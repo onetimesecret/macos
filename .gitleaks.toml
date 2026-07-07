@@ -1,0 +1,25 @@
+# gitleaks configuration for OTS Cache.
+#
+# CI runs the gitleaks CLI (see .github/workflows/ci.yml) as the backstop for
+# the "never commit a secret" rule (docs/01 §9). We deliberately do NOT use the
+# gitleaks GitHub Action: for organization-owned repos it now hard-requires a
+# paid GITLEAKS_LICENSE before it will scan. The tool itself is free, so we run
+# the binary directly and keep the full default ruleset here.
+title = "OTS Cache — gitleaks"
+
+[extend]
+# Keep every default rule; the only change below is to ADD one allowlist entry.
+useDefault = true
+
+# The one deliberate exemption. This is a *secrets* tool: its tests necessarily
+# contain secret-SHAPED fixtures to prove the redaction path never leaks
+# plaintext across the FFI. `sk-live_<hex>` is a made-up example key — note the
+# hyphen; real Stripe keys are `sk_live_` with an underscore, which this pattern
+# does NOT match, so genuine Stripe keys are still caught. Scoped to this exact
+# fake so a real credential accidentally committed anywhere still fails the scan.
+[allowlist]
+description = "Deliberately-fake example credential used across the redaction tests."
+regexTarget = "match"
+regexes = [
+  '''sk-live_[0-9a-f]{20,}''',
+]
