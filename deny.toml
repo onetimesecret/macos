@@ -25,6 +25,10 @@ allow = [
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace crates reference each other by path without a version pin;
+# this exemption applies only to publish = false crates, so anything
+# headed for crates.io still needs real version requirements.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"
