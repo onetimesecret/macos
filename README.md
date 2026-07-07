@@ -24,6 +24,10 @@ first deliverable is the thinking, not the binary.
 - 📄 **[docs/00-problem-space.md](docs/00-problem-space.md)** — the Milestone 1
   document: what problem this solves, what everyone else overlooks, the design
   ethos, and the questions deferred to later milestones.
+- 🧱 **[docs/01-repo-skeleton.md](docs/01-repo-skeleton.md)** — the prescription
+  for standing up the repo and app skeleton: the Rust-core + Swift-UI split, the
+  "secret bytes never enter Swift" boundary, the toolchain, and the ordered
+  bootstrap sequence.
 
 ## The one-paragraph version
 
