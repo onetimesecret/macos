@@ -1,0 +1,25 @@
+name: Bug report
+description: Something behaves differently than the spec says it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: pre-alpha, commit abc1234
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Environment
+      description: macOS version, hardware, anything unusual.
+    validations:
+      required: false

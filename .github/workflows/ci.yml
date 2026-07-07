@@ -1,0 +1,49 @@
+# Two lanes, both required (docs/spec/07-repo-skeleton.md):
+#   logic    — ubuntu: the crates that hold all the logic, cheap and fast
+#   platform — macos:  full workspace, incl. the pasteboard adapter
+#
+# Future jobs, recorded here rather than forgotten:
+#   - signing + notarization (a release-engineering ADR of its own)
+#   - frugality-budget assertions (docs/spec/05): download size, resident
+#     memory, idle wakeups — measurable only once a binary exists.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  logic:
+    name: logic (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        run: rustup show # respects rust-toolchain.toml
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy -p companion-core -p ots-client --all-targets -- -D warnings
+      - name: Test
+        run: cargo test -p companion-core -p ots-client
+      - name: cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+
+  platform:
+    name: platform (macos)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (full workspace)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test (full workspace)
+        run: cargo test --workspace

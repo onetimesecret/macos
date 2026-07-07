@@ -1,0 +1,13 @@
+name: Question
+description: Ask about the design, the spec, or the code.
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: >
+        If it touches behaviour, check docs/spec/06-open-questions.md
+        first — it may already be an open question with a current leaning.
+    validations:
+      required: true

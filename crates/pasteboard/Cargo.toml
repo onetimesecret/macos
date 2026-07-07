@@ -1,0 +1,20 @@
+[package]
+name = "companion-pasteboard"
+version = "0.1.0"
+description = "Pasteboard adapter for the Onetime Secret macOS companion: NSPasteboard on macOS, plus the hygiene vocabulary (ConcealedType, transient, clear-after-copy) shared by every implementation."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# This is the one crate permitted to write `unsafe` (doc 07) — the FFI
+# surface stays auditable by crate boundary. The allowance (and the objc2
+# dependency under [target.'cfg(target_os = "macos")'.dependencies])
+# arrives with the NSPasteboard code in milestone 2; until then the
+# workspace-wide deny holds here too.
+[lints]
+workspace = true
+
+[dependencies]
+zeroize = { workspace = true }
