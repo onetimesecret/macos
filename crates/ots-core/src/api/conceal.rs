@@ -208,8 +208,10 @@ pub fn build_body(secret: &str, opts: &ConcealOpts) -> Zeroizing<String> {
 #[must_use]
 pub fn auth_header(creds: &Credentials) -> Zeroizing<String> {
     let raw = Zeroizing::new(format!("{}:{}", creds.extid, creds.token.as_str()));
-    let encoded = base64::engine::general_purpose::STANDARD.encode(raw.as_bytes());
-    Zeroizing::new(format!("Basic {encoded}"))
+    // The base64 of `extid:token` is itself credential-bearing — wrap it so the
+    // intermediate wipes on drop too, not just the final header.
+    let encoded = Zeroizing::new(base64::engine::general_purpose::STANDARD.encode(raw.as_bytes()));
+    Zeroizing::new(format!("Basic {}", encoded.as_str()))
 }
 
 /// Parse a conceal response into a [`ShareLink`], tolerant of the v2/v3 `record`
