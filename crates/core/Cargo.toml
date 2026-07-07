@@ -1,0 +1,24 @@
+[package]
+name = "companion-core"
+version = "0.1.0"
+description = "Cell store, TTL scheduling, zeroizing buffers, and secret-shape heuristics for the Onetime Secret macOS companion. No UI, no macOS dependencies."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+zeroize = { workspace = true }
+
+[dev-dependencies]
+# Examples only: the demo REPL dry-runs promotion through the client crate
+# and copies out through the in-memory pasteboard.
+ots-client = { path = "../ots-client" }
+companion-pasteboard = { path = "../pasteboard" }
+
+[[example]]
+name = "demo"

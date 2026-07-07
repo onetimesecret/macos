@@ -1,0 +1,4 @@
+# Pinned stable; bump deliberately, not ambiently (doc 07).
+[toolchain]
+channel = "1.94.1"
+components = ["rustfmt", "clippy"]

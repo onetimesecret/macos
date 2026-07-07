@@ -1,60 +1,76 @@
-# OTS Cache — macOS companion for Onetime Secret
+# macOS companion for Onetime Secret
 
-> **Working title.** The product name is unsettled; `OTS Cache` is a placeholder
-> that captures the intent. See the naming note in the spec.
+**Design-first, pre-alpha, no releases.** What exists today is a
+specification, the Rust core it prescribes, and a headless demo. There is
+no app to download yet, and no screenshots of vaporware.
 
-A small, native macOS app that gives sensitive content a safe, self-clearing
-place to rest **while it is in transit** — the moment between copying something
-out of one place and pasting it into another. It lives in the menu bar and, when
-you want it, as a quiet panel docked to the edge of the screen.
+A menu-bar-resident staging area for content in transition. Drag or paste
+text and images into a small edge-docked panel; each item becomes a
+**SleeperCell** with a visible, limited time-to-live. Cells exist to be
+copied back out and then forgotten — like a CPU's L1/L2 cache, the value
+is in being small, close, and evicted by policy, never in being a system
+of record. Secondarily, any cell can be promoted into a
+[Onetime Secret](https://onetimesecret.com) link (v3 API) when the
+content needs to travel to another person or machine.
 
-It is the **open-source desktop companion** to
-[Onetime Secret](https://onetimesecret.com). Its primary job is local and needs
-no account: park clipboard text or an image in a **SleeperCell** that expires on
-its own. Its secondary job is one gesture away: promote any cell into a secure,
-one-time [Onetime Secret](https://onetimesecret.com) link.
+The core loop (paste, hold briefly, copy out, forget) requires no account
+and no network. Promotion is the app's only outbound action.
 
-## Status
+## Try the core today
 
-**Design phase — Milestone 1: restating the problem space.**
+The logic crates are pure Rust and run anywhere:
 
-No application code yet. This repository currently holds the specification. The
-first deliverable is the thinking, not the binary.
+```sh
+cargo test --workspace
+cargo run -p companion-core --example demo
+```
 
-- 📄 **[docs/00-problem-space.md](docs/00-problem-space.md)** — the Milestone 1
-  document: what problem this solves, what everyone else overlooks, the design
-  ethos, and the questions deferred to later milestones.
-- 🧱 **[docs/01-repo-skeleton.md](docs/01-repo-skeleton.md)** — the prescription
-  for standing up the repo and app skeleton: the Rust-core + Swift-UI split, the
-  "secret bytes never enter Swift" boundary, the toolchain, and the ordered
-  bootstrap sequence.
+The demo walks the whole SleeperCell lifecycle in a terminal: staging,
+masking of secret-shaped content, the draining ring, TTL cycling,
+copy-out with pasteboard hygiene, silent expiry, and a dry run of the
+promotion request (nothing is sent).
 
-## The one-paragraph version
+## Reading order
 
-The system clipboard is a single volatile register: copy something new and the
-last thing is gone. The market's answer is the clipboard-history app — a
-searchable archive that keeps *everything forever*, quietly accumulating every
-password and 2FA code you have ever copied. We want the opposite. Think of it as
-an **L1/L2 cache for content in transit**: a small, bounded set of slots that
-hold your working set *right now* and then evict themselves. Forgetting is the
-default. Keeping costs a deliberate click.
+The spec governs; code follows it. Start at
+[docs/spec/README.md](docs/spec/README.md):
 
-## Principles (short form)
+| Doc | Contents |
+| --- | --- |
+| [01-problem-space](docs/spec/01-problem-space.md) | The problem restated, the cache analogy taken seriously, anti-goals |
+| [02-overlooked-opportunities](docs/spec/02-overlooked-opportunities.md) | The landscape of neighbouring apps and the gaps they leave |
+| [03-design-principles](docs/spec/03-design-principles.md) | Six principles and the arguments they settle |
+| [04-interaction-model](docs/spec/04-interaction-model.md) | SleeperCell anatomy, TTL ladder, panel behaviour |
+| [05-technical-direction](docs/spec/05-technical-direction.md) | Shell survey, security posture, a11y, frugality budget |
+| [06-open-questions](docs/spec/06-open-questions.md) | Everything unresolved, honestly |
+| [07-repo-skeleton](docs/spec/07-repo-skeleton.md) | The prescription this repository was initialized from |
 
-- **Ephemeral by default.** Expiry is the resting state; permanence is the
-  exception. Forgetting is free; keeping costs a click.
-- **Content plays second fiddle.** The *state* — time remaining, security,
-  transit — is the star. Cells preview content; they don't edit it.
-- **Present, not central.** An ambient edge-docked panel that is there when you
-  glance and gone when you don't. It never steals focus.
-- **Frugal.** Small in memory, disk, CPU, battery, pixels, and cognition. Native
-  Rust, not a browser in a trench coat.
-- **Accessible first.** Full keyboard control; the countdown never relies on
-  colour or motion alone; Reduce Motion / Increase Contrast / Dynamic Type are
-  first-class.
-- **Local-first and private.** Sensitive transit content does not silently
-  persist or sync. The network is opt-in and only for sharing.
+Decisions land as ADRs in [docs/adr/](docs/adr/). ADR-0001 (Rust core,
+thin shell) is accepted; ADR-0002 (shell selection) is honestly empty
+until the panel spike runs on macOS hardware.
+
+## Layout
+
+```
+crates/core/         cell store, TTL scheduling, zeroizing buffers,
+                     secret-shape heuristics — no macOS deps
+crates/ots-client/   Onetime Secret v3 API client, auth strategies — no macOS deps
+crates/pasteboard/   pasteboard hygiene contract; NSPasteboard adapter lands here
+shell/               empty until ADR-0002
+spikes/              disposable framework spikes, excluded from the workspace
+docs/spec/           the governing spec   ·   docs/adr/  decisions
+```
+
+## Naming note
+
+**Airlock** is a working title only: a small chamber between two
+environments that things pass through but never live in — the product in
+one image. It collides with at least one existing security vendor, so it
+will not survive to release without a trademark check (open question №8).
+The name appears nowhere in identifiers, so the eventual rename is a
+one-file change.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Security reports: see
+[SECURITY.md](SECURITY.md).

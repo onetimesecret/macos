@@ -1,0 +1,31 @@
+# cargo-deny gates from commit one (doc 07): advisories deny, licenses
+# allowlisted to permissive so distribution stays simple.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  # Required by unicode-ident (transitive via serde); permissive,
+  # data-file attribution only.
+  "Unicode-3.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
