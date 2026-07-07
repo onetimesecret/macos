@@ -65,13 +65,16 @@ jobs:
   # CLI directly rather than gitleaks/gitleaks-action@v2: the Action now requires
   # a paid GITLEAKS_LICENSE for organization repos, but the tool itself is free.
   # Rules + the single test-fixture allowlist live in .gitleaks.toml.
+  #
+  # Scan the working TREE (`gitleaks dir`), not history (`gitleaks git`). With a
+  # full-history checkout, `gitleaks git` walks every fetched branch, so a
+  # secret-shaped fixture on an unrelated sibling branch would fail this branch's
+  # build. A tree scan is correctly scoped to the files this branch ships.
   secret-scan:
     name: Secret scanning
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # full history — gitleaks scans every commit
       - name: gitleaks scan
         env:
           GITLEAKS_VERSION: "8.21.2"
@@ -80,4 +83,4 @@ jobs:
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | tar -xz -C "$RUNNER_TEMP/bin" gitleaks
           "$RUNNER_TEMP/bin/gitleaks" version
-          "$RUNNER_TEMP/bin/gitleaks" git . --config .gitleaks.toml --redact --verbose
+          "$RUNNER_TEMP/bin/gitleaks" dir . --config .gitleaks.toml --redact --verbose
