@@ -1,0 +1,38 @@
+# cargo-deny configuration — license compliance + RUSTSEC advisories.
+# Run locally via `scripts/check.sh` and in CI on every push (docs/01 §9).
+
+[advisories]
+version = 2
+# Fail the build on any known vulnerability or unmaintained-with-advisory crate.
+yanked = "deny"
+ignore = []
+
+[licenses]
+version = 2
+# Permissive licenses compatible with this project's MIT license. Anything
+# outside this set must be reviewed and added deliberately, never silently.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "CC0-1.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Multiple versions of the same crate are a smell in a security tool; warn so a
+# reviewer sees the tree grow, but don't hard-block a prototype on it.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

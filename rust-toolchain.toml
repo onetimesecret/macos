@@ -1,0 +1,11 @@
+# Pinned toolchain so every machine and CI runner is identical (docs/01 §6).
+#
+# NOTE — deliberate bump from the spec's original 1.83.0 floor. The current
+# secure dependency ecosystem (zeroize, the reqwest/rustls TLS tree, idna/icu)
+# requires the Rust 2024 edition and a compiler floor of ~1.86. The spec frames
+# this pin as "a real floor; bump deliberately" — this is that bump. Revisit
+# when the dependency floor moves again.
+[toolchain]
+channel = "1.94.1"
+components = ["rustfmt", "clippy"]
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]

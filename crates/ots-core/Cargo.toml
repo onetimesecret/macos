@@ -1,0 +1,43 @@
+[package]
+name = "ots-core"
+version = "0.1.0"
+description = "The trust core for OTS Cache: secret buffers, SleeperCells, TTL, and the Onetime Secret v3 client. Carries no Apple assumptions (docs/01 D4)."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = ["http"]
+# `http` pulls in reqwest for the live conceal call. The request-body,
+# auth-header, and response-parsing logic are always compiled and tested; only
+# the network send sits behind this feature so the pure logic builds fast and
+# stays portable (the heavy TLS tree is isolated).
+http = ["dep:reqwest"]
+
+[dependencies]
+zeroize = { version = "1", features = ["derive"] }
+libc = "0.2"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "blocking",
+], optional = true }
+
+# Credentials at rest go to the macOS Keychain; never plaintext config. This
+# dependency is macOS-only by construction — the portable core falls back to an
+# in-memory dev store elsewhere (see keychain.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "2"
+
+[dev-dependencies]
+# Proves, at compile time, that SecretBuffer cannot be Clone/Copy/Debug/
+# Serialize — the structural half of the boundary law (docs/01 §3).
+static_assertions = "1"

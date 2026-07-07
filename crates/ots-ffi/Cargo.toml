@@ -1,0 +1,20 @@
+[package]
+name = "ots-ffi"
+version = "0.1.0"
+description = "The only crate exposed to Swift. Thin C-ABI seam over ots-core; hands out handles and outputs, never plaintext secrets (docs/01 §3, §5)."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+# staticlib for the .xcframework the Swift app links; cdylib so the seam can be
+# built and smoke-tested as a shared object off macOS too.
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+ots-core = { path = "../ots-core" }
+serde_json = "1"

@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # Fast gate: the portable trust core + FFI on Linux. This is the bulk of the
+  # security-critical code and it carries no Apple assumptions (docs/01 D4).
+  core:
+    name: Rust core (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        run: rustup show
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy (default features)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy (core, no default features)
+        run: cargo clippy -p ots-core --all-targets --no-default-features -- -D warnings
+      - name: Test
+        run: cargo test --workspace
+      - name: License + advisory check
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  # macOS build: exercises the macOS-only paths (security-framework Keychain),
+  # builds the universal .xcframework, and builds/tests the Swift shell.
+  macos:
+    name: macOS (core + Swift)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        run: rustup show
+      - name: Rust gates (macOS core)
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+      - name: Build .xcframework
+        run: scripts/build-core.sh
+      - name: Swift build & test
+        run: |
+          cd apps/OTSCache
+          swift build
+          swift test
+      - name: Swift format lint (advisory)
+        # Advisory until the style baseline is confirmed on a macOS runner, then
+        # make it blocking (docs/01 §9).
+        continue-on-error: true
+        run: |
+          cd apps/OTSCache
+          swift format lint --recursive Sources Tests
+
+  # Backstop for the "never commit a secret" rule (docs/01 §9).
+  secret-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
