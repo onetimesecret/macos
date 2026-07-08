@@ -1,0 +1,22 @@
+[package]
+name = "companion-ffi"
+version = "0.1.0"
+description = "The C-ABI seam for the Onetime Secret macOS companion: the only crate a non-Rust shell may call. Hands out opaque handles and non-secret JSON — never plaintext."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+# staticlib feeds the .xcframework (scripts/build-core.sh); cdylib lets
+# the seam be smoke-tested off macOS; rlib keeps `cargo test` natural.
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+companion-core = { path = "../core" }
+companion-pasteboard = { path = "../pasteboard" }
+serde_json = { workspace = true }
