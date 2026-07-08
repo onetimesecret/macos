@@ -29,9 +29,9 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy -p companion-core -p ots-client --all-targets -- -D warnings
+        run: cargo clippy -p companion-core -p ots-client -p companion-credentials -p companion-ffi --all-targets -- -D warnings
       - name: Test
-        run: cargo test -p companion-core -p ots-client
+        run: cargo test -p companion-core -p ots-client -p companion-credentials -p companion-ffi
       - name: cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
 
@@ -47,3 +47,18 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test (full workspace)
         run: cargo test --workspace
+
+  # A backstop for the "never commit a secret" rule (adopted from the
+  # prototype skeleton, PR #5). Scans the full history, so checkout is
+  # unshallow. The binary is version-pinned; bump deliberately.
+  secret-scan:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks (full-history scan)
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar -xz gitleaks
+          ./gitleaks detect --source . --no-banner --redact
