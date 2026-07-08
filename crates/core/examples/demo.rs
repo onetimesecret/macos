@@ -24,6 +24,8 @@ const DEMO_SERVER: &str = "https://eu.onetimesecret.com";
 const ALLOWED_TTLS: &[u64] = &[300, 1800, 3600, 14_400, 28_800, 86_400, 259_200, 604_800];
 
 fn main() {
+    // No core dumps while secrets are held; buffers are mlocked besides.
+    companion_core::harden_process();
     let clock = ManualClock::new();
     let mut store = CellStore::new(clock.clone());
     let mut pasteboard = MemoryPasteboard::new();

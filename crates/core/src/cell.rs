@@ -4,11 +4,27 @@ use std::time::{Duration, Instant};
 
 use zeroize::Zeroizing;
 
+use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
 
 /// Opaque, monotonically assigned cell identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CellId(pub(crate) u64);
+
+impl CellId {
+    /// The raw id, for carrying across an FFI seam. `0` is never issued.
+    #[must_use]
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+
+    /// Rebuild an id from its raw form (an FFI caller handing one back).
+    /// Unknown ids are harmless: lookups simply return `None`.
+    #[must_use]
+    pub fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+}
 
 /// What kind of content a cell holds — the "kind glyph".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,11 +59,11 @@ pub struct Promotion {
     pub receipt_id: String,
 }
 
-/// The content buffer. Zeroized on drop — expiry and discard are the
-/// same wipe.
-#[derive(Debug)]
+/// The content buffer: a [`SecretBuffer`] — page-locked while alive,
+/// zeroized on drop — so expiry and discard are the same wipe.
+/// Deliberately not `Debug`: cell contents cannot be logged.
 pub struct CellContent {
-    bytes: Zeroizing<Vec<u8>>,
+    bytes: SecretBuffer,
     kind: CellKind,
 }
 
@@ -56,7 +72,7 @@ impl CellContent {
     #[must_use]
     pub fn text(s: &str) -> Self {
         Self {
-            bytes: Zeroizing::new(s.as_bytes().to_vec()),
+            bytes: SecretBuffer::from_text(s),
             kind: CellKind::Text,
         }
     }
@@ -65,7 +81,7 @@ impl CellContent {
     #[must_use]
     pub fn image(bytes: Vec<u8>) -> Self {
         Self {
-            bytes: Zeroizing::new(bytes),
+            bytes: SecretBuffer::new(bytes),
             kind: CellKind::Image,
         }
     }
@@ -92,22 +108,24 @@ impl CellContent {
     /// their copy; [`CellContent::clone_zeroizing`] is the preferred exit.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes
+        self.bytes.expose()
     }
 
     /// Text view of the content, when it is text.
     #[must_use]
     pub fn as_text(&self) -> Option<&str> {
         match self.kind {
-            CellKind::Text => std::str::from_utf8(&self.bytes).ok(),
+            CellKind::Text => std::str::from_utf8(self.bytes.expose()).ok(),
             CellKind::Image => None,
         }
     }
 
     /// A zeroizing copy of the bytes, for handing to the pasteboard.
+    /// The copy leaves the page-locked region — that is inherent to
+    /// copy-out; it exists to be written somewhere else and dropped.
     #[must_use]
     pub fn clone_zeroizing(&self) -> Zeroizing<Vec<u8>> {
-        Zeroizing::new(self.bytes.to_vec())
+        Zeroizing::new(self.bytes.expose().to_vec())
     }
 
     /// Character count for text, byte count for images — the metadata
@@ -121,7 +139,7 @@ impl CellContent {
 
 /// A `SleeperCell`. Anatomy per doc 04: time-remaining cue, kind glyph,
 /// recognition line, interactive TTL label, promote CTA.
-#[derive(Debug)]
+/// Not `Debug` — it holds a [`CellContent`], and cells are never logged.
 pub struct Cell {
     pub(crate) id: CellId,
     pub(crate) content: CellContent,
