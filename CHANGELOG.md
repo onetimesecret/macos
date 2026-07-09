@@ -21,7 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   available, the guest route otherwise — lands the returned share link
   on the clipboard (`SystemPasteboard` on macOS), and retains only the
   receipt id on the cell. `promote` is unchanged (still a dry run);
-  `send` is the live path (issue #3, workstream 3).
+  `send` is the live path. Verified live against the guest route on
+  `eu.onetimesecret.com`: a real secret was concealed, the share link
+  round-tripped onto the real clipboard, only the receipt id was kept
+  (issue #3, workstream 3 — closes the promotion loop end to end).
 - `companion-pasteboard`: the real `NSPasteboard` adapter
   (`SystemPasteboard`, macOS-gated, `objc2`/`objc2-app-kit`), meeting the
   hygiene contract already tested against `MemoryPasteboard` — outbound
