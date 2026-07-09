@@ -33,11 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = PanelController(model: model)
         self.controller = controller
 
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(
-            systemSymbolName: "hourglass",
-            accessibilityDescription: "Onetime Secret Companion"
-        )
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // ㊙️ maruhi ("secret") — the menu-bar glyph. An emoji title
+        // renders in colour; VoiceOver reads the explicit label, not the
+        // emoji's own name.
+        item.button?.title = "㊙️"
+        item.button?.setAccessibilityLabel("Onetime Secret Companion")
         item.button?.target = self
         item.button?.action = #selector(togglePanel)
         statusItem = item
@@ -66,6 +67,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 final class PanelModel: ObservableObject {
     @Published private(set) var cells: [CellSummary] = []
 
+    /// Whether the panel floats above other apps' windows (`.statusBar`
+    /// level) or behaves like a normal window other windows can cover
+    /// (`.normal`). Persisted, so the choice survives relaunch; the
+    /// controller follows it. Default: float on top (original behavior).
+    @Published var floatsOnTop: Bool {
+        didSet { UserDefaults.standard.set(floatsOnTop, forKey: Self.floatsKey) }
+    }
+    private static let floatsKey = "floatsOnTop"
+
     private let client = CompanionClient()
     // nonisolated(unsafe): deinit is always nonisolated, even on a
     // @MainActor class (Swift 6), and Timer isn't Sendable. Safe here —
@@ -75,6 +85,8 @@ final class PanelModel: ObservableObject {
     private nonisolated(unsafe) var redrawTimer: Timer?
 
     init() {
+        // Unset → float on top, matching the panel's original behavior.
+        floatsOnTop = UserDefaults.standard.object(forKey: Self.floatsKey) as? Bool ?? true
         refresh()
     }
 

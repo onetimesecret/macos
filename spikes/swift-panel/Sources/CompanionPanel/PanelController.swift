@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// An edge-docked, non-activating panel — a *surface*, not a window. It
@@ -15,10 +16,18 @@ import SwiftUI
 final class PanelController: NSObject {
     private let panel: NSPanel
     private let edge: NSRectEdge
+    private var levelObserver: AnyCancellable?
 
     init(model: PanelModel, edge: NSRectEdge = .maxX) {
         self.edge = edge
-        let hosting = NSHostingController(rootView: PanelView(model: model))
+        // NSHostingController sizes the window to the SwiftUI view's
+        // fitting size, which otherwise collapses to the content's
+        // intrinsic (narrow) width and overrides the contentRect below.
+        // Pin the root to the intended shelf size so the window stays
+        // 320 wide, top-anchored, the ScrollView filling the rest.
+        let hosting = NSHostingController(
+            rootView: PanelView(model: model).frame(width: 320, height: 480, alignment: .top)
+        )
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 480),
             styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView, .utilityWindow],
@@ -27,7 +36,8 @@ final class PanelController: NSObject {
         )
         panel.contentViewController = hosting
         panel.isFloatingPanel = true
-        panel.level = .statusBar
+        // Window level is a persisted setting (PanelModel.floatsOnTop),
+        // applied and kept in sync in the observer set up after super.init.
         panel.hidesOnDeactivate = false
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
@@ -35,12 +45,34 @@ final class PanelController: NSObject {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         // Only take key focus if a control inside genuinely asks for it.
         panel.becomesKeyOnlyIfNeeded = true
-        // Capture exclusion (docs/spec/05): off by default, surfaced
-        // honestly as a toggle in the real app — always on in the spike,
-        // since the spike's job is to confirm this and `.none` are
-        // compatible with the rest of the panel's behavior.
+        // Capture exclusion (docs/spec/05): secrets on screen must not
+        // leak into screenshots or screen recordings, so the panel is
+        // excluded from capture. In the real app this is an honest,
+        // user-visible toggle; the spike forces it on, since the spike's
+        // job is to confirm `.none` is compatible with the rest of the
+        // panel's behavior.
         panel.sharingType = .none
+        // Debug-only escape hatch: a DEBUG build honours
+        // COMPANION_ALLOW_CAPTURE=1 so the panel can be screenshotted
+        // while diagnosing the UI. A release build compiles this out
+        // entirely, so capture exclusion can never be disabled in a
+        // shipped binary.
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["COMPANION_ALLOW_CAPTURE"] != nil {
+            panel.sharingType = .readOnly
+            FileHandle.standardError.write(Data(
+                "[companion] DEBUG: capture exclusion OFF — panel is screenshot-able\n".utf8
+            ))
+        }
+        #endif
         super.init()
+        // Follow the float-on-top setting: `.statusBar` sits above every
+        // other app; `.normal` lets other windows cover the panel. The
+        // publisher emits its current value on subscribe, so this also
+        // sets the initial level.
+        levelObserver = model.$floatsOnTop.sink { [weak self] floats in
+            self?.panel.level = floats ? .statusBar : .normal
+        }
     }
 
     /// Show docked to the chosen edge without activating the app or

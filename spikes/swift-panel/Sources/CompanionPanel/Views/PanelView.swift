@@ -46,7 +46,23 @@ struct PanelView: View {
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
+            pinToggle
         }
+    }
+
+    /// Float-on-top setting. A real `Toggle` (not a bare button) so
+    /// VoiceOver announces it as a switch with on/off state — the panel's
+    /// window level follows it (PanelController).
+    private var pinToggle: some View {
+        Toggle(isOn: $model.floatsOnTop) {
+            Image(systemName: model.floatsOnTop ? "pin.fill" : "pin")
+        }
+        .toggleStyle(.button)
+        .controlSize(.small)
+        .help(model.floatsOnTop
+            ? "Floating above other windows — click to let them cover it"
+            : "Behaves like a normal window — click to keep it on top")
+        .accessibilityLabel(Text("Keep panel above other windows"))
     }
 
     private var dropZone: some View {
