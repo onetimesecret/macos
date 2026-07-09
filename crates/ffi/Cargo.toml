@@ -20,3 +20,6 @@ workspace = true
 companion-core = { path = "../core" }
 companion-pasteboard = { path = "../pasteboard" }
 serde_json = { workspace = true }
+# Named only to spell the `Pasteboard::write` signature the `Board`
+# backend delegates to; the bytes stay zeroizing end to end.
+zeroize = { workspace = true }

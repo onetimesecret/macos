@@ -65,6 +65,7 @@ dependencies = [
  "companion-core",
  "companion-pasteboard",
  "serde_json",
+ "zeroize",
 ]
 
 [[package]]

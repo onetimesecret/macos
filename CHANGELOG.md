@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Real pasteboard **ingest** across the C-ABI seam (issue #4): on macOS
+  `companion_new` now binds the real `NSPasteboard.general` via the
+  `SystemPasteboard` adapter (WS2) instead of the in-process stand-in, so
+  the core reads the system clipboard itself — the shell asks, the core
+  takes. Off macOS and in the FFI unit tests the in-process
+  `MemoryPasteboard` stays, chosen once in `companion_new` behind an
+  internal `Board` enum and invisible above the seam; the tests build a
+  seeded in-memory handle directly so they never read or clobber a real
+  clipboard. Verified end to end: a token-shaped string placed on the real
+  clipboard with `pbcopy` is ingested, detected ("GitHub token"), masked
+  in the summary JSON (`••••`), and the raw secret never appears — the
+  boundary law holds through the live path. The `.xcframework` packaging
+  and `swift build`/`swift test` remain to be run on a machine with full
+  Xcode (this environment has Command Line Tools only); the Rust core
+  builds clean in release for both Apple arches. See
+  docs/adr/0003-binding-mechanism.md for the seam's binding decision.
 - `spikes/tauri-panel`: the Tauri arm of the ADR-0002 two-way spike —
   Rust-native (links `companion-core`/`companion-pasteboard` directly, no
   C-ABI seam needed), non-activating edge-docked panel achieved by

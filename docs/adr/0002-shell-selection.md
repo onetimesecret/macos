@@ -19,6 +19,13 @@ over the C ABI for Swift) rather than wiring the real system pasteboard
 for ingest — that's issue #4's scope, not this spike's, and doing it
 identically in both keeps the comparison fair.
 
+(Update, issue #4: the C-ABI/Swift path's real ingest has since landed —
+`companion_new` now binds `NSPasteboard.general` and the core reads the
+real clipboard itself, verified end to end. The Tauri arm still stages
+directly; it links `companion-pasteboard` and could swap the same way.
+This is spike-completeness, not a selection criterion — the panel-
+semantics/memory/CPU comparison below is unchanged.)
+
 Issue #4 defines the hardware session that also covers VoiceOver
 operability. This ADR's Decision is **not being set by this spike alone**
 — that determination belongs to issue #4, per explicit instruction. What
