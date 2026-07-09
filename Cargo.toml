@@ -14,6 +14,7 @@ members = [
   "crates/ffi",
   "crates/ots-client",
   "crates/pasteboard",
+  "crates/transport",
 ]
 
 [workspace.package]

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `companion-transport`: `UreqTransport`, the one concrete HTTP
+  transport this workspace ships for `ots-client` (`ureq` + `rustls`,
+  default-features off — no gzip/cookies/charset). Refuses a non-`https`
+  URL before any socket opens (the network boundary, docs/spec/05).
+  `ots-client` itself stays sans-IO; this crate is the integrator's one
+  choice, made once, here.
+- `companion-core`'s demo gains `send`/`login`/`logout`: `send` performs
+  a real `POST` through `UreqTransport` — authenticated (Keychain-or-dev
+  credentials from `companion-credentials`, set via `login`) when
+  available, the guest route otherwise — lands the returned share link
+  on the clipboard (`SystemPasteboard` on macOS), and retains only the
+  receipt id on the cell. `promote` is unchanged (still a dry run);
+  `send` is the live path (issue #3, workstream 3).
 - `companion-pasteboard`: the real `NSPasteboard` adapter
   (`SystemPasteboard`, macOS-gated, `objc2`/`objc2-app-kit`), meeting the
   hygiene contract already tested against `MemoryPasteboard` — outbound

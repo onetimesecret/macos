@@ -29,9 +29,9 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy -p companion-core -p ots-client -p companion-credentials -p companion-ffi --all-targets -- -D warnings
+        run: cargo clippy -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-transport --all-targets -- -D warnings
       - name: Test
-        run: cargo test -p companion-core -p ots-client -p companion-credentials -p companion-ffi
+        run: cargo test -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-transport
       - name: cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
 
