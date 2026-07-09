@@ -9,12 +9,26 @@ repository.workspace = true
 rust-version.workspace = true
 
 # This is the one crate permitted to write `unsafe` (doc 07) — the FFI
-# surface stays auditable by crate boundary. The allowance (and the objc2
-# dependency under [target.'cfg(target_os = "macos")'.dependencies])
-# arrives with the NSPasteboard code in milestone 2; until then the
-# workspace-wide deny holds here too.
+# surface stays auditable by crate boundary. The workspace-wide deny
+# stays in force here at the crate level; `src/macos.rs` carves out its
+# own module-scoped `#![allow(unsafe_code)]` for the objc2 calls, so the
+# unsafe surface is auditable by module, not just by crate.
 [lints]
 workspace = true
 
 [dependencies]
 zeroize = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+# default-features off: AppKit/Foundation's "default" feature enables
+# hundreds of unrelated classes (NSButton, NSApplication, ...); we want
+# exactly the pasteboard surface, both for the frugality budget (doc 05)
+# and to keep the unsafe surface auditable.
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "NSPasteboard",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "NSArray",
+  "NSString",
+] }

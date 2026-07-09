@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `companion-pasteboard`: the real `NSPasteboard` adapter
+  (`SystemPasteboard`, macOS-gated, `objc2`/`objc2-app-kit`), meeting the
+  hygiene contract already tested against `MemoryPasteboard` — outbound
+  writes carry `TransientType` always and `ConcealedType` when secret,
+  inbound `ConcealedType` is reported, clear-after-copy is
+  change-count-guarded. Verified against the real system clipboard: both
+  marks land as written and are visible to any pasteboard observer
+  (issue #3, workstream 2).
 - Harvested from the parallel skeleton prototype (PR #5), adapted to
   this crate layout:
   - `companion-core`: `SecretBuffer` (page-locked via `mlock`, zeroized
@@ -42,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Basic now, PASETO later), downward TTL snapping, share-link assembly.
 - `companion-pasteboard`: the pasteboard hygiene contract
   (`ConcealedType`, transient marking, change-count-guarded
-  clear-after-copy) with an in-memory implementation; the `NSPasteboard`
-  adapter follows in milestone 2.
+  clear-after-copy) with an in-memory implementation for tests, the
+  demo, and non-macOS hosts.
 - A headless demo of the SleeperCell lifecycle:
   `cargo run -p companion-core --example demo`.
