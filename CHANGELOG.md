@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `spikes/tauri-panel`: the Tauri arm of the ADR-0002 two-way spike —
+  Rust-native (links `companion-core`/`companion-pasteboard` directly, no
+  C-ABI seam needed), non-activating edge-docked panel achieved by
+  bypassing Tauri's own `show()`/`set_visible()` (which unconditionally
+  calls `makeKeyAndOrderFront`) with a direct objc2 side-door onto the
+  raw `NSWindow`; text-drag receiving via the WebKit/HTML5 DnD layer
+  (Tauri's native `DragDropEvent` is file-paths-only); scheduled expiry
+  via `tauri::async_runtime` + `tokio::time::sleep`; menu-bar tray icon.
+  Verified non-activating via `lsappinfo` polling; measured 61.6 MB
+  resident / 0.0% idle CPU across all 4 processes (main + 3 WebKit XPC
+  helpers) — already over docs/spec/05's 60 MB Tauri budget at 0 cells.
+  See docs/adr/0002-shell-selection.md for the full comparison against
+  swift-panel (issue #3, workstream 1).
 - `companion-transport`: `UreqTransport`, the one concrete HTTP
   transport this workspace ships for `ots-client` (`ureq` + `rustls`,
   default-features off — no gzip/cookies/charset). Refuses a non-`https`
@@ -50,9 +63,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     arms one timer instead of polling. `scripts/build-core.sh` packages
     it as a universal `.xcframework`.
   - `spikes/swift-panel`: the Swift/AppKit arm of the ADR-0002 spike —
-    menu-bar panel, non-activating edge-docked `NSPanel`, draining ring
-    with Reduce Motion fallback and VoiceOver text equivalents — bound
-    to the seam, awaiting the issue #4 hardware session.
+    menu-bar panel, non-activating edge-docked `NSPanel`
+    (`sharingType = .none`), draining ring with Reduce Motion fallback
+    and VoiceOver text equivalents, drag receiving via
+    `.onDrop(of: [.plainText])`, bound to the seam through
+    `PanelController` as the app's real entry point. Verified
+    non-activating and measured (~22 MB idle, 0.0% CPU) via `lsappinfo`
+    polling and `footprint`/`top` — see docs/adr/0002-shell-selection.md.
+    VoiceOver operability itself awaits the issue #4 hardware session.
   - CI: a full-history gitleaks secret-scan job.
 - Repository skeleton per the spec's initialization prescription
   (docs/spec/07): Cargo workspace, CI lanes, ADR practice, governance

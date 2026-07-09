@@ -35,6 +35,11 @@ final class PanelController: NSObject {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         // Only take key focus if a control inside genuinely asks for it.
         panel.becomesKeyOnlyIfNeeded = true
+        // Capture exclusion (docs/spec/05): off by default, surfaced
+        // honestly as a toggle in the real app — always on in the spike,
+        // since the spike's job is to confirm this and `.none` are
+        // compatible with the rest of the panel's behavior.
+        panel.sharingType = .none
         super.init()
     }
 

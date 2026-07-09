@@ -16,6 +16,9 @@ members = [
   "crates/pasteboard",
   "crates/transport",
 ]
+# tauri-panel is Rust but not product code — a disposable ADR-0002 spike
+# (spikes/README.md) with its own Cargo.lock and target/.
+exclude = ["spikes/tauri-panel"]
 
 [workspace.package]
 edition = "2024"
