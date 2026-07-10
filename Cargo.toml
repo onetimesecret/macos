@@ -8,7 +8,13 @@
 
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/ots-client", "crates/pasteboard"]
+members = [
+  "crates/core",
+  "crates/credentials",
+  "crates/ffi",
+  "crates/ots-client",
+  "crates/pasteboard",
+]
 
 [workspace.package]
 edition = "2024"

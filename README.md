@@ -52,12 +52,15 @@ until the panel spike runs on macOS hardware.
 ## Layout
 
 ```
-crates/core/         cell store, TTL scheduling, zeroizing buffers,
-                     secret-shape heuristics — no macOS deps
+crates/core/         cell store, TTL scheduling, SecretBuffer (page-locked,
+                     zeroizing), secret-shape heuristics — no macOS deps
 crates/ots-client/   Onetime Secret v3 API client, auth strategies — no macOS deps
+crates/credentials/  credential-store contract; macOS Keychain impl (cfg-gated)
 crates/pasteboard/   pasteboard hygiene contract; NSPasteboard adapter lands here
+crates/ffi/          the C-ABI seam a non-Rust shell calls — plaintext never
+                     crosses it, in either direction
 shell/               empty until ADR-0002
-spikes/              disposable framework spikes, excluded from the workspace
+spikes/swift-panel/  the Swift arm of the ADR-0002 spike (see its README)
 docs/spec/           the governing spec   ·   docs/adr/  decisions
 ```
 

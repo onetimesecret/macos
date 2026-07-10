@@ -14,11 +14,19 @@ workspace = true
 [dependencies]
 zeroize = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+# SecretBuffer page locking (mlock/munlock) and core-dump disabling.
+libc = "0.2"
+
 [dev-dependencies]
 # Examples only: the demo REPL dry-runs promotion through the client crate
 # and copies out through the in-memory pasteboard.
 ots-client = { path = "../ots-client" }
 companion-pasteboard = { path = "../pasteboard" }
+# Compile-time proof that SecretBuffer implements no duplication or
+# serialization traits.
+static_assertions = "1"
+serde = { workspace = true }
 
 [[example]]
 name = "demo"

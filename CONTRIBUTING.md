@@ -12,8 +12,10 @@ Short version: this is a spec-first project.
   (principle 4); "no" is the expected answer to most scope additions.
 - **Keep the crates honest.** `companion-core` and `ots-client` stay free
   of UI and platform dependencies; `unsafe` lives only in
-  `companion-pasteboard` (and later the shell glue). New dependencies
-  arrive with the code that needs them and must pass `cargo deny check`.
+  `companion-core`'s `secret`/`harden` modules (page locking, core-dump
+  hardening), `companion-ffi` (the C seam), and `companion-pasteboard`
+  adapters — each occurrence with a SAFETY note. New dependencies arrive
+  with the code that needs them and must pass `cargo deny check`.
 - **Local gate** before pushing:
   `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 
