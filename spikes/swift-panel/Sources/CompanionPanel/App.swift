@@ -78,8 +78,12 @@ final class PanelModel: ObservableObject {
     /// DEV SCAFFOLDING: stage a sample secret-shaped text so the spike
     /// shows a live, draining, masked cell before the NSPasteboard
     /// adapter lands. Deleted with the stand-in (issue #3).
+    ///
+    /// The PAT-shaped sample is assembled at runtime — it still trips
+    /// the core's detection, but the raw pattern never appears in the
+    /// repository text (the secret-scan CI job reads the full history).
     func devStageSample() {
-        client.devSeedPasteboard("ghp_16C7e42F292c6912E7710c838347Ae178B4a")
+        client.devSeedPasteboard("ghp_" + String(repeating: "n0ts3cr3t", count: 4))
         ingest()
     }
 

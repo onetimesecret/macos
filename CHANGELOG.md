@@ -23,13 +23,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     never crosses. Adds what the prototype's seam lacked: copy-out (the
     core writes the pasteboard itself, transient/concealed-marked, with
     a change-count-guarded clear) and `next_deadline_ms` so the shell
-    arms one timer instead of polling. `scripts/build-core.sh` packages
-    it as a universal `.xcframework`.
+    arms one timer instead of polling. The temporary plaintext-ingest
+    dev shim is gated behind an off-by-default `dev-scaffolding`
+    feature, so a normal build exports no entry point that moves
+    plaintext across the seam. `scripts/build-core.sh` packages it as a
+    universal `.xcframework` (`--dev-scaffolding` opts the spike in).
   - `spikes/swift-panel`: the Swift/AppKit arm of the ADR-0002 spike —
     menu-bar panel, non-activating edge-docked `NSPanel`, draining ring
     with Reduce Motion fallback and VoiceOver text equivalents — bound
     to the seam, awaiting the issue #4 hardware session.
-  - CI: a full-history gitleaks secret-scan job.
+  - CI: a full-history gitleaks secret-scan job. The binary is
+    version-pinned and checksum-verified; intentionally fake test
+    fixtures are allowlisted by exact fingerprint in `.gitleaksignore`,
+    and PAT-shaped samples are assembled at runtime so no token-shaped
+    literal sits in the source text.
 - Repository skeleton per the spec's initialization prescription
   (docs/spec/07): Cargo workspace, CI lanes, ADR practice, governance
   files.

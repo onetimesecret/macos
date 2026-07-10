@@ -40,7 +40,9 @@
 //! spike; secrets never cross, so it is not a safety one.
 #![allow(unsafe_code)] // A C ABI requires raw pointers; every unsafe fn documents its contract.
 
-use std::ffi::{CStr, CString, c_char, c_int};
+#[cfg(any(test, feature = "dev-scaffolding"))]
+use std::ffi::CStr;
+use std::ffi::{CString, c_char, c_int};
 use std::ptr;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -354,12 +356,17 @@ pub unsafe extern "C" fn companion_cell_discard(handle: *mut CompanionHandle, id
 ///
 /// Dev scaffolding only: it moves plaintext in the ingest direction
 /// (shell → core), which the real pasteboard read replaces outright.
-/// It is deleted together with the in-process stand-in (issue #3).
-/// Returns `false` on a null/invalid argument.
+/// Because that direction breaks the boundary law, the symbol exists
+/// only behind the off-by-default `dev-scaffolding` cargo feature
+/// (`scripts/build-core.sh --dev-scaffolding`); a default build exports
+/// no plaintext-ingest entry point. It is deleted together with the
+/// in-process stand-in (issue #3). Returns `false` on a null/invalid
+/// argument.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `text` must be a valid,
 /// NUL-terminated UTF-8 C string.
+#[cfg(any(test, feature = "dev-scaffolding"))]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_dev_seed_pasteboard(
     handle: *mut CompanionHandle,
@@ -448,9 +455,12 @@ fn spoken_remaining(remaining: Duration) -> String {
 }
 
 /// Borrow a C string as `&str`, or `None` if null / not valid UTF-8.
+/// Only the dev-scaffolding entry point takes a string in; everything
+/// else hands strings out.
 ///
 /// # Safety
 /// `p` must be null or a valid NUL-terminated C string.
+#[cfg(any(test, feature = "dev-scaffolding"))]
 unsafe fn cstr<'a>(p: *const c_char) -> Option<&'a str> {
     if p.is_null() {
         return None;
@@ -518,8 +528,11 @@ mod tests {
 
     #[test]
     fn ingest_list_shows_masked_recognition_never_the_secret() {
-        let secret = "ghp_16C7e42F292c6912E7710c838347Ae178B4a";
-        let handle = handle_with_text(secret);
+        // PAT-shaped, assembled at runtime so the raw pattern never
+        // appears in the repository text (the secret-scan CI job reads
+        // the full history).
+        let secret = format!("ghp_{}", "n0ts3cr3t".repeat(4));
+        let handle = handle_with_text(&secret);
         unsafe {
             let id = companion_ingest_pasteboard(handle);
             assert_ne!(id, 0);
@@ -528,7 +541,7 @@ mod tests {
             assert!(json.contains("••••"), "recognition should be masked");
             assert!(json.contains("GitHub token"), "detection is reported");
             assert!(
-                !json.contains("16C7e42F"),
+                !json.contains("n0ts3cr3t"),
                 "the raw secret must never appear in the FFI output: {json}"
             );
 
