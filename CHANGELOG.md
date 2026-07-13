@@ -55,6 +55,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     REPL walks the full rev C lifecycle headless. ADR-0001's
     "rendering vs residence" consequence is annotated as superseded by
     the hard law; the hardware runbook carries a rev C note.
+  - An adversarial review pass hardened the slice: `SystemClock` now
+    anchors to a **sleep-inclusive OS clock** (`CLOCK_MONOTONIC` on
+    Darwin, `CLOCK_BOOTTIME` on Linux), so countdowns and pause-holds
+    keep draining while the machine sleeps — an 8h page no longer gains
+    a weekend of life from a closed lid. Cycling or setting the rung of
+    a due-but-unreaped page now refuses instead of resurrecting it
+    (zero means zeroized, matching the pause's own refusal); the sealed
+    paste zeroizes its transit copy of the clipboard string; page
+    payloads preallocate exactly, so reallocation strands no sealed
+    bytes in freed heap; and the Swift ⌘↩ wrapper refuses text with an
+    interior NUL rather than sealing a silent truncation.
 - **The shell graduated**: `spikes/swift-panel` is now `shell/`, per
   ADR-0002's consequences — the Swift package is unchanged apart from
   the xcframework path and its comments losing the spike framing.

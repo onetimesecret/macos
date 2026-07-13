@@ -366,7 +366,19 @@ impl<C: Clock> SheetStore<C> {
         {
             return Err(PayloadError::ImageChip);
         }
-        let mut out = Zeroizing::new(String::new());
+        // Preallocate the full payload: growing the string reallocates,
+        // and reallocation strands sealed bytes in freed, unwiped heap.
+        // One exact-size buffer means the one Zeroizing wipe covers
+        // everything the payload ever touched.
+        let total: usize = sheet
+            .segments
+            .iter()
+            .map(|segment| match segment {
+                Segment::Ink(text) => text.len(),
+                Segment::Chip(chip_id) => sheet.chip(*chip_id).map_or(0, |c| c.bytes.len()),
+            })
+            .sum();
+        let mut out = Zeroizing::new(String::with_capacity(total));
         for segment in &sheet.segments {
             match segment {
                 Segment::Ink(text) => out.push_str(text),
@@ -390,21 +402,31 @@ impl<C: Clock> SheetStore<C> {
     /// *reset* to the full rung value (doc 04 — each click resets the
     /// clock to the shown rung). A held page keeps its hold; the frozen
     /// remaining life resets to the new rung — the pause is the tab's
-    /// lever, the countdown the header's. Returns the new rung.
+    /// lever, the countdown the header's. A **due** page refuses, like
+    /// [`SheetStore::pause_press`]: zero means zeroized, and a click in
+    /// the sliver before the timer reaps must not resurrect it. Returns
+    /// the new rung.
     pub fn cycle_rung(&mut self, id: SheetId) -> Option<Ttl> {
         let now = self.clock.now();
         let sheet = self.sheet_mut(id)?;
         normalize(sheet, now);
+        if sheet.remaining(now).is_zero() {
+            return None; // due; the timer will reap it
+        }
         let rung = sheet.rung.next();
         set_clock(sheet, rung, now);
         Some(rung)
     }
 
-    /// Set a page to a specific rung, resetting the clock to it.
+    /// Set a page to a specific rung, resetting the clock to it. A due
+    /// page refuses (see [`SheetStore::cycle_rung`]).
     pub fn set_rung(&mut self, id: SheetId, rung: Ttl) -> Option<Ttl> {
         let now = self.clock.now();
         let sheet = self.sheet_mut(id)?;
         normalize(sheet, now);
+        if sheet.remaining(now).is_zero() {
+            return None; // due; the timer will reap it
+        }
         set_clock(sheet, rung, now);
         Some(rung)
     }
@@ -1017,5 +1039,58 @@ mod tests {
             "9f2abc"
         );
         assert!(!store.mark_chip_promoted(ChipId(999), "x".into()));
+    }
+
+    #[test]
+    fn the_gauge_drains_linearly_and_turns_last_hour_under_sixty_minutes() {
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap(); // 8h
+        let now = store.now();
+        let sheet = store.sheet(id).unwrap();
+        assert!((sheet.fraction_remaining(now) - 1.0).abs() < 0.001);
+        assert!(!sheet.last_hour(now));
+
+        clock.advance(4 * HOUR); // half of 8h
+        let now = store.now();
+        let sheet = store.sheet(id).unwrap();
+        assert!((sheet.fraction_remaining(now) - 0.5).abs() < 0.001);
+        assert!(!sheet.last_hour(now), "3h59m over the line is not urgent");
+
+        clock.advance(3 * HOUR); // 1h remains — the boundary is inclusive
+        let now = store.now();
+        assert!(store.sheet(id).unwrap().last_hour(now));
+
+        clock.advance(HOUR); // zero: due is not "last hour", it is dead
+        let now = store.now();
+        let sheet = store.sheet(id).unwrap();
+        assert!(!sheet.last_hour(now));
+        assert!((sheet.fraction_remaining(now) - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn cycling_or_setting_a_due_page_refuses_instead_of_resurrecting() {
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        store.set_rung(id, Ttl::MIN).unwrap(); // 1h
+        clock.advance(HOUR);
+        // The timer has not fired yet, but the page is due: a click in
+        // that sliver must not resurrect it. Zero means zeroized.
+        assert_eq!(store.cycle_rung(id), None);
+        assert_eq!(store.set_rung(id, Ttl::MAX), None);
+        assert_eq!(store.expire_due(), vec![id]);
+    }
+
+    #[test]
+    fn an_empty_snapshot_is_select_all_delete_and_zeroizes_every_chip() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let a = seal(&mut store, id, "first secret");
+        let b = seal(&mut store, id, "second secret");
+        assert!(store.sync_document(id, vec![Segment::Chip(a), Segment::Chip(b)]));
+        // ⌘A ⌫: the document is empty now, and so must the chips be.
+        assert!(store.sync_document(id, Vec::new()));
+        assert_eq!(store.sheet(id).unwrap().chip_count(), 0);
+        assert!(store.copy_out_chip(a).is_none());
+        assert!(store.copy_out_chip(b).is_none());
     }
 }

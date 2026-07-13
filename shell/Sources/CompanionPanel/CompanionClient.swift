@@ -71,8 +71,8 @@ struct LedgerEntry: Codable, Hashable {
         case ageMs = "age_ms"
     }
 
-    /// The wire carries `{"ink": "…"}` or `{"chip": 7}`-style tombstone
-    /// objects whose single value is a string either way.
+    /// The wire carries `{"ink": "…"}` or `{"tombstone": "…"}` objects
+    /// — one key, string value either way (companion_ffi.h).
     enum SegmentValue: Codable, Hashable {
         case string(String)
 
@@ -160,7 +160,12 @@ final class CompanionClient {
     /// after this returns, the caller deletes its copy from the view.
     @discardableResult
     func sealText(sheet: UInt64, _ text: String) -> ChipInfo? {
-        text.withCString { cText in
+        // A C string truncates at an interior NUL; sealing a silently
+        // truncated secret and telling the editor to delete the whole
+        // thing would lose the remainder. Refuse instead — the editor
+        // keeps its copy and nothing was sealed.
+        guard !text.contains("\0") else { return nil }
+        return text.withCString { cText in
             decodeJSON(ChipInfo.self, from: companion_sheet_seal_text(handle, sheet, cText))
         }
     }

@@ -122,6 +122,7 @@ final class PanelModel: ObservableObject {
     /// The sealed paste (⇧⌘V): the core reads the pasteboard itself and
     /// the content lands as an opaque chip. Consent is the gesture.
     func sealPaste() {
+        notice = nil
         guard let sheet = currentSheet() else { refresh(); return }
         if client.sealFromPasteboard(sheet: sheet) == nil {
             notice = "nothing to seal"
@@ -137,6 +138,7 @@ final class PanelModel: ObservableObject {
     /// (docs/hardware-verification.md); until that lands, the text
     /// transits this process once, in the ingest direction only.
     func receiveDrop(_ text: String) {
+        notice = nil
         guard let sheet = currentSheet() else { refresh(); return }
         _ = client.sealText(sheet: sheet, text)
         refresh()
@@ -144,6 +146,7 @@ final class PanelModel: ObservableObject {
 
     /// A new page (⌥⌘N). At the cap the app declines and says so.
     func newPage() {
+        notice = nil
         if client.newSheet() == 0 {
             notice = "the window holds 9 pages — let one expire, or close one"
         }
@@ -162,8 +165,11 @@ final class PanelModel: ObservableObject {
         refresh()
     }
 
-    /// Close the page; it rests in the ledger.
+    /// Close the page; it rests in the ledger. Closing also clears any
+    /// standing refusal — the cap condition it named may just have been
+    /// resolved.
     func close(_ id: UInt64) {
+        notice = nil
         _ = client.closeSheet(id: id)
         refresh()
     }

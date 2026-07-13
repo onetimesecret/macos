@@ -72,7 +72,7 @@ use companion_pasteboard::{
     ChangeCount, ContentKind, MemoryPasteboard, Pasteboard, PasteboardContent, PasteboardItem,
     WriteOptions,
 };
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 /// The pasteboard the core reads and writes through the seam.
 ///
@@ -342,7 +342,14 @@ pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
     };
     let sheet = SheetId::from_raw(sheet);
     let sealed = match item.content {
-        PasteboardContent::Text(text) => guard.store.seal_text(sheet, &text),
+        PasteboardContent::Text(mut text) => {
+            // The board handed us an owned copy of what may now be a
+            // secret; the core takes its own custody copy, so wipe this
+            // transit copy instead of letting it drop unwiped.
+            let sealed = guard.store.seal_text(sheet, &text);
+            text.zeroize();
+            sealed
+        }
         PasteboardContent::Image(bytes) => guard.store.seal_image(sheet, bytes),
     };
     match sealed {
@@ -1003,6 +1010,46 @@ mod tests {
             let chip = take_json(companion_sheet_seal_from_pasteboard(handle, sheet));
             assert!(chip.contains("\"kind\":\"text\""), "{chip}");
             assert!(chip.contains("size_label"), "{chip}");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn an_image_on_the_board_seals_as_a_metadata_chip_and_copies_back_as_an_image() {
+        let handle = handle();
+        {
+            // A pretend PNG on the board, as a screenshot app would
+            // leave it.
+            let guard = unsafe { &*handle };
+            let mut guard = guard.inner.lock().unwrap();
+            let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+            png.resize(2048, 7);
+            guard
+                .pasteboard
+                .put_external(PasteboardContent::Image(png), false);
+        }
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            let chip_json = take_json(companion_sheet_seal_from_pasteboard(handle, sheet));
+            assert!(chip_json.contains("\"kind\":\"image\""), "{chip_json}");
+            assert!(
+                chip_json.contains("PNG image"),
+                "metadata-only face: {chip_json}"
+            );
+            let chip: serde_json::Value = serde_json::from_str(&chip_json).unwrap();
+            let chip_id = chip["chip_id"].as_u64().unwrap();
+
+            // Copy-out routes the bytes back as an image, still inside
+            // the core.
+            assert!(companion_chip_copy_out(handle, chip_id));
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                let item = guard.pasteboard.read().expect("board holds our write");
+                assert!(
+                    matches!(item.content, PasteboardContent::Image(ref b) if b.len() == 2048),
+                    "the write carries the image kind"
+                );
+            }
             companion_free(handle);
         }
     }
