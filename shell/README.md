@@ -17,34 +17,40 @@ swift run CompanionPanel
 ```
 
 The `--dev-scaffolding` flag compiles in `companion_dev_seed_pasteboard`
-(off by default in the seam): the shell still routes dropped text and
-the "stage a sample cell (dev)" footer through it. It goes away when
-drop-to-seal gets its boundary-lawful design (core reading
-`NSDraggingInfo.draggingPasteboard` directly — see
+(off by default in the seam): the "seal a sample (dev)" footer routes
+through it. It goes away when drop-to-seal gets its boundary-lawful
+design (core reading `NSDraggingInfo.draggingPasteboard` directly — see
 docs/hardware-verification.md).
 
 ## Honest status
 
-- **This is the rev A surface**: a menu-bar item opening an edge-docked,
-  non-activating panel of SleeperCells. The spec has since moved to
-  interaction-model rev C (docs/spec/04) — a real movable, resizable,
-  non-activating window with sheets of ink, sealed chips, and bottom
-  tabs. Rebuilding this surface to rev C is the next milestone; ADR-0002
-  records why that strengthens rather than reopens the shell choice.
-- Ingest is real: the core binds `NSPasteboard.general` itself and reads
-  the clipboard on request — the shell asks, the core takes.
-- Expiry is scheduled (one timer at the core's next deadline), and the
-  1 Hz countdown redraw runs only while the panel is visible — keep it
-  that way; the frugality budget (< 25 MB idle, near-zero idle CPU) is a
-  review bar, not a wish. 22 MB at 0 cells is the baseline to regress
-  against.
+- **The core speaks rev C; this surface is transitional** (issue #10).
+  The seam and everything behind it is the rev C model — sheets with a
+  pausable countdown, gesture-only sealing (⇧⌘V, drop, seal-text),
+  mechanical excerpts, the ledger, cap 9 — but the panel still wears the
+  spike's shape: a menu-bar item opening a docked list of pages, not
+  the rev C window (movable, resizable, bottom tabs, the ink editor).
+  Building that window is the next slice; ADR-0002 records why rev C
+  strengthens rather than reopens the shell choice.
+- Sealed paste is real: the core binds `NSPasteboard.general` itself and
+  reads the clipboard on the gesture — the shell asks, the core takes.
+  Drop-to-seal interim route: the drop handler hands text to the core's
+  seal-text entry (the ⌘↩ call); the lawful end state is the core
+  reading the drag pasteboard itself.
+- Expiry is scheduled (one timer at the core's next event — page expiry
+  or pause-hold lapse), and the 1 Hz countdown redraw runs only while
+  the panel is visible — keep it that way; the frugality budget
+  (< 25 MB idle, near-zero idle CPU) is a review bar, not a wish. 22 MB
+  at 0 cells is the baseline to regress against.
 - VoiceOver operability awaits the hardware runbook
   (docs/hardware-verification.md §B); its failure modes are ADR-0002
   eject triggers.
 
-## The boundary law
+## The boundary law (hard form, rev C)
 
-Plaintext secret bytes live only in the Rust core. This package sees
-ids, masked recognition lines, and booleans; ingest *and* copy-out
-happen inside the core. If a change here needs the bytes, the change is
-wrong.
+Sealed bytes never reach this package — they have no display form at
+all. This package sees ids, titles, mechanical excerpts, and booleans;
+the sealed paste *and* copy-out happen inside the core. The one
+plaintext-in call is `sealText` (⌘↩): its argument is visible ink the
+editor already holds, and after the call the editor deletes its copy.
+If a change here needs sealed bytes, the change is wrong.

@@ -27,6 +27,10 @@ that renders state and forwards intents.
 - Plaintext resides at rest only in the zeroizing core; any shell's UI
   layer receives it transiently for display and never retains it
   (rendering vs residence, docs/spec/05).
+  *(Superseded by rev C, 2026-07-13: doc 05 hardened this to "sealed
+  bytes never reach the UI layer at all" — gesture-only masking means
+  sealed content has no display form, so the transient-display allowance
+  is gone. The architecture split this ADR decides is unchanged.)*
 - Cost: an FFI or IPC boundary between core and shell, designed rather
   than accreted.
 

@@ -1,46 +1,61 @@
 //! # companion-ffi — the only crate a non-Rust shell may call
 //!
-//! A thin C ABI over the core. It hands the shell **handles** (cell ids
-//! as `u64`), **non-secret metadata** (summary JSON with masked
-//! recognition lines), and **action results** (booleans, counts) — and
-//! never a plaintext secret. The boundary law, adopted from the
-//! prototype skeleton (PR #5):
+//! A thin C ABI over the core, speaking interaction-model rev C:
+//! sheets of ink and sealed chips. It hands the shell **handles**
+//! (sheet and chip ids as `u64`), **non-secret metadata** (summary and
+//! ledger JSON, chip excerpts), and **action results** (booleans,
+//! counts) — and never a sealed byte. The boundary law, hard form
+//! (docs/spec/05, amended by rev C):
 //!
-//! > Plaintext secret bytes live only in the Rust core, in memory that
-//! > the core owns, locks, and wipes. They never cross this seam.
+//! > Sealed bytes never reach the UI layer. Sealed content has no
+//! > display form at all — the UI receives only the mechanical excerpt
+//! > and counts, so it can never draw the bytes, and no reveal
+//! > affordance can exist.
 //!
-//! Both directions honour it:
+//! Every direction that moves sealed bytes stays inside the core:
 //!
-//! - **Ingest**: the core reads the pasteboard itself
-//!   ([`companion_ingest_pasteboard`]); the shell asks, the core takes.
+//! - **Sealed paste (⇧⌘V)**: the core reads the pasteboard itself
+//!   ([`companion_sheet_seal_from_pasteboard`]); the shell asks, the
+//!   core takes.
 //! - **Copy-out**: the core writes the pasteboard itself
-//!   ([`companion_cell_copy_out`]), applying the hygiene contract
+//!   ([`companion_chip_copy_out`]), applying the hygiene contract
 //!   (transient + concealed marks, change-count-guarded clear). The
 //!   shell never sees the bytes it is copying.
+//! - **The one deliberate ingest-direction entry** is
+//!   [`companion_sheet_seal_text`], the ⌘↩ retrofit: its argument is
+//!   visible ink the shell's editor already holds — not yet sealed,
+//!   readable on screen by definition. The gesture moves it into core
+//!   custody; from the moment this returns, the shell's obligation is
+//!   to delete its copy from the view and forget it. Plaintext flows
+//!   *in* here, never *out* anywhere.
+//!
+//! Visible ink crosses freely in both directions
+//! ([`companion_sheet_sync_document`], the ledger) — it renders on
+//! screen, so holding it shell-side breaks no law; the core keeps a
+//! snapshot for tab titles, the ledger, and page promotion.
 //!
 //! ## Scheduling, not polling
 //!
-//! The shell arms **one** timer from [`companion_next_deadline_ms`] and
-//! calls [`companion_expire_due`] when it fires (doc 05 frugality
-//! budget). There is deliberately no "tick" entry point.
+//! The shell arms **one** timer from [`companion_next_event_ms`] — the
+//! earliest page expiry *or* hold lapse — and calls
+//! [`companion_expire_due`] when it fires (doc 05 frugality budget).
+//! There is deliberately no "tick" entry point.
 //!
 //! ## Auditing the boundary
 //!
-//! Scan the exported functions: none returns secret bytes. `list` emits
-//! masked recognition lines only; ingest and copy-out return ids and
-//! booleans. A test below asserts the raw secret never appears in list
-//! output.
+//! Scan the exported functions: none returns sealed bytes. Summaries
+//! and ledger records carry excerpts and counts; sealing returns a chip
+//! id and its excerpt; copy-out returns a boolean. A test below seals a
+//! secret through every route and asserts the raw bytes never appear in
+//! any output.
 //!
 //! ## Codegen
 //!
 //! Hand-written C ABI plus a committed header
 //! (`include/companion_ffi.h`) — the stable substrate the
-//! `.xcframework` wraps (`scripts/build-core.sh`). Whether a binding
-//! generator earns its keep is an ergonomics question for the shell
-//! spike; secrets never cross, so it is not a safety one.
+//! `.xcframework` wraps (`scripts/build-core.sh`). ADR-0003.
 #![allow(unsafe_code)] // A C ABI requires raw pointers; every unsafe fn documents its contract.
 
-#[cfg(any(test, feature = "dev-scaffolding"))]
 use std::ffi::CStr;
 use std::ffi::{CString, c_char, c_int};
 use std::ptr;
@@ -48,7 +63,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use companion_core::{
-    Cell, CellId, CellKind, CellStore, LifecycleState, SystemClock, TTL_LADDER, Ttl,
+    Cause, ChipId, ChipMeta, LedgerSegment, Segment, Sheet, SheetId, SheetStore, SystemClock,
+    TTL_LADDER, Ttl,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -56,7 +72,7 @@ use companion_pasteboard::{
     ChangeCount, ContentKind, MemoryPasteboard, Pasteboard, PasteboardContent, PasteboardItem,
     WriteOptions,
 };
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 /// The pasteboard the core reads and writes through the seam.
 ///
@@ -65,9 +81,6 @@ use zeroize::Zeroizing;
 /// and the unit tests below — it is the in-process [`MemoryPasteboard`],
 /// so the seam stays exercisable without a window server and the tests
 /// never touch (or depend on) a developer's real clipboard.
-///
-/// This is the swap issue #4 calls for: `companion_new` no longer wires a
-/// stand-in on macOS; the core reads and writes the real board itself.
 enum Board {
     // Constructed off-macOS (`companion_new`) and by the tests below. On a
     // macOS *library* build only the tests reach it, so silence the
@@ -81,10 +94,10 @@ enum Board {
 
 impl Board {
     /// Seed content as another app would — dev scaffolding behind
-    /// [`companion_dev_seed_pasteboard`], so the spike's demo and drop
-    /// affordances have something to ingest. The real system clipboard
-    /// has no unmarked "external put", so on macOS the seed rides the
-    /// normal write (transient-marked); ingest reads text regardless of
+    /// [`companion_dev_seed_pasteboard`], so demo and test affordances
+    /// have something to seal. The real system clipboard has no
+    /// unmarked "external put", so on macOS the seed rides the normal
+    /// write (transient-marked); sealed paste reads text regardless of
     /// marks, so the core cannot tell the difference.
     #[cfg(any(test, feature = "dev-scaffolding"))]
     fn put_external(&mut self, content: PasteboardContent, concealed: bool) {
@@ -109,6 +122,17 @@ impl Board {
     fn current_is_transient(&self) -> bool {
         match self {
             Board::Memory(pb) => pb.current_is_transient(),
+            #[cfg(target_os = "macos")]
+            Board::System(_) => false,
+        }
+    }
+
+    /// Whether the current item carries the concealed mark (tests only,
+    /// same reasoning as [`Board::current_is_transient`]).
+    #[cfg(test)]
+    fn current_is_concealed(&self) -> bool {
+        match self {
+            Board::Memory(pb) => pb.read().is_some_and(|item| item.concealed),
             #[cfg(target_os = "macos")]
             Board::System(_) => false,
         }
@@ -154,15 +178,11 @@ impl Pasteboard for Board {
     }
 }
 
-/// The core state behind the seam: the store, the pasteboard the core
-/// reads and writes itself, and the receipt of our last outbound write
-/// (for the guarded clear).
-///
-/// The pasteboard is the real [`SystemPasteboard`] on macOS and the
-/// in-process [`MemoryPasteboard`] elsewhere — chosen once in
-/// [`companion_new`], invisible above this seam (see [`Board`]).
+/// The core state behind the seam: the sheet store, the pasteboard the
+/// core reads and writes itself, and the receipt of our last outbound
+/// write (for the guarded clear).
 struct Companion {
-    store: CellStore<SystemClock>,
+    store: SheetStore<SystemClock>,
     pasteboard: Board,
     last_write: Option<ChangeCount>,
 }
@@ -205,7 +225,7 @@ pub extern "C" fn companion_new() -> *mut CompanionHandle {
     #[cfg(not(target_os = "macos"))]
     let pasteboard = Board::Memory(MemoryPasteboard::new());
     let companion = Companion {
-        store: CellStore::new(SystemClock),
+        store: SheetStore::new(SystemClock),
         pasteboard,
         last_write: None,
     };
@@ -214,8 +234,9 @@ pub extern "C" fn companion_new() -> *mut CompanionHandle {
     }))
 }
 
-/// Release a handle created by [`companion_new`], wiping every secret it
-/// holds. Passing null is a no-op.
+/// Release a handle created by [`companion_new`], wiping every sealed
+/// byte it holds — sheets and ledger alike; exit is total amnesia.
+/// Passing null is a no-op.
 ///
 /// # Safety
 /// `handle` must be a pointer returned by [`companion_new`] and not
@@ -229,70 +250,239 @@ pub unsafe extern "C" fn companion_free(handle: *mut CompanionHandle) {
 }
 
 // ---------------------------------------------------------------------------
-// Ingest and copy-out — the core touches the pasteboard, never the shell
+// Sheets: create, close, order
 // ---------------------------------------------------------------------------
 
-/// Stage whatever is on the pasteboard as a new cell, returning its id.
-/// Returns `0` when there was nothing to stage, the store refused (at
-/// capacity — doc 04: refuse, don't evict), or on error. `0` is never a
-/// valid cell id.
+/// A new page at the end of the tab strip, on the default rung, its
+/// countdown started. Returns the sheet id, or `0` when the store
+/// refused — the cap is 9, the keyboard wall, and at the wall the app
+/// declines the tenth and says so (refuse-don't-evict, doc 04). `0` is
+/// never a valid id.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_ingest_pasteboard(handle: *mut CompanionHandle) -> u64 {
+pub unsafe extern "C" fn companion_sheet_new(handle: *mut CompanionHandle) -> u64 {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return 0;
     };
     let Ok(mut guard) = handle.inner.lock() else {
         return 0;
     };
-    let Some(item) = guard.pasteboard.read() else {
-        return 0;
-    };
-    let hint = item.concealed.then_some(true);
-    let staged = match item.content {
-        PasteboardContent::Text(text) => guard.store.stage_text(&text, hint),
-        PasteboardContent::Image(bytes) => guard.store.stage_image(bytes, hint),
-    };
-    match staged {
+    match guard.store.new_sheet() {
         Ok(id) => id.raw(),
         Err(_) => 0,
     }
 }
 
-/// Copy a cell's content back out: the core writes the pasteboard
-/// itself, marked transient (and concealed when the cell is), and
-/// remembers the write for [`companion_clear_clipboard_if_ours`].
-/// Copy-out does **not** consume the cell. Returns whether the cell
-/// existed.
+/// Close a page: it rests in the ledger like an expired one, its sealed
+/// bytes zeroized. Returns whether the page existed.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_cell_copy_out(handle: *mut CompanionHandle, id: u64) -> bool {
+pub unsafe extern "C" fn companion_sheet_close(handle: *mut CompanionHandle, id: u64) -> bool {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    let Some(cell) = guard.store.get(CellId::from_raw(id)) else {
+    guard.store.close_sheet(SheetId::from_raw(id))
+}
+
+/// Move a page to `index` in the visible order (drag-to-reorder; the
+/// ⌘-number map follows). Out-of-range indices clamp to the end.
+/// Returns whether the page existed.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_move(
+    handle: *mut CompanionHandle,
+    id: u64,
+    index: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
-    let (kind, concealed) = (cell.kind(), cell.concealed());
-    let Some(bytes) = guard.store.copy_out(CellId::from_raw(id)) else {
+    let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    let kind = match kind {
-        CellKind::Text => ContentKind::Text,
-        CellKind::Image => ContentKind::Image,
+    let index = usize::try_from(index).unwrap_or(usize::MAX);
+    guard.store.move_sheet(SheetId::from_raw(id), index)
+}
+
+// ---------------------------------------------------------------------------
+// Sealing — the gesture routes; bytes stay core-side
+// ---------------------------------------------------------------------------
+
+/// The sealed paste (⇧⌘V): the core reads the pasteboard itself and
+/// seals whatever it holds onto the page — text or image, unread and
+/// unclassified; consent is the gesture. Returns the new chip's
+/// non-secret JSON (see the header; caller frees with
+/// [`companion_string_free`]), or null when the board was empty, the
+/// page unknown, or the content zero-length.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let Some(item) = guard.pasteboard.read() else {
+        return ptr::null_mut();
+    };
+    let sheet = SheetId::from_raw(sheet);
+    let sealed = match item.content {
+        PasteboardContent::Text(mut text) => {
+            // The board handed us an owned copy of what may now be a
+            // secret; the core takes its own custody copy, so wipe this
+            // transit copy instead of letting it drop unwiped.
+            let sealed = guard.store.seal_text(sheet, &text);
+            text.zeroize();
+            sealed
+        }
+        PasteboardContent::Image(bytes) => guard.store.seal_image(sheet, bytes),
+    };
+    match sealed {
+        Ok(chip) => chip_json(&guard.store, sheet, chip),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// The ⌘↩ retrofit: seal `text` — the selection, or the current line —
+/// onto the page. This is the seam's one deliberate ingest-direction
+/// plaintext entry: the argument is visible ink the shell's editor
+/// already holds, readable on screen by definition; the gesture moves
+/// it into core custody. From the moment this returns, the shell must
+/// delete its copy from the view and forget it — undo never un-seals
+/// (doc 06 №5). Returns the new chip's non-secret JSON (caller frees),
+/// or null for an unknown page or empty text.
+///
+/// # Safety
+/// `handle` must be a valid handle. `text` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_seal_text(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    text: *const c_char,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Some(text) = (unsafe { cstr(text) }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let sheet = SheetId::from_raw(sheet);
+    match guard.store.seal_text(sheet, text) {
+        Ok(chip) => chip_json(&guard.store, sheet, chip),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The synced document
+// ---------------------------------------------------------------------------
+
+/// Replace a page's document snapshot: a JSON array of runs, in
+/// document order — `{"ink": "text"}` for visible ink, `{"chip": id}`
+/// where a sealed chip sits. The shell owns the live document; this
+/// mirror exists for tab titles, the ledger, and page promotion.
+///
+/// The snapshot is **authoritative for chip liveness**: a chip of this
+/// sheet the snapshot no longer references was deleted in the editor,
+/// and its bytes are zeroized here. A malformed snapshot (bad JSON, a
+/// chip this sheet does not own, a duplicate reference) is rejected
+/// whole. The shell must send a snapshot that reflects every chip
+/// sealed before this call. Returns whether it was accepted.
+///
+/// # Safety
+/// `handle` must be a valid handle. `json` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_sync_document(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    json: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(json) = (unsafe { cstr(json) }) else {
+        return false;
+    };
+    let Some(segments) = parse_segments(json) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .sync_document(SheetId::from_raw(sheet), segments)
+}
+
+// ---------------------------------------------------------------------------
+// Chips: copy-out, delete
+// ---------------------------------------------------------------------------
+
+/// Copy a chip's bytes back out: the core writes the pasteboard itself,
+/// marked transient **and concealed** (a chip is sealed by definition),
+/// and remembers the write for [`companion_clear_clipboard_if_ours`].
+/// Copy-out does **not** consume the chip — multi-paste is a core
+/// moment. Returns whether the chip existed.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, chip: u64) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    let Some((bytes, meta)) = guard.store.copy_out_chip(ChipId::from_raw(chip)) else {
+        return false;
+    };
+    let kind = match meta {
+        ChipMeta::Text { .. } => ContentKind::Text,
+        ChipMeta::Image { .. } => ContentKind::Image,
     };
     let receipt = guard
         .pasteboard
-        .write(bytes, kind, WriteOptions { concealed });
+        .write(bytes, kind, WriteOptions { concealed: true });
     guard.last_write = Some(receipt);
     true
+}
+
+/// Remove a chip now, wherever it sits; its bytes are wiped as it
+/// drops (⌫ removes it whole; there is no resurrection path). Returns
+/// whether the chip existed.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_delete(handle: *mut CompanionHandle, chip: u64) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.delete_chip(ChipId::from_raw(chip))
 }
 
 /// Clear the pasteboard **iff** it still holds our last copy-out — the
@@ -323,15 +513,14 @@ pub unsafe extern "C" fn companion_clear_clipboard_if_ours(handle: *mut Companio
 // Reading state — non-secret metadata only
 // ---------------------------------------------------------------------------
 
-/// A JSON array of non-secret cell summaries, newest first. Recognition
-/// lines are masked exactly as the core renders them. The caller owns
-/// the returned string and must release it with
+/// A JSON array of non-secret page summaries, in visible (tab) order.
+/// The caller owns the returned string and must release it with
 /// [`companion_string_free`]. Returns null on error.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_list_json(handle: *mut CompanionHandle) -> *mut c_char {
+pub unsafe extern "C" fn companion_sheets_json(handle: *mut CompanionHandle) -> *mut c_char {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -341,8 +530,8 @@ pub unsafe extern "C" fn companion_list_json(handle: *mut CompanionHandle) -> *m
     let now = guard.store.now();
     let summaries: Vec<serde_json::Value> = guard
         .store
-        .cells()
-        .map(|cell| summary_json(cell, now))
+        .sheets()
+        .map(|sheet| summary_json(sheet, now))
         .collect();
     match serde_json::to_string(&summaries) {
         Ok(json) => into_c_string(json),
@@ -350,31 +539,84 @@ pub unsafe extern "C" fn companion_list_json(handle: *mut CompanionHandle) -> *m
     }
 }
 
-/// Milliseconds until the earliest cell deadline — the **one** timer the
-/// shell arms. Returns `-1` when there is nothing to schedule (no
-/// timers ticking, no wakeups), `0` when something is already due.
+/// The ledger (⌘0): dead pages, newest first — dimmed ink and chip
+/// tombstones, session-bound, read-only. Sealed bytes were zeroized at
+/// death; a tombstone carries only the excerpt that always rendered.
+/// The caller owns the returned string and must release it with
+/// [`companion_string_free`]. Returns null on error.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_next_deadline_ms(handle: *mut CompanionHandle) -> i64 {
+pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let now = guard.store.now();
+    let records: Vec<serde_json::Value> = guard
+        .store
+        .ledger()
+        .map(|record| {
+            let segments: Vec<serde_json::Value> = record
+                .segments()
+                .iter()
+                .map(|segment| match segment {
+                    LedgerSegment::Ink(text) => serde_json::json!({ "ink": text }),
+                    LedgerSegment::Tombstone { excerpt } => {
+                        serde_json::json!({ "tombstone": excerpt })
+                    }
+                })
+                .collect();
+            serde_json::json!({
+                "cause": match record.cause() {
+                    Cause::Expired => "expired",
+                    Cause::Closed => "closed",
+                },
+                "title": record.title(),
+                "age_ms": u64::try_from(
+                    now.saturating_duration_since(record.died_at()).as_millis()
+                ).unwrap_or(u64::MAX),
+                "segments": segments,
+            })
+        })
+        .collect();
+    match serde_json::to_string(&records) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Milliseconds until the next scheduled instant — the earliest page
+/// expiry or hold lapse, whichever comes first. This is the **one**
+/// timer the shell arms. Returns `-1` when there is nothing to
+/// schedule (no timers ticking, no wakeups), `0` when something is
+/// already due.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_next_event_ms(handle: *mut CompanionHandle) -> i64 {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return -1;
     };
     let Ok(guard) = handle.inner.lock() else {
         return -1;
     };
-    let Some(deadline) = guard.store.next_deadline() else {
+    let Some(at) = guard.store.next_event() else {
         return -1;
     };
-    let remaining = deadline.saturating_duration_since(guard.store.now());
+    let remaining = at.saturating_duration_since(guard.store.now());
     i64::try_from(remaining.as_millis()).unwrap_or(i64::MAX)
 }
 
-/// Remove and wipe every cell whose deadline has passed — call when the
-/// armed timer fires, then re-arm from [`companion_next_deadline_ms`].
-/// Returns how many cells expired (the shell drops them from view
-/// silently; the user set the clock).
+/// Settle the clock — call when the armed timer fires, then re-arm from
+/// [`companion_next_event_ms`]. Lapsed holds become regular pages
+/// again; every page at zero moves to the ledger, its sealed bytes
+/// zeroized. Returns how many pages expired (the shell drops them from
+/// view silently; the user set the clock).
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -390,37 +632,41 @@ pub unsafe extern "C" fn companion_expire_due(handle: *mut CompanionHandle) -> u
 }
 
 // ---------------------------------------------------------------------------
-// TTL and discard
+// Time: the ladder and the pause
 // ---------------------------------------------------------------------------
 
-/// Cycle a cell's TTL: next rung on the ladder, clock reset to the full
-/// rung value (one affordance for extend, shorten, and reset — doc 04).
-/// Returns the new rung code, or `-1` if the cell is gone.
+/// Cycle a page's countdown label: next rung on the ladder, clock
+/// *reset* to the full rung value (each click resets the clock to the
+/// shown rung — doc 04). A held page keeps its hold. Returns the new
+/// rung code, or `-1` if the page is gone.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_cell_cycle_ttl(handle: *mut CompanionHandle, id: u64) -> c_int {
+pub unsafe extern "C" fn companion_sheet_cycle_rung(
+    handle: *mut CompanionHandle,
+    id: u64,
+) -> c_int {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return -1;
     };
     let Ok(mut guard) = handle.inner.lock() else {
         return -1;
     };
-    match guard.store.cycle_ttl(CellId::from_raw(id)) {
-        Some(ttl) => ttl_to_code(ttl),
+    match guard.store.cycle_rung(SheetId::from_raw(id)) {
+        Some(rung) => ttl_to_code(rung),
         None => -1,
     }
 }
 
-/// Set a cell to an explicit rung (see the `CompanionRung` codes in the
-/// header), resetting the clock to it. Returns `true` when the cell
+/// Set a page to an explicit rung (see the `CompanionRung` codes in the
+/// header), resetting the clock to it. Returns `true` when the page
 /// existed and the code was valid.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_cell_set_ttl(
+pub unsafe extern "C" fn companion_sheet_set_rung(
     handle: *mut CompanionHandle,
     id: u64,
     rung: c_int,
@@ -434,45 +680,49 @@ pub unsafe extern "C" fn companion_cell_set_ttl(
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    guard.store.set_ttl(CellId::from_raw(id), ttl).is_some()
+    guard.store.set_rung(SheetId::from_raw(id), ttl).is_some()
 }
 
-/// Discard a cell now; its buffer is wiped as it drops. Returns whether
-/// it existed.
+/// The pause gesture (double-click a tab): the first press holds the
+/// page's clock for **1 hour**; a press while held tops the hold up to
+/// **24 hours from now** — never cumulative. A pause holds the clock;
+/// it never extends the rung. The hold lapses on its own — the lapse
+/// is folded into [`companion_next_event_ms`]. Returns false for an
+/// unknown or already-due page.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_cell_discard(handle: *mut CompanionHandle, id: u64) -> bool {
+pub unsafe extern "C" fn companion_sheet_pause_press(
+    handle: *mut CompanionHandle,
+    id: u64,
+) -> bool {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    guard.store.discard(CellId::from_raw(id))
+    guard.store.pause_press(SheetId::from_raw(id))
 }
 
 // ---------------------------------------------------------------------------
-// Dev scaffolding — a seed the spike's demo/drop affordances ingest
+// Dev scaffolding — a seed for demo/test affordances
 // ---------------------------------------------------------------------------
 
-/// Seed the pasteboard with `text` as an external app would, so the
-/// spike's "sample cell" button and drop zone have something for
-/// [`companion_ingest_pasteboard`] to capture. On macOS this writes the
-/// **real** system clipboard (so the button demonstrates a genuine
-/// clipboard → core round-trip on device, and — like any capture — it
-/// replaces what was on the clipboard); off macOS it seeds the in-process
-/// board.
+/// Seed the pasteboard with `text` as an external app would, so demo
+/// affordances have something for
+/// [`companion_sheet_seal_from_pasteboard`] to seal. On macOS this
+/// writes the **real** system clipboard (so the button demonstrates a
+/// genuine clipboard → core round-trip on device, and — like any
+/// capture — it replaces what was on the clipboard); off macOS it
+/// seeds the in-process board.
 ///
 /// Demo scaffolding, not a data path: the text it carries is a caller-
-/// supplied fixture (a fake sample token, or text a drop already handed
-/// the shell), never a copy-out. Because it moves plaintext in the
-/// ingest direction (shell → core), the symbol exists only behind the
-/// off-by-default `dev-scaffolding` cargo feature
-/// (`scripts/build-core.sh --dev-scaffolding`); a default build exports
-/// no plaintext-ingest entry point. Returns `false` on a null/invalid
-/// argument.
+/// supplied fixture, never a copy-out. The symbol exists only behind
+/// the off-by-default `dev-scaffolding` cargo feature
+/// (`scripts/build-core.sh --dev-scaffolding`). Returns `false` on a
+/// null/invalid argument.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `text` must be a valid,
@@ -501,8 +751,8 @@ pub unsafe extern "C" fn companion_dev_seed_pasteboard(
 /// Free a string returned by this library. Passing null is a no-op.
 ///
 /// # Safety
-/// `s` must be a pointer returned by one of this library's `*_json`
-/// functions (or null), not previously freed.
+/// `s` must be a pointer returned by one of this library's `*_json` or
+/// seal functions (or null), not previously freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_string_free(s: *mut c_char) {
     if !s.is_null() {
@@ -514,38 +764,73 @@ pub unsafe extern "C" fn companion_string_free(s: *mut c_char) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// One cell's non-secret snapshot. The recognition line is the core's
-/// masked rendering; there is deliberately no field that could carry
-/// plaintext of a concealed cell.
-fn summary_json(cell: &Cell, now: std::time::Instant) -> serde_json::Value {
-    let remaining = cell.remaining(now);
+/// One page's non-secret snapshot. There is deliberately no field that
+/// could carry sealed content — excerpts live in the chip JSON returned
+/// at seal time and in ledger tombstones, and those are the only
+/// rendering sealed content ever gets.
+fn summary_json(sheet: &Sheet, now: std::time::Instant) -> serde_json::Value {
+    let remaining = sheet.remaining(now);
     serde_json::json!({
-        "id": cell.id().raw(),
-        "kind": match cell.kind() {
-            CellKind::Text => "text",
-            CellKind::Image => "image",
-        },
-        "state": match cell.state(now) {
-            LifecycleState::Staged => "staged",
-            LifecycleState::Draining => "draining",
-            LifecycleState::LastHour => "last_hour",
-            LifecycleState::Expired => "expired",
-        },
-        "concealed": cell.concealed(),
-        "detected_as": cell.detected_as(),
-        "ttl_code": ttl_to_code(cell.ttl()),
-        "ttl_label": cell.ttl().to_string(),
+        "id": sheet.id().raw(),
+        "title": sheet.title(),
+        "rung_code": ttl_to_code(sheet.rung()),
+        "rung_label": sheet.rung().to_string(),
         "remaining_ms": u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX),
-        "remaining_label": cell.ttl_label(now),
+        "remaining_label": sheet.remaining_label(now),
         "spoken_remaining": spoken_remaining(remaining),
-        "recognition": cell.recognition_line(),
-        "display_size": cell.content().display_size(),
-        "promoted": cell.promotion().is_some(),
+        "fraction_remaining": f64::from(sheet.fraction_remaining(now)),
+        "paused": sheet.is_held(now),
+        "hold_remaining_ms":
+            u64::try_from(sheet.hold_remaining(now).as_millis()).unwrap_or(u64::MAX),
+        "chip_count": sheet.chip_count(),
+        "last_hour": sheet.last_hour(now),
     })
 }
 
-/// The `VoiceOver` text-equivalent of the draining ring: coarse, natural,
-/// honest words — never colour or motion alone (doc 05 a11y).
+/// A freshly sealed chip's non-secret face, as an owned C string.
+fn chip_json(store: &SheetStore<SystemClock>, sheet: SheetId, chip: ChipId) -> *mut c_char {
+    let Some(sealed) = store.sheet(sheet).and_then(|s| s.chip(chip)) else {
+        return ptr::null_mut();
+    };
+    let value = serde_json::json!({
+        "chip_id": sealed.id().raw(),
+        "kind": match sealed.meta() {
+            ChipMeta::Text { .. } => "text",
+            ChipMeta::Image { .. } => "image",
+        },
+        "excerpt": sealed.excerpt(),
+        "size_label": sealed.size_label(),
+        "promoted": sealed.promotion().is_some(),
+    });
+    match serde_json::to_string(&value) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Parse the synced-document JSON: `[{"ink": "…"}, {"chip": 7}, …]`.
+fn parse_segments(json: &str) -> Option<Vec<Segment>> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let runs = value.as_array()?;
+    let mut segments = Vec::with_capacity(runs.len());
+    for run in runs {
+        let object = run.as_object()?;
+        if object.len() != 1 {
+            return None;
+        }
+        if let Some(ink) = object.get("ink") {
+            segments.push(Segment::Ink(ink.as_str()?.to_string()));
+        } else if let Some(chip) = object.get("chip") {
+            segments.push(Segment::Chip(ChipId::from_raw(chip.as_u64()?)));
+        } else {
+            return None;
+        }
+    }
+    Some(segments)
+}
+
+/// The `VoiceOver` text-equivalent of the draining gauge: coarse,
+/// natural, honest words — never colour or motion alone (doc 05 a11y).
 fn spoken_remaining(remaining: Duration) -> String {
     let secs = remaining.as_secs();
     if secs == 0 {
@@ -566,12 +851,9 @@ fn spoken_remaining(remaining: Duration) -> String {
 }
 
 /// Borrow a C string as `&str`, or `None` if null / not valid UTF-8.
-/// Only the dev-scaffolding entry point takes a string in; everything
-/// else hands strings out.
 ///
 /// # Safety
 /// `p` must be null or a valid NUL-terminated C string.
-#[cfg(any(test, feature = "dev-scaffolding"))]
 unsafe fn cstr<'a>(p: *const c_char) -> Option<&'a str> {
     if p.is_null() {
         return None;
@@ -609,17 +891,14 @@ fn ttl_to_code(ttl: Ttl) -> c_int {
 mod tests {
     use super::*;
 
-    /// A handle whose pasteboard holds `text`, exactly as the shell
-    /// would meet it. Built on the in-process board directly — never
-    /// `companion_new` — so the tests stay deterministic and never read
-    /// or clobber a real clipboard on macOS, where `companion_new` now
-    /// binds `NSPasteboard.general`.
-    fn handle_with_text(text: &str) -> *mut CompanionHandle {
-        let mut pasteboard = MemoryPasteboard::new();
-        pasteboard.put_external(PasteboardContent::Text(text.to_string()), false);
+    /// A handle over the in-process board — never `companion_new`, so
+    /// the tests stay deterministic and never read or clobber a real
+    /// clipboard on macOS, where `companion_new` binds
+    /// `NSPasteboard.general`.
+    fn handle() -> *mut CompanionHandle {
         let companion = Companion {
-            store: CellStore::new(SystemClock),
-            pasteboard: Board::Memory(pasteboard),
+            store: SheetStore::new(SystemClock),
+            pasteboard: Board::Memory(MemoryPasteboard::new()),
             last_write: None,
         };
         Box::into_raw(Box::new(CompanionHandle {
@@ -627,11 +906,23 @@ mod tests {
         }))
     }
 
+    fn seed(handle: *mut CompanionHandle, text: &str) {
+        let guard = unsafe { &*handle };
+        let mut guard = guard.inner.lock().unwrap();
+        guard
+            .pasteboard
+            .put_external(PasteboardContent::Text(text.to_string()), false);
+    }
+
     unsafe fn take_json(p: *mut c_char) -> String {
         assert!(!p.is_null(), "expected a JSON string, got null");
         let s = unsafe { CStr::from_ptr(p) }.to_str().unwrap().to_owned();
         unsafe { companion_string_free(p) };
         s
+    }
+
+    fn cstring(s: &str) -> CString {
+        CString::new(s).unwrap()
     }
 
     #[test]
@@ -647,52 +938,157 @@ mod tests {
     }
 
     #[test]
-    fn ingest_list_shows_masked_recognition_never_the_secret() {
+    fn sealed_bytes_never_appear_in_any_output() {
         // PAT-shaped, assembled at runtime so the raw pattern never
         // appears in the repository text (the secret-scan CI job reads
         // the full history).
         let secret = format!("ghp_{}", "n0ts3cr3t".repeat(4));
-        let handle = handle_with_text(&secret);
+        let handle = handle();
         unsafe {
-            let id = companion_ingest_pasteboard(handle);
-            assert_ne!(id, 0);
+            let sheet = companion_sheet_new(handle);
+            assert_ne!(sheet, 0);
 
-            let json = take_json(companion_list_json(handle));
-            assert!(json.contains("••••"), "recognition should be masked");
-            assert!(json.contains("GitHub token"), "detection is reported");
+            // Route 1: the ⌘↩ ingest entry.
+            let chip = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring(&secret).as_ptr(),
+            ));
             assert!(
-                !json.contains("n0ts3cr3t"),
-                "the raw secret must never appear in the FFI output: {json}"
+                !chip.contains("n0ts3cr3t"),
+                "chip JSON must carry the excerpt, never the bytes: {chip}"
             );
+            assert!(chip.contains("excerpt"), "chip JSON: {chip}");
+
+            // Route 2: the sealed paste.
+            seed(handle, &secret);
+            let chip2 = take_json(companion_sheet_seal_from_pasteboard(handle, sheet));
+            assert!(!chip2.contains("n0ts3cr3t"), "{chip2}");
+
+            // Summaries carry counts and titles, never chip contents.
+            let sheets = take_json(companion_sheets_json(handle));
+            assert!(!sheets.contains("n0ts3cr3t"), "{sheets}");
+            assert!(sheets.contains("\"chip_count\":2"), "{sheets}");
+
+            // And after death, the ledger holds tombstones — excerpts,
+            // struck through shell-side, never bytes.
+            assert!(companion_sheet_close(handle, sheet));
+            let ledger = take_json(companion_ledger_json(handle));
+            assert!(!ledger.contains("n0ts3cr3t"), "{ledger}");
+            assert!(ledger.contains("tombstone"), "{ledger}");
 
             companion_free(handle);
         }
     }
 
     #[test]
-    fn copy_out_writes_the_pasteboard_in_core_and_guarded_clear_works() {
-        let handle = handle_with_text("on its way somewhere else");
+    fn there_is_no_detection_and_no_reveal_surface() {
+        // Rev C deleted detection: nothing in the seam's output ever
+        // claims to know what the content is. The vocabulary itself is
+        // gone from the wire.
+        let handle = handle();
         unsafe {
-            let id = companion_ingest_pasteboard(handle);
-            assert_ne!(id, 0);
+            let sheet = companion_sheet_new(handle);
+            let _ = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring("postgres://ops:hunter2@db-3.internal:5432/prod").as_ptr(),
+            ));
+            let sheets = take_json(companion_sheets_json(handle));
+            assert!(!sheets.contains("detected_as"), "{sheets}");
+            assert!(!sheets.contains("recognition"), "{sheets}");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn sealed_paste_reads_the_board_core_side() {
+        let handle = handle();
+        seed(handle, "on its way somewhere else");
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            let chip = take_json(companion_sheet_seal_from_pasteboard(handle, sheet));
+            assert!(chip.contains("\"kind\":\"text\""), "{chip}");
+            assert!(chip.contains("size_label"), "{chip}");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn an_image_on_the_board_seals_as_a_metadata_chip_and_copies_back_as_an_image() {
+        let handle = handle();
+        {
+            // A pretend PNG on the board, as a screenshot app would
+            // leave it.
+            let guard = unsafe { &*handle };
+            let mut guard = guard.inner.lock().unwrap();
+            let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+            png.resize(2048, 7);
+            guard
+                .pasteboard
+                .put_external(PasteboardContent::Image(png), false);
+        }
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            let chip_json = take_json(companion_sheet_seal_from_pasteboard(handle, sheet));
+            assert!(chip_json.contains("\"kind\":\"image\""), "{chip_json}");
+            assert!(
+                chip_json.contains("PNG image"),
+                "metadata-only face: {chip_json}"
+            );
+            let chip: serde_json::Value = serde_json::from_str(&chip_json).unwrap();
+            let chip_id = chip["chip_id"].as_u64().unwrap();
+
+            // Copy-out routes the bytes back as an image, still inside
+            // the core.
+            assert!(companion_chip_copy_out(handle, chip_id));
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                let item = guard.pasteboard.read().expect("board holds our write");
+                assert!(
+                    matches!(item.content, PasteboardContent::Image(ref b) if b.len() == 2048),
+                    "the write carries the image kind"
+                );
+            }
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn copy_out_writes_the_pasteboard_in_core_marked_concealed() {
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            let chip_json = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring("multi-paste me").as_ptr(),
+            ));
+            let chip: serde_json::Value = serde_json::from_str(&chip_json).unwrap();
+            let chip_id = chip["chip_id"].as_u64().unwrap();
 
             // The core writes the pasteboard itself; the shell never
-            // holds the bytes.
-            assert!(companion_cell_copy_out(handle, id));
+            // holds the bytes. Chips are sealed by definition, so the
+            // write carries both hygiene marks.
+            assert!(companion_chip_copy_out(handle, chip_id));
             {
                 let guard = (*handle).inner.lock().unwrap();
                 assert!(
                     guard.pasteboard.current_is_transient(),
                     "outbound copies carry the transient mark"
                 );
+                assert!(
+                    guard.pasteboard.current_is_concealed(),
+                    "chip copies carry the concealed mark"
+                );
             }
 
-            // Copy-out does not consume the cell.
-            let json = take_json(companion_list_json(handle));
-            assert!(json.contains("\"id\":"));
+            // Copy-out does not consume the chip.
+            let sheets = take_json(companion_sheets_json(handle));
+            assert!(sheets.contains("\"chip_count\":1"), "{sheets}");
 
             // Guarded clear: succeeds while the board still holds our
-            // write, refuses after the user copies something else.
+            // write, refuses after.
             assert!(companion_clear_clipboard_if_ours(handle));
             assert!(
                 !companion_clear_clipboard_if_ours(handle),
@@ -704,22 +1100,95 @@ mod tests {
     }
 
     #[test]
-    fn scheduling_surface_reports_deadlines() {
-        let handle = handle_with_text("tempus fugit");
+    fn sync_document_names_the_page_and_reaps_omitted_chips() {
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            let chip_json = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring("dsn-goes-here").as_ptr(),
+            ));
+            let chip: serde_json::Value = serde_json::from_str(&chip_json).unwrap();
+            let chip_id = chip["chip_id"].as_u64().unwrap();
+
+            let doc = format!("[{{\"ink\": \"### deploy friday\\n\"}}, {{\"chip\": {chip_id}}}]");
+            assert!(companion_sheet_sync_document(
+                handle,
+                sheet,
+                cstring(&doc).as_ptr()
+            ));
+            let sheets = take_json(companion_sheets_json(handle));
+            assert!(
+                sheets.contains("\"title\":\"deploy friday\""),
+                "markup-stripped title: {sheets}"
+            );
+
+            // Malformed snapshots are rejected whole.
+            assert!(!companion_sheet_sync_document(
+                handle,
+                sheet,
+                cstring("not json").as_ptr()
+            ));
+            assert!(!companion_sheet_sync_document(
+                handle,
+                sheet,
+                cstring(r#"[{"chip": 424242}]"#).as_ptr()
+            ));
+
+            // A snapshot that omits the chip zeroizes it.
+            assert!(companion_sheet_sync_document(
+                handle,
+                sheet,
+                cstring(r#"[{"ink": "just ink"}]"#).as_ptr()
+            ));
+            assert!(!companion_chip_copy_out(handle, chip_id), "no resurrection");
+
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_cap_refuses_the_tenth_page() {
+        let handle = handle();
+        unsafe {
+            for _ in 0..9 {
+                assert_ne!(companion_sheet_new(handle), 0);
+            }
+            assert_eq!(companion_sheet_new(handle), 0, "the keyboard wall");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn scheduling_surface_covers_expiry_and_hold_lapses() {
+        let handle = handle();
         unsafe {
             assert_eq!(
-                companion_next_deadline_ms(handle),
+                companion_next_event_ms(handle),
                 -1,
                 "empty store: nothing to arm"
             );
-            let id = companion_ingest_pasteboard(handle);
-            assert_ne!(id, 0);
+            let sheet = companion_sheet_new(handle);
+            assert_ne!(sheet, 0);
 
             // Default rung is 8h; the one armed timer is under that and
             // far above zero.
-            let ms = companion_next_deadline_ms(handle);
+            let ms = companion_next_event_ms(handle);
             assert!(ms > 7 * 60 * 60 * 1000, "deadline ms: {ms}");
             assert!(ms <= 8 * 60 * 60 * 1000, "deadline ms: {ms}");
+
+            // Pause: the next event becomes the hold lapse (1h), not
+            // the expiry.
+            assert!(companion_sheet_pause_press(handle, sheet));
+            let ms = companion_next_event_ms(handle);
+            assert!(ms <= 60 * 60 * 1000, "hold lapse ms: {ms}");
+            assert!(ms > 59 * 60 * 1000, "hold lapse ms: {ms}");
+
+            // The summary says so, in a11y words too.
+            let sheets = take_json(companion_sheets_json(handle));
+            assert!(sheets.contains("\"paused\":true"), "{sheets}");
+            assert!(sheets.contains("spoken_remaining"), "{sheets}");
 
             assert_eq!(companion_expire_due(handle), 0, "nothing due yet");
             companion_free(handle);
@@ -727,16 +1196,38 @@ mod tests {
     }
 
     #[test]
-    fn ttl_and_discard_over_the_abi() {
-        let handle = handle_with_text("value");
+    fn rungs_pause_move_and_close_over_the_abi() {
+        let handle = handle();
         unsafe {
-            let id = companion_ingest_pasteboard(handle);
-            assert!(companion_cell_set_ttl(handle, id, 0)); // 1h
-            let new_code = companion_cell_cycle_ttl(handle, id); // -> 3h
-            assert_eq!(new_code, 1);
-            assert!(!companion_cell_set_ttl(handle, id, 99), "bad rung code");
-            assert!(companion_cell_discard(handle, id));
-            assert!(!companion_cell_discard(handle, id), "already gone");
+            let a = companion_sheet_new(handle);
+            let b = companion_sheet_new(handle);
+            assert!(companion_sheet_set_rung(handle, a, 0)); // 1h
+            assert_eq!(companion_sheet_cycle_rung(handle, a), 1); // -> 3h
+            assert!(!companion_sheet_set_rung(handle, a, 99), "bad rung code");
+            assert!(companion_sheet_move(handle, b, 0));
+            assert!(companion_sheet_close(handle, a));
+            assert!(!companion_sheet_close(handle, a), "already gone");
+            assert_eq!(companion_sheet_cycle_rung(handle, a), -1, "gone");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn ledger_json_reports_cause_title_and_age() {
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            assert!(companion_sheet_sync_document(
+                handle,
+                sheet,
+                cstring(r#"[{"ink": "errands\nmilk"}]"#).as_ptr()
+            ));
+            assert!(companion_sheet_close(handle, sheet));
+            let ledger = take_json(companion_ledger_json(handle));
+            assert!(ledger.contains("\"cause\":\"closed\""), "{ledger}");
+            assert!(ledger.contains("\"title\":\"errands\""), "{ledger}");
+            assert!(ledger.contains("age_ms"), "{ledger}");
+            assert!(ledger.contains("milk"), "ink survives dimmed: {ledger}");
             companion_free(handle);
         }
     }
@@ -744,11 +1235,16 @@ mod tests {
     #[test]
     fn null_handles_are_handled_gracefully() {
         unsafe {
-            assert_eq!(companion_ingest_pasteboard(ptr::null_mut()), 0);
-            assert!(companion_list_json(ptr::null_mut()).is_null());
-            assert!(!companion_cell_discard(ptr::null_mut(), 1));
-            assert!(!companion_cell_copy_out(ptr::null_mut(), 1));
-            assert_eq!(companion_next_deadline_ms(ptr::null_mut()), -1);
+            assert_eq!(companion_sheet_new(ptr::null_mut()), 0);
+            assert!(companion_sheets_json(ptr::null_mut()).is_null());
+            assert!(companion_ledger_json(ptr::null_mut()).is_null());
+            assert!(!companion_sheet_close(ptr::null_mut(), 1));
+            assert!(!companion_chip_copy_out(ptr::null_mut(), 1));
+            assert!(!companion_chip_delete(ptr::null_mut(), 1));
+            assert!(!companion_sheet_pause_press(ptr::null_mut(), 1));
+            assert_eq!(companion_next_event_ms(ptr::null_mut()), -1);
+            assert!(companion_sheet_seal_text(ptr::null_mut(), 1, cstring("x").as_ptr()).is_null());
+            assert!(companion_sheet_seal_from_pasteboard(ptr::null_mut(), 1).is_null());
             companion_free(ptr::null_mut()); // no-op
             companion_string_free(ptr::null_mut()); // no-op
         }

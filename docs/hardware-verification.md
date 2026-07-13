@@ -1,5 +1,13 @@
 # Hardware-session runbook — the VoiceOver go/no-go (issue #4)
 
+> **Rev C note (issue #10, 2026-07-13):** the core now speaks
+> interaction-model rev C — sheets, gesture-only sealing, mechanical
+> excerpts, the pausable countdown, the ledger; detection is deleted and
+> the cap is 9 pages. Sections A and D below were written against the
+> rev A code and read as history; the *checks* still stand with the
+> vocabulary shifted (capture → sealed paste, cell → page, recognition
+> line → excerpt). Section B's go/no-go is unchanged and still open.
+
 Everything that can be verified without a display, VoiceOver, and full
 Xcode is done and on-branch. This is the part only a person at the machine
 can run: the VoiceOver operability proof that is issue #4's reason to
@@ -83,10 +91,14 @@ get decided from felt experience, not a spreadsheet. Current code values:
 - **Default TTL:** 8h (ladder 1h→3h→8h→24h→3d→7d; docs/spec/04,
   docs/spec/06 open question 1). Does 8h feel right as the landing rung
   when you cycle?
-- **Capacity:** 12 cells, **refuse-don't-evict** (docs/spec/06 open
-  question 3). Does hitting the cap feel like a wall or a nudge?
-- **Eviction:** none — cells leave only by expiry or explicit discard.
-  Watch whether that matches intuition when the panel fills.
+- **Capacity:** 9 pages (was 12 cells in rev A), **refuse-don't-evict**
+  (docs/spec/06 open question 4). Does hitting the keyboard wall feel
+  like a wall or a nudge?
+- **Eviction:** none — pages leave only by expiry or explicit close.
+  Watch whether that matches intuition when the tab strip fills.
+- **The pause** (rev C): double-click holds 1h, again tops up to 24h.
+  Does the top-up ceiling feel bounded enough (docs/spec/06 open
+  question 8)?
 
 ## Boundary-law note that surfaced during this work (drag ingest)
 

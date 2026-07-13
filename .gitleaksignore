@@ -42,3 +42,8 @@ e5a4d02f43db3f6f1be307b504c05f2bb6964056:docs/Airlock Prototype/_ds/onetime-secr
 # full-history scan sees it because CI's fetch-depth: 0 checkout brings
 # every branch along.
 472b5a3a0d66afd0d00190c88cb5218c3e56dbba:crates/ots-ffi/src/lib.rs:generic-api-key:359
+
+# Historical only: the rev C excerpt-rule test (issue #10) first landed
+# its 40-char PAT-shaped fixture as a literal; the follow-up commit
+# rewrote it to be assembled at runtime, matching the discipline above.
+1f7f12c7dda24a6d162de81ae3315672cef146e7:crates/core/src/sheet.rs:github-pat:456

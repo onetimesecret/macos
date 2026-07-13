@@ -1,33 +1,40 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The edge-docked shelf: a drop/paste target on top, a stack of
-/// SleeperCells below, most recent on top (docs/spec/04). Minimal
-/// chrome, generous whitespace, one accent.
+/// TRANSITIONAL SURFACE: the spike's docked shelf, now speaking the
+/// rev C core — a seal target on top, the pages below in tab order,
+/// each with its pausable countdown. The real rev C window (movable,
+/// resizable, bottom tabs, the ink editor) is the next slice.
 struct PanelView: View {
     @ObservedObject var model: PanelModel
 
     var body: some View {
         VStack(spacing: 10) {
             header
-            dropZone
-            if model.cells.isEmpty {
+            sealZone
+            if let notice = model.notice {
+                Text(notice)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.ember)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if model.sheets.isEmpty {
                 emptyState
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        ForEach(model.cells) { cell in
-                            SleeperCellView(
-                                cell: cell,
-                                onCopy: { model.copyOut(cell.id) },
-                                onCycle: { model.cycle(cell.id) },
-                                onDismiss: { model.discard(cell.id) }
+                        ForEach(model.sheets) { sheet in
+                            SheetRowView(
+                                sheet: sheet,
+                                onCycle: { model.cycleRung(sheet.id) },
+                                onPause: { model.pause(sheet.id) },
+                                onClose: { model.close(sheet.id) }
                             )
                         }
                     }
                 }
             }
-            devFooter
+            footer
         }
         .padding(12)
         .background(Color.panelBackground)
@@ -65,11 +72,14 @@ struct PanelView: View {
         .accessibilityLabel(Text("Keep panel above other windows"))
     }
 
-    private var dropZone: some View {
-        Button(action: model.ingest) {
+    /// The sealed paste (⇧⌘V) and drop-to-seal target. Masking is by
+    /// gesture, not by content: what lands here becomes an opaque chip,
+    /// unread and unclassified (docs/spec/04).
+    private var sealZone: some View {
+        Button(action: model.sealPaste) {
             HStack(spacing: 6) {
-                Image(systemName: "bolt.horizontal")
-                Text("drop or paste here")
+                Image(systemName: "seal")
+                Text("drop or ⇧⌘V to seal")
                     .font(.system(.callout, design: .monospaced))
             }
             .frame(maxWidth: .infinity)
@@ -83,16 +93,13 @@ struct PanelView: View {
             )
         }
         .buttonStyle(.plain)
-        .keyboardShortcut("v", modifiers: .command)
-        .accessibilityLabel(Text("Paste into a new cell"))
-        // The make-or-break behavior ADR-0002 measures: a real drag,
-        // received without the panel ever taking focus (issue #3 WS1).
-        // Text is extracted here and staged via the same dev-seed path
-        // devStageSample uses — the NSPasteboard adapter (WS2) isn't
-        // yet wired into companion-ffi's ingest (that's issue #4), so a
-        // real system-pasteboard round trip isn't provable through this
-        // path yet; what this proves is that the shell itself receives
-        // drops without activating.
+        .keyboardShortcut("v", modifiers: [.command, .shift])
+        .accessibilityLabel(Text("Seal the clipboard's content onto the page"))
+        // Drop-to-seal, received without the panel ever taking focus.
+        // Interim route: the text goes to the core's seal-text entry
+        // (the ⌘↩ call); the boundary-lawful end state is the core
+        // reading NSDraggingInfo.draggingPasteboard itself
+        // (docs/hardware-verification.md — a hardware-session decision).
         .onDrop(of: [.plainText], isTargeted: nil) { providers in
             guard let provider = providers.first else { return false }
             _ = provider.loadObject(ofClass: String.self) { text, _ in
@@ -111,13 +118,20 @@ struct PanelView: View {
             .frame(maxWidth: .infinity)
     }
 
-    /// DEV SCAFFOLDING — deleted with the NSPasteboard adapter: until the
-    /// core can read the real pasteboard, this stages a sample cell so
-    /// the vertical slice has something alive to show.
-    private var devFooter: some View {
-        Button("stage a sample cell (dev)", action: model.devStageSample)
-            .buttonStyle(.link)
-            .font(.caption2)
-            .accessibilityLabel(Text("Stage a sample cell, developer scaffolding"))
+    private var footer: some View {
+        HStack {
+            Button("new page", action: model.newPage)
+                .buttonStyle(.link)
+                .font(.caption2)
+                .accessibilityLabel(Text("New page"))
+            Spacer()
+            // DEV SCAFFOLDING — present only while the core is built
+            // with --dev-scaffolding: seeds the clipboard and seals it,
+            // so the panel shows a live chip without leaving the app.
+            Button("seal a sample (dev)", action: model.devStageSample)
+                .buttonStyle(.link)
+                .font(.caption2)
+                .accessibilityLabel(Text("Seal a sample chip, developer scaffolding"))
+        }
     }
 }
