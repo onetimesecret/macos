@@ -86,6 +86,7 @@ impl Board {
     /// has no unmarked "external put", so on macOS the seed rides the
     /// normal write (transient-marked); ingest reads text regardless of
     /// marks, so the core cannot tell the difference.
+    #[cfg(any(test, feature = "dev-scaffolding"))]
     fn put_external(&mut self, content: PasteboardContent, concealed: bool) {
         match self {
             Board::Memory(pb) => pb.put_external(content, concealed),
