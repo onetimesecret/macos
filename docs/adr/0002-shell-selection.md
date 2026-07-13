@@ -1,7 +1,7 @@
 # ADR-0002: Shell selection
 
-- **Status:** proposed — spike complete, decision deferred
-- **Date:** 2026-07-08
+- **Status:** accepted — Swift/AppKit shell over the Rust core
+- **Date:** 2026-07-08 (evidence); decided 2026-07-13
 
 ## Context
 
@@ -95,20 +95,51 @@ that measurement already past its ceiling and swift-panel does not.
 
 ## Decision
 
-Not yet made — reserved for issue #4's hardware session, per explicit
-instruction that this spike does not decide it unilaterally. The
-evidence above: swift-panel meets every non-activating/drag target
-measured here with native APIs and no workarounds, and sits at 88% of
-its idle-memory budget before cells exist; tauri-panel meets the same
-functional bar but only by bypassing Tauri's own visibility API and
-moving drag handling into JS, and is already at 103% of its idle-memory
-budget before cells exist. Both need the 5-cell case actually measured,
-not assumed, before either number is final.
+**Swift/AppKit shell over the Rust core**, crossing the C-ABI seam in
+`crates/ffi` (mechanism: ADR-0003). Decided 2026-07-13 on the spike
+evidence above: swift-panel meets every non-activating/drag target with
+first-class AppKit APIs and no workarounds, at 88% of its idle-memory
+budget before cells exist; tauri-panel reaches the same functional bar
+only by bypassing Tauri's own visibility API (`makeKeyAndOrderFront` in
+tao) and moving drag handling into WebKit JS, and is already at 103% of
+its idle-memory budget on process baseline alone. Tauri's one advantage
+— no C-ABI seam — does not outweigh two load-bearing behaviors living in
+workarounds.
+
+Interaction-model revision C (docs/spec/04) replaces the edge-docked
+panel with a real movable, resizable, non-activating window plus
+bottom-edge tabs. Every finding above applies at least as strongly to
+that surface, so rev C strengthens rather than reopens this decision.
+
+The VoiceOver hardware runbook (docs/hardware-verification.md, section
+B) remains open as *verification* of the native-a11y premise, not as a
+gate: its failure modes are eject triggers below, not blockers to
+proceeding.
 
 ## Consequences
 
-—
+- `spikes/swift-panel` graduates to `shell/` (the spikes/README
+  contract); `spikes/tauri-panel` is retired with the measurements
+  preserved here.
+- The C-ABI seam (`crates/ffi`, opaque handles, non-secret JSON) is now
+  a permanent, load-bearing boundary — and the natural enforcement point
+  for the boundary law (sealed bytes never cross into Swift).
+- Shell-side work is Swift/SwiftUI/AppKit; the Rust workspace stays free
+  of shell concerns. CI needs a macOS lane that builds the xcframework
+  and runs `swift build && swift test`.
+- The frugality budget for the shell is the native one: < 25 MB idle
+  with 5 cells, near-zero idle CPU. 22 MB at 0 cells is the recorded
+  baseline to regress against.
 
 ## Eject triggers
 
-—
+- VoiceOver operability (runbook section B) fails in a way native
+  AppKit APIs cannot reach — this falsifies the premise the decision
+  rests on and reopens it outright.
+- The 5-cell (or rev-C 9-sheet) resident-memory measurement lands
+  materially over the 25 MB native budget and cannot be brought back.
+- Rev C's window semantics (movable, resizable, non-activating,
+  tabbed) prove unreachable with `NSPanel`/AppKit primitives.
+- The C-ABI seam forces a boundary-law breach — any change that needs
+  sealed bytes on the Swift side is evidence the seam is misdrawn, and
+  two of those is evidence the shell choice is.

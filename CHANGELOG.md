@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **ADR-0002 accepted: the shell is Swift/AppKit** over the Rust core,
+  across the C-ABI seam (ADR-0003). Decided on the two-way spike's
+  evidence: native non-activating/drag semantics with no workarounds and
+  22 MB idle vs. Tauri's bypassed visibility API, JS-side drag handling,
+  and 61.6 MB (already over budget at 0 cells). The VoiceOver hardware
+  runbook (docs/hardware-verification.md §B) stays open as verification;
+  its failure modes are recorded as eject triggers, not gates.
+  Consequences: swift-panel graduates to `shell/`, tauri-panel retires.
+
 ### Added
 
 - Real pasteboard **ingest** across the C-ABI seam (issue #4): on macOS
