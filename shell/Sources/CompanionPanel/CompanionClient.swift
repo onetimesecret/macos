@@ -1,57 +1,110 @@
 import Foundation
 import CompanionCore
 
-/// A non-secret snapshot of a cell, decoded from the core's JSON (see
-/// crates/ffi/include/companion_ffi.h for the field contract). There is
-/// deliberately no secret field — the UI is never handed plaintext; the
-/// recognition line arrives masked exactly as the core renders it.
-struct CellSummary: Identifiable, Codable, Hashable {
+/// A non-secret snapshot of a sheet — a page of ink and sealed chips —
+/// decoded from the core's JSON (see crates/ffi/include/companion_ffi.h
+/// for the field contract). There is deliberately no content field of
+/// any kind: sealed bytes have no display form at all (the boundary
+/// law, hard form), and the live ink belongs to the shell's editor, not
+/// the summary.
+struct SheetSummary: Identifiable, Codable, Hashable {
     let id: UInt64
-    let kind: String
-    let state: String
-    let concealed: Bool
-    let detectedAs: String?
-    let ttlCode: Int32
-    let ttlLabel: String
+    let title: String
+    let rungCode: Int32
+    let rungLabel: String
     let remainingMs: UInt64
     let remainingLabel: String
     let spokenRemaining: String
-    let recognition: String
-    let displaySize: UInt64
-    let promoted: Bool
+    let fractionRemaining: Double
+    let paused: Bool
+    let holdRemainingMs: UInt64
+    let chipCount: UInt64
+    let lastHour: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, state, concealed, recognition, promoted
-        case detectedAs = "detected_as"
-        case ttlCode = "ttl_code"
-        case ttlLabel = "ttl_label"
+        case id, title, paused
+        case rungCode = "rung_code"
+        case rungLabel = "rung_label"
         case remainingMs = "remaining_ms"
         case remainingLabel = "remaining_label"
         case spokenRemaining = "spoken_remaining"
-        case displaySize = "display_size"
+        case fractionRemaining = "fraction_remaining"
+        case holdRemainingMs = "hold_remaining_ms"
+        case chipCount = "chip_count"
+        case lastHour = "last_hour"
+    }
+}
+
+/// A freshly sealed chip's non-secret face, returned by the seal
+/// routes: the mechanical excerpt and counts are the only rendering the
+/// content ever gets — never revealable, at any privilege.
+struct ChipInfo: Codable, Hashable {
+    let chipId: UInt64
+    let kind: String
+    let excerpt: String
+    let sizeLabel: String
+    let promoted: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case kind, excerpt, promoted
+        case chipId = "chip_id"
+        case sizeLabel = "size_label"
+    }
+}
+
+/// One run of a dead page in the ledger: dimmed ink, or the tombstone
+/// of a chip (its excerpt; the bytes were zeroized at death).
+enum LedgerRun: Hashable {
+    case ink(String)
+    case tombstone(String)
+}
+
+/// A dead page, resting in the ledger (⌘0): session-bound, read-only.
+struct LedgerEntry: Codable, Hashable {
+    let cause: String
+    let title: String
+    let ageMs: UInt64
+    private let segments: [[String: SegmentValue]]
+
+    enum CodingKeys: String, CodingKey {
+        case cause, title, segments
+        case ageMs = "age_ms"
+    }
+
+    /// The wire carries `{"ink": "…"}` or `{"chip": 7}`-style tombstone
+    /// objects whose single value is a string either way.
+    enum SegmentValue: Codable, Hashable {
+        case string(String)
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            self = .string(try container.decode(String.self))
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            if case .string(let value) = self { try container.encode(value) }
+        }
+    }
+
+    /// The page's runs, in document order.
+    var runs: [LedgerRun] {
+        segments.compactMap { object in
+            if case .string(let text)? = object["ink"] { return .ink(text) }
+            if case .string(let excerpt)? = object["tombstone"] { return .tombstone(excerpt) }
+            return nil
+        }
     }
 }
 
 /// The TTL ladder (docs/spec/04). Raw values are the C ABI rung codes.
 enum Rung: Int32, CaseIterable {
     case oneHour = 0, threeHours, eightHours, twentyFourHours, threeDays, sevenDays
-
-    /// Total lifetime of this rung, for drawing the draining ring.
-    var seconds: Double {
-        switch self {
-        case .oneHour: return 3600
-        case .threeHours: return 3 * 3600
-        case .eightHours: return 8 * 3600
-        case .twentyFourHours: return 24 * 3600
-        case .threeDays: return 3 * 24 * 3600
-        case .sevenDays: return 7 * 24 * 3600
-        }
-    }
 }
 
 /// A thin, memory-safe Swift wrapper over the C ABI. Owns the opaque
 /// handle for its lifetime and only ever sees ids, non-secret summaries,
-/// and booleans. Both pasteboard directions run inside the core.
+/// excerpts, and booleans. Sealed-byte movement runs inside the core.
 final class CompanionClient {
     private let handle: OpaquePointer
 
@@ -67,18 +120,71 @@ final class CompanionClient {
         companion_free(handle)
     }
 
-    /// Stage the pasteboard's content; returns the new cell id, or 0 when
-    /// there was nothing to stage or the store refused at capacity.
+    // MARK: Sheets
+
+    /// A new page at the end of the tab strip; 0 means the store
+    /// refused at the cap of 9 (refuse-don't-evict — say so).
     @discardableResult
-    func ingestPasteboard() -> UInt64 {
-        companion_ingest_pasteboard(handle)
+    func newSheet() -> UInt64 {
+        companion_sheet_new(handle)
     }
 
-    /// Copy a cell back out. The core writes the pasteboard itself; this
-    /// process never holds the bytes.
+    /// Close a page; it rests in the ledger, sealed bytes zeroized.
     @discardableResult
-    func copyOut(id: UInt64) -> Bool {
-        companion_cell_copy_out(handle, id)
+    func closeSheet(id: UInt64) -> Bool {
+        companion_sheet_close(handle, id)
+    }
+
+    /// Move a page in the visible order (drag-to-reorder).
+    @discardableResult
+    func moveSheet(id: UInt64, to index: UInt64) -> Bool {
+        companion_sheet_move(handle, id, index)
+    }
+
+    /// Current pages, in visible (tab) order.
+    func sheets() -> [SheetSummary] {
+        decodeJSON([SheetSummary].self, from: companion_sheets_json(handle)) ?? []
+    }
+
+    // MARK: Sealing — the gesture routes
+
+    /// The sealed paste (⇧⌘V): the core reads the pasteboard itself.
+    /// Returns the new chip's face, or nil.
+    @discardableResult
+    func sealFromPasteboard(sheet: UInt64) -> ChipInfo? {
+        decodeJSON(ChipInfo.self, from: companion_sheet_seal_from_pasteboard(handle, sheet))
+    }
+
+    /// The ⌘↩ retrofit: seal editor text the user selected. The one
+    /// deliberate plaintext-in call — the text was visible ink already;
+    /// after this returns, the caller deletes its copy from the view.
+    @discardableResult
+    func sealText(sheet: UInt64, _ text: String) -> ChipInfo? {
+        text.withCString { cText in
+            decodeJSON(ChipInfo.self, from: companion_sheet_seal_text(handle, sheet, cText))
+        }
+    }
+
+    /// Push the page's document snapshot (JSON runs) to the core —
+    /// authoritative for chip liveness.
+    @discardableResult
+    func syncDocument(sheet: UInt64, json: String) -> Bool {
+        json.withCString { companion_sheet_sync_document(handle, sheet, $0) }
+    }
+
+    // MARK: Chips
+
+    /// Copy a chip back out. The core writes the pasteboard itself,
+    /// marked transient + concealed; this process never holds the bytes.
+    @discardableResult
+    func copyOutChip(id: UInt64) -> Bool {
+        companion_chip_copy_out(handle, id)
+    }
+
+    /// ⌫ on a chip: removes it whole, bytes zeroized, no resurrection.
+    @discardableResult
+    func deleteChip(id: UInt64) -> Bool {
+        companion_chip_delete(handle, id)
     }
 
     /// Change-count-guarded clear of our own last copy-out.
@@ -87,45 +193,50 @@ final class CompanionClient {
         companion_clear_clipboard_if_ours(handle)
     }
 
-    /// Current cells, newest first.
-    func list() -> [CellSummary] {
-        guard let ptr = companion_list_json(handle) else { return [] }
-        defer { companion_string_free(ptr) }
-        let json = String(cString: ptr)
-        guard let data = json.data(using: .utf8) else { return [] }
-        return (try? JSONDecoder().decode([CellSummary].self, from: data)) ?? []
+    // MARK: Time
+
+    /// Milliseconds until the next scheduled instant — page expiry or
+    /// hold lapse — the ONE timer to arm. -1 means nothing to schedule.
+    func nextEventMs() -> Int64 {
+        companion_next_event_ms(handle)
     }
 
-    /// Milliseconds until the earliest deadline — the ONE timer to arm.
-    /// -1 means nothing to schedule.
-    func nextDeadlineMs() -> Int64 {
-        companion_next_deadline_ms(handle)
-    }
-
-    /// Expire overdue cells; returns how many were wiped.
+    /// Settle the clock: normalize lapsed holds, expire due pages;
+    /// returns how many pages expired.
     @discardableResult
     func expireDue() -> UInt64 {
         companion_expire_due(handle)
     }
 
-    /// Step a cell up the ladder (clock reset); returns the new rung.
+    /// Click the countdown label: next rung, clock reset.
     @discardableResult
-    func cycleTTL(id: UInt64) -> Rung? {
-        Rung(rawValue: companion_cell_cycle_ttl(handle, id))
+    func cycleRung(sheet: UInt64) -> Rung? {
+        Rung(rawValue: companion_sheet_cycle_rung(handle, sheet))
     }
 
     @discardableResult
-    func setTTL(id: UInt64, rung: Rung) -> Bool {
-        companion_cell_set_ttl(handle, id, rung.rawValue)
+    func setRung(sheet: UInt64, rung: Rung) -> Bool {
+        companion_sheet_set_rung(handle, sheet, rung.rawValue)
     }
 
+    /// Double-click the tab: hold 1h, then top-up to 24h from now.
     @discardableResult
-    func discard(id: UInt64) -> Bool {
-        companion_cell_discard(handle, id)
+    func pausePress(sheet: UInt64) -> Bool {
+        companion_sheet_pause_press(handle, sheet)
     }
 
-    /// DEV SCAFFOLDING (deleted with the NSPasteboard adapter): seed the
-    /// in-process pasteboard stand-in so the spike can stage a live cell.
+    // MARK: The ledger
+
+    /// Dead pages, newest first (⌘0) — dimmed ink and tombstones.
+    func ledger() -> [LedgerEntry] {
+        decodeJSON([LedgerEntry].self, from: companion_ledger_json(handle)) ?? []
+    }
+
+    // MARK: Dev scaffolding
+
+    /// DEV SCAFFOLDING: seed the pasteboard as an external app would,
+    /// so demo affordances have something to seal. Only present in
+    /// `--dev-scaffolding` builds of the core.
     @discardableResult
     func devSeedPasteboard(_ text: String) -> Bool {
         text.withCString { companion_dev_seed_pasteboard(handle, $0) }
@@ -134,5 +245,16 @@ final class CompanionClient {
     /// The core's version string.
     static var version: String {
         String(cString: companion_version())
+    }
+
+    // MARK: Plumbing
+
+    /// Decode an owned JSON C string from the seam, freeing it either way.
+    private func decodeJSON<T: Decodable>(_ type: T.Type, from ptr: UnsafeMutablePointer<CChar>?) -> T? {
+        guard let ptr else { return nil }
+        defer { companion_string_free(ptr) }
+        let json = String(cString: ptr)
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
     }
 }

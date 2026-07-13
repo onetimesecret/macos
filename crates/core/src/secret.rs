@@ -39,6 +39,19 @@ impl SecretBuffer {
         Self::new(text.as_bytes().to_vec())
     }
 
+    /// Take ownership of `bytes` **without** locking pages. This is the
+    /// documented mlock exclusion for large image payloads (doc 05):
+    /// wiring megabytes against swap routinely exceeds `RLIMIT_MEMLOCK`
+    /// and starves the small text buffers that need the lock most. The
+    /// zeroize-on-drop guarantee is unchanged.
+    #[must_use]
+    pub fn new_unlocked(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes,
+            locked: false,
+        }
+    }
+
     /// Number of secret bytes held.
     #[must_use]
     pub fn len(&self) -> usize {

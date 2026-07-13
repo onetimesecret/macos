@@ -1,7 +1,7 @@
 [package]
 name = "companion-core"
 version = "0.1.0"
-description = "Cell store, TTL scheduling, zeroizing buffers, and secret-shape heuristics for the Onetime Secret macOS companion. No UI, no macOS dependencies."
+description = "Sheet store for the Onetime Secret macOS companion: ink + sealed chips, pausable per-page countdowns, the session ledger, zeroizing buffers. No UI, no macOS dependencies."
 publish = false
 edition.workspace = true
 license.workspace = true

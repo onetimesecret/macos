@@ -1,19 +1,21 @@
-//! Headless walkthrough of the `SleeperCell` lifecycle — the panel, in a
-//! terminal, with time under your control.
+//! Headless walkthrough of the sheet lifecycle (interaction-model
+//! rev C) — the window, in a terminal, with time under your control.
 //!
 //! ```text
 //! cargo run -p companion-core --example demo
 //! ```
 //!
-//! Content stages into zeroizing cells, secret-shaped text arrives
-//! masked, TTL labels cycle the ladder, the ring drains as you `tick`
-//! the clock, expiry is silent, and `promote` dry-runs the v3 conceal
-//! request without a byte leaving the machine.
+//! Pages hold ink and sealed chips. Sealing is by gesture (`seal`,
+//! `paste-seal`), never by detection; chips render as their mechanical
+//! excerpt and nothing else — there is no reveal command, at any
+//! privilege. One pausable countdown per page; dead pages rest in the
+//! ledger, ink only. `promote` dry-runs the v3 conceal request without
+//! a byte leaving the machine; `send` is the real thing.
 
 use std::io::{BufRead, Write as _};
 use std::time::Duration;
 
-use companion_core::{Cell, CellKind, CellStore, LifecycleState, ManualClock};
+use companion_core::{Cause, LedgerSegment, ManualClock, Segment, Sheet, SheetId, SheetStore};
 use companion_credentials::default_credential_store;
 use companion_pasteboard::{ContentKind, MemoryPasteboard, Pasteboard, WriteOptions};
 use companion_transport::UreqTransport;
@@ -31,173 +33,481 @@ const CRED_ACCOUNT_KEY: &str = "demo-api-key";
 const CRED_ACCOUNT_SECRET: &str = "demo-api-secret";
 
 fn main() {
-    // No core dumps while secrets are held; buffers are mlocked besides.
+    // No core dumps while secrets are held; text buffers are mlocked
+    // besides.
     companion_core::harden_process();
     let clock = ManualClock::new();
-    let mut store = CellStore::new(clock.clone());
+    let mut store = SheetStore::new(clock.clone());
     let mut pasteboard = MemoryPasteboard::new();
+    let mut current: Option<SheetId> = None;
 
     println!("╭──────────────────────────────────────────────────────────────╮");
-    println!("│  SleeperCell demo — the core crate, headless                 │");
-    println!("│  Drop or paste something on its way somewhere else.          │");
+    println!("│  Sheet demo — the core crate, headless (rev C)               │");
+    println!("│  Ink is visible. Chips are sealed by gesture, never read.    │");
     println!("╰──────────────────────────────────────────────────────────────╯");
     println!("Type `help` for commands. Time only moves when you `tick` it.\n");
 
     let stdin = std::io::stdin();
     loop {
-        print!("airlock> ");
+        let title = current
+            .and_then(|id| store.sheet(id))
+            .map_or_else(|| "no page".to_string(), Sheet::title);
+        print!("airlock:{title}> ");
         std::io::stdout().flush().ok();
         let Some(Ok(line)) = stdin.lock().lines().next() else {
             break;
         };
         let line = line.trim();
         let (cmd, rest) = line.split_once(' ').unwrap_or((line, ""));
+        // Commands that need a current page resolve it once, here.
         match cmd {
             "" => {}
             "help" | "?" => help(),
-            "paste" | "p" => paste(&mut store, rest),
-            "image" => image(&mut store),
-            "ls" | "l" => render(&store),
-            "tick" | "t" => tick(&mut store, &clock, rest),
-            "ttl" => cycle_ttl(&mut store, rest),
-            "copy" | "c" => copy_out(&mut store, &mut pasteboard, rest),
+            "new" | "n" => match store.new_sheet() {
+                Ok(id) => {
+                    current = Some(id);
+                    println!("a new page, default rung. the countdown is running.");
+                }
+                Err(e) => println!("refused: {e}"),
+            },
+            "go" | "g" => match nth_sheet(&store, rest) {
+                Some(id) => current = Some(id),
+                None => println!("no such page"),
+            },
+            "tabs" | "ls" | "l" => render(&store, current),
+            "ink" | "i" => {
+                if let Some(id) = page(&mut current, &store) {
+                    ink(&mut store, id, rest);
+                }
+            }
+            "seal" | "s" => {
+                if let Some(id) = page(&mut current, &store) {
+                    seal(&mut store, id, rest);
+                }
+            }
+            "put" => put(&mut pasteboard, rest),
+            "paste-seal" | "pv" => {
+                if let Some(id) = page(&mut current, &store) {
+                    paste_seal(&mut store, &mut pasteboard, id);
+                }
+            }
+            "image" => {
+                if let Some(id) = page(&mut current, &store) {
+                    image(&mut store, id);
+                }
+            }
+            "rm-chip" => {
+                if let Some(id) = page(&mut current, &store) {
+                    rm_chip(&mut store, id, rest);
+                }
+            }
+            "copy" | "c" => {
+                if let Some(id) = page(&mut current, &store) {
+                    copy_out(&mut store, &mut pasteboard, id, rest);
+                }
+            }
             "clear" => clear(&mut pasteboard),
-            "peek" => peek(&store, rest),
-            "promote" | "link" => promote(&mut store, rest),
-            "send" => send(&mut store, rest),
+            "rung" => {
+                if let Some(id) = page(&mut current, &store) {
+                    cycle_rung(&mut store, id);
+                }
+            }
+            "pause" => {
+                if let Some(id) = page(&mut current, &store) {
+                    pause(&mut store, id);
+                }
+            }
+            "close" => {
+                if let Some(id) = current {
+                    store.close_sheet(id);
+                    current = store.sheets().next().map(Sheet::id);
+                    println!("closed. the page rests in the ledger.");
+                } else {
+                    println!("no page");
+                }
+            }
+            "ledger" => ledger(&store),
+            "tick" | "t" => tick(&mut store, &clock, rest, &mut current),
+            "promote" => {
+                if let Some(id) = page(&mut current, &store) {
+                    promote(&mut store, id, rest);
+                }
+            }
+            "send" => {
+                if let Some(id) = page(&mut current, &store) {
+                    send(&mut store, id, rest);
+                }
+            }
             "login" => login(rest),
             "logout" => logout(),
-            "discard" | "d" | "burn" => discard(&mut store, rest),
             "quit" | "q" | "exit" => break,
             other => println!("unknown command `{other}` — try `help`"),
         }
     }
     let held = store.len();
     if held > 0 {
-        println!("exit is total amnesia: {held} cell(s) zeroized. nothing persists.");
+        println!(
+            "exit is total amnesia: {held} page(s) zeroized — ledger included. nothing persists."
+        );
     }
 }
 
 fn help() {
     println!(
         "\
-  paste <text>     stage text (secret-shaped content arrives masked)
-  image            stage a pretend screenshot
-  ls               the panel: ring, kind, recognition line, TTL label
-  tick <2h|30m|5s> advance the clock; due cells expire silently
-  ttl <n>          click cell n's TTL label: next rung, clock reset
-  copy <n>         copy cell n back out (marked concealed + transient)
-  clear            clear-after-copy: only if the clipboard is still ours
-  peek <n>         reveal cell n (the Space overlay; deliberate, logged)
-  promote <n>      dry-run the v3 conceal request — nothing is sent
-  send <n>         the real thing: a live POST to {DEMO_SERVER}
-                   (guest route, or authenticated if `login` was used)
-                   — link lands on the clipboard, only the receipt id
-                   is retained
-  login <key> <secret>  store API credentials (Keychain on macOS)
-  logout                remove stored credentials
-  discard <n>      discard now (zeroized immediately)
+  new                a new page, default rung (⌥⌘N)
+  go <n>             jump to page n in tab order (⌘n)
+  tabs               the tab strip and the current page
+  ink <text>         type a line of visible ink onto the page
+  seal <text>        the ⌘↩ gesture: seal text into an opaque chip
+  put <text>         put text on the demo clipboard (another app's copy)
+  paste-seal         the ⇧⌘V gesture: seal whatever the clipboard holds
+  image              seal a pretend screenshot (metadata-only chip)
+  rm-chip <n>        ⌫ on chip n: removes it whole, bytes zeroized
+  copy <n>           copy chip n back out (marked concealed + transient)
+  clear              clear-after-copy: only if the clipboard is still ours
+  rung               click the countdown label: next rung, clock reset
+  pause              double-click the tab: hold 1h, then top-up to 24h
+  close              close the page; it rests in the ledger
+  ledger             ⌘0 — dead pages, dimmed ink, chips zeroized
+  tick <2h|30m|5s>   advance the clock; due pages expire silently
+  promote <n|page>   dry-run the v3 conceal request — nothing is sent
+  send <n|page>      the real thing: a live POST to {DEMO_SERVER}
+                     (guest route, or authenticated after `login`)
+  login <key> <secret>   store API credentials (Keychain on macOS)
+  logout                 remove stored credentials
   quit"
     );
 }
 
-fn nth(store: &CellStore<ManualClock>, arg: &str) -> Option<companion_core::CellId> {
-    let n: usize = arg.trim().parse().ok()?;
-    store.cells().nth(n.checked_sub(1)?).map(Cell::id)
+/// The current page, fixed up first if it expired out from under the
+/// prompt. `None` (with a nudge) when no pages exist.
+fn page(current: &mut Option<SheetId>, store: &SheetStore<ManualClock>) -> Option<SheetId> {
+    if current.and_then(|id| store.sheet(id)).is_none() {
+        *current = store.sheets().next().map(Sheet::id);
+    }
+    if current.is_none() {
+        println!("no page — `new` makes one");
+    }
+    *current
 }
 
-fn paste(store: &mut CellStore<ManualClock>, text: &str) {
+fn nth_sheet(store: &SheetStore<ManualClock>, arg: &str) -> Option<SheetId> {
+    let n: usize = arg.trim().parse().ok()?;
+    store.sheets().nth(n.checked_sub(1)?).map(Sheet::id)
+}
+
+fn nth_chip(store: &SheetStore<ManualClock>, page: SheetId, arg: &str) -> Option<u64> {
+    let n: usize = arg.trim().parse().ok()?;
+    store
+        .sheet(page)?
+        .chips()
+        .nth(n.checked_sub(1)?)
+        .map(|c| c.id().raw())
+}
+
+fn ink(store: &mut SheetStore<ManualClock>, page: SheetId, text: &str) {
     if text.is_empty() {
-        println!("usage: paste <text>");
+        println!("usage: ink <text>");
         return;
     }
-    match store.stage_text(text, None) {
-        Ok(id) => {
-            let cell = store.get(id).expect("just staged");
-            match cell.detected_as() {
-                Some(shape) => println!(
-                    "staged, masked — looks like a {shape}. expires in {}.",
-                    cell.ttl_label(store.now())
-                ),
-                None => println!("staged. expires in {}.", cell.ttl_label(store.now())),
-            }
+    let mut segments: Vec<Segment> = store
+        .sheet(page)
+        .map(|s| s.segments().to_vec())
+        .unwrap_or_default();
+    segments.push(Segment::Ink(format!("{text}\n")));
+    if store.sync_document(page, segments) {
+        println!("ink. (you see it; it was never sealed.)");
+    }
+}
+
+fn seal(store: &mut SheetStore<ManualClock>, page: SheetId, text: &str) {
+    if text.is_empty() {
+        println!("usage: seal <text>");
+        return;
+    }
+    match store.seal_text(page, text) {
+        Ok(chip) => {
+            let mut segments: Vec<Segment> = store
+                .sheet(page)
+                .map(|s| s.segments().to_vec())
+                .unwrap_or_default();
+            segments.push(Segment::Chip(chip));
+            store.sync_document(page, segments);
+            let sheet = store.sheet(page).expect("just sealed");
+            let sealed = sheet.chip(chip).expect("just sealed");
+            println!(
+                "sealed: [ {} · {} ] — bytes core-side, never rendered again.",
+                sealed.excerpt(),
+                sealed.size_label()
+            );
         }
         Err(e) => println!("refused: {e}"),
     }
 }
 
-fn image(store: &mut CellStore<ManualClock>) {
-    // A pretend 212 KB screenshot, the visual-board example.
-    match store.stage_image(vec![0x89; 212 * 1024], None) {
-        Ok(_) => println!("staged. the cell appearing is the receipt."),
+fn put(pb: &mut MemoryPasteboard, text: &str) {
+    if text.is_empty() {
+        println!("usage: put <text>");
+        return;
+    }
+    pb.put_external(
+        companion_pasteboard::PasteboardContent::Text(text.to_string()),
+        false,
+    );
+    println!("on the demo clipboard, as another app would leave it.");
+}
+
+fn paste_seal(store: &mut SheetStore<ManualClock>, pb: &mut MemoryPasteboard, page: SheetId) {
+    // The ⇧⌘V route: the core reads the board itself; consent is the
+    // gesture, and what arrives is never parsed or classified.
+    let Some(item) = pb.read() else {
+        println!("the clipboard is empty");
+        return;
+    };
+    let sealed = match item.content {
+        companion_pasteboard::PasteboardContent::Text(text) => store.seal_text(page, &text),
+        companion_pasteboard::PasteboardContent::Image(bytes) => store.seal_image(page, bytes),
+    };
+    match sealed {
+        Ok(chip) => {
+            let mut segments: Vec<Segment> = store
+                .sheet(page)
+                .map(|s| s.segments().to_vec())
+                .unwrap_or_default();
+            segments.push(Segment::Chip(chip));
+            store.sync_document(page, segments);
+            let sheet = store.sheet(page).expect("page exists");
+            let sealed = sheet.chip(chip).expect("just sealed");
+            println!(
+                "sealed from the clipboard: [ {} · {} ]",
+                sealed.excerpt(),
+                sealed.size_label()
+            );
+        }
         Err(e) => println!("refused: {e}"),
     }
 }
 
-fn render(store: &CellStore<ManualClock>) {
+fn image(store: &mut SheetStore<ManualClock>, page: SheetId) {
+    // A pretend 212 KB screenshot with a PNG header — the face shows
+    // metadata only, read without opening the contents.
+    let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    bytes.resize(212 * 1024, 0);
+    match store.seal_image(page, bytes) {
+        Ok(chip) => {
+            let mut segments: Vec<Segment> = store
+                .sheet(page)
+                .map(|s| s.segments().to_vec())
+                .unwrap_or_default();
+            segments.push(Segment::Chip(chip));
+            store.sync_document(page, segments);
+            println!("sealed. the chip shows kind and size, nothing else.");
+        }
+        Err(e) => println!("refused: {e}"),
+    }
+}
+
+fn rm_chip(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
+    match nth_chip(store, page, arg) {
+        Some(raw) => {
+            store.delete_chip(companion_core::ChipId::from_raw(raw));
+            println!("gone whole; bytes zeroized. undo never un-seals.");
+        }
+        None => println!("no such chip"),
+    }
+}
+
+fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
     if store.is_empty() {
-        println!("(empty — the system working, not the product failing)");
+        println!("(no pages — the system working, not the product failing)");
         return;
     }
     let now = store.now();
-    println!("  #  ring       kind  cell");
-    for (i, cell) in store.cells().enumerate() {
-        let f = cell.fraction_remaining(now);
-        let ring = ring_glyph(f);
-        let kind = match (cell.concealed(), cell.kind()) {
-            (true, _) => "⚿ ",
-            (false, CellKind::Text) => "Aa",
-            (false, CellKind::Image) => "▣ ",
+    // The tab strip, Excel-anchored in spirit.
+    let mut strip = String::new();
+    for (i, sheet) in store.sheets().enumerate() {
+        let marker = if Some(sheet.id()) == current {
+            "▸"
+        } else {
+            " "
         };
-        let urgency = match cell.state(now) {
-            LifecycleState::LastHour => " ⚠ last hour",
-            _ => "",
-        };
-        let promoted = cell
-            .promotion()
-            .map(|p| format!(" ↗ receipt {}", p.receipt_id))
-            .unwrap_or_default();
+        let held = if sheet.is_held(now) { "⏸ " } else { "" };
+        strip.push_str(&format!("[{marker}{} {held}{}]", i + 1, sheet.title()));
+    }
+    strip.push_str(&format!("[◌ {}]", store.ledger().count()));
+    println!("{strip}");
+
+    let Some(sheet) = current.and_then(|id| store.sheet(id)) else {
+        return;
+    };
+    let held = if sheet.is_held(now) {
+        format!(
+            " · held, lapses in {}",
+            companion_core::ttl::human_remaining(sheet.hold_remaining(now))
+        )
+    } else {
+        String::new()
+    };
+    println!(
+        "┌ {} ── {} of {}{held} ┐",
+        sheet.title(),
+        sheet.remaining_label(now),
+        sheet.rung()
+    );
+    let mut chip_no = 0;
+    for segment in sheet.segments() {
+        match segment {
+            Segment::Ink(text) => {
+                for line in text.lines() {
+                    println!("│ {line}");
+                }
+            }
+            Segment::Chip(chip_id) => {
+                if let Some(chip) = sheet.chip(*chip_id) {
+                    chip_no += 1;
+                    let promoted = chip
+                        .promotion()
+                        .map(|p| format!(" ↗ receipt {}", p.receipt_id))
+                        .unwrap_or_default();
+                    println!(
+                        "│ {chip_no}· [ {} · {} ]{promoted}",
+                        chip.excerpt(),
+                        chip.size_label()
+                    );
+                }
+            }
+        }
+    }
+    let gauge = gauge_glyphs(sheet.fraction_remaining(now), sheet.last_hour(now));
+    println!("└ {gauge} ┘");
+}
+
+fn gauge_glyphs(fraction: f32, last_hour: bool) -> String {
+    const WIDTH: usize = 24;
+    let filled = ((fraction * WIDTH as f32).round() as usize).min(WIDTH);
+    let fill = if last_hour { '▚' } else { '█' };
+    let mut g: String = std::iter::repeat_n(fill, filled).collect();
+    g.extend(std::iter::repeat_n('░', WIDTH - filled));
+    if last_hour {
+        g.push_str(" ⚠ last hour");
+    }
+    g
+}
+
+fn copy_out(
+    store: &mut SheetStore<ManualClock>,
+    pb: &mut MemoryPasteboard,
+    page: SheetId,
+    arg: &str,
+) {
+    let Some(raw) = nth_chip(store, page, arg) else {
+        println!("no such chip");
+        return;
+    };
+    let id = companion_core::ChipId::from_raw(raw);
+    let Some((bytes, meta)) = store.copy_out_chip(id) else {
+        return;
+    };
+    let kind = match meta {
+        companion_core::ChipMeta::Text { .. } => ContentKind::Text,
+        companion_core::ChipMeta::Image { .. } => ContentKind::Image,
+    };
+    // Chips are sealed by definition: outbound copies always carry the
+    // concealed mark (and the transient mark, as every write does).
+    pb.write(bytes, kind, WriteOptions { concealed: true });
+    println!(
+        "on the clipboard, marked transient + concealed (clipboard managers will skip it). \
+         the chip stays — multi-paste away."
+    );
+}
+
+fn clear(pb: &mut MemoryPasteboard) {
+    let count = pb.change_count();
+    if pb.clear_if_unchanged(count) {
+        println!("clipboard cleared (it still held our write).");
+    } else {
+        println!("left alone — the clipboard changed since our copy.");
+    }
+}
+
+fn cycle_rung(store: &mut SheetStore<ManualClock>, page: SheetId) {
+    match store.cycle_rung(page) {
+        Some(rung) => println!("clock reset: {rung} from now"),
+        None => println!("no such page"),
+    }
+}
+
+fn pause(store: &mut SheetStore<ManualClock>, page: SheetId) {
+    if store.pause_press(page) {
+        let now = store.now();
+        let sheet = store.sheet(page).expect("just paused");
         println!(
-            "  {}  {ring} {:>3.0}%  {kind}   {:<44} [{}]{urgency}{promoted}",
-            i + 1,
-            f * 100.0,
-            cell.recognition_line(),
-            cell.ttl_label(now),
+            "held — lapses in {}. the clock is frozen; the rung is not extended.",
+            companion_core::ttl::human_remaining(sheet.hold_remaining(now))
         );
+    } else {
+        println!("nothing to hold");
     }
 }
 
-fn ring_glyph(fraction: f32) -> char {
-    match (fraction * 8.0).round() as u32 {
-        8 => '●',
-        6 | 7 => '◕',
-        4 | 5 => '◑',
-        2 | 3 => '◔',
-        _ => '○',
+fn ledger(store: &SheetStore<ManualClock>) {
+    let mut any = false;
+    for record in store.ledger() {
+        any = true;
+        let cause = match record.cause() {
+            Cause::Expired => "expired",
+            Cause::Closed => "closed",
+        };
+        println!("◌ {} ({cause})", record.title());
+        for segment in record.segments() {
+            match segment {
+                LedgerSegment::Ink(text) => {
+                    for line in text.lines() {
+                        println!("    {line}");
+                    }
+                }
+                LedgerSegment::Tombstone { excerpt } => {
+                    println!("    ~~[ {excerpt} ]~~ zeroized");
+                }
+            }
+        }
+    }
+    if !any {
+        println!("(the ledger is empty)");
     }
 }
 
-fn tick(store: &mut CellStore<ManualClock>, clock: &ManualClock, arg: &str) {
+fn tick(
+    store: &mut SheetStore<ManualClock>,
+    clock: &ManualClock,
+    arg: &str,
+    current: &mut Option<SheetId>,
+) {
     let Some(delta) = parse_duration(arg.trim()) else {
         println!("usage: tick <e.g. 2h, 45m, 30s, 1d>");
         return;
     };
     clock.advance(delta);
     let expired = store.expire_due();
-    // In the app expiry is silent — the cell is simply gone at next
-    // glance. The demo narrates for the observer's benefit.
+    // In the app expiry is silent — the page is simply gone at next
+    // glance, its ink resting in the ledger. The demo narrates for the
+    // observer's benefit.
     if !expired.is_empty() {
         println!(
-            "(+{arg}) {} cell(s) reached their deadline: removed, buffers zeroized.",
+            "(+{arg}) {} page(s) reached zero: sealed bytes zeroized, ink to the ledger.",
             expired.len()
         );
+        if current.and_then(|id| store.sheet(id)).is_none() {
+            *current = store.sheets().next().map(Sheet::id);
+        }
     } else {
         println!("(+{arg})");
     }
-    match store.next_deadline() {
-        Some(deadline) => println!(
+    match store.next_event() {
+        Some(at) => println!(
             "next armed timer: {} from now (the only timer there is)",
-            companion_core::ttl::human_remaining(deadline - store.now())
+            companion_core::ttl::human_remaining(at - store.now())
         ),
         None => println!("no timers armed — idle CPU is 0% by construction"),
     }
@@ -217,78 +527,54 @@ fn parse_duration(arg: &str) -> Option<Duration> {
     Some(Duration::from_secs(secs))
 }
 
-fn cycle_ttl(store: &mut CellStore<ManualClock>, arg: &str) {
-    match nth(store, arg).and_then(|id| store.cycle_ttl(id)) {
-        Some(rung) => println!("clock reset: {rung} from now"),
-        None => println!("no such cell"),
-    }
-}
-
-fn copy_out(store: &mut CellStore<ManualClock>, pb: &mut MemoryPasteboard, arg: &str) {
-    let Some(id) = nth(store, arg) else {
-        println!("no such cell");
-        return;
-    };
-    let cell = store.get(id).expect("id from nth");
-    let kind = match cell.kind() {
-        CellKind::Text => ContentKind::Text,
-        CellKind::Image => ContentKind::Image,
-    };
-    let concealed = cell.concealed();
-    let bytes = store.copy_out(id).expect("id from nth");
-    pb.write(bytes, kind, WriteOptions { concealed });
-    println!(
-        "on the clipboard, marked transient{}. the cell keeps draining — multi-paste away.",
-        if concealed {
-            " + concealed (clipboard managers will skip it)"
-        } else {
-            ""
+/// Resolve `promote <n|page>` / `send <n|page>` into a payload without
+/// letting the demo hold plaintext longer than the call.
+fn payload_for(
+    store: &SheetStore<ManualClock>,
+    page: SheetId,
+    arg: &str,
+) -> Option<zeroize::Zeroizing<String>> {
+    if arg.trim() == "page" {
+        match store.sheet_payload(page) {
+            Ok(payload) => Some(payload),
+            Err(e) => {
+                println!("refused: {e}");
+                None
+            }
         }
-    );
-}
-
-fn clear(pb: &mut MemoryPasteboard) {
-    let count = pb.change_count();
-    if pb.clear_if_unchanged(count) {
-        println!("clipboard cleared (it still held our write).");
     } else {
-        println!("left alone — the clipboard changed since our copy.");
+        let raw = nth_chip(store, page, arg)?;
+        let bytes = store.chip_payload(companion_core::ChipId::from_raw(raw))?;
+        match std::str::from_utf8(&bytes) {
+            Ok(text) => Some(zeroize::Zeroizing::new(text.to_string())),
+            Err(_) => {
+                println!("v1 promotes text; the v3 conceal payload is text-shaped");
+                None
+            }
+        }
     }
 }
 
-fn peek(store: &CellStore<ManualClock>, arg: &str) {
-    match nth(store, arg).and_then(|id| store.get(id)) {
-        Some(cell) => match cell.content().as_text() {
-            Some(text) => println!("┃ {text}"),
-            None => println!("┃ image · {} bytes", cell.content().len()),
-        },
-        None => println!("no such cell"),
-    }
-}
-
-fn promote(store: &mut CellStore<ManualClock>, arg: &str) {
-    let Some(id) = nth(store, arg) else {
-        println!("no such cell");
-        return;
-    };
+fn promote(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
     let now = store.now();
-    let cell = store.get(id).expect("id from nth");
-    let Some(text) = cell.content().as_text() else {
-        println!("v1 promotes text; the v3 conceal payload is text-shaped (open question №6)");
+    let Some(text) = payload_for(store, page, arg) else {
+        if !arg.trim().is_empty() && arg.trim() != "page" && nth_chip(store, page, arg).is_none() {
+            println!("usage: promote <chip #|page>");
+        }
         return;
     };
-    let remaining = cell.remaining(now).as_secs();
+    let remaining = store.sheet(page).map_or(0, |s| s.remaining(now).as_secs());
     let snapped = snap_ttl(remaining, ALLOWED_TTLS).expect("non-empty ladder");
     let chars = text.chars().count();
 
     // Build the real request through the real client — then don't send it.
     let api = Api::new(DEMO_SERVER, Box::new(NoAuth));
-    let payload = ConcealPayload::new(text, "eu.onetimesecret.com").with_ttl(snapped);
+    let payload = ConcealPayload::new(text.as_str(), "eu.onetimesecret.com").with_ttl(snapped);
     let request = api
         .guest_conceal_request(&payload)
         .expect("payload serializes");
 
-    println!("── promotion, frame 2 of 3 · DRY RUN — nothing leaves this machine ──");
+    println!("── promotion · DRY RUN — nothing leaves this machine ──");
     println!("   {} {}", request.method, request.url);
     for (name, value) in &request.headers {
         println!("   {name}: {value}");
@@ -298,34 +584,32 @@ fn promote(store: &mut CellStore<ManualClock>, arg: &str) {
         "•".repeat(chars.min(12))
     );
     println!(
-        "   ttl: {} remaining → {} (snapped down; never outlives intent)",
+        "   ttl: {} remaining on the page → {} (snapped down; never outlives intent)",
         companion_core::ttl::human_remaining(Duration::from_secs(remaining)),
         companion_core::ttl::human_remaining(Duration::from_secs(snapped)),
     );
-    store.mark_promoted(id, "dry-run".into());
-    println!("   cell marked promoted; in the app: link on clipboard, offer to burn local copy.");
+    if let Some(raw) = nth_chip(store, page, arg) {
+        store.mark_chip_promoted(companion_core::ChipId::from_raw(raw), "dry-run".into());
+        println!(
+            "   chip marked promoted; in the app: link on clipboard, offer to burn local copy."
+        );
+    }
 }
 
 /// `send`'s live counterpart to `promote`'s dry run: a real POST through
 /// the real transport (`companion-transport`), authenticated from
 /// Keychain-or-dev-store credentials when `login` has set them,
 /// otherwise the guest route. Only the receipt id is retained on the
-/// cell; the share link lands on the clipboard, not in any local
-/// history (docs/spec/05).
-fn send(store: &mut CellStore<ManualClock>, arg: &str) {
-    let Some(id) = nth(store, arg) else {
-        println!("no such cell");
-        return;
-    };
+/// chip; the share link lands on the clipboard, not in any local
+/// history (docs/spec/05). Sealed bytes travel core → client directly.
+fn send(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
     let now = store.now();
-    let cell = store.get(id).expect("id from nth");
-    let Some(text) = cell.content().as_text() else {
-        println!("v1 promotes text; the v3 conceal payload is text-shaped (open question №6)");
+    let Some(text) = payload_for(store, page, arg) else {
         return;
     };
-    let remaining = cell.remaining(now).as_secs();
+    let remaining = store.sheet(page).map_or(0, |s| s.remaining(now).as_secs());
     let snapped = snap_ttl(remaining, ALLOWED_TTLS).expect("non-empty ladder");
-    let payload = ConcealPayload::new(text, "eu.onetimesecret.com").with_ttl(snapped);
+    let payload = ConcealPayload::new(text.as_str(), "eu.onetimesecret.com").with_ttl(snapped);
     let transport = UreqTransport::new();
     let creds = default_credential_store();
     let stored = creds
@@ -333,7 +617,7 @@ fn send(store: &mut CellStore<ManualClock>, arg: &str) {
         .ok()
         .zip(creds.load(CRED_ACCOUNT_SECRET).ok());
 
-    println!("── promotion, frame 2 of 3 · LIVE — POSTing to {DEMO_SERVER} ──");
+    println!("── promotion · LIVE — POSTing to {DEMO_SERVER} ──");
     let result = if let Some((key, secret)) = stored {
         let auth = BasicAuth::new(
             String::from_utf8_lossy(&key).into_owned(),
@@ -352,7 +636,9 @@ fn send(store: &mut CellStore<ManualClock>, arg: &str) {
             let link = share_link(DEMO_SERVER, &data);
             let receipt = data.receipt.identifier.clone();
             land_link_on_clipboard(&link);
-            store.mark_promoted(id, receipt.clone());
+            if let Some(raw) = nth_chip(store, page, arg) {
+                store.mark_chip_promoted(companion_core::ChipId::from_raw(raw), receipt.clone());
+            }
             println!("   {link}");
             println!("   on the clipboard. only the receipt id ({receipt}) is retained.");
         }
@@ -405,11 +691,4 @@ fn logout() {
     let _ = creds.delete(CRED_ACCOUNT_KEY);
     let _ = creds.delete(CRED_ACCOUNT_SECRET);
     println!("credentials removed. `send` will use the guest route.");
-}
-
-fn discard(store: &mut CellStore<ManualClock>, arg: &str) {
-    match nth(store, arg).map(|id| store.discard(id)) {
-        Some(true) => println!("gone. buffer zeroized on the way down."),
-        _ => println!("no such cell"),
-    }
 }
