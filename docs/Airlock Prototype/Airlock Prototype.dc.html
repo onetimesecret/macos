@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/colors_and_type.css">
+  <script src="_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/_ds_bundle.js"></script>
+  <style>
+    body { margin: 0; background: #F6F3EE; }
+    a { color: #D45A2A; text-decoration: none; }
+    a:hover { color: #A8431C; text-decoration: underline; }
+    [data-ed] { outline: none; }
+    [data-ed]::selection, [data-ed] *::selection { background: rgba(212,90,42,.22); }
+    [data-ed] [data-acts] { display: none; }
+    [data-ed] [data-chip]:hover [data-acts] { display: inline-flex; }
+    [data-ed] [data-chip]:hover { background: #EFE9E1 !important; border-color: rgba(62,52,40,.30) !important; }
+    [data-tab] [data-x] { display: none !important; }
+    [data-tab]:hover [data-x] { display: inline !important; }
+    @keyframes ol-pop { from { opacity: 0; transform: translate(-50%, 5px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  </style>
+</helmet>
+
+<section data-screen-label="prototype — the window round" style="padding:44px 48px 72px;display:flex;flex-direction:column;gap:26px;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif;color:#3E3831">
+
+  <!-- ============ INTRO ============ -->
+  <div style="max-width:880px;display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="background:#3E3831;color:#F6F3EE;font:600 10px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px;letter-spacing:.08em">PROTO</span>
+      <h1 style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em">the sheet, live — the window round</h1>
+    </div>
+    <p style="margin:0;font-size:13px;line-height:1.55;color:#5C554B;text-wrap:pretty">The panel grew up into a window: drag it by the title bar, resize it by any edge, double-click the title to stretch it tall. Page tabs moved to the bottom edge, Excel-style — <strong>⌘1–9</strong> jumps, <strong>⌥⌘←/→</strong> steps, drag to reorder, double-click a tab to pause its clock (1h, then 24h, then top-up). <strong>⌘0</strong> opens the ledger — a permanent dashed tab where expired and closed pages rest as dimmed ink. Sealed paste rekeyed to <strong>⇧⌘V</strong> (⌥⌘V is taken by the OS); sealing anything already on the page is now <strong>⌘↩</strong> — the selection, or the current line. And the page reads markdown: <code style="font:11px ui-monospace,'SF Mono',Menlo,monospace;background:#EFE9E1;padding:1px 5px;border-radius:4px">### heading</code> renders like one without ever hiding the markup. The rules are written down in the <a href="Airlock Spec.dc.html">interaction-model spec, revision C</a>.</p>
+    <p style="margin:0;font:11px/1.7 ui-monospace,'SF Mono',Menlo,monospace;color:#98917F">constants: sealed chips are excerpts + counts, never revealable · hover → actions, never content · one countdown per sheet · ladder 1h→3h→8h→24h→3d→7d, default 8h · capture exclusion is a setting, not a caption · expiry is silent — the ledger holds ink only, sealed bytes stay zeroized</p>
+  </div>
+
+  <!-- ============ THE PROTOTYPE ============ -->
+  <div data-screen-label="the desktop" style="display:flex;flex-direction:column;gap:10px">
+    <div data-artboard="true" style="width:960px;height:620px;border-radius:14px;overflow:hidden;position:relative;background:linear-gradient(168deg,#B7AFA4 0%,#9C948A 48%,#837B72 100%);border:1px solid rgba(62,52,40,.14);box-shadow:0 12px 32px rgba(50,40,30,.16)">
+
+      <!-- menu bar -->
+      <div style="height:26px;display:flex;align-items:center;gap:13px;padding:0 12px;background:#F5F3F0;border-bottom:1px solid rgba(62,52,40,.10);font-size:11.5px;color:#3E3831;position:relative;z-index:3">
+        <span style="font-size:12px"></span>
+        <sc-if value="{{ focused }}" hint-placeholder-val="{{ false }}">
+          <span style="font-weight:700">Airlock</span><span>Edit</span>
+        </sc-if>
+        <sc-if value="{{ notFocused }}" hint-placeholder-val="{{ true }}">
+          <span style="font-weight:700">Finder</span><span>File</span><span>Edit</span><span>View</span><span>Go</span>
+        </sc-if>
+        <span style="flex:1"></span>
+        <span onClick="{{ togglePanel }}" title="Airlock — click to toggle the panel (⌥Space)" style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:20px;border-radius:5px;cursor:pointer">
+          <span style="display:inline-flex;width:24px;height:20px;align-items:center;justify-content:center;border-radius:5px"><span style="display:inline-flex"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="#3E3831" stroke-width="1.4" stroke-dasharray="26 6.7" transform="rotate(-25 8 8)"></circle><circle cx="8" cy="8" r="1.7" fill="#3E3831"></circle></svg></span></span>
+        </span>
+        <span style="font-variant-numeric:tabular-nums">{{ clockText }}</span>
+      </div>
+
+      <!-- hint when panel hidden -->
+      <sc-if value="{{ panelClosed }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;left:16px;bottom:12px;font:10px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:rgba(246,243,238,.75)">panel dismissed — ⌥Space or click the ring · sheets keep draining while hidden</div>
+      </sc-if>
+
+      <!-- the window -->
+      <div ref="{{ panelRef }}" style="{{ winStyle }}">
+
+        <!-- title bar: drag to move, double-click to stretch -->
+        <div onMouseDown="{{ dragMove }}" onDoubleClick="{{ titleDbl }}" title="drag to move · double-click to stretch vertically" style="display:flex;align-items:center;gap:8px;padding:10px 12px 7px;cursor:default;-webkit-user-select:none;user-select:none">
+          <span style="font-size:12px;font-weight:600;color:#4A443C">Airlock</span>
+          <span style="flex:1"></span>
+          <sc-if value="{{ focused }}" hint-placeholder-val="{{ false }}">
+            <span style="font:10px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#B0A896">esc returns</span>
+          </sc-if>
+          <span data-nodrag="true" onClick="{{ cycleTtl }}" title="one countdown for the whole page — click to cycle 1h→3h→8h→24h→3d→7d (resets the clock)" style="cursor:pointer;font:700 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace"><span style="{{ ttlColor }}">{{ ttlLabel }}</span></span>
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.6 1.2l3.2 3.2-2 .5-1.5 1.5-.4 2.8-1.9-1.9-2.6 2.6-.4-.4 2.6-2.6-1.9-1.9 2.8-.4L7.1 3.2z" fill="#A39A8C"></path></svg>
+        </div>
+
+        <!-- content area -->
+        <div style="flex:1;display:flex;flex-direction:column;min-height:0;margin:0 10px;position:relative">
+
+          <!-- the page (always mounted; hidden while the ledger shows) -->
+          <div style="{{ pageDyn }}">
+            <div ref="{{ edRef }}" data-ed="true" spellcheck="false" aria-label="the page — type, paste, or drop" style="flex:1;min-height:0;overflow:auto;padding:10px 12px 12px;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;line-height:1.7;color:#3F3A33;white-space:pre-wrap;word-break:break-word;cursor:text;caret-color:#3F3A33"></div>
+            <sc-if value="{{ notEmpty }}" hint-placeholder-val="{{ false }}">
+              <div style="height:3px;background:rgba(62,52,40,.07)"><div style="{{ gaugeFill }}"></div></div>
+            </sc-if>
+          </div>
+
+          <!-- the ledger -->
+          <sc-if value="{{ viewExpired }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1;min-height:0;overflow:auto;border:1px dashed rgba(62,52,40,.28);border-radius:8px;padding:11px 13px;display:flex;flex-direction:column;gap:13px;background:rgba(247,245,242,.55)">
+              <div style="font:10px/1.5 ui-monospace,'SF Mono',Menlo,monospace;color:#98917F">the ledger — pages that expired or were closed · ink only, dimmed · sealed content stays zeroized · clears when the app quits</div>
+              <sc-if value="{{ graveEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:12px;color:#B0A896;padding:14px 0">nothing here yet</div>
+              </sc-if>
+              <sc-for list="{{ grave }}" as="g" hint-placeholder-count="1">
+                <div style="display:flex;flex-direction:column;gap:3px;opacity:.55;border-bottom:1px dashed rgba(62,52,40,.15);padding-bottom:11px">
+                  <div style="display:flex;align-items:baseline;gap:9px">
+                    <span style="font:700 11px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#3F3A33">{{ g.name }}</span>
+                    <span style="font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#98917F">{{ g.meta }}</span>
+                  </div>
+                  <div style="font:11px/1.65 ui-monospace,'SF Mono',Menlo,monospace;color:#8A8276;white-space:pre-wrap;word-break:break-word">{{ g.body }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- empty-state overlay -->
+          <sc-if value="{{ emptyOverlay }}" hint-placeholder-val="{{ true }}">
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;pointer-events:none;padding:0 14px">
+              <span style="font-size:12.5px;color:#5C554B">Drop, paste, or click in and type.</span>
+              <span style="font:10px/1.7 ui-monospace,'SF Mono',Menlo,monospace;color:#B0A896">⌘V lands visible · ⇧⌘V lands sealed · ⌘↩ seals a line · everything here expires together</span>
+            </div>
+          </sc-if>
+        </div>
+
+        <!-- footer / promote confirm -->
+        <sc-if value="{{ footerSheet }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;align-items:center;padding:7px 12px 6px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#A39A8C">
+            <span style="flex:1"></span>
+            <span onClick="{{ promoteOpen }}" style="color:#B4552E;cursor:pointer">↗&nbsp;page</span>
+          </div>
+        </sc-if>
+        <sc-if value="{{ promoting }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:10px;padding:7px 12px 6px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#6F695F">
+            <span>one link for the whole page · expires with it — {{ ttlLabel }}</span>
+            <span style="flex:1"></span>
+            <span onClick="{{ promoteCancel }}" style="color:#A39A8C;cursor:pointer">cancel</span>
+            <span onClick="{{ promoteCreate }}" style="color:#B4552E;cursor:pointer;font-weight:700">create link</span>
+          </div>
+        </sc-if>
+        <sc-if value="{{ footerLedger }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;padding:7px 12px 6px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#A39A8C">
+            <span>esc or any ⌘number returns to the pages</span>
+            <span style="flex:1"></span>
+          </div>
+        </sc-if>
+
+        <!-- bottom tab strip, Excel-anchored -->
+        <div ref="{{ stripRef }}" style="display:flex;align-items:center;gap:3px;padding:0 10px 8px;-webkit-user-select:none;user-select:none">
+          <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="1">
+            <div data-tab="true" onMouseDown="{{ t.down }}" onDoubleClick="{{ t.pause }}" title="{{ t.tip }}" style="{{ t.tabStyle }}">
+              <div style="height:2px;background:rgba(62,52,40,.07)"><div style="{{ t.fillStyle }}"></div></div>
+              <div style="display:flex;align-items:center;gap:5px;padding:4px 9px 5px;min-width:0">
+                <span style="{{ t.labelStyle }}">{{ t.label }}</span>
+                <span data-x="true" onClick="{{ t.close }}" title="close page — it rests in the ledger" style="font-size:9px;color:#98917F;cursor:pointer;line-height:1;flex:none">✕</span>
+              </div>
+            </div>
+          </sc-for>
+          <span onClick="{{ newSheet }}" title="new page (⌥⌘N) — fresh 8h" style="padding:2px 6px;font:12px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#B0A896;cursor:pointer">+</span>
+          <span style="flex:1"></span>
+          <div onClick="{{ openExpired }}" title="the ledger — expired &amp; closed pages (⌘0)" style="{{ graveTabStyle }}"><span style="font-size:11px">◌</span><span>{{ graveCount }}</span></div>
+        </div>
+
+        <!-- resize handles -->
+        <div onMouseDown="{{ rsE }}" style="position:absolute;top:10px;right:-3px;bottom:10px;width:7px;cursor:ew-resize"></div>
+        <div onMouseDown="{{ rsW }}" style="position:absolute;top:10px;left:-3px;bottom:10px;width:7px;cursor:ew-resize"></div>
+        <div onMouseDown="{{ rsS }}" style="position:absolute;left:10px;right:10px;bottom:-3px;height:7px;cursor:ns-resize"></div>
+        <div onMouseDown="{{ rsSE }}" style="position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;cursor:nwse-resize"></div>
+
+        <!-- seal-selection pill -->
+        <sc-if value="{{ sealPos }}" hint-placeholder-val="{{ false }}">
+          <div style="{{ sealPosStyle }}">
+            <span onMouseDown="{{ sealNow }}" style="display:inline-flex;align-items:baseline;gap:6px;transform:translateX(-50%);background:rgba(62,52,40,.92);color:#F6F3EE;border-radius:6px;padding:5px 9px;font:10px/1 ui-monospace,'SF Mono',Menlo,monospace;cursor:pointer;box-shadow:0 6px 16px rgba(40,32,24,.30);white-space:nowrap">seal<span style="opacity:.55">⌘↩</span></span>
+          </div>
+        </sc-if>
+
+        <!-- toast -->
+        <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;left:50%;bottom:44px;transform:translateX(-50%);background:rgba(62,52,40,.92);color:#F6F3EE;border-radius:14px;padding:7px 13px;font:10px/1.5 ui-monospace,'SF Mono',Menlo,monospace;box-shadow:0 8px 20px rgba(40,32,24,.30);animation:ol-pop .18s ease-out both;pointer-events:none;max-width:290px;text-align:center;text-wrap:pretty;z-index:6">{{ toast }}</div>
+        </sc-if>
+
+      </div>
+    </div>
+
+    <!-- legend -->
+    <p style="margin:0;max-width:960px;font:11px/1.8 ui-monospace,'SF Mono',Menlo,monospace;color:#8A8276">⌘V paste visible · ⇧⌘V paste sealed · ⌘↩ seals the selection, or the current line · drop onto the page = sealed · click the countdown to cycle the ladder · ⌘1–9 jump to a page · ⌘0 the ledger · ⌥⌘←/→ step pages · drag tabs to reorder · double-click a tab to pause its clock — 1h, again 24h, again tops up · double-click the title bar to stretch · drag any edge to resize · ⌥⌘N new page · ⌥Space summons or dismisses · esc hands the keyboard back</p>
+    <p style="margin:0;max-width:960px;font:10px/1.7 ui-monospace,'SF Mono',Menlo,monospace;color:#98917F">simulated here: capture exclusion, clipboard concealment flags, core-side zeroization · the DOM holds only excerpts — full content stays out of the page · markdown styles the line without touching the bytes; the markup never disappears · your browser may reserve ⌘1–9/⌘0 for its own tabs — ⌃1–9/⌃0 does the same thing here · if ⇧⌘V is blocked by clipboard permissions, paste visible then ⌘↩, or drop text onto the page · two demo sheets and one dead page are pre-staged; the front page starts empty because empty is the resting state</p>
+  </div>
+
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;clockSpeed&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;real time&quot;,&quot;60× demo&quot;,&quot;600× demo&quot;],&quot;default&quot;:&quot;60× demo&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Demo clock&quot;},&quot;markdown&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Rendering&quot;}}">
+class Component extends DCLogic {
+  state = {
+    focused: false, panelOpen: true, empty: true, promoting: false,
+    toast: null, sealPos: null, dropHover: false, rev: 0,
+    viewExpired: false,
+    win: { x: 596, y: 40, w: 352, h: 452 }
+  };
+
+  LADDER = [1, 3, 8, 24, 72, 168].map(h => h * 3600e3);
+  LADDER_NAMES = ['1h', '3h', '8h', '24h', '3d', '7d'];
+  DESK = { w: 960, h: 620, top: 30 };
+  MIN = { w: 300, h: 260 };
+
+  componentDidMount() {
+    this.edRef = this.edRef || React.createRef();
+    this.vault = new Map();
+    this.sheets = [];
+    this.grave = [];
+    this.activeId = null;
+    this.vNow = 0;
+    this.lastReal = performance.now();
+    this.seedSheets();
+
+    const ed = this.edRef.current;
+    if (ed) {
+      ed.contentEditable = 'true';
+      ed.addEventListener('paste', this.onPaste);
+      ed.addEventListener('input', this.afterEdit);
+      ed.addEventListener('focus', () => this.setState({ focused: true }));
+      ed.addEventListener('blur', () => this.setState({ focused: false }));
+      ed.addEventListener('keydown', this.onEdKey);
+      ed.addEventListener('mousedown', this.onEdMouseDown);
+      ed.addEventListener('click', this.onEdClick);
+      const pageWrap = ed.parentElement;
+      pageWrap.addEventListener('dragover', this.onDragOver);
+      pageWrap.addEventListener('dragleave', () => this.setState({ dropHover: false }));
+      pageWrap.addEventListener('drop', this.onDrop);
+    }
+    window.addEventListener('keydown', this.onWinKey);
+    document.addEventListener('selectionchange', this.onSelChange);
+    this.timer = setInterval(this.tick, 200);
+    this.afterEdit();
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+    window.removeEventListener('keydown', this.onWinKey);
+    document.removeEventListener('selectionchange', this.onSelChange);
+  }
+
+  // ---------- clock ----------
+  speed() {
+    const v = this.props.clockSpeed ?? '60× demo';
+    if (v.indexOf('600') === 0) return 600;
+    if (v.indexOf('60') === 0) return 60;
+    return 1;
+  }
+
+  tick = () => {
+    const real = performance.now();
+    const delta = (real - this.lastReal) * this.speed();
+    this.vNow += delta;
+    this.lastReal = real;
+    this.sheets.forEach(s => {
+      if (s.pauseUntil && s.pauseUntil > this.vNow) s.expiresAt += delta;
+      else if (s.pauseUntil) { s.pauseUntil = null; s.pauseStage = 0; }
+    });
+    const dead = this.sheets.filter(s => s.expiresAt <= this.vNow);
+    dead.forEach(s => this.destroySheet(s, 'expired'));
+    this.setState({ rev: this.state.rev + 1 });
+  };
+
+  fmt(ms) {
+    if (ms <= 0) return '0s';
+    const s = ms / 1000;
+    if (s < 60) return Math.ceil(s) + 's';
+    const m = s / 60;
+    if (m < 60) return Math.ceil(m) + 'm';
+    const h = m / 60;
+    if (h < 48) return Math.ceil(h) + 'h';
+    return Math.ceil(h / 24) + 'd';
+  }
+
+  // ---------- sheets ----------
+  mkSheet(ttlIdx) {
+    const total = this.LADDER[ttlIdx];
+    return { id: 's' + Math.random().toString(36).slice(2, 8), holder: document.createElement('div'),
+      ttlIdx, totalMs: total, expiresAt: this.vNow + total, name: 'untitled', pauseUntil: null, pauseStage: 0 };
+  }
+
+  active() { return this.sheets.find(s => s.id === this.activeId); }
+
+  seedSheets() {
+    const chip = (content) => {
+      const id = 'c' + Math.random().toString(36).slice(2, 8);
+      this.vault.set(id, { kind: 'text', content });
+      const e = this.excerptOf(content);
+      return this.chipHTML(id, e.disp, e.count);
+    };
+    const s1 = this.mkSheet(2); // fresh, empty, active
+    const s2 = this.mkSheet(2); // deploy — 8h rung, 6.8h left
+    s2.expiresAt = this.vNow + 6.8 * 3600e3;
+    s2.holder.innerHTML =
+      '### deploy friday\nin order —\n' + chip('ghp_4kQ9wXbGdEMOnlyTr2NblfVZa81uYcMe0H5jK') +
+      '\n\ndsn for the migration:\n' + chip('postgres://ops:S3cr3t-demo@db-3.internal:5432/prod') +
+      '\n\ncourier drop-off, typed so it stays visible:\n14 Rue de la Paix, 75002 Paris\n';
+    const s3 = this.mkSheet(0); // errands — 1h rung, 47m left
+    s3.expiresAt = this.vNow + 47 * 60e3;
+    s3.holder.innerHTML = '### errands\nwifi at the venue:\n' + chip('k9$-mVt4-qq7-w3f8') + '\n';
+    this.sheets = [s1, s2, s3];
+    this.activeId = s1.id;
+    this.sheets.forEach(s => { s.name = this.deriveName(s.holder); });
+    // one pre-dead page so the ledger has something to show
+    this.grave = [{ name: 'handover', reason: 'expired', diedAt: this.vNow - 2 * 3600e3,
+      body: 'ssh for the interim box:\n[st4g…ing-9 · 18 ch · zeroized]\n\nrunbook lives in the wiki — /ops/handover' }];
+  }
+
+  switchTo(id) {
+    if (this.state.viewExpired) this.setState({ viewExpired: false });
+    if (id === this.activeId) return;
+    const ed = this.edRef.current, cur = this.active(), next = this.sheets.find(s => s.id === id);
+    if (!ed || !next) return;
+    if (cur) { while (ed.firstChild) cur.holder.appendChild(ed.firstChild); cur.name = this.deriveName(cur.holder); }
+    while (next.holder.firstChild) ed.appendChild(next.holder.firstChild);
+    this.activeId = id;
+    this.setState({ promoting: false });
+    this.afterEdit();
+  }
+
+  newSheet = () => {
+    if (this.sheets.length >= 9) { this.showToast('nine pages is the wall — ⌘0 belongs to the ledger'); return; }
+    const s = this.mkSheet(2);
+    this.sheets.push(s);
+    this.switchTo(s.id);
+    const ed = this.edRef.current;
+    if (ed) ed.focus();
+  };
+
+  cycleTab(dir) {
+    if (!this.sheets.length) return;
+    if (this.state.viewExpired) {
+      this.switchTo(this.sheets[dir > 0 ? 0 : this.sheets.length - 1].id);
+      return;
+    }
+    const i = this.sheets.findIndex(s => s.id === this.activeId);
+    this.switchTo(this.sheets[(i + dir + this.sheets.length) % this.sheets.length].id);
+  }
+
+  destroySheet(s, reason) {
+    // sealed bytes zeroized; ink rests in the ledger, dimmed, session-only
+    const host = s.id === this.activeId ? this.edRef.current : s.holder;
+    const body = host ? this.graveBody(host) : '';
+    if (body || (s.name && s.name !== 'untitled')) {
+      this.grave.unshift({ name: s.name, reason, diedAt: this.vNow, body });
+      if (this.grave.length > 12) this.grave.pop();
+    }
+    if (host) host.querySelectorAll('[data-chip]').forEach(c => this.vault.delete(c.getAttribute('data-chip')));
+    const wasActive = s.id === this.activeId;
+    if (wasActive && host) host.replaceChildren();
+    this.sheets = this.sheets.filter(x => x !== s);
+    if (wasActive) {
+      if (this.sheets.length) { this.activeId = null; const ve = this.state.viewExpired; this.switchTo(this.sheets[0].id); if (ve) this.setState({ viewExpired: true }); }
+      else { const fresh = this.mkSheet(2); this.sheets = [fresh]; this.activeId = fresh.id; this.afterEdit(); }
+    } else {
+      this.setState({ rev: this.state.rev + 1 });
+    }
+  }
+
+  graveBody(host) {
+    let out = '';
+    const rec = (node) => {
+      node.childNodes.forEach(n => {
+        if (n.nodeType === 3) out += n.data;
+        else if (n.nodeType === 1) {
+          if (n.hasAttribute && n.hasAttribute('data-chip')) {
+            const ex = n.querySelector('span');
+            out += '[' + (ex ? ex.textContent : 'sealed') + ' · zeroized]';
+          } else if (n.tagName === 'BR') out += '\n';
+          else rec(n);
+        }
+      });
+    };
+    rec(host);
+    return out.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  deriveName(root) {
+    let txt = '';
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: n => n.parentElement && n.parentElement.closest('[data-chip]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+    });
+    while (w.nextNode()) txt += w.currentNode.data + '\n';
+    let line = txt.split('\n').map(l => l.trim()).find(l => l.length);
+    if (!line) return 'untitled';
+    line = line.replace(/^#{1,6}\s+/, '').replace(/^[->*]\s+/, '').replace(/[`*_~]/g, '').trim();
+    if (!line) return 'untitled';
+    return line.length > 16 ? line.slice(0, 15) + '…' : line;
+  }
+
+  // ---------- markdown (display only — the bytes never change) ----------
+  caretOffset(ed, r) {
+    const pre = document.createRange();
+    pre.selectNodeContents(ed);
+    pre.setEnd(r.startContainer, r.startOffset);
+    const frag = pre.cloneContents();
+    let n = 0;
+    const rec = (node) => {
+      node.childNodes.forEach(c => {
+        if (c.nodeType === 3) n += c.data.length;
+        else if (c.nodeType === 1) {
+          if (c.hasAttribute && c.hasAttribute('data-chip')) n += 1;
+          else if (c.tagName === 'BR') n += 1;
+          else rec(c);
+        }
+      });
+    };
+    rec(frag);
+    return n;
+  }
+
+  flatText(ed) {
+    let out = '';
+    const rec = (node) => {
+      node.childNodes.forEach(c => {
+        if (c.nodeType === 3) out += c.data;
+        else if (c.nodeType === 1) {
+          if (c.hasAttribute && c.hasAttribute('data-chip')) out += '\uFFFC';
+          else if (c.tagName === 'BR') out += '\n';
+          else rec(c);
+        }
+      });
+    };
+    rec(ed);
+    return out;
+  }
+
+  posAt(ed, target) {
+    let pos = 0, res = null;
+    const rec = (node) => {
+      for (const c of node.childNodes) {
+        if (res) return;
+        if (c.nodeType === 3) {
+          if (target <= pos + c.data.length) { res = { node: c, off: target - pos }; return; }
+          pos += c.data.length;
+        } else if (c.nodeType === 1) {
+          if ((c.hasAttribute && c.hasAttribute('data-chip')) || c.tagName === 'BR') {
+            if (target <= pos) { const i = [...c.parentNode.childNodes].indexOf(c); res = { node: c.parentNode, off: i }; return; }
+            pos += 1;
+          } else rec(c);
+        }
+      }
+    };
+    rec(ed);
+    return res || { node: ed, off: ed.childNodes.length };
+  }
+
+  decorate() {
+    if (!(this.props.markdown ?? true)) return;
+    const ed = this.edRef.current;
+    if (!ed) return;
+    const sel = document.getSelection();
+    let caret = null;
+    if (sel && sel.rangeCount && sel.isCollapsed && ed.contains(sel.getRangeAt(0).startContainer)) {
+      caret = this.caretOffset(ed, sel.getRangeAt(0));
+    }
+    // flatten to segments (unwrapping any previous decoration)
+    const segs = [];
+    const rec = (node) => {
+      node.childNodes.forEach(c => {
+        if (c.nodeType === 3) segs.push({ t: 'text', s: c.data });
+        else if (c.nodeType === 1) {
+          if (c.hasAttribute && c.hasAttribute('data-chip')) segs.push({ t: 'chip', el: c });
+          else if (c.tagName === 'BR') segs.push({ t: 'text', s: '\n' });
+          else if (c.tagName === 'DIV') { segs.push({ t: 'text', s: '\n' }); rec(c); }
+          else rec(c);
+        }
+      });
+    };
+    rec(ed);
+    // rebuild, styling pure-text heading lines
+    const frag = document.createDocumentFragment();
+    let line = [];
+    const flush = (nl) => {
+      const pure = line.every(i => i.t === 'text');
+      const lineText = line.map(i => i.t === 'text' ? i.s : '').join('');
+      const m = pure ? lineText.match(/^(#{1,6} )(.*)$/) : null;
+      if (m && m[2].length) {
+        const lvl = m[1].length - 1;
+        const size = lvl === 1 ? '15.5px' : lvl === 2 ? '14px' : '12.5px';
+        const span = document.createElement('span');
+        span.setAttribute('data-md', '1');
+        span.style.cssText = 'font-weight:700;font-size:' + size;
+        const pre = document.createElement('span');
+        pre.style.cssText = 'color:#B8AF9E;font-weight:400';
+        pre.textContent = m[1];
+        span.appendChild(pre);
+        span.appendChild(document.createTextNode(m[2]));
+        frag.appendChild(span);
+      } else {
+        line.forEach(i => frag.appendChild(i.t === 'text' ? document.createTextNode(i.s) : i.el));
+      }
+      if (nl) frag.appendChild(document.createTextNode('\n'));
+      line = [];
+    };
+    segs.forEach(seg => {
+      if (seg.t === 'chip') { line.push(seg); return; }
+      const parts = seg.s.split('\n');
+      parts.forEach((p, i) => {
+        if (p) line.push({ t: 'text', s: p });
+        if (i < parts.length - 1) flush(true);
+      });
+    });
+    flush(false);
+    ed.replaceChildren(frag);
+    if (caret !== null) {
+      const p = this.posAt(ed, caret);
+      const r = document.createRange();
+      try { r.setStart(p.node, p.off); r.collapse(true); sel.removeAllRanges(); sel.addRange(r); } catch (e) {}
+    }
+  }
+
+  // ---------- content in ----------
+  excerptOf(text) {
+    const trimmed = text.replace(/\n+$/, '');
+    const lines = trimmed.split('\n');
+    if (lines.length > 1) {
+      const head = lines[0].slice(0, 17);
+      return { disp: head + '…', count: lines.length + ' ln' };
+    }
+    const len = text.length;
+    const B = Math.min(24, Math.floor(len / 3));
+    if (B < 1) return { disp: '···', count: len + ' ch' };
+    const h = Math.max(1, Math.ceil(B * 0.6)), t = Math.max(0, B - h);
+    return { disp: text.slice(0, h) + '…' + (t ? text.slice(-t) : ''), count: len + ' ch' };
+  }
+
+  esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  chipHTML(id, disp, count) {
+    const CHIP = 'display:inline-flex;align-items:center;gap:8px;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:3px 9px;margin:2px 0;vertical-align:baseline;white-space:nowrap;cursor:default;-webkit-user-select:none;user-select:none;transition:background .12s,border-color .12s';
+    const COPY = '<svg width="11" height="11" viewBox="0 0 13 13" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="7.5" rx="1.5" fill="none" stroke="#6F695F" stroke-width="1.2"></rect><path d="M8.5 4.5V3A1.5 1.5 0 007 1.5H3A1.5 1.5 0 001.5 3v5A1.5 1.5 0 003 9.5h1.5" fill="none" stroke="#6F695F" stroke-width="1.2"></path></svg>';
+    return '<span data-chip="' + id + '" contenteditable="false" aria-label="sealed — ' + this.esc(count) + '" style="' + CHIP + '">' +
+      '<span style="font-size:11.5px;color:#3F3A33">' + this.esc(disp) + '</span>' +
+      '<span style="font-size:9.5px;color:#98917F">' + this.esc(count) + '</span>' +
+      '<span data-acts="true" style="align-items:center;gap:7px;margin-left:1px">' +
+      '<span data-act="copy" title="copy contents back out" style="display:inline-flex;cursor:pointer">' + COPY + '</span>' +
+      '<span data-act="link" title="one-snippet link (stub)" style="font-size:10px;color:#B4552E;cursor:pointer;white-space:nowrap">↗&nbsp;link</span>' +
+      '</span></span>';
+  }
+
+  ensureCaret() {
+    const ed = this.edRef.current;
+    const sel = document.getSelection();
+    if (!ed) return;
+    if (!sel.rangeCount || !ed.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+      ed.focus();
+      const r = document.createRange();
+      r.selectNodeContents(ed); r.collapse(false);
+      sel.removeAllRanges(); sel.addRange(r);
+    }
+  }
+
+  insertChip(id, disp, count) {
+    if (!this.state.panelOpen) this.setState({ panelOpen: true });
+    if (this.state.viewExpired) this.setState({ viewExpired: false });
+    this.ensureCaret();
+    document.execCommand('insertHTML', false, this.chipHTML(id, disp, count));
+    this.afterEdit();
+  }
+
+  sealText = (text, label) => {
+    if (!text) return;
+    const id = 'c' + Math.random().toString(36).slice(2, 8);
+    this.vault.set(id, { kind: 'text', content: text });
+    const e = this.excerptOf(text);
+    this.insertChip(id, label ? (label.length > 24 ? label.slice(0, 23) + '…' : label) : e.disp, e.count);
+  };
+
+  sealImage = (blob, name) => {
+    const id = 'c' + Math.random().toString(36).slice(2, 8);
+    this.vault.set(id, { kind: 'image', blob });
+    const kb = Math.max(1, Math.round(blob.size / 1024));
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const disp = name.length > 24 ? name.slice(0, 23) + '…' : name;
+      this.insertChip(id, disp, img.naturalWidth + '×' + img.naturalHeight + ' · ' + kb + ' KB');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); this.insertChip(id, name, kb + ' KB'); };
+    img.src = url;
+  };
+
+  onPaste = (e) => {
+    e.preventDefault();
+    const dt = e.clipboardData;
+    const img = [...(dt.files || [])].find(f => f.type.indexOf('image/') === 0);
+    if (img) { this.sealImage(img, img.name || 'Image'); return; }
+    const text = dt.getData('text/plain');
+    if (!text) return;
+    document.execCommand('insertText', false, text);
+    this.afterEdit();
+  };
+
+  sealFromClipboard = async () => {
+    if (!this.state.panelOpen) this.setState({ panelOpen: true });
+    try {
+      const t = await navigator.clipboard.readText();
+      if (t) { this.sealText(t); return; }
+      if (navigator.clipboard.read) {
+        const items = await navigator.clipboard.read();
+        for (const it of items) {
+          const ty = it.types.find(x => x.indexOf('image/') === 0);
+          if (ty) { this.sealImage(await it.getType(ty), 'Image'); return; }
+        }
+      }
+      this.showToast('clipboard is empty');
+    } catch (err) {
+      this.showToast('clipboard read is blocked here — ⌘V then ⌘↩, or drop text onto the page');
+    }
+  };
+
+  onDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; if (!this.state.dropHover) this.setState({ dropHover: true }); };
+
+  onDrop = (e) => {
+    e.preventDefault();
+    this.setState({ dropHover: false });
+    const dt = e.dataTransfer;
+    const files = [...(dt.files || [])];
+    let handled = false;
+    files.forEach(f => {
+      if (f.type.indexOf('image/') === 0) { this.sealImage(f, f.name || 'Image'); handled = true; }
+      else if (f.type.indexOf('text/') === 0 || /\.(txt|md|pem|key|env|json|yml|yaml|csv|log)$/i.test(f.name)) {
+        f.text().then(t => this.sealText(t, f.name)); handled = true;
+      }
+    });
+    if (!handled) { const t = dt.getData('text/plain'); if (t) this.sealText(t); }
+  };
+
+  // ---------- seal selection / line ----------
+  onSelChange = () => {
+    const ed = this.edRef.current, panel = this.panelRef && this.panelRef.current;
+    const sel = document.getSelection();
+    const clear = () => { if (this.state.sealPos) this.setState({ sealPos: null }); };
+    if (!ed || !panel || !sel || !sel.rangeCount || sel.isCollapsed) return clear();
+    const r = sel.getRangeAt(0);
+    if (!ed.contains(r.commonAncestorContainer)) return clear();
+    if (r.cloneContents().querySelector('[data-chip]')) return clear();
+    if (!r.toString().trim()) return clear();
+    const rect = r.getBoundingClientRect(), pr = panel.getBoundingClientRect();
+    const left = Math.min(Math.max(rect.left - pr.left + rect.width / 2, 46), pr.width - 46);
+    const top = Math.max(rect.top - pr.top - 30, 2);
+    this.setState({ sealPos: { left, top } });
+  };
+
+  sealNow = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    this.sealSelection();
+  };
+
+  sealSelection = () => {
+    const ed = this.edRef.current;
+    const sel = document.getSelection();
+    if (!ed || !sel || !sel.rangeCount || sel.isCollapsed) return;
+    const r = sel.getRangeAt(0);
+    if (!ed.contains(r.commonAncestorContainer)) return;
+    if (r.cloneContents().querySelector('[data-chip]')) { this.showToast('that selection already holds a sealed chip'); return; }
+    const text = sel.toString();
+    if (!text.trim()) return;
+    const id = 'c' + Math.random().toString(36).slice(2, 8);
+    this.vault.set(id, { kind: 'text', content: text });
+    const ex = this.excerptOf(text);
+    document.execCommand('insertHTML', false, this.chipHTML(id, ex.disp, ex.count));
+    this.setState({ sealPos: null });
+    this.afterEdit();
+  };
+
+  sealSelectionOrLine = () => {
+    const ed = this.edRef.current;
+    const sel = document.getSelection();
+    if (!ed || !sel || !sel.rangeCount) return;
+    if (!ed.contains(sel.getRangeAt(0).commonAncestorContainer)) return;
+    if (!sel.isCollapsed) { this.sealSelection(); return; }
+    const off = this.caretOffset(ed, sel.getRangeAt(0));
+    const flat = this.flatText(ed);
+    const start = flat.lastIndexOf('\n', off - 1) + 1;
+    let end = flat.indexOf('\n', off);
+    if (end === -1) end = flat.length;
+    const lineStr = flat.slice(start, end);
+    if (lineStr.indexOf('\uFFFC') !== -1) { this.showToast('that line already holds a sealed chip'); return; }
+    if (!lineStr.trim()) { this.showToast('nothing on this line to seal'); return; }
+    const a = this.posAt(ed, start), b = this.posAt(ed, end);
+    const r = document.createRange();
+    try { r.setStart(a.node, a.off); r.setEnd(b.node, b.off); } catch (e) { return; }
+    sel.removeAllRanges(); sel.addRange(r);
+    this.sealSelection();
+  };
+
+  // ---------- chip actions ----------
+  onEdMouseDown = (e) => { if (e.target.closest && e.target.closest('[data-act]')) e.preventDefault(); };
+
+  onEdClick = (e) => {
+    const act = e.target.closest && e.target.closest('[data-act]');
+    if (!act) return;
+    e.preventDefault(); e.stopPropagation();
+    const chip = act.closest('[data-chip]');
+    const id = chip && chip.getAttribute('data-chip');
+    if (act.getAttribute('data-act') === 'copy') this.copyOut(id);
+    else this.showToast('stub — a one-snippet link would be minted here · nothing sent');
+  };
+
+  copyOut(id) {
+    const v = this.vault.get(id);
+    if (!v) { this.showToast('nothing there — the contents were zeroized'); return; }
+    if (v.kind === 'text') {
+      const done = () => this.showToast('copied · flagged transient + concealed — managers would ignore it');
+      navigator.clipboard.writeText(v.content).then(done).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = v.content; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { this.showToast('copy blocked in this preview'); }
+        ta.remove();
+      });
+    } else {
+      try {
+        navigator.clipboard.write([new ClipboardItem({ [v.blob.type]: v.blob })])
+          .then(() => this.showToast('image copied back out'))
+          .catch(() => this.showToast('image copy is stubbed in this preview'));
+      } catch (e) { this.showToast('image copy is stubbed in this preview'); }
+    }
+  }
+
+  // ---------- keys ----------
+  onEdKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); this.edRef.current.blur(); }
+    else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); this.sealSelectionOrLine(); }
+    else if (e.key === 'Enter' && !e.shiftKey && !e.altKey) { e.preventDefault(); document.execCommand('insertText', false, '\n'); }
+  };
+
+  onWinKey = (e) => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (e.code === 'KeyV' && e.metaKey && e.shiftKey) { e.preventDefault(); this.sealFromClipboard(); }
+    else if (e.code === 'KeyN' && e.metaKey && e.altKey) { e.preventDefault(); this.newSheet(); }
+    else if (e.code === 'Space' && e.altKey && !e.metaKey) { e.preventDefault(); this.togglePanel(); }
+    else if (mod && e.altKey && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { e.preventDefault(); this.cycleTab(e.code === 'ArrowRight' ? 1 : -1); }
+    else if (mod && !e.shiftKey && !e.altKey && /^Digit\d$/.test(e.code)) {
+      e.preventDefault();
+      const n = +e.code.slice(5);
+      if (n === 0) this.openExpired();
+      else if (n <= this.sheets.length) this.switchTo(this.sheets[n - 1].id);
+      else this.showToast('no page ' + n + ' — ' + this.sheets.length + ' open');
+    }
+    else if (e.key === 'Escape' && this.state.viewExpired) { this.setState({ viewExpired: false }); }
+  };
+
+  togglePanel = () => {
+    const open = !this.state.panelOpen;
+    this.setState({ panelOpen: open });
+    if (open && !this.state.viewExpired) { requestAnimationFrame(() => { const ed = this.edRef.current; if (ed) ed.focus(); }); }
+    else { const ed = this.edRef.current; if (ed) ed.blur(); }
+  };
+
+  openExpired = () => {
+    const ed = this.edRef.current;
+    if (ed) ed.blur();
+    if (!this.state.panelOpen) this.setState({ panelOpen: true });
+    this.setState({ viewExpired: true, promoting: false, sealPos: null });
+  };
+
+  // ---------- window drag / resize ----------
+  startWin(mode, e) {
+    if (mode === 'move' && e.target.closest && e.target.closest('[data-nodrag]')) return;
+    if (e.button !== 0) return;
+    e.preventDefault();
+    this.dm = { mode, mx: e.clientX, my: e.clientY, ...this.state.win };
+    window.addEventListener('mousemove', this.onWinMove);
+    window.addEventListener('mouseup', this.onWinUp);
+  }
+
+  onWinMove = (e) => {
+    const d = this.dm; if (!d) return;
+    const dx = e.clientX - d.mx, dy = e.clientY - d.my;
+    let { x, y, w, h } = d;
+    const D = this.DESK, M = this.MIN;
+    if (d.mode === 'move') { x += dx; y += dy; }
+    if (d.mode === 'e' || d.mode === 'se') w += dx;
+    if (d.mode === 's' || d.mode === 'se') h += dy;
+    if (d.mode === 'w') { w -= dx; x += dx; }
+    w = Math.max(M.w, Math.min(w, D.w - 8));
+    h = Math.max(M.h, Math.min(h, D.h - D.top - 8));
+    if (d.mode === 'w') x = d.x + (d.w - w);
+    x = Math.max(4, Math.min(x, D.w - w - 4));
+    y = Math.max(D.top, Math.min(y, D.h - h - 4));
+    this.setState({ win: { x, y, w, h } });
+  };
+
+  onWinUp = () => {
+    this.dm = null;
+    window.removeEventListener('mousemove', this.onWinMove);
+    window.removeEventListener('mouseup', this.onWinUp);
+  };
+
+  titleDbl = () => {
+    const win = this.state.win;
+    const maxH = this.DESK.h - this.DESK.top - 8;
+    if (win.h >= maxH - 2) {
+      const p = this.prevWin || { y: 60, h: 452 };
+      this.setState({ win: { ...win, y: p.y, h: p.h } });
+    } else {
+      this.prevWin = { y: win.y, h: win.h };
+      this.setState({ win: { ...win, y: this.DESK.top + 2, h: maxH } });
+    }
+  };
+
+  // ---------- tabs: reorder, pause, close ----------
+  tabDown(s, e) {
+    if (e.target.closest && e.target.closest('[data-x]')) return;
+    if (e.button !== 0) return;
+    this.switchTo(s.id);
+    const td = { id: s.id, sx: e.clientX, moved: false };
+    this.td = td;
+    const move = (ev) => {
+      if (!this.td) return;
+      if (!td.moved && Math.abs(ev.clientX - td.sx) < 5) return;
+      td.moved = true;
+      const strip = this.stripRef && this.stripRef.current;
+      if (!strip) return;
+      const els = [...strip.querySelectorAll('[data-tab]')];
+      const idx = this.sheets.findIndex(x => x.id === td.id);
+      if (idx === -1) return;
+      let target = 0;
+      els.forEach((el, i) => {
+        if (i === idx) return;
+        const r = el.getBoundingClientRect();
+        if (ev.clientX > r.left + r.width / 2) target++;
+      });
+      target = Math.max(0, Math.min(target, this.sheets.length - 1));
+      if (target !== idx) {
+        const [m] = this.sheets.splice(idx, 1);
+        this.sheets.splice(target, 0, m);
+        this.setState({ rev: this.state.rev + 1 });
+      }
+    };
+    const up = () => {
+      this.td = null;
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+
+  pauseTab(s) {
+    const now = this.vNow;
+    const paused = s.pauseUntil && s.pauseUntil > now;
+    if (!paused) { s.pauseUntil = now + 3600e3; s.pauseStage = 1; this.showToast('clock paused — holds for 1h · double-click again for 24h'); }
+    else if (s.pauseStage === 1) { s.pauseUntil = now + 86400e3; s.pauseStage = 2; this.showToast('pause extended — holds for 24h'); }
+    else { s.pauseUntil = now + 86400e3; this.showToast('pause topped up — 24h from now'); }
+    this.setState({ rev: this.state.rev + 1 });
+  }
+
+  // ---------- ttl / promote / toast ----------
+  cycleTtl = () => {
+    const s = this.active();
+    if (!s || this.state.viewExpired) return;
+    s.ttlIdx = (s.ttlIdx + 1) % this.LADDER.length;
+    s.totalMs = this.LADDER[s.ttlIdx];
+    s.expiresAt = this.vNow + s.totalMs;
+    this.setState({ rev: this.state.rev + 1 });
+  };
+
+  promoteOpen = () => {
+    if (this.state.viewExpired) return;
+    if (this.state.empty) { this.showToast('nothing on this page yet'); return; }
+    this.setState({ promoting: true });
+  };
+  promoteCancel = () => this.setState({ promoting: false });
+  promoteCreate = () => {
+    this.setState({ promoting: false });
+    this.showToast('stub — nothing sent · the page\u2019s one-time link would now be on your clipboard');
+  };
+
+  showToast(msg) {
+    clearTimeout(this.toastT);
+    this.setState({ toast: msg });
+    this.toastT = setTimeout(() => this.setState({ toast: null }), 3000);
+  }
+
+  afterEdit = (e) => {
+    const ed = this.edRef.current;
+    if (!ed) return;
+    if (!e || !e.isComposing) this.decorate();
+    const s = this.active();
+    const chips = ed.querySelectorAll('[data-chip]').length;
+    let txt = '';
+    const w = document.createTreeWalker(ed, NodeFilter.SHOW_TEXT, {
+      acceptNode: n => n.parentElement && n.parentElement.closest('[data-chip]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+    });
+    while (w.nextNode()) txt += w.currentNode.data + '\n';
+    const empty = chips === 0 && txt.trim() === '';
+    if (s) s.name = this.deriveName(ed);
+    const live = new Set();
+    ed.querySelectorAll('[data-chip]').forEach(c => live.add(c.getAttribute('data-chip')));
+    this.sheets.forEach(sh => { if (sh.id !== this.activeId) sh.holder.querySelectorAll('[data-chip]').forEach(c => live.add(c.getAttribute('data-chip'))); });
+    [...this.vault.keys()].forEach(k => { if (!live.has(k)) this.vault.delete(k); });
+    this.setState({ empty });
+  };
+
+  // ---------- render ----------
+  renderVals() {
+    if (!this.edRef) this.edRef = React.createRef();
+    if (!this.panelRef) this.panelRef = React.createRef();
+    if (!this.stripRef) this.stripRef = React.createRef();
+    const sheets = this.sheets || [];
+    const grave = this.grave || [];
+    const viewExpired = this.state.viewExpired;
+    const act = sheets.find(s => s.id === this.activeId);
+    const remaining = act ? Math.max(0, act.expiresAt - this.vNow) : 0;
+    const frac = act ? Math.max(0, Math.min(1, remaining / act.totalMs)) : 1;
+    const urgent = act ? remaining < 3600e3 : false;
+    const actPaused = act && act.pauseUntil && act.pauseUntil > this.vNow;
+    const hatch = 'repeating-linear-gradient(45deg,#D45A2A 0 3px,#EBB49A 3px 6px)';
+    const pausedFill = 'repeating-linear-gradient(90deg,#9A9185 0 3px,rgba(154,145,133,.22) 3px 6px)';
+
+    const tabs = sheets.map((s, i) => {
+      const isA = s.id === this.activeId && !viewExpired;
+      const rem = Math.max(0, s.expiresAt - this.vNow);
+      const f = Math.max(0, Math.min(1, rem / s.totalMs));
+      const urg = rem < 3600e3;
+      const paused = s.pauseUntil && s.pauseUntil > this.vNow;
+      return {
+        label: (paused ? '⏸ ' : '') + s.name,
+        down: (e) => this.tabDown(s, e),
+        pause: () => this.pauseTab(s),
+        close: (e) => { e.stopPropagation(); this.destroySheet(s, 'closed'); },
+        tip: paused
+          ? 'clock paused — resumes in ' + this.fmt(s.pauseUntil - this.vNow) + ' · double-click tops up · drag to reorder'
+          : '⌘' + (i + 1) + ' · double-click pauses the clock (1h → 24h → top-up) · drag to reorder',
+        tabStyle: {
+          display: 'flex', flexDirection: 'column', overflow: 'hidden', cursor: 'pointer',
+          background: isA ? '#F7F5F2' : 'rgba(62,52,40,.05)',
+          border: isA ? '1px solid rgba(62,52,40,.10)' : '1px solid rgba(62,52,40,.08)',
+          borderTop: 'none', borderRadius: '0 0 7px 7px', maxWidth: '104px', minWidth: 0
+        },
+        labelStyle: { font: '10.5px/1 ui-monospace,"SF Mono",Menlo,monospace', color: isA ? '#3F3A33' : '#8A8276', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },
+        fillStyle: { height: '100%', width: (f * 100).toFixed(1) + '%', background: paused ? pausedFill : (urg ? hatch : (isA ? '#9A9185' : 'rgba(154,145,133,.45)')) }
+      };
+    });
+
+    const emptyState = this.state.empty;
+    const pageBase = { display: viewExpired ? 'none' : 'flex', flexDirection: 'column', flex: 1, minHeight: 0 };
+    const pageDyn = emptyState ? {
+      ...pageBase,
+      border: '1px dashed ' + (this.state.dropHover ? 'rgba(212,90,42,.55)' : 'rgba(62,52,40,.28)'),
+      borderRadius: '8px', background: this.state.dropHover ? 'rgba(212,90,42,.05)' : 'transparent',
+      transition: 'border-color .15s, background .15s'
+    } : {
+      ...pageBase,
+      border: this.state.dropHover ? '1.5px dashed rgba(212,90,42,.55)' : (this.state.focused ? '1.5px solid rgba(212,90,42,.45)' : '1px solid rgba(62,52,40,.10)'),
+      borderRadius: '8px', background: '#F7F5F2', overflow: 'hidden', transition: 'border-color .15s'
+    };
+
+    const win = this.state.win;
+    const open = this.state.panelOpen;
+    const winStyle = {
+      position: 'absolute', left: win.x + 'px', top: win.y + 'px', width: win.w + 'px', height: win.h + 'px',
+      display: 'flex', flexDirection: 'column', zIndex: 2,
+      borderRadius: '11px', background: '#EDEBE7', border: '1px solid rgba(62,52,40,.16)',
+      boxShadow: '0 22px 44px rgba(40,32,24,.26),0 2px 6px rgba(40,32,24,.12)',
+      opacity: open ? 1 : 0,
+      transform: open ? 'translateY(0)' : 'translateY(-6px)',
+      pointerEvents: open ? 'auto' : 'none',
+      transition: 'opacity .16s cubic-bezier(.16,1,.3,1), transform .16s cubic-bezier(.16,1,.3,1)'
+    };
+
+    const graveList = grave.map(g => ({
+      name: g.name,
+      meta: g.reason + ' ' + this.fmt(Math.max(0, this.vNow - g.diedAt)) + ' ago',
+      body: g.body || '(the page held only sealed content — zeroized)'
+    }));
+
+    const d = new Date();
+    const clockText = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] + ' ' + d.getDate() + ' ' +
+      ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + '\u00a0\u00a0' +
+      (d.getHours() % 12 || 12) + ':' + String(d.getMinutes()).padStart(2, '0');
+
+    return {
+      edRef: this.edRef, panelRef: this.panelRef, stripRef: this.stripRef,
+      focused: this.state.focused, notFocused: !this.state.focused,
+      notEmpty: !emptyState && !viewExpired,
+      emptyOverlay: emptyState && !viewExpired,
+      panelClosed: !open,
+      winStyle, pageDyn,
+      gaugeFill: { height: '100%', width: (frac * 100).toFixed(1) + '%', background: actPaused ? pausedFill : (urgent ? hatch : '#9A9185'), transition: 'width .2s linear' },
+      ttlLabel: viewExpired ? 'ledger' : (actPaused ? '⏸ ' + this.fmt(remaining) : this.fmt(remaining)),
+      ttlColor: { color: viewExpired ? '#98917F' : (urgent && !actPaused ? '#D45A2A' : '#6F695F') },
+      tabs,
+      viewExpired, footerSheet: !this.state.promoting && !viewExpired, footerLedger: viewExpired,
+      grave: graveList, graveEmpty: graveList.length === 0, graveCount: String(graveList.length),
+      graveTabStyle: {
+        display: 'flex', alignItems: 'center', gap: '5px', padding: '3px 9px', cursor: 'pointer', flex: 'none',
+        border: '1.5px dashed rgba(62,52,40,' + (viewExpired ? '.42' : '.24') + ')', borderRadius: '6px',
+        font: (viewExpired ? '700 ' : '') + '10px/1 ui-monospace,"SF Mono",Menlo,monospace',
+        color: viewExpired ? '#3F3A33' : '#98917F',
+        background: viewExpired ? '#F7F5F2' : 'transparent'
+      },
+      promoting: this.state.promoting,
+      toast: this.state.toast,
+      sealPos: !!this.state.sealPos,
+      sealPosStyle: this.state.sealPos ? { position: 'absolute', left: this.state.sealPos.left + 'px', top: this.state.sealPos.top + 'px', zIndex: 5 } : {},
+      sealNow: this.sealNow,
+      clockText,
+      dragMove: (e) => this.startWin('move', e),
+      rsE: (e) => this.startWin('e', e), rsW: (e) => this.startWin('w', e),
+      rsS: (e) => this.startWin('s', e), rsSE: (e) => this.startWin('se', e),
+      titleDbl: this.titleDbl,
+      openExpired: this.openExpired,
+      togglePanel: this.togglePanel, cycleTtl: this.cycleTtl, newSheet: this.newSheet,
+      promoteOpen: this.promoteOpen, promoteCancel: this.promoteCancel, promoteCreate: this.promoteCreate
+    };
+  }
+}
+</script>
+</body>
+</html>

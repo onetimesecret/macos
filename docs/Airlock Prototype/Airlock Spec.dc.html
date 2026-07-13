@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/colors_and_type.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@400;600;700&amp;display=swap">
+  <script src="_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/_ds_bundle.js"></script>
+  <style>
+    body { margin: 0; }
+    a { color: #B4552E; text-decoration: none; }
+    a:hover { color: #8F3F1E; text-decoration: underline; }
+  </style>
+</helmet>
+
+<x-import component-from-global-scope="doc-page" from="./doc-page.js" size="letter" margin="0.8in" hint-size="850px,1400px">
+
+  <div slot="footer" style="display:flex;justify-content:space-between;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#98917F;padding:0 0 4px">
+    <span>airlock (working title) — interaction model, revision C</span>
+    <span>draft for review · 12 Jul 2026</span>
+  </div>
+
+  <div style="font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif;color:#2E2A24;font-size:14.5px;line-height:1.6">
+
+    <h1 style="margin:0 0 6px;font-family:var(--font-brand,'Zilla Slab',serif);font-size:29px;font-weight:700;letter-spacing:-.02em;line-height:1.15">Interaction model — revision C: the window</h1>
+    <p style="margin:0 0 22px;font:10.5px/1.8 ui-monospace,'SF Mono',Menlo,monospace;color:#8A8276">docs/spec/04-interaction-model.md · revision C · draft for review · 12 Jul 2026<br>supersedes: rev B (the sheet) · principles (doc 03) still binding; boundary laws (doc 05) amended in §10<br>sources: design rounds v7–v10 · the 12 Jul decision rounds · companion prototype: <a href="Airlock Prototype.dc.html">Airlock Prototype.dc.html</a></p>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">0 · Status</h2>
+    <p style="margin:0 0 10px;text-wrap:pretty">Rev B established the sheet: one page of ink and sealed chips, one countdown, gesture-only masking. Rev C is the <strong>window round</strong> — the panel behaves like a real macOS window, the page tabs move to the bottom edge and grow a keyboard map, the clock learns to pause, dead pages get a place to rest (the ledger — an amendment to a boundary law, argued in §7), and the page learns to read markdown without ever rewriting it. Two shortcuts changed under collision audit (§2, §3). Where this document contradicts rev B, this document governs. The product frame is unchanged: a chamber things pass through, never a place they live.</p>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">1 · The shape of the thing</h2>
+    <p style="margin:0 0 10px;text-wrap:pretty">A menu-bar resident summons a non-activating window. The window shows one sheet; the sheet holds <strong>ink</strong> (visible text) and <strong>sealed chips</strong> (opaque tokens for deliberately masked content). One countdown governs the page; zero means zeroized, silently. Sheets multiply as bottom-edge tabs, Excel-anchored, each tab carrying its own gauge. A permanent dashed tab at the strip's right end is the ledger (§7).</p>
+
+    <div style="break-inside:avoid;margin:14px 0;padding:14px 16px;background:#FAF8F5;border:1px solid rgba(62,52,40,.14);border-radius:8px">
+      <div style="font:11.5px/1.5 ui-monospace,'SF Mono',Menlo,monospace;white-space:pre;color:#3E3831">┌ Airlock ······································ 8h ✈ ┐
+│                                                     │
+│  ### deploy friday                  ← styled, markup│
+│  in order —                           kept visible  │
+│  [ ghp_4kQ9wXbG…e0H5jK · 40 ch ]    ← sealed chip   │
+│                                                     │
+│  ████████████████████░░░░           ← the gauge     │
+│                                            ↗ page   │
+├──────┬─────────┬────┬───────────────────────────────┤
+│deploy│⏸ errands│ +  │                        ◌ 1    │
+└──────┴─────────┴────┴───────────────────────────────┘</div>
+      <div style="margin-top:10px;font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:#98917F">Fig. 1 — a sheet in its window. Tabs hang from the bottom edge like Excel's; each carries its own gauge; ⏸ marks a paused clock; the dashed ◌ tab is the ledger. The old "excluded from screen capture" caption is gone from the footer — the exclusion itself remains, as a setting (§10).</div>
+    </div>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">2 · Ink, and the sealing gestures</h2>
+    <p style="margin:0 0 10px;text-wrap:pretty">Unchanged in principle: masking is decided by <strong>gesture, not by content and not by origin</strong>. The app never parses, classifies, or scores what arrives. Two gestures were rekeyed under collision audit — ⌥⌘V belongs to Finder ("Move Item Here") and ⌥-combinations type alternate glyphs in text fields, so the sealed paste moves to <strong>⇧⌘V</strong>; ⌥V is held as the fallback candidate if ⇧⌘V ("paste and match style") proves too contested in practice. The seal gesture becomes <strong>⌘↩</strong> (§3).</p>
+
+    <table style="width:100%;border-collapse:collapse;font:12px/1.55 ui-monospace,'SF Mono',Menlo,monospace;margin:10px 0 14px">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:6px 12px 6px 0;border-bottom:1.5px solid rgba(62,52,40,.35);font-weight:700;width:172px">route</th>
+          <th style="text-align:left;padding:6px 12px 6px 0;border-bottom:1.5px solid rgba(62,52,40,.35);font-weight:700;width:110px">lands as</th>
+          <th style="text-align:left;padding:6px 0;border-bottom:1.5px solid rgba(62,52,40,.35);font-weight:700">why</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">typing</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top">visible ink</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">you wrote it; you see it</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">⌘V</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top">visible ink</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">paste behaves like every text editor on the machine — plain text, no surprises</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">⇧⌘V</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top">sealed chip</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">the masked paste — consent expressed by the gesture; bytes route core-side, never render. Rekeyed from ⌥⌘V (OS collision); ⌥V held as alternative</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">drop onto the panel</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top">sealed chip</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">dragging content to a secrecy tool is already the "stage this" gesture (Q2, §12)</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">⌘↩ / select → seal</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top">sealed chip</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">the retrofit — seals the selection, or with no selection the current line, if the line holds content (§3)</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">images, any route</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top">sealed chip</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">an image has no inline-text form; the chip shows clipboard metadata only (Q3)</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:0 0 10px;text-wrap:pretty">The paste-flip guarantee from rev B holds verbatim: <strong>nothing is sealed without your gesture, and nothing sealed ever renders.</strong> Excerpts are mechanical; counts are counts; detection never returns.</p>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">3 · Sealing by keyboard — ⌘↩</h2>
+    <p style="margin:0 0 10px;text-wrap:pretty">The seal shortcut is <strong>⌘↩ (Command-Return)</strong>, replacing rev B's proposed ⌥⌘S (Q1 closed). Semantics: with a selection, seal the selection; with a bare caret, seal the <strong>current line</strong>, if the line holds content. A line already holding a chip refuses with an explanation; an empty line does nothing. ⌘↩ is the natural "commit this line" gesture, it has no OS-level claim inside a text view, and it makes the common case — paste a secret, seal it — a two-keystroke sequence with the hands never leaving home row. The floating on-selection affordance remains the discoverable path and now teaches ⌘↩.</p>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">4 · The sealed chip</h2>
+    <p style="margin:0 0 10px;text-wrap:pretty">Unchanged from rev B, restated in brief: the excerpt rule is mechanical (single line: reveal budget min(24, ⌊n/3⌋), 60/40 head–tail split; multi-line: first line, ≤17 chars, count in lines; images/files: metadata only). A chip is <strong>never revealable</strong>, is atomic under the caret (arrows step over, one ⌫ removes it whole, selection cannot reach inside), and hover reveals <strong>actions, never content</strong>: copy-out (transient + concealed pasteboard flags, non-consuming) and ↗ link. No per-chip timers, ever.</p>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">5 · Time — the ladder, the gauge, and the pause</h2>
+    <ul style="margin:0 0 12px;padding-left:22px;display:flex;flex-direction:column;gap:5px">
+      <li style="text-wrap:pretty"><strong>One countdown per sheet.</strong> Unchanged. The ladder: 1h → 3h → 8h → 24h → 3d → 7d, default 8h; click the header label to cycle; each click resets the clock to the shown rung.</li>
+      <li style="text-wrap:pretty"><strong>The gauge:</strong> the page's bottom edge drains continuously; each tab carries its own gauge. Under one hour it turns ember with a hatched texture — urgency is never colour-only.</li>
+      <li style="text-wrap:pretty"><strong>The pause — new.</strong> Double-click a tab to hold that page's clock: first double-click holds it for <strong>1 hour</strong>; a second extends the hold to <strong>24 hours</strong>; further double-clicks <strong>top the hold back up</strong> to 24 hours from now. While held, the tab shows ⏸, the gauge freezes with a dashed fill, and remaining life does not drain. When the hold lapses, the page is simply a regular page again — no notification, no state to clean up. A pause holds the clock; it never extends the rung. The honest tension — pausing is a lever against ephemerality — is bounded by the top-up ceiling (24h per press, never cumulative) and logged as Q9.</li>
+      <li style="text-wrap:pretty"><strong>Expiry is silent</strong> — no notification, no badge. What changed: the dead page's ink now rests in the ledger (§7). Its sealed bytes are zeroized at expiry exactly as before.</li>
+    </ul>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">6 · Sheets, several — tabs at the bottom</h2>
+    <p style="margin:0 0 10px;text-wrap:pretty"><strong>Q5 is closed: tabs won</strong>, and they moved to the window's bottom edge, Excel-anchored — below the content they name, out of the title bar's way, exactly where a spreadsheet hand already knows to look. Pad edges and the bare flip are retired. Each tab's edge strip is that sheet's own gauge; cross-sheet urgency reads as geometry. Names come from each sheet's first typed line, live, with markdown markup stripped for the title only (<code style="font:11px ui-monospace,'SF Mono',Menlo,monospace">### deploy friday</code> → "deploy friday"); a page with no typed line is "untitled".</p>
+    <ul style="margin:0 0 12px;padding-left:22px;display:flex;flex-direction:column;gap:5px">
+      <li style="text-wrap:pretty"><strong>Cap: 9 sheets</strong>, refuse-don't-evict (down from rev B's proposed 5-page framing being unsettled, and from rev A's 12) — the natural limit of the keyboard map, since ⌘0 belongs to the ledger. At the wall the app declines the tenth and says so.</li>
+      <li style="text-wrap:pretty"><strong>⌘1–⌘9</strong> jump to a page by position. <strong>⌘0</strong> opens the ledger. <strong>⌥⌘← / ⌥⌘→</strong> step to the previous / next page.</li>
+      <li style="text-wrap:pretty"><strong>Drag to reorder.</strong> Tabs reorder by direct drag, live; the ⌘-number map follows the visible order.</li>
+      <li style="text-wrap:pretty"><strong>Close</strong> is an ✕ on tab hover; a closed page rests in the ledger like an expired one. New page: the + affordance, or ⌥⌘N.</li>
+    </ul>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">7 · The ledger — ⌘0</h2>
+    <p style="margin:0 0 10px;text-wrap:pretty">Rev B's law read "no retention: no history, no archive, no trash, no recently-expired". Lived experience overruled the absolutism: a page that expires mid-thought takes typed context with it — the errand list around the secret, not just the secret. The <strong>ledger</strong> is the narrow amendment: a permanent dashed tab at the strip's right end (⌘0) showing expired and closed pages as a list of <strong>dimmed ink</strong>. The boundary holds where it matters:</p>
+    <ul style="margin:0 0 12px;padding-left:22px;display:flex;flex-direction:column;gap:5px">
+      <li style="text-wrap:pretty"><strong>Ink only.</strong> Sealed bytes are zeroized at death exactly as before; a chip appears in the ledger as its excerpt struck through with "zeroized". Nothing sealed survives, ever, anywhere.</li>
+      <li style="text-wrap:pretty"><strong>Dimmed and read-only.</strong> Ledger entries are records, not pages — no editing, no resurrection, no re-opening. Copy of visible ink is allowed; it was never secret.</li>
+      <li style="text-wrap:pretty"><strong>Session-bound.</strong> The ledger lives in memory and clears when the app quits. Nothing is written to disk. Capacity is bounded (newest dozen); older records fall off silently.</li>
+      <li style="text-wrap:pretty"><strong>Visually apart.</strong> The dashed border and dimmed type say "this is residue, not storage" before any copy does.</li>
+    </ul>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">8 · Markdown — styled, never rewritten</h2>
+    <p style="margin:0 0 10px;text-wrap:pretty">The page reads markdown the way a person does, without pretending to be a rich-text editor. A line beginning <code style="font:11px ui-monospace,'SF Mono',Menlo,monospace">### </code> renders at heading weight and size — and the <code style="font:11px ui-monospace,'SF Mono',Menlo,monospace">### </code> itself stays on screen, dimmed, exactly where it was typed. <strong>Display-only, markup-preserving:</strong> the bytes of the page never change; select-all-copy returns exactly what was typed; sealing a heading line seals the markup too. Scope for rev C is headings (#, ##, ### and deeper); inline emphasis is deliberately deferred (Q10). Tab titles strip the markup (§6) because a title is a name, not a document.</p>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">9 · The window</h2>
+    <p style="margin:0 0 10px;text-wrap:pretty">The panel of rev B is now a window in the ordinary macOS sense, while remaining a non-activating accessory: it <strong>moves</strong> by its title bar, <strong>resizes</strong> from any edge or corner (the page grows; chrome stays constant), and <strong>double-clicking the title bar stretches it vertically</strong> to full working height — double-click again to return. Position and size persist across summons. None of this changes the focus law: the window accepts the keyboard by deliberate act only and never becomes the key window for chrome interactions (§below). The footer no longer carries the "excluded from screen capture" caption — the surface should be quiet about its own plumbing; the exclusion itself is unchanged and lives in settings (§10).</p>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">10 · Focus, promotion, and the boundary laws</h2>
+    <p style="margin:0 0 10px;text-wrap:pretty"><strong>Focus:</strong> accept, never take — unchanged. Click or ⌥Space in; esc out; ember border while the page holds keys. <strong>Promotion:</strong> unchanged — ↗ link on a chip, ↗ page in the footer, inline confirmation, the only network action. <strong>Boundary laws, as amended by rev C:</strong></p>
+    <ul style="margin:0 0 12px;padding-left:22px;display:flex;flex-direction:column;gap:5px">
+      <li>Sealed bytes live core-side only; the UI layer never receives them and so can never draw them. No reveal affordance can exist. <em>Unchanged.</em></li>
+      <li>The panel is excluded from screenshots and screen recording. <em>Amended:</em> the exclusion is a setting and is no longer captioned on the surface.</li>
+      <li>Never steals focus; no modals; no auto-focused fields. <em>Unchanged.</em></li>
+      <li>No notifications, badges, counts, or guilt. <em>Unchanged.</em></li>
+      <li><em>Amended:</em> no retention <strong>of sealed content</strong>, ever. The ledger (§7) retains dimmed ink of dead pages, in memory, for the session only. No history of sealed bytes, no archive, no disk.</li>
+      <li>No account for the core loop; promotion is the single outbound act. <em>Unchanged.</em></li>
+    </ul>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">11 · The keyboard map, complete</h2>
+    <table style="width:100%;border-collapse:collapse;font:12px/1.55 ui-monospace,'SF Mono',Menlo,monospace;margin:8px 0 14px">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:6px 12px 6px 0;border-bottom:1.5px solid rgba(62,52,40,.35);font-weight:700;width:130px">keys</th>
+          <th style="text-align:left;padding:6px 0;border-bottom:1.5px solid rgba(62,52,40,.35);font-weight:700">action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid rgba(62,52,40,.12);font-weight:700">⌥Space</td><td style="padding:6px 0;border-bottom:1px solid rgba(62,52,40,.12);color:#5C554B">summon / dismiss the window</td></tr>
+        <tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid rgba(62,52,40,.12);font-weight:700">⌘V</td><td style="padding:6px 0;border-bottom:1px solid rgba(62,52,40,.12);color:#5C554B">paste, visible</td></tr>
+        <tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid rgba(62,52,40,.12);font-weight:700">⇧⌘V</td><td style="padding:6px 0;border-bottom:1px solid rgba(62,52,40,.12);color:#5C554B">paste, sealed (⌥V held as alternative candidate)</td></tr>
+        <tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid rgba(62,52,40,.12);font-weight:700">⌘↩</td><td style="padding:6px 0;border-bottom:1px solid rgba(62,52,40,.12);color:#5C554B">seal the selection, or the current line if it holds content</td></tr>
+        <tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid rgba(62,52,40,.12);font-weight:700">⌘1 – ⌘9</td><td style="padding:6px 0;border-bottom:1px solid rgba(62,52,40,.12);color:#5C554B">jump to page 1–9, in visible tab order</td></tr>
+        <tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid rgba(62,52,40,.12);font-weight:700">⌘0</td><td style="padding:6px 0;border-bottom:1px solid rgba(62,52,40,.12);color:#5C554B">the ledger — expired &amp; closed pages, dimmed</td></tr>
+        <tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid rgba(62,52,40,.12);font-weight:700">⌥⌘← / ⌥⌘→</td><td style="padding:6px 0;border-bottom:1px solid rgba(62,52,40,.12);color:#5C554B">previous / next page</td></tr>
+        <tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid rgba(62,52,40,.12);font-weight:700">⌥⌘N</td><td style="padding:6px 0;border-bottom:1px solid rgba(62,52,40,.12);color:#5C554B">new page, default rung</td></tr>
+        <tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid rgba(62,52,40,.12);font-weight:700">esc</td><td style="padding:6px 0;border-bottom:1px solid rgba(62,52,40,.12);color:#5C554B">hand the keyboard back (also leaves the ledger)</td></tr>
+        <tr><td style="padding:6px 12px 6px 0;border-bottom:1px solid rgba(62,52,40,.12);font-weight:700">⌫ on a chip</td><td style="padding:6px 0;border-bottom:1px solid rgba(62,52,40,.12);color:#5C554B">removes it whole; arrows step over it</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:0 0 10px;text-wrap:pretty">Pointer-only gestures, for completeness: click the countdown to cycle the ladder · drag tabs to reorder · double-click a tab to pause its clock (1h → 24h → top-up) · ✕ on tab hover to close · drag the title bar to move · drag any edge to resize · double-click the title bar to stretch vertically · drop content onto the page to seal it.</p>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">12 · Change ledger — rev B → rev C</h2>
+    <table style="width:100%;border-collapse:collapse;font:12px/1.55 ui-monospace,'SF Mono',Menlo,monospace;margin:8px 0 14px">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:6px 12px 6px 0;border-bottom:1.5px solid rgba(62,52,40,.35);font-weight:700;width:150px">surface</th>
+          <th style="text-align:left;padding:6px 12px 6px 0;border-bottom:1.5px solid rgba(62,52,40,.35);font-weight:700">rev B</th>
+          <th style="text-align:left;padding:6px 0;border-bottom:1.5px solid rgba(62,52,40,.35);font-weight:700">rev C</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">the container</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">fixed edge-docked panel</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">a real window — move, resize, double-click title to stretch; still non-activating</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">sealed paste</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">⌥⌘V</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">⇧⌘V — ⌥⌘V is claimed by the OS; ⌥V held as fallback</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">seal shortcut</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">⌥⌘S proposed (Q1 open)</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">⌘↩ — selection, or current line (Q1 closed)</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">switcher</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">three candidates, unsettled (Q5)</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">tabs won; moved to the bottom edge, Excel-anchored; drag to reorder</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">keyboard nav</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">none</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">⌘1–9 pages · ⌘0 ledger · ⌥⌘←/→ step</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">capacity</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">5 proposed, unsettled</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">9 — the keyboard map is the natural wall; refuse-don't-evict unchanged</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">the clock</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">drains, always</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">pausable per page — double-click the tab: 1h → 24h → top-up</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">after death</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">nothing — no retention of any kind</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">the ledger (⌘0): dimmed ink, session-only; sealed bytes still zeroized</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">rendering</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">plain monospace</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">markdown headings styled, markup kept visible; tab titles strip markup</td></tr>
+        <tr><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;font-weight:700">capture caption</td><td style="padding:7px 12px 7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">"excluded from screen capture" in the footer</td><td style="padding:7px 0;border-bottom:1px solid rgba(62,52,40,.12);vertical-align:top;color:#5C554B">removed from the surface; the exclusion itself unchanged, in settings</td></tr>
+      </tbody>
+    </table>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">13 · Open questions <span style="font-weight:400;color:#8A8276;font-size:12.5px">(for doc 06)</span></h2>
+    <ul style="margin:0 0 12px;padding-left:22px;display:flex;flex-direction:column;gap:6px">
+      <li style="text-wrap:pretty"><strong>Q1 — closed.</strong> Seal is ⌘↩, selection-or-line.</li>
+      <li style="text-wrap:pretty"><strong>Q2 — drop semantics.</strong> Unchanged: drop = sealed proposed; alternative mirrors paste. Decide by living with it.</li>
+      <li style="text-wrap:pretty"><strong>Q3 — images.</strong> Unchanged: always sealed, metadata only.</li>
+      <li style="text-wrap:pretty"><strong>Q4 — the cap.</strong> Now 9 (the keyboard wall). Whether 9 is too generous in practice remains open.</li>
+      <li style="text-wrap:pretty"><strong>Q5 — closed.</strong> Bottom tabs.</li>
+      <li style="text-wrap:pretty"><strong>Q6 — undo across a seal.</strong> Unchanged: proposed ⌘Z removes the chip without restoring text; needs a felt test.</li>
+      <li style="text-wrap:pretty"><strong>Q7 — dark appearance.</strong> Still unexplored.</li>
+      <li style="text-wrap:pretty"><strong>Q8 — the name.</strong> "Airlock" still a working title.</li>
+      <li style="text-wrap:pretty"><strong>Q9 — pause abuse.</strong> Serial top-ups can hold a page alive indefinitely, one deliberate double-click at a time. Is a cumulative ceiling (say, 7d of total held time) needed, or is requiring presence-per-24h discipline enough?</li>
+      <li style="text-wrap:pretty"><strong>Q10 — markdown scope.</strong> Headings only for now. Inline emphasis (**bold**, `code`) is cheap to add and easy to regret — the page should read like a text file, not a wiki. Revisit with use.</li>
+      <li style="text-wrap:pretty"><strong>Q11 — ledger retention.</strong> Session-bound today. Should it also age out on a fixed window (e.g. 24h) even within a long-running session?</li>
+    </ul>
+
+    <h2 style="margin:24px 0 8px;font-size:16px;font-weight:700">Appendix A · What the companion prototype proves</h2>
+    <p style="margin:0 0 8px;text-wrap:pretty"><a href="Airlock Prototype.dc.html">Airlock Prototype.dc.html</a> implements this document against a real clipboard: typing, ⌘V visible, ⇧⌘V sealed, drop-to-seal, ⌘↩ selection-or-line, the excerpt rule, chip atomicity and hover actions, the ladder with live drain and silent expiry (demo clock at 1×/60×/600×), bottom tabs with per-tab gauges, drag-reorder, double-click pause (1h → 24h → top-up), the 9-page wall, the ledger at ⌘0 with a pre-staged dead page, markdown heading rendering with markup kept, title-bar drag, edge resize, double-click stretch, and accept-never-take focus.</p>
+    <p style="margin:0 0 8px;text-wrap:pretty">Simulated, by necessity of the medium: capture exclusion, pasteboard concealment flags, core-side zeroization, and undo semantics (Q6). Browsers may reserve ⌘1–9/⌘0 for their own tabs; the prototype accepts ⌃1–9/⌃0 as equivalents. One fidelity rule honoured end-to-end: full content never enters the page's DOM — excerpts and counts only, exactly as the shipping UI layer would.</p>
+
+  </div>
+</x-import>
+</x-dc>
+</body>
+</html>

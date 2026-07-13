@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas">
+  <link rel="stylesheet" href="_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/colors_and_type.css">
+  <script src="_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/_ds_bundle.js"></script>
+  <style>
+    :root { --pg-bg:#F6F3EE; --pg-ink:#3E3831; --pg-sub:#5C554B; --pg-note:#98917F; --pg-ann:#8A8276; --pg-badge-bg:#EDE7DD; --pg-badge-ink:#3E3831; --pg-inv-bg:#3E3831; --pg-inv-ink:#F6F3EE; --pg-hair:rgba(62,52,40,.16); --pg-hair2:rgba(62,52,40,.08); --pg-led-a:#5C554B; --pg-led-b:#6F695F; }
+    body[data-appearance="dark"] { --pg-bg:#201B15; --pg-ink:#EAE3D8; --pg-sub:#C6BDAF; --pg-note:#8B8271; --pg-ann:#9C9384; --pg-badge-bg:#332C23; --pg-badge-ink:#D8D0C2; --pg-inv-bg:#EAE3D8; --pg-inv-ink:#201B15; --pg-hair:rgba(234,227,216,.24); --pg-hair2:rgba(234,227,216,.10); --pg-led-a:#C6BDAF; --pg-led-b:#A69D8C; }
+    body { margin: 0; background: var(--pg-bg); }
+    a { color: #D45A2A; text-decoration: none; }
+    a:hover { color: #A8431C; text-decoration: underline; }
+    body[data-appearance="dark"] a { color: #E0703F; }
+    body[data-appearance="dark"] a:hover { color: #EE9265; }
+    body[data-appearance="dark"][data-dim="true"] [data-artboard="true"] { filter: brightness(.87); }
+  </style>
+</helmet>
+
+<section data-screen-label="v10 — no labels" style="padding:44px 48px 72px;display:flex;flex-direction:column;gap:30px;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif;color:var(--pg-ink,#3E3831)">
+
+  <!-- ============ INTRO ============ -->
+  <div style="max-width:880px;display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="background:var(--pg-inv-bg,#3E3831);color:var(--pg-inv-ink,#F6F3EE);font:600 10px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px;letter-spacing:.08em">10</span>
+      <h1 style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em">v10 · the labels come off</h1>
+    </div>
+    <p style="margin:0;font-size:13px;line-height:1.55;color:var(--pg-sub,#5C554B);text-wrap:pretty">You're right — I carried the caption forward from the original cell anatomy without ever questioning it. Examined, the label answers a <strong>classifier's question</strong> ("what species is this?") that nobody at the panel is asking. The owner's question is <strong>"which one is this?"</strong> — and the fragment already answers it, because the owner pasted it twenty minutes ago: <span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px">ghp_…</span> is a GitHub token to anyone who owns one, <span style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px">postgres://</span> announces itself, PEM headers are literally self-labelling. Meanwhile the classifier costs a regex bank that must chase every new token format, guesses wrong just often enough to erode trust, and — worst — makes a privacy product that <em>parses your secrets to be helpful</em>. "We never read what you paste" is a stronger position than "we read it to protect you." So: the regex bank is deleted. Everything a chip shows is now built without reading the content — a simple excerpt (a fixed number of characters from the start and the end, no parsing) plus the clipboard's own metadata (kind, dimensions, byte size, filename, line count). Detection was also quietly doing a second job in <a href="Airlock Sheet v9.dc.html">v9</a> — deciding what gets masked. That decision is now made by origin, not content (<a href="#1c">1c</a>): typed text stays readable, pasted content lands masked.</p>
+    <p style="margin:0;font:11px/1.7 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-note,#98917F)">new rule: the app never reads what you paste — fragments are simple excerpts, counts are counts, names come from the clipboard's metadata · everything else unchanged: one countdown per sheet · hover → actions, never content · excluded from capture · ladder 1h→7d, default 8h</p>
+  </div>
+
+  <!-- ============ LEDGER ============ -->
+  <div style="max-width:880px;display:flex;flex-direction:column;gap:6px">
+    <span style="font-size:13px;font-weight:700">The label's jobs — and what handles each one now</span>
+    <div style="display:grid;grid-template-columns:236px 1fr;border-top:1px solid var(--pg-hair,rgba(62,52,40,.16))">
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">"which one is this?"</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">the visible fragment — a fixed number of characters from the start and end, middle hidden · it only has to be recognized by the person who pasted it, not identified by a stranger</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">"what species is this?"</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">dropped — nobody was asking · schemes, vendor prefixes and PEM headers self-identify; the label was mostly reading the answer off the value and handing it back</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">naming · context</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">the author's own typed line above the paste — the text file already taught everyone this ritual; the app stops competing with it (<a href="#1b">1b</a>)</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">mask or keep readable (v9's hidden detection job)</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">decided by origin, not content — typed text stays readable, pasted content is masked (<a href="#1c">1c</a>) · stricter than v9, which displayed "benign" pastes on screen and so quietly broke the no-plaintext rule again</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">kind · size (images, files)</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">the clipboard's own metadata — content type, dimensions, byte size, filename — read without ever opening the contents</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">the regex bank</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">deleted — nothing to maintain, no wrong guesses, less security-sensitive code to audit</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">what is honestly lost</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">the app can no longer notice when you type a secret by hand ("looks like a key — mask it?") — masking typed text becomes a manual step: select it, choose seal · and a harmless paste (an address, say) gets masked too; if that proves annoying in practice, a second paste command that keeps text visible (⌥⌘V) is the candidate fix — undecided</div>
+    </div>
+  </div>
+
+  <!-- ============ OPTIONS ROW ============ -->
+  <div style="display:flex;flex-wrap:wrap;gap:44px;align-items:flex-start">
+
+    <!-- ================= 1a SPECIMENS ================= -->
+    <div id="1a" data-screen-label="1a chip specimens" style="width:640px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:9px">
+        <a href="#1a" style="background:var(--pg-badge-bg,#EDE7DD);color:var(--pg-badge-ink,#3E3831);font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px">1a</a>
+        <span style="font-size:13.5px;font-weight:700">Specimens</span>
+        <span style="font-size:11.5px;color:var(--pg-ann,#8A8276)">the same five pastes, before and after.</span>
+      </div>
+      <div data-artboard="true" style="width:640px;box-sizing:border-box;border-radius:14px;background:#EDEBE7;border:1px solid rgba(62,52,40,.16);box-shadow:0 12px 32px rgba(50,40,30,.16);padding:18px 20px 20px">
+        <div style="display:grid;grid-template-columns:1fr 30px 1fr;align-items:center;row-gap:13px;font-family:ui-monospace,'SF Mono',Menlo,monospace">
+          <div style="font-size:10px;letter-spacing:.08em;color:#98917F">V9 — ANSWERS "WHAT SPECIES?"</div>
+          <div></div>
+          <div style="font-size:10px;letter-spacing:.08em;color:#98917F">V10 — ANSWERS "WHICH ONE?"</div>
+
+          <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">GITHUB TOKEN</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">••••••••&nbsp;&nbsp;ghp_4kQ…H5jK</span></div>
+          <div style="text-align:center;color:#B0A896;font-size:11px">→</div>
+          <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px"><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">ghp_4kQ9w…H5jK</span><span style="font-size:9.5px;color:#98917F">40&nbsp;ch</span></div>
+
+          <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">POSTGRES URL</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">postgres://ops:••••@db-3…</span></div>
+          <div style="text-align:center;color:#B0A896;font-size:11px">→</div>
+          <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px"><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">postgres://o…internal/prod</span><span style="font-size:9.5px;color:#98917F">52&nbsp;ch</span></div>
+
+          <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">PRIVATE KEY</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">-----BEGIN OPENSSH ••••</span></div>
+          <div style="text-align:center;color:#B0A896;font-size:11px">→</div>
+          <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px"><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">-----BEGIN OPENSS…</span><span style="font-size:9.5px;color:#98917F">14&nbsp;ln</span></div>
+
+          <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">LOOKS LIKE A PASSWORD</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">••••••••••</span></div>
+          <div style="text-align:center;color:#B0A896;font-size:11px">→</div>
+          <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px"><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">k9$…w3f</span><span style="font-size:9.5px;color:#98917F">18&nbsp;ch</span></div>
+
+          <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">IMAGE · 1440×900</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">Screenshot — build 4471</span></div>
+          <div style="text-align:center;color:#B0A896;font-size:11px">→</div>
+          <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px"><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">Screenshot — build 4471</span><span style="font-size:9.5px;color:#98917F">1440×900 · 412&nbsp;KB</span></div>
+        </div>
+      </div>
+      <p style="margin:0;font:11px/1.65 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-ann,#8A8276)">the caps line was a regex library's guess; the fragment is the value identifying itself — the postgres row is your example: the scheme already said postgres · the excerpt rule is fixed and simple (about the first 12 and last 12 characters; first line only for multi-line pastes) — simple is the safety argument: nothing to parse, nothing to guess wrong · where no fragment is possible (an image), the clipboard's metadata fills in: filename, dimensions, file size · the fourth row is the hard case: a random password has no recognizable start — there the character count and your own line above it (<a href="#1b">1b</a>) do the naming</p>
+    </div>
+
+    <!-- ================= 1b THE SHEET, RELABELLED BY ITS AUTHOR ================= -->
+    <div id="1b" data-screen-label="1b sheet without labels" style="width:490px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:9px">
+        <a href="#1b" style="background:var(--pg-badge-bg,#EDE7DD);color:var(--pg-badge-ink,#3E3831);font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px">1b</a>
+        <span style="font-size:13.5px;font-weight:700">The sheet, relabelled by its author</span>
+      </div>
+      <div data-artboard="true" style="width:490px;height:420px;border-radius:14px;overflow:hidden;position:relative;background:linear-gradient(168deg,#B7AFA4 0%,#9C948A 48%,#837B72 100%);border:1px solid rgba(62,52,40,.14);box-shadow:0 12px 32px rgba(50,40,30,.16)">
+        <div style="height:26px;display:flex;align-items:center;gap:13px;padding:0 12px;background:#F5F3F0;border-bottom:1px solid rgba(62,52,40,.10);font-size:11.5px;color:#3E3831">
+          <span style="font-size:12px"></span><span style="font-weight:700">Finder</span><span>File</span><span>Edit</span><span>View</span><span>Go</span>
+          <span style="flex:1"></span>
+          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="#3E3831" stroke-width="1.4" stroke-dasharray="26 6.7" transform="rotate(-25 8 8)"></circle><circle cx="8" cy="8" r="1.7" fill="#3E3831"></circle></svg>
+          <span style="font-variant-numeric:tabular-nums">Sat 12 Jul&nbsp;&nbsp;9:41</span>
+        </div>
+        <div style="position:absolute;top:34px;right:10px;width:332px;border-radius:11px;background:#EDEBE7;border:1px solid rgba(62,52,40,.16);box-shadow:0 22px 44px rgba(40,32,24,.26),0 2px 6px rgba(40,32,24,.12)">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 7px">
+            <span style="font-size:12px;font-weight:600;color:#4A443C">Airlock</span>
+            <span style="flex:1"></span>
+            <span style="font:700 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#6F695F">8h</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.6 1.2l3.2 3.2-2 .5-1.5 1.5-.4 2.8-1.9-1.9-2.6 2.6-.4-.4 2.6-2.6-1.9-1.9 2.8-.4L7.1 3.2z" fill="#A39A8C"></path></svg>
+          </div>
+          <div style="margin:0 10px;background:#F7F5F2;border:1px solid rgba(62,52,40,.10);border-radius:8px;overflow:hidden">
+            <div style="padding:10px 12px 12px;font-family:ui-monospace,'SF Mono',Menlo,monospace">
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">deploy friday, in order —</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">ghp_4kQ9w…H5jK</span><span style="font-size:9.5px;color:#98917F">40&nbsp;ch</span></div>
+              <div style="height:16px"></div>
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">dsn for the migration:</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">postgres://o…internal/prod</span><span style="font-size:9.5px;color:#98917F">52&nbsp;ch</span></div>
+              <div style="height:16px"></div>
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">courier drop-off, typed so it stays visible:</div>
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">14 Rue de la Paix, 75002 Paris</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">Screenshot — build 4471</span><span style="font-size:9.5px;color:#98917F">1440×900 · 412&nbsp;KB</span></div>
+            </div>
+            <div style="height:3px;background:rgba(62,52,40,.07)"><div style="height:100%;width:85%;background:#9A9185"></div></div>
+          </div>
+          <div style="display:flex;align-items:center;padding:8px 12px 9px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#A39A8C"><span>excluded from screen capture</span><span style="flex:1"></span><span style="color:#B4552E">↗&nbsp;page</span></div>
+        </div>
+      </div>
+      <p style="margin:0;font:11px/1.65 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-ann,#8A8276)">v9's page, redrawn — chips drop to one line and the sheet reads like the text file it's modelled on · the typed lines were already doing the naming; with the caps rows gone they do it alone, and better ("dsn for the migration" says more than "POSTGRES URL" ever did) · nothing on this page required reading a paste</p>
+    </div>
+
+    <!-- ================= 1c PROVENANCE ================= -->
+    <div id="1c" data-screen-label="1c provenance seals" style="width:490px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:9px">
+        <a href="#1c" style="background:var(--pg-badge-bg,#EDE7DD);color:var(--pg-badge-ink,#3E3831);font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px">1c</a>
+        <span style="font-size:13.5px;font-weight:700">Masked by origin, not by detection</span>
+      </div>
+      <div data-artboard="true" style="width:490px;height:420px;border-radius:14px;overflow:hidden;position:relative;background:linear-gradient(168deg,#B7AFA4 0%,#9C948A 48%,#837B72 100%);border:1px solid rgba(62,52,40,.14);box-shadow:0 12px 32px rgba(50,40,30,.16)">
+        <div style="height:26px;display:flex;align-items:center;gap:13px;padding:0 12px;background:#F5F3F0;border-bottom:1px solid rgba(62,52,40,.10);font-size:11.5px;color:#3E3831">
+          <span style="font-size:12px"></span><span style="font-weight:700">Airlock</span><span>Edit</span>
+          <span style="flex:1"></span>
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:20px;border-radius:5px;background:rgba(62,52,40,.16)"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="#3E3831" stroke-width="1.4" stroke-dasharray="26 6.7" transform="rotate(-25 8 8)"></circle><circle cx="8" cy="8" r="1.7" fill="#3E3831"></circle></svg></span>
+          <span style="font-variant-numeric:tabular-nums">Sat 12 Jul&nbsp;&nbsp;9:41</span>
+        </div>
+        <div style="position:absolute;top:34px;right:10px;width:332px;border-radius:11px;background:#EDEBE7;border:1px solid rgba(62,52,40,.16);box-shadow:0 22px 44px rgba(40,32,24,.26),0 2px 6px rgba(40,32,24,.12)">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 7px">
+            <span style="font-size:12px;font-weight:600;color:#4A443C">Airlock</span>
+            <span style="flex:1"></span>
+            <span style="font:10px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#B0A896">esc returns</span>
+            <span style="font:700 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#6F695F">8h</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.6 1.2l3.2 3.2-2 .5-1.5 1.5-.4 2.8-1.9-1.9-2.6 2.6-.4-.4 2.6-2.6-1.9-1.9 2.8-.4L7.1 3.2z" fill="#A39A8C"></path></svg>
+          </div>
+          <div style="margin:0 10px;background:#F7F5F2;border:1.5px solid rgba(212,90,42,.45);border-radius:8px;overflow:hidden">
+            <div style="padding:10px 12px 12px;font-family:ui-monospace,'SF Mono',Menlo,monospace">
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">wifi at the venue:</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.22);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">k9$…w3f</span><span style="font-size:9.5px;color:#98917F">18&nbsp;ch</span></div>
+              <div style="height:16px"></div>
+              <div style="display:flex;align-items:center;gap:1px"><span style="display:inline-block;width:1.5px;height:14px;background:#3F3A33"></span></div>
+            </div>
+            <div style="height:3px;background:rgba(62,52,40,.07)"><div style="height:100%;width:97%;background:#9A9185"></div></div>
+          </div>
+          <div style="display:flex;align-items:center;padding:8px 12px 9px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#A39A8C"><span>excluded from screen capture</span><span style="flex:1"></span><span style="color:#B4552E">↗&nbsp;page</span></div>
+        </div>
+      </div>
+      <p style="margin:0;font:11px/1.65 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-ann,#8A8276)">the rule fits in a sentence: you wrote it, you see it — you pasted it, it's masked · no judgment call, no parsing, and it restores the rule v9 had bent: pasted content never appears on screen, whatever it is · shown: the label line was typed, the password chip just landed at the caret · masking typed text stays manual (select it, choose seal); whether to add a keep-it-visible paste command is the open question from the table above</p>
+    </div>
+
+  </div>
+
+  <p style="margin:6px 0 0;font:11px/1.7 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-note,#98917F)">Try next: "test the excerpt rule against real values — first 8 + last 4 vs first 12 + last 12: can a database URL's password ever show through?" · "design the select-then-seal gesture for typed secrets" · "decide if a keep-it-visible paste command (⌥⌘V) is worth adding" · "redraw v9's sheet switchers with these unlabelled chips" · "put copy and create-link on the one-line chip's hover"</p>
+
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;darkMode&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Appearance&quot;},&quot;dimArtboards&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Appearance&quot;}}">
+class Component extends DCLogic {
+  componentDidMount() { this.syncAppearance(); }
+  componentDidUpdate() { this.syncAppearance(); }
+  syncAppearance() {
+    const dark = this.props.darkMode ?? true;
+    const dim = this.props.dimArtboards ?? true;
+    document.body.dataset.appearance = dark ? 'dark' : 'light';
+    document.body.dataset.dim = dim ? 'true' : 'false';
+  }
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -36,8 +36,8 @@ macos-companion/
 ├── .editorconfig
 ├── .gitignore               # target/, .DS_Store, *.p12, *.provisionprofile
 ├── crates/
-│   ├── core/                # cell store, TTL wheel, zeroizing buffers,
-│   │                        #   secret-shape heuristics — no macOS deps
+│   ├── core/                # sheet store, TTL wheel, zeroizing buffers
+│   │                        #   — no macOS deps (detection deleted, rev C)
 │   ├── ots-client/          # v3 API + auth strategy trait — no macOS deps
 │   └── pasteboard/          # NSPasteboard adapter (objc2) — macOS-only
 ├── shell/                   # empty until ADR-0002 (the milestone-2 decision)

@@ -32,7 +32,7 @@ we need:
 
 The closest neighbours in *ergonomics*: a drop target appears, holds files
 and snippets mid-drag, and gets out of the way. They validated the
-edge-docked, drag-first, present-not-centre-stage interaction. What they
+drag-first, present-not-centre-stage interaction. What they
 miss:
 
 - **No time model.** A shelf holds items until you remove them. In
@@ -83,9 +83,9 @@ a one-click exit to secure transfer has no incumbent.**
 ### 1. Time-remaining as the primary visual state
 
 Everywhere else, expiry is buried metadata (a tooltip, a settings page).
-Making the TTL the most prominent thing about each cell — a draining
-visual cue plus a natural-time label — changes what the interface *is*: a
-glance at the panel answers "what is in flight and how long does it have",
+Making the TTL the most prominent thing about each sheet — a draining
+gauge plus a natural-time label — changes what the interface *is*: a
+glance at the window answers "what is in flight and how long does it have",
 which is the only question a staging area needs to answer. No other app
 renders time as the content's principal attribute.
 
@@ -93,8 +93,8 @@ renders time as the content's principal attribute.
 
 The interactive label (click to cycle `1h → 3h → 8h → 24h → 3d → 7d`,
 resetting the clock) collapses what would elsewhere be a preferences pane,
-a per-item settings sheet, and a date picker into one affordance on the
-cell itself. Two properties worth protecting: the vocabulary is *natural
+a per-item settings sheet, and a date picker into one affordance in the
+sheet's header. Two properties worth protecting: the vocabulary is *natural
 time* (humans plan in "3 days", not timestamps), and the ceiling is low
 (7 days is the maximum life; there is no "forever" on the wheel — the
 absence of a keep-forever option is a design statement, not a missing
@@ -102,21 +102,21 @@ feature).
 
 ### 3. Deliberate placement as the privacy model
 
-Because nothing is captured automatically, everything in the panel is
+Because nothing is captured automatically, everything in the window is
 there by an intentional act. That single decision eliminates the entire
 "my clipboard manager recorded my password" class of problem, makes the
-panel's contents meaningful (100% signal), and keeps the mental model
+window's contents meaningful (100% signal), and keeps the mental model
 honest: the user always knows what the app holds, because they put every
 item there.
 
 ### 4. The promotion gradient
 
-Local cell → Onetime Secret link is a *gradient of the same idea* —
+Local sheet → Onetime Secret link is a *gradient of the same idea* —
 ephemeral, view-limited content — extended from one machine to two
 parties. Overlooked by everyone: senders have no staging, stagers have no
-sending. Concretely: the cell's remaining TTL seeds the secret's TTL, the
+sending. Concretely: the sheet's remaining TTL seeds the secret's TTL, the
 API call is `POST /api/v3/secret/conceal`, the returned link lands in the
-clipboard, and the local cell can offer to burn itself now that the
+clipboard, and the local copy can offer to burn itself now that the
 content has a better home. One click from "held here" to "en route,
 one-time, encrypted" — with the content never passing through a browser
 tab or sitting exposed in the clipboard along the way.
@@ -144,9 +144,9 @@ doc 01). See doc 03.
 The platform provides hooks that neighbours ignore or merely comply with;
 this app can treat them as product features: mark its own copies with
 `ConcealedType` (and a transient pasteboard type) so clipboard managers
-ignore content leaving the panel; exclude the panel from screen capture
+ignore content leaving the window; exclude the window from screen capture
 and screen sharing (`NSWindow.sharingType = .none`); offer clipboard
-clear-after-copy with a countdown; hold cell contents in zeroized,
+clear-after-copy with a countdown; hold sealed content in zeroized,
 non-swappable memory. Individually small; together they make "the right
 place to put a secret for an hour" a defensible technical claim, not a
 slogan. Details in doc 05.

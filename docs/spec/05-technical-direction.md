@@ -16,12 +16,12 @@ A UI-agnostic core crate plus a thin shell:
 │   panel window · tray · drag-drop · a11y    │
 ├─────────────────────────────────────────────┤
 │ core crate (pure Rust, no UI deps)          │
-│   cell store (memory-only, zeroizing)       │
+│   sheet store (ink + sealed bytes,          │
+│     memory-only, zeroizing)                 │
 │   TTL scheduler (timer wheel, no polling)   │
 │   pasteboard adapter (NSPasteboard, kinds,  │
-│     ConcealedType read/write)               │
+│     ConcealedType/transient write)          │
 │   ots-client (v3 API, auth strategies)      │
-│   secret-shape detection (heuristics)       │
 └─────────────────────────────────────────────┘
 ```
 
@@ -43,9 +43,9 @@ behaviours it lacks (non-activating NSPanel, `sharingType`,
 pasteboard types), on the strength of maturity + a11y + contributor
 accessibility — with the Swift-shell option kept live as the
 better-native fallback, made cheap by the core-crate architecture.
-Decision belongs to milestone 2 after a two-way spike: the panel
-experience (non-activating, edge-docked, drag-in) is the make-or-break
-surface to prototype in both.
+Decision belongs to milestone 2 after a two-way spike: the window
+experience (non-activating accessory, accept-never-take focus, drag-in)
+is the make-or-break surface to prototype in both.
 
 Non-negotiables regardless of shell: signed + notarized, universal binary
 (arm64 first), sandboxed if feasible (pasteboard and network entitlements
@@ -56,11 +56,12 @@ download as a target, no always-resident helper processes.
 
 The claims in docs 02–03, made implementable:
 
-- **Memory-only by default.** Cells live in RAM; process exit is total
-  amnesia (v1 behaviour; persistence across restart is an open question).
-  Buffers zeroized on expiry/discard (`zeroize`), `mlock` where practical
-  for small secret-shaped payloads; large images excluded from `mlock`
-  and documented as such.
+- **Memory-only by default.** Sheets live in RAM; process exit is total
+  amnesia — including the ledger, which is session-bound by design (v1
+  behaviour; persistence across restart is an open question). Sealed
+  buffers zeroized on expiry/discard (`zeroize`), `mlock` where practical
+  for small sealed payloads; large images excluded from `mlock` and
+  documented as such.
 - **Zeroization is why the core is Rust.** Swift is memory-safe but not
   memory-hygienic: `String`/`Data` are copy-on-write, ARC/autorelease and
   `NSString` bridging create uncontrolled copies, and there is no blessed
@@ -68,23 +69,31 @@ The claims in docs 02–03, made implementable:
   Platform security APIs (Keychain, CryptoKit, `sharingType`, Sandbox)
   are equally reachable from any shell and don't differentiate; buffer
   lifecycle does.
-- **Rendering vs residence.** Displaying a secret in a UI layer for the
-  moments a human reads it is a normal, accepted exposure — browsers do
-  secure work all day, including Onetime Secret itself. The rule is about
-  *residence*: the authoritative copy lives at rest only in the zeroizing
-  core; any shell's UI layer (DOM included) receives plaintext
-  transiently, on demand, for display, and never retains it in frontend
-  state for the cell's lifetime. Copy-out goes core → pasteboard
-  directly, not through the UI layer. Residual heap/crash-dump copies in
-  a webview process are a real but marginal exposure under the threat
-  model below — a scoring criterion for the shell decision, not a gate.
+- **Sealed bytes never reach the UI layer.** *(Amended by rev C — this
+  was previously the softer "rendering vs residence" rule, which allowed
+  the UI transient plaintext for display.)* Rev C's gesture-only masking
+  makes the hard law affordable: sealed content has **no display form at
+  all** — the UI receives only the mechanical excerpt and counts, so it
+  can never draw the bytes, and no reveal affordance can exist. Visible
+  ink is ordinary text the user chose to keep readable; it transits the
+  UI like any editor's buffer. Copy-out and promotion of sealed bytes go
+  core → pasteboard / core → network client directly, never through the
+  UI layer. This upgrades the webview-residual-copy concern from a
+  scoring criterion to a solved case for sealed content.
+- **No content inspection.** The v10 round deleted secret-shape
+  detection entirely: the core never parses, classifies, or scores what
+  arrives. Excerpts are fixed-budget substrings; metadata comes from the
+  clipboard's own declarations. Less security-sensitive code to audit,
+  and "we never read what you paste" stays literally true.
 - **Pasteboard hygiene.** Outbound copies marked
-  `org.nspasteboard.ConcealedType` + transient; inbound `ConcealedType`
-  respected by masking the cell by default. Optional clear-after-copy
+  `org.nspasteboard.ConcealedType` + transient. *(Amended by rev C:
+  inbound `ConcealedType` no longer drives masking — masking is decided
+  by the user's gesture alone, doc 04.)* Optional clear-after-copy
   (clear the system clipboard N seconds after a copy-out, only if the
   clipboard still holds our change-count).
-- **Capture exclusion.** Panel `NSWindow.sharingType = .none` by default,
-  surfaced honestly in the UI as a toggle.
+- **Capture exclusion.** Window `NSWindow.sharingType = .none` by
+  default. *(Amended by rev C: the on-surface "excluded from screen
+  capture" caption is gone — the setting toggle is the honest surface.)*
 - **Runtime memory dumping.** Unlike Linux (`ptrace`, `/proc/pid/mem` —
   trivial with same UID), macOS blocks `task_for_pid` against a Hardened
   Runtime binary without `get-task-allow` — even for root, unless SIP is
@@ -114,9 +123,10 @@ Grounded in the current repo (`apps/api/v3/routes.txt`,
 
 - **Promotion** → `POST /api/v3/secret/conceal` with
   `{ kind: "conceal", secret, ttl, share_domain, passphrase?, recipient? }`.
-  Cell-remaining-TTL seeds `ttl`, snapped to server-permitted values;
-  entitlement rejections (cf. `secret_ttl_entitlement_spec.rb`) surface
-  inline with the nearest allowed value offered.
+  The sheet's remaining TTL seeds `ttl`, snapped to server-permitted
+  values; entitlement rejections (cf. `secret_ttl_entitlement_spec.rb`)
+  surface inline with the nearest allowed value offered. Sealed bytes are
+  composed into the request core-side (see the boundary law above).
 - **Auth, phase 1:** HTTP Basic (`basicauth` strategy — API key + secret
   pair, configured alongside the organization `extid`), stored in
   Keychain. **Phase 2:** PASETO bearer tokens when v3 auth ships; the
@@ -126,8 +136,8 @@ Grounded in the current repo (`apps/api/v3/routes.txt`,
   `POST /api/v3/guest/secret/conceal` allows promotion with no account —
   worth supporting so the open-source app is fully useful against
   self-hosted instances with zero setup.
-- **Post-promotion:** store only the receipt identifier on the live cell
-  (for a "burn remote" affordance on that cell alone). No receipt
+- **Post-promotion:** store only the receipt identifier on the live
+  sheet (for a "burn remote" affordance there alone). No receipt
   browsing, no local history of promoted secrets (doc 03 §5).
 - **Server config:** `GET /api/v3/status` + config endpoints at
   connection-test time to learn allowed TTLs and share domains, cached in
@@ -137,26 +147,30 @@ Grounded in the current repo (`apps/api/v3/routes.txt`,
 
 Category-defying per doc 02 §8; committed now because retrofits fail:
 
-- **Keyboard-complete.** Every operation in doc 04's table has a binding;
-  the global summon hotkey focuses the panel for full keyboard operation.
-- **VoiceOver-legible.** Each cell is one accessibility element with a
-  composed label ("Text, postgres URL, 142 characters, expires in 7
-  hours"); the TTL label is an adjustable control (VO-arrows step the
-  ladder); the draining ring mirrors into an accessibility value that
+- **Keyboard-complete.** Every operation in doc 04's keyboard map has a
+  binding; ⌥Space summons the window for full keyboard operation, esc
+  hands it back.
+- **VoiceOver-legible.** A sealed chip is one accessibility element with
+  a composed label built from its excerpt and count ("Sealed, ghp_4kQ9…,
+  40 characters"); the countdown label is an adjustable control
+  (VO-arrows step the ladder); each tab announces its name and remaining
+  time; the draining gauge mirrors into an accessibility value that
   announces at coarse thresholds only (no chatter).
-- **Not colour-only.** Urgency encoded in ring geometry + label text, not
-  hue alone; WCAG 2.2 AA contrast against both system materials.
+- **Not colour-only.** Urgency encoded in gauge texture (hatching) +
+  label text, not hue alone; WCAG 2.2 AA contrast against both system
+  materials.
 - **Motion-respectful.** `prefers-reduced-motion` swaps the draining
   animation for stepped states; no parallax, no bounce.
-- **Text scaling.** Cells reflow with system text size; the panel is a
-  column, so this is layout-cheap if honoured from the first sketch.
+- **Text scaling.** The sheet is a text view and tabs a single strip, so
+  reflow with system text size is layout-cheap if honoured from the
+  first sketch.
 
 ## Frugality budget (v1 targets, measured in CI once real)
 
 | Metric | Target |
 | --- | --- |
 | Download size | < 10 MB |
-| Resident memory, idle w/ 5 cells | < 60 MB (Tauri) / < 25 MB (native shell) |
+| Resident memory, idle w/ 5 sheets | < 60 MB (Tauri) / < 25 MB (native shell) |
 | Idle CPU | ~0% (no timers ticking; TTL expiry scheduled) |
 | Wakeups | No periodic wakeups while panel hidden |
 | Network at rest | Zero connections |

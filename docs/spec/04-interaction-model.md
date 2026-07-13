@@ -1,155 +1,287 @@
 # docs/spec/04-interaction-model.md
 ---
 
-# Interaction Model (draft)
+# Interaction Model (revision C — the window)
 
-Supporting material for milestone 1 — a concrete sketch so the principles
-in doc 03 can be argued against, not a finalized interface. Everything
-here is revisable; the open questions it generates live in doc 06.
+Supporting material for milestone 1 — the concrete model the principles in
+doc 03 are argued against. This is **revision C**, replacing the rev A
+text that previously lived in this file. It consolidates two design
+rounds so it reads self-contained:
+
+- **Rev A** (the previous text of this doc): a stack of "SleeperCells",
+  each with its own TTL, masked by content detection.
+- **Rev B** (*the sheet*, design rounds v7–v10 — never landed in this
+  repo): the stack became a single page of freely typed **ink** holding
+  opaque **sealed chips**; one countdown per sheet; content detection was
+  deleted outright.
+- **Rev C** (*the window*, 12 Jul 2026 decision rounds): the panel became
+  a real window, tabs moved to the bottom edge and gained a keyboard map,
+  the clock learned to pause, dead pages got the ledger, and the page
+  learned to read markdown without rewriting it.
+
+Sources: `docs/Airlock Prototype/Airlock Spec.dc.html` (rev C, authoritative
+for conflicts), the design rounds v7–v10 in the same folder, and the
+working prototype `docs/Airlock Prototype/Airlock Prototype.dc.html`.
+Where this document contradicts rev A or rev B, this document governs.
+The product frame is unchanged: a chamber things pass through, never a
+place they live.
+
+## The shape of the thing
+
+A menu-bar resident summons a non-activating window. The window shows one
+sheet; the sheet holds **ink** (visible text) and **sealed chips** (opaque
+tokens for deliberately masked content). One countdown governs the page;
+zero means zeroized, silently. Sheets multiply as bottom-edge tabs,
+Excel-anchored, each tab carrying its own gauge. A permanent dashed tab at
+the strip's right end is the ledger.
+
+```
+┌ Airlock ······································ 8h ✈ ┐
+│                                                     │
+│  ### deploy friday                  ← styled, markup│
+│  in order —                           kept visible  │
+│  [ ghp_4kQ9wXbG…e0H5jK · 40 ch ]    ← sealed chip   │
+│                                                     │
+│  ████████████████████░░░░           ← the gauge     │
+│                                            ↗ page   │
+├──────┬─────────┬────┬───────────────────────────────┤
+│deploy│⏸ errands│ +  │                        ◌ 1    │
+└──────┴─────────┴────┴───────────────────────────────┘
+```
+
+Tabs hang from the bottom edge like Excel's; each carries its own gauge;
+⏸ marks a paused clock; the dashed ◌ tab is the ledger.
 
 ## Surfaces
 
 ### Menu bar item
 
 The app's only permanent presence. Monochrome template icon, no badge, no
-count. Click toggles the panel; drag-hover onto the icon opens the panel
-to receive the drop. The menu (right-click) carries the boring necessities:
+count. Click toggles the window; drag-hover onto the icon opens it to
+receive the drop. The menu (right-click) carries the boring necessities:
 Settings, About, Quit — not features.
 
-### The panel
+### The window
 
-A single column docked adjacent to a user-chosen screen edge (right edge
-default), sized like a sidebar, visually quiet (system materials, respects
-light/dark). Behaviour:
+Rev B's fixed edge-docked panel is now a window in the ordinary macOS
+sense, while remaining a **non-activating accessory**:
 
-- **Non-activating.** Opening the panel does not deactivate the user's app
-  (NSPanel semantics). Copy-out and TTL clicks work without the user
-  losing their place; keyboard focus is taken only when explicitly
-  summoned via hotkey.
-- **Summon/dismiss.** Menu bar click, a global hotkey (configurable,
-  keyboard-first users are first-class), and appearing automatically
-  during any drag that hovers the docked edge (shelf-app convention).
-  Dismisses on Esc, on click-outside, or stays pinned if the user pins it.
-- **Excluded from capture.** The panel is invisible to screen sharing and
-  screenshots by default (`sharingType = .none`); a visible indicator
-  states this, and it is a setting, not a hidden behaviour.
+- **Moves** by its title bar; **resizes** from any edge or corner (the
+  page grows; chrome stays constant).
+- **Double-clicking the title bar stretches it vertically** to full
+  working height — double-click again to return.
+- **Position and size persist** across summons.
+- **Excluded from capture.** Invisible to screen sharing and screenshots
+  by default (`sharingType = .none`). Rev C removed the "excluded from
+  screen capture" caption from the surface — the surface should be quiet
+  about its own plumbing; the exclusion itself is unchanged and lives in
+  settings.
 
-### Layout, top to bottom
+### Focus: accept, never take
 
-1. **Drop zone** — a generous, always-present target strip at the top.
-   Also acts as the paste target: with the panel focused, ⌘V lands here.
-2. **SleeperCells** — newest at top, a vertical stack of uniform cells.
-3. **Footer whisper** — a single line: connection state to the Onetime
-   Secret account *iff* one is configured; otherwise nothing.
+None of the window behaviour changes the focus law. The window accepts
+the keyboard by deliberate act only — click into the page, or summon with
+⌥Space — and never becomes the key window for chrome interactions. Esc
+hands the keyboard back. An ember border shows while the page holds keys.
+Opening the window never deactivates the user's frontmost app.
 
-The empty state is one sentence ("Drop or paste something on its way
-somewhere else.") and dimmed keyboard-shortcut hints. No illustrations, no
-onboarding carousel.
+## The sheet: ink and sealed chips
+
+A sheet reads like a little text file. **Ink** is anything typed —
+visible, editable, ordinary text. A **sealed chip** is an opaque token
+standing in for content that was deliberately masked; its bytes route
+core-side and never render.
+
+Masking is decided by **gesture, not by content and not by origin**. The
+app never parses, classifies, or scores what arrives — the v10 round
+deleted the regex bank on the argument that *"we never read what you
+paste" is a stronger position than "we read it to protect you"*. Excerpts
+are mechanical; counts are counts; detection never returns.
 
 ## Getting content in
 
-| Route | Gesture | Notes |
+| Route | Lands as | Why |
 | --- | --- | --- |
-| Drag & drop | Onto panel, drop zone, or menu-bar icon | Text, RTF (flattened to plain), images, and promoted-file *contents* (small text/image files); not a file shelf — files themselves are out of scope initially |
-| Paste | ⌘V with panel focused; global "paste to panel" hotkey | The global hotkey is the power path: stage the current clipboard without touching the mouse |
-| Services / share ext. | "Stage in ‹app›" from selection | Later milestone |
+| Typing | visible ink | You wrote it; you see it |
+| ⌘V | visible ink | Paste behaves like every text editor on the machine — plain text, no surprises |
+| ⇧⌘V | sealed chip | The masked paste — consent expressed by the gesture; bytes route core-side, never render. Rekeyed from ⌥⌘V (OS collision: Finder's "Move Item Here"); ⌥V held as fallback candidate |
+| Drop onto the window | sealed chip | Dragging content to a secrecy tool is already the "stage this" gesture (doc 06) |
+| ⌘↩ / select → seal | sealed chip | The retrofit — seals the selection, or with no selection the current line, if the line holds content |
+| Images, any route | sealed chip | An image has no inline-text form; the chip shows clipboard metadata only |
 
-On arrival a cell is created with the default TTL (proposed: **8h** — a
-working day; see doc 06). No dialog, no naming step, no confirmation. The
-cell appearing *is* the receipt.
+The **paste-flip guarantee**: nothing is sealed without your gesture, and
+nothing sealed ever renders.
 
-## The SleeperCell
+No dialog, no naming step, no confirmation on any route. The author's own
+typed line above a chip does the naming — "dsn for the migration" says
+more than a detected "POSTGRES URL" label ever did.
 
-The unit of the interface. Anatomy, left to right:
+### Sealing by keyboard — ⌘↩
 
-```
-┌────────────────────────────────────────────────┐
-│ ◔  Aa  "postgres://ops:•••@db-3.internal…"     │
-│        142 chars · pasted 14:02        [ 8h ]  │
-│                                        ↗ link  │
-└────────────────────────────────────────────────┘
-  │   │   │                               │  └── promote CTA (subtle, hover/focus-revealed)
-  │   │   └── recognition line: trimmed   └── interactive TTL label
-  │   │       snippet or image thumbnail
-  │   └── kind glyph (text / image / concealed)
-  └── time-remaining cue (draining ring)
-```
+The seal shortcut is **⌘↩ (Command-Return)**, replacing rev B's proposed
+⌥⌘S. Semantics: with a selection, seal the selection; with a bare caret,
+seal the **current line**, if the line holds content. A line already
+holding a chip refuses with an explanation; an empty line does nothing.
+⌘↩ is the natural "commit this line" gesture, it has no OS-level claim
+inside a text view, and it makes the common case — paste a secret, seal
+it — a two-keystroke sequence with the hands never leaving home row. The
+floating on-selection affordance remains the discoverable path and
+teaches ⌘↩.
 
-- **Time-remaining cue.** A small ring (or edge gauge) that visibly
-  drains over the cell's life. Continuous, ambient, honest — the primary
-  visual state per doc 02 §1. In the final hour it shifts along a second
-  channel besides colour (thickness/texture) so urgency is not
+## The sealed chip
+
+- **The excerpt rule is mechanical.** Single line: reveal budget
+  `min(24, ⌊n/3⌋)` characters, split 60/40 head–tail, middle hidden.
+  Multi-line: first line only, ≤ 17 characters, with the count shown in
+  lines. Images and files: clipboard metadata only (kind, dimensions,
+  byte size, filename) — read without opening the contents. The excerpt
+  only has to be *recognized by the person who pasted it*, not identified
+  by a stranger.
+- **Never revealable.** No reveal affordance exists, at any privilege.
+- **Atomic under the caret.** Arrows step over it, one ⌫ removes it
+  whole, selection cannot reach inside it.
+- **Hover reveals actions, never content:** copy-out (marked transient +
+  concealed on the pasteboard, non-consuming — multi-paste is a core
+  moment) and ↗ link (promotion).
+- **No per-chip timers, ever.** Time belongs to the sheet.
+
+## Time: the ladder, the gauge, and the pause
+
+- **One countdown per sheet.** The ladder: `1h → 3h → 8h → 24h → 3d →
+  7d`, default **8h**. Click the header label to cycle; each click resets
+  the clock to the shown rung. (Wrap semantics at the top of the ladder
+  remain an open question — doc 06.)
+- **The gauge.** The page's bottom edge drains continuously; each tab
+  carries its own gauge, so cross-sheet urgency reads as geometry. Under
+  one hour it turns ember with a hatched texture — urgency is never
   colour-only.
-- **Recognition line.** First ~60 chars of text (middle-ellipsized) or an
-  image thumbnail, plus a metadata whisper (size, arrival time). Content
-  detected as secret-shaped (arrived with `ConcealedType`, or matches
-  key/token patterns) renders masked by default with a reveal-on-hold.
-- **Interactive TTL label.** Reads as natural time remaining ("8h",
-  "3d"). Click to cycle the ladder `1h → 3h → 8h → 24h → 3d → 7d → 1h`,
-  each click *resetting* the clock to the shown value. One affordance for
-  extend, shorten, and reset; no menus, no pickers. Scroll/arrow-keys on
-  the focused label also step it.
-- **Promote CTA.** A quiet "↗ link" revealed on hover/focus (always
-  present to assistive tech). See promotion flow below.
+- **The pause.** Double-click a tab to hold that page's clock: the first
+  double-click holds it for **1 hour**; a second extends the hold to
+  **24 hours**; further double-clicks **top the hold back up** to 24
+  hours from now. While held, the tab shows ⏸, the gauge freezes with a
+  dashed fill, and remaining life does not drain. When the hold lapses,
+  the page is simply a regular page again — no notification, no state to
+  clean up. A pause holds the clock; it never extends the rung. The
+  honest tension — pausing is a lever against ephemerality — is bounded
+  by the top-up ceiling (24h per press, never cumulative) and logged in
+  doc 06.
+- **Expiry is silent** — no notification, no badge. The dead page's ink
+  rests in the ledger; its sealed bytes are zeroized at expiry.
 
-### Cell interactions
+## Sheets, several: tabs at the bottom
 
-| Intent | Mouse | Keyboard (panel focused) |
-| --- | --- | --- |
-| Copy back out | Click cell body | ↑/↓ to select, ⏎ to copy |
-| Copy + auto-clear clipboard | ⌥-click | ⌥⏎ |
-| Cycle TTL | Click label | T, or ←/→ on label |
-| Peek (read-only overlay) | Space / long-hover *action*, not content-on-hover | Space |
-| Promote to secret link | Click "↗ link" | L |
-| Discard now | Hover ✕, or drag out of panel | ⌫ (with brief inline undo) |
+Tabs won the switcher question, and they sit on the window's bottom
+edge, Excel-anchored — below the content they name, out of the title
+bar's way, exactly where a spreadsheet hand already knows to look.
 
-Copy-out places the content on the clipboard marked with
-`org.nspasteboard.ConcealedType` + a transient type, so clipboard
-managers ignore it. Copy-out does **not** consume the cell (multi-paste is
-a core moment, doc 01) — the cell simply keeps draining.
+- **Names are live.** A tab is named by its sheet's first typed line,
+  with markdown markup stripped for the title only (`### deploy friday`
+  → "deploy friday"); a page with no typed line is "untitled".
+- **Cap: 9 sheets, refuse-don't-evict.** The natural limit of the
+  keyboard map, since ⌘0 belongs to the ledger. At the wall the app
+  declines the tenth and says so. Silent eviction of deliberately placed
+  content would break trust (doc 03 §5) — eviction is by the TTL the
+  user chose, never LRU surprise.
+- **Drag to reorder**, live; the ⌘-number map follows the visible order.
+- **Close** is an ✕ on tab hover; a closed page rests in the ledger like
+  an expired one. New page: the + affordance, or ⌥⌘N.
 
-### Cell lifecycle
+## The ledger — ⌘0
 
-`staged → draining → last-hour (urgency cue) → expired (removed; content
-zeroized)`. Expiry is silent by default: the cell is simply gone at next
-glance. A cell being promoted passes through `promoting → promoted`
-(shows the one-time link was copied, offers **Burn local copy**) and then
-resumes draining if kept.
+Rev B's law read "no retention: no history, no archive, no trash, no
+recently-expired". Lived experience overruled the absolutism: a page that
+expires mid-thought takes typed context with it — the errand list around
+the secret, not just the secret. The **ledger** is the narrow amendment
+(recorded in docs 03 and 05): a permanent dashed tab at the strip's right
+end (⌘0) showing expired and closed pages as a list of **dimmed ink**.
+The boundary holds where it matters:
 
-The panel holds a small working set — soft cap around a dozen cells
-(exact number: doc 06). At the cap, the panel refuses gently and asks the
-user to let something expire or discard, rather than silently evicting
-the oldest: silent eviction of deliberately-placed content would break
-trust (doc 03 §5) — the cache analogy yields eviction *by policy*, and
-here the policy is the TTL the user chose, never LRU surprise.
+- **Ink only.** Sealed bytes are zeroized at death exactly as before; a
+  chip appears in the ledger as its excerpt struck through with
+  "zeroized". Nothing sealed survives, ever, anywhere.
+- **Dimmed and read-only.** Ledger entries are records, not pages — no
+  editing, no resurrection, no re-opening. Copy of visible ink is
+  allowed; it was never secret.
+- **Session-bound.** The ledger lives in memory and clears when the app
+  quits. Nothing is written to disk. Capacity is bounded (newest dozen);
+  older records fall off silently.
+- **Visually apart.** The dashed border and dimmed type say "this is
+  residue, not storage" before any copy does.
+
+## Markdown: styled, never rewritten
+
+The page reads markdown the way a person does, without pretending to be
+a rich-text editor. A line beginning `### ` renders at heading weight and
+size — and the `### ` itself stays on screen, dimmed, exactly where it
+was typed. **Display-only, markup-preserving:** the bytes of the page
+never change; select-all-copy returns exactly what was typed; sealing a
+heading line seals the markup too. Scope for rev C is headings (#, ##,
+### and deeper); inline emphasis is deliberately deferred (doc 06). Tab
+titles strip the markup because a title is a name, not a document.
+
+## The keyboard map, complete
+
+| Keys | Action |
+| --- | --- |
+| ⌥Space | summon / dismiss the window |
+| ⌘V | paste, visible |
+| ⇧⌘V | paste, sealed (⌥V held as alternative candidate) |
+| ⌘↩ | seal the selection, or the current line if it holds content |
+| ⌘1 – ⌘9 | jump to page 1–9, in visible tab order |
+| ⌘0 | the ledger — expired & closed pages, dimmed |
+| ⌥⌘← / ⌥⌘→ | previous / next page |
+| ⌥⌘N | new page, default rung |
+| esc | hand the keyboard back (also leaves the ledger) |
+| ⌫ on a chip | removes it whole; arrows step over it |
+
+Pointer-only gestures, for completeness: click the countdown to cycle the
+ladder · drag tabs to reorder · double-click a tab to pause its clock
+(1h → 24h → top-up) · ✕ on tab hover to close · drag the title bar to
+move · drag any edge to resize · double-click the title bar to stretch
+vertically · drop content onto the page to seal it.
 
 ## Promotion flow (secondary interaction)
 
-One click from cell to shareable one-time link:
+Unchanged in role: the only network action, and the single place the app
+ever mentions accounts. Two affordances: **↗ link** on a chip's hover
+actions (promote that sealed content) and **↗ page** in the footer
+(promote the sheet).
 
-1. Click "↗ link" (or L). If no account is configured, this is the single
-   place the app ever mentions accounts: an inline hint linking to
-   Settings → Connection, plus a guest-mode option where the server
-   allows it.
-2. An inline, in-cell confirmation (not a modal): destination
-   (`share_domain`), TTL (seeded from the cell's remaining time, snapped
+1. If no account is configured, an inline hint links to Settings →
+   Connection, plus a guest-mode option where the server allows it.
+2. An inline, in-place confirmation (not a modal): destination
+   (`share_domain`), TTL (seeded from the sheet's remaining time, snapped
    to the server's allowed values), optional passphrase, optional
-   recipient. One confirming click. The network boundary is explicit —
-   this is the app's only outbound action (doc 03 §6).
+   recipient. One confirming click. The network boundary is explicit.
 3. `POST /api/v3/secret/conceal` (Basic auth: org `extid` + API token,
-   until PASETO lands). On success the link is on the clipboard, the cell
-   shows `promoted` with the receipt identifier, and offers **Burn local
-   copy**.
-4. Failure is inline in the cell (offline, auth, entitlement/TTL
-   rejection) with a retry; content never leaves the cell on failure.
+   until PASETO lands). Sealed bytes travel core → client directly, never
+   through the UI layer. On success the link is on the clipboard and the
+   confirmation offers **Burn local copy**.
+4. Failure is inline (offline, auth, entitlement/TTL rejection) with a
+   retry; content never leaves the sheet on failure.
 
 Deliberately absent from v1: browsing receipts, burning remote secrets
-from the panel, secret generation. The panel is a staging area with an
-exit ramp, not an API console.
+from the window, secret generation. A staging area with an exit ramp, not
+an API console.
 
 ## Settings (one small window)
 
 Connection (server URL, org `extid` + API token, share domain, test
-button), default TTL, dock edge, hotkeys, clipboard clear-after-copy
+button), default TTL rung, summon hotkey, clipboard clear-after-copy
 timing, screen-capture exclusion toggle, launch at login. That's the
-whole list; growth here is a smell.
+whole list; growth here is a smell. (Rev C deleted "dock edge" — the
+window remembers its own position.)
+
+## Change ledger, rev A → rev C
+
+| Surface | Rev A (previously this doc) | Rev C |
+| --- | --- | --- |
+| The unit | a stack of SleeperCells | sheets of ink + sealed chips |
+| Time | per-cell TTL | one countdown per sheet; pausable (double-click tab: 1h → 24h → top-up) |
+| Masking | detection (`ConcealedType`, key/token regex), reveal-on-hold | gesture only (⇧⌘V, drop, ⌘↩); chips never revealable; detection deleted |
+| The container | fixed edge-docked panel | a real window — move, resize, double-click-stretch; still non-activating |
+| Capacity | soft cap ~12 cells | 9 sheets — the keyboard wall; refuse-don't-evict unchanged |
+| Keyboard nav | per-cell bindings, no global map | full map: ⌘1–9, ⌘0, ⌥⌘←/→, ⌥⌘N, ⇧⌘V, ⌘↩ |
+| After death | nothing — no retention of any kind | the ledger (⌘0): dimmed ink, session-only; sealed bytes still zeroized |
+| Rendering | plain snippet + kind glyph | markdown headings styled, markup kept visible; tab titles strip markup |
+| Capture caption | visible indicator on the surface | removed from the surface; the exclusion unchanged, in settings |
