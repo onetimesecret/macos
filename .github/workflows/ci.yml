@@ -48,6 +48,25 @@ jobs:
       - name: Test (full workspace)
         run: cargo test --workspace
 
+  # The Swift/AppKit shell (ADR-0002): build the C-ABI seam as a
+  # universal xcframework, then build and test the Swift package against
+  # it. --dev-scaffolding stays until drop-to-seal gets its
+  # boundary-lawful design (the shell still links the dev-seed symbol).
+  shell:
+    name: shell (macos)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Build CompanionCore.xcframework
+        run: ./scripts/build-core.sh --dev-scaffolding
+      - name: swift build
+        run: swift build --package-path shell
+      - name: swift test
+        run: swift test --package-path shell
+
   # A backstop for the "never commit a secret" rule (adopted from the
   # prototype skeleton, PR #5). Scans the full history, so checkout is
   # unshallow. The binary is version-pinned AND checksum-verified (from
