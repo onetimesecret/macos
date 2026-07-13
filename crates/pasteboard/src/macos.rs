@@ -12,7 +12,10 @@
 //! format support is open question #6 in doc 06.
 
 use objc2::rc::Retained;
-use objc2_app_kit::{NSPasteboard, NSPasteboardType, NSPasteboardTypePNG, NSPasteboardTypeString};
+use objc2_app_kit::{
+    NSPasteboard, NSPasteboardNameDrag, NSPasteboardType, NSPasteboardTypePNG,
+    NSPasteboardTypeString,
+};
 use objc2_foundation::{NSArray, NSData, NSString};
 use zeroize::Zeroizing;
 
@@ -42,6 +45,18 @@ impl SystemPasteboard {
     pub fn new() -> Self {
         Self {
             pasteboard: NSPasteboard::generalPasteboard(),
+        }
+    }
+
+    /// Binds the drag pasteboard (`NSPasteboardNameDrag`) — the board an
+    /// in-flight drag session's content rides on. Drop-to-seal reads it
+    /// core-side, so dropped bytes never transit the shell (the drag
+    /// boundary decision, docs/hardware-verification.md).
+    #[must_use]
+    pub fn drag() -> Self {
+        Self {
+            // SAFETY: reading a static extern pasteboard-name constant.
+            pasteboard: NSPasteboard::pasteboardWithName(unsafe { NSPasteboardNameDrag }),
         }
     }
 

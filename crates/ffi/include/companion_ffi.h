@@ -126,6 +126,16 @@ char *companion_sheet_seal_from_pasteboard(CompanionHandle *handle,
 char *companion_sheet_seal_text(CompanionHandle *handle, uint64_t sheet,
                                 const char *text);
 
+/*
+ * Drop-to-seal: the core reads the DRAG pasteboard itself
+ * (NSPasteboardNameDrag — the board the in-flight drag session's
+ * content rides on) and seals it onto the page; dropped bytes never
+ * transit the shell. Call from the drop handler while the session's
+ * data is still on the board. Returns chip JSON as above, or null
+ * (unknown page, empty/unreadable drag content, off-macOS build).
+ */
+char *companion_sheet_seal_from_drag(CompanionHandle *handle, uint64_t sheet);
+
 /* ------------------------------------------------------------------ */
 /* The synced document                                                 */
 /* ------------------------------------------------------------------ */

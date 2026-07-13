@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The rev C window** (issue #12, docs/spec/04) — the shell sheds the
+  spike's transitional docked list and becomes the window the spec
+  describes: movable by its title bar, resizable from any edge,
+  double-click-stretch to full working height, frame persisted across
+  summons, still a non-activating accessory excluded from capture. One
+  page shows at a time in an `NSTextView`-backed **ink editor**: typed
+  ink, sealed chips as atomic inline attachments (arrows step over, one
+  ⌫ removes whole — the sync mirror zeroizes core-side), markdown
+  headings styled display-only with the markup kept visible. Bottom-edge
+  Excel-anchored tabs carry live titles and per-tab gauges (dashed when
+  held, hatched ember in the last hour), pause on double-click, close on
+  ✕, drag to reorder; the dashed ◌ tab is the ledger — dead pages as
+  dimmed read-only ink, tombstones struck through and labelled
+  "zeroized". The keyboard map is complete: ⌥Space summon (Carbon
+  hotkey, the app's one global claim), ⌘1–9, ⌘0, ⌥⌘←/→, ⌥⌘N, ⇧⌘V, ⌘↩,
+  Esc hands the keyboard back (an ember border shows while the page
+  holds it). Focus law unchanged: keys by deliberate act only.
+- **Drop-to-seal is boundary-lawful**: `companion_sheet_seal_from_drag`
+  reads the **drag pasteboard** core-side (`NSPasteboard(name: .drag)`,
+  a new `SystemPasteboard::drag()` binding) while the drop handler is
+  still inside the drag session — the shell hands over only the page id,
+  no dropped byte transits Swift, the general clipboard is untouched.
+  This closes the drag-ingest decision the hardware runbook had left
+  open; what remains there is live-drag verification, not design.
+- **The Rust↔Swift JSON contract test** (deferred from PR #11):
+  `CoreContractTests` drives the live core through `CompanionClient` —
+  sheet lifecycle, seal, document sync, title derivation, the pause, the
+  ledger tombstone, the cap refusal — so a drifting field name fails in
+  CI instead of rendering as an empty window. Deliberately avoids the
+  pasteboard routes, so tests never touch a developer's real clipboard.
+
 ### Changed
 
 - **The core speaks interaction-model rev C** (issue #10): sheets of
