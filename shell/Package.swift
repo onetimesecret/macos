@@ -1,8 +1,7 @@
 // swift-tools-version: 6.0
-// The Swift/AppKit arm of the ADR-0002 shell spike. It links the Rust
-// core only through the binary framework produced by
-// scripts/build-core.sh — no Swift code holds a secret. A spike, not the
-// shell: it graduates to shell/ only if ADR-0002 lands on Swift.
+// The shell — Swift/AppKit over the Rust core (ADR-0002, accepted). It
+// links the core only through the binary framework produced by
+// scripts/build-core.sh — no Swift code holds a secret.
 import PackageDescription
 
 let package = Package(
@@ -13,7 +12,7 @@ let package = Package(
         // crates/ffi/include/companion_ffi.h as the CompanionCore module.
         .binaryTarget(
             name: "CompanionCore",
-            path: "../../bindings/CompanionCore.xcframework"
+            path: "../bindings/CompanionCore.xcframework"
         ),
         .executableTarget(
             name: "CompanionPanel",

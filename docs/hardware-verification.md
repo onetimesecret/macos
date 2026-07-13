@@ -19,9 +19,10 @@ human-in-the-loop verification, not tooling.
    (note the full `/Contents/Developer` suffix), then `xcodebuild -version`.
 2. **Build the core** → `bindings/CompanionCore.xcframework`
    (git-ignored build artifact, universal arm64 + x86_64):
-   `./scripts/build-core.sh`
-3. **Build + test the Swift arm:**
-   `cd spikes/swift-panel && swift build && swift test`
+   `./scripts/build-core.sh --dev-scaffolding` (the shell still links
+   the dev-seed symbol for drop staging)
+3. **Build + test the shell:**
+   `cd shell && swift build && swift test`
 4. **Run the menu-bar app:** `swift run` (or open `Package.swift` in
    Xcode and run). It appears as a status-bar item — click the icon to
    open the panel; there is no Dock icon or window.

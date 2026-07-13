@@ -46,8 +46,9 @@ The spec governs; code follows it. Start at
 | [07-repo-skeleton](docs/spec/07-repo-skeleton.md) | The prescription this repository was initialized from |
 
 Decisions land as ADRs in [docs/adr/](docs/adr/). ADR-0001 (Rust core,
-thin shell) is accepted; ADR-0002 (shell selection) is honestly empty
-until the panel spike runs on macOS hardware.
+thin shell), ADR-0002 (Swift/AppKit shell, decided on the two-way
+spike's evidence), and ADR-0003 (the C-ABI binding mechanism) are
+accepted.
 
 ## Layout
 
@@ -59,8 +60,8 @@ crates/credentials/  credential-store contract; macOS Keychain impl (cfg-gated)
 crates/pasteboard/   pasteboard hygiene contract; NSPasteboard adapter lands here
 crates/ffi/          the C-ABI seam a non-Rust shell calls — plaintext never
                      crosses it, in either direction
-shell/               empty until ADR-0002
-spikes/swift-panel/  the Swift arm of the ADR-0002 spike (see its README)
+shell/               the Swift/AppKit shell (ADR-0002) — links the core only
+                     through the xcframework built from crates/ffi
 docs/spec/           the governing spec   ·   docs/adr/  decisions
 ```
 

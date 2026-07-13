@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The shell graduated**: `spikes/swift-panel` is now `shell/`, per
+  ADR-0002's consequences — the Swift package is unchanged apart from
+  the xcframework path and its comments losing the spike framing.
+  `spikes/tauri-panel` (and `spikes/` itself) is retired; the ADR
+  preserves its measurements. CI gains a `shell (macos)` lane that
+  builds the seam's universal xcframework (`scripts/build-core.sh
+  --dev-scaffolding`) and runs `swift build && swift test` — the first
+  time the Swift package is compiled by CI rather than by hand.
+
 - **ADR-0002 accepted: the shell is Swift/AppKit** over the Rust core,
   across the C-ABI seam (ADR-0003). Decided on the two-way spike's
   evidence: native non-activating/drag semantics with no workarounds and

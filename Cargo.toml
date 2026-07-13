@@ -3,8 +3,9 @@
 # Layout follows docs/spec/07-repo-skeleton.md: logic crates (`core`,
 # `ots-client`) carry no macOS dependencies and build/test on Linux;
 # `pasteboard` is the sole crate allowed to touch platform FFI.
-# `shell/` stays empty until ADR-0002 selects a shell; `spikes/` is
-# excluded from the workspace by construction.
+# `shell/` is the Swift/AppKit shell (ADR-0002, accepted) — not Rust,
+# so not a workspace member; it links the core through the xcframework
+# scripts/build-core.sh packages from `crates/ffi`.
 
 [workspace]
 resolver = "3"
@@ -16,9 +17,6 @@ members = [
   "crates/pasteboard",
   "crates/transport",
 ]
-# tauri-panel is Rust but not product code — a disposable ADR-0002 spike
-# (spikes/README.md) with its own Cargo.lock and target/.
-exclude = ["spikes/tauri-panel"]
 
 [workspace.package]
 edition = "2024"
