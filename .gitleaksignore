@@ -27,3 +27,18 @@
 # assembled at runtime (nothing PAT-shaped sits in current source text).
 e058e59d500a1ad669461e3978954de0081518c2:crates/ffi/src/lib.rs:github-pat:521
 3b9eab8df21137bdcabc998fe9c525e18b278194:spikes/swift-panel/Sources/CompanionPanel/App.swift:github-pat:82
+
+# Rev C prototype demo content (docs/, PR #7): the interactive
+# prototype's seeded sheets carry a deliberately fake GitHub PAT (note
+# "dEMOnly" embedded in it) and the bundled design-system demo uses a
+# made-up Stripe-shaped payload string (same literal, two sites). Docs
+# assets, never wired to anything.
+e5a4d02f43db3f6f1be307b504c05f2bb6964056:docs/Airlock Prototype/Airlock Prototype.dc.html:github-pat:289
+e5a4d02f43db3f6f1be307b504c05f2bb6964056:docs/Airlock Prototype/_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/_ds_bundle.js:stripe-access-token:893
+e5a4d02f43db3f6f1be307b504c05f2bb6964056:docs/Airlock Prototype/_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/_ds_bundle.js:stripe-access-token:1371
+
+# Historical only: a made-up key in a redaction test on the closed
+# PR #5 prototype branch (crates/ots-ffi never existed on main). The
+# full-history scan sees it because CI's fetch-depth: 0 checkout brings
+# every branch along.
+472b5a3a0d66afd0d00190c88cb5218c3e56dbba:crates/ots-ffi/src/lib.rs:generic-api-key:359

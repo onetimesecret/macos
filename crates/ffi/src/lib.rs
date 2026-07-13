@@ -50,12 +50,12 @@ use std::time::Duration;
 use companion_core::{
     Cell, CellId, CellKind, CellStore, LifecycleState, SystemClock, TTL_LADDER, Ttl,
 };
+#[cfg(target_os = "macos")]
+use companion_pasteboard::SystemPasteboard;
 use companion_pasteboard::{
     ChangeCount, ContentKind, MemoryPasteboard, Pasteboard, PasteboardContent, PasteboardItem,
     WriteOptions,
 };
-#[cfg(target_os = "macos")]
-use companion_pasteboard::SystemPasteboard;
 use zeroize::Zeroizing;
 
 /// The pasteboard the core reads and writes through the seam.
