@@ -86,18 +86,17 @@ it is *in transition* and should stop existing when the transition ends.
 The brief frames the app as "an L1/L2 cache for the clipboard", and the
 analogy holds up under weight — it is the spec in miniature:
 
-1. **Small.** A cache holds a working set, not an archive. A dozen cells,
-   not a thousand rows of history. Smallness is what keeps the whole state
-   legible at a glance.
-2. **Close.** One keystroke or one glance away, docked at the edge of the
-   screen — in peripheral vision, adjacent to the work, never in front of
-   it.
+1. **Small.** A cache holds a working set, not an archive. A handful of
+   sheets, not a thousand rows of history. Smallness is what keeps the
+   whole state legible at a glance.
+2. **Close.** One keystroke or one glance away — in peripheral vision,
+   adjacent to the work, never in front of it.
 3. **Evicts by policy, not by user labour.** Nobody "cleans up" a CPU
    cache. Every entry has a TTL from the moment it arrives; expiry is the
    default lifecycle, and *keeping* something is the action that requires
    intent (resetting or extending the TTL).
 4. **Never authoritative.** A cache never owns the data; the source of
-   truth is elsewhere. Losing a cell is at worst a minor re-fetch, never a
+   truth is elsewhere. Losing a sheet is at worst a minor re-fetch, never a
    catastrophe. This single property is what lets the app stay calm — no
    sync, no backup, no versioning, no anxiety.
 5. **Optimized for one access pattern.** Caches win by refusing
@@ -129,17 +128,17 @@ It also removes the accumulation tax. Tools that retain accrue baggage:
 the 4,000-item history, the graveyard of stickies, the "someday I'll sort
 this" folder. Each is a small standing debt of attention. A tool where
 everything self-cleans owes the user nothing and asks nothing back. Empty
-is its natural, healthy state — an empty panel is the system working, not
+is its natural, healthy state — an empty window is the system working, not
 the product failing at engagement.
 
 ## Present, but not centre stage
 
-The app lives in the menu bar with a panel docked adjacent to a screen
-edge. It is furniture: glanceable, reachable, and otherwise invisible. It
-never demands attention — no badges, no counters, no notifications begging
-for interaction. Content plays "second or third fiddle": cells *summarize*
-what they hold (a snippet, a thumbnail, a size); they are handles for
-moving content, not a reading or editing surface.
+The app lives in the menu bar with a small window it summons. It is
+furniture: glanceable, reachable, and otherwise invisible. It never
+demands attention — no badges, no counters, no notifications begging for
+interaction. Sensitive content plays "second or third fiddle": sealed
+items are *summarized* (a mechanical excerpt, a count, a size); they are
+handles for moving content, not a reading surface.
 
 The honest success metric is *seconds of user attention consumed per
 transfer*, minimized — the opposite of engagement. A perfect session is:
@@ -167,12 +166,12 @@ Not personas — moments. The same person hits all of these in a week:
 Stated early because scope discipline *is* the product:
 
 - **Not a clipboard history.** No automatic capture of clipboard changes.
-  Everything in the panel was placed there deliberately. (Automatic
+  Everything in the window was placed there deliberately. (Automatic
   capture is precisely the liability this app exists to avoid.)
 - **Not a notes app.** No editing beyond trivial trimming, no formatting,
   no organization, no folders, no tags.
-- **Not a search index.** A dozen glanceable cells need eyes, not a query
-  language. If it needs search, it has failed the "small" property.
+- **Not a search index.** A handful of glanceable sheets need eyes, not a
+  query language. If it needs search, it has failed the "small" property.
 - **Not a sync service.** No cloud, no accounts for the core loop, no
   state that outlives the machine (initially, no state that outlives the
   process — see open questions).

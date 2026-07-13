@@ -4,36 +4,53 @@
 # macOS Companion — Design Spec
 
 An open-source, Rust-based macOS desktop companion to Onetime Secret.
-Working title: **Airlock** (see naming note below). Its cells of pasted
-content are called **SleeperCells**.
+Working title: **Airlock** (see naming note below).
 
-This is a *design* spec, produced ahead of any implementation. Milestone 1
-is deliberately narrow: restate the problem space in our own words, and map
-the opportunities that neighbouring applications overlook. Interaction and
-technical direction documents are included as supporting material — they
-record current thinking, not decisions.
+This is a *design* spec, produced ahead of implementation. Milestone 1
+restated the problem space and mapped the opportunities neighbouring
+applications overlook; the interaction model has since been through three
+revisions of design rounds and is now at **revision C** (doc 04), with a
+working HTML prototype alongside.
 
 ## One-paragraph summary
 
-A menu-bar-resident staging area for content in transition. Drag or paste
-text and images into a small edge-docked panel; each item becomes a
-SleeperCell with a visible, limited time-to-live. Cells exist to be copied
-back out and then forgotten — like a CPU's L1/L2 cache, the value is in
-being small, close, and evicted by policy, never in being a system of
-record. Secondarily, any cell can be promoted into a Onetime Secret link
-(v3 API) when the content needs to travel to another person or machine.
+A menu-bar-resident staging area for content in transition. Summoning the
+non-activating window shows a **sheet** — a little text file of visible
+**ink** and opaque **sealed chips**. Typing and ⌘V land as ink; a
+deliberate gesture (⇧⌘V, a drop, or ⌘↩ on a selection) seals content into
+a chip whose bytes never render. One countdown governs each sheet — like
+a CPU's L1/L2 cache, the value is in being small, close, and evicted by
+policy, never in being a system of record. Zero means zeroized, silently.
+Secondarily, a chip or a whole page can be promoted into a Onetime Secret
+link (v3 API) when the content needs to travel to another person or
+machine.
 
 ## Reading order
 
-| Doc | Contents | Milestone-1 status |
+| Doc | Contents | Status |
 | --- | --- | --- |
 | [01-problem-space.md](01-problem-space.md) | Restatement of the problem, the cache analogy taken seriously, anti-goals | **Core deliverable** |
 | [02-overlooked-opportunities.md](02-overlooked-opportunities.md) | Landscape of neighbouring apps and the gaps they leave | **Core deliverable** |
-| [03-design-principles.md](03-design-principles.md) | The principles that fall out of 01 + 02 | Supporting |
-| [04-interaction-model.md](04-interaction-model.md) | SleeperCell anatomy, TTL cycling, panel behaviour, promotion flow | Supporting — draft |
-| [05-technical-direction.md](05-technical-direction.md) | Rust framework survey, v3 API integration, security posture, a11y | Supporting — draft, no decisions |
-| [06-open-questions.md](06-open-questions.md) | Everything unresolved, honestly | Supporting |
-| [07-repo-skeleton.md](07-repo-skeleton.md) | Prescription for initializing the app repository | Supporting — prescription, not yet executed |
+| [03-design-principles.md](03-design-principles.md) | The principles that fall out of 01 + 02 | Binding, as amended by rev C |
+| [04-interaction-model.md](04-interaction-model.md) | Sheets, ink and sealed chips, the window, tabs, the ledger, the keyboard map | **Revision C** — consolidates design rounds v7–v10 and the 12 Jul 2026 decision rounds |
+| [05-technical-direction.md](05-technical-direction.md) | Rust framework survey, v3 API integration, security posture, a11y | Supporting — draft, amended by rev C |
+| [06-open-questions.md](06-open-questions.md) | Everything unresolved, honestly | Supporting — updated for rev C |
+| [07-repo-skeleton.md](07-repo-skeleton.md) | Prescription for initializing the app repository | Executed |
+
+## Design rounds and prototype
+
+The interaction model's revisions live as rendered documents in
+[`docs/Airlock Prototype/`](../Airlock%20Prototype/):
+
+- `Airlock Spec.dc.html` — **rev C**, the authoritative interaction
+  model; doc 04 is its markdown consolidation (including the rev B
+  material it references).
+- `Airlock Prototype.dc.html` — interactive HTML prototype implementing
+  rev C against a real clipboard (excerpt rule, sealing gestures, tabs,
+  pause, ledger, markdown headings; capture exclusion and zeroization
+  simulated, as the medium requires).
+- `Airlock Panel v7` … `Airlock Sheet v10` — the design rounds that got
+  there, kept for the arguments, not the conclusions.
 
 ## Naming note
 
@@ -43,13 +60,16 @@ product in one image. It collides with at least one existing security
 vendor (Airlock Digital), so it will not survive to release without a
 trademark check. Alternatives considered: Layover, Vestibule, Foyer,
 Waypoint, Holdover. The name matters less than the metaphor; every
-candidate is a word for *a place you pass through*.
+candidate is a word for *a place you pass through*. (Rev B retired the
+earlier "SleeperCell" name for staged items along with the cell model
+itself; the units are now sheets and sealed chips.)
 
 ## Relationship to the web application
 
-The companion is open source and standalone-useful: the core loop (paste,
-hold briefly, copy out, forget) requires no account and no network. The
-Onetime Secret v3 API appears only at the promotion step — turning a local
-ephemeral cell into a one-time link. Authentication starts with HTTP Basic
-(organization `extid` + API token pair) and migrates to PASETO when the v3
-auth work lands. See [05-technical-direction.md](05-technical-direction.md).
+The companion is open source and standalone-useful: the core loop (type
+or paste, hold briefly, copy out, forget) requires no account and no
+network. The Onetime Secret v3 API appears only at the promotion step —
+turning local ephemeral content into a one-time link. Authentication
+starts with HTTP Basic (organization `extid` + API token pair) and
+migrates to PASETO when the v3 auth work lands. See
+[05-technical-direction.md](05-technical-direction.md).
