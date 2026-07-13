@@ -29,13 +29,22 @@ struct InkEditorView: NSViewRepresentable {
         ))
         container.widthTracksTextView = true
         let storage = model.storage(for: sheetID)
+        // The page's storage outlives any one editor instance (tab
+        // switches recreate the view); detach layout managers a torn-
+        // down editor left behind so exactly one drives this storage.
+        for stale in storage.layoutManagers {
+            storage.removeLayoutManager(stale)
+        }
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
 
         let textView = InkTextView(frame: .zero, textContainer: container)
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
-        textView.isRichText = false
+        // Rich text stays on so chip attachments survive editing; the
+        // user-facing surface is still plain — ⌘V pastes plain text and
+        // no ruler/font UI exists. Styling is ours alone (restyle()).
+        textView.isRichText = true
         textView.allowsUndo = true
         textView.usesFindPanel = false
         textView.isAutomaticQuoteSubstitutionEnabled = false

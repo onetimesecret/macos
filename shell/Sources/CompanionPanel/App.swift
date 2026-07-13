@@ -66,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let menu = NSMenu()
             menu.addItem(
                 withTitle: "About Onetime Secret Companion",
-                action: #selector(orderFrontStandardAboutPanel(_:)),
+                action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                 keyEquivalent: ""
             ).target = NSApp
             menu.addItem(.separator())
@@ -83,9 +83,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func orderFrontStandardAboutPanel(_ sender: Any?) {
-        NSApp.orderFrontStandardAboutPanel(sender)
-    }
 }
 
 /// One run of a page's document, as the shell mirrors it to the core
