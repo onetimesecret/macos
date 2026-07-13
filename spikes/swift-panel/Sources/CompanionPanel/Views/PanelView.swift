@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The edge-docked shelf: a drop/paste target on top, a stack of
 /// SleeperCells below, most recent on top (docs/spec/04). Minimal
@@ -45,7 +46,23 @@ struct PanelView: View {
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
+            pinToggle
         }
+    }
+
+    /// Float-on-top setting. A real `Toggle` (not a bare button) so
+    /// VoiceOver announces it as a switch with on/off state — the panel's
+    /// window level follows it (PanelController).
+    private var pinToggle: some View {
+        Toggle(isOn: $model.floatsOnTop) {
+            Image(systemName: model.floatsOnTop ? "pin.fill" : "pin")
+        }
+        .toggleStyle(.button)
+        .controlSize(.small)
+        .help(model.floatsOnTop
+            ? "Floating above other windows — click to let them cover it"
+            : "Behaves like a normal window — click to keep it on top")
+        .accessibilityLabel(Text("Keep panel above other windows"))
     }
 
     private var dropZone: some View {
@@ -68,6 +85,22 @@ struct PanelView: View {
         .buttonStyle(.plain)
         .keyboardShortcut("v", modifiers: .command)
         .accessibilityLabel(Text("Paste into a new cell"))
+        // The make-or-break behavior ADR-0002 measures: a real drag,
+        // received without the panel ever taking focus (issue #3 WS1).
+        // Text is extracted here and staged via the same dev-seed path
+        // devStageSample uses — the NSPasteboard adapter (WS2) isn't
+        // yet wired into companion-ffi's ingest (that's issue #4), so a
+        // real system-pasteboard round trip isn't provable through this
+        // path yet; what this proves is that the shell itself receives
+        // drops without activating.
+        .onDrop(of: [.plainText], isTargeted: nil) { providers in
+            guard let provider = providers.first else { return false }
+            _ = provider.loadObject(ofClass: String.self) { text, _ in
+                guard let text else { return }
+                Task { @MainActor in model.receiveDrop(text) }
+            }
+            return true
+        }
     }
 
     private var emptyState: some View {

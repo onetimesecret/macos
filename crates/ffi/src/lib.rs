@@ -50,20 +50,120 @@ use std::time::Duration;
 use companion_core::{
     Cell, CellId, CellKind, CellStore, LifecycleState, SystemClock, TTL_LADDER, Ttl,
 };
+#[cfg(target_os = "macos")]
+use companion_pasteboard::SystemPasteboard;
 use companion_pasteboard::{
-    ChangeCount, ContentKind, MemoryPasteboard, Pasteboard, PasteboardContent, WriteOptions,
+    ChangeCount, ContentKind, MemoryPasteboard, Pasteboard, PasteboardContent, PasteboardItem,
+    WriteOptions,
 };
+use zeroize::Zeroizing;
+
+/// The pasteboard the core reads and writes through the seam.
+///
+/// On macOS this is the real system clipboard ([`SystemPasteboard`], the
+/// `NSPasteboard` adapter that landed in issue #3). Off macOS — Linux CI,
+/// and the unit tests below — it is the in-process [`MemoryPasteboard`],
+/// so the seam stays exercisable without a window server and the tests
+/// never touch (or depend on) a developer's real clipboard.
+///
+/// This is the swap issue #4 calls for: `companion_new` no longer wires a
+/// stand-in on macOS; the core reads and writes the real board itself.
+enum Board {
+    // Constructed off-macOS (`companion_new`) and by the tests below. On a
+    // macOS *library* build only the tests reach it, so silence the
+    // never-constructed lint there rather than gate the whole variant out
+    // (the `Pasteboard`/seed match arms need it in scope regardless).
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    Memory(MemoryPasteboard),
+    #[cfg(target_os = "macos")]
+    System(SystemPasteboard),
+}
+
+impl Board {
+    /// Seed content as another app would — dev scaffolding behind
+    /// [`companion_dev_seed_pasteboard`], so the spike's demo and drop
+    /// affordances have something to ingest. The real system clipboard
+    /// has no unmarked "external put", so on macOS the seed rides the
+    /// normal write (transient-marked); ingest reads text regardless of
+    /// marks, so the core cannot tell the difference.
+    #[cfg(any(test, feature = "dev-scaffolding"))]
+    fn put_external(&mut self, content: PasteboardContent, concealed: bool) {
+        match self {
+            Board::Memory(pb) => pb.put_external(content, concealed),
+            #[cfg(target_os = "macos")]
+            Board::System(pb) => {
+                let (bytes, kind) = match content {
+                    PasteboardContent::Text(s) => (s.into_bytes(), ContentKind::Text),
+                    PasteboardContent::Image(b) => (b, ContentKind::Image),
+                };
+                pb.write(Zeroizing::new(bytes), kind, WriteOptions { concealed });
+            }
+        }
+    }
+
+    /// Whether the current item carries the transient mark. Only the
+    /// in-memory board (which the tests below use) answers meaningfully;
+    /// the real clipboard's marking is verified out of band (issue #4's
+    /// `pbcopy` → ingest round-trip), so the macOS arm never needs to.
+    #[cfg(test)]
+    fn current_is_transient(&self) -> bool {
+        match self {
+            Board::Memory(pb) => pb.current_is_transient(),
+            #[cfg(target_os = "macos")]
+            Board::System(_) => false,
+        }
+    }
+}
+
+impl Pasteboard for Board {
+    fn read(&self) -> Option<PasteboardItem> {
+        match self {
+            Board::Memory(pb) => pb.read(),
+            #[cfg(target_os = "macos")]
+            Board::System(pb) => pb.read(),
+        }
+    }
+
+    fn write(
+        &mut self,
+        content: Zeroizing<Vec<u8>>,
+        kind: ContentKind,
+        options: WriteOptions,
+    ) -> ChangeCount {
+        match self {
+            Board::Memory(pb) => pb.write(content, kind, options),
+            #[cfg(target_os = "macos")]
+            Board::System(pb) => pb.write(content, kind, options),
+        }
+    }
+
+    fn change_count(&self) -> ChangeCount {
+        match self {
+            Board::Memory(pb) => pb.change_count(),
+            #[cfg(target_os = "macos")]
+            Board::System(pb) => pb.change_count(),
+        }
+    }
+
+    fn clear_if_unchanged(&mut self, expected: ChangeCount) -> bool {
+        match self {
+            Board::Memory(pb) => pb.clear_if_unchanged(expected),
+            #[cfg(target_os = "macos")]
+            Board::System(pb) => pb.clear_if_unchanged(expected),
+        }
+    }
+}
 
 /// The core state behind the seam: the store, the pasteboard the core
 /// reads and writes itself, and the receipt of our last outbound write
 /// (for the guarded clear).
 ///
-/// The pasteboard is the in-process stand-in until the `NSPasteboard`
-/// adapter lands in `companion-pasteboard` (milestone 2, issue #3); it
-/// is swapped here, and nothing above this seam changes.
+/// The pasteboard is the real [`SystemPasteboard`] on macOS and the
+/// in-process [`MemoryPasteboard`] elsewhere — chosen once in
+/// [`companion_new`], invisible above this seam (see [`Board`]).
 struct Companion {
     store: CellStore<SystemClock>,
-    pasteboard: MemoryPasteboard,
+    pasteboard: Board,
     last_write: Option<ChangeCount>,
 }
 
@@ -97,9 +197,16 @@ pub extern "C" fn companion_version() -> *const c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn companion_new() -> *mut CompanionHandle {
     companion_core::harden_process();
+    // The one place the backend is chosen: the real system clipboard on
+    // macOS, the in-process board elsewhere. Everything above this line is
+    // identical on both.
+    #[cfg(target_os = "macos")]
+    let pasteboard = Board::System(SystemPasteboard::new());
+    #[cfg(not(target_os = "macos"))]
+    let pasteboard = Board::Memory(MemoryPasteboard::new());
     let companion = Companion {
         store: CellStore::new(SystemClock),
-        pasteboard: MemoryPasteboard::new(),
+        pasteboard,
         last_write: None,
     };
     Box::into_raw(Box::new(CompanionHandle {
@@ -347,20 +454,24 @@ pub unsafe extern "C" fn companion_cell_discard(handle: *mut CompanionHandle, id
 }
 
 // ---------------------------------------------------------------------------
-// Dev scaffolding — deleted when the NSPasteboard adapter lands
+// Dev scaffolding — a seed the spike's demo/drop affordances ingest
 // ---------------------------------------------------------------------------
 
-/// Put text on the **in-process** pasteboard as an external app would,
-/// so the vertical-slice spike can demonstrate a live cell before the
-/// real `NSPasteboard` adapter exists.
+/// Seed the pasteboard with `text` as an external app would, so the
+/// spike's "sample cell" button and drop zone have something for
+/// [`companion_ingest_pasteboard`] to capture. On macOS this writes the
+/// **real** system clipboard (so the button demonstrates a genuine
+/// clipboard → core round-trip on device, and — like any capture — it
+/// replaces what was on the clipboard); off macOS it seeds the in-process
+/// board.
 ///
-/// Dev scaffolding only: it moves plaintext in the ingest direction
-/// (shell → core), which the real pasteboard read replaces outright.
-/// Because that direction breaks the boundary law, the symbol exists
-/// only behind the off-by-default `dev-scaffolding` cargo feature
+/// Demo scaffolding, not a data path: the text it carries is a caller-
+/// supplied fixture (a fake sample token, or text a drop already handed
+/// the shell), never a copy-out. Because it moves plaintext in the
+/// ingest direction (shell → core), the symbol exists only behind the
+/// off-by-default `dev-scaffolding` cargo feature
 /// (`scripts/build-core.sh --dev-scaffolding`); a default build exports
-/// no plaintext-ingest entry point. It is deleted together with the
-/// in-process stand-in (issue #3). Returns `false` on a null/invalid
+/// no plaintext-ingest entry point. Returns `false` on a null/invalid
 /// argument.
 ///
 /// # Safety
@@ -499,12 +610,21 @@ mod tests {
     use super::*;
 
     /// A handle whose pasteboard holds `text`, exactly as the shell
-    /// would meet it.
+    /// would meet it. Built on the in-process board directly — never
+    /// `companion_new` — so the tests stay deterministic and never read
+    /// or clobber a real clipboard on macOS, where `companion_new` now
+    /// binds `NSPasteboard.general`.
     fn handle_with_text(text: &str) -> *mut CompanionHandle {
-        let handle = companion_new();
-        let c_text = CString::new(text).unwrap();
-        assert!(unsafe { companion_dev_seed_pasteboard(handle, c_text.as_ptr()) });
-        handle
+        let mut pasteboard = MemoryPasteboard::new();
+        pasteboard.put_external(PasteboardContent::Text(text.to_string()), false);
+        let companion = Companion {
+            store: CellStore::new(SystemClock),
+            pasteboard: Board::Memory(pasteboard),
+            last_write: None,
+        };
+        Box::into_raw(Box::new(CompanionHandle {
+            inner: Mutex::new(companion),
+        }))
     }
 
     unsafe fn take_json(p: *mut c_char) -> String {

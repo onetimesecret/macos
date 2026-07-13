@@ -19,10 +19,13 @@ zeroize = { workspace = true }
 libc = "0.2"
 
 [dev-dependencies]
-# Examples only: the demo REPL dry-runs promotion through the client crate
-# and copies out through the in-memory pasteboard.
+# Examples only: the demo REPL runs promotion through the client crate,
+# a real transport, and Keychain-or-guest credentials; copies out
+# through the in-memory pasteboard.
 ots-client = { path = "../ots-client" }
 companion-pasteboard = { path = "../pasteboard" }
+companion-transport = { path = "../transport" }
+companion-credentials = { path = "../credentials" }
 # Compile-time proof that SecretBuffer implements no duplication or
 # serialization traits.
 static_assertions = "1"

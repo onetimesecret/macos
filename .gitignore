@@ -1,5 +1,10 @@
 # Rust
 /target/
+# tauri-panel is excluded from the Cargo workspace by construction
+# (spikes/README.md), so its target/ isn't covered by the root's.
+/spikes/tauri-panel/target/
+# tauri-build regenerates these ACL/capability schemas on every build.
+/spikes/tauri-panel/gen/
 **/*.rs.bk
 
 # Xcode / Swift (spikes, later the shell)

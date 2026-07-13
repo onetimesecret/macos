@@ -14,14 +14,21 @@ use std::io::{BufRead, Write as _};
 use std::time::Duration;
 
 use companion_core::{Cell, CellKind, CellStore, LifecycleState, ManualClock};
+use companion_credentials::default_credential_store;
 use companion_pasteboard::{ContentKind, MemoryPasteboard, Pasteboard, WriteOptions};
-use ots_client::{Api, ConcealPayload, NoAuth, snap_ttl};
+use companion_transport::UreqTransport;
+use ots_client::{Api, BasicAuth, Client, ConcealPayload, NoAuth, share_link, snap_ttl};
 
 const DEMO_SERVER: &str = "https://eu.onetimesecret.com";
 
 /// Server-allowed TTLs a real client would learn from the config
 /// endpoint at connection-test time (docs/spec/05).
 const ALLOWED_TTLS: &[u64] = &[300, 1800, 3600, 14_400, 28_800, 86_400, 259_200, 604_800];
+
+/// Keychain (or dev-store) accounts `login`/`logout` manage. Two items
+/// rather than one, so neither half is ever a full credential alone.
+const CRED_ACCOUNT_KEY: &str = "demo-api-key";
+const CRED_ACCOUNT_SECRET: &str = "demo-api-secret";
 
 fn main() {
     // No core dumps while secrets are held; buffers are mlocked besides.
@@ -57,6 +64,9 @@ fn main() {
             "clear" => clear(&mut pasteboard),
             "peek" => peek(&store, rest),
             "promote" | "link" => promote(&mut store, rest),
+            "send" => send(&mut store, rest),
+            "login" => login(rest),
+            "logout" => logout(),
             "discard" | "d" | "burn" => discard(&mut store, rest),
             "quit" | "q" | "exit" => break,
             other => println!("unknown command `{other}` — try `help`"),
@@ -80,6 +90,12 @@ fn help() {
   clear            clear-after-copy: only if the clipboard is still ours
   peek <n>         reveal cell n (the Space overlay; deliberate, logged)
   promote <n>      dry-run the v3 conceal request — nothing is sent
+  send <n>         the real thing: a live POST to {DEMO_SERVER}
+                   (guest route, or authenticated if `login` was used)
+                   — link lands on the clipboard, only the receipt id
+                   is retained
+  login <key> <secret>  store API credentials (Keychain on macOS)
+  logout                remove stored credentials
   discard <n>      discard now (zeroized immediately)
   quit"
     );
@@ -288,6 +304,107 @@ fn promote(store: &mut CellStore<ManualClock>, arg: &str) {
     );
     store.mark_promoted(id, "dry-run".into());
     println!("   cell marked promoted; in the app: link on clipboard, offer to burn local copy.");
+}
+
+/// `send`'s live counterpart to `promote`'s dry run: a real POST through
+/// the real transport (`companion-transport`), authenticated from
+/// Keychain-or-dev-store credentials when `login` has set them,
+/// otherwise the guest route. Only the receipt id is retained on the
+/// cell; the share link lands on the clipboard, not in any local
+/// history (docs/spec/05).
+fn send(store: &mut CellStore<ManualClock>, arg: &str) {
+    let Some(id) = nth(store, arg) else {
+        println!("no such cell");
+        return;
+    };
+    let now = store.now();
+    let cell = store.get(id).expect("id from nth");
+    let Some(text) = cell.content().as_text() else {
+        println!("v1 promotes text; the v3 conceal payload is text-shaped (open question №6)");
+        return;
+    };
+    let remaining = cell.remaining(now).as_secs();
+    let snapped = snap_ttl(remaining, ALLOWED_TTLS).expect("non-empty ladder");
+    let payload = ConcealPayload::new(text, "eu.onetimesecret.com").with_ttl(snapped);
+    let transport = UreqTransport::new();
+    let creds = default_credential_store();
+    let stored = creds
+        .load(CRED_ACCOUNT_KEY)
+        .ok()
+        .zip(creds.load(CRED_ACCOUNT_SECRET).ok());
+
+    println!("── promotion, frame 2 of 3 · LIVE — POSTing to {DEMO_SERVER} ──");
+    let result = if let Some((key, secret)) = stored {
+        let auth = BasicAuth::new(
+            String::from_utf8_lossy(&key).into_owned(),
+            String::from_utf8_lossy(&secret).into_owned(),
+        );
+        Client::new(DEMO_SERVER, Box::new(auth), transport).conceal(&payload)
+    } else {
+        println!(
+            "   (no stored credentials — using the guest route; `login <key> <secret>` to authenticate)"
+        );
+        Client::new(DEMO_SERVER, Box::new(NoAuth), transport).guest_conceal(&payload)
+    };
+
+    match result {
+        Ok(data) => {
+            let link = share_link(DEMO_SERVER, &data);
+            let receipt = data.receipt.identifier.clone();
+            land_link_on_clipboard(&link);
+            store.mark_promoted(id, receipt.clone());
+            println!("   {link}");
+            println!("   on the clipboard. only the receipt id ({receipt}) is retained.");
+        }
+        Err(e) => println!("   failed: {e}"),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn land_link_on_clipboard(link: &str) {
+    use companion_pasteboard::SystemPasteboard;
+    use zeroize::Zeroizing;
+
+    let mut pb = SystemPasteboard::new();
+    pb.write(
+        Zeroizing::new(link.as_bytes().to_vec()),
+        ContentKind::Text,
+        WriteOptions { concealed: false },
+    );
+}
+
+#[cfg(not(target_os = "macos"))]
+fn land_link_on_clipboard(_link: &str) {
+    println!("   (not on macOS — nothing else will land this on a real clipboard)");
+}
+
+fn login(rest: &str) {
+    let mut parts = rest.split_whitespace();
+    let (Some(key), Some(secret)) = (parts.next(), parts.next()) else {
+        println!("usage: login <api-key> <api-secret>");
+        return;
+    };
+    let creds = default_credential_store();
+    if let Err(e) = creds
+        .store(CRED_ACCOUNT_KEY, key.as_bytes())
+        .and_then(|()| creds.store(CRED_ACCOUNT_SECRET, secret.as_bytes()))
+    {
+        println!("failed to store credentials: {e}");
+        return;
+    }
+    let backend = if cfg!(target_os = "macos") {
+        "macOS Keychain"
+    } else {
+        "in-memory dev store"
+    };
+    println!("credentials stored ({backend}). `send` will now authenticate.");
+}
+
+fn logout() {
+    let creds = default_credential_store();
+    let _ = creds.delete(CRED_ACCOUNT_KEY);
+    let _ = creds.delete(CRED_ACCOUNT_SECRET);
+    println!("credentials removed. `send` will use the guest route.");
 }
 
 fn discard(store: &mut CellStore<ManualClock>, arg: &str) {

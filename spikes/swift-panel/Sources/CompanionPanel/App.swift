@@ -1,24 +1,58 @@
+import AppKit
 import SwiftUI
 
 /// The app's resident presence is the menu-bar item; a click reveals the
-/// panel. Present, not centre-stage (docs/spec/03 principle 2).
+/// panel (docs/spec/03 principle 2). This is the ADR-0002 entry point:
+/// `PanelController`'s edge-docked, non-activating `NSPanel` — not
+/// SwiftUI's stock `MenuBarExtra`, which has its own (less
+/// disqualifiable) activation behavior and can't dock to a screen edge
+/// or drop capture. Measuring the make-or-break surface means running
+/// the surface itself, not a lookalike.
 @main
 struct CompanionPanelApp: App {
-    @StateObject private var model = PanelModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra {
-            PanelView(model: model)
-                .frame(width: 320)
-        } label: {
-            // A glanceable indicator; the ember accent stays sparing.
-            Image(systemName: "hourglass")
-                .accessibilityLabel(Text("Onetime Secret Companion"))
+        // No SwiftUI scene renders anything; the status item + panel
+        // (built in AppDelegate) are the entire UI. A placeholder scene
+        // is required by the `App` protocol.
+        Settings {}
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let model = PanelModel()
+    private var controller: PanelController?
+    private var statusItem: NSStatusItem?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // No Dock icon, no app menu — present, not central.
+        NSApp.setActivationPolicy(.accessory)
+
+        let controller = PanelController(model: model)
+        self.controller = controller
+
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // ㊙️ maruhi ("secret") — the menu-bar glyph. An emoji title
+        // renders in colour; VoiceOver reads the explicit label, not the
+        // emoji's own name.
+        item.button?.title = "㊙️"
+        item.button?.setAccessibilityLabel("Onetime Secret Companion")
+        item.button?.target = self
+        item.button?.action = #selector(togglePanel)
+        statusItem = item
+
+        // Testing aid: show without a click, so the non-activating claim
+        // is scriptable (e.g. ADR-0002 measurement runs) rather than
+        // needing a synthetic click through Accessibility permissions.
+        if ProcessInfo.processInfo.environment["COMPANION_AUTOSHOW"] != nil {
+            controller.show()
         }
-        // A window-style panel, not a menu: it previews cells and shows
-        // the countdown. The edge-docked NSPanel (PanelController) is the
-        // richer surface this spike also exercises.
-        .menuBarExtraStyle(.window)
+    }
+
+    @objc private func togglePanel() {
+        controller?.toggle()
     }
 }
 
@@ -33,11 +67,26 @@ struct CompanionPanelApp: App {
 final class PanelModel: ObservableObject {
     @Published private(set) var cells: [CellSummary] = []
 
+    /// Whether the panel floats above other apps' windows (`.statusBar`
+    /// level) or behaves like a normal window other windows can cover
+    /// (`.normal`). Persisted, so the choice survives relaunch; the
+    /// controller follows it. Default: float on top (original behavior).
+    @Published var floatsOnTop: Bool {
+        didSet { UserDefaults.standard.set(floatsOnTop, forKey: Self.floatsKey) }
+    }
+    private static let floatsKey = "floatsOnTop"
+
     private let client = CompanionClient()
-    private var expiryTimer: Timer?
-    private var redrawTimer: Timer?
+    // nonisolated(unsafe): deinit is always nonisolated, even on a
+    // @MainActor class (Swift 6), and Timer isn't Sendable. Safe here —
+    // Timer.invalidate() is documented thread-safe, and every other
+    // touch of these properties already runs on the main actor.
+    private nonisolated(unsafe) var expiryTimer: Timer?
+    private nonisolated(unsafe) var redrawTimer: Timer?
 
     init() {
+        // Unset → float on top, matching the panel's original behavior.
+        floatsOnTop = UserDefaults.standard.object(forKey: Self.floatsKey) as? Bool ?? true
         refresh()
     }
 
@@ -84,6 +133,14 @@ final class PanelModel: ObservableObject {
     /// repository text (the secret-scan CI job reads the full history).
     func devStageSample() {
         client.devSeedPasteboard("ghp_" + String(repeating: "n0ts3cr3t", count: 4))
+        ingest()
+    }
+
+    /// A real drag landed on the panel. Staged via the same dev-seed
+    /// path as `devStageSample` — see the comment at the drop site
+    /// (`PanelView.dropZone`) for why this isn't the final ingest path.
+    func receiveDrop(_ text: String) {
+        client.devSeedPasteboard(text)
         ingest()
     }
 

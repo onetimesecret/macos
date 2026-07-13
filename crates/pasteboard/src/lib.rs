@@ -1,11 +1,10 @@
-//! Pasteboard adapter: the one crate that will touch `NSPasteboard`.
+//! Pasteboard adapter: the one crate that touches `NSPasteboard`.
 //!
-//! What lives here now is the *contract* every implementation meets —
-//! the hygiene rules from docs/spec/05 — plus [`MemoryPasteboard`], an
-//! in-process implementation for tests, the demo, and any non-macOS
-//! development host. The real `NSPasteboard` adapter (via `objc2`)
-//! arrives in milestone 2 and is macOS-gated; nothing else in the
-//! workspace may grow a platform dependency.
+//! What lives here is the *contract* every implementation meets — the
+//! hygiene rules from docs/spec/05 — plus two implementations:
+//! [`MemoryPasteboard`] (tests, the demo, any non-macOS development
+//! host) and [`SystemPasteboard`] (the real `NSPasteboard`, macOS-gated;
+//! nothing else in the workspace may grow a platform dependency).
 //!
 //! Hygiene contract:
 //!
@@ -20,6 +19,12 @@
 //!   write* — never clobbering something the user copied since.
 
 use zeroize::Zeroizing;
+
+#[cfg(target_os = "macos")]
+mod macos;
+
+#[cfg(target_os = "macos")]
+pub use macos::SystemPasteboard;
 
 /// The nspasteboard.org convention marking secret content; clipboard
 /// managers that honour it (most do) will not record the item.
