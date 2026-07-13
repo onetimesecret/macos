@@ -18,11 +18,15 @@ frugality budget (docs/spec/05) while it sits open and closed.
 ## Build (macOS only)
 
 ```sh
-./scripts/build-core.sh        # cargo → universal libcompanion_ffi.a → bindings/CompanionCore.xcframework
+./scripts/build-core.sh --dev-scaffolding   # cargo → universal libcompanion_ffi.a → bindings/CompanionCore.xcframework
 cd spikes/swift-panel
 swift build && swift test
 swift run CompanionPanel
 ```
+
+The `--dev-scaffolding` flag compiles in `companion_dev_seed_pasteboard`
+(off by default in the seam) — the spike needs it to stage a sample cell
+until the `NSPasteboard` adapter lands.
 
 ## Honest status
 

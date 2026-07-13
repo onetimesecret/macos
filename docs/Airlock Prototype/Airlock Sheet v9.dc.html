@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas">
+  <link rel="stylesheet" href="_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/colors_and_type.css">
+  <script src="_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/_ds_bundle.js"></script>
+  <style>
+    :root { --pg-bg:#F6F3EE; --pg-ink:#3E3831; --pg-sub:#5C554B; --pg-note:#98917F; --pg-ann:#8A8276; --pg-badge-bg:#EDE7DD; --pg-badge-ink:#3E3831; --pg-inv-bg:#3E3831; --pg-inv-ink:#F6F3EE; --pg-hair:rgba(62,52,40,.16); --pg-hair2:rgba(62,52,40,.08); --pg-led-a:#5C554B; --pg-led-b:#6F695F; }
+    body[data-appearance="dark"] { --pg-bg:#201B15; --pg-ink:#EAE3D8; --pg-sub:#C6BDAF; --pg-note:#8B8271; --pg-ann:#9C9384; --pg-badge-bg:#332C23; --pg-badge-ink:#D8D0C2; --pg-inv-bg:#EAE3D8; --pg-inv-ink:#201B15; --pg-hair:rgba(234,227,216,.24); --pg-hair2:rgba(234,227,216,.10); --pg-led-a:#C6BDAF; --pg-led-b:#A69D8C; }
+    body { margin: 0; background: var(--pg-bg); }
+    a { color: #D45A2A; text-decoration: none; }
+    a:hover { color: #A8431C; text-decoration: underline; }
+    body[data-appearance="dark"] a { color: #E0703F; }
+    body[data-appearance="dark"] a:hover { color: #EE9265; }
+    body[data-appearance="dark"][data-dim="true"] [data-artboard="true"] { filter: brightness(.87); }
+  </style>
+</helmet>
+
+<section data-screen-label="v9 — the sheet" style="padding:44px 48px 72px;display:flex;flex-direction:column;gap:30px;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif;color:var(--pg-ink,#3E3831)">
+
+  <!-- ============ INTRO ============ -->
+  <div style="max-width:880px;display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span style="background:var(--pg-inv-bg,#3E3831);color:var(--pg-inv-ink,#F6F3EE);font:600 10px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px;letter-spacing:.08em">9</span>
+      <h1 style="margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em">v9 · the sheet — uni-cell as a little text file</h1>
+    </div>
+    <p style="margin:0;font-size:13px;line-height:1.55;color:var(--pg-sub,#5C554B);text-wrap:pretty"><a href="Airlock Uni-cell v8.dc.html">v8</a> priced the uni-cell as a single-occupant chamber. v9 lets the chamber be a <strong>page</strong>: paste, come back later, hit enter twice, paste again — the actual life of the random text file this app replaces. Still one cell, one lifetime; what changes is its grain. A sheet holds three kinds of ink: <strong>typed text</strong> (yours, readable — you wrote it), <strong>benign pastes</strong> (readable — recognition was never the problem), and <strong>sealed chips</strong> — anything secret-shaped lands masked, labelled, atomic, because the bytes still never reach the UI. So auto-labelling survives <em>per snippet, on the chips</em>; the page itself needs no caption. Create-link exists at both grains: a quiet ↗ on every chip, one for the whole page in the footer. Focus is the other spec collision: a page you type into must sometimes hold the keyboard — the rule refines to <strong>accept, never take</strong> (<a href="#1c">1c</a>). Sheets can multiply Excel-style — several exist, one shows: <a href="#1d">1d</a> tabs, <a href="#1e">1e</a> pad edges, <a href="#1f">1f</a> bare flip — three switchers so we don't marry the tab strip.</p>
+    <p style="margin:0;font:11px/1.7 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-note,#98917F)">constants (spec, unchanged): sealed chips are masked, never revealable · hover reveals actions, never content · one countdown per sheet — snippets never get timers · ladder 1h→3h→8h→24h→3d→7d, default 8h · excluded from capture · no notifications — a hidden sheet dies quietly</p>
+  </div>
+
+  <!-- ============ LEDGER ============ -->
+  <div style="max-width:880px;display:flex;flex-direction:column;gap:6px">
+    <span style="font-size:13px;font-weight:700">The flagged features, re-priced on a page</span>
+    <div style="display:grid;grid-template-columns:236px 1fr;border-top:1px solid var(--pg-hair,rgba(62,52,40,.16))">
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">auto-labelling</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">moves onto the sealed chips, per snippet — typed and benign text is just text; the page carries no caption of its own</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">masking · boundary law</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">intact for pastes: secret-shaped content lands already sealed — bytes are routed core-side before render, no flash of plaintext (<a href="#1b">1b</a>) · the new edge: a secret typed by hand is visible by definition — a quiet per-run "seal this?" offer is the open question</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">create link</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">two grains — ↗ on every chip for one snippet · ↗ page in the footer bundles the whole sheet into one secret, expiry seeded from the page's remaining time</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">ttl ladder · click-to-cycle</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">per sheet — one label, one countdown, everything on the page expires together; per-snippet timers are exactly the futility trap uni-cell exists to kill</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">hover → actions, never content</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">survives — chips are the only hover targets; typed text has no actions to hide</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">never steals focus</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">refines to <strong>accept, never take</strong> — the keyboard enters only by deliberate click or ⌥Space, esc always hands it back · chips stay atomic under the caret: one ⌫ removes a whole chip, selection cannot reach inside one</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">capacity 12 · refuse-don't-evict</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">re-bases to sheets — a few pages, one visible; the cap question moves up a level (wall at 3? 5?) and snippets-per-page needs no cap at all</div>
+      <div style="padding:8px 16px 8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:600 10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-a,#5C554B)">the v8 backbreakers, re-checked</div>
+      <div style="padding:8px 0;border-bottom:1px solid var(--pg-hair2,rgba(62,52,40,.08));font:10.5px/1.6 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-led-b,#6F695F)">clutter: one page in view · ttl futility: one countdown per view — other sheets' time reads as tab/edge geometry, never as numbers to track · fiddliness: chips are atomic and finger-sized, the page body is one big target · and the second pocket returns, without multi-cell chrome: ad-hoc separation on one page</div>
+    </div>
+  </div>
+
+  <!-- ============ OPTIONS ROW ============ -->
+  <div style="display:flex;flex-wrap:wrap;gap:44px;align-items:flex-start">
+
+    <!-- ================= 1a THE SHEET ================= -->
+    <div id="1a" data-screen-label="1a the sheet" style="width:490px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:9px">
+        <a href="#1a" style="background:var(--pg-badge-bg,#EDE7DD);color:var(--pg-badge-ink,#3E3831);font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px">1a</a>
+        <span style="font-size:13.5px;font-weight:700">The sheet</span>
+        <span style="font-size:11.5px;color:var(--pg-ann,#8A8276)">one page, three kinds of ink.</span>
+      </div>
+      <div data-artboard="true" style="width:490px;height:420px;border-radius:14px;overflow:hidden;position:relative;background:linear-gradient(168deg,#B7AFA4 0%,#9C948A 48%,#837B72 100%);border:1px solid rgba(62,52,40,.14);box-shadow:0 12px 32px rgba(50,40,30,.16)">
+        <div style="height:26px;display:flex;align-items:center;gap:13px;padding:0 12px;background:#F5F3F0;border-bottom:1px solid rgba(62,52,40,.10);font-size:11.5px;color:#3E3831">
+          <span style="font-size:12px"></span><span style="font-weight:700">Finder</span><span>File</span><span>Edit</span><span>View</span><span>Go</span>
+          <span style="flex:1"></span>
+          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="#3E3831" stroke-width="1.4" stroke-dasharray="26 6.7" transform="rotate(-25 8 8)"></circle><circle cx="8" cy="8" r="1.7" fill="#3E3831"></circle></svg>
+          <span style="font-variant-numeric:tabular-nums">Fri 11 Jul&nbsp;&nbsp;9:41</span>
+        </div>
+        <div style="position:absolute;top:34px;right:10px;width:332px;border-radius:11px;background:#EDEBE7;border:1px solid rgba(62,52,40,.16);box-shadow:0 22px 44px rgba(40,32,24,.26),0 2px 6px rgba(40,32,24,.12)">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 7px">
+            <span style="font-size:12px;font-weight:600;color:#4A443C">Airlock</span>
+            <span style="flex:1"></span>
+            <span style="font:700 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#6F695F">8h</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.6 1.2l3.2 3.2-2 .5-1.5 1.5-.4 2.8-1.9-1.9-2.6 2.6-.4-.4 2.6-2.6-1.9-1.9 2.8-.4L7.1 3.2z" fill="#A39A8C"></path></svg>
+          </div>
+          <div style="margin:0 10px;background:#F7F5F2;border:1px solid rgba(62,52,40,.10);border-radius:8px;overflow:hidden">
+            <div style="padding:10px 12px 12px;font-family:ui-monospace,'SF Mono',Menlo,monospace">
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">deploy friday, in order —</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">GITHUB TOKEN</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">••••••••&nbsp;&nbsp;ghp_4kQ…H5jK</span></div>
+              <div style="height:16px"></div>
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">dsn for the migration:</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">POSTGRES URL</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">postgres://ops:••••@db-3…</span></div>
+              <div style="height:16px"></div>
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">courier drop-off:</div>
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">14 Rue de la Paix, 75002 Paris</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">IMAGE · 1440×900</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">Screenshot — build 4471</span></div>
+            </div>
+            <div style="height:3px;background:rgba(62,52,40,.07)"><div style="height:100%;width:85%;background:#9A9185"></div></div>
+          </div>
+          <div style="display:flex;align-items:center;padding:8px 12px 9px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#A39A8C"><span>excluded from screen capture</span><span style="flex:1"></span><span style="color:#B4552E">↗&nbsp;page</span></div>
+        </div>
+      </div>
+      <p style="margin:0;font:11px/1.65 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-ann,#8A8276)">typed text is yours and readable · benign pastes (the address) stay text · secret-shaped pastes are chips: masked, labelled, atomic — the per-snippet auto-label lives on the chip, nowhere else · one ttl in the header for the whole page (click to cycle), the page's bottom edge is its gauge · ↗ page in the footer promotes the sheet whole</p>
+    </div>
+
+    <!-- ================= 1b SEALED ON ARRIVAL ================= -->
+    <div id="1b" data-screen-label="1b sealed on arrival" style="width:490px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:9px">
+        <a href="#1b" style="background:var(--pg-badge-bg,#EDE7DD);color:var(--pg-badge-ink,#3E3831);font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px">1b</a>
+        <span style="font-size:13.5px;font-weight:700">Sealed on arrival</span>
+        <span style="font-size:11.5px;color:var(--pg-ann,#8A8276)">paste lands masked · hover is where the verbs live.</span>
+      </div>
+      <div data-artboard="true" style="width:490px;height:420px;border-radius:14px;overflow:hidden;position:relative;background:linear-gradient(168deg,#B7AFA4 0%,#9C948A 48%,#837B72 100%);border:1px solid rgba(62,52,40,.14);box-shadow:0 12px 32px rgba(50,40,30,.16)">
+        <div style="height:26px;display:flex;align-items:center;gap:13px;padding:0 12px;background:#F5F3F0;border-bottom:1px solid rgba(62,52,40,.10);font-size:11.5px;color:#3E3831">
+          <span style="font-size:12px"></span><span style="font-weight:700">Finder</span><span>File</span><span>Edit</span><span>View</span><span>Go</span>
+          <span style="flex:1"></span>
+          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="#3E3831" stroke-width="1.4" stroke-dasharray="26 6.7" transform="rotate(-25 8 8)"></circle><circle cx="8" cy="8" r="1.7" fill="#3E3831"></circle></svg>
+          <span style="font-variant-numeric:tabular-nums">Fri 11 Jul&nbsp;&nbsp;9:41</span>
+        </div>
+        <div style="position:absolute;top:34px;right:10px;width:332px;border-radius:11px;background:#EDEBE7;border:1px solid rgba(62,52,40,.16);box-shadow:0 22px 44px rgba(40,32,24,.26),0 2px 6px rgba(40,32,24,.12)">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 7px">
+            <span style="font-size:12px;font-weight:600;color:#4A443C">Airlock</span>
+            <span style="flex:1"></span>
+            <span style="font:700 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#6F695F">8h</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.6 1.2l3.2 3.2-2 .5-1.5 1.5-.4 2.8-1.9-1.9-2.6 2.6-.4-.4 2.6-2.6-1.9-1.9 2.8-.4L7.1 3.2z" fill="#A39A8C"></path></svg>
+          </div>
+          <div style="margin:0 10px;background:#F7F5F2;border:1px solid rgba(62,52,40,.10);border-radius:8px;overflow:hidden">
+            <div style="padding:10px 12px 12px;font-family:ui-monospace,'SF Mono',Menlo,monospace">
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">deploy friday —</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:#EFE9E1;border:1px solid rgba(62,52,40,.22);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">GITHUB TOKEN</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">••••••••&nbsp;&nbsp;ghp_4kQ…H5jK</span><svg width="11" height="11" viewBox="0 0 13 13" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="7.5" rx="1.5" fill="none" stroke="#6F695F" stroke-width="1.2"></rect><path d="M8.5 4.5V3A1.5 1.5 0 007 1.5H3A1.5 1.5 0 001.5 3v5A1.5 1.5 0 003 9.5h1.5" fill="none" stroke="#6F695F" stroke-width="1.2"></path></svg><span style="font-size:10px;color:#B4552E;white-space:nowrap">↗&nbsp;link</span></div>
+              <div style="height:16px"></div>
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">dsn:</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">POSTGRES URL</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">postgres://ops:••••@db-3…</span></div>
+            </div>
+            <div style="height:3px;background:rgba(62,52,40,.07)"><div style="height:100%;width:85%;background:#9A9185"></div></div>
+          </div>
+          <div style="display:flex;align-items:center;padding:8px 12px 9px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#A39A8C"><span>excluded from screen capture</span><span style="flex:1"></span><span style="color:#B4552E">↗&nbsp;page</span></div>
+        </div>
+      </div>
+      <p style="margin:0;font:11px/1.65 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-ann,#8A8276)">a secret-shaped paste lands already sealed — the bytes are routed core-side before anything renders, so there is no flash of plaintext to shoulder-surf · benign pastes land as text · the token chip is hovered: copy and ↗ surface on the chip itself, per snippet — content never changes on hover · a chip never opens; there is nothing to open</p>
+    </div>
+
+    <!-- ================= 1c ACCEPTING THE KEYBOARD ================= -->
+    <div id="1c" data-screen-label="1c accepting the keyboard" style="width:490px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:9px">
+        <a href="#1c" style="background:var(--pg-badge-bg,#EDE7DD);color:var(--pg-badge-ink,#3E3831);font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px">1c</a>
+        <span style="font-size:13.5px;font-weight:700">Accepting the keyboard</span>
+        <span style="font-size:11.5px;color:var(--pg-ann,#8A8276)">accept, never take.</span>
+      </div>
+      <div data-artboard="true" style="width:490px;height:420px;border-radius:14px;overflow:hidden;position:relative;background:linear-gradient(168deg,#B7AFA4 0%,#9C948A 48%,#837B72 100%);border:1px solid rgba(62,52,40,.14);box-shadow:0 12px 32px rgba(50,40,30,.16)">
+        <div style="height:26px;display:flex;align-items:center;gap:13px;padding:0 12px;background:#F5F3F0;border-bottom:1px solid rgba(62,52,40,.10);font-size:11.5px;color:#3E3831">
+          <span style="font-size:12px"></span><span style="font-weight:700">Airlock</span><span>Edit</span>
+          <span style="flex:1"></span>
+          <span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:20px;border-radius:5px;background:rgba(62,52,40,.16)"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="#3E3831" stroke-width="1.4" stroke-dasharray="26 6.7" transform="rotate(-25 8 8)"></circle><circle cx="8" cy="8" r="1.7" fill="#3E3831"></circle></svg></span>
+          <span style="font-variant-numeric:tabular-nums">Fri 11 Jul&nbsp;&nbsp;9:41</span>
+        </div>
+        <div style="position:absolute;top:34px;right:10px;width:332px;border-radius:11px;background:#EDEBE7;border:1px solid rgba(62,52,40,.16);box-shadow:0 22px 44px rgba(40,32,24,.26),0 2px 6px rgba(40,32,24,.12)">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 7px">
+            <span style="font-size:12px;font-weight:600;color:#4A443C">Airlock</span>
+            <span style="flex:1"></span>
+            <span style="font:10px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#B0A896">esc returns</span>
+            <span style="font:700 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#6F695F">8h</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.6 1.2l3.2 3.2-2 .5-1.5 1.5-.4 2.8-1.9-1.9-2.6 2.6-.4-.4 2.6-2.6-1.9-1.9 2.8-.4L7.1 3.2z" fill="#A39A8C"></path></svg>
+          </div>
+          <div style="margin:0 10px;background:#F7F5F2;border:1.5px solid rgba(212,90,42,.45);border-radius:8px;overflow:hidden">
+            <div style="padding:10px 12px 12px;font-family:ui-monospace,'SF Mono',Menlo,monospace">
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">deploy friday, in order —</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">GITHUB TOKEN</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">••••••••&nbsp;&nbsp;ghp_4kQ…H5jK</span></div>
+              <div style="height:16px"></div>
+              <div style="height:16px"></div>
+              <div style="display:flex;align-items:center;gap:1px"><span style="display:inline-block;width:1.5px;height:14px;background:#3F3A33"></span></div>
+            </div>
+            <div style="height:3px;background:rgba(62,52,40,.07)"><div style="height:100%;width:85%;background:#9A9185"></div></div>
+          </div>
+          <div style="display:flex;align-items:center;padding:8px 12px 9px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#A39A8C"><span>excluded from screen capture</span><span style="flex:1"></span><span style="color:#B4552E">↗&nbsp;page</span></div>
+        </div>
+      </div>
+      <p style="margin:0;font:11px/1.65 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-ann,#8A8276)">the panel never takes the keyboard, but it may accept it — entry only by deliberate click into the page or ⌥Space; esc (or clicking your real work) hands it straight back · shown: two enters after the chip, caret parked, ready for the next paste — the whole ritual the text file taught · chips are atomic under the caret: arrows step over one, a single ⌫ removes one whole, selection cannot reach inside · the ember page border is the one visual that says "keys land here now"</p>
+    </div>
+
+    <!-- ================= 1d TABS ================= -->
+    <div id="1d" data-screen-label="1d tabs" style="width:490px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:9px">
+        <a href="#1d" style="background:var(--pg-badge-bg,#EDE7DD);color:var(--pg-badge-ink,#3E3831);font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px">1d</a>
+        <span style="font-size:13.5px;font-weight:700">Tabs</span>
+        <span style="font-size:11.5px;color:var(--pg-ann,#8A8276)">the strip is the only place TTLs coexist — as geometry.</span>
+      </div>
+      <div data-artboard="true" style="width:490px;height:420px;border-radius:14px;overflow:hidden;position:relative;background:linear-gradient(168deg,#B7AFA4 0%,#9C948A 48%,#837B72 100%);border:1px solid rgba(62,52,40,.14);box-shadow:0 12px 32px rgba(50,40,30,.16)">
+        <div style="height:26px;display:flex;align-items:center;gap:13px;padding:0 12px;background:#F5F3F0;border-bottom:1px solid rgba(62,52,40,.10);font-size:11.5px;color:#3E3831">
+          <span style="font-size:12px"></span><span style="font-weight:700">Finder</span><span>File</span><span>Edit</span><span>View</span><span>Go</span>
+          <span style="flex:1"></span>
+          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="#3E3831" stroke-width="1.4" stroke-dasharray="26 6.7" transform="rotate(-25 8 8)"></circle><circle cx="8" cy="8" r="1.7" fill="#3E3831"></circle></svg>
+          <span style="font-variant-numeric:tabular-nums">Fri 11 Jul&nbsp;&nbsp;9:41</span>
+        </div>
+        <div style="position:absolute;top:34px;right:10px;width:332px;border-radius:11px;background:#EDEBE7;border:1px solid rgba(62,52,40,.16);box-shadow:0 22px 44px rgba(40,32,24,.26),0 2px 6px rgba(40,32,24,.12)">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 7px">
+            <span style="font-size:12px;font-weight:600;color:#4A443C">Airlock</span>
+            <span style="flex:1"></span>
+            <span style="font:700 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#6F695F">8h</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.6 1.2l3.2 3.2-2 .5-1.5 1.5-.4 2.8-1.9-1.9-2.6 2.6-.4-.4 2.6-2.6-1.9-1.9 2.8-.4L7.1 3.2z" fill="#A39A8C"></path></svg>
+          </div>
+          <div style="display:flex;gap:3px;margin:0 10px;align-items:flex-end">
+            <div style="display:flex;flex-direction:column;background:#F7F5F2;border:1px solid rgba(62,52,40,.10);border-bottom:none;border-radius:7px 7px 0 0;overflow:hidden">
+              <span style="padding:5px 11px 4px;font:10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#3F3A33">deploy</span>
+              <div style="height:2px;background:rgba(62,52,40,.07)"><div style="height:100%;width:85%;background:#9A9185"></div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;background:rgba(62,52,40,.05);border:1px solid rgba(62,52,40,.08);border-bottom:none;border-radius:7px 7px 0 0;overflow:hidden">
+              <span style="padding:5px 11px 4px;font:10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#8A8276">errands</span>
+              <div style="height:2px;background:rgba(62,52,40,.07)"><div style="height:100%;width:78%;background:repeating-linear-gradient(45deg,#D45A2A 0 3px,#EBB49A 3px 6px)"></div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;background:rgba(62,52,40,.05);border:1px solid rgba(62,52,40,.08);border-bottom:none;border-radius:7px 7px 0 0;overflow:hidden">
+              <span style="padding:5px 11px 4px;font:10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#8A8276">notes</span>
+              <div style="height:2px;background:rgba(62,52,40,.07)"><div style="height:100%;width:60%;background:rgba(154,145,133,.45)"></div></div>
+            </div>
+            <span style="padding:0 6px 5px;font:12px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#B0A896">+</span>
+          </div>
+          <div style="margin:0 10px;background:#F7F5F2;border:1px solid rgba(62,52,40,.10);border-radius:0 8px 8px 8px;overflow:hidden">
+            <div style="padding:10px 12px 12px;font-family:ui-monospace,'SF Mono',Menlo,monospace">
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">deploy friday, in order —</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">GITHUB TOKEN</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">••••••••&nbsp;&nbsp;ghp_4kQ…H5jK</span></div>
+              <div style="height:16px"></div>
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">dsn for the migration:</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">POSTGRES URL</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">postgres://ops:••••@db-3…</span></div>
+            </div>
+            <div style="height:3px;background:rgba(62,52,40,.07)"><div style="height:100%;width:85%;background:#9A9185"></div></div>
+          </div>
+          <div style="display:flex;align-items:center;padding:8px 12px 9px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#A39A8C"><span>excluded from screen capture</span><span style="flex:1"></span><span style="color:#B4552E">↗&nbsp;page</span></div>
+        </div>
+      </div>
+      <p style="margin:0;font:11px/1.65 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-ann,#8A8276)">names come from each sheet's first typed line — never from sealed content · every tab's underline is that sheet's own gauge: errands is under an hour (ember + hatch) and says so from the strip, without a number, without opening it — the only cross-sheet urgency signal, and it's position, not a count · the futility complaint stays answered: you glance three edges, you never track three timers · + stages a fresh page at 8h</p>
+    </div>
+
+    <!-- ================= 1e PAD EDGES ================= -->
+    <div id="1e" data-screen-label="1e pad edges" style="width:490px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:9px">
+        <a href="#1e" style="background:var(--pg-badge-bg,#EDE7DD);color:var(--pg-badge-ink,#3E3831);font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px">1e</a>
+        <span style="font-size:13.5px;font-weight:700">Pad edges</span>
+        <span style="font-size:11.5px;color:var(--pg-ann,#8A8276)">the stack is the switcher — sheets seen side-on.</span>
+      </div>
+      <div data-artboard="true" style="width:490px;height:420px;border-radius:14px;overflow:hidden;position:relative;background:linear-gradient(168deg,#B7AFA4 0%,#9C948A 48%,#837B72 100%);border:1px solid rgba(62,52,40,.14);box-shadow:0 12px 32px rgba(50,40,30,.16)">
+        <div style="height:26px;display:flex;align-items:center;gap:13px;padding:0 12px;background:#F5F3F0;border-bottom:1px solid rgba(62,52,40,.10);font-size:11.5px;color:#3E3831">
+          <span style="font-size:12px"></span><span style="font-weight:700">Finder</span><span>File</span><span>Edit</span><span>View</span><span>Go</span>
+          <span style="flex:1"></span>
+          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="#3E3831" stroke-width="1.4" stroke-dasharray="26 6.7" transform="rotate(-25 8 8)"></circle><circle cx="8" cy="8" r="1.7" fill="#3E3831"></circle></svg>
+          <span style="font-variant-numeric:tabular-nums">Fri 11 Jul&nbsp;&nbsp;9:41</span>
+        </div>
+        <div style="position:absolute;top:34px;right:10px;width:332px;border-radius:11px;background:#EDEBE7;border:1px solid rgba(62,52,40,.16);box-shadow:0 22px 44px rgba(40,32,24,.26),0 2px 6px rgba(40,32,24,.12)">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 7px">
+            <span style="font-size:12px;font-weight:600;color:#4A443C">Airlock</span>
+            <span style="flex:1"></span>
+            <span style="font:700 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#6F695F">8h</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.6 1.2l3.2 3.2-2 .5-1.5 1.5-.4 2.8-1.9-1.9-2.6 2.6-.4-.4 2.6-2.6-1.9-1.9 2.8-.4L7.1 3.2z" fill="#A39A8C"></path></svg>
+          </div>
+          <div style="margin:0 10px;background:#F7F5F2;border:1px solid rgba(62,52,40,.10);border-radius:8px 8px 2px 2px;overflow:hidden">
+            <div style="padding:10px 12px 12px;font-family:ui-monospace,'SF Mono',Menlo,monospace">
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">deploy friday, in order —</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">GITHUB TOKEN</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">••••••••&nbsp;&nbsp;ghp_4kQ…H5jK</span></div>
+              <div style="height:16px"></div>
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">courier drop-off:</div>
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">14 Rue de la Paix, 75002 Paris</div>
+            </div>
+            <div style="height:3px;background:rgba(62,52,40,.07)"><div style="height:100%;width:85%;background:#9A9185"></div></div>
+          </div>
+          <div style="margin:2px 16px 0;height:5px;border-radius:0 0 3px 3px;background:#E6E1D9;border:1px solid rgba(62,52,40,.12);border-top:none;position:relative;overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:78%;background:repeating-linear-gradient(45deg,rgba(212,90,42,.60) 0 3px,rgba(235,180,154,.60) 3px 6px)"></div></div>
+          <div style="margin:2px 22px 0;height:5px;border-radius:0 0 3px 3px;background:#E6E1D9;border:1px solid rgba(62,52,40,.12);border-top:none;position:relative;overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:60%;background:rgba(154,145,133,.50)"></div></div>
+          <div style="display:flex;align-items:center;padding:8px 12px 9px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#A39A8C"><span>excluded from screen capture</span><span style="flex:1"></span><span style="color:#B4552E">↗&nbsp;page</span></div>
+        </div>
+      </div>
+      <p style="margin:0;font:11px/1.65 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-ann,#8A8276)">the other sheets are paper edges under the page — each edge is that sheet's own gauge seen side-on (the ember edge is errands, under an hour) · zero chrome added, the metaphor does the work · honest cost: 5-px edges are exactly the fine targets uni-cell swore off — so a click anywhere on the stack flips to the next sheet in order, and the edges are display, not individual buttons</p>
+    </div>
+
+    <!-- ================= 1f BARE FLIP ================= -->
+    <div id="1f" data-screen-label="1f bare flip" style="width:490px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:9px">
+        <a href="#1f" style="background:var(--pg-badge-bg,#EDE7DD);color:var(--pg-badge-ink,#3E3831);font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px">1f</a>
+        <span style="font-size:13.5px;font-weight:700">Bare flip</span>
+        <span style="font-size:11.5px;color:var(--pg-ann,#8A8276)">chromeless until you ask.</span>
+      </div>
+      <div data-artboard="true" style="width:490px;height:420px;border-radius:14px;overflow:hidden;position:relative;background:linear-gradient(168deg,#B7AFA4 0%,#9C948A 48%,#837B72 100%);border:1px solid rgba(62,52,40,.14);box-shadow:0 12px 32px rgba(50,40,30,.16)">
+        <div style="height:26px;display:flex;align-items:center;gap:13px;padding:0 12px;background:#F5F3F0;border-bottom:1px solid rgba(62,52,40,.10);font-size:11.5px;color:#3E3831">
+          <span style="font-size:12px"></span><span style="font-weight:700">Finder</span><span>File</span><span>Edit</span><span>View</span><span>Go</span>
+          <span style="flex:1"></span>
+          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.2" fill="none" stroke="#3E3831" stroke-width="1.4" stroke-dasharray="26 6.7" transform="rotate(-25 8 8)"></circle><circle cx="8" cy="8" r="1.7" fill="#3E3831"></circle></svg>
+          <span style="font-variant-numeric:tabular-nums">Fri 11 Jul&nbsp;&nbsp;9:41</span>
+        </div>
+        <div style="position:absolute;top:34px;right:10px;width:332px;border-radius:11px;background:#EDEBE7;border:1px solid rgba(62,52,40,.16);box-shadow:0 22px 44px rgba(40,32,24,.26),0 2px 6px rgba(40,32,24,.12)">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 7px">
+            <span style="font-size:12px;font-weight:600;color:#4A443C">Airlock</span>
+            <span style="flex:1"></span>
+            <span style="font:700 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#D45A2A">47m</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.6 1.2l3.2 3.2-2 .5-1.5 1.5-.4 2.8-1.9-1.9-2.6 2.6-.4-.4 2.6-2.6-1.9-1.9 2.8-.4L7.1 3.2z" fill="#A39A8C"></path></svg>
+          </div>
+          <div style="margin:0 10px;background:#F7F5F2;border:1px solid rgba(62,52,40,.10);border-radius:8px;overflow:hidden">
+            <div style="padding:10px 12px 12px;font-family:ui-monospace,'SF Mono',Menlo,monospace">
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">pharmacy after 6, then —</div>
+              <div style="display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;background:rgba(62,52,40,.07);border:1px solid rgba(62,52,40,.15);border-radius:6px;padding:4px 9px;margin:3px 0"><span style="font-size:8.5px;letter-spacing:.07em;color:#98917F">CONCEALED · PIN</span><span style="font-size:11.5px;color:#3F3A33;white-space:nowrap">••••&nbsp;&nbsp;door code</span></div>
+              <div style="height:16px"></div>
+              <div style="font-size:12px;line-height:1.7;color:#3F3A33">14 Rue de la Paix, 75002 Paris</div>
+            </div>
+            <div style="height:3px;background:rgba(62,52,40,.07)"><div style="height:100%;width:78%;background:repeating-linear-gradient(45deg,#D45A2A 0 3px,#EBB49A 3px 6px)"></div></div>
+          </div>
+          <div style="position:absolute;left:50%;top:118px;transform:translateX(-50%);display:flex;align-items:center;gap:9px;background:rgba(62,52,40,.85);color:#F6F3EE;border-radius:20px;padding:7px 14px;font:10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;box-shadow:0 8px 20px rgba(40,32,24,.30)"><span style="font-weight:700">2 / 3</span><span style="opacity:.75">errands — 47m</span></div>
+          <div style="display:flex;align-items:center;padding:8px 12px 9px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#A39A8C"><span>excluded from screen capture</span><span style="flex:1"></span><span style="color:#B4552E">↗&nbsp;page</span></div>
+        </div>
+      </div>
+      <p style="margin:0;font:11px/1.65 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-ann,#8A8276)">no strip, no edges — one sheet at a time, indistinguishable from single-sheet until you flip (⌘⇥ inside the panel, or two-finger swipe) · the position pill appears only during the flip, then fades · the resting face is the calmest of the three switchers, and the trade is stated plainly: hidden sheets are invisible, and a hidden ember sheet dies unwatched — expiry-as-designed, or silent loss? test it</p>
+    </div>
+
+  </div>
+
+  <!-- ============ SHARED ============ -->
+  <div style="display:flex;flex-direction:column;gap:14px;margin-top:8px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-size:13px;font-weight:700">Shared</span>
+      <span style="font:11px/1 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-note,#98917F)">the resting state, one grain finer</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start">
+
+      <!-- 1g empty page -->
+      <div id="1g" data-screen-label="1g empty page" style="width:400px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:baseline;gap:9px"><a href="#1g" style="background:var(--pg-badge-bg,#EDE7DD);color:var(--pg-badge-ink,#3E3831);font:600 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;padding:4px 7px;border-radius:5px">1g</a><span style="font-size:12.5px;font-weight:700">Empty page — still the majority state</span></div>
+        <div data-artboard="true" style="width:332px;border-radius:11px;background:#EDEBE7;border:1px solid rgba(62,52,40,.16);box-shadow:0 14px 30px rgba(40,32,24,.14)">
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px 7px">
+            <span style="font-size:12px;font-weight:600;color:#4A443C">Airlock</span>
+            <span style="flex:1"></span>
+            <span style="font:700 10.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#6F695F">8h</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.6 1.2l3.2 3.2-2 .5-1.5 1.5-.4 2.8-1.9-1.9-2.6 2.6-.4-.4 2.6-2.6-1.9-1.9 2.8-.4L7.1 3.2z" fill="#A39A8C"></path></svg>
+          </div>
+          <div style="margin:0 10px;padding:22px 14px;border:1px dashed rgba(62,52,40,.28);border-radius:8px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center">
+            <span style="font-size:12.5px;color:#5C554B">Drop, paste, or click in and type.</span>
+            <span style="font:10px/1.7 ui-monospace,'SF Mono',Menlo,monospace;color:#B0A896">everything on this page expires together · ⌥Space from anywhere</span>
+          </div>
+          <div style="display:flex;align-items:center;padding:9px 12px;font:9.5px/1 ui-monospace,'SF Mono',Menlo,monospace;color:#A39A8C"><span>excluded from screen capture</span></div>
+        </div>
+        <p style="margin:0;font:11px/1.65 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-ann,#8A8276)">one new word in the sentence ("type") and one new promise ("expires together") — otherwise v8's resting state, unchanged · the dashed line still exists only when empty; an occupied page is its own drop target (paste appends at the caret's last resting place, never replaces)</p>
+      </div>
+
+    </div>
+  </div>
+
+  <p style="margin:6px 0 0;font:11px/1.7 ui-monospace,'SF Mono',Menlo,monospace;color:var(--pg-note,#98917F)">Try next: "pick the switcher" — tabs (1d) vs edges (1e) vs flip (1f) is the whole personality question · "the typed-secret seal offer — design the quiet nudge" · "return-visit storyboard: open, enter enter, paste, esc" · "sheet cap + the refusal moment at 3 pages" · "does ↗ page refuse mixed content or bundle it" · "dark appearance of the page"</p>
+
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;darkMode&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Appearance&quot;},&quot;dimArtboards&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Appearance&quot;}}">
+class Component extends DCLogic {
+  componentDidMount() { this.syncAppearance(); }
+  componentDidUpdate() { this.syncAppearance(); }
+  syncAppearance() {
+    const dark = this.props.darkMode ?? true;
+    const dim = this.props.dimArtboards ?? true;
+    document.body.dataset.appearance = dark ? 'dark' : 'light';
+    document.body.dataset.dim = dim ? 'true' : 'false';
+  }
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

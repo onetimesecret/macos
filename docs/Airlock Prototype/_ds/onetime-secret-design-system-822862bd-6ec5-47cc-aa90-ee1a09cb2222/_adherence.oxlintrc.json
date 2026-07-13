@@ -1,0 +1,180 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "ui_kits/marketing-site/**",
+              "ui_kits/secret-app/**"
+            ],
+            "message": "Import design-system components from 'index.js', not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a design-system spacing token via var()."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Zilla Slab Highlight|Zilla Slab))/i]",
+        "message": "Font not provided by the design system. Available: Zilla Slab Highlight, Zilla Slab."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
+  "x-omelette": {
+    "components": {},
+    "tokens": [
+      "--ots-accent-bg",
+      "--ots-accent-bg-hov",
+      "--ots-accent-text",
+      "--ots-brand-100",
+      "--ots-brand-200",
+      "--ots-brand-300",
+      "--ots-brand-400",
+      "--ots-brand-50",
+      "--ots-brand-500",
+      "--ots-brand-600",
+      "--ots-brand-700",
+      "--ots-brand-800",
+      "--ots-brand-900",
+      "--ots-brand-950",
+      "--ots-brandcomp-100",
+      "--ots-brandcomp-200",
+      "--ots-brandcomp-300",
+      "--ots-brandcomp-400",
+      "--ots-brandcomp-50",
+      "--ots-brandcomp-500",
+      "--ots-brandcomp-600",
+      "--ots-brandcomp-700",
+      "--ots-brandcomp-800",
+      "--ots-brandcomp-900",
+      "--ots-brandcomp-950",
+      "--ots-danger",
+      "--ots-focus-ring",
+      "--ots-font-body",
+      "--ots-font-brand",
+      "--ots-font-mono",
+      "--ots-header-height",
+      "--ots-radius-2xl",
+      "--ots-radius-full",
+      "--ots-radius-lg",
+      "--ots-radius-md",
+      "--ots-radius-sm",
+      "--ots-radius-xl",
+      "--ots-space-1",
+      "--ots-space-10",
+      "--ots-space-12",
+      "--ots-space-16",
+      "--ots-space-2",
+      "--ots-space-20",
+      "--ots-space-24",
+      "--ots-space-3",
+      "--ots-space-4",
+      "--ots-space-6",
+      "--ots-space-8",
+      "--ots-success",
+      "--ots-surface-0",
+      "--ots-surface-1",
+      "--ots-surface-2",
+      "--ots-surface-3",
+      "--ots-surface-4",
+      "--ots-text-primary",
+      "--ots-text-secondary",
+      "--ots-text-tertiary",
+      "--ots-warning"
+    ],
+    "tokenKinds": {
+      "--ots-brand-50": "color",
+      "--ots-brand-100": "color",
+      "--ots-brand-200": "color",
+      "--ots-brand-300": "color",
+      "--ots-brand-400": "color",
+      "--ots-brand-500": "color",
+      "--ots-brand-600": "color",
+      "--ots-brand-700": "color",
+      "--ots-brand-800": "color",
+      "--ots-brand-900": "color",
+      "--ots-brand-950": "color",
+      "--ots-brandcomp-50": "color",
+      "--ots-brandcomp-100": "color",
+      "--ots-brandcomp-200": "color",
+      "--ots-brandcomp-300": "color",
+      "--ots-brandcomp-400": "color",
+      "--ots-brandcomp-500": "color",
+      "--ots-brandcomp-600": "color",
+      "--ots-brandcomp-700": "color",
+      "--ots-brandcomp-800": "color",
+      "--ots-brandcomp-900": "color",
+      "--ots-brandcomp-950": "color",
+      "--ots-danger": "color",
+      "--ots-success": "color",
+      "--ots-warning": "color",
+      "--ots-font-brand": "font",
+      "--ots-font-body": "font",
+      "--ots-font-mono": "font",
+      "--ots-radius-sm": "radius",
+      "--ots-radius-md": "radius",
+      "--ots-radius-lg": "radius",
+      "--ots-radius-xl": "radius",
+      "--ots-radius-2xl": "radius",
+      "--ots-radius-full": "radius",
+      "--ots-space-1": "spacing",
+      "--ots-space-2": "spacing",
+      "--ots-space-3": "spacing",
+      "--ots-space-4": "spacing",
+      "--ots-space-6": "spacing",
+      "--ots-space-8": "spacing",
+      "--ots-space-10": "spacing",
+      "--ots-space-12": "spacing",
+      "--ots-space-16": "spacing",
+      "--ots-space-20": "spacing",
+      "--ots-space-24": "spacing",
+      "--ots-header-height": "spacing",
+      "--ots-surface-0": "color",
+      "--ots-surface-1": "color",
+      "--ots-surface-2": "color",
+      "--ots-surface-3": "color",
+      "--ots-surface-4": "color",
+      "--ots-text-primary": "font",
+      "--ots-text-secondary": "font",
+      "--ots-text-tertiary": "font",
+      "--ots-accent-text": "font",
+      "--ots-accent-bg": "color",
+      "--ots-accent-bg-hov": "color",
+      "--ots-focus-ring": "color"
+    },
+    "fontFamilies": [
+      "Zilla Slab",
+      "Zilla Slab Highlight"
+    ]
+  }
+}

@@ -1,0 +1,295 @@
+/* Onetime Secret — Design Tokens (colors + type)
+ * Ported from tailwind.css + global.css in onetimesecret.com (develop).
+ * Use via class="ots-light" | "ots-dark" | "ots-sepia" | "ots-hc" on <html> or root container.
+ * Dark is the canonical default (matches SSG render).
+ */
+
+/* -------------------- Fonts -------------------- */
+@font-face {
+  font-family: "Zilla Slab Highlight";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/ZillaSlabHighlight-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Zilla Slab Highlight";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/ZillaSlabHighlight-Bold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Zilla Slab";
+  font-style: italic;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/ZillaSlab-SemiBoldItalic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Zilla Slab";
+  font-style: italic;
+  font-weight: 300;
+  font-display: swap;
+  src: url("fonts/ZillaSlab-LightItalic.woff") format("woff");
+}
+/* Zilla Slab body weights come from Google Fonts (fallback; user-provided uploads
+ * only cover italic + highlight variants). */
+@import url("https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@300;400;500;600;700&display=swap");
+
+/* -------------------- Brand palette (theme-agnostic) -------------------- */
+:root {
+  /* Accent / brand — warm red-orange, "Onetime orange" */
+  --ots-brand-50:  #fcf8f2;
+  --ots-brand-100: #fcf4e8;
+  --ots-brand-200: #f7dec3;
+  --ots-brand-300: #f0c39e;
+  --ots-brand-400: #e68b5e;
+  --ots-brand-500: #dc4a22;  /* signature logo color */
+  --ots-brand-600: #c43d1b;  /* AA-safe on white */
+  --ots-brand-700: #a32d12;
+  --ots-brand-800: #85200c;
+  --ots-brand-900: #631507;
+  --ots-brand-950: #400b03;
+
+  /* Complement — cyan/teal. Used sparingly for API / secondary accent. */
+  --ots-brandcomp-50:  #f2fbfc;
+  --ots-brandcomp-100: #e8fafc;
+  --ots-brandcomp-200: #c3f0f7;
+  --ots-brandcomp-300: #a0e6f2;
+  --ots-brandcomp-400: #5fcfe8;
+  --ots-brandcomp-500: #23b5dd;
+  --ots-brandcomp-600: #1c9cc7;
+  --ots-brandcomp-700: #1478a6;
+  --ots-brandcomp-800: #0d5985;
+  --ots-brandcomp-900: #073b63;
+  --ots-brandcomp-950: #032140;
+
+  /* Semantic danger / success (used in form states) */
+  --ots-danger:  #dc2626;
+  --ots-success: #16a34a;
+  --ots-warning: #ca8a04;
+
+  /* Type families */
+  --ots-font-brand: "Zilla Slab", Georgia, "Times New Roman", serif;
+  --ots-font-body:  ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+                    "Helvetica Neue", Arial, sans-serif;
+  --ots-font-mono:  ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+                    "Liberation Mono", "Courier New", monospace;
+
+  /* Radii (rounded-lg overridden to 20px in original — we keep as token) */
+  --ots-radius-sm: 0.375rem;  /* 6px  */
+  --ots-radius-md: 0.5rem;    /* 8px  */
+  --ots-radius-lg: 1.25rem;   /* 20px — card default */
+  --ots-radius-xl: 1rem;      /* 16px — icon container */
+  --ots-radius-2xl: 1.5rem;
+  --ots-radius-full: 9999px;
+
+  /* Spacing (4px base) */
+  --ots-space-1: 0.25rem;
+  --ots-space-2: 0.5rem;
+  --ots-space-3: 0.75rem;
+  --ots-space-4: 1rem;
+  --ots-space-6: 1.5rem;
+  --ots-space-8: 2rem;
+  --ots-space-10: 2.5rem;
+  --ots-space-12: 3rem;
+  --ots-space-16: 4rem;
+  --ots-space-20: 5rem;
+  --ots-space-24: 6rem;
+
+  /* Header height (global) */
+  --ots-header-height: 4rem;
+}
+
+/* -------------------- Dark theme (canonical default) -------------------- */
+.ots-dark, :root, html.dark {
+  color-scheme: dark;
+  --ots-surface-0: #09090b;  /* zinc-950 page bg */
+  --ots-surface-1: #18181b;  /* zinc-900 card bg */
+  --ots-surface-2: #27272a;  /* zinc-800 inset */
+  --ots-surface-3: #3f3f46;  /* zinc-700 border */
+  --ots-surface-4: #52525b;  /* zinc-600 hover border */
+
+  --ots-text-primary:   #f0f0f2;
+  --ots-text-secondary: #a0a0a8;
+  --ots-text-tertiary:  #8e8e90;  /* tuned for 4.55:1 on surface-2 */
+
+  --ots-accent-text:   var(--ots-brand-400);  /* text on dark */
+  --ots-accent-bg:     var(--ots-brand-600);  /* bg for buttons etc. */
+  --ots-accent-bg-hov: var(--ots-brand-500);
+
+  --ots-focus-ring: var(--ots-brand-500);
+}
+
+/* -------------------- Light theme -------------------- */
+.ots-light, html:not(.dark):not(.ots-dark):not(.ots-sepia):not(.ots-hc) {
+  color-scheme: light;
+  --ots-surface-0: #fafafa;
+  --ots-surface-1: #ffffff;
+  --ots-surface-2: #f4f4f5;
+  --ots-surface-3: #e4e4e7;
+  --ots-surface-4: #d4d4d8;
+
+  --ots-text-primary:   #18181b;
+  --ots-text-secondary: #52525b;
+  --ots-text-tertiary:  #6d6d77;
+
+  --ots-accent-text:   var(--ots-brand-700);
+  --ots-accent-bg:     var(--ots-brand-600);
+  --ots-accent-bg-hov: var(--ots-brand-700);
+
+  --ots-focus-ring: var(--ots-brand-600);
+}
+
+/* -------------------- Sepia theme -------------------- */
+.ots-sepia {
+  color-scheme: light;
+  --ots-surface-0: #f3ead8;
+  --ots-surface-1: #faf3e2;
+  --ots-surface-2: #ede2c8;
+  --ots-surface-3: #d9c9a7;
+  --ots-surface-4: #c1ae88;
+
+  --ots-text-primary:   #2b1f10;
+  --ots-text-secondary: #5e4b33;
+  --ots-text-tertiary:  #7a6744;
+
+  --ots-accent-text:   var(--ots-brand-800);
+  --ots-accent-bg:     var(--ots-brand-700);
+  --ots-accent-bg-hov: var(--ots-brand-800);
+
+  --ots-focus-ring: var(--ots-brand-700);
+}
+
+/* -------------------- High contrast theme -------------------- */
+.ots-hc {
+  color-scheme: light;
+  --ots-surface-0: #ffffff;
+  --ots-surface-1: #ffffff;
+  --ots-surface-2: #f1f1f1;
+  --ots-surface-3: #000000;
+  --ots-surface-4: #000000;
+
+  --ots-text-primary:   #000000;
+  --ots-text-secondary: #000000;
+  --ots-text-tertiary:  #1f1f1f;
+
+  --ots-accent-text:   #85200c;
+  --ots-accent-bg:     #85200c;
+  --ots-accent-bg-hov: #631507;
+
+  --ots-focus-ring: #000000;
+}
+.ots-hc * { border-color: #000 !important; }
+
+/* -------------------- Semantic type rules -------------------- */
+.ots-root {
+  font-family: var(--ots-font-body);
+  color: var(--ots-text-primary);
+  background: var(--ots-surface-0);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.ots-h1, h1.ots {
+  font-family: var(--ots-font-brand);
+  font-weight: 800;
+  font-size: clamp(2.25rem, 2vw + 2rem, 4.5rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ots-text-primary);
+  text-wrap: balance;
+}
+.ots-h2, h2.ots {
+  font-family: var(--ots-font-brand);
+  font-weight: 700;
+  font-size: clamp(1.875rem, 1vw + 1.5rem, 2.25rem);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ots-text-primary);
+  text-wrap: balance;
+}
+.ots-h3, h3.ots {
+  font-family: var(--ots-font-brand);
+  font-weight: 700;
+  font-size: 1.25rem;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: var(--ots-text-primary);
+}
+.ots-h4, h4.ots {
+  font-family: var(--ots-font-brand);
+  font-weight: 600;
+  font-size: 1.125rem;
+  line-height: 1.3;
+  color: var(--ots-text-primary);
+}
+.ots-body {
+  font-family: var(--ots-font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--ots-text-secondary);
+}
+.ots-body-lg {
+  font-family: var(--ots-font-body);
+  font-size: 1.125rem;
+  line-height: 1.6;
+  color: var(--ots-text-secondary);
+}
+.ots-small {
+  font-family: var(--ots-font-body);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--ots-text-secondary);
+}
+.ots-caption {
+  font-family: var(--ots-font-body);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--ots-text-tertiary);
+}
+.ots-code {
+  font-family: var(--ots-font-mono);
+  font-size: 0.875rem;
+  background: var(--ots-surface-2);
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--ots-radius-sm);
+  color: var(--ots-text-primary);
+}
+.ots-section-label {
+  font-family: var(--ots-font-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--ots-accent-text);
+}
+
+/* Gradient accent text — used for hero second-line, CTA h2 */
+.ots-gradient-text {
+  color: var(--ots-brand-500);
+  background: linear-gradient(135deg,
+    var(--ots-brand-500) 0%,
+    var(--ots-brand-400) 40%,
+    var(--ots-brandcomp-400) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  padding-bottom: 0.15em;
+}
+
+/* Dot-glow utility — hero status badge, region map */
+.ots-dot-glow { box-shadow: 0 0 8px var(--ots-brand-500); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+@media (forced-colors: active) {
+  .ots-gradient-text { background: none; -webkit-text-fill-color: unset; }
+}

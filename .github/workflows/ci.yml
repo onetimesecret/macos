@@ -50,15 +50,25 @@ jobs:
 
   # A backstop for the "never commit a secret" rule (adopted from the
   # prototype skeleton, PR #5). Scans the full history, so checkout is
-  # unshallow. The binary is version-pinned; bump deliberately.
+  # unshallow. The binary is version-pinned AND checksum-verified (from
+  # the release's checksums.txt): the tool that reads the whole history
+  # must not itself be an unverified download. Bump both together.
+  # Intentionally-fake test fixtures are allowlisted by fingerprint in
+  # .gitleaksignore, which gitleaks reads from the source root.
   secret-scan:
     name: secret scan
     runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.18.4
+      GITLEAKS_SHA256: ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: gitleaks (full-history scan)
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar -xz gitleaks
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum --check
+          tar -xzf gitleaks.tar.gz gitleaks
           ./gitleaks detect --source . --no-banner --redact

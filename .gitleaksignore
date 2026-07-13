@@ -1,0 +1,29 @@
+# Fingerprints gitleaks may skip: every entry is an intentionally fake,
+# publicly documented, or synthetic fixture that teaches the detection
+# heuristics — never a real credential. Each pins one finding to an
+# exact commit:file:rule:line, so a genuine leak anywhere else (or a
+# fixture reintroduced in a new commit) still fails the scan.
+#
+# Regenerate a fingerprint by running the same pinned gitleaks as CI:
+#   gitleaks detect --source . --no-banner
+# and copying the "Fingerprint:" line of the finding.
+
+# crates/core detection fixtures (detect.rs / store.rs tests): fake
+# vendor-token shapes the heuristics must recognise. The AWS and Stripe
+# fixtures are the examples those vendors publish in their own docs.
+1edcffb8d0428e93c4dde15075c272eed830db6d:crates/core/src/detect.rs:github-pat:157
+1edcffb8d0428e93c4dde15075c272eed830db6d:crates/core/src/detect.rs:gitlab-pat:161
+1edcffb8d0428e93c4dde15075c272eed830db6d:crates/core/src/detect.rs:generic-api-key:161
+1edcffb8d0428e93c4dde15075c272eed830db6d:crates/core/src/detect.rs:stripe-access-token:169
+1edcffb8d0428e93c4dde15075c272eed830db6d:crates/core/src/detect.rs:aws-access-token:172
+1edcffb8d0428e93c4dde15075c272eed830db6d:crates/core/src/detect.rs:gcp-api-key:174
+1edcffb8d0428e93c4dde15075c272eed830db6d:crates/core/src/detect.rs:jwt:194
+1edcffb8d0428e93c4dde15075c272eed830db6d:crates/core/src/store.rs:github-pat:396
+
+# ots-client test fixture: a made-up API key in a serialization test.
+1edcffb8d0428e93c4dde15075c272eed830db6d:crates/ots-client/src/types.rs:generic-api-key:213
+
+# Historical only: PAT-shaped fixtures that later commits rewrote to be
+# assembled at runtime (nothing PAT-shaped sits in current source text).
+e058e59d500a1ad669461e3978954de0081518c2:crates/ffi/src/lib.rs:github-pat:521
+3b9eab8df21137bdcabc998fe9c525e18b278194:spikes/swift-panel/Sources/CompanionPanel/App.swift:github-pat:82

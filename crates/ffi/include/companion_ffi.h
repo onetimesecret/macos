@@ -110,8 +110,16 @@ bool companion_cell_discard(CompanionHandle *handle, uint64_t id);
  * DEV SCAFFOLDING — deleted when the NSPasteboard adapter lands: put text
  * on the in-process pasteboard stand-in, as an external app would, so the
  * vertical slice can demonstrate a live cell today.
+ *
+ * This is the one entry point that moves plaintext toward the core from
+ * the shell, so it exists only when the core was built with the
+ * off-by-default `dev-scaffolding` cargo feature. build-core.sh defines
+ * COMPANION_DEV_SCAFFOLDING in the packaged header iff it enabled that
+ * feature; a default build has neither the symbol nor the declaration.
  */
+#ifdef COMPANION_DEV_SCAFFOLDING
 bool companion_dev_seed_pasteboard(CompanionHandle *handle, const char *text);
+#endif
 
 /* Free a string returned by companion_list_json(). Null is a no-op. */
 void companion_string_free(char *s);
