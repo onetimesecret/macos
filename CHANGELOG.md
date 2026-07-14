@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Pages persist across relaunch, sealed at rest** — quit is the one
-  moment state touches disk: `applicationWillTerminate` asks the core
+  moment state touches disk: `applicationShouldTerminate` asks the core
   to snapshot the whole store (live pages, chips, the ledger, clocks)
   into an exact-size zeroizing buffer (`companion-core::persist`,
   format `OTSSNAP1`), seal it with ChaCha20-Poly1305 under a 32-byte
@@ -161,6 +161,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its own random-named temp file opened create-new (never following
   what's already there), and cleans up after a failed rename as well
   as a failed write.
+- **A state file that fails to restore is no longer overwritten at
+  quit** — a denied or missing Keychain key used to hand the session a
+  fresh page and, with it, the licence to save that empty store over
+  yesterday's file. The save licence is now withheld when an existing
+  file refuses to restore: the session still gets a working page, but
+  the old sealed state stays on disk for a later, luckier launch.
+- **A refused quit-save is no longer silent** — the one write of the
+  session used to discard its result, exiting cleanly with nothing
+  saved. The save now happens in `applicationShouldTerminate`, where a
+  refusal logs itself and asks — Quit Anyway or Cancel — before the
+  session's pages are lost.
 
 ## [0.1.0] - 2026-07-13
 
