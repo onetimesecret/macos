@@ -154,6 +154,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through an invisible one-pixel relay panel that takes the keys and
   immediately orders out — the window server returns the keyboard to
   the active app while the window never leaves the screen.
+- **The sealed-state temp file can no longer be raced or redirected** —
+  saves used to write through a predictable `state.sealed.tmp` opened
+  create-and-truncate, which a crash leftover, a planted symlink, or a
+  second running instance could subvert. Each save now writes through
+  its own random-named temp file opened create-new (never following
+  what's already there), and cleans up after a failed rename as well
+  as a failed write.
 
 ## [0.1.0] - 2026-07-13
 
