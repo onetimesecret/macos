@@ -1,0 +1,61 @@
+# docs/from-here-to-testflight.md
+
+---
+
+Good pivot — this is the more important question. Let me ground it in both your actual repo state and current Apple requirements before answering.Good — you've already started packaging. There's a `dist/CompanionApp.app`, a `shell/Info.plist`, and a `build-app.sh`. Let me read those plus the core build script so my steps match reality, and check current Apple requirements.Now I have the full picture. Before I lay out the steps, let me verify the current Apple requirements — the macOS-TestFlight-specific ones (sandbox, provisioning, upload path) shift periodically.Two things confirmed that shape the answer: Mac TestFlight requires a provisioning profile triggered by a restricted entitlement, and without an Xcode project your upload path is a signed `.pkg` via Transporter. Let me quickly check the Rust core's Keychain and network usage, since sandboxing is where this app will actually fight you.Here's the full picture, grounded in your actual repo. You're further along than "where the app is now" implies: `build-app.sh` already produces `dist/CompanionApp.app` with the bundle id `com.onetimesecret.companion`, `LSUIElement`, and version stamping, and the Rust core is a static `.a` linked into one Mach-O (no embedded dylib to sign separately, which simplifies everything). What's missing for TestFlight is the App Store distribution chain: sandbox, entitlements, a real Distribution identity, a provisioning profile, a signed `.pkg`, and an App Store Connect record.
+
+One decision up front, since it's the only real fork: keep the SwiftPM + scripts pipeline and manage the cert/profile/`.pkg` by hand, or add a thin Xcode target (or `xcodebuild -exportArchive`) and let automatic signing do it. I'd keep your scripts for the build and add the distribution signing to them, because the boundary-clean SwiftPM build is worth preserving. But be honest with yourself: cert creation, profile management, and the App-Store re-sign are exactly what Xcode automates, so if step 5 below starts eating your evening, wrapping it in Xcode is the escape hatch, not a failure.
+
+The steps, in order:
+
+1. **Apple Developer Program.** Paid membership if you don't have one. Note your Team ID.
+
+2. **Register the App ID.** In Certificates, Identifiers & Profiles, create an explicit identifier matching `com.onetimesecret.companion`, and enable Keychain Sharing on it.
+
+3. **Create the App Store Connect record.** New macOS app, select that bundle id, set name, SKU, primary language. Decide the real product name here (see the naming note below).
+
+4. **Add App Sandbox and entitlements.** This is the actual work. Create `shell/CompanionApp.entitlements`:
+   - `com.apple.security.app-sandbox` = true (mandatory for anything shipped through App Store Connect)
+   - `com.apple.security.network.client` = true (promotion POST and the connection test)
+   - `com.apple.security.keychain-access-groups` = `["$(AppIdentifierPrefix)com.onetimesecret.companion"]`. This one does double duty: it's the restricted entitlement that forces macOS to issue a genuine provisioning profile, which is what makes Mac TestFlight work at all.
+
+5. **Certificates and profile.** An "Apple Distribution" certificate signs the `.app`; a "Mac Installer Distribution" (a.k.a. "3rd Party Mac Developer Installer") certificate signs the `.pkg`. Create a Mac App Store distribution provisioning profile for the App ID and copy it to `Contents/embedded.provisionprofile` before signing. App Store re-signs your build on ingest, so the embedded profile is for upload validation, not the final identity.
+
+6. **Extend `build-app.sh` for distribution.** Replace the ad-hoc sign with a real one, adding hardened runtime and the entitlements:
+
+   ```
+   codesign --force --options runtime \
+     --entitlements shell/CompanionApp.entitlements \
+     --sign "Apple Distribution: Onetime Secret (TEAMID)" \
+     dist/CompanionApp.app
+   ```
+
+   You already parameterized `CODESIGN_IDENTITY`, so this is a small change plus the two new flags.
+
+7. **Add the App Store Info.plist keys.** Set `ITSAppUsesNonExemptEncryption` (false if you use only standard crypto and HTTPS, which you do; declaring it skips the per-build prompt). Ensure `CFBundleVersion` increments on every upload; it's stamped from the Cargo version today, so a resubmit without a version bump will be rejected as a duplicate build number.
+
+8. **Build the installer package:**
+
+   ```
+   productbuild --component dist/CompanionApp.app /Applications \
+     --sign "3rd Party Mac Developer Installer: Onetime Secret (TEAMID)" \
+     CompanionApp.pkg
+   ```
+
+9. **Upload.** Since there's no Xcode archive, use the Transporter app (drag the `.pkg`, Verify, Deliver) or `xcrun altool` / iTMSTransporter with an App Store Connect API key. Apple notarizes the App Store build during processing, so you do not run `notarytool` yourself on this lane.
+
+10. **Turn on TestFlight.** Once the build finishes processing in App Store Connect, add internal testers (up to 100, no review). External testers require a brief Beta App Review first.
+
+Where sandboxing will actually bite this app, in priority order:
+
+**Keychain is the one to verify on device.** The core uses `security-framework` generic-password items scoped by service name with no explicit `kSecAttrAccessGroup` (`crates/credentials/src/lib.rs`). Under sandbox those land in the app's own keychain automatically, and with the `keychain-access-groups` entitlement whose first group is the app id, store/load/exists/delete stay consistent across TestFlight builds (Apple signs them all with the same App Store identity, so the ACL doesn't re-prompt the way your ad-hoc rebuilds do). But this is the single highest-risk integration point; test the full save-token, relaunch, promote round trip in the sandboxed build before trusting it.
+
+**The ⌥Space hotkey survives.** Carbon `RegisterEventHotKey` (`HotKey.swift`) is permitted in sandboxed App Store apps and needs neither an entitlement nor an Accessibility grant. Good news, because an event-tap approach would not have survived.
+
+**Check the state-file path.** The core's `write_private` (`crates/ffi/src/persist.rs`) writes the encrypted state file to a path the Swift side hands it. Make sure that path resolves inside the sandbox container. `NSHomeDirectory` and `FileManager.applicationSupportDirectory` already return the container path once sandboxed, so if Swift uses those you're fine; a hardcoded absolute path outside the container will fail closed.
+
+**Capture exclusion is free and already correct.** `sharingType = .none` needs no entitlement, and the `COMPANION_ALLOW_CAPTURE` toggle is compiled out of release, so the TestFlight build is never screenshot-able. That also means you cannot let me drive it through screen tools once it's a release build; you'll test the shipped artifact by hand.
+
+**Reconcile the name before step 3.** The window header says "Airlock" while the bundle name, About panel, and accessibility label say "CompanionApp" (`App.swift`). Whatever you register in App Store Connect, the About panel and VoiceOver label should match it, or testers see two different product names.
+
+Sources: [Provisioning Profiles for macOS Apps (Xojo)](https://blog.xojo.com/2025/01/30/provisioning-profiles-for-macos-apps/), [Uploading macOS Builds to App Store Connect (Xojo)](https://blog.xojo.com/2025/01/14/uploading-macos-builds-to-app-store-connect/), [Upload builds — App Store Connect Help (Apple)](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/), [TN3147: Migrating to the latest notarization tool (Apple)](https://developer.apple.com/documentation/technotes/tn3147-migrating-to-the-latest-notarization-tool), [Meet TestFlight on Mac — WWDC21 (Apple)](https://developer.apple.com/videos/play/wwdc2021/10170/).

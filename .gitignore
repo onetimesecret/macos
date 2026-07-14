@@ -26,3 +26,4 @@ secrets/
 # macOS
 .DS_Store
 *.txt
+/.serena/
