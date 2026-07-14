@@ -5,7 +5,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "CompanionPanel",
+    name: "CompanionApp",
     platforms: [.macOS(.v13)], // MenuBarExtra needs macOS 13+
     targets: [
         // Produced by scripts/build-core.sh. Exposes the C ABI in
@@ -15,14 +15,14 @@ let package = Package(
             path: "../bindings/CompanionCore.xcframework"
         ),
         .executableTarget(
-            name: "CompanionPanel",
+            name: "CompanionApp",
             dependencies: ["CompanionCore"],
-            path: "Sources/CompanionPanel"
+            path: "Sources/CompanionApp"
         ),
         .testTarget(
-            name: "CompanionPanelTests",
-            dependencies: ["CompanionPanel"],
-            path: "Tests/CompanionPanelTests"
+            name: "CompanionAppTests",
+            dependencies: ["CompanionApp"],
+            path: "Tests/CompanionAppTests"
         ),
     ]
 )

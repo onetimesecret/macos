@@ -7,7 +7,7 @@ import SwiftUI
 /// SwiftUI's stock `MenuBarExtra`, which has its own activation
 /// behavior and can't drop capture.
 @main
-struct CompanionPanelApp: App {
+struct CompanionApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {

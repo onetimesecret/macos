@@ -13,7 +13,7 @@ measurements are preserved in the ADR.
 ./scripts/build-core.sh   # cargo → universal libcompanion_ffi.a → bindings/CompanionCore.xcframework
 cd shell
 swift build && swift test
-swift run CompanionPanel
+swift run CompanionApp
 ```
 
 The rev C surfaces make dev scaffolding unnecessary — type a line and

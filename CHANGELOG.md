@@ -61,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The shell is CompanionApp now** — package, product, executable,
+  targets, source and test directories, and every doc reference;
+  renamed wholesale, no aliases kept. A companion app named
+  CompanionApp, in the proud naming tradition of *Scary Movie*.
 - **The menu-bar glyph is a template image now** — the maruhi drawn
   monochrome (㊙ with the text-presentation selector) onto an
   `isTemplate` image, so the system tints it like every other status
