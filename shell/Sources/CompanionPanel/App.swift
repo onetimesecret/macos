@@ -438,13 +438,17 @@ final class WindowModel: ObservableObject {
                 client.promoteSheet(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
             }
             await MainActor.run { [weak self] in
-                self?.finishPromotion(outcome)
+                self?.finishPromotion(outcome, for: target)
             }
         }
     }
 
-    private func finishPromotion(_ outcome: PromotionOutcome) {
-        guard var draft = promotion else { return }
+    private func finishPromotion(_ outcome: PromotionOutcome, for target: PromotionDraft.Target) {
+        // The confirmation may have been dismissed — or reopened on a
+        // different target — while the call was out; a stale outcome
+        // must not land on someone else's draft. (On success the link
+        // is on the clipboard and the receipt marked either way.)
+        guard var draft = promotion, draft.target == target else { return }
         draft.inFlight = false
         if outcome.ok {
             draft.error = nil
