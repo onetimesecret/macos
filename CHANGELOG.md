@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ADR-0004 accepted: Keychain prompt timing** — the ACL prompt may
+  appear only when a secret is used (a promotion reading the token),
+  never for a presence check. `CredentialStore::exists` answers "is a
+  token stored?" via an attributes-only Keychain query that never
+  decrypts; `has_token` in the connection JSON now means stored, not
+  readable, so launch and Settings no longer greet the user with a
+  Keychain prompt. See docs/adr/0004-keychain-prompt-timing.md.
+- **Clear stored token** in Settings → Connection: removes the token
+  from the Keychain through the existing seam (empty token → delete),
+  behind an inline confirm — the destructive-act guard the rest of the
+  surface uses.
 - **The promotion flow** (issue #16, docs/spec/04) — the exit ramp, and
   the app's only network action. Two affordances: **↗** on a chip's
   hover actions and **↗ page** in the footer, both opening an inline,
