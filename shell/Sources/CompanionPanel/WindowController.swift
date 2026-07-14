@@ -50,17 +50,6 @@ final class WindowController: NSObject, NSWindowDelegate {
         // and screenshots. Rev C keeps the surface quiet about it — the
         // exclusion itself is unchanged.
         panel.sharingType = .none
-        // Debug-only escape hatch: a DEBUG build honours
-        // COMPANION_ALLOW_CAPTURE=1 so the window can be screenshotted
-        // while diagnosing the UI. A release build compiles this out.
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["COMPANION_ALLOW_CAPTURE"] != nil {
-            panel.sharingType = .readOnly
-            FileHandle.standardError.write(Data(
-                "[companion] DEBUG: capture exclusion OFF — window is screenshot-able\n".utf8
-            ))
-        }
-        #endif
         super.init()
         panel.delegate = self
         // Float-on-top setting, unchanged from the panel: `.statusBar`
@@ -70,6 +59,22 @@ final class WindowController: NSObject, NSWindowDelegate {
                 self?.panel.level = floats ? .statusBar : .normal
             }
             .store(in: &observers)
+        // Debug-only escape hatch: the Settings toggle (seeded by
+        // COMPANION_ALLOW_CAPTURE=1 for scripted runs) lifts the
+        // capture exclusion so the window can be screenshotted while
+        // diagnosing the UI. A release build compiles this out.
+        #if DEBUG
+        model.$allowCapture
+            .sink { [weak self] allow in
+                self?.panel.sharingType = allow ? .readOnly : .none
+                if allow {
+                    FileHandle.standardError.write(Data(
+                        "[companion] DEBUG: capture exclusion OFF — window is screenshot-able\n".utf8
+                    ))
+                }
+            }
+            .store(in: &observers)
+        #endif
     }
 
     // MARK: Summon & dismiss

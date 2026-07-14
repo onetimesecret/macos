@@ -26,6 +26,11 @@ elif [[ -n "${1:-}" ]]; then
   exit 1
 fi
 
+# Must match the shell's platform floor (Package.swift: .macOS(.v13)),
+# else cc-built objects (e.g. ring's C sources) default to the SDK's
+# version and ld warns on every link.
+export MACOSX_DEPLOYMENT_TARGET=13.0
+
 TARGETS=(aarch64-apple-darwin x86_64-apple-darwin)
 LIB=libcompanion_ffi.a
 OUT=bindings

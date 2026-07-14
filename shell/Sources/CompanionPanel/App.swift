@@ -15,6 +15,18 @@ struct CompanionPanelApp: App {
         // (built in AppDelegate) are the entire UI. A placeholder scene
         // is required by the `App` protocol.
         Settings {}
+            .commands {
+                // The scene's automatic "Settings…" (⌘,) item would
+                // open the empty placeholder as a blank window — the
+                // main menu dispatches key equivalents even for an
+                // accessory app whenever it is active (e.g. while the
+                // real Settings window is key). Repoint it so every ⌘,
+                // in the app lands on the one real Settings window.
+                CommandGroup(replacing: .appSettings) {
+                    Button("Settings…") { appDelegate.openSettings() }
+                        .keyboardShortcut(",", modifiers: .command)
+                }
+            }
     }
 }
 
@@ -33,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = WindowController(model: model)
         self.controller = controller
         model.onHandBackKeys = { [weak controller] in controller?.handBackKeys() }
+        model.onOpenSettings = { [weak self] in self?.settings.show() }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         // ㊙️ maruhi ("secret") — the menu-bar glyph. An emoji title
@@ -59,11 +72,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Left click toggles the window; right click gets the boring
-    /// necessities (docs/spec/04: "Settings, About, Quit — not
-    /// features"; Settings arrives with its own slice).
+    /// Left click toggles the window; ⌥-click goes straight to
+    /// Settings; right click gets the boring necessities
+    /// (docs/spec/04: "Settings, About, Quit — not features").
     @objc private func statusItemClicked() {
-        if NSApp.currentEvent?.type == .rightMouseUp {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp {
             let menu = NSMenu()
             menu.addItem(
                 withTitle: "About Onetime Secret Companion",
@@ -84,12 +98,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let button = statusItem?.button {
                 menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 4), in: button)
             }
+        } else if let event, event.type == .leftMouseUp, event.modifierFlags.contains(.option) {
+            // A genuine ⌥-click only: an accessibility press (VoiceOver
+            // AXPress) delivers the action with a stale currentEvent
+            // that can still carry .option from earlier keyboard use —
+            // that must toggle the panel, never activate Settings.
+            settings.show()
         } else {
             controller?.toggle()
         }
     }
 
-    @objc private func openSettings() {
+    @objc func openSettings() {
         settings.show()
     }
 }
@@ -181,6 +201,16 @@ final class WindowModel: ObservableObject {
     }
     private static let floatsKey = "floatsOnTop"
 
+    #if DEBUG
+    /// Debug builds only: lift the capture exclusion so the window can
+    /// be screenshotted while diagnosing the UI. Deliberately NOT
+    /// persisted — a security opt-out fails closed at every launch.
+    /// COMPANION_ALLOW_CAPTURE=1 seeds it for scripted runs; a release
+    /// build compiles the property out entirely.
+    @Published var allowCapture =
+        ProcessInfo.processInfo.environment["COMPANION_ALLOW_CAPTURE"] != nil
+    #endif
+
     /// The live editor view, so ⌥Space can hand it the keyboard.
     /// Weak and non-published: view plumbing, not state.
     weak var activeEditor: NSTextView?
@@ -188,6 +218,10 @@ final class WindowModel: ObservableObject {
     /// Set by the app delegate; Esc routes here when no editor holds
     /// the keys (the controller re-keys the frontmost app's window).
     var onHandBackKeys: (() -> Void)?
+
+    /// Set by the app delegate; ⌘, routes here (the delegate owns the
+    /// Settings window, the panel merely asks for it).
+    var onOpenSettings: (() -> Void)?
 
     private let client = CompanionClient()
 

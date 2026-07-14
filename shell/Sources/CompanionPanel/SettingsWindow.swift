@@ -17,14 +17,26 @@ final class SettingsWindowController {
     func show() {
         if window == nil {
             let hosted = NSHostingController(rootView: ConnectionSettingsView(model: model))
+            // The window owns its size; without this the hosting
+            // controller re-imposes the view's preferred height and
+            // fights the user's vertical resize.
+            hosted.sizingOptions = []
             let window = NSWindow(contentViewController: hosted)
             window.title = "Settings"
-            window.styleMask = [.titled, .closable]
+            window.styleMask = [.titled, .closable, .resizable]
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 420, height: 260))
+            window.setContentSize(NSSize(width: 420, height: 360))
+            // Vertical resize only: the form is built for one width.
+            window.contentMinSize = NSSize(width: 420, height: 300)
+            window.contentMaxSize = NSSize(width: 420, height: CGFloat.greatestFiniteMagnitude)
             window.center()
             self.window = window
         }
+        // The panel floats at .statusBar while pinned (the default);
+        // a .normal-level Settings window would open key yet invisible
+        // beneath it — level beats key status for stacking. Match the
+        // panel's level so ordering front actually reveals it.
+        window?.level = model.floatsOnTop ? .statusBar : .normal
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
@@ -62,6 +74,15 @@ struct ConnectionSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            #if DEBUG
+            Section {
+                Toggle("Allow screenshots of the window", isOn: $model.allowCapture)
+            } header: {
+                Text("Debug build only: lifts the screen-capture exclusion until the app quits. A release build has no such switch.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            #endif
             HStack {
                 Button("Test") { test() }
                     .disabled(testing)
@@ -80,6 +101,7 @@ struct ConnectionSettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 420)
+        .frame(maxHeight: .infinity)
         .onAppear(perform: load)
     }
 
