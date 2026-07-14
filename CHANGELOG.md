@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pages persist across relaunch, sealed at rest** — quit is the one
+  moment state touches disk: `applicationWillTerminate` asks the core
+  to snapshot the whole store (live pages, chips, the ledger, clocks)
+  into an exact-size zeroizing buffer (`companion-core::persist`,
+  format `OTSSNAP1`), seal it with ChaCha20-Poly1305 under a 32-byte
+  key resting in the Keychain (`state-key`, same service as the API
+  token), and write only ciphertext to
+  `Application Support/CompanionApp/state.sealed` (0600, atomic
+  temp-file rename). Launch is the mirror: decrypt, restore, then
+  drain the wall-clock time the app was closed — countdowns keep
+  ticking while away, holds absorb time-away first, and pages that
+  didn't survive the gap expire into the ledger before the window
+  opens. The file is useless without the Keychain item and vice versa;
+  deleting either forgets everything. Tampering anywhere in the file
+  (or a bare bit flip) fails authentication and reads as a fresh
+  start. New seam: `companion_persist_save` / `companion_persist_restore`
+  / `companion_sheet_document_json` (the last replays a restored
+  page's ink and chip faces so the editor rebuilds pixel-identical —
+  sealed bytes still never cross into Swift).
+
 - **The shell packages as a real .app bundle** — `scripts/build-app.sh`
   assembles `dist/CompanionApp.app` (bundle id
   `com.onetimesecret.companion`, reserved in docs/spec/07) from the
@@ -87,6 +107,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app's name, and the core's version via `companion_version()`. A bare
   SwiftPM executable has no Info.plist, so the standard panel had
   nothing to say before.
+- **Tabs drag to reorder** — grab a page tab and slide it, spreadsheet
+  style; the ⌘-number map follows the visible order. The previous
+  item-provider drag never started inside a non-activating panel, so
+  the affordance is now a plain mouse drag with midpoint-based
+  reordering.
+- **⌘W closes what's showing** — the macOS convention: a page goes to
+  rest in the ledger; the ledger view steps aside.
+- **Transient notices dismiss themselves** — "the link is on the
+  clipboard" and friends clear after a few seconds instead of lingering
+  until the next action; a newer notice restarts the clock.
+
+### Fixed
+
+- **The unpinned window no longer floats over fullscreen apps** — the
+  window level, floating-panel flag, and fullscreen-auxiliary behavior
+  now all follow the pin: pinned floats everywhere, unpinned behaves
+  like a normal window others can cover.
+- **⌥-click on the menu-bar item reliably opens Settings** — the check
+  reads the live hardware modifier state instead of the delivered
+  event's flags, which the status bar can misreport (and which go stale
+  under an accessibility press).
+- **The blank strip above the header is gone** — the transparent
+  titlebar's safe-area inset was doubling the top bar; the hosting view
+  now ignores it.
+- **The ledger tab toggles** — click ◌ to visit the ledger, click it
+  again to return to the page; before, it only opened.
+- **A tab's hover ✕ no longer shifts the title** — the close button
+  keeps its space reserved and reveals by opacity, the browser-tab
+  convention, instead of inserting itself on hover.
 
 ## [0.1.0] - 2026-07-13
 

@@ -73,6 +73,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Quit is the one moment state touches disk: seal everything into
+    /// the state file so the next launch opens where this one left off.
+    func applicationWillTerminate(_ notification: Notification) {
+        model.saveState()
+    }
+
     /// The ㊙ glyph rendered monochrome (U+FE0E forces text
     /// presentation over emoji) onto a template image: the menu bar
     /// tints template images to match its appearance, which a colour
@@ -307,6 +313,11 @@ final class WindowModel: ObservableObject {
     init() {
         // Unset → float on top, matching the original behavior.
         floatsOnTop = UserDefaults.standard.object(forKey: Self.floatsKey) as? Bool ?? true
+        // Yesterday's pages return: the core decrypts the sealed state
+        // file (key from the Keychain) and drains the time the app was
+        // closed, expiring what didn't survive it. A missing or
+        // unreadable file simply means a fresh start.
+        _ = client.persistRestore(from: Self.stateFileURL.path)
         // A fresh sheet awaits: the window never opens onto nothing.
         if client.sheets().isEmpty {
             _ = client.newSheet()
@@ -333,6 +344,25 @@ final class WindowModel: ObservableObject {
     private static let extidKey = "connection.extid"
     private static let shareDomainKey = "connection.shareDomain"
 
+    /// Where the sealed state rests between runs. Ciphertext only —
+    /// the key lives in the Keychain, so the file alone says nothing.
+    private static var stateFileURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("CompanionApp", isDirectory: true)
+            .appendingPathComponent("state.sealed")
+    }
+
+    /// JIT encryption at quit: seal the whole store — live pages,
+    /// chips, the ledger — into the state file in one core call.
+    /// Nothing touches disk while the app runs.
+    func saveState() {
+        let url = Self.stateFileURL
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        _ = client.persistSave(to: url.path)
+    }
+
     deinit {
         eventTimer?.invalidate()
         redrawTimer?.invalidate()
@@ -358,10 +388,25 @@ final class WindowModel: ObservableObject {
         armEventTimer()
     }
 
-    /// The page's document, created on first use.
+    /// The page's document, created on first use. A page restored from
+    /// the state file already has a document core-side; replay it into
+    /// the fresh storage with the editor's own attributes, so restored
+    /// ink and chips are indistinguishable from typed ones. A page born
+    /// in this process replays as empty.
     func storage(for id: UInt64) -> NSTextStorage {
         if let existing = storages[id] { return existing }
         let created = NSTextStorage()
+        for run in client.documentRuns(sheet: id) {
+            switch run {
+            case .ink(let text):
+                created.append(NSAttributedString(
+                    string: text,
+                    attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]
+                ))
+            case .chip(let info):
+                created.append(NSAttributedString(attachment: ChipAttachment(info: info)))
+            }
+        }
         storages[id] = created
         return created
     }
