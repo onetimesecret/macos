@@ -78,6 +78,18 @@ Reasons:
 
 swift run remains fine for quick UI iteration where none of that matters (layout, tab drag, notices). But for the persistence round trip, prompt timing, and the fullscreen/Spaces check: quit the running instance normally (so it saves state), run scripts/build-app.sh, and launch the fresh dist/CompanionApp.app.
 
+
+### Summoning
+
+⌥Space (Option-Space). It toggles: one press summons the window and gives it the keyboard (the page is ready to type into), a second press dismisses it. This is documented in docs/spec/04-interaction-model.md and implemented in WindowController.summon().
+
+Related: Esc hands the keyboard back to whatever app had it, leaving the window visible. And with the new Spaces behavior in the working tree, if the window is visible on a different Space, ⌥Space brings it to your current Space instead of dismissing it.
+
+### Force close
+
+Use scripts/quit-app.sh
+
+
 ## Naming note
 
 **Airlock** is a working title only: a small chamber between two
