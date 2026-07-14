@@ -303,6 +303,14 @@ final class WindowModel: ObservableObject {
     /// carrying only ids and excerpts. Pruned when pages die.
     private var storages: [UInt64: NSTextStorage] = [:]
 
+    /// Each live page's undo history. Undo is as document-scoped as
+    /// the storage it rewrites (ADR-0006): one editor serves every
+    /// page, so letting the window's single manager span pages would
+    /// let ⌘Z on one page replay edits against another. Pruned with
+    /// the storages; cleared for a page whose storage is changed
+    /// behind the editor's back.
+    private var undoManagers: [UInt64: UndoManager] = [:]
+
     // nonisolated(unsafe): deinit is always nonisolated, even on a
     // @MainActor class (Swift 6), and Timer isn't Sendable. Safe here —
     // Timer.invalidate() is documented thread-safe, and every other
@@ -395,14 +403,42 @@ final class WindowModel: ObservableObject {
         sheets = client.sheets()
         let live = Set(sheets.map(\.id))
         // A dead page's ink lives on only in the ledger; drop the
-        // editor-side document.
+        // editor-side document, and its undo history with it.
         storages = storages.filter { live.contains($0.key) }
+        undoManagers = undoManagers.filter { live.contains($0.key) }
         if let current = selection, !live.contains(current) {
             selection = sheets.first?.id
         }
         if selection == nil { selection = sheets.first?.id }
+        // A promotion whose subject died — expiry, mostly; `close`
+        // clears its own — must not keep the confirmation standing:
+        // ↩ lands on "Create link", and a stale draft would answer a
+        // stray keystroke with a network call (issue #19). A chip
+        // draft can only be declared orphaned wholesale: chip→page
+        // membership is unknowable once the page is gone.
+        if let draft = promotion {
+            let orphaned = switch draft.target {
+            case .page(let id): !live.contains(id)
+            case .chip: sheets.isEmpty
+            }
+            if orphaned { promotion = nil }
+        }
         ledgerEntries = client.ledger()
         armEventTimer()
+        // The last page died while the window held the keyboard: hand
+        // it back. Keeping it would light the ember over nothing to
+        // type into — key status with no editor is exactly the state
+        // the focus law forbids (issue #19; ADR-0005).
+        if Self.shouldHandBackKeys(sheetsEmpty: sheets.isEmpty, holdsKeys: holdsKeys) {
+            onHandBackKeys?()
+        }
+    }
+
+    /// Whether the keyboard goes back to the app underneath: yes
+    /// exactly when the sheet list has emptied while the window holds
+    /// the keys. Pure, so the decision is testable without a window.
+    nonisolated static func shouldHandBackKeys(sheetsEmpty: Bool, holdsKeys: Bool) -> Bool {
+        sheetsEmpty && holdsKeys
     }
 
     /// The page's document, created on first use. A page restored from
@@ -428,11 +464,24 @@ final class WindowModel: ObservableObject {
         return created
     }
 
+    /// The page's undo history, created on first use. The editor asks
+    /// its delegate for a manager on every undo touch, so history
+    /// simply follows the current page — no hand-off at the swap
+    /// (ADR-0006).
+    func undoManager(for id: UInt64) -> UndoManager {
+        if let existing = undoManagers[id] { return existing }
+        let created = UndoManager()
+        undoManagers[id] = created
+        return created
+    }
+
     // MARK: Navigation — the keyboard map
 
     func select(_ id: UInt64) {
+        let leavingLedger = showingLedger
         showingLedger = false
         selection = id
+        if leavingLedger { refocusEditorIfKeyed() }
     }
 
     /// ⌘1–⌘9: jump by visible tab order.
@@ -444,7 +493,10 @@ final class WindowModel: ObservableObject {
     /// ⌥⌘← / ⌥⌘→.
     func step(_ delta: Int) {
         guard !sheets.isEmpty else { return }
-        if showingLedger { showingLedger = false }
+        if showingLedger {
+            showingLedger = false
+            refocusEditorIfKeyed()
+        }
         let current = sheets.firstIndex { $0.id == selection } ?? 0
         let next = min(max(current + delta, 0), sheets.count - 1)
         selection = sheets[next].id
@@ -461,8 +513,25 @@ final class WindowModel: ObservableObject {
     func toggleLedger() {
         if showingLedger {
             showingLedger = false
+            refocusEditorIfKeyed()
         } else {
             showLedger()
+        }
+    }
+
+    /// The ledger's exit. Visiting the ledger unmounted the editor, so
+    /// the page returns with the window key and nothing focused — the
+    /// ember lit over typing that beeps (issue #19). When the window
+    /// already holds the keys, pass them to the editor once it has
+    /// remounted: that is a render pass after `showingLedger` flips,
+    /// hence the turn's delay (ADR-0005's timing discipline). An
+    /// unkeyed window is left alone — focusing would be *taking*, and
+    /// the law only ever accepts.
+    private func refocusEditorIfKeyed() {
+        guard holdsKeys else { return }
+        Task { @MainActor [weak self] in
+            guard let self, self.holdsKeys, let editor = self.activeEditor else { return }
+            editor.window?.makeFirstResponder(editor)
         }
     }
 
@@ -483,6 +552,7 @@ final class WindowModel: ObservableObject {
     func escape() {
         if showingLedger {
             showingLedger = false
+            refocusEditorIfKeyed()
         } else {
             onHandBackKeys?()
         }
@@ -502,12 +572,65 @@ final class WindowModel: ObservableObject {
         if created != 0 { select(created) }
     }
 
+    /// The focus law's third grant (ADR-0005): a click into the
+    /// pageless window's empty content area creates the page and hands
+    /// its editor the keys. The click itself already made the window
+    /// key — the empty state's catcher answers `needsPanelToBecomeKey`
+    /// — but the editor mounts a render pass after `selection` changes,
+    /// so the focus call waits one runloop turn. Inlining it here would
+    /// find `activeEditor` still nil and reintroduce the beep this
+    /// grant exists to cure.
+    func createPageAndFocus(in window: NSWindow?) {
+        newPage()
+        Task { @MainActor [weak self] in
+            guard let self, let editor = self.activeEditor else { return }
+            window?.makeFirstResponder(editor)
+        }
+    }
+
     /// Close the page; it rests in the ledger. Closing also clears any
     /// standing refusal — the cap condition it named may be resolved.
     func close(_ id: UInt64) {
         notice = nil
+        // A draft aimed at this page — or at a chip riding on it —
+        // dies with it. Left standing, the confirmation would still
+        // answer ↩ ("Create link" carries the default action) with a
+        // network call over a page that no longer exists (issue #19).
+        // The chips must be asked for *before* the close; a dead page
+        // replays no runs.
+        if let draft = promotion,
+           Self.shouldClearPromotion(
+               target: draft.target,
+               closingSheet: id,
+               chipsOnSheet: chipIds(onSheet: id)
+           ) {
+            promotion = nil
+        }
         _ = client.closeSheet(id: id)
         refresh()
+    }
+
+    /// Whether closing `closingSheet` orphans the open promotion
+    /// draft: a draft for the page itself, or for a chip the page
+    /// carries. A draft aimed elsewhere survives — its subject is
+    /// still alive. Pure, so the decision is testable without a core.
+    nonisolated static func shouldClearPromotion(
+        target: PromotionDraft.Target,
+        closingSheet: UInt64,
+        chipsOnSheet: Set<UInt64>
+    ) -> Bool {
+        switch target {
+        case .page(let id): id == closingSheet
+        case .chip(let id): chipsOnSheet.contains(id)
+        }
+    }
+
+    /// The chips riding on a page, by id — asked of the core, which
+    /// is authoritative even for a page whose editor never mounted.
+    private func chipIds(onSheet id: UInt64) -> Set<UInt64> {
+        Set(client.documentRuns(sheet: id).compactMap {
+            if case .chip(let info) = $0 { info.chipId } else { nil }
+        })
     }
 
     /// ⌘W closes what's showing, the macOS convention: the ledger view
@@ -515,6 +638,7 @@ final class WindowModel: ObservableObject {
     func closeCurrent() {
         if showingLedger {
             showingLedger = false
+            refocusEditorIfKeyed()
         } else if let id = selection {
             close(id)
         }
@@ -691,6 +815,11 @@ final class WindowModel: ObservableObject {
             }
             guard let range = found else { continue }
             storage.replaceCharacters(in: range, with: "")
+            // The storage changed behind the editor's back: the page's
+            // undo history now points at offsets that may no longer
+            // exist, and — as everywhere — undo must never resurrect
+            // what was sealed and has now travelled. History dies.
+            undoManagers[sheet]?.removeAllActions()
             syncDocument(sheet: sheet, runs: InkEditorView.Coordinator.runs(of: storage))
             return
         }

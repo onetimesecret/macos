@@ -6,7 +6,8 @@ import SwiftUI
 /// sense — moves by its title bar, resizes from any edge, remembers its
 /// frame — while remaining a **non-activating accessory**. The focus
 /// law is unchanged from the panel it replaces: the window accepts the
-/// keyboard by deliberate act only (click into the page, or summon with
+/// keyboard by deliberate act only (click into the page, click into the
+/// empty state — which conjures the page, ADR-0005 — or summon with
 /// ⌥Space) and opening it never deactivates the user's frontmost app.
 @MainActor
 final class WindowController: NSObject, NSWindowDelegate {
@@ -125,8 +126,20 @@ final class WindowController: NSObject, NSWindowDelegate {
             model.loadStateIfNeeded()
             pullToActiveSpace()
             panel.makeKeyAndOrderFront(nil)
-            if let editor = model.activeEditor {
-                panel.makeFirstResponder(editor)
+            // A pageless window would leave the grant with nothing to
+            // land on — key status, dead keystrokes. The summon
+            // conjures the page it promises (ADR-0005).
+            if model.sheets.isEmpty {
+                model.newPage()
+            }
+            // Focus defers one runloop turn: a page born this instant
+            // reaches `activeEditor` only after SwiftUI's next render
+            // pass. Asking now would find nil, skip the hand-off, and
+            // leave typing to beep at the window (ADR-0005). An editor
+            // already mounted simply gets the keys a turn later.
+            Task { @MainActor [weak self] in
+                guard let self, let editor = self.model.activeEditor else { return }
+                self.panel.makeFirstResponder(editor)
             }
         }
     }

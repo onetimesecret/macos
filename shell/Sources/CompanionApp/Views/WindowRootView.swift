@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The window's face (docs/spec/04): a quiet header where the title bar
@@ -130,16 +131,32 @@ struct WindowRootView: View {
         if model.showingLedger {
             LedgerView(entries: model.ledgerEntries)
         } else if let selection = model.selection {
+            // No `.id(selection)` on the editor, and the omission is
+            // contract, not oversight (ADR-0006): one editor persists
+            // across page switches, and `updateNSView` swaps the
+            // page's storage underneath it. Re-adding an id would make
+            // every switch an identity change again — the swap path
+            // goes dead, and caret, scroll, and undo are quietly
+            // discarded on every tab change.
             InkEditorView(model: model, sheetID: selection)
-                .id(selection) // storage swap keyed on the page
         } else {
-            VStack(spacing: 6) {
-                Text("Empty is the resting state.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Text("⌥⌘N for a page")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+            // The empty state: static text over a click-catcher. The
+            // catcher is the focus law's third grant (ADR-0005) — a
+            // click into the emptiness creates a page and hands its
+            // editor the keyboard.
+            ZStack {
+                EmptyStateKeyGrant { window in
+                    model.createPageAndFocus(in: window)
+                }
+                VStack(spacing: 6) {
+                    Text("Empty is the resting state.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Text("click — or ⌥Space — for a page")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                }
+                .allowsHitTesting(false)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -183,5 +200,51 @@ struct WindowRootView: View {
         .frame(width: 0, height: 0)
         .opacity(0)
         .accessibilityHidden(true)
+    }
+}
+
+// MARK: - The empty state's click catcher
+
+/// The focus law's third grant (ADR-0005). The window honours the law
+/// through `becomesKeyOnlyIfNeeded`: a click grants key status only
+/// when the clicked view answers `needsPanelToBecomeKey`. The empty
+/// state's static text answers no — so a pageless window could never
+/// accept the keyboard at all, and keystrokes fell through to the app
+/// underneath. This view answers yes, because a click into the
+/// emptiness is itself the deliberate act the law requires, and it
+/// reports the click so the model can conjure the page the grant
+/// promises. Chrome — tabs, header, pin — carries no such view and
+/// stays mute.
+private struct EmptyStateKeyGrant: NSViewRepresentable {
+    let onClick: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> KeyGrantingClickView {
+        let view = KeyGrantingClickView()
+        view.onClick = onClick
+        return view
+    }
+
+    func updateNSView(_ view: KeyGrantingClickView, context: Context) {
+        view.onClick = onClick
+    }
+}
+
+/// The minimal view that satisfies the panel's question: it needs the
+/// panel to become key — that is its entire purpose — and it takes the
+/// very first click even from an unkeyed window, so granting and
+/// creating are one gesture, not two.
+private final class KeyGrantingClickView: NSView {
+    var onClick: ((NSWindow?) -> Void)?
+
+    override var needsPanelToBecomeKey: Bool { true }
+
+    /// The granting click must not be swallowed as "just focusing":
+    /// the same click that keys the window creates the page.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// The window is captured here, before the click's consequences
+    /// unmount this view and sever it from the hierarchy.
+    override func mouseDown(with event: NSEvent) {
+        onClick?(window)
     }
 }
