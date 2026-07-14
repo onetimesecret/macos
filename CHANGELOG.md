@@ -124,10 +124,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **The unpinned window no longer floats over fullscreen apps** — the
-  window level, floating-panel flag, and fullscreen-auxiliary behavior
-  now all follow the pin: pinned floats everywhere, unpinned behaves
-  like a normal window others can cover.
+- **The window no longer hovers over fullscreen apps, pinned or not**
+  — `.canJoinAllSpaces` turned out to be the culprit: for an accessory
+  app it joins fullscreen Spaces too, and AppKit has no combination
+  that means "every desktop, but never fullscreen". The window now
+  lives on one Space and comes when called (`.moveToActiveSpace`):
+  summoning brings it to the desktop you're on, switching Spaces
+  leaves it where it was, and a fullscreen Space only ever sees it by
+  deliberate summon — menu-bar click or ⌥Space — never by drifting in.
+  The pin still decides only the altitude among ordinary windows:
+  pinned floats above them, unpinned is a normal window others can
+  cover.
 - **⌥-click on the menu-bar item reliably opens Settings** — the check
   reads the live hardware modifier state instead of the delivered
   event's flags, which the status bar can misreport (and which go stale
@@ -140,6 +147,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A tab's hover ✕ no longer shifts the title** — the close button
   keeps its space reserved and reveals by opacity, the browser-tab
   convention, instead of inserting itself on hover.
+- **Esc no longer blinks the window** — handing the keyboard back used
+  to reorder the window out and front again (a non-activating panel
+  has no "resign key" verb), a round trip that showed as a visible
+  hide-and-reappear over a fullscreen Space. Key status now passes
+  through an invisible one-pixel relay panel that takes the keys and
+  immediately orders out — the window server returns the keyboard to
+  the active app while the window never leaves the screen.
 
 ## [0.1.0] - 2026-07-13
 

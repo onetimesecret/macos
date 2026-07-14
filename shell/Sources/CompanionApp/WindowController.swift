@@ -53,20 +53,25 @@ final class WindowController: NSObject, NSWindowDelegate {
         // and screenshots. Rev C keeps the surface quiet about it — the
         // exclusion itself is unchanged.
         panel.sharingType = .none
+        // The window lives on one Space and comes when called.
+        // `.canJoinAllSpaces` was the trap: for an accessory app it
+        // joins fullscreen Spaces too — hovering over them uninvited —
+        // and no collection behavior means "every desktop, but never
+        // fullscreen". `.moveToActiveSpace` (with the explicit pull in
+        // the summon paths) relocates it to wherever the user is
+        // instead; a fullscreen Space only ever sees it by deliberate
+        // summon, which `.fullScreenAuxiliary` permits.
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         super.init()
         panel.delegate = self
-        // The pin decides the whole altitude story, not just the level:
-        // pinned floats above everything (`.statusBar`, panel-floating,
-        // welcome on fullscreen Spaces); unpinned is a normal window —
-        // other windows cover it and fullscreen apps exclude it.
+        // The pin decides the altitude among ordinary windows: pinned
+        // floats above them (`.statusBar`, panel-floating); unpinned is
+        // a normal window others can cover.
         model.$floatsOnTop
             .sink { [weak self] floats in
                 guard let panel = self?.panel else { return }
                 panel.level = floats ? .statusBar : .normal
                 panel.isFloatingPanel = floats
-                panel.collectionBehavior = floats
-                    ? [.canJoinAllSpaces, .fullScreenAuxiliary]
-                    : [.canJoinAllSpaces]
             }
             .store(in: &observers)
         // Debug-only escape hatch: the Settings toggle (seeded by
@@ -95,6 +100,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// answers this click — not the launch).
     func show() {
         model.loadStateIfNeeded()
+        pullToActiveSpace()
         panel.orderFrontRegardless()
     }
 
@@ -103,7 +109,9 @@ final class WindowController: NSObject, NSWindowDelegate {
     }
 
     func toggle() {
-        if panel.isVisible { hide() } else { show() }
+        // Visible on *this* Space toggles off; visible on some other
+        // Space is as good as hidden — toggle brings it here.
+        if panel.isVisible && panel.isOnActiveSpace { hide() } else { show() }
     }
 
     /// ⌥Space: summoning by keyboard IS the deliberate act, so the
@@ -111,10 +119,11 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// A second ⌥Space dismisses. `.nonactivatingPanel` means making it
     /// key never activates this app or deactivates the frontmost one.
     func summon() {
-        if panel.isVisible {
+        if panel.isVisible && panel.isOnActiveSpace {
             hide()
         } else {
             model.loadStateIfNeeded()
+            pullToActiveSpace()
             panel.makeKeyAndOrderFront(nil)
             if let editor = model.activeEditor {
                 panel.makeFirstResponder(editor)
@@ -122,18 +131,55 @@ final class WindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// A summon means *here*: if the window is up on some other Space,
+    /// order it out first so ordering front lands it on this one —
+    /// `.moveToActiveSpace` covers the well-behaved cases; the explicit
+    /// round trip makes it a guarantee.
+    private func pullToActiveSpace() {
+        if panel.isVisible && !panel.isOnActiveSpace {
+            panel.orderOut(nil)
+        }
+    }
+
     /// Esc: hand the keyboard back to wherever it came from. Dropping
     /// key status re-keys the active app's window; ours stays visible.
     func handBackKeys() {
         panel.makeFirstResponder(nil)
+        guard panel.isKeyWindow else { return }
+        // A non-activating panel has no "resign key" verb. Reordering
+        // the window out and back returns the keyboard, but the round
+        // trip blinks — a visible hide-and-reappear over a fullscreen
+        // Space. Instead, pass key status through an invisible relay
+        // and order *it* out: the window server hands the keyboard to
+        // the active app while our window never leaves the screen.
+        keyRelay.setFrameOrigin(panel.frame.origin)
+        keyRelay.makeKeyAndOrderFront(nil)
+        keyRelay.orderOut(nil)
         if panel.isKeyWindow {
-            // A non-activating panel has no "resign key" verb; briefly
-            // reordering out is the reliable way to return the keyboard
-            // without dismissing the window.
+            // The relay was refused key status (or key bounced back);
+            // fall back to the round trip rather than keep the keys.
             panel.orderOut(nil)
             panel.orderFrontRegardless()
         }
     }
+
+    /// The keyboard's waypoint on its way back to the active app: a
+    /// zero-alpha, borderless speck that exists only to take key status
+    /// from the window and immediately vanish with it.
+    private lazy var keyRelay: NSPanel = {
+        let relay = KeyRelayPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            styleMask: [.nonactivatingPanel, .borderless],
+            backing: .buffered,
+            defer: true
+        )
+        relay.alphaValue = 0
+        relay.isReleasedWhenClosed = false
+        relay.isExcludedFromWindowsMenu = true
+        relay.sharingType = .none
+        relay.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        return relay
+    }()
 
     // MARK: NSWindowDelegate
 
@@ -159,4 +205,11 @@ final class WindowController: NSObject, NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) {
         model.holdsKeys = false
     }
+}
+
+/// A borderless panel AppKit would otherwise refuse key status (no
+/// title bar); it exists only as `keyRelay`'s class — a waypoint for
+/// the keyboard on its way back to the active app.
+private final class KeyRelayPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
 }
