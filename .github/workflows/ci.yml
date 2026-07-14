@@ -66,6 +66,10 @@ jobs:
         run: swift build --package-path shell
       - name: swift test
         run: swift test --package-path shell
+      # --debug reuses the build above; the step exists to keep the
+      # bundle assembly (Info.plist, stamping, codesign) from rotting.
+      - name: Assemble CompanionApp.app
+        run: ./scripts/build-app.sh --debug
 
   # A backstop for the "never commit a secret" rule (adopted from the
   # prototype skeleton, PR #5). Scans the full history, so checkout is

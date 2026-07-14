@@ -67,6 +67,7 @@ dependencies = [
  "companion-pasteboard",
  "companion-transport",
  "ots-client",
+ "ring",
  "serde_json",
  "zeroize",
 ]

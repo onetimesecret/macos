@@ -162,7 +162,7 @@ struct InkEditorView: NSViewRepresentable {
             }
             guard range.length > 0 else { return }
             if Self.containsChip(storage, in: range) {
-                model.notice = "already sealed — a chip has no plaintext to seal"
+                model.flash("already sealed — a chip has no plaintext to seal")
                 return
             }
             let ink = text.substring(with: range)

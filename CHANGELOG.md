@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The shell packages as a real .app bundle** — `scripts/build-app.sh`
+  assembles `dist/CompanionApp.app` (bundle id
+  `com.onetimesecret.companion`, reserved in docs/spec/07) from the
+  Swift build, stamps the bundle version from `crates/ffi`'s
+  `CARGO_PKG_VERSION` (the same string the About panel shows), and
+  ad-hoc signs it (`CODESIGN_IDENTITY` overrides). A bare `swift run`
+  binary has no `CFBundleIdentifier`, so TCC grants and per-app
+  screen-capture pickers cannot address it; the bundle makes the app a
+  citizen of the permission system. `LSUIElement` in the checked-in
+  `shell/Info.plist` declares the accessory nature at the bundle level.
+  CI assembles the bundle in the shell lane so the packaging cannot rot.
+
 - **ADR-0004 accepted: Keychain prompt timing** — the ACL prompt may
   appear only when a secret is used (a promotion reading the token),
   never for a presence check. `CredentialStore::exists` answers "is a

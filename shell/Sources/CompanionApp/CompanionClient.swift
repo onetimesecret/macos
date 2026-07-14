@@ -97,6 +97,27 @@ struct LedgerEntry: Codable, Hashable {
     }
 }
 
+/// One run of a live page's document, as the core replays it for an
+/// editor rebuilding after a restore: visible ink, or a chip's
+/// non-secret face (never its bytes).
+enum RestoredRun: Decodable {
+    case ink(String)
+    case chip(ChipInfo)
+
+    private enum CodingKeys: String, CodingKey {
+        case ink, chip
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let text = try container.decodeIfPresent(String.self, forKey: .ink) {
+            self = .ink(text)
+        } else {
+            self = .chip(try container.decode(ChipInfo.self, forKey: .chip))
+        }
+    }
+}
+
 /// The TTL ladder (docs/spec/04). Raw values are the C ABI rung codes.
 enum Rung: Int32, CaseIterable {
     case oneHour = 0, threeHours, eightHours, twentyFourHours, threeDays, sevenDays
@@ -361,6 +382,30 @@ final class CompanionClient: @unchecked Sendable {
     /// Dead pages, newest first (⌘0) — dimmed ink and tombstones.
     func ledger() -> [LedgerEntry] {
         decodeJSON([LedgerEntry].self, from: companion_ledger_json(handle)) ?? []
+    }
+
+    // MARK: Persistence — the sealed state file
+
+    /// A live page's document runs, for rebuilding the editor after a
+    /// restore: ink verbatim, chips as their non-secret faces.
+    func documentRuns(sheet: UInt64) -> [RestoredRun] {
+        decodeJSON([RestoredRun].self, from: companion_sheet_document_json(handle, sheet)) ?? []
+    }
+
+    /// Save the whole store to `path`, encrypted core-side (the key
+    /// rests in the Keychain; only ciphertext touches disk). Call at
+    /// quit — nothing saves on its own.
+    @discardableResult
+    func persistSave(to path: String) -> Bool {
+        path.withCString { companion_persist_save(handle, $0) }
+    }
+
+    /// Restore the store from `path` at startup, before the first page
+    /// is created. False means a fresh start (no file) as much as a
+    /// refused one (missing key, failed authentication).
+    @discardableResult
+    func persistRestore(from path: String) -> Bool {
+        path.withCString { companion_persist_restore(handle, $0) }
     }
 
     /// The core's version string.

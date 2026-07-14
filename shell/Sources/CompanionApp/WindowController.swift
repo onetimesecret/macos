@@ -19,6 +19,11 @@ final class WindowController: NSObject, NSWindowDelegate {
         let hosting = NSHostingController(
             rootView: WindowRootView(model: model)
                 .frame(minWidth: 380, minHeight: 300)
+                // The transparent title bar arrives as a top safe-area
+                // inset; honouring it would stack a blank strip above
+                // the header. The header IS the title bar — extend
+                // under it (the buttons are hidden; the bar still drags).
+                .ignoresSafeArea()
         )
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 440),
@@ -29,7 +34,6 @@ final class WindowController: NSObject, NSWindowDelegate {
             defer: true
         )
         panel.contentViewController = hosting
-        panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         // The chrome is quiet: the SwiftUI header lives where the title
         // would; the transparent title bar remains the drag surface.
@@ -40,7 +44,6 @@ final class WindowController: NSObject, NSWindowDelegate {
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isMovableByWindowBackground = true
         panel.minSize = NSSize(width: 380, height: 300)
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         // Only take key focus if a view inside genuinely asks for it
         // (the page's text view); chrome clicks never make it key.
         panel.becomesKeyOnlyIfNeeded = true
@@ -52,11 +55,18 @@ final class WindowController: NSObject, NSWindowDelegate {
         panel.sharingType = .none
         super.init()
         panel.delegate = self
-        // Float-on-top setting, unchanged from the panel: `.statusBar`
-        // sits above every other app; `.normal` lets windows cover it.
+        // The pin decides the whole altitude story, not just the level:
+        // pinned floats above everything (`.statusBar`, panel-floating,
+        // welcome on fullscreen Spaces); unpinned is a normal window —
+        // other windows cover it and fullscreen apps exclude it.
         model.$floatsOnTop
             .sink { [weak self] floats in
-                self?.panel.level = floats ? .statusBar : .normal
+                guard let panel = self?.panel else { return }
+                panel.level = floats ? .statusBar : .normal
+                panel.isFloatingPanel = floats
+                panel.collectionBehavior = floats
+                    ? [.canJoinAllSpaces, .fullScreenAuxiliary]
+                    : [.canJoinAllSpaces]
             }
             .store(in: &observers)
         // Debug-only escape hatch: the Settings toggle (seeded by

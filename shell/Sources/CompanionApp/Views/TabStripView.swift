@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// The bottom-edge tab strip, Excel-anchored (docs/spec/04): one tab
 /// per page carrying its own gauge, a + for a new page, and the
@@ -8,21 +7,34 @@ import UniformTypeIdentifiers
 struct TabStripView: View {
     @ObservedObject var model: WindowModel
 
+    /// Each tab's frame in the strip's space, kept fresh by preference
+    /// so a drag knows which slot the pointer is over. A plain mouse
+    /// drag, not an item-provider drag session — the non-activating
+    /// panel never grants the latter its session.
+    @State private var tabFrames: [UInt64: CGRect] = [:]
+
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(Array(model.sheets.enumerated()), id: \.element.id) { index, sheet in
+            ForEach(model.sheets) { sheet in
                 SheetTab(
                     sheet: sheet,
                     selected: model.selection == sheet.id && !model.showingLedger,
                     model: model
                 )
-                .onDrag {
-                    model.draggingTab = sheet.id
-                    return NSItemProvider(object: String(sheet.id) as NSString)
-                }
-                .onDrop(
-                    of: [UTType.plainText],
-                    delegate: TabDropDelegate(target: sheet.id, index: index, model: model)
+                .opacity(model.draggingTab == sheet.id ? 0.6 : 1)
+                .background(GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: TabFramesKey.self,
+                        value: [sheet.id: geometry.frame(in: .named(Self.stripSpace))]
+                    )
+                })
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.stripSpace))
+                        .onChanged { value in
+                            model.draggingTab = sheet.id
+                            reorder(dragged: sheet.id, pointerX: value.location.x)
+                        }
+                        .onEnded { _ in model.draggingTab = nil }
                 )
             }
             newPageTab
@@ -34,6 +46,23 @@ struct TabStripView: View {
         .padding(.vertical, 4)
         .frame(height: 32)
         .background(Color.panelBackground)
+        .coordinateSpace(name: Self.stripSpace)
+        .onPreferenceChange(TabFramesKey.self) { tabFrames = $0 }
+    }
+
+    private static let stripSpace = "tabStrip"
+
+    /// Excel-style live reorder: the dragged tab lands after every tab
+    /// whose midpoint the pointer has passed. Midpoints, not edges, keep
+    /// the order stable while the strip re-lays-out mid-drag.
+    private func reorder(dragged: UInt64, pointerX: CGFloat) {
+        let target = model.sheets
+            .filter { $0.id != dragged }
+            .count { tabFrames[$0.id].map { $0.midX < pointerX } ?? false }
+        let current = model.sheets.firstIndex { $0.id == dragged }
+        if let current, target != current {
+            model.move(dragged, to: target)
+        }
     }
 
     private var newPageTab: some View {
@@ -72,8 +101,9 @@ struct TabStripView: View {
     }
 
     /// The dashed residue tab: expired and closed pages, dimmed (⌘0).
+    /// A toggle — click again to return to the page.
     private var ledgerTab: some View {
-        Button(action: model.showLedger) {
+        Button(action: model.toggleLedger) {
             HStack(spacing: 4) {
                 Image(systemName: "circle.dashed")
                     .font(.system(size: 10))
@@ -118,17 +148,20 @@ private struct SheetTab: View {
                     .font(.system(.caption, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                if hovering {
-                    Button {
-                        model.close(sheet.id)
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 7, weight: .bold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(Text("Close page"))
+                // The ✕ keeps its seat whether or not it is visible —
+                // revealing it must never nudge the title (the browsers'
+                // convention: reserve, then fade in).
+                Button {
+                    model.close(sheet.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
+                .accessibilityLabel(Text("Close page"))
             }
             .padding(.horizontal, 8)
             .frame(height: 18)
@@ -175,25 +208,13 @@ private struct SheetTab: View {
     }
 }
 
-/// Live drag-to-reorder: entering a tab while dragging another moves it
-/// there immediately, so the strip previews its final order.
-private struct TabDropDelegate: DropDelegate {
-    let target: UInt64
-    let index: Int
-    let model: WindowModel
+/// The tabs' frames, gathered up the preference chain for the strip's
+/// drag-to-reorder.
+private struct TabFramesKey: PreferenceKey {
+    static let defaultValue: [UInt64: CGRect] = [:]
 
-    func dropEntered(info: DropInfo) {
-        guard let dragged = model.draggingTab, dragged != target else { return }
-        model.move(dragged, to: index)
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        model.draggingTab = nil
-        return true
+    static func reduce(value: inout [UInt64: CGRect], nextValue: () -> [UInt64: CGRect]) {
+        value.merge(nextValue()) { _, newer in newer }
     }
 }
 

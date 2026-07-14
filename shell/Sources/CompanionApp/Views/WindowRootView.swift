@@ -167,6 +167,10 @@ struct WindowRootView: View {
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
             Button("") { model.step(1) }
                 .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+            // ⌘W: close the page — every macOS app's close verb. The
+            // ledger view, when showing, closes back to the page.
+            Button("") { model.closeCurrent() }
+                .keyboardShortcut("w", modifiers: .command)
             // ⌘,: Settings — the macOS convention, honoured while the
             // window holds the keys (an accessory app has no app menu
             // to carry it globally).

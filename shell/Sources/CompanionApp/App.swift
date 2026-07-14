@@ -122,11 +122,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let button = statusItem?.button {
                 menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 4), in: button)
             }
-        } else if let event, event.type == .leftMouseUp, event.modifierFlags.contains(.option) {
-            // A genuine ⌥-click only: an accessibility press (VoiceOver
-            // AXPress) delivers the action with a stale currentEvent
-            // that can still carry .option from earlier keyboard use —
-            // that must toggle the panel, never activate Settings.
+        } else if NSEvent.modifierFlags.contains(.option) {
+            // The live hardware state, not the delivered event's flags:
+            // the status bar's event can misreport modifiers, and an
+            // accessibility press (VoiceOver AXPress) arrives with a
+            // stale currentEvent that could still carry .option from
+            // earlier keyboard use. ⌥ physically held right now is the
+            // one honest signal — that opens Settings; anything else
+            // toggles the panel.
             settings.show()
         } else {
             controller?.toggle()
@@ -139,8 +142,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The standard About panel, dressed up: the colour ㊙️ at icon
     /// size (the menu bar gets the monochrome template; here colour is
-    /// the point), the cheeky name, and the core's version — there is
-    /// no bundle Info.plist to supply any of them.
+    /// the point), the cheeky name, and the core's version — supplied
+    /// explicitly because a bare `swift run` has no bundle Info.plist,
+    /// and the bundled app (scripts/build-app.sh) stamps its plist from
+    /// the same source this version string is baked from.
     @objc func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "CompanionApp",
@@ -235,6 +240,11 @@ final class WindowModel: ObservableObject {
     /// A refusal or status line the window shows briefly ("the window
     /// holds 9 pages…"). Refuse-don't-evict means the app says so.
     @Published var notice: String?
+
+    /// Notices are transient by contract: each `flash` restarts the
+    /// clock, and the line clears itself unless a newer notice has
+    /// taken its place.
+    private var noticeGeneration = 0
 
     /// True while the page holds the keyboard — drives the ember
     /// border. Set by the controller from window key status.
@@ -384,6 +394,28 @@ final class WindowModel: ObservableObject {
         showingLedger = true
     }
 
+    /// The ◌ tab is a toggle: click to visit the ledger, click again
+    /// to return to the page.
+    func toggleLedger() {
+        if showingLedger {
+            showingLedger = false
+        } else {
+            showLedger()
+        }
+    }
+
+    /// Show `message` for a few seconds, then clear it — unless a newer
+    /// notice replaced it in the meantime.
+    func flash(_ message: String) {
+        notice = message
+        noticeGeneration += 1
+        let generation = noticeGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+            guard let self, self.noticeGeneration == generation else { return }
+            self.notice = nil
+        }
+    }
+
     /// Esc: leave the ledger if it is showing; otherwise hand the
     /// keyboard back.
     func escape() {
@@ -402,7 +434,7 @@ final class WindowModel: ObservableObject {
         notice = nil
         let created = client.newSheet()
         if created == 0 {
-            notice = "the window holds 9 pages — let one expire, or close one"
+            flash("the window holds 9 pages — let one expire, or close one")
         }
         refresh()
         if created != 0 { select(created) }
@@ -414,6 +446,16 @@ final class WindowModel: ObservableObject {
         notice = nil
         _ = client.closeSheet(id: id)
         refresh()
+    }
+
+    /// ⌘W closes what's showing, the macOS convention: the ledger view
+    /// steps aside; a page goes to rest in the ledger.
+    func closeCurrent() {
+        if showingLedger {
+            showingLedger = false
+        } else if let id = selection {
+            close(id)
+        }
     }
 
     /// Drag-to-reorder: move `id` to `index` in visible order; the
@@ -443,7 +485,7 @@ final class WindowModel: ObservableObject {
         notice = nil
         guard let sheet = selection else { return nil }
         let chip = client.sealFromPasteboard(sheet: sheet)
-        if chip == nil { notice = "nothing to seal" }
+        if chip == nil { flash("nothing to seal") }
         return chip
     }
 
@@ -453,7 +495,7 @@ final class WindowModel: ObservableObject {
         notice = nil
         guard let sheet = selection else { return nil }
         let chip = client.sealFromDrag(sheet: sheet)
-        if chip == nil { notice = "nothing to seal" }
+        if chip == nil { flash("nothing to seal") }
         return chip
     }
 
@@ -544,7 +586,7 @@ final class WindowModel: ObservableObject {
         if outcome.ok {
             draft.error = nil
             draft.receiptId = outcome.receiptId
-            notice = "the link is on the clipboard"
+            flash("the link is on the clipboard")
         } else {
             // Inline, with retry; content never left the sheet.
             draft.error = outcome.error ?? "promotion failed"
