@@ -17,11 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   key resting in the Keychain (`state-key`, same service as the API
   token), and write only ciphertext to
   `Application Support/CompanionApp/state.sealed` (0600, atomic
-  temp-file rename). Launch is the mirror: decrypt, restore, then
-  drain the wall-clock time the app was closed — countdowns keep
-  ticking while away, holds absorb time-away first, and pages that
-  didn't survive the gap expire into the ledger before the window
-  opens. The file is useless without the Keychain item and vice versa;
+  temp-file rename). The window's first reveal is the mirror — not
+  launch, so starting at login never raises a Keychain prompt for a
+  window nobody asked to see: decrypt, restore, then drain the
+  wall-clock time the app was closed — countdowns keep ticking while
+  away, holds absorb time-away first, and pages that didn't survive
+  the gap expire into the ledger before the window opens. A session
+  whose window never showed never saves, so it cannot overwrite
+  yesterday's file with an empty store. The file is useless without
+  the Keychain item and vice versa;
   deleting either forgets everything. Tampering anywhere in the file
   (or a bare bit flip) fails authentication and reads as a fresh
   start. New seam: `companion_persist_save` / `companion_persist_restore`

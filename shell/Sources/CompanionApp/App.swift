@@ -313,15 +313,9 @@ final class WindowModel: ObservableObject {
     init() {
         // Unset → float on top, matching the original behavior.
         floatsOnTop = UserDefaults.standard.object(forKey: Self.floatsKey) as? Bool ?? true
-        // Yesterday's pages return: the core decrypts the sealed state
-        // file (key from the Keychain) and drains the time the app was
-        // closed, expiring what didn't survive it. A missing or
-        // unreadable file simply means a fresh start.
-        _ = client.persistRestore(from: Self.stateFileURL.path)
-        // A fresh sheet awaits: the window never opens onto nothing.
-        if client.sheets().isEmpty {
-            _ = client.newSheet()
-        }
+        // No pages yet: restore waits for the first reveal
+        // (`loadStateIfNeeded`), so launching at login never raises a
+        // Keychain prompt for a window nobody asked to see.
         // The connection outlives the process in two non-secret halves:
         // config in UserDefaults, the token in the Keychain (core-side).
         // Configuring with a nil token keeps whatever the Keychain
@@ -335,6 +329,26 @@ final class WindowModel: ObservableObject {
             token: nil
         )
         connection = client.connectionInfo()
+    }
+
+    /// Whether the sealed state has been loaded this session — set by
+    /// the first reveal, and the licence `saveState` requires.
+    private var stateLoaded = false
+
+    /// The first reveal loads yesterday's pages: the core decrypts the
+    /// state file (the key comes from the Keychain — a prompt, if the
+    /// ACL raises one, answers the user's own summon, per ADR-0004's
+    /// spirit of prompting only on use) and drains the wall-clock time
+    /// the app was closed, expiring what didn't survive it. A missing
+    /// or unreadable file is a fresh start; either way a page awaits —
+    /// the window never opens onto nothing.
+    func loadStateIfNeeded() {
+        guard !stateLoaded else { return }
+        stateLoaded = true
+        _ = client.persistRestore(from: Self.stateFileURL.path)
+        if client.sheets().isEmpty {
+            _ = client.newSheet()
+        }
         refresh()
         selection = sheets.first?.id
     }
@@ -354,8 +368,11 @@ final class WindowModel: ObservableObject {
 
     /// JIT encryption at quit: seal the whole store — live pages,
     /// chips, the ledger — into the state file in one core call.
-    /// Nothing touches disk while the app runs.
+    /// Nothing touches disk while the app runs. A session whose window
+    /// never showed never loaded, and must not overwrite yesterday's
+    /// file with its empty store.
     func saveState() {
+        guard stateLoaded else { return }
         let url = Self.stateFileURL
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true

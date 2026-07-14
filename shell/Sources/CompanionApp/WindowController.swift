@@ -90,8 +90,11 @@ final class WindowController: NSObject, NSWindowDelegate {
     // MARK: Summon & dismiss
 
     /// Menu-bar click: show without taking the keyboard — clicking into
-    /// the page is the deliberate act that grants it.
+    /// the page is the deliberate act that grants it. The first reveal
+    /// restores yesterday's pages (a Keychain prompt, if one comes,
+    /// answers this click — not the launch).
     func show() {
+        model.loadStateIfNeeded()
         panel.orderFrontRegardless()
     }
 
@@ -111,6 +114,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         if panel.isVisible {
             hide()
         } else {
+            model.loadStateIfNeeded()
             panel.makeKeyAndOrderFront(nil)
             if let editor = model.activeEditor {
                 panel.makeFirstResponder(editor)

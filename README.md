@@ -65,6 +65,19 @@ shell/               the Swift/AppKit shell (ADR-0002) — links the core only
 docs/spec/           the governing spec   ·   docs/adr/  decisions
 ```
 
+## Running
+
+Use the .app (scripts/build-app.sh → dist/CompanionApp.app), especially when testing Keychain behavior and permission prompts.
+
+Reasons:
+
+
+- Keychain behavior is the thing under test. The state key and API token live in the Keychain, and ACLs key off the app's identity. The bundle carries com.onetimesecret.companion and a signature; a bare swift run binary has no CFBundleIdentifier, so prompts and grants behave differently (and less representatively) than what a real user would see. Since you specifically want to observe when the prompt fires (first reveal, not launch), test the bundle.
+- Permission-system citizenship. TCC grants and per-app pickers can't address a bundle-less binary — that's why build-app.sh exists.
+- The rebuild hazard. swift build SIGKILLs a live instance running from .build/ (in-place re-sign), and a SIGKILL skips applicationWillTerminate — meaning no state save, pages gone. Running from dist/ keeps the live instance decoupled from builds.
+
+swift run remains fine for quick UI iteration where none of that matters (layout, tab drag, notices). But for the persistence round trip, prompt timing, and the fullscreen/Spaces check: quit the running instance normally (so it saves state), run scripts/build-app.sh, and launch the fresh dist/CompanionApp.app.
+
 ## Naming note
 
 **Airlock** is a working title only: a small chamber between two
