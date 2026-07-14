@@ -48,10 +48,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onOpenSettings = { [weak self] in self?.settings.show() }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        // ㊙️ maruhi ("secret") — the menu-bar glyph. An emoji title
-        // renders in colour; VoiceOver reads the explicit label, not the
-        // emoji's own name.
-        item.button?.title = "㊙️"
+        // ㊙ maruhi ("secret") — the menu-bar glyph, drawn as a template
+        // image so the system tints it like every other status item:
+        // dark in light mode, light in dark mode, dimmed when inactive.
+        // VoiceOver reads the explicit label, not the glyph's own name.
+        item.button?.image = Self.maruhiTemplateImage()
         item.button?.setAccessibilityLabel("Onetime Secret Companion")
         item.button?.target = self
         item.button?.action = #selector(statusItemClicked)
@@ -70,6 +71,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ProcessInfo.processInfo.environment["COMPANION_AUTOSHOW"] != nil {
             controller.show()
         }
+    }
+
+    /// The ㊙ glyph rendered monochrome (U+FE0E forces text
+    /// presentation over emoji) onto a template image: the menu bar
+    /// tints template images to match its appearance, which a colour
+    /// emoji title never gets.
+    private static func maruhiTemplateImage() -> NSImage {
+        let side: CGFloat = 18
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            let glyph = "㊙\u{FE0E}" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 15, weight: .regular),
+                .foregroundColor: NSColor.black,
+            ]
+            let size = glyph.size(withAttributes: attributes)
+            glyph.draw(
+                at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
+                withAttributes: attributes
+            )
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     /// Left click toggles the window; ⌥-click goes straight to
@@ -558,6 +582,25 @@ final class WindowModel: ObservableObject {
         defaults.set(shareDomain, forKey: Self.shareDomainKey)
         defaults.set(extid, forKey: Self.extidKey)
         connection = client.connectionInfo()
+        return true
+    }
+
+    /// Clear the stored API token: an empty string through the seam
+    /// deletes it from the Keychain. The rest of the connection config is
+    /// resent from the saved state (not the form's unsaved edits), so
+    /// nothing else moves. Returns false only if the core refuses — it
+    /// won't, since a valid https server is always configured.
+    @discardableResult
+    func clearToken() -> Bool {
+        guard let connection else { return false }
+        let accepted = client.configureConnection(
+            serverUrl: connection.serverUrl,
+            shareDomain: connection.shareDomain,
+            extid: connection.extid,
+            token: ""
+        )
+        guard accepted else { return false }
+        self.connection = client.connectionInfo()
         return true
     }
 

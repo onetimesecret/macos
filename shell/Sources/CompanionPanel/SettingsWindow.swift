@@ -55,6 +55,7 @@ struct ConnectionSettingsView: View {
     @State private var status: String?
     @State private var statusIsError = false
     @State private var testing = false
+    @State private var confirmingClear = false
 
     var body: some View {
         Form {
@@ -69,6 +70,19 @@ struct ConnectionSettingsView: View {
             Section {
                 TextField("Organization extid", text: $extid, prompt: Text("empty for guest promotion"))
                 SecureField("API token", text: $token, prompt: Text(tokenPrompt))
+                if model.connection?.hasToken == true {
+                    Button("Clear stored token", role: .destructive) { confirmingClear = true }
+                        .confirmationDialog(
+                            "Clear the stored API token?",
+                            isPresented: $confirmingClear,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Clear token", role: .destructive) { clearToken() }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("Promotion falls back to guest links until you enter a new token.")
+                        }
+                }
             } header: {
                 Text("The token goes straight to the Keychain and is never shown again.")
                     .font(.caption)
@@ -129,6 +143,13 @@ struct ConnectionSettingsView: View {
         token = ""
         statusIsError = !accepted
         status = accepted ? "saved" : "refused — the server URL must be https://…"
+    }
+
+    private func clearToken() {
+        let cleared = model.clearToken()
+        token = ""
+        statusIsError = !cleared
+        status = cleared ? "token cleared" : "could not clear the token"
     }
 
     private func test() {
