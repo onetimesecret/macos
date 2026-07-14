@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-13
+
+The first tagged milestone. The rev C surface ran its first live
+hardware session on real hardware: summoned, typed on, sealed, and —
+confirmed by the session itself — excluded from capture (screenshots of
+the window come out blank; the session had to be photographed with a
+phone). Rough edges noted for follow-up; the core loop works.
+
 ### Added
 
 - **The rev C window** (issue #12, docs/spec/04) — the shell sheds the
