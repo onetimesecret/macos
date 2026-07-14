@@ -340,7 +340,11 @@ fn span(claimed_ms: u64) -> Duration {
     Duration::from_millis(claimed_ms.min(MAX_SPAN_MS))
 }
 
-fn read_sheet(reader: &mut Reader<'_>, now: Instant, away: Duration) -> Result<Sheet, RestoreError> {
+fn read_sheet(
+    reader: &mut Reader<'_>,
+    now: Instant,
+    away: Duration,
+) -> Result<Sheet, RestoreError> {
     use RestoreError::Malformed;
     let id = SheetId::from_raw(reader.u64().ok_or(Malformed)?);
     let rung = Ttl::from_secs(reader.u64().ok_or(Malformed)?).ok_or(Malformed)?;
@@ -526,7 +530,16 @@ mod tests {
         assert_eq!(sheet.segments(), original.sheet(first).unwrap().segments());
         assert_eq!(sheet.chip_count(), 2);
         let chips: Vec<&SealedChip> = sheet.chips().collect();
-        assert_eq!(chips[0].excerpt(), original.sheet(first).unwrap().chips().next().unwrap().excerpt());
+        assert_eq!(
+            chips[0].excerpt(),
+            original
+                .sheet(first)
+                .unwrap()
+                .chips()
+                .next()
+                .unwrap()
+                .excerpt()
+        );
         assert_eq!(chips[0].promotion().unwrap().receipt_id, "receipt-42");
         assert_eq!(chips[1].excerpt(), "PNG image");
         assert!(chips[1].promotion().is_none());
@@ -558,7 +571,11 @@ mod tests {
             .map(SealedChip::id)
             .collect();
         assert!(!old_chips.contains(&new_chip));
-        assert!(revived.sheets().all(|s| s.id() != new_sheet || s.id() == new_sheet));
+        assert!(
+            revived
+                .sheets()
+                .all(|s| s.id() != new_sheet || s.id() == new_sheet)
+        );
         assert!(new_sheet.raw() > first.raw());
     }
 
@@ -647,7 +664,12 @@ mod tests {
         );
 
         // Truncation anywhere must reject without touching the store.
-        for cut in [MAGIC.len(), MAGIC.len() + 3, snapshot.len() / 2, snapshot.len() - 1] {
+        for cut in [
+            MAGIC.len(),
+            MAGIC.len() + 3,
+            snapshot.len() / 2,
+            snapshot.len() - 1,
+        ] {
             assert_eq!(
                 revived.restore(&snapshot[..cut], 0),
                 Err(RestoreError::Malformed),
@@ -659,7 +681,10 @@ mod tests {
         padded.push(0);
         assert_eq!(revived.restore(&padded, 0), Err(RestoreError::Malformed));
 
-        assert!(revived.is_empty(), "a failed restore must leave nothing behind");
+        assert!(
+            revived.is_empty(),
+            "a failed restore must leave nothing behind"
+        );
         assert_eq!(revived.ledger().count(), 0);
 
         // And the pristine snapshot still restores after all that.

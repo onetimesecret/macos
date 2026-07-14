@@ -183,7 +183,10 @@ mod tests {
     #[test]
     fn the_wrong_key_opens_nothing() {
         let sealed = seal_state(&key(), b"payload").unwrap();
-        assert!(open_state(&key(), &sealed).is_none(), "keys are independent");
+        assert!(
+            open_state(&key(), &sealed).is_none(),
+            "keys are independent"
+        );
     }
 
     #[test]

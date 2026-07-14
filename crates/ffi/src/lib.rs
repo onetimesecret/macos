@@ -1552,9 +1552,8 @@ mod tests {
     /// and every JSON output stay free of the sealed bytes.
     #[test]
     fn persist_round_trips_over_the_seam() {
-        let credentials: Arc<dyn CredentialStore> = Arc::new(
-            companion_credentials::InMemoryCredentialStore::default(),
-        );
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
         let path = std::env::temp_dir().join(format!(
             "companion-persist-seam-{}.sealed",
             std::process::id()
