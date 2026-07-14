@@ -1,120 +1,135 @@
-# Hardware-session runbook — the VoiceOver go/no-go (issue #4)
+# Hardware-session runbook — rev C (the "for realsies" session)
 
-> **Rev C note (issue #10, 2026-07-13):** the core now speaks
-> interaction-model rev C — sheets, gesture-only sealing, mechanical
-> excerpts, the pausable countdown, the ledger; detection is deleted and
-> the cap is 9 pages. Sections A and D below were written against the
-> rev A code and read as history; the *checks* still stand with the
-> vocabulary shifted (capture → sealed paste, cell → page, recognition
-> line → excerpt). Section B's go/no-go is unchanged and still open.
+The part only a person at the machine can run. Everything below assumes
+the rev C window (issue #12, merged) over the rev C core (issue #10):
+sheets of ink and sealed chips, gesture-only sealing, the pausable
+countdown, bottom tabs, the ledger. Do it on the Mac you'll ship
+against.
 
-Everything that can be verified without a display, VoiceOver, and full
-Xcode is done and on-branch. This is the part only a person at the machine
-can run: the VoiceOver operability proof that is issue #4's reason to
-exist. Do it on the Mac you'll ship against, with VoiceOver **on**.
+Two prior results stand and are not re-run here:
 
-The build/test chain that Command Line Tools couldn't run is green as of
-2026-07-09 (Xcode 26.0): the universal `.xcframework` builds, `swift build`
-links against it, and `swift test` passes. What remains below is the
-human-in-the-loop verification, not tooling.
+- **Headless ingest proof (rev A, 2026-07-09):** the core bound to the
+  real `NSPasteboard.general` ingested a `pbcopy`'d token and the raw
+  bytes never crossed the seam. The mechanism is unchanged in rev C;
+  §A verifies it through the live gestures instead.
+- **Spike measurements (ADR-0002):** 22 MB resident / 0.0% idle CPU,
+  non-activating confirmed via `lsappinfo` polling. §E re-measures
+  against the rev C window with pages loaded.
 
 ## Build + run
 
-1. **Full Xcode active** (not just Command Line Tools):
-   `xcode-select -p` should print an `Xcode*.app/Contents/Developer` path.
-   If it points at Command Line Tools, repoint:
-   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`
-   (note the full `/Contents/Developer` suffix), then `xcodebuild -version`.
-2. **Build the core** → `bindings/CompanionCore.xcframework`
-   (git-ignored build artifact, universal arm64 + x86_64):
-   `./scripts/build-core.sh --dev-scaffolding` (the shell still links
-   the dev-seed symbol for drop staging)
-3. **Build + test the shell:**
-   `cd shell && swift build && swift test`
-4. **Run the menu-bar app:** `swift run` (or open `Package.swift` in
-   Xcode and run). It appears as a status-bar item — click the icon to
-   open the panel; there is no Dock icon or window.
+1. **Full Xcode active:** `xcode-select -p` prints an
+   `Xcode*.app/Contents/Developer` path; if not,
+   `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+2. `./scripts/build-core.sh` → `bindings/CompanionCore.xcframework`
+   (no `--dev-scaffolding` needed; rev C has no dev-seed path).
+3. `cd shell && swift build && swift test && swift run CompanionPanel`
+4. The window summons with **⌥Space** or from the menu-bar item.
 
-## A — Real ingest on device (already verified headless; confirm in UI)
+## §0 — The prototype walk
 
-Headless proof: `pbcopy` a token-shaped string → the production
-`companion_new` (bound to the real `NSPasteboard.general`) ingested it,
-detected "GitHub token", masked it (`••••`), and the raw secret never
-appeared in the summary JSON. Confirm the same through the live panel:
+Open `docs/Airlock Prototype.dc.html` in a browser beside the app. The
+prototype is the script; the app is under test. Walk every gesture in
+both and note any divergence in feel, not just function:
 
-- [ ] Copy a secret-shaped string elsewhere (`Cmd-C` a fake token).
-- [ ] Trigger capture (menu-bar → panel → **Capture**). A cell appears.
-- [ ] Its recognition line is **masked**, not the raw value.
-- [ ] The "sample cell" button still works (it now seeds the *real*
-      clipboard, so it will replace your clipboard contents — expected).
+- [ ] ⌥Space summons; ⌥Space again dismisses; Esc hands keys back
+      without hiding the window.
+- [ ] ⌘V pastes visible ink, exactly like any text editor.
+- [ ] ⇧⌘V pastes sealed: a chip appears, masked, with the mechanical
+      excerpt — never the bytes.
+- [ ] Type a line, ⌘↩ seals it; select a fragment, ⌘↩ seals just the
+      selection.
+- [ ] ⌫ on a chip removes it (and zeroizes core-side — no visible
+      check here; the contract test covers it).
+- [ ] ⌥⌘N new page; ⌥⌘←/→ walk pages; ⌘1–⌘9 jump in visible tab
+      order; ⌘0 opens the ledger.
+- [ ] Drag a tab to reorder; confirm the ⌘-number map follows the new
+      visible order.
+- [ ] ✕ closes a page; it appears in the ledger as dimmed ink.
+- [ ] Markdown: `#`/`##`/`###` headings render styled with markup
+      visible; the bytes on the page never change.
 
-## B — VoiceOver operability (THE go/no-go)
+## §A — Boundary-lawful ingest, live
 
-This is the determination issue #4 exists to make and the one still-open
-input to ADR-0002's reserved shell decision. The premise under test:
-native AppKit gives first-class VoiceOver for free (docs/spec/05, the
-"VoiceOver-legible" cell requirement; docs/spec/02). Turn VoiceOver on
-(`Cmd-F5`); drive the panel from the keyboard only.
+- [ ] **Cross-app text drag** (the one open drag verification): drag
+      selected text from another app onto the page. It seals; the
+      *general clipboard is untouched* (`pbpaste` before/after
+      matches). The core read the drag pasteboard itself —
+      `companion_sheet_seal_from_drag` — no byte transited Swift.
+- [ ] **Image drag:** drop an image; confirm the app's behaviour
+      (accept-and-seal or refuse) matches the spec's current text-first
+      posture, and nothing crashes or renders raw data.
+- [ ] **Copy-out:** copy from a chip; paste elsewhere and confirm the
+      round-trip; confirm a clipboard manager (if present) shows the
+      transient/concealed marking or skips it.
+- [ ] ⇧⌘V with a secret on the clipboard: the chip's excerpt is
+      mechanical (head…tail) — never enough to reconstruct the value.
 
-- [ ] **Focus the cell** with VO navigation. It is reachable.
-- [ ] **Hear its remaining life in words** — the `spoken_remaining`
-      string ("about 7 hours remaining"), not a colour or a bare number.
-      The text label is the load-bearing equivalent of the visual ring
-      (origin: docs/archive/00-problem-space.md, "VoiceOver announces
-      remaining life in words"); verify it reads without the ring.
-- [ ] **Cycle the TTL** from the keyboard; hear the new life announced.
-- [ ] **Dismiss/discard** the cell from the keyboard.
-- [ ] Throughout, confirm the **frontmost app never changes** — the panel
-      does not steal focus (docs/spec/03 design principle; docs/spec/04
-      "Non-activating"). This is an accessibility rule, not etiquette.
-      `lsappinfo front` in a terminal before/after is a cheap cross-check.
-- [ ] Reduce Motion on: the draining ring's text equivalent still conveys
-      remaining life (the animation is not the only signal).
+## §B — VoiceOver operability (THE go/no-go)
 
-**If any of B fails and can't be reached with native AppKit APIs, the
-native-shell premise is wrong — that is the finding, and it feeds
-ADR-0002's still-reserved shell decision.**
+The premise under test: native AppKit gives first-class VoiceOver for
+free. Failure that native APIs cannot reach is an ADR-0002 **eject
+trigger**. VoiceOver on (⌘F5); keyboard only.
 
-## C — Keychain round-trip on device (`companion-credentials`)
+- [ ] Summon the window with ⌥Space under VO; the window is reachable.
+- [ ] Focus a **tab**: hear its title and its remaining life in words
+      (the `spoken_remaining` string — "about 7 hours remaining"), not
+      a colour or a gauge.
+- [ ] Focus the **countdown**: hear the same in words; its hint offers
+      cycling the ladder.
+- [ ] Cycle the rung from the keyboard; hear the new life announced.
+- [ ] Focus a **sealed chip** in the page: it announces as sealed with
+      its excerpt — never reads sealed content (there is none to read).
+- [ ] Open the **ledger** (⌘0) under VO; entries read as dimmed/dead
+      pages with counts.
+- [ ] Close a page from the keyboard under VO.
+- [ ] Throughout: the **frontmost app never changes** (`lsappinfo
+      front` before/after). The focus law is an accessibility rule,
+      not etiquette.
+- [ ] Reduce Motion on: remaining life still legible without the
+      gauge animation.
 
-The macOS Keychain path (`security-framework`, cfg-gated) compiles; it
-needs a real device to round-trip (the CI/dev fallback is in-memory):
+## §C — Keychain round-trip (`companion-credentials`)
 
-- [ ] Store a credential via the Keychain path, read it back, delete it —
-      on a real login keychain, confirming the prompt/ACL behaviour.
+- [ ] Store a credential via the Keychain path, read it back, delete
+      it — on a real login keychain, confirming prompt/ACL behaviour.
+      (CI uses the in-memory fallback; this is the only place the real
+      path runs.)
 
-## D — Open defaults, as felt in the live UI (docs/spec/06)
+## §D — Rev C time, felt
 
-Not blockers for the spike; note what the live UI reveals so the defaults
-get decided from felt experience, not a spreadsheet. Current code values:
+- [ ] **The pause:** double-click a tab's gauge — holds 1h; again —
+      tops up to 24h; confirm the hold lapses back into countdown.
+      Does the bounded top-up feel right (docs/spec/06 q8)?
+- [ ] **Countdown through a closed lid:** note a page's remaining
+      time, sleep the Mac past a meaningful chunk of it, wake.
+      Remaining time must reflect wall-clock sleep (the core clocks
+      sleep-monotonic); an expiry that came due during sleep fires on
+      wake and the page lands in the ledger.
+- [ ] **The keyboard wall:** fill to 9 pages; the 10th is refused, not
+      evicted. Wall or nudge (docs/spec/06 q4)?
+- [ ] **Default rung:** does 8h feel right as the landing rung when
+      you cycle (docs/spec/06 q1)?
+- [ ] **Expiry, watched:** let one short-rung page expire while the
+      window is open. Silent removal to the ledger — is silence the
+      right promise (docs/spec/06)?
 
-- **Default TTL:** 8h (ladder 1h→3h→8h→24h→3d→7d; docs/spec/04,
-  docs/spec/06 open question 1). Does 8h feel right as the landing rung
-  when you cycle?
-- **Capacity:** 9 pages (was 12 cells in rev A), **refuse-don't-evict**
-  (docs/spec/06 open question 4). Does hitting the keyboard wall feel
-  like a wall or a nudge?
-- **Eviction:** none — pages leave only by expiry or explicit close.
-  Watch whether that matches intuition when the tab strip fills.
-- **The pause** (rev C): double-click holds 1h, again tops up to 24h.
-  Does the top-up ceiling feel bounded enough (docs/spec/06 open
-  question 8)?
+## §E — Frugality, re-measured
 
-## Boundary-law note that surfaced during this work (drag ingest)
+The budget is < 25 MB resident idle **with pages loaded**, near-zero
+idle CPU; 22 MB at 0 cells (rev A panel) is the baseline. Materially
+over and unrecoverable is an ADR-0002 eject trigger.
 
-The **capture-from-clipboard** path is lawful and real: the core reads
-`NSPasteboard.general` itself, no plaintext through Swift (the boundary
-law, docs/spec/05 and ADR-0001). The **drag** path had an unresolved
-wrinkle: dragged text arrives in Swift's drop handler (`NSDraggingInfo`)
-— not on the general clipboard — so early routes either held the bytes
-in Swift briefly or clobbered the user's clipboard through the dev-seed.
+- [ ] With 5 pages of mixed ink and chips: `footprint` / `top`
+      resident memory, window hidden, after a minute idle.
+- [ ] Same at the 9-page wall.
+- [ ] Idle CPU ~0.0% with the window hidden (the 1 Hz redraw must not
+      run while not visible).
 
-**Decided and implemented (issue #12, the rev C window):** the core
-reads the **drag pasteboard** itself. `NSDraggingInfo.draggingPasteboard`
-is `NSPasteboard(name: .drag)` — a named board the core can bind exactly
-as it binds `.general` — so `companion_sheet_seal_from_drag` reads it
-core-side while the drop handler is still inside the drag session, and
-the shell hands over only the target page id. No dropped byte transits
-Swift; the general clipboard is untouched. What remains for the hardware
-session is *verification with a live drag* (a real cross-app text drag,
-plus an image drag), not a design decision.
+## Recording results
+
+Append findings to this file under a dated `## Results — YYYY-MM-DD`
+heading: pass/fail per section, felt-default notes for §D verbatim,
+and the §E numbers. §B outcomes (either way) get recorded in
+ADR-0002 — it accepted the shell with §B open as verification, and
+its eject triggers name the failure modes.
