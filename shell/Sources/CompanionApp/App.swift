@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import os
 
 /// The app's resident presence is the menu-bar item; a click reveals
 /// the window (docs/spec/03 principle 2) and ⌥Space summons it with the
@@ -7,7 +8,7 @@ import SwiftUI
 /// SwiftUI's stock `MenuBarExtra`, which has its own activation
 /// behavior and can't drop capture.
 @main
-struct CompanionPanelApp: App {
+struct CompanionApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
@@ -15,6 +16,18 @@ struct CompanionPanelApp: App {
         // (built in AppDelegate) are the entire UI. A placeholder scene
         // is required by the `App` protocol.
         Settings {}
+            .commands {
+                // The scene's automatic "Settings…" (⌘,) item would
+                // open the empty placeholder as a blank window — the
+                // main menu dispatches key equivalents even for an
+                // accessory app whenever it is active (e.g. while the
+                // real Settings window is key). Repoint it so every ⌘,
+                // in the app lands on the one real Settings window.
+                CommandGroup(replacing: .appSettings) {
+                    Button("Settings…") { appDelegate.openSettings() }
+                        .keyboardShortcut(",", modifiers: .command)
+                }
+            }
     }
 }
 
@@ -33,13 +46,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = WindowController(model: model)
         self.controller = controller
         model.onHandBackKeys = { [weak controller] in controller?.handBackKeys() }
+        model.onOpenSettings = { [weak self] in self?.settings.show() }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        // ㊙️ maruhi ("secret") — the menu-bar glyph. An emoji title
-        // renders in colour; VoiceOver reads the explicit label, not the
-        // emoji's own name.
-        item.button?.title = "㊙️"
-        item.button?.setAccessibilityLabel("Onetime Secret Companion")
+        // ㊙ maruhi ("secret") — the menu-bar glyph, drawn as a template
+        // image so the system tints it like every other status item:
+        // dark in light mode, light in dark mode, dimmed when inactive.
+        // VoiceOver reads the explicit label, not the glyph's own name.
+        item.button?.image = Self.maruhiTemplateImage()
+        item.button?.setAccessibilityLabel("CompanionApp")
         item.button?.target = self
         item.button?.action = #selector(statusItemClicked)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -59,17 +74,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Left click toggles the window; right click gets the boring
-    /// necessities (docs/spec/04: "Settings, About, Quit — not
-    /// features"; Settings arrives with its own slice).
+    /// Quit is the one moment state touches disk: seal everything into
+    /// the state file so the next launch opens where this one left off.
+    /// Intercepted here rather than in `applicationWillTerminate` so a
+    /// refused save — Keychain denied, disk full, a failed rename —
+    /// still reaches the user while there is time to choose. One alert,
+    /// two honest exits: quit anyway and accept the loss, or stay and
+    /// try again later. Never a retry loop; cancelling simply returns
+    /// to the app.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !model.saveState() else { return .terminateNow }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "This session could not be saved"
+        alert.informativeText =
+            "The sealed state file was not written, so this session's pages "
+            + "will not survive the quit. The previous file, if any, is untouched."
+        alert.addButton(withTitle: "Quit Anyway")
+        alert.addButton(withTitle: "Cancel")
+        // An accessory app's alert would otherwise appear behind
+        // whatever is frontmost.
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    }
+
+    /// The ㊙ glyph rendered monochrome (U+FE0E forces text
+    /// presentation over emoji) onto a template image: the menu bar
+    /// tints template images to match its appearance, which a colour
+    /// emoji title never gets.
+    private static func maruhiTemplateImage() -> NSImage {
+        let side: CGFloat = 18
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            let glyph = "㊙\u{FE0E}" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 15, weight: .regular),
+                .foregroundColor: NSColor.black,
+            ]
+            let size = glyph.size(withAttributes: attributes)
+            glyph.draw(
+                at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
+                withAttributes: attributes
+            )
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    /// Left click toggles the window; ⌥-click goes straight to
+    /// Settings; right click gets the boring necessities
+    /// (docs/spec/04: "Settings, About, Quit — not features").
     @objc private func statusItemClicked() {
-        if NSApp.currentEvent?.type == .rightMouseUp {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp {
             let menu = NSMenu()
             menu.addItem(
-                withTitle: "About Onetime Secret Companion",
-                action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+                withTitle: "About CompanionApp",
+                action: #selector(showAbout),
                 keyEquivalent: ""
-            ).target = NSApp
+            ).target = self
             menu.addItem(
                 withTitle: "Settings…",
                 action: #selector(openSettings),
@@ -84,13 +147,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let button = statusItem?.button {
                 menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 4), in: button)
             }
+        } else if NSEvent.modifierFlags.contains(.option) {
+            // The live hardware state, not the delivered event's flags:
+            // the status bar's event can misreport modifiers, and an
+            // accessibility press (VoiceOver AXPress) arrives with a
+            // stale currentEvent that could still carry .option from
+            // earlier keyboard use. ⌥ physically held right now is the
+            // one honest signal — that opens Settings; anything else
+            // toggles the panel.
+            settings.show()
         } else {
             controller?.toggle()
         }
     }
 
-    @objc private func openSettings() {
+    @objc func openSettings() {
         settings.show()
+    }
+
+    /// The standard About panel, dressed up: the colour ㊙️ at icon
+    /// size (the menu bar gets the monochrome template; here colour is
+    /// the point), the cheeky name, and the core's version — supplied
+    /// explicitly because a bare `swift run` has no bundle Info.plist,
+    /// and the bundled app (scripts/build-app.sh) stamps its plist from
+    /// the same source this version string is baked from.
+    @objc func showAbout() {
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: "CompanionApp",
+            .applicationIcon: Self.maruhiAboutIcon(),
+            .applicationVersion: CompanionClient.version,
+        ])
+        // An accessory app's panel would otherwise appear behind
+        // whatever is frontmost.
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// The ㊙️ emoji (U+FE0F keeps the colour presentation) rendered at
+    /// About-panel icon size.
+    private static func maruhiAboutIcon() -> NSImage {
+        let side: CGFloat = 256
+        return NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            let glyph = "㊙\u{FE0F}" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 200)
+            ]
+            let size = glyph.size(withAttributes: attributes)
+            glyph.draw(
+                at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
+                withAttributes: attributes
+            )
+            return true
+        }
     }
 }
 
@@ -159,6 +266,11 @@ final class WindowModel: ObservableObject {
     /// holds 9 pages…"). Refuse-don't-evict means the app says so.
     @Published var notice: String?
 
+    /// Notices are transient by contract: each `flash` restarts the
+    /// clock, and the line clears itself unless a newer notice has
+    /// taken its place.
+    private var noticeGeneration = 0
+
     /// True while the page holds the keyboard — drives the ember
     /// border. Set by the controller from window key status.
     @Published var holdsKeys = false
@@ -181,6 +293,16 @@ final class WindowModel: ObservableObject {
     }
     private static let floatsKey = "floatsOnTop"
 
+    #if DEBUG
+    /// Debug builds only: lift the capture exclusion so the window can
+    /// be screenshotted while diagnosing the UI. Deliberately NOT
+    /// persisted — a security opt-out fails closed at every launch.
+    /// COMPANION_ALLOW_CAPTURE=1 seeds it for scripted runs; a release
+    /// build compiles the property out entirely.
+    @Published var allowCapture =
+        ProcessInfo.processInfo.environment["COMPANION_ALLOW_CAPTURE"] != nil
+    #endif
+
     /// The live editor view, so ⌥Space can hand it the keyboard.
     /// Weak and non-published: view plumbing, not state.
     weak var activeEditor: NSTextView?
@@ -188,6 +310,10 @@ final class WindowModel: ObservableObject {
     /// Set by the app delegate; Esc routes here when no editor holds
     /// the keys (the controller re-keys the frontmost app's window).
     var onHandBackKeys: (() -> Void)?
+
+    /// Set by the app delegate; ⌘, routes here (the delegate owns the
+    /// Settings window, the panel merely asks for it).
+    var onOpenSettings: (() -> Void)?
 
     private let client = CompanionClient()
 
@@ -206,10 +332,9 @@ final class WindowModel: ObservableObject {
     init() {
         // Unset → float on top, matching the original behavior.
         floatsOnTop = UserDefaults.standard.object(forKey: Self.floatsKey) as? Bool ?? true
-        // A fresh sheet awaits: the window never opens onto nothing.
-        if client.sheets().isEmpty {
-            _ = client.newSheet()
-        }
+        // No pages yet: restore waits for the first reveal
+        // (`loadStateIfNeeded`), so launching at login never raises a
+        // Keychain prompt for a window nobody asked to see.
         // The connection outlives the process in two non-secret halves:
         // config in UserDefaults, the token in the Keychain (core-side).
         // Configuring with a nil token keeps whatever the Keychain
@@ -223,14 +348,99 @@ final class WindowModel: ObservableObject {
             token: nil
         )
         connection = client.connectionInfo()
+    }
+
+    /// Whether the first reveal has run — restore is attempted once.
+    private var stateLoaded = false
+
+    /// The licence `saveState` requires, granted separately from
+    /// `stateLoaded`: a restore that failed over an *existing* file —
+    /// Keychain key denied or missing, damaged snapshot — leaves the
+    /// session usable but unlicensed, so quitting cannot overwrite
+    /// yesterday's sealed file with this session's consolation page.
+    private var saveLicence = false
+
+    /// The persistence trail in the unified log: restore refusals and
+    /// quit-save failures, never content — the file is ciphertext and
+    /// these lines carry only what happened to it.
+    private static let logger = Logger(
+        subsystem: "com.onetimesecret.companion", category: "persistence"
+    )
+
+    /// The first reveal loads yesterday's pages: the core decrypts the
+    /// state file (the key comes from the Keychain — a prompt, if the
+    /// ACL raises one, answers the user's own summon, per ADR-0004's
+    /// spirit of prompting only on use) and drains the wall-clock time
+    /// the app was closed, expiring what didn't survive it. A missing
+    /// file is a fresh start; an existing file that refuses to open
+    /// still gets a working page but forfeits the quit-save licence,
+    /// keeping the refusal recoverable. Either way a page awaits — the
+    /// window never opens onto nothing.
+    func loadStateIfNeeded() {
+        guard !stateLoaded else { return }
+        stateLoaded = true
+        let path = Self.stateFileURL.path
+        let fileExists = FileManager.default.fileExists(atPath: path)
+        let restored = client.persistRestore(from: path)
+        saveLicence = Self.grantsSaveLicence(fileExists: fileExists, restored: restored)
+        if !saveLicence {
+            Self.logger.error(
+                "restore failed over an existing state file; withholding the quit-save licence"
+            )
+        }
+        if client.sheets().isEmpty {
+            _ = client.newSheet()
+        }
         refresh()
         selection = sheets.first?.id
+    }
+
+    /// The licence's truth table. The core folds "no file yet" and
+    /// "refused" into one false; the file's presence on disk is what
+    /// tells them apart. A restore that succeeded keeps the licence, a
+    /// missing file grants it fresh (nothing exists to protect), and
+    /// only an existing file that would not open withholds it.
+    nonisolated static func grantsSaveLicence(fileExists: Bool, restored: Bool) -> Bool {
+        restored || !fileExists
     }
 
     private static let defaultServer = "https://eu.onetimesecret.com"
     private static let serverKey = "connection.serverURL"
     private static let extidKey = "connection.extid"
     private static let shareDomainKey = "connection.shareDomain"
+
+    /// Where the sealed state rests between runs. Ciphertext only —
+    /// the key lives in the Keychain, so the file alone says nothing.
+    private static var stateFileURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("CompanionApp", isDirectory: true)
+            .appendingPathComponent("state.sealed")
+    }
+
+    /// JIT encryption at quit: seal the whole store — live pages,
+    /// chips, the ledger — into the state file in one core call.
+    /// Nothing touches disk while the app runs. A session whose window
+    /// never showed never loaded, and must not overwrite yesterday's
+    /// file with its empty store; nor may one whose restore was
+    /// refused (`saveLicence`).
+    ///
+    /// Returns true when the file is settled — written, or deliberately
+    /// left alone. False means the save was attempted and refused: this
+    /// session's pages will not survive the quit, and the caller should
+    /// say so before the process goes.
+    @discardableResult
+    func saveState() -> Bool {
+        guard stateLoaded, saveLicence else { return true }
+        let url = Self.stateFileURL
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        let saved = client.persistSave(to: url.path)
+        if !saved {
+            Self.logger.error("quit-save refused; the sealed state file was not rewritten")
+        }
+        return saved
+    }
 
     deinit {
         eventTimer?.invalidate()
@@ -257,10 +467,25 @@ final class WindowModel: ObservableObject {
         armEventTimer()
     }
 
-    /// The page's document, created on first use.
+    /// The page's document, created on first use. A page restored from
+    /// the state file already has a document core-side; replay it into
+    /// the fresh storage with the editor's own attributes, so restored
+    /// ink and chips are indistinguishable from typed ones. A page born
+    /// in this process replays as empty.
     func storage(for id: UInt64) -> NSTextStorage {
         if let existing = storages[id] { return existing }
         let created = NSTextStorage()
+        for run in client.documentRuns(sheet: id) {
+            switch run {
+            case .ink(let text):
+                created.append(NSAttributedString(
+                    string: text,
+                    attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]
+                ))
+            case .chip(let info):
+                created.append(NSAttributedString(attachment: ChipAttachment(info: info)))
+            }
+        }
         storages[id] = created
         return created
     }
@@ -293,6 +518,28 @@ final class WindowModel: ObservableObject {
         showingLedger = true
     }
 
+    /// The ◌ tab is a toggle: click to visit the ledger, click again
+    /// to return to the page.
+    func toggleLedger() {
+        if showingLedger {
+            showingLedger = false
+        } else {
+            showLedger()
+        }
+    }
+
+    /// Show `message` for a few seconds, then clear it — unless a newer
+    /// notice replaced it in the meantime.
+    func flash(_ message: String) {
+        notice = message
+        noticeGeneration += 1
+        let generation = noticeGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+            guard let self, self.noticeGeneration == generation else { return }
+            self.notice = nil
+        }
+    }
+
     /// Esc: leave the ledger if it is showing; otherwise hand the
     /// keyboard back.
     func escape() {
@@ -311,7 +558,7 @@ final class WindowModel: ObservableObject {
         notice = nil
         let created = client.newSheet()
         if created == 0 {
-            notice = "the window holds 9 pages — let one expire, or close one"
+            flash("the window holds 9 pages — let one expire, or close one")
         }
         refresh()
         if created != 0 { select(created) }
@@ -323,6 +570,16 @@ final class WindowModel: ObservableObject {
         notice = nil
         _ = client.closeSheet(id: id)
         refresh()
+    }
+
+    /// ⌘W closes what's showing, the macOS convention: the ledger view
+    /// steps aside; a page goes to rest in the ledger.
+    func closeCurrent() {
+        if showingLedger {
+            showingLedger = false
+        } else if let id = selection {
+            close(id)
+        }
     }
 
     /// Drag-to-reorder: move `id` to `index` in visible order; the
@@ -352,7 +609,7 @@ final class WindowModel: ObservableObject {
         notice = nil
         guard let sheet = selection else { return nil }
         let chip = client.sealFromPasteboard(sheet: sheet)
-        if chip == nil { notice = "nothing to seal" }
+        if chip == nil { flash("nothing to seal") }
         return chip
     }
 
@@ -362,7 +619,7 @@ final class WindowModel: ObservableObject {
         notice = nil
         guard let sheet = selection else { return nil }
         let chip = client.sealFromDrag(sheet: sheet)
-        if chip == nil { notice = "nothing to seal" }
+        if chip == nil { flash("nothing to seal") }
         return chip
     }
 
@@ -453,7 +710,7 @@ final class WindowModel: ObservableObject {
         if outcome.ok {
             draft.error = nil
             draft.receiptId = outcome.receiptId
-            notice = "the link is on the clipboard"
+            flash("the link is on the clipboard")
         } else {
             // Inline, with retry; content never left the sheet.
             draft.error = outcome.error ?? "promotion failed"
@@ -524,6 +781,25 @@ final class WindowModel: ObservableObject {
         defaults.set(shareDomain, forKey: Self.shareDomainKey)
         defaults.set(extid, forKey: Self.extidKey)
         connection = client.connectionInfo()
+        return true
+    }
+
+    /// Clear the stored API token: an empty string through the seam
+    /// deletes it from the Keychain. The rest of the connection config is
+    /// resent from the saved state (not the form's unsaved edits), so
+    /// nothing else moves. Returns false only if the core refuses — it
+    /// won't, since a valid https server is always configured.
+    @discardableResult
+    func clearToken() -> Bool {
+        guard let connection else { return false }
+        let accepted = client.configureConnection(
+            serverUrl: connection.serverUrl,
+            shareDomain: connection.shareDomain,
+            extid: connection.extid,
+            token: ""
+        )
+        guard accepted else { return false }
+        self.connection = client.connectionInfo()
         return true
     }
 

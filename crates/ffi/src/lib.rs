@@ -56,10 +56,12 @@
 //! `.xcframework` wraps (`scripts/build-core.sh`). ADR-0003.
 #![allow(unsafe_code)] // A C ABI requires raw pointers; every unsafe fn documents its contract.
 
+mod persist;
 mod promotion;
 
 use std::ffi::CStr;
 use std::ffi::{CString, c_char, c_int};
+use std::path::Path;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -663,6 +665,55 @@ pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> 
     }
 }
 
+/// A live page's document, replayed for a shell rebuilding its editor
+/// after a restore: `[{"ink": "…"}, {"chip": {…}}, …]` in document
+/// order, each chip as the same non-secret face the seal routes return
+/// (id, kind, excerpt, size label, promoted) — the boundary law holds:
+/// ink renders anyway, and a chip crosses as its face, never its bytes.
+/// The caller owns the returned string and must release it with
+/// [`companion_string_free`]. Returns null for an unknown page.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_document_json(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let Some(sheet) = guard.store.sheet(SheetId::from_raw(sheet)) else {
+        return ptr::null_mut();
+    };
+    let runs: Vec<serde_json::Value> = sheet
+        .segments()
+        .iter()
+        .filter_map(|segment| match segment {
+            Segment::Ink(text) => Some(serde_json::json!({ "ink": text })),
+            Segment::Chip(chip_id) => sheet.chip(*chip_id).map(|chip| {
+                serde_json::json!({ "chip": {
+                    "chip_id": chip.id().raw(),
+                    "kind": match chip.meta() {
+                        ChipMeta::Text { .. } => "text",
+                        ChipMeta::Image { .. } => "image",
+                    },
+                    "excerpt": chip.excerpt(),
+                    "size_label": chip.size_label(),
+                    "promoted": chip.promotion().is_some(),
+                }})
+            }),
+        })
+        .collect();
+    match serde_json::to_string(&runs) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
 /// Milliseconds until the next scheduled instant — the earliest page
 /// expiry or hold lapse, whichever comes first. This is the **one**
 /// timer the shell arms. Returns `-1` when there is nothing to
@@ -703,6 +754,102 @@ pub unsafe extern "C" fn companion_expire_due(handle: *mut CompanionHandle) -> u
         return 0;
     };
     guard.store.expire_due().len() as u64
+}
+
+// ---------------------------------------------------------------------------
+// Persistence — the sealed state file (JIT encryption at quit)
+// ---------------------------------------------------------------------------
+
+/// Save the whole store — sheets, sealed chips, clocks, the ledger — to
+/// `path`, encrypted with ChaCha20-Poly1305 under a 32-byte key that
+/// rests in the OS credential store (`state-key` account, minted on
+/// first save). Only ciphertext touches disk; the plaintext snapshot is
+/// wiped before this returns. The write is atomic (temp file + rename)
+/// and owner-only. Call at quit; nothing saves on its own.
+///
+/// # Safety
+/// `handle` must be a valid handle; `path` a valid NUL-terminated
+/// UTF-8 path whose parent directory exists.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_persist_save(
+    handle: *mut CompanionHandle,
+    path: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(path) = (unsafe { cstr(path) }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    let Some(wall_ms) = wall_now_ms() else {
+        return false;
+    };
+    let Some(key) = persist::ensure_state_key(guard.credentials.as_ref()) else {
+        return false;
+    };
+    let snapshot = guard.store.snapshot(wall_ms);
+    let Some(sealed) = persist::seal_state(&key, &snapshot) else {
+        return false;
+    };
+    persist::write_private(Path::new(path), &sealed)
+}
+
+/// Restore the store from a state file [`companion_persist_save`]
+/// wrote: decrypt (the key comes from the credential store — never
+/// minted here), replace the store's sheets and ledger, and drain every
+/// countdown by the wall time that passed while the app was closed.
+/// Pages that came due while away expire into the ledger immediately.
+/// Meant for startup, before the first page is created. Returns whether
+/// a state was restored — false covers "no file yet" (a fresh start,
+/// not an error) as well as a missing key, failed authentication, or a
+/// damaged snapshot.
+///
+/// # Safety
+/// `handle` must be a valid handle; `path` a valid NUL-terminated
+/// UTF-8 path.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_persist_restore(
+    handle: *mut CompanionHandle,
+    path: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(path) = (unsafe { cstr(path) }) else {
+        return false;
+    };
+    let Ok(file) = std::fs::read(path) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    let Some(key) = persist::load_state_key(guard.credentials.as_ref()) else {
+        return false;
+    };
+    let Some(plaintext) = persist::open_state(&key, &file) else {
+        return false;
+    };
+    let Some(wall_ms) = wall_now_ms() else {
+        return false;
+    };
+    if guard.store.restore(&plaintext, wall_ms).is_err() {
+        return false;
+    }
+    // Deaths-while-away leave ledger residue like any other death.
+    guard.store.expire_due();
+    true
+}
+
+/// Unix epoch milliseconds, for stamping and aging snapshots.
+fn wall_now_ms() -> Option<u64> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
 }
 
 // ---------------------------------------------------------------------------
@@ -856,6 +1003,11 @@ pub unsafe extern "C" fn companion_connection_configure(
 /// `{"configured", "server_url", "share_domain", "extid", "has_token"}`
 /// (or null on an invalid handle); free with [`companion_string_free`].
 ///
+/// `has_token` is an **existence** check — does the credential store
+/// hold a token — decided without reading the secret. So calling this
+/// at launch to render Settings never provokes the Keychain ACL prompt;
+/// that prompt is reserved for the read a promotion actually needs.
+///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
@@ -866,7 +1018,10 @@ pub unsafe extern "C" fn companion_connection_json(handle: *mut CompanionHandle)
     let Ok(guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
-    let has_token = guard.credentials.load(TOKEN_ACCOUNT).is_ok();
+    // Existence, not a read: this must not decrypt the token (see the
+    // CredentialStore::exists contract). On a backend hiccup, fail to
+    // "no token" — rendering Settings must never wedge on the Keychain.
+    let has_token = guard.credentials.exists(TOKEN_ACCOUNT).unwrap_or(false);
     let json = match &guard.connection {
         Some(conn) => serde_json::json!({
             "configured": true,
@@ -1299,12 +1454,20 @@ mod tests {
     /// clipboard on macOS, where `companion_new` binds
     /// `NSPasteboard.general`.
     fn handle() -> *mut CompanionHandle {
+        handle_with(Arc::new(
+            companion_credentials::InMemoryCredentialStore::default(),
+        ))
+    }
+
+    /// Same, sharing `credentials` — two handles with one credential
+    /// store model two launches of the app against one keychain.
+    fn handle_with(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
         let companion = Companion {
             store: SheetStore::new(SystemClock),
             pasteboard: Board::Memory(MemoryPasteboard::new()),
             last_write: None,
             connection: None,
-            credentials: Arc::new(companion_credentials::InMemoryCredentialStore::default()),
+            credentials,
         };
         Box::into_raw(Box::new(CompanionHandle {
             inner: Mutex::new(companion),
@@ -1381,6 +1544,65 @@ mod tests {
         }
         assert_eq!(ttl_from_code(-1), None);
         assert_eq!(ttl_from_code(99), None);
+    }
+
+    /// Two launches against one keychain: save on the first handle,
+    /// restore on a second, and the pages — ink, chips, titles — come
+    /// back through the same non-secret routes, while the file on disk
+    /// and every JSON output stay free of the sealed bytes.
+    #[test]
+    fn persist_round_trips_over_the_seam() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let path = std::env::temp_dir().join(format!(
+            "companion-persist-seam-{}.sealed",
+            std::process::id()
+        ));
+        let c_path = cstring(path.to_str().unwrap());
+        let secret = "hunter2-the-sealed-bytes";
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            let sheet = companion_sheet_new(first);
+            assert_ne!(sheet, 0);
+            let chip_json: serde_json::Value = serde_json::from_str(&take_json(
+                companion_sheet_seal_text(first, sheet, cstring(secret).as_ptr()),
+            ))
+            .unwrap();
+            let chip = chip_json["chip_id"].as_u64().unwrap();
+            let doc = cstring(&format!(
+                r##"[{{"ink": "# deploy notes\n"}}, {{"chip": {chip}}}]"##
+            ));
+            assert!(companion_sheet_sync_document(first, sheet, doc.as_ptr()));
+            assert!(companion_persist_save(first, c_path.as_ptr()));
+            companion_free(first);
+
+            let raw = std::fs::read(&path).unwrap();
+            assert!(
+                !raw.windows(secret.len()).any(|w| w == secret.as_bytes()),
+                "sealed bytes visible in the state file"
+            );
+
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(second, c_path.as_ptr()));
+            let sheets = take_json(companion_sheets_json(second));
+            assert!(sheets.contains("\"title\":\"deploy notes\""), "{sheets}");
+            let document = take_json(companion_sheet_document_json(second, sheet));
+            assert!(document.contains("\"ink\""));
+            assert!(document.contains(&format!("\"chip_id\":{chip}")));
+            assert!(
+                !document.contains(secret),
+                "sealed bytes leaked into the replayed document"
+            );
+            // The restored chip still copies out core-side.
+            assert!(companion_chip_copy_out(second, chip));
+            companion_free(second);
+
+            // A handle over a different keychain cannot open the file.
+            let stranger = handle();
+            assert!(!companion_persist_restore(stranger, c_path.as_ptr()));
+            companion_free(stranger);
+        }
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pages persist across relaunch, sealed at rest** — quit is the one
+  moment state touches disk: `applicationShouldTerminate` asks the core
+  to snapshot the whole store (live pages, chips, the ledger, clocks)
+  into an exact-size zeroizing buffer (`companion-core::persist`,
+  format `OTSSNAP1`), seal it with ChaCha20-Poly1305 under a 32-byte
+  key resting in the Keychain (`state-key`, same service as the API
+  token), and write only ciphertext to
+  `Application Support/CompanionApp/state.sealed` (0600, atomic
+  temp-file rename). The window's first reveal is the mirror — not
+  launch, so starting at login never raises a Keychain prompt for a
+  window nobody asked to see: decrypt, restore, then drain the
+  wall-clock time the app was closed — countdowns keep ticking while
+  away, holds absorb time-away first, and pages that didn't survive
+  the gap expire into the ledger before the window opens. A session
+  whose window never showed never saves, so it cannot overwrite
+  yesterday's file with an empty store. The file is useless without
+  the Keychain item and vice versa;
+  deleting either forgets everything. Tampering anywhere in the file
+  (or a bare bit flip) fails authentication and reads as a fresh
+  start. New seam: `companion_persist_save` / `companion_persist_restore`
+  / `companion_sheet_document_json` (the last replays a restored
+  page's ink and chip faces so the editor rebuilds pixel-identical —
+  sealed bytes still never cross into Swift).
+
+- **The shell packages as a real .app bundle** — `scripts/build-app.sh`
+  assembles `dist/CompanionApp.app` (bundle id
+  `com.onetimesecret.companion`, reserved in docs/spec/07) from the
+  Swift build, stamps the bundle version from `crates/ffi`'s
+  `CARGO_PKG_VERSION` (the same string the About panel shows), and
+  ad-hoc signs it (`CODESIGN_IDENTITY` overrides). A bare `swift run`
+  binary has no `CFBundleIdentifier`, so TCC grants and per-app
+  screen-capture pickers cannot address it; the bundle makes the app a
+  citizen of the permission system. `LSUIElement` in the checked-in
+  `shell/Info.plist` declares the accessory nature at the bundle level.
+  CI assembles the bundle in the shell lane so the packaging cannot rot.
+
+- **ADR-0004 accepted: Keychain prompt timing** — the ACL prompt may
+  appear only when a secret is used (a promotion reading the token),
+  never for a presence check. `CredentialStore::exists` answers "is a
+  token stored?" via an attributes-only Keychain query that never
+  decrypts; `has_token` in the connection JSON now means stored, not
+  readable, so launch and Settings no longer greet the user with a
+  Keychain prompt. See docs/adr/0004-keychain-prompt-timing.md.
+- **Clear stored token** in Settings → Connection: removes the token
+  from the Keychain through the existing seam (empty token → delete),
+  behind an inline confirm — the destructive-act guard the rest of the
+  surface uses.
 - **The promotion flow** (issue #16, docs/spec/04) — the exit ramp, and
   the app's only network action. Two affordances: **↗** on a chip's
   hover actions and **↗ page** in the footer, both opening an inline,
@@ -47,6 +94,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Swift contract test covers config round-trip and offline refusals;
     CI never opens a socket, and the seam tests never write a real
     Keychain.
+
+### Changed
+
+- **The shell is CompanionApp now** — package, product, executable,
+  targets, source and test directories, and every doc reference;
+  renamed wholesale, no aliases kept. A companion app named
+  CompanionApp, in the proud naming tradition of *Scary Movie*.
+- **The menu-bar glyph is a template image now** — the maruhi drawn
+  monochrome (㊙ with the text-presentation selector) onto an
+  `isTemplate` image, so the system tints it like every other status
+  item: dark in light mode, light in dark mode, dimmed when inactive.
+  The colour emoji title never got any of that.
+- **The About panel earns its keep** — the colour ㊙️ at icon size
+  (colour is the point there; the menu bar keeps the template), the
+  app's name, and the core's version via `companion_version()`. A bare
+  SwiftPM executable has no Info.plist, so the standard panel had
+  nothing to say before.
+- **Tabs drag to reorder** — grab a page tab and slide it, spreadsheet
+  style; the ⌘-number map follows the visible order. The previous
+  item-provider drag never started inside a non-activating panel, so
+  the affordance is now a plain mouse drag with midpoint-based
+  reordering.
+- **⌘W closes what's showing** — the macOS convention: a page goes to
+  rest in the ledger; the ledger view steps aside.
+- **Transient notices dismiss themselves** — "the link is on the
+  clipboard" and friends clear after a few seconds instead of lingering
+  until the next action; a newer notice restarts the clock.
+
+### Fixed
+
+- **The window no longer hovers over fullscreen apps, pinned or not**
+  — `.canJoinAllSpaces` turned out to be the culprit: for an accessory
+  app it joins fullscreen Spaces too, and AppKit has no combination
+  that means "every desktop, but never fullscreen". The window now
+  lives on one Space and comes when called (`.moveToActiveSpace`):
+  summoning brings it to the desktop you're on, switching Spaces
+  leaves it where it was, and a fullscreen Space only ever sees it by
+  deliberate summon — menu-bar click or ⌥Space — never by drifting in.
+  The pin still decides only the altitude among ordinary windows:
+  pinned floats above them, unpinned is a normal window others can
+  cover.
+- **⌥-click on the menu-bar item reliably opens Settings** — the check
+  reads the live hardware modifier state instead of the delivered
+  event's flags, which the status bar can misreport (and which go stale
+  under an accessibility press).
+- **The blank strip above the header is gone** — the transparent
+  titlebar's safe-area inset was doubling the top bar; the hosting view
+  now ignores it.
+- **The ledger tab toggles** — click ◌ to visit the ledger, click it
+  again to return to the page; before, it only opened.
+- **A tab's hover ✕ no longer shifts the title** — the close button
+  keeps its space reserved and reveals by opacity, the browser-tab
+  convention, instead of inserting itself on hover.
+- **Esc no longer blinks the window** — handing the keyboard back used
+  to reorder the window out and front again (a non-activating panel
+  has no "resign key" verb), a round trip that showed as a visible
+  hide-and-reappear over a fullscreen Space. Key status now passes
+  through an invisible one-pixel relay panel that takes the keys and
+  immediately orders out — the window server returns the keyboard to
+  the active app while the window never leaves the screen.
+- **The sealed-state temp file can no longer be raced or redirected** —
+  saves used to write through a predictable `state.sealed.tmp` opened
+  create-and-truncate, which a crash leftover, a planted symlink, or a
+  second running instance could subvert. Each save now writes through
+  its own random-named temp file opened create-new (never following
+  what's already there), and cleans up after a failed rename as well
+  as a failed write.
+- **A state file that fails to restore is no longer overwritten at
+  quit** — a denied or missing Keychain key used to hand the session a
+  fresh page and, with it, the licence to save that empty store over
+  yesterday's file. The save licence is now withheld when an existing
+  file refuses to restore: the session still gets a working page, but
+  the old sealed state stays on disk for a later, luckier launch.
+- **A refused quit-save is no longer silent** — the one write of the
+  session used to discard its result, exiting cleanly with nothing
+  saved. The save now happens in `applicationShouldTerminate`, where a
+  refusal logs itself and asks — Quit Anyway or Cancel — before the
+  session's pages are lost.
 
 ## [0.1.0] - 2026-07-13
 

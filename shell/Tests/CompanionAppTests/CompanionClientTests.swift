@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import CompanionPanel
+@testable import CompanionApp
 
 /// These decode the core's non-secret JSON and check the rung mapping —
 /// no live core needed, so they run wherever the package builds.

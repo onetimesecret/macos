@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The bundle's identity sheet, consumed by scripts/build-app.sh — a bare
+  `swift run` never reads it (App.swift supplies name/icon/version to the
+  About panel by hand for exactly that reason).
+
+  Why a bundle at all: a bare executable has no CFBundleIdentifier, so
+  macOS cannot address it — TCC grants, screen-capture pickers, and
+  LaunchServices all key on the bundle id. Packaging is what makes the
+  app a citizen of the permission system.
+
+  CFBundleVersion / CFBundleShortVersionString hold a placeholder; the
+  build script stamps both from crates/ffi's CARGO_PKG_VERSION — the
+  same source companion_version() is baked from, so the About panel and
+  the bundle agree whenever the xcframework is fresh (build-core.sh).
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>CompanionApp</string>
+	<key>CFBundleExecutable</key>
+	<string>CompanionApp</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.onetimesecret.companion</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>CompanionApp</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.0.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© Onetime Secret</string>
+</dict>
+</plist>

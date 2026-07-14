@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import CompanionPanel
+@testable import CompanionApp
 
 /// The Rust↔Swift JSON contract, tested against the LIVE core — every
 /// assertion here decodes real `companion_*` output through the same

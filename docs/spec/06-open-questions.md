@@ -56,8 +56,9 @@ with a current leaning where one exists.
    restoring the text (undo never un-seals). Needs a felt test.
 6. **Dark appearance.** Still unexplored; the ember/hatching urgency
    cues need checking against dark materials.
-7. **The name.** "Airlock" collides with Airlock Digital. Shortlist and
-   trademark pass needed before any public artifact.
+7. **The name.** "Airlock" collided with Airlock Digital and was retired
+   in favour of the deliberately generic working title "CompanionApp".
+   Shortlist and trademark pass still needed before any public artifact.
 8. **Pause abuse.** Serial top-ups can hold a page alive indefinitely,
    one deliberate double-click at a time. Is a cumulative ceiling (say,
    7d of total held time) needed, or is requiring presence-per-24h

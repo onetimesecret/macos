@@ -65,14 +65,40 @@ shell/               the Swift/AppKit shell (ADR-0002) — links the core only
 docs/spec/           the governing spec   ·   docs/adr/  decisions
 ```
 
+## Running
+
+Use the .app (scripts/build-app.sh → dist/CompanionApp.app), especially when testing Keychain behavior and permission prompts.
+
+Reasons:
+
+
+- Keychain behavior is the thing under test. The state key and API token live in the Keychain, and ACLs key off the app's identity. The bundle carries com.onetimesecret.companion and a signature; a bare swift run binary has no CFBundleIdentifier, so prompts and grants behave differently (and less representatively) than what a real user would see. Since you specifically want to observe when the prompt fires (first reveal, not launch), test the bundle.
+- Permission-system citizenship. TCC grants and per-app pickers can't address a bundle-less binary — that's why build-app.sh exists.
+- The rebuild hazard. swift build SIGKILLs a live instance running from .build/ (in-place re-sign), and a SIGKILL skips applicationWillTerminate — meaning no state save, pages gone. Running from dist/ keeps the live instance decoupled from builds.
+
+swift run remains fine for quick UI iteration where none of that matters (layout, tab drag, notices). But for the persistence round trip, prompt timing, and the fullscreen/Spaces check: quit the running instance normally (so it saves state), run scripts/build-app.sh, and launch the fresh dist/CompanionApp.app.
+
+
+### Summoning
+
+⌥Space (Option-Space). It toggles: one press summons the window and gives it the keyboard (the page is ready to type into), a second press dismisses it. This is documented in docs/spec/04-interaction-model.md and implemented in WindowController.summon().
+
+Related: Esc hands the keyboard back to whatever app had it, leaving the window visible. And with the new Spaces behavior in the working tree, if the window is visible on a different Space, ⌥Space brings it to your current Space instead of dismissing it.
+
+### Force close
+
+Use scripts/quit-app.sh
+
+
 ## Naming note
 
-**Airlock** is a working title only: a small chamber between two
-environments that things pass through but never live in — the product in
-one image. It collides with at least one existing security vendor, so it
-will not survive to release without a trademark check (open question №8).
-The name appears nowhere in identifiers, so the eventual rename is a
-one-file change.
+**CompanionApp** is a deliberately generic working title. It replaced
+the earlier working title "Airlock" — a small chamber between two
+environments that things pass through but never live in, the product in
+one image — which collides with at least one existing security vendor
+(open question №8). The old name survives only in the design-history
+documents under `docs/Airlock Prototype/`. The final name still needs a
+shortlist and a trademark pass before any public artifact.
 
 ## License
 

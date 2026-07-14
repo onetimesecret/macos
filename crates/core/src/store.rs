@@ -88,17 +88,20 @@ impl std::fmt::Display for PayloadError {
 
 impl std::error::Error for PayloadError {}
 
-/// The memory-only sheet store. Everything in it — sheets, chips, and
-/// the ledger — dies with the process; exit is total amnesia, and that
-/// is the product, not a limitation.
+/// The in-memory sheet store. Everything in it — sheets, chips, and
+/// the ledger — dies with the process, with one deliberate exception:
+/// the shell may ask for the whole store as a plaintext snapshot at
+/// quit and hand one back at launch ([`crate::persist`]), and the seam
+/// above encrypts it before anything touches disk. Nothing here writes
+/// a byte on its own.
 pub struct SheetStore<C: Clock> {
-    clock: C,
-    sheets: Vec<Sheet>,
-    ledger: VecDeque<LedgerRecord>,
-    cap: usize,
-    default_rung: Ttl,
-    next_sheet_id: u64,
-    next_chip_id: u64,
+    pub(crate) clock: C,
+    pub(crate) sheets: Vec<Sheet>,
+    pub(crate) ledger: VecDeque<LedgerRecord>,
+    pub(crate) cap: usize,
+    pub(crate) default_rung: Ttl,
+    pub(crate) next_sheet_id: u64,
+    pub(crate) next_chip_id: u64,
 }
 
 impl<C: Clock> SheetStore<C> {

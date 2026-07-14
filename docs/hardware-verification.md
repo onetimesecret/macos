@@ -23,12 +23,13 @@ Two prior results stand and are not re-run here:
    `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
 2. `./scripts/build-core.sh` → `bindings/CompanionCore.xcframework`
    (no `--dev-scaffolding` needed; rev C has no dev-seed path).
-3. `cd shell && swift build && swift test && swift run CompanionPanel`
+3. `cd shell && swift build && swift test && swift run CompanionApp`
 4. The window summons with **⌥Space** or from the menu-bar item.
 
 ## §0 — The prototype walk
 
-Open `docs/Airlock Prototype.dc.html` in a browser beside the app. The
+Open `docs/Airlock Prototype/Airlock Prototype.dc.html` in a browser
+beside the app. The
 prototype is the script; the app is under test. Walk every gesture in
 both and note any divergence in feel, not just function:
 

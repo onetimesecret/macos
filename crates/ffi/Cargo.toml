@@ -29,6 +29,9 @@ companion-credentials = { path = "../credentials" }
 companion-pasteboard = { path = "../pasteboard" }
 companion-transport = { path = "../transport" }
 ots-client = { path = "../ots-client" }
+# State-file encryption (ChaCha20-Poly1305, src/persist.rs). Already in
+# the tree via companion-transport → ureq → rustls: no new supply chain.
+ring = "0.17"
 serde_json = { workspace = true }
 # Named only to spell the `Pasteboard::write` signature the `Board`
 # backend delegates to; the bytes stay zeroizing end to end.

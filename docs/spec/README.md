@@ -4,7 +4,7 @@
 # macOS Companion — Design Spec
 
 An open-source, Rust-based macOS desktop companion to Onetime Secret.
-Working title: **Airlock** (see naming note below).
+Working title: **CompanionApp** (see naming note below).
 
 This is a *design* spec, produced ahead of implementation. Milestone 1
 restated the problem space and mapped the opportunities neighbouring
@@ -54,15 +54,18 @@ The interaction model's revisions live as rendered documents in
 
 ## Naming note
 
-**Airlock** is a working title only: a small chamber between two
-environments that things pass through but never live in — which is the
-product in one image. It collides with at least one existing security
-vendor (Airlock Digital), so it will not survive to release without a
-trademark check. Alternatives considered: Layover, Vestibule, Foyer,
-Waypoint, Holdover. The name matters less than the metaphor; every
-candidate is a word for *a place you pass through*. (Rev B retired the
-earlier "SleeperCell" name for staged items along with the cell model
-itself; the units are now sheets and sealed chips.)
+**CompanionApp** is a deliberately generic working title. It replaced
+the earlier working title **Airlock** — a small chamber between two
+environments that things pass through but never live in, which is the
+product in one image — because that name collides with at least one
+existing security vendor (Airlock Digital) and would not survive to
+release without a trademark check. The old name remains only in the
+design-history documents under [`docs/Airlock Prototype/`](../Airlock%20Prototype/).
+Alternatives considered: Layover, Vestibule, Foyer, Waypoint, Holdover.
+The name matters less than the metaphor; every candidate is a word for
+*a place you pass through*. (Rev B retired the earlier "SleeperCell"
+name for staged items along with the cell model itself; the units are
+now sheets and sealed chips.)
 
 ## Relationship to the web application
 

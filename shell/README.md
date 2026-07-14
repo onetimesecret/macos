@@ -13,8 +13,27 @@ measurements are preserved in the ADR.
 ./scripts/build-core.sh   # cargo → universal libcompanion_ffi.a → bindings/CompanionCore.xcframework
 cd shell
 swift build && swift test
-swift run CompanionPanel
+swift run CompanionApp
 ```
+
+`swift run` is the edit-compile loop, but the bare binary has no
+`CFBundleIdentifier`, so macOS can't address it — TCC grants don't
+stick, and per-app screen-capture pickers can't list it. When the app
+needs to be a citizen of the permission system, build the bundle:
+
+```sh
+./scripts/build-app.sh    # → dist/CompanionApp.app (ad-hoc signed; --debug for a debug build)
+open dist/CompanionApp.app
+```
+
+The bundle id is `com.onetimesecret.companion` (reserved in
+docs/spec/07); the version is stamped from `crates/ffi`'s
+`CARGO_PKG_VERSION`, the source the About panel's string is baked from
+(rebuild the core to keep them in step). Ad-hoc signing changes the
+code identity on every rebuild — TCC grants reset and the Keychain
+re-confirms access to stored items (the API token, the state key); set
+`CODESIGN_IDENTITY` to a real certificate for an identity that
+persists.
 
 The rev C surfaces make dev scaffolding unnecessary — type a line and
 ⌘↩ seals it; `--dev-scaffolding` builds of the core still exist for the

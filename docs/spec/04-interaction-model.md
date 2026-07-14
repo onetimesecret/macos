@@ -36,7 +36,7 @@ Excel-anchored, each tab carrying its own gauge. A permanent dashed tab at
 the strip's right end is the ledger.
 
 ```
-┌ Airlock ······································ 8h ✈ ┐
+┌ CompanionApp ································· 8h ✈ ┐
 │                                                     │
 │  ### deploy friday                  ← styled, markup│
 │  in order —                           kept visible  │

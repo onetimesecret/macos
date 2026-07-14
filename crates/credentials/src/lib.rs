@@ -51,6 +51,15 @@ pub trait CredentialStore: Send + Sync {
     /// Delete the secret for `account`. Deleting a missing item is not
     /// an error.
     fn delete(&self, account: &str) -> Result<(), CredentialError>;
+    /// Whether a credential is stored for `account`, decided **without
+    /// reading the secret**. On macOS this is an attributes-only
+    /// Keychain query, so it never provokes the ACL confirmation prompt
+    /// that [`load`](Self::load) can. The distinction is deliberate:
+    /// this returns `true` for an item that is present but that the
+    /// process is not (yet) authorized to decrypt — the case where
+    /// `load(...).is_ok()` would return `false`. It answers "is a token
+    /// stored?", not "can we read it right now?".
+    fn exists(&self, account: &str) -> Result<bool, CredentialError>;
 }
 
 /// The platform default: the macOS Keychain where available, the
@@ -95,6 +104,11 @@ impl CredentialStore for InMemoryCredentialStore {
         let mut map = self.inner.lock().map_err(|_| poisoned())?;
         map.remove(account);
         Ok(())
+    }
+
+    fn exists(&self, account: &str) -> Result<bool, CredentialError> {
+        let map = self.inner.lock().map_err(|_| poisoned())?;
+        Ok(map.contains_key(account))
     }
 }
 
@@ -148,6 +162,26 @@ impl CredentialStore for KeychainStore {
             Err(e) => Err(CredentialError::Backend(e.to_string())),
         }
     }
+
+    fn exists(&self, account: &str) -> Result<bool, CredentialError> {
+        use security_framework::item::{ItemClass, ItemSearchOptions};
+
+        // Attributes only — no load_data(): the query matches the item
+        // but never asks the Keychain to decrypt it, so it stays below
+        // the ACL prompt. A hit means the token is stored; the read that
+        // actually needs it (promotion) is where the prompt belongs.
+        match ItemSearchOptions::new()
+            .class(ItemClass::generic_password())
+            .service(&self.service)
+            .account(account)
+            .load_attributes(true)
+            .search()
+        {
+            Ok(_) => Ok(true),
+            Err(e) if e.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(false),
+            Err(e) => Err(CredentialError::Backend(e.to_string())),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -158,13 +192,17 @@ mod tests {
     fn in_memory_round_trips_a_token() {
         let store = InMemoryCredentialStore::default();
         assert!(matches!(store.load("acct"), Err(CredentialError::NotFound)));
+        assert!(!store.exists("acct").unwrap());
 
         store.store("acct", b"api-token-value").unwrap();
         let loaded = store.load("acct").unwrap();
         assert_eq!(&*loaded, b"api-token-value");
+        // exists() sees the item without reading it back.
+        assert!(store.exists("acct").unwrap());
 
         store.delete("acct").unwrap();
         assert!(matches!(store.load("acct"), Err(CredentialError::NotFound)));
+        assert!(!store.exists("acct").unwrap());
         // Deleting an absent account is not an error.
         store.delete("acct").unwrap();
     }

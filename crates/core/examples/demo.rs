@@ -52,7 +52,7 @@ fn main() {
         let title = current
             .and_then(|id| store.sheet(id))
             .map_or_else(|| "no page".to_string(), Sheet::title);
-        print!("airlock:{title}> ");
+        print!("companionapp:{title}> ");
         std::io::stdout().flush().ok();
         let Some(Ok(line)) = stdin.lock().lines().next() else {
             break;

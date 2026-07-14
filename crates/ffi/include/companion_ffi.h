@@ -152,6 +152,17 @@ char *companion_sheet_seal_from_drag(CompanionHandle *handle, uint64_t sheet);
 bool companion_sheet_sync_document(CompanionHandle *handle, uint64_t sheet,
                                    const char *json);
 
+/*
+ * A live page's document, replayed for a shell rebuilding its editor
+ * after companion_persist_restore(): a JSON array of runs in document
+ * order — {"ink": "text"} for visible ink, {"chip": {…}} where a chip
+ * sits, the chip object carrying the same non-secret face the seal
+ * routes return (chip_id, kind, excerpt, size_label, promoted). Ink
+ * renders anyway; a chip crosses as its face, never its bytes. Free
+ * with companion_string_free(). Null for an unknown page.
+ */
+char *companion_sheet_document_json(CompanionHandle *handle, uint64_t sheet);
+
 /* ------------------------------------------------------------------ */
 /* Chips                                                               */
 /* ------------------------------------------------------------------ */
@@ -216,9 +227,9 @@ bool companion_sheet_pause_press(CompanionHandle *handle, uint64_t id);
 /* ------------------------------------------------------------------ */
 
 /*
- * The ledger (cmd-0): dead pages, newest first — session-bound,
- * read-only, capped at the newest dozen. Free with
- * companion_string_free(). Fields per record:
+ * The ledger (cmd-0): dead pages, newest first — read-only, capped at
+ * the newest dozen, carried across relaunch only inside the sealed
+ * state file. Free with companion_string_free(). Fields per record:
  *   cause ("expired"|"closed"), title, age_ms (since death),
  *   segments: array of {"ink": "…"} | {"tombstone": "<excerpt>"} in
  *   document order. Sealed bytes were zeroized at death; a tombstone
@@ -226,6 +237,30 @@ bool companion_sheet_pause_press(CompanionHandle *handle, uint64_t id);
  *   shell-side, labelled "zeroized").
  */
 char *companion_ledger_json(CompanionHandle *handle);
+
+/* ------------------------------------------------------------------ */
+/* Persistence: the sealed state file                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Save the whole store — sheets, sealed chips, clocks, the ledger — to
+ * `path`, encrypted (ChaCha20-Poly1305) under a 32-byte key resting in
+ * the OS credential store ("state-key" account, minted on first save).
+ * Only ciphertext touches disk; the write is atomic and owner-only.
+ * Call at quit — nothing saves on its own. Returns success.
+ */
+bool companion_persist_save(CompanionHandle *handle, const char *path);
+
+/*
+ * Restore from a state file companion_persist_save() wrote: decrypt,
+ * replace the store's sheets and ledger, and drain every countdown by
+ * the wall time that passed while the app was closed; pages that came
+ * due while away expire into the ledger immediately. Call at startup,
+ * before creating the first page. Returns whether a state was restored
+ * — false covers "no file yet" (a fresh start, not an error) as well
+ * as a missing key, failed authentication, or a damaged snapshot.
+ */
+bool companion_persist_restore(CompanionHandle *handle, const char *path);
 
 /* ------------------------------------------------------------------ */
 /* Promotion: the exit ramp, the app's only network action             */
@@ -248,7 +283,10 @@ bool companion_connection_configure(CompanionHandle *handle, const char *json);
 /*
  * Connection state for Settings, never the token itself. Free with
  * companion_string_free(). Fields: configured, server_url,
- * share_domain, extid, has_token.
+ * share_domain, extid, has_token. has_token is an existence check —
+ * decided without reading the secret, so rendering Settings at launch
+ * never triggers the Keychain prompt; that is reserved for the read a
+ * promotion needs.
  */
 char *companion_connection_json(CompanionHandle *handle);
 

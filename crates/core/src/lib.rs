@@ -4,12 +4,14 @@
 //!
 //! Design contract (docs/spec/01–05):
 //!
-//! - **Memory-only.** Sheets live in RAM; process exit is total amnesia
-//!   — including the [`ledger`], which is session-bound by design.
+//! - **Memory-first, with one deliberate exit.** Sheets live in RAM.
 //!   Sealed bytes live in a [`SecretBuffer`]: page-locked against swap
 //!   while alive (images excluded, documented in doc 05), zeroized at
 //!   death, impossible to `Clone`, `Debug`, or serialize.
-//!   [`harden_process`] disables core dumps.
+//!   [`harden_process`] disables core dumps. The one exit is
+//!   [`persist`]: at the shell's explicit request the whole store
+//!   crosses to disk *encrypted* at quit and comes back at launch —
+//!   never in plaintext, never on its own (see the module docs).
 //! - **Masking is by gesture, never by content.** The core never
 //!   parses, classifies, or scores what arrives — rev C deleted
 //!   detection outright. A chip's excerpt is a fixed-budget substring;
@@ -27,6 +29,7 @@
 pub mod clock;
 pub mod harden;
 pub mod ledger;
+pub mod persist;
 pub mod secret;
 pub mod sheet;
 pub mod store;
@@ -35,6 +38,7 @@ pub mod ttl;
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use harden::harden_process;
 pub use ledger::{Cause, LedgerRecord, LedgerSegment};
+pub use persist::RestoreError;
 pub use secret::SecretBuffer;
 pub use sheet::{ChipId, ChipMeta, Promotion, SealedChip, Segment, Sheet, SheetId};
 pub use store::{DEFAULT_SHEET_CAP, LEDGER_CAP, PayloadError, Refusal, SheetStore};

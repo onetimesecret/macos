@@ -9,8 +9,11 @@
 //!   a chip survives solely as its (never-secret) excerpt, struck
 //!   through as "zeroized". Nothing sealed survives, ever, anywhere.
 //! - **Read-only.** Records, not pages — no editing, no resurrection.
-//! - **Session-bound.** In memory, dies with the store. Capacity is
-//!   bounded (newest dozen); older records fall off silently.
+//! - **Store-bound.** In memory, dies with the store; it survives a
+//!   relaunch only inside the store's encrypted snapshot
+//!   ([`crate::persist`]), where a tombstone still carries nothing but
+//!   its excerpt. Capacity is bounded (newest dozen); older records
+//!   fall off silently.
 
 use std::time::Instant;
 

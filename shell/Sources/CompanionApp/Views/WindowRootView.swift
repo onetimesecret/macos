@@ -60,10 +60,22 @@ struct WindowRootView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Circle().fill(Color.ember).frame(width: 6, height: 6)
-            Text(model.showingLedger ? "the ledger" : "Airlock")
+            Text(model.showingLedger ? "the ledger" : "CompanionApp")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
             Spacer()
+            #if DEBUG
+            // Standing indicator while the debug capture opt-out is on:
+            // the window is screenshot-able and screen-share-visible,
+            // and stderr alone is invisible outside a terminal.
+            if model.allowCapture {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.ember)
+                    .help("Debug: capture exclusion is OFF — this window shows up in screenshots and screen sharing")
+                    .accessibilityLabel(Text("Screenshots allowed (debug)"))
+            }
+            #endif
             if let sheet = model.selectedSheet, !model.showingLedger {
                 countdownButton(sheet)
             }
@@ -155,6 +167,15 @@ struct WindowRootView: View {
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
             Button("") { model.step(1) }
                 .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+            // ⌘W: close the page — every macOS app's close verb. The
+            // ledger view, when showing, closes back to the page.
+            Button("") { model.closeCurrent() }
+                .keyboardShortcut("w", modifiers: .command)
+            // ⌘,: Settings — the macOS convention, honoured while the
+            // window holds the keys (an accessory app has no app menu
+            // to carry it globally).
+            Button("") { model.onOpenSettings?() }
+                .keyboardShortcut(",", modifiers: .command)
             // Esc outside the editor (the ledger, chrome): hand back.
             Button("") { model.escape() }
                 .keyboardShortcut(.cancelAction)
