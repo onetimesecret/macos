@@ -105,14 +105,24 @@ pub(crate) fn open_state(key: &[u8], file: &[u8]) -> Option<Zeroizing<Vec<u8>>> 
 }
 
 /// Write `bytes` to `path` atomically (temp file, fsync, rename) with
-/// owner-only permissions. The content is ciphertext, but a state file
-/// readable by other accounts would still be a needless gift.
+/// owner-only permissions. The temp file carries a fresh random suffix
+/// and is opened create-new, so concurrent savers never truncate each
+/// other's half-written file and anything planted at the name — a
+/// crash leftover, a symlink — is an open error, never followed. Two
+/// writers still race on the final rename (last one wins the state
+/// file), but every write lands whole or not at all. The content is
+/// ciphertext, but a state file readable by other accounts would still
+/// be a needless gift.
 pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> bool {
+    let mut suffix = [0u8; 8];
+    if SystemRandom::new().fill(&mut suffix).is_err() {
+        return false;
+    }
     let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".tmp");
+    tmp.push(format!(".{:016x}.tmp", u64::from_be_bytes(suffix)));
     let tmp = Path::new(&tmp);
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -123,11 +133,11 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> bool {
     };
     let written = file.write_all(bytes).is_ok() && file.sync_all().is_ok();
     drop(file);
-    if !written {
+    if !written || std::fs::rename(tmp, path).is_err() {
         let _ = std::fs::remove_file(tmp);
         return false;
     }
-    std::fs::rename(tmp, path).is_ok()
+    true
 }
 
 fn aead_key(key: &[u8]) -> Option<LessSafeKey> {
@@ -208,5 +218,108 @@ mod tests {
         let a = seal_state(&key, b"same payload").unwrap();
         let b = seal_state(&key, b"same payload").unwrap();
         assert_ne!(a, b, "two saves of the same state must not repeat a nonce");
+    }
+
+    /// A fresh directory under the system temp dir, removed by each
+    /// test on success; a failure leaves it behind for inspection.
+    fn scratch_dir() -> std::path::PathBuf {
+        let mut tag = [0u8; 8];
+        SystemRandom::new().fill(&mut tag).unwrap();
+        let dir = std::env::temp_dir().join(format!(
+            "companion-persist-test-{:016x}",
+            u64::from_be_bytes(tag)
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        dir
+    }
+
+    /// Everything in `dir` other than the state file itself — after any
+    /// write, success or not, this must be empty.
+    fn temp_litter(dir: &Path) -> Vec<std::ffi::OsString> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name != "state.sealed")
+            .collect()
+    }
+
+    #[test]
+    fn write_private_replaces_whole_and_cleans_up() {
+        let dir = scratch_dir();
+        let target = dir.join("state.sealed");
+        assert!(write_private(&target, b"first save"));
+        assert_eq!(std::fs::read(&target).unwrap(), b"first save");
+        assert!(write_private(
+            &target,
+            b"second save, longer than the first"
+        ));
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            b"second save, longer than the first"
+        );
+        assert_eq!(temp_litter(&dir), Vec::<std::ffi::OsString>::new());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_state_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch_dir();
+        let target = dir.join("state.sealed");
+        assert!(write_private(&target, b"sealed bytes"));
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "the rename must keep the temp's mode");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_planted_symlink_beside_the_target_is_never_followed() {
+        let dir = scratch_dir();
+        let target = dir.join("state.sealed");
+        let victim = dir.join("victim");
+        std::fs::write(&victim, b"untouched").unwrap();
+        // The writer once used the predictable sibling name
+        // `<path>.tmp`; a symlink planted there must stay a dead end,
+        // not a redirect for the write.
+        std::os::unix::fs::symlink(&victim, dir.join("state.sealed.tmp")).unwrap();
+        assert!(write_private(&target, b"sealed bytes"));
+        assert_eq!(std::fs::read(&target).unwrap(), b"sealed bytes");
+        assert_eq!(
+            std::fs::read(&victim).unwrap(),
+            b"untouched",
+            "the write escaped through the planted symlink"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn concurrent_saves_never_land_a_torn_file() {
+        let dir = scratch_dir();
+        let target = dir.join("state.sealed");
+        // Payloads big enough that a shared temp path would show as a
+        // mixed or truncated file; the assertion never false-fails, it
+        // only catches corruption when the interleaving produces one.
+        let a = vec![0xAA_u8; 64 * 1024];
+        let b = vec![0xBB_u8; 64 * 1024];
+        std::thread::scope(|scope| {
+            let target = &target;
+            for payload in [&a, &b] {
+                scope.spawn(move || {
+                    for _ in 0..16 {
+                        assert!(write_private(target, payload));
+                    }
+                });
+            }
+        });
+        let last = std::fs::read(&target).unwrap();
+        assert!(
+            last == a || last == b,
+            "the state file holds a torn write of {} bytes",
+            last.len()
+        );
+        assert_eq!(temp_litter(&dir), Vec::<std::ffi::OsString>::new());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

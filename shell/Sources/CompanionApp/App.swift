@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import os
 
 /// The app's resident presence is the menu-bar item; a click reveals
 /// the window (docs/spec/03 principle 2) and ⌥Space summons it with the
@@ -75,8 +76,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Quit is the one moment state touches disk: seal everything into
     /// the state file so the next launch opens where this one left off.
-    func applicationWillTerminate(_ notification: Notification) {
-        model.saveState()
+    /// Intercepted here rather than in `applicationWillTerminate` so a
+    /// refused save — Keychain denied, disk full, a failed rename —
+    /// still reaches the user while there is time to choose. One alert,
+    /// two honest exits: quit anyway and accept the loss, or stay and
+    /// try again later. Never a retry loop; cancelling simply returns
+    /// to the app.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !model.saveState() else { return .terminateNow }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "This session could not be saved"
+        alert.informativeText =
+            "The sealed state file was not written, so this session's pages "
+            + "will not survive the quit. The previous file, if any, is untouched."
+        alert.addButton(withTitle: "Quit Anyway")
+        alert.addButton(withTitle: "Cancel")
+        // An accessory app's alert would otherwise appear behind
+        // whatever is frontmost.
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
     /// The ㊙ glyph rendered monochrome (U+FE0E forces text
@@ -331,26 +350,58 @@ final class WindowModel: ObservableObject {
         connection = client.connectionInfo()
     }
 
-    /// Whether the sealed state has been loaded this session — set by
-    /// the first reveal, and the licence `saveState` requires.
+    /// Whether the first reveal has run — restore is attempted once.
     private var stateLoaded = false
+
+    /// The licence `saveState` requires, granted separately from
+    /// `stateLoaded`: a restore that failed over an *existing* file —
+    /// Keychain key denied or missing, damaged snapshot — leaves the
+    /// session usable but unlicensed, so quitting cannot overwrite
+    /// yesterday's sealed file with this session's consolation page.
+    private var saveLicence = false
+
+    /// The persistence trail in the unified log: restore refusals and
+    /// quit-save failures, never content — the file is ciphertext and
+    /// these lines carry only what happened to it.
+    private static let logger = Logger(
+        subsystem: "com.onetimesecret.companion", category: "persistence"
+    )
 
     /// The first reveal loads yesterday's pages: the core decrypts the
     /// state file (the key comes from the Keychain — a prompt, if the
     /// ACL raises one, answers the user's own summon, per ADR-0004's
     /// spirit of prompting only on use) and drains the wall-clock time
     /// the app was closed, expiring what didn't survive it. A missing
-    /// or unreadable file is a fresh start; either way a page awaits —
-    /// the window never opens onto nothing.
+    /// file is a fresh start; an existing file that refuses to open
+    /// still gets a working page but forfeits the quit-save licence,
+    /// keeping the refusal recoverable. Either way a page awaits — the
+    /// window never opens onto nothing.
     func loadStateIfNeeded() {
         guard !stateLoaded else { return }
         stateLoaded = true
-        _ = client.persistRestore(from: Self.stateFileURL.path)
+        let path = Self.stateFileURL.path
+        let fileExists = FileManager.default.fileExists(atPath: path)
+        let restored = client.persistRestore(from: path)
+        saveLicence = Self.grantsSaveLicence(fileExists: fileExists, restored: restored)
+        if !saveLicence {
+            Self.logger.error(
+                "restore failed over an existing state file; withholding the quit-save licence"
+            )
+        }
         if client.sheets().isEmpty {
             _ = client.newSheet()
         }
         refresh()
         selection = sheets.first?.id
+    }
+
+    /// The licence's truth table. The core folds "no file yet" and
+    /// "refused" into one false; the file's presence on disk is what
+    /// tells them apart. A restore that succeeded keeps the licence, a
+    /// missing file grants it fresh (nothing exists to protect), and
+    /// only an existing file that would not open withholds it.
+    nonisolated static func grantsSaveLicence(fileExists: Bool, restored: Bool) -> Bool {
+        restored || !fileExists
     }
 
     private static let defaultServer = "https://eu.onetimesecret.com"
@@ -370,14 +421,25 @@ final class WindowModel: ObservableObject {
     /// chips, the ledger — into the state file in one core call.
     /// Nothing touches disk while the app runs. A session whose window
     /// never showed never loaded, and must not overwrite yesterday's
-    /// file with its empty store.
-    func saveState() {
-        guard stateLoaded else { return }
+    /// file with its empty store; nor may one whose restore was
+    /// refused (`saveLicence`).
+    ///
+    /// Returns true when the file is settled — written, or deliberately
+    /// left alone. False means the save was attempted and refused: this
+    /// session's pages will not survive the quit, and the caller should
+    /// say so before the process goes.
+    @discardableResult
+    func saveState() -> Bool {
+        guard stateLoaded, saveLicence else { return true }
         let url = Self.stateFileURL
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true
         )
-        _ = client.persistSave(to: url.path)
+        let saved = client.persistSave(to: url.path)
+        if !saved {
+            Self.logger.error("quit-save refused; the sealed state file was not rewritten")
+        }
+        return saved
     }
 
     deinit {
