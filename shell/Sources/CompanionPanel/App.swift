@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // dark in light mode, light in dark mode, dimmed when inactive.
         // VoiceOver reads the explicit label, not the glyph's own name.
         item.button?.image = Self.maruhiTemplateImage()
-        item.button?.setAccessibilityLabel("Onetime Secret Companion")
+        item.button?.setAccessibilityLabel("CompanionApp")
         item.button?.target = self
         item.button?.action = #selector(statusItemClicked)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -104,10 +104,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if event?.type == .rightMouseUp {
             let menu = NSMenu()
             menu.addItem(
-                withTitle: "About Onetime Secret Companion",
-                action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+                withTitle: "About CompanionApp",
+                action: #selector(showAbout),
                 keyEquivalent: ""
-            ).target = NSApp
+            ).target = self
             menu.addItem(
                 withTitle: "Settings…",
                 action: #selector(openSettings),
@@ -135,6 +135,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openSettings() {
         settings.show()
+    }
+
+    /// The standard About panel, dressed up: the colour ㊙️ at icon
+    /// size (the menu bar gets the monochrome template; here colour is
+    /// the point), the cheeky name, and the core's version — there is
+    /// no bundle Info.plist to supply any of them.
+    @objc func showAbout() {
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: "CompanionApp",
+            .applicationIcon: Self.maruhiAboutIcon(),
+            .applicationVersion: CompanionClient.version,
+        ])
+        // An accessory app's panel would otherwise appear behind
+        // whatever is frontmost.
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// The ㊙️ emoji (U+FE0F keeps the colour presentation) rendered at
+    /// About-panel icon size.
+    private static func maruhiAboutIcon() -> NSImage {
+        let side: CGFloat = 256
+        return NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            let glyph = "㊙\u{FE0F}" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 200)
+            ]
+            let size = glyph.size(withAttributes: attributes)
+            glyph.draw(
+                at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
+                withAttributes: attributes
+            )
+            return true
+        }
     }
 }
 

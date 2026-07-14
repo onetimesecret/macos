@@ -59,6 +59,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     CI never opens a socket, and the seam tests never write a real
     Keychain.
 
+### Changed
+
+- **The menu-bar glyph is a template image now** — the maruhi drawn
+  monochrome (㊙ with the text-presentation selector) onto an
+  `isTemplate` image, so the system tints it like every other status
+  item: dark in light mode, light in dark mode, dimmed when inactive.
+  The colour emoji title never got any of that.
+- **The About panel earns its keep** — the colour ㊙️ at icon size
+  (colour is the point there; the menu bar keeps the template), the
+  app's name, and the core's version via `companion_version()`. A bare
+  SwiftPM executable has no Info.plist, so the standard panel had
+  nothing to say before.
+
 ## [0.1.0] - 2026-07-13
 
 The first tagged milestone. The rev C surface ran its first live
