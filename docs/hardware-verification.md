@@ -104,13 +104,17 @@ get decided from felt experience, not a spreadsheet. Current code values:
 
 The **capture-from-clipboard** path is lawful and real: the core reads
 `NSPasteboard.general` itself, no plaintext through Swift (the boundary
-law, docs/spec/05 and ADR-0001). The **drag** path has an unresolved
-wrinkle worth a decision before it ships: dragged text arrives in Swift's
-drop handler (`NSDraggingInfo`) — not on the general clipboard — so the
-current spike routes it via the dev-seed → the general clipboard, which
-(a) means Swift briefly holds the dropped text and (b) clobbers the user's
-clipboard on every drop. The lawful production design is the core reading
-`NSDraggingInfo.draggingPasteboard` directly (Swift hands the core a
-reference/trigger, not the bytes). Left as a documented hardware-session
-decision rather than guessed, since it can't be verified without a live
-drag.
+law, docs/spec/05 and ADR-0001). The **drag** path had an unresolved
+wrinkle: dragged text arrives in Swift's drop handler (`NSDraggingInfo`)
+— not on the general clipboard — so early routes either held the bytes
+in Swift briefly or clobbered the user's clipboard through the dev-seed.
+
+**Decided and implemented (issue #12, the rev C window):** the core
+reads the **drag pasteboard** itself. `NSDraggingInfo.draggingPasteboard`
+is `NSPasteboard(name: .drag)` — a named board the core can bind exactly
+as it binds `.general` — so `companion_sheet_seal_from_drag` reads it
+core-side while the drop handler is still inside the drag session, and
+the shell hands over only the target page id. No dropped byte transits
+Swift; the general clipboard is untouched. What remains for the hardware
+session is *verification with a live drag* (a real cross-app text drag,
+plus an image drag), not a design decision.

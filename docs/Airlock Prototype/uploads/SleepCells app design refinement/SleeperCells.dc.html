@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<style>
+ body{margin:0;background:#efece6;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;--ember:#d45a2a;--blur:24px}
+ .dv-turn{padding:44px 48px 40px}
+ .dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 6px}
+ .dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}
+ .dv-tname{font:600 13px/1.2 system-ui,sans-serif;color:#1a1a1a}
+ .dv-sub{margin:0 0 28px;font:13px/1.55 system-ui;color:rgba(0,0,0,.52);max-width:780px}
+ .dv-opts{display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start}
+ .dv-opt{flex:none;display:flex;flex-direction:column;gap:11px;width:340px;scroll-margin-top:16px}
+ .dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}
+ .dv-opt:target .dv-oid{background:var(--ember);color:#fff}
+ .dv-olabel{display:flex;align-items:baseline;gap:8px;font:600 14px/1.3 system-ui;color:#1a1a1a}
+ .dv-desc{font:12px/1.5 system-ui;color:rgba(0,0,0,.55);margin:-3px 0 2px}
+ .dv-note{font:10.5px/1.5 ui-monospace,Menlo,monospace;color:#a6421c;background:rgba(212,90,42,.07);border:1px solid rgba(212,90,42,.22);padding:7px 10px;border-radius:8px}
+ .dv-cap{font:10px/1.3 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.4);text-transform:uppercase;letter-spacing:.07em;margin:6px 0 -3px}
+ .dv-next{margin:30px 0 0;font:12px/1.7 system-ui;color:rgba(0,0,0,.5)}
+ a{color:var(--ember);text-decoration:none} a:hover{color:#a6421c}
+</style>
+</helmet>
+<section class="dv-turn" id="t4" style="--ember: {{ember}}; --blur: {{blur}}">
+<div class="dv-thd"><a class="dv-tid" href="#t4">4</a><span class="dv-tname">Working prototype &middot; park &rsquo;n fly</span></div>
+<p class="dv-sub">The real interactions, testable. The bottom field is a normal auto-growing textarea &mdash; paste or type into it (it never spawns a cell on its own), press <b>⌘⏎</b> to park the contents as a cell and reset the field. Every cell is a live micro-notepad: click in and edit freely, it grows for multi-line, and when you empty it and click away it vanishes after a short grace (double-click blank space for a fresh empty cell). Secrets auto-mask &mdash; click into the row <i>or</i> the eye to reveal &amp; edit. Click the time to cycle how long a cell lives. Cells are ordered soonest-to-expire. Time runs fast here so you can watch them drain and go.</p>
+<div class="dv-opt" id="4a" style="width:auto">
+  <div class="dv-note">LIVE &middot; ⌘⏎ parks the field &middot; double-click blank space for a new cell &middot; empty + click away vanishes after a grace &middot; click the time to cycle lifespan &middot; click row/eye to reveal</div>
+  <div style="position:relative;width:380px;border-radius:16px;overflow:hidden;box-shadow:0 14px 44px rgba(40,26,14,.3);background:linear-gradient(155deg,#efe8db,#ded3bf)">
+    <div style="height:38px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid rgba(0,0,0,.06)">
+      <span style="width:11px;height:11px;border-radius:50%;background:#ec6a5e"></span>
+      <span style="width:11px;height:11px;border-radius:50%;background:#f4bf4f"></span>
+      <span style="width:11px;height:11px;border-radius:50%;background:#61c554"></span>
+      <span style="flex:1"></span>
+      <span style="width:6px;height:6px;border-radius:50%;background:var(--ember)"></span>
+      <span style="font:600 11px/1 ui-monospace,Menlo,monospace;color:rgba(38,32,26,.7)">Airlock</span>
+      <span style="flex:1"></span>
+      <span title="Keep above other windows" style="font:13px/1 ui-monospace;color:rgba(38,32,26,.5)">⤒</span>
+    </div>
+    <div style="--text:#2a2622;--dim:rgba(38,32,26,.56);--cell:rgba(255,255,255,.62);--cline:rgba(0,0,0,.07);--dash:rgba(0,0,0,.24);--field:rgba(255,255,255,.7);display:flex;flex-direction:column;height:480px">
+      <div onDoubleClick="{{onListDbl}}" title="double-click blank space for a new cell" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px">
+        <sc-for list="{{liveP}}" as="c" key="{{c.id}}" hint-placeholder-count="4">
+          <div style="position:relative;border-radius:11px;background:var(--cell);border:1px solid var(--cline);overflow:hidden">
+            <div style="{{c.fillH}}"></div>
+            <div style="position:relative;display:flex;align-items:flex-start;gap:8px;padding:9px 10px 9px 12px">
+              <sc-if value="{{c.showMasked}}" hint-placeholder-val="{{false}}">
+                <span title="looks like a secret — masked; click to reveal" style="width:6px;height:6px;border-radius:50%;background:var(--ember);flex:none;margin-top:6px"></span>
+              </sc-if>
+              <sc-if value="{{c.showMasked}}" hint-placeholder-val="{{false}}">
+                <textarea rows="1" value="{{c.text}}" ref="{{c.autoRef}}" spellCheck="{{false}}" onChange="{{c.onEditLive}}" onFocus="{{c.onFocusCell}}" onBlur="{{c.onBlurCell}}" style="flex:1;min-width:0;resize:none;overflow:hidden;border:none;background:transparent;outline:none;color:var(--text);font:500 12px/1.5 ui-monospace,Menlo,monospace;padding:0;margin:0;display:block;-webkit-text-security:disc" style-focus="-webkit-text-security: none"></textarea>
+              </sc-if>
+              <sc-if value="{{c.showPlain}}" hint-placeholder-val="{{true}}">
+                <textarea rows="1" value="{{c.text}}" ref="{{c.autoRef}}" autoFocus="{{c.autofocus}}" spellCheck="{{false}}" onChange="{{c.onEditLive}}" onFocus="{{c.onFocusCell}}" onBlur="{{c.onBlurCell}}" style="flex:1;min-width:0;resize:none;overflow:hidden;border:none;background:transparent;outline:none;color:var(--text);font:500 12px/1.5 ui-monospace,Menlo,monospace;padding:0;margin:0;display:block"></textarea>
+              </sc-if>
+              <div style="display:flex;align-items:center;gap:9px;flex:none;margin-top:2px">
+                <sc-if value="{{c.masked}}" hint-placeholder-val="{{false}}">
+                  <button onClick="{{c.onReveal}}" title="reveal / hide" style="border:none;background:transparent;cursor:pointer;color:var(--dim);padding:0;display:flex;align-items:center" style-hover="color: var(--ember)">
+                    <sc-if value="{{c.rev}}" hint-placeholder-val="{{false}}">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                    </sc-if>
+                    <sc-if value="{{c.showMasked}}" hint-placeholder-val="{{true}}">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    </sc-if>
+                  </button>
+                </sc-if>
+                <button onClick="{{c.onCycle}}" title="click to change how long this lives" style="border:none;background:transparent;cursor:pointer;color:var(--dim);font:600 10.5px/1 ui-monospace,Menlo,monospace;padding:3px 5px;border-radius:5px" style-hover="color: var(--ember); background: rgba(212,90,42,.1)">{{c.ttlTxt}}</button>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="padding:10px 12px;border-top:1px solid var(--cline);display:flex;flex-direction:column;gap:4px">
+        <textarea rows="1" placeholder="Paste or type here — ⌘⏎ to park it as a cell" onInput="{{onDropInput}}" onKeyDown="{{onDropKey}}" spellCheck="{{false}}" style="width:100%;box-sizing:border-box;min-height:38px;max-height:132px;overflow-y:auto;resize:none;border:1px dashed var(--dash);border-radius:9px;background:var(--field);color:var(--text);font:500 12px/1.55 ui-monospace,Menlo,monospace;padding:9px 12px;outline:none" style-focus="border-color: var(--ember); border-style: solid"></textarea>
+        <span style="font:500 9px/1.3 ui-monospace,Menlo,monospace;color:var(--dim);opacity:.7;padding:0 2px">⌘⏎ parks it · ⏎ adds a line</span>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="dv-next">Try next: &ldquo;auto-relock a revealed secret after a few seconds&rdquo; &middot; &ldquo;drag to reorder overrides the sort&rdquo; &middot; &ldquo;a menu-bar mini version&rdquo; &middot; &ldquo;real-time speeds &amp; an expiry animation&rdquo;</p>
+</section>
+<section class="dv-turn" id="t3" style="--ember: {{ember}}; --blur: {{blur}}">
+<div class="dv-thd"><a class="dv-tid" href="#t3">3</a><span class="dv-tname">2b, refined &middot; reveal-to-edit &amp; multi-line</span></div>
+<p class="dv-sub">Horizontal drain kept. Two fixes: (1) masking is only an at-rest veil for screen-shares &mdash; you can&rsquo;t edit blind, so opening a masked cell reveals its plaintext, and the small eye lets you peek without editing. (2) A cell holds any length: at rest it shows one truncated line plus a &ldquo;⏎ N lines&rdquo; hint; click to open a real multi-line editor. Same illusory behaviour throughout &mdash; paste to spawn, clear to vanish. Light + dark.</p>
+<div class="dv-opts">
+
+  <div class="dv-opt" id="3a">
+    <div class="dv-olabel"><a class="dv-oid" href="#3a">3a</a>Light</div>
+    <div class="dv-desc">Try the address cell (multi-line) and the token cell (masked &mdash; click the eye, or click the row to reveal &amp; edit).</div>
+    <div class="dv-note">LIVE &middot; click a cell to edit &middot; eye = peek &middot; clear to vanish</div>
+    <div style="position:relative;width:340px;height:470px;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.14);background:linear-gradient(155deg,#e9e2d5,#d8ceba 58%,#cabca4)">
+      <div style="position:absolute;top:0;left:0;right:0;height:26px;background:rgba(250,248,244,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;gap:13px;padding:0 12px;border-bottom:1px solid rgba(0,0,0,.06)">
+        <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.62)">Finder</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">File</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">Edit</span>
+        <span style="flex:1"></span>
+        <span style="width:16px;height:16px;border-radius:4px;display:grid;place-items:center;background:rgba(212,90,42,.16);color:var(--ember);font:700 9px/1 ui-monospace">◈</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.6)">9:41</span>
+      </div>
+      <div style="position:absolute;top:34px;right:12px;width:300px;--text:#2a2622;--dim:rgba(38,32,26,.56);--cell:rgba(255,255,255,.5);--cline:rgba(0,0,0,.06);--dash:rgba(0,0,0,.22);--field:rgba(255,255,255,.6);background:rgba(249,247,243,.72);border:1px solid rgba(0,0,0,.08);border-radius:14px;box-shadow:0 16px 46px rgba(40,26,14,.26);backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);padding:12px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:7px;padding:1px 1px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--ember);flex:none"></span>
+          <span style="font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--text)">Airlock</span>
+          <span style="flex:1"></span>
+          <span title="Keep panel above other windows" style="font:13px/1 ui-monospace;color:var(--dim);width:20px;height:20px;display:grid;place-items:center;border-radius:5px">⤒</span>
+        </div>
+        <textarea placeholder="⌁   paste here — a cell appears" onChange="{{onPasteD}}" style="width:100%;box-sizing:border-box;resize:none;height:44px;border:1px dashed var(--dash);border-radius:9px;background:transparent;color:var(--text);font:500 12px/1.5 ui-monospace,Menlo,monospace;padding:8px 10px;outline:none" style-focus="border-color: var(--ember)"></textarea>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:1px">
+          <sc-for list="{{liveD}}" as="c" hint-placeholder-count="4">
+            <div style="position:relative;border-radius:11px;background:var(--cell);border:1px solid var(--cline);overflow:hidden">
+              <div style="{{c.fillH}}"></div>
+              <sc-if value="{{c.reading}}" hint-placeholder-val="{{true}}">
+                <div onClick="{{c.onOpen}}" style="position:relative;display:flex;align-items:center;gap:8px;padding:11px 12px;cursor:text">
+                  <sc-if value="{{c.showMasked}}" hint-placeholder-val="{{false}}">
+                    <span style="width:6px;height:6px;border-radius:50%;background:var(--ember);flex:none"></span>
+                  </sc-if>
+                  <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);font:500 12px/1.4 ui-monospace,Menlo,monospace">{{c.displayText}}</span>
+                  <sc-if value="{{c.multiline}}" hint-placeholder-val="{{false}}">
+                    <span style="font:500 9px/1 ui-monospace,Menlo,monospace;color:var(--dim);flex:none;opacity:.75">{{c.moreTxt}}</span>
+                  </sc-if>
+                  <sc-if value="{{c.masked}}" hint-placeholder-val="{{false}}">
+                    <button onClick="{{c.onReveal}}" title="peek without editing" style="flex:none;border:none;background:transparent;cursor:pointer;color:var(--dim);font:400 13px/1 ui-monospace;padding:0 1px">{{c.eye}}</button>
+                  </sc-if>
+                  <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:var(--dim);flex:none">{{c.ttlTxt}}</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{c.isEditing}}" hint-placeholder-val="{{false}}">
+                <div style="position:relative;padding:9px 10px 10px">
+                  <textarea value="{{c.text}}" rows="{{c.rows}}" autoFocus="{{true}}" spellCheck="{{false}}" onChange="{{c.onEditLive}}" onBlur="{{c.onBlur}}" style="width:100%;box-sizing:border-box;resize:none;border:1px solid var(--ember);border-radius:8px;background:var(--field);color:var(--text);font:500 12px/1.5 ui-monospace,Menlo,monospace;padding:8px;outline:none"></textarea>
+                  <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:6px">
+                    <span style="font:500 9px/1 ui-monospace;color:var(--dim);opacity:.7">clear to delete · click away to keep</span>
+                    <span style="font:500 10px/1 ui-monospace;color:var(--dim)">{{c.ttlTxt}}</span>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dv-opt" id="3b">
+    <div class="dv-olabel"><a class="dv-oid" href="#3b">3b</a>Dark</div>
+    <div class="dv-desc">Same panel, dark vibrancy. Shares live state with 3a &mdash; edits in one show in the other.</div>
+    <div class="dv-note">LIVE &middot; same behaviour as 3a</div>
+    <div style="position:relative;width:340px;height:470px;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.28);background:linear-gradient(155deg,#2a251f,#1a1613 60%,#120f0d)">
+      <div style="position:absolute;top:0;left:0;right:0;height:26px;background:rgba(28,26,24,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;gap:13px;padding:0 12px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.72)">Finder</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.5)">File</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.5)">Edit</span>
+        <span style="flex:1"></span>
+        <span style="width:16px;height:16px;border-radius:4px;display:grid;place-items:center;background:rgba(212,90,42,.22);color:var(--ember);font:700 9px/1 ui-monospace">◈</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.68)">9:41</span>
+      </div>
+      <div style="position:absolute;top:34px;right:12px;width:300px;--text:#ece7e0;--dim:rgba(236,231,224,.52);--cell:rgba(255,255,255,.06);--cline:rgba(255,255,255,.08);--dash:rgba(255,255,255,.22);--field:rgba(0,0,0,.28);background:rgba(30,29,27,.62);border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 16px 46px rgba(0,0,0,.5);backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);padding:12px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:7px;padding:1px 1px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--ember);flex:none"></span>
+          <span style="font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--text)">Airlock</span>
+          <span style="flex:1"></span>
+          <span title="Keep panel above other windows" style="font:13px/1 ui-monospace;color:var(--dim);width:20px;height:20px;display:grid;place-items:center;border-radius:5px">⤒</span>
+        </div>
+        <textarea placeholder="⌁   paste here — a cell appears" onChange="{{onPasteD}}" style="width:100%;box-sizing:border-box;resize:none;height:44px;border:1px dashed var(--dash);border-radius:9px;background:transparent;color:var(--text);font:500 12px/1.5 ui-monospace,Menlo,monospace;padding:8px 10px;outline:none" style-focus="border-color: var(--ember)"></textarea>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:1px">
+          <sc-for list="{{liveD}}" as="c" hint-placeholder-count="4">
+            <div style="position:relative;border-radius:11px;background:var(--cell);border:1px solid var(--cline);overflow:hidden">
+              <div style="{{c.fillH}}"></div>
+              <sc-if value="{{c.reading}}" hint-placeholder-val="{{true}}">
+                <div onClick="{{c.onOpen}}" style="position:relative;display:flex;align-items:center;gap:8px;padding:11px 12px;cursor:text">
+                  <sc-if value="{{c.showMasked}}" hint-placeholder-val="{{false}}">
+                    <span style="width:6px;height:6px;border-radius:50%;background:var(--ember);flex:none"></span>
+                  </sc-if>
+                  <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);font:500 12px/1.4 ui-monospace,Menlo,monospace">{{c.displayText}}</span>
+                  <sc-if value="{{c.multiline}}" hint-placeholder-val="{{false}}">
+                    <span style="font:500 9px/1 ui-monospace,Menlo,monospace;color:var(--dim);flex:none;opacity:.75">{{c.moreTxt}}</span>
+                  </sc-if>
+                  <sc-if value="{{c.masked}}" hint-placeholder-val="{{false}}">
+                    <button onClick="{{c.onReveal}}" title="peek without editing" style="flex:none;border:none;background:transparent;cursor:pointer;color:var(--dim);font:400 13px/1 ui-monospace;padding:0 1px">{{c.eye}}</button>
+                  </sc-if>
+                  <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:var(--dim);flex:none">{{c.ttlTxt}}</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{c.isEditing}}" hint-placeholder-val="{{false}}">
+                <div style="position:relative;padding:9px 10px 10px">
+                  <textarea value="{{c.text}}" rows="{{c.rows}}" autoFocus="{{true}}" spellCheck="{{false}}" onChange="{{c.onEditLive}}" onBlur="{{c.onBlur}}" style="width:100%;box-sizing:border-box;resize:none;border:1px solid var(--ember);border-radius:8px;background:var(--field);color:var(--text);font:500 12px/1.5 ui-monospace,Menlo,monospace;padding:8px;outline:none"></textarea>
+                  <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:6px">
+                    <span style="font:500 9px/1 ui-monospace;color:var(--dim);opacity:.7">clear to delete · click away to keep</span>
+                    <span style="font:500 10px/1 ui-monospace;color:var(--dim)">{{c.ttlTxt}}</span>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<p class="dv-next">Try next: &ldquo;auto-lock a revealed cell after a few seconds&rdquo; &middot; &ldquo;drain right-to-left instead&rdquo; &middot; &ldquo;show the eye only on hover&rdquo; &middot; &ldquo;real-time speeds&rdquo;</p>
+</section>
+<section class="dv-turn" id="t2" style="--ember: {{ember}}; --blur: {{blur}}">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Editable, illusory cells &middot; line &amp; drain timers &middot; no category labels</span></div>
+<p class="dv-sub">All three are live: paste into the field and a cell appears; click any cell and edit it in place; select-all + cut (or delete everything) and the cell vanishes. Time runs ~60&times; fast here so you can watch the shortest cell drain and expire. Descriptive labels are gone &mdash; the content is its own label. The only classification kept is a high-confidence &ldquo;looks like a secret&rdquo; check (known prefixes, creds-in-URL, high entropy), which masks the text and adds a small ember dot; click a masked cell to reveal &amp; edit. Addresses and phone-ish numbers stay plain on purpose &mdash; no guessing.</p>
+<div class="dv-opts">
+
+  <div class="dv-opt" id="2a">
+    <div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Hairline</div>
+    <div class="dv-desc">The line, as-is: a 2px drain under the text. Least ink, calmest. Ember dot = masked secret.</div>
+    <div class="dv-note">LIVE &middot; paste, edit in place, cut to vanish &middot; accelerated time</div>
+    <div style="position:relative;width:340px;height:470px;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.14);background:linear-gradient(155deg,#e9e2d5,#d8ceba 58%,#cabca4)">
+      <div style="position:absolute;top:0;left:0;right:0;height:26px;background:rgba(250,248,244,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;gap:13px;padding:0 12px;border-bottom:1px solid rgba(0,0,0,.06)">
+        <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.62)">Finder</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">File</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">Edit</span>
+        <span style="flex:1"></span>
+        <span style="width:16px;height:16px;border-radius:4px;display:grid;place-items:center;background:rgba(212,90,42,.16);color:var(--ember);font:700 9px/1 ui-monospace">◈</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.6)">9:41</span>
+      </div>
+      <div style="position:absolute;top:34px;right:12px;width:300px;--text:#2a2622;--dim:rgba(38,32,26,.56);--cell:rgba(255,255,255,.5);--cline:rgba(0,0,0,.06);--dash:rgba(0,0,0,.22);background:rgba(249,247,243,.72);border:1px solid rgba(0,0,0,.08);border-radius:14px;box-shadow:0 16px 46px rgba(40,26,14,.26);backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);padding:12px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:7px;padding:1px 1px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--ember);flex:none"></span>
+          <span style="font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--text)">Airlock</span>
+          <span style="flex:1"></span>
+          <span title="Keep panel above other windows" style="font:13px/1 ui-monospace;color:var(--dim);width:20px;height:20px;display:grid;place-items:center;border-radius:5px">⤒</span>
+        </div>
+        <textarea placeholder="⌁   paste here — a cell appears" onChange="{{onPasteA}}" style="width:100%;box-sizing:border-box;resize:none;height:44px;border:1px dashed var(--dash);border-radius:9px;background:transparent;color:var(--text);font:500 12px/1.5 ui-monospace,Menlo,monospace;padding:8px 10px;outline:none" style-focus="border-color: var(--ember)"></textarea>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:1px">
+          <sc-for list="{{liveA}}" as="c" hint-placeholder-count="4">
+            <div style="position:relative;display:flex;align-items:center;gap:9px;padding:10px 12px 14px;border-radius:11px;background:var(--cell);border:1px solid var(--cline);overflow:hidden">
+              <sc-if value="{{c.masked}}" hint-placeholder-val="{{false}}">
+                <span title="looks like a secret — masked; click to reveal &amp; edit" style="width:6px;height:6px;border-radius:50%;background:var(--ember);flex:none"></span>
+                <input value="{{c.text}}" onChange="{{c.onEdit}}" spellCheck="{{false}}" style="flex:1;min-width:0;border:none;background:transparent;outline:none;color:var(--text);font:500 12px/1.4 ui-monospace,Menlo,monospace;padding:0;-webkit-text-security:disc" style-focus="-webkit-text-security: none">
+              </sc-if>
+              <sc-if value="{{c.plain}}" hint-placeholder-val="{{true}}">
+                <input value="{{c.text}}" onChange="{{c.onEdit}}" spellCheck="{{false}}" style="flex:1;min-width:0;border:none;background:transparent;outline:none;color:var(--text);font:500 12px/1.4 ui-monospace,Menlo,monospace;padding:0">
+              </sc-if>
+              <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:var(--dim);flex:none">{{c.ttlTxt}}</span>
+              <div style="position:absolute;left:12px;right:12px;bottom:6px;height:2px;border-radius:1px;background:rgba(0,0,0,.09)">
+                <div style="{{c.bar}}"></div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dv-opt" id="2b">
+    <div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>Drain &middot; horizontal</div>
+    <div class="dv-desc">The cell background IS the timer: an ember tint empties right-to-left as time passes. Zero extra real estate; a full row = fresh, a sliver = about to go.</div>
+    <div class="dv-note">LIVE &middot; watch the address cell drain out and disappear</div>
+    <div style="position:relative;width:340px;height:470px;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.14);background:linear-gradient(155deg,#e9e2d5,#d8ceba 58%,#cabca4)">
+      <div style="position:absolute;top:0;left:0;right:0;height:26px;background:rgba(250,248,244,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;gap:13px;padding:0 12px;border-bottom:1px solid rgba(0,0,0,.06)">
+        <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.62)">Finder</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">File</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">Edit</span>
+        <span style="flex:1"></span>
+        <span style="width:16px;height:16px;border-radius:4px;display:grid;place-items:center;background:rgba(212,90,42,.16);color:var(--ember);font:700 9px/1 ui-monospace">◈</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.6)">9:41</span>
+      </div>
+      <div style="position:absolute;top:34px;right:12px;width:300px;--text:#2a2622;--dim:rgba(38,32,26,.56);--cell:rgba(255,255,255,.5);--cline:rgba(0,0,0,.06);--dash:rgba(0,0,0,.22);background:rgba(249,247,243,.72);border:1px solid rgba(0,0,0,.08);border-radius:14px;box-shadow:0 16px 46px rgba(40,26,14,.26);backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);padding:12px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:7px;padding:1px 1px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--ember);flex:none"></span>
+          <span style="font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--text)">Airlock</span>
+          <span style="flex:1"></span>
+          <span title="Keep panel above other windows" style="font:13px/1 ui-monospace;color:var(--dim);width:20px;height:20px;display:grid;place-items:center;border-radius:5px">⤒</span>
+        </div>
+        <textarea placeholder="⌁   paste here — a cell appears" onChange="{{onPasteB}}" style="width:100%;box-sizing:border-box;resize:none;height:44px;border:1px dashed var(--dash);border-radius:9px;background:transparent;color:var(--text);font:500 12px/1.5 ui-monospace,Menlo,monospace;padding:8px 10px;outline:none" style-focus="border-color: var(--ember)"></textarea>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:1px">
+          <sc-for list="{{liveB}}" as="c" hint-placeholder-count="4">
+            <div style="position:relative;border-radius:11px;background:var(--cell);border:1px solid var(--cline);overflow:hidden">
+              <div style="{{c.fillH}}"></div>
+              <div style="position:relative;display:flex;align-items:center;gap:9px;padding:11px 12px">
+                <sc-if value="{{c.masked}}" hint-placeholder-val="{{false}}">
+                  <span title="looks like a secret — masked; click to reveal &amp; edit" style="width:6px;height:6px;border-radius:50%;background:var(--ember);flex:none"></span>
+                  <input value="{{c.text}}" onChange="{{c.onEdit}}" spellCheck="{{false}}" style="flex:1;min-width:0;border:none;background:transparent;outline:none;color:var(--text);font:500 12px/1.4 ui-monospace,Menlo,monospace;padding:0;-webkit-text-security:disc" style-focus="-webkit-text-security: none">
+                </sc-if>
+                <sc-if value="{{c.plain}}" hint-placeholder-val="{{true}}">
+                  <input value="{{c.text}}" onChange="{{c.onEdit}}" spellCheck="{{false}}" style="flex:1;min-width:0;border:none;background:transparent;outline:none;color:var(--text);font:500 12px/1.4 ui-monospace,Menlo,monospace;padding:0">
+                </sc-if>
+                <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:var(--dim);flex:none">{{c.ttlTxt}}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dv-opt" id="2c">
+    <div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a>Drain &middot; vertical</div>
+    <div class="dv-desc">Same idea, but the tint sinks like liquid in a tank &mdash; the cell literally empties. Reads at a glance across the whole stack.</div>
+    <div class="dv-note">LIVE &middot; same behaviours as 2a/2b</div>
+    <div style="position:relative;width:340px;height:470px;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.14);background:linear-gradient(155deg,#e9e2d5,#d8ceba 58%,#cabca4)">
+      <div style="position:absolute;top:0;left:0;right:0;height:26px;background:rgba(250,248,244,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;gap:13px;padding:0 12px;border-bottom:1px solid rgba(0,0,0,.06)">
+        <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.62)">Finder</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">File</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">Edit</span>
+        <span style="flex:1"></span>
+        <span style="width:16px;height:16px;border-radius:4px;display:grid;place-items:center;background:rgba(212,90,42,.16);color:var(--ember);font:700 9px/1 ui-monospace">◈</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.6)">9:41</span>
+      </div>
+      <div style="position:absolute;top:34px;right:12px;width:300px;--text:#2a2622;--dim:rgba(38,32,26,.56);--cell:rgba(255,255,255,.5);--cline:rgba(0,0,0,.06);--dash:rgba(0,0,0,.22);background:rgba(249,247,243,.72);border:1px solid rgba(0,0,0,.08);border-radius:14px;box-shadow:0 16px 46px rgba(40,26,14,.26);backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);padding:12px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:7px;padding:1px 1px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--ember);flex:none"></span>
+          <span style="font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--text)">Airlock</span>
+          <span style="flex:1"></span>
+          <span title="Keep panel above other windows" style="font:13px/1 ui-monospace;color:var(--dim);width:20px;height:20px;display:grid;place-items:center;border-radius:5px">⤒</span>
+        </div>
+        <textarea placeholder="⌁   paste here — a cell appears" onChange="{{onPasteC}}" style="width:100%;box-sizing:border-box;resize:none;height:44px;border:1px dashed var(--dash);border-radius:9px;background:transparent;color:var(--text);font:500 12px/1.5 ui-monospace,Menlo,monospace;padding:8px 10px;outline:none" style-focus="border-color: var(--ember)"></textarea>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:1px">
+          <sc-for list="{{liveC}}" as="c" hint-placeholder-count="4">
+            <div style="position:relative;border-radius:11px;background:var(--cell);border:1px solid var(--cline);overflow:hidden">
+              <div style="{{c.fillV}}"></div>
+              <div style="position:relative;display:flex;align-items:center;gap:9px;padding:11px 12px">
+                <sc-if value="{{c.masked}}" hint-placeholder-val="{{false}}">
+                  <span title="looks like a secret — masked; click to reveal &amp; edit" style="width:6px;height:6px;border-radius:50%;background:var(--ember);flex:none"></span>
+                  <input value="{{c.text}}" onChange="{{c.onEdit}}" spellCheck="{{false}}" style="flex:1;min-width:0;border:none;background:transparent;outline:none;color:var(--text);font:500 12px/1.4 ui-monospace,Menlo,monospace;padding:0;-webkit-text-security:disc" style-focus="-webkit-text-security: none">
+                </sc-if>
+                <sc-if value="{{c.plain}}" hint-placeholder-val="{{true}}">
+                  <input value="{{c.text}}" onChange="{{c.onEdit}}" spellCheck="{{false}}" style="flex:1;min-width:0;border:none;background:transparent;outline:none;color:var(--text);font:500 12px/1.4 ui-monospace,Menlo,monospace;padding:0">
+                </sc-if>
+                <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:var(--dim);flex:none">{{c.ttlTxt}}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<p class="dv-next">Try next: &ldquo;<a class="dv-oid" href="#2a">2a</a> but the line only appears in the last hour&rdquo; &middot; &ldquo;combine <a class="dv-oid" href="#2b">2b</a> with a fade-to-transparent as it drains&rdquo; &middot; &ldquo;real-time speeds&rdquo; &middot; &ldquo;dark theme for the winner&rdquo;</p>
+</section>
+<section class="dv-turn" id="t1" style="--ember: {{ember}}; --blur: {{blur}}">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Three directions for the SleeperCells panel</span></div>
+<p class="dv-sub">All three keep the load-bearing rules: no plaintext reveal, masked recognition line, time-remaining as the most prominent attribute, the single ember accent, system type, and layered translucency that would degrade to solid fills under Reduce Transparency. They diverge on hierarchy, ring treatment, and how the &ldquo;editable&rdquo; idea is handled. Each shown light + dark.</p>
+<div class="dv-opts">
+
+  <div class="dv-opt" id="1a">
+    <div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Refined native</div>
+    <div class="dv-desc">macOS vibrancy, tightened type &amp; spacing. The most shippable. Compact 34px ring, calm rows.</div>
+    <div class="dv-note">EDITABLE &middot; the drop field is a real &lt;textarea&gt; &mdash; paste in, copy out. Cells stay recognition-only.</div>
+    <div class="dv-cap">Light</div>
+    <div style="position:relative;width:340px;height:544px;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.14);background:linear-gradient(155deg,#e9e2d5,#d8ceba 58%,#cabca4)">
+      <div style="position:absolute;top:0;left:0;right:0;height:26px;background:rgba(250,248,244,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;gap:13px;padding:0 12px;border-bottom:1px solid rgba(0,0,0,.06)">
+        <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.62)">Finder</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">File</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">Edit</span>
+        <span style="flex:1"></span>
+        <span style="width:16px;height:16px;border-radius:4px;display:grid;place-items:center;background:rgba(212,90,42,.16);color:var(--ember);font:700 9px/1 ui-monospace">◈</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.6)">9:41</span>
+      </div>
+      <div style="position:absolute;top:34px;right:12px;width:300px;--text:#2a2622;--dim:rgba(38,32,26,.56);--cell:rgba(255,255,255,.5);--cline:rgba(0,0,0,.06);--dash:rgba(0,0,0,.22);background:rgba(249,247,243,.72);border:1px solid rgba(0,0,0,.08);border-radius:14px;box-shadow:0 16px 46px rgba(40,26,14,.26);backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);padding:12px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:7px;padding:1px 1px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--ember);flex:none"></span>
+          <span style="font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--text)">Airlock</span>
+          <span style="flex:1"></span>
+          <span style="font:500 8px/1 ui-monospace,Menlo,monospace;color:var(--dim);letter-spacing:.09em">PRESENT, NOT CENTRAL</span>
+          <span title="Keep panel above other windows" style="font:13px/1 ui-monospace;color:var(--dim);width:20px;height:20px;display:grid;place-items:center;border-radius:5px">⤒</span>
+        </div>
+        <textarea placeholder="⌁   drop or paste here" style="width:100%;box-sizing:border-box;resize:none;height:44px;border:1px dashed var(--dash);border-radius:9px;background:transparent;color:var(--text);font:500 12px/1.5 ui-monospace,Menlo,monospace;padding:8px 10px;outline:none" style-focus="border-color: var(--ember)"></textarea>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:1px">
+          <sc-for list="{{cellsA}}" as="c" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:11px;background:var(--cell);border:1px solid var(--cline);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)">
+              <svg width="34" height="34" viewBox="0 0 34 34" style="flex:none">
+                <circle cx="17" cy="17" r="15" fill="none" stroke="rgba(128,116,104,.32)" stroke-width="3"></circle>
+                <circle cx="17" cy="17" r="15" pathLength="100" fill="none" stroke="var(--ember)" stroke-width="{{c.ringW}}" stroke-linecap="round" stroke-dasharray="{{c.arc}} 100" transform="rotate(-90 17 17)"></circle>
+                <text x="17" y="17" text-anchor="middle" dominant-baseline="central" style="font:600 8.5px ui-monospace,Menlo,monospace;fill:var(--text)">{{c.ttl}}</text>
+              </svg>
+              <div style="min-width:0;flex:1;overflow:hidden">
+                <div style="font:500 9px/1.35 ui-monospace,Menlo,monospace;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{c.cap}}</div>
+                <div style="font:500 12px/1.4 ui-monospace,Menlo,monospace;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{c.rec}}</div>
+              </div>
+              <span style="font:400 15px/1 ui-monospace;color:var(--dim);flex:none">⧉</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    <div class="dv-cap">Dark</div>
+    <div style="position:relative;width:340px;height:544px;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.28);background:linear-gradient(155deg,#2a251f,#1a1613 60%,#120f0d)">
+      <div style="position:absolute;top:0;left:0;right:0;height:26px;background:rgba(28,26,24,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;gap:13px;padding:0 12px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.72)">Finder</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.5)">File</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.5)">Edit</span>
+        <span style="flex:1"></span>
+        <span style="width:16px;height:16px;border-radius:4px;display:grid;place-items:center;background:rgba(212,90,42,.22);color:var(--ember);font:700 9px/1 ui-monospace">◈</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.68)">9:41</span>
+      </div>
+      <div style="position:absolute;top:34px;right:12px;width:300px;--text:#ece7e0;--dim:rgba(236,231,224,.52);--cell:rgba(255,255,255,.06);--cline:rgba(255,255,255,.08);--dash:rgba(255,255,255,.22);background:rgba(30,29,27,.62);border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 16px 46px rgba(0,0,0,.5);backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);padding:12px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:7px;padding:1px 1px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--ember);flex:none"></span>
+          <span style="font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--text)">Airlock</span>
+          <span style="flex:1"></span>
+          <span style="font:500 8px/1 ui-monospace,Menlo,monospace;color:var(--dim);letter-spacing:.09em">PRESENT, NOT CENTRAL</span>
+          <span title="Keep panel above other windows" style="font:13px/1 ui-monospace;color:var(--dim);width:20px;height:20px;display:grid;place-items:center;border-radius:5px">⤒</span>
+        </div>
+        <textarea placeholder="⌁   drop or paste here" style="width:100%;box-sizing:border-box;resize:none;height:44px;border:1px dashed var(--dash);border-radius:9px;background:transparent;color:var(--text);font:500 12px/1.5 ui-monospace,Menlo,monospace;padding:8px 10px;outline:none" style-focus="border-color: var(--ember)"></textarea>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:1px">
+          <sc-for list="{{cellsA}}" as="c" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:11px;background:var(--cell);border:1px solid var(--cline);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)">
+              <svg width="34" height="34" viewBox="0 0 34 34" style="flex:none">
+                <circle cx="17" cy="17" r="15" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="3"></circle>
+                <circle cx="17" cy="17" r="15" pathLength="100" fill="none" stroke="var(--ember)" stroke-width="{{c.ringW}}" stroke-linecap="round" stroke-dasharray="{{c.arc}} 100" transform="rotate(-90 17 17)"></circle>
+                <text x="17" y="17" text-anchor="middle" dominant-baseline="central" style="font:600 8.5px ui-monospace,Menlo,monospace;fill:var(--text)">{{c.ttl}}</text>
+              </svg>
+              <div style="min-width:0;flex:1;overflow:hidden">
+                <div style="font:500 9px/1.35 ui-monospace,Menlo,monospace;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{c.cap}}</div>
+                <div style="font:500 12px/1.4 ui-monospace,Menlo,monospace;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{c.rec}}</div>
+              </div>
+              <span style="font:400 15px/1 ui-monospace;color:var(--dim);flex:none">⧉</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dv-opt" id="1b">
+    <div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Time-first</div>
+    <div class="dv-desc">Time is the whole interface. 46px rings, thicker &amp; broken in the last hour (a second channel besides colour). A live TTL ladder along the bottom.</div>
+    <div class="dv-note">SPEC-PURE &middot; no plaintext, no editing. The ring is the hero; content plays second fiddle.</div>
+    <div class="dv-cap">Light</div>
+    <div style="position:relative;width:340px;height:544px;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.14);background:linear-gradient(155deg,#e9e2d5,#d8ceba 58%,#cabca4)">
+      <div style="position:absolute;top:0;left:0;right:0;height:26px;background:rgba(250,248,244,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;gap:13px;padding:0 12px;border-bottom:1px solid rgba(0,0,0,.06)">
+        <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.62)">Finder</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">File</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">Edit</span>
+        <span style="flex:1"></span>
+        <span style="width:16px;height:16px;border-radius:4px;display:grid;place-items:center;background:rgba(212,90,42,.16);color:var(--ember);font:700 9px/1 ui-monospace">◈</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.6)">9:41</span>
+      </div>
+      <div style="position:absolute;top:34px;right:12px;width:300px;--text:#2a2622;--dim:rgba(38,32,26,.56);--cell:rgba(255,255,255,.5);--cline:rgba(0,0,0,.06);--dash:rgba(0,0,0,.22);--rung:rgba(0,0,0,.4);background:rgba(249,247,243,.72);border:1px solid rgba(0,0,0,.08);border-radius:14px;box-shadow:0 16px 46px rgba(40,26,14,.26);backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);padding:12px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:7px;padding:1px 1px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--ember);flex:none"></span>
+          <span style="font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--text)">Airlock</span>
+          <span style="flex:1"></span>
+          <span style="font:500 8px/1 ui-monospace,Menlo,monospace;color:var(--dim);letter-spacing:.09em">PRESENT, NOT CENTRAL</span>
+          <span title="Keep panel above other windows" style="font:13px/1 ui-monospace;color:var(--dim);width:20px;height:20px;display:grid;place-items:center;border-radius:5px">⤒</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:6px;height:40px;border:1px dashed var(--dash);border-radius:9px;color:var(--dim);font:500 12px/1 ui-monospace,Menlo,monospace">⌁ drop or paste here</div>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:1px">
+          <sc-for list="{{cellsB}}" as="c" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:13px;padding:10px 11px;border-radius:13px;background:var(--cell);border:1px solid var(--cline);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)">
+              <svg width="46" height="46" viewBox="0 0 46 46" style="flex:none">
+                <circle cx="23" cy="23" r="20" fill="none" stroke="rgba(128,116,104,.3)" stroke-width="3"></circle>
+                <circle cx="23" cy="23" r="20" pathLength="100" fill="none" stroke="var(--ember)" stroke-width="{{c.ringWB}}" stroke-linecap="round" stroke-dasharray="{{c.arc}} 100" transform="rotate(-90 23 23)"></circle>
+                <text x="23" y="23" text-anchor="middle" dominant-baseline="central" style="font:600 11px ui-monospace,Menlo,monospace;fill:var(--text)">{{c.ttl}}</text>
+              </svg>
+              <div style="min-width:0;flex:1;overflow:hidden">
+                <div style="font:500 13px/1.4 ui-monospace,Menlo,monospace;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{c.rec}}</div>
+                <div style="font:500 9px/1.4 ui-monospace,Menlo,monospace;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">{{c.cap}} · {{c.size}}</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:none">
+                <span style="font:400 15px/1 ui-monospace;color:var(--dim)">⧉</span>
+                <span style="font:500 9px/1 ui-monospace;color:var(--dim);opacity:.7">↗</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:9px;background:var(--cell);border:1px solid var(--cline)">
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--rung)">1h</span>
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--rung)">3h</span>
+          <span style="font:700 9.5px/1 ui-monospace;color:var(--ember)">8h</span>
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--rung)">24h</span>
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--rung)">3d</span>
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--rung)">7d</span>
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--dim);opacity:.5;text-decoration:line-through">∞</span>
+        </div>
+      </div>
+    </div>
+    <div class="dv-cap">Dark</div>
+    <div style="position:relative;width:340px;height:544px;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.28);background:linear-gradient(155deg,#2a251f,#1a1613 60%,#120f0d)">
+      <div style="position:absolute;top:0;left:0;right:0;height:26px;background:rgba(28,26,24,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;gap:13px;padding:0 12px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.72)">Finder</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.5)">File</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.5)">Edit</span>
+        <span style="flex:1"></span>
+        <span style="width:16px;height:16px;border-radius:4px;display:grid;place-items:center;background:rgba(212,90,42,.22);color:var(--ember);font:700 9px/1 ui-monospace">◈</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.68)">9:41</span>
+      </div>
+      <div style="position:absolute;top:34px;right:12px;width:300px;--text:#ece7e0;--dim:rgba(236,231,224,.52);--cell:rgba(255,255,255,.06);--cline:rgba(255,255,255,.08);--dash:rgba(255,255,255,.22);--rung:rgba(236,231,224,.42);background:rgba(30,29,27,.62);border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 16px 46px rgba(0,0,0,.5);backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);padding:12px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:7px;padding:1px 1px 0">
+          <span style="width:7px;height:7px;border-radius:50%;background:var(--ember);flex:none"></span>
+          <span style="font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--text)">Airlock</span>
+          <span style="flex:1"></span>
+          <span style="font:500 8px/1 ui-monospace,Menlo,monospace;color:var(--dim);letter-spacing:.09em">PRESENT, NOT CENTRAL</span>
+          <span title="Keep panel above other windows" style="font:13px/1 ui-monospace;color:var(--dim);width:20px;height:20px;display:grid;place-items:center;border-radius:5px">⤒</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:6px;height:40px;border:1px dashed var(--dash);border-radius:9px;color:var(--dim);font:500 12px/1 ui-monospace,Menlo,monospace">⌁ drop or paste here</div>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:1px">
+          <sc-for list="{{cellsB}}" as="c" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:13px;padding:10px 11px;border-radius:13px;background:var(--cell);border:1px solid var(--cline);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)">
+              <svg width="46" height="46" viewBox="0 0 46 46" style="flex:none">
+                <circle cx="23" cy="23" r="20" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="3"></circle>
+                <circle cx="23" cy="23" r="20" pathLength="100" fill="none" stroke="var(--ember)" stroke-width="{{c.ringWB}}" stroke-linecap="round" stroke-dasharray="{{c.arc}} 100" transform="rotate(-90 23 23)"></circle>
+                <text x="23" y="23" text-anchor="middle" dominant-baseline="central" style="font:600 11px ui-monospace,Menlo,monospace;fill:var(--text)">{{c.ttl}}</text>
+              </svg>
+              <div style="min-width:0;flex:1;overflow:hidden">
+                <div style="font:500 13px/1.4 ui-monospace,Menlo,monospace;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{c.rec}}</div>
+                <div style="font:500 9px/1.4 ui-monospace,Menlo,monospace;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">{{c.cap}} · {{c.size}}</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:none">
+                <span style="font:400 15px/1 ui-monospace;color:var(--dim)">⧉</span>
+                <span style="font:500 9px/1 ui-monospace;color:var(--dim);opacity:.7">↗</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:9px;background:var(--cell);border:1px solid var(--cline)">
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--rung)">1h</span>
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--rung)">3h</span>
+          <span style="font:700 9.5px/1 ui-monospace;color:var(--ember)">8h</span>
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--rung)">24h</span>
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--rung)">3d</span>
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--rung)">7d</span>
+          <span style="font:500 9.5px/1 ui-monospace;color:var(--dim);opacity:.5;text-decoration:line-through">∞</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dv-opt" id="1c">
+    <div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Editorial</div>
+    <div class="dv-desc">Quieter and warmer. New York serif for the caption line, a thin linear drain instead of a ring, minimal chrome. Recognition reads like a citation.</div>
+    <div class="dv-note">EDITABLE CELLS &middot; click any cell to open an inline textarea you can paste into or copy from (mockup convenience &mdash; the shipping app never shows plaintext).</div>
+    <div class="dv-cap">Light</div>
+    <div style="position:relative;width:340px;height:544px;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.14);background:linear-gradient(155deg,#e9e2d5,#d8ceba 58%,#cabca4)">
+      <div style="position:absolute;top:0;left:0;right:0;height:26px;background:rgba(250,248,244,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;gap:13px;padding:0 12px;border-bottom:1px solid rgba(0,0,0,.06)">
+        <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.62)">Finder</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">File</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.48)">Edit</span>
+        <span style="flex:1"></span>
+        <span style="width:16px;height:16px;border-radius:4px;display:grid;place-items:center;background:rgba(212,90,42,.16);color:var(--ember);font:700 9px/1 ui-monospace">◈</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.6)">9:41</span>
+      </div>
+      <div style="position:absolute;top:34px;right:12px;width:300px;--text:#2a2622;--dim:rgba(38,32,26,.58);--cell:rgba(255,255,255,.5);--cline:rgba(0,0,0,.07);--dash:rgba(0,0,0,.18);--track:rgba(0,0,0,.12);--field:rgba(255,255,255,.6);background:rgba(249,247,243,.72);border:1px solid rgba(0,0,0,.08);border-radius:14px;box-shadow:0 16px 46px rgba(40,26,14,.26);backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);padding:13px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--ember);flex:none;align-self:center"></span>
+          <span style="font:600 15px/1 ui-serif,'New York',Georgia,serif;color:var(--text);letter-spacing:.01em">Airlock</span>
+          <span style="flex:1"></span>
+          <span style="font:italic 400 9px/1 ui-serif,Georgia,serif;color:var(--dim)">present, not central</span>
+          <span title="Keep panel above other windows" style="font:12px/1 ui-monospace;color:var(--dim);width:18px;height:18px;display:grid;place-items:center;align-self:center">⤒</span>
+        </div>
+        <div style="border-top:1px solid var(--cline);border-bottom:1px solid var(--cline);padding:9px 2px;text-align:center;font:italic 400 12px/1.4 ui-serif,'New York',Georgia,serif;color:var(--dim)">Drop or paste something on its way somewhere else</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{cellsC}}" as="c" hint-placeholder-count="5">
+            <div style="border-radius:11px;background:var(--cell);border:1px solid var(--cline);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);overflow:hidden">
+              <div onClick="{{c.onToggle}}" style="display:flex;align-items:baseline;gap:10px;padding:10px 12px 9px;cursor:text">
+                <div style="min-width:0;flex:1;overflow:hidden">
+                  <div style="font:italic 400 10.5px/1.3 ui-serif,'New York',Georgia,serif;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{c.cap}}</div>
+                  <div style="font:500 12.5px/1.45 ui-monospace,Menlo,monospace;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">{{c.rec}}</div>
+                </div>
+                <span style="font:400 12px/1 ui-serif,'New York',Georgia,serif;color:var(--dim);flex:none">{{c.ttl}}</span>
+              </div>
+              <div style="height:3px;background:var(--track);margin:0 12px;border-radius:2px;overflow:hidden">
+                <div style="{{c.bar}}"></div>
+              </div>
+              <sc-if value="{{c.expanded}}" hint-placeholder-val="{{false}}">
+                <div style="padding:10px 12px 12px">
+                  <textarea defaultValue="{{c.val}}" style="width:100%;box-sizing:border-box;resize:vertical;min-height:54px;border:1px solid var(--cline);border-radius:8px;background:var(--field);color:var(--text);font:500 11.5px/1.5 ui-monospace,Menlo,monospace;padding:8px;outline:none" style-focus="border-color: var(--ember)"></textarea>
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+                    <span style="font:italic 400 9.5px/1.2 ui-serif,Georgia,serif;color:var(--dim)">editable — paste or copy (mockup)</span>
+                    <button onClick="{{c.onCopy}}" style="font:500 10px/1 ui-monospace;color:var(--ember);background:rgba(212,90,42,.1);border:1px solid rgba(212,90,42,.28);border-radius:6px;padding:5px 10px;cursor:pointer">copy</button>
+                  </div>
+                </div>
+              </sc-if>
+              <div style="height:9px"></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    <div class="dv-cap">Dark</div>
+    <div style="position:relative;width:340px;height:544px;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(0,0,0,.28);background:linear-gradient(155deg,#2a251f,#1a1613 60%,#120f0d)">
+      <div style="position:absolute;top:0;left:0;right:0;height:26px;background:rgba(28,26,24,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:flex;align-items:center;gap:13px;padding:0 12px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.72)">Finder</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.5)">File</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.5)">Edit</span>
+        <span style="flex:1"></span>
+        <span style="width:16px;height:16px;border-radius:4px;display:grid;place-items:center;background:rgba(212,90,42,.22);color:var(--ember);font:700 9px/1 ui-monospace">◈</span>
+        <span style="font:500 10px/1 ui-monospace,Menlo,monospace;color:rgba(255,255,255,.68)">9:41</span>
+      </div>
+      <div style="position:absolute;top:34px;right:12px;width:300px;--text:#ece7e0;--dim:rgba(236,231,224,.55);--cell:rgba(255,255,255,.06);--cline:rgba(255,255,255,.09);--dash:rgba(255,255,255,.2);--track:rgba(255,255,255,.14);--field:rgba(0,0,0,.28);background:rgba(30,29,27,.62);border:1px solid rgba(255,255,255,.1);border-radius:14px;box-shadow:0 16px 46px rgba(0,0,0,.5);backdrop-filter:blur(var(--blur)) saturate(180%);-webkit-backdrop-filter:blur(var(--blur)) saturate(180%);padding:13px;display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span style="width:6px;height:6px;border-radius:50%;background:var(--ember);flex:none;align-self:center"></span>
+          <span style="font:600 15px/1 ui-serif,'New York',Georgia,serif;color:var(--text);letter-spacing:.01em">Airlock</span>
+          <span style="flex:1"></span>
+          <span style="font:italic 400 9px/1 ui-serif,Georgia,serif;color:var(--dim)">present, not central</span>
+          <span title="Keep panel above other windows" style="font:12px/1 ui-monospace;color:var(--dim);width:18px;height:18px;display:grid;place-items:center;align-self:center">⤒</span>
+        </div>
+        <div style="border-top:1px solid var(--cline);border-bottom:1px solid var(--cline);padding:9px 2px;text-align:center;font:italic 400 12px/1.4 ui-serif,'New York',Georgia,serif;color:var(--dim)">Drop or paste something on its way somewhere else</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{cellsC}}" as="c" hint-placeholder-count="5">
+            <div style="border-radius:11px;background:var(--cell);border:1px solid var(--cline);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);overflow:hidden">
+              <div onClick="{{c.onToggle}}" style="display:flex;align-items:baseline;gap:10px;padding:10px 12px 9px;cursor:text">
+                <div style="min-width:0;flex:1;overflow:hidden">
+                  <div style="font:italic 400 10.5px/1.3 ui-serif,'New York',Georgia,serif;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{c.cap}}</div>
+                  <div style="font:500 12.5px/1.45 ui-monospace,Menlo,monospace;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">{{c.rec}}</div>
+                </div>
+                <span style="font:400 12px/1 ui-serif,'New York',Georgia,serif;color:var(--dim);flex:none">{{c.ttl}}</span>
+              </div>
+              <div style="height:3px;background:var(--track);margin:0 12px;border-radius:2px;overflow:hidden">
+                <div style="{{c.bar}}"></div>
+              </div>
+              <sc-if value="{{c.expanded}}" hint-placeholder-val="{{false}}">
+                <div style="padding:10px 12px 12px">
+                  <textarea defaultValue="{{c.val}}" style="width:100%;box-sizing:border-box;resize:vertical;min-height:54px;border:1px solid var(--cline);border-radius:8px;background:var(--field);color:var(--text);font:500 11.5px/1.5 ui-monospace,Menlo,monospace;padding:8px;outline:none" style-focus="border-color: var(--ember)"></textarea>
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+                    <span style="font:italic 400 9.5px/1.2 ui-serif,Georgia,serif;color:var(--dim)">editable — paste or copy (mockup)</span>
+                    <button onClick="{{c.onCopy}}" style="font:500 10px/1 ui-monospace;color:var(--ember);background:rgba(212,90,42,.12);border:1px solid rgba(212,90,42,.3);border-radius:6px;padding:5px 10px;cursor:pointer">copy</button>
+                  </div>
+                </div>
+              </sc-if>
+              <div style="height:9px"></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<p class="dv-next">Try next: &ldquo;push <a class="dv-oid" href="#1b">1b</a> further &mdash; even bigger rings&rdquo; &middot; &ldquo;make <a class="dv-oid" href="#1a">1a</a> the base and add <a class="dv-oid" href="#1c">1c</a>&rsquo;s editable cells&rdquo; &middot; &ldquo;a warmer wallpaper&rdquo; &middot; &ldquo;new directions&rdquo;</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+ &quot;$preview&quot;: { &quot;width&quot;: 1200, &quot;height&quot;: 760 },
+ &quot;accent&quot;: { &quot;editor&quot;: &quot;color&quot;, &quot;default&quot;: &quot;#d45a2a&quot;, &quot;options&quot;: [&quot;#d45a2a&quot;, &quot;#c0542a&quot;, &quot;#7a5c3a&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Theme&quot; },
+ &quot;frost&quot;: { &quot;editor&quot;: &quot;range&quot;, &quot;default&quot;: 24, &quot;min&quot;: 8, &quot;max&quot;: 40, &quot;step&quot;: 2, &quot;unit&quot;: &quot;px&quot;, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;Theme&quot; }
+}">
+class Component extends DCLogic {
+  state = { expanded: {}, live: this.seedLive(), editing: { a: null, b: null, c: null, d: null }, revealed: {}, focusId: null };
+
+  componentDidMount() {
+    this._timer = setInterval(() => {
+      this.setState((s) => {
+        if (!s.live) return null;
+        const tick = (list) => list.map((c) => ({ ...c, frac: c.frac - c.decay })).filter((c) => c.frac > 0);
+        return { live: { a: tick(s.live.a), b: tick(s.live.b), c: tick(s.live.c), d: tick(s.live.d) } };
+      });
+    }, 1000);
+  }
+
+  componentWillUnmount() {
+    if (this._timer) clearInterval(this._timer);
+    if (this._grace) Object.values(this._grace).forEach(clearTimeout);
+  }
+
+  seedLive() {
+    this._id = 0;
+    const mk = (text, mins, frac, decay) => ({ id: ++this._id, text, mins, frac, decay, masked: this.isSensitive(text) });
+    const set = () => [
+      mk('ghp_4kQ9zR1sT7wX2vB8nM3pL6dF0aH5jK', 480, 0.96, 0.0006),
+      mk('14 Rue de la Paix, 75002 Paris', 113, 0.38, 0.004),
+      mk('postgres://ops:s3cr3t@db-3.internal:5432/prod', 180, 0.62, 0.0012),
+      mk('https://example.com/d/ab8f2c', 10080, 0.9, 0.0004),
+    ];
+    const setD = () => [
+      mk('ghp_4kQ9zR1sT7wX2vB8nM3pL6dF0aH5jK', 480, 0.96, 0.0006),
+      mk('14 Rue de la Paix\n75002 Paris\nFrance', 113, 0.4, 0.004),
+      mk('postgres://ops:s3cr3t@db-3.internal:5432/prod', 180, 0.62, 0.0012),
+      mk('https://example.com/d/ab8f2c', 10080, 0.9, 0.0004),
+    ];
+    return { a: set(), b: set(), c: set(), d: setD() };
+  }
+
+  isSensitive(t) {
+    const s = (t || '').trim();
+    if (!s) return false;
+    if (/^(ghp_|gho_|github_pat_|glpat-|sk-|AKIA|ASIA|xox[bap]-|eyJ[A-Za-z0-9_-]{10,}|ssh-(rsa|ed25519)|-----BEGIN)/.test(s)) return true;
+    if (/^[a-z][a-z0-9+.-]*:\/\/[^\s\/]*:[^\s@]+@/i.test(s)) return true;
+    if (s.length >= 24 && !/\s/.test(s) && !/^https?:\/\//i.test(s)) {
+      const f = {}; const n = s.length;
+      for (const ch of s) f[ch] = (f[ch] || 0) + 1;
+      let H = 0;
+      for (const k in f) { const p = f[k] / n; H -= p * Math.log2(p); }
+      if (H > 3.8) return true;
+    }
+    return false;
+  }
+
+  fmtTtl(c) {
+    const m = c.frac * c.mins;
+    if (m >= 2880) return Math.round(m / 1440) + 'd';
+    if (m >= 60) return Math.round(m / 60) + 'h';
+    if (m >= 1) return Math.round(m) + 'm';
+    return Math.max(1, Math.round(m * 60)) + 's';
+  }
+
+  addCell(key, text) {
+    this.setState((s) => ({ live: { ...s.live, [key]: [{ id: ++this._id, text, mins: 480, frac: 1, decay: 0.0015, masked: this.isSensitive(text) }, ...s.live[key]] } }));
+  }
+
+  editCell(key, id, v) {
+    this.setState((s) => ({
+      live: {
+        ...s.live,
+        [key]: v.trim() === ''
+          ? s.live[key].filter((c) => c.id !== id)
+          : s.live[key].map((c) => (c.id === id ? { ...c, text: v, masked: this.isSensitive(v) } : c)),
+      },
+    }));
+  }
+
+  mkPaste(key) {
+    return (e) => {
+      const v = e.target.value;
+      if (!v.trim()) return;
+      e.target.value = '';
+      this.addCell(key, v);
+    };
+  }
+
+  cyclePresets = [60, 180, 480, 1440, 4320, 10080];
+
+  grow(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }
+
+  cycleTtl(key, id) {
+    this.setState((s) => ({
+      live: {
+        ...s.live,
+        [key]: s.live[key].map((c) => {
+          if (c.id !== id) return c;
+          let i = this.cyclePresets.findIndex((p) => p >= c.mins - 0.5);
+          if (i < 0) i = this.cyclePresets.length - 1;
+          const next = this.cyclePresets[(i + 1) % this.cyclePresets.length];
+          return { ...c, mins: next, frac: 1 };
+        }),
+      },
+    }));
+  }
+
+  growDrop(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 132) + 'px';
+  }
+
+  onDropInput = (e) => { this.growDrop(e.target); };
+
+  onDropKey = (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      const el = e.target;
+      const v = el.value;
+      if (v && v.trim()) { this.addCell('d', v); el.value = ''; this.growDrop(el); }
+    }
+  };
+
+  editP(id, v) {
+    if (v && v.trim() !== '' && this._grace && this._grace[id]) { clearTimeout(this._grace[id]); delete this._grace[id]; }
+    this.setState((s) => ({ live: { ...s.live, d: s.live.d.map((c) => (c.id === id ? { ...c, text: v, masked: this.isSensitive(v) } : c)) } }));
+  }
+
+  focusP(id) {
+    if (this._grace && this._grace[id]) { clearTimeout(this._grace[id]); delete this._grace[id]; }
+    if (this.state.focusId === id) this.setState({ focusId: null });
+  }
+
+  blurP(id, v) {
+    if (v && v.trim() !== '') return;
+    this._grace = this._grace || {};
+    if (this._grace[id]) clearTimeout(this._grace[id]);
+    this._grace[id] = setTimeout(() => {
+      delete this._grace[id];
+      this.setState((s) => ({ live: { ...s.live, d: s.live.d.filter((c) => !(c.id === id && (!c.text || c.text.trim() === ''))) } }));
+    }, 4000);
+  }
+
+  addEmptyCell() {
+    const id = ++this._id;
+    this.setState((s) => ({ live: { ...s.live, d: [...s.live.d, { id, text: '', mins: 480, frac: 1, decay: 0.0015, masked: false }] }, focusId: id }));
+  }
+
+  onListDblClick = (e) => { if (e.target === e.currentTarget) this.addEmptyCell(); };
+
+  openEdit(key, id) { this.setState((s) => ({ editing: { ...s.editing, [key]: id } })); }
+  closeEdit(key, id, v) {
+    this.editCell(key, id, v);
+    this.setState((s) => ({ editing: { ...s.editing, [key]: s.editing[key] === id ? null : s.editing[key] } }));
+  }
+  toggleReveal(id) { this.setState((s) => ({ revealed: { ...s.revealed, [id]: !s.revealed[id] } })); }
+
+  base() {
+    return [
+      { id: 1, k: 'TEXT',  det: 'looks like a Postgres URL', rec: 'postgres://ops:••••@db-3…', ttl: '3h',  size: '47 chars', frac: 0.42, urgent: false, val: 'postgres://ops:s3cr3t@db-3.internal:5432/prod' },
+      { id: 2, k: 'TEXT',  det: 'concealed · GitHub token',  rec: '•••••••••• ghp_4kQ…',       ttl: '8h',  size: '40 chars', frac: 0.96, urgent: false, val: 'ghp_4kQ9zR1sT7wX2vB8nM3pL6dF0aH5jK' },
+      { id: 3, k: 'IMAGE', det: 'error dialog · 1440×900',   rec: 'Screenshot — build 4471',   ttl: '24h', size: '212 KB',  frac: 0.66, urgent: false, val: '[image · handle only, no plaintext]' },
+      { id: 4, k: 'TEXT',  det: 'postal address',            rec: '14 Rue de la Paix, 75002…', ttl: '43m', size: '64 chars', frac: 0.11, urgent: true,  val: '14 Rue de la Paix, 75002 Paris, France' },
+      { id: 5, k: 'LINK',  det: 'looks like a share URL',    rec: 'https://example.com/d/ab…', ttl: '7d',  size: '—',        frac: 0.90, urgent: false, val: 'https://example.com/d/ab8f2c' },
+    ];
+  }
+
+  renderVals() {
+    const ember = this.props.accent ?? '#d45a2a';
+    const blur = (this.props.frost ?? 24) + 'px';
+    const mk = (c) => ({
+      ...c,
+      cap: c.k + ' · ' + c.det,
+      arc: Math.max(3, Math.round(c.frac * 100)),
+      ringW: c.urgent ? 5 : 3,
+      ringWB: c.urgent ? 6 : 4,
+      bar: { height: '100%', width: Math.round(c.frac * 100) + '%', background: 'var(--ember)', borderRadius: '2px' },
+      expanded: !!this.state.expanded[c.id],
+      onToggle: () => this.setState((s) => ({ expanded: { ...s.expanded, [c.id]: !s.expanded[c.id] } })),
+      onCopy: (e) => {
+        let node = e && e.currentTarget ? e.currentTarget.parentElement : null;
+        while (node && !node.querySelector('textarea')) node = node.parentElement;
+        const el = node && node.querySelector('textarea');
+        if (!el) return;
+        el.focus(); el.select();
+        try { document.execCommand('copy'); } catch (err) {}
+        if (navigator.clipboard) navigator.clipboard.writeText(el.value).catch(() => {});
+      },
+    });
+    const cells = this.base().map(mk);
+    const live = this.state.live || { a: [], b: [], c: [] };
+    const dress = (key) => live[key].map((c) => {
+      const pct = Math.max(0, Math.min(100, c.frac * 100)) + '%';
+      return {
+        ...c,
+        plain: !c.masked,
+        ttlTxt: this.fmtTtl(c),
+        onEdit: (e) => this.editCell(key, c.id, e.target.value),
+        bar: { height: '100%', width: pct, background: 'var(--ember)', borderRadius: '1px' },
+        fillH: { position: 'absolute', top: 0, left: 0, bottom: 0, width: pct, background: 'var(--ember)', opacity: 0.13 },
+        fillV: { position: 'absolute', left: 0, right: 0, bottom: 0, height: pct, background: 'var(--ember)', opacity: 0.11 },
+      };
+    });
+    const revealed = this.state.revealed || {};
+    const editing = this.state.editing || {};
+    const dressD = (key) => live[key].map((c) => {
+      const pct = Math.max(0, Math.min(100, c.frac * 100)) + '%';
+      const lines = String(c.text).split('\n');
+      const first = lines[0];
+      const extra = lines.length - 1;
+      const rev = !!revealed[c.id];
+      const isEditing = editing[key] === c.id;
+      const hideChars = c.masked && !rev;
+      const dots = '•'.repeat(Math.min((first.replace(/\s/g, '').length || first.length), 26));
+      return {
+        ...c,
+        isEditing,
+        reading: !isEditing,
+        showMasked: hideChars,
+        showPlain: !hideChars,
+        displayText: hideChars ? dots : first,
+        multiline: extra > 0,
+        moreTxt: '⏎ ' + (extra + 1) + ' lines',
+        rows: Math.max(2, Math.min(lines.length, 8)),
+        ttlTxt: this.fmtTtl(c),
+        onOpen: () => this.openEdit(key, c.id),
+        onBlur: (e) => this.closeEdit(key, c.id, e.target.value),
+        onEditLive: (e) => this.editCell(key, c.id, e.target.value),
+        onReveal: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.toggleReveal(c.id); },
+        eye: rev ? '𝅼' : '⦿',
+        fillH: { position: 'absolute', top: 0, left: 0, bottom: 0, width: pct, background: 'var(--ember)', opacity: 0.13 },
+      };
+    });
+    const proto = ((this.state.live || {}).d || []).slice()
+      .sort((a, b) => ((a.frac * a.mins) - (b.frac * b.mins)) || (a.id - b.id))
+      .map((c) => {
+        const pct = Math.max(0, Math.min(100, c.frac * 100)) + '%';
+        const rev = !!revealed[c.id];
+        const showMasked = c.masked && !rev;
+        return {
+          ...c,
+          rev,
+          showMasked,
+          showPlain: !showMasked,
+          ttlTxt: this.fmtTtl(c),
+          autofocus: this.state.focusId === c.id,
+          autoRef: (el) => { if (el) this.grow(el); },
+          onEditLive: (e) => { this.grow(e.target); this.editP(c.id, e.target.value); },
+          onFocusCell: () => this.focusP(c.id),
+          onBlurCell: (e) => this.blurP(c.id, e.target.value),
+          onReveal: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.toggleReveal(c.id); },
+          onCycle: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.cycleTtl('d', c.id); },
+          fillH: { position: 'absolute', top: 0, left: 0, bottom: 0, width: pct, background: 'var(--ember)', opacity: 0.12 },
+        };
+      });
+    return {
+      ember, blur, cellsA: cells, cellsB: cells, cellsC: cells,
+      liveA: dress('a'), liveB: dress('b'), liveC: dress('c'),
+      liveD: dressD('d'), onPasteD: this.mkPaste('d'),
+      liveP: proto, onDropInput: this.onDropInput, onDropKey: this.onDropKey, onListDbl: this.onListDblClick,
+      onPasteA: this.mkPaste('a'), onPasteB: this.mkPaste('b'), onPasteC: this.mkPaste('c'),
+    };
+  }
+}
+</script>
+</body>
+</html>

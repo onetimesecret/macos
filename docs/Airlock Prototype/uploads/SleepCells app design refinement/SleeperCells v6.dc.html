@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<style>
+ body{margin:0;background:#ecebe8;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;--ember:#d45a2a}
+ .dv-turn{padding:44px 48px 40px}
+ .dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 6px}
+ .dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}
+ .dv-tname{font:600 13px/1.2 system-ui,sans-serif;color:#1a1a1a}
+ .dv-sub{margin:0 0 24px;font:13px/1.55 system-ui;color:rgba(0,0,0,.52);max-width:760px}
+ .dv-note{font:10.5px/1.5 ui-monospace,Menlo,monospace;color:#7a4a2c;background:rgba(160,100,50,.06);border:1px solid rgba(160,100,50,.2);padding:7px 10px;border-radius:8px}
+ a{color:var(--ember);text-decoration:none} a:hover{color:#a6421c}
+ @keyframes ttlpop{0%{opacity:0;transform:translateY(5px)}18%{opacity:1;transform:translateY(0)}70%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-7px)}}
+</style>
+</helmet>
+<section class="dv-turn" id="t6" style="--ember: {{ember}}; --paper: {{paper}}; --ink: {{ink}}; --chip: {{chip}}">
+<div class="dv-thd"><a class="dv-tid" href="#t6">6</a><span class="dv-tname">New page &middot; time as geometry, resizable window, Recently deleted</span></div>
+<p class="dv-sub">The passage of time now uses the one thing every cell shares: its width. The full width is the horizon N (24&nbsp;h by default) &mdash; a cell with 12&nbsp;h left fills half-way; anything beyond N pegs at full and stops mattering visually. A thin column on the right edge is the slow axis (N&times;7, a week) draining downward. The label on each cell is the TTL rung in use (age since added lives in its tooltip); hover a cell to see the exact remaining time as a watermark countdown — click it to keep it visible. The window resizes by its right edge, bottom edge, and bottom corners. &ldquo;Expired&rdquo; is renamed <b>Recently deleted</b> and works like the Trash: &times; sends a cell there, everything there leaves after 24&nbsp;h, deleting takes two clicks, and the list is always reachable &mdash; even when empty.</p>
+<div style="display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start">
+<div id="6a" style="flex:none;display:flex;flex-direction:column;gap:11px;max-width:460px">
+  <div class="dv-note">LIVE &middot; drag the right/bottom edges or corners to resize &middot; hover a cell for the countdown &middot; the full width = 24&nbsp;h left, the right column = a week &middot; &times; moves a cell to Recently deleted (&ldquo;0 deleted&rdquo; still opens it) &middot; time runs fast here</div>
+  <div ref="{{panelRef}}" style="position:relative;width:440px;max-height:640px;display:flex;flex-direction:column;border-radius:14px;overflow:hidden;background:var(--paper);border:1px solid color-mix(in srgb, var(--ink) 12%, transparent);box-shadow:0 28px 80px rgba(20,16,12,.3), 0 2px 8px rgba(0,0,0,.08)">
+    <div style="display:flex;align-items:center;gap:4px;padding:8px 10px 7px;flex:none">
+      <button onClick="{{onSyncToggle}}" title="{{syncTitle}}" aria-label="{{syncTitle}}" style="border:none;background:transparent;cursor:pointer;padding:4px 6px;border-radius:6px;display:flex;align-items:center" style-hover="background: color-mix(in srgb, var(--ink) 7%, transparent)">
+        <sc-if value="{{syncLocal}}" hint-placeholder-val="{{true}}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="color-mix(in srgb, var(--ink) 45%, transparent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+        </sc-if>
+        <sc-if value="{{syncRemote}}" hint-placeholder-val="{{false}}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ember)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path><polyline points="9 13.5 11.4 16 15.5 11.5"></polyline></svg>
+        </sc-if>
+      </button>
+      <span style="font:600 12px/1 ui-monospace,Menlo,monospace;color:var(--ink)">Airlock</span>
+      <span style="flex:1"></span>
+      <button onClick="{{onSort}}" title="Sort — each click cycles: time left, A–Z (⌘S)" aria-label="Sort cells. Each click cycles between time left and alphabetical." style="border:none;background:transparent;cursor:pointer;color:color-mix(in srgb, var(--ink) 52%, transparent);padding:4px 7px;border-radius:6px;display:flex;align-items:center;gap:5px" style-hover="color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16"></path><path d="M4 7l3-3 3 3"></path><path d="M17 20V4"></path><path d="M14 17l3 3 3-3"></path></svg>
+        <sc-if value="{{sortLabelOn}}" hint-placeholder-val="{{false}}">
+          <span style="font:600 10px/1 ui-monospace,Menlo,monospace">{{sortLabel}}</span>
+        </sc-if>
+      </button>
+      <button onClick="{{onPin}}" title="{{pinTitle}}" aria-label="{{pinTitle}}" style="border:none;background:transparent;cursor:pointer;padding:4px 6px;border-radius:6px;display:flex;align-items:center" style-hover="background: color-mix(in srgb, var(--ink) 7%, transparent)">
+        <sc-if value="{{pinned}}" hint-placeholder-val="{{true}}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="var(--ember)" stroke="var(--ember)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"></path><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"></path></svg>
+        </sc-if>
+        <sc-if value="{{unpinned}}" hint-placeholder-val="{{false}}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="color-mix(in srgb, var(--ink) 45%, transparent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"></path><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"></path></svg>
+        </sc-if>
+      </button>
+    </div>
+    <sc-if value="{{syncOpen}}" hint-placeholder-val="{{false}}">
+      <div onClick="{{onSyncClose}}" style="position:fixed;inset:0;z-index:5"></div>
+      <div role="menu" style="position:absolute;top:36px;left:8px;z-index:6;width:240px;background:var(--chip);border:1px solid color-mix(in srgb, var(--ink) 14%, transparent);border-radius:10px;box-shadow:0 14px 38px rgba(0,0,0,.18);padding:6px;display:flex;flex-direction:column;gap:2px">
+        <div role="menuitem" style="display:flex;align-items:flex-start;gap:8px;padding:7px 9px;border-radius:7px">
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+            <span style="font:600 11px/1.2 ui-monospace,Menlo,monospace;color:var(--ink)">Local</span>
+            <span style="font:400 10.5px/1.4 ui-monospace,Menlo,monospace;color:color-mix(in srgb, var(--ink) 52%, transparent)">Cells stay on this device</span>
+          </div>
+          <sc-if value="{{syncLocal}}" hint-placeholder-val="{{true}}"><span style="color:var(--ember);font:700 11px/1.2 ui-monospace,Menlo,monospace">✓</span></sc-if>
+        </div>
+        <div role="menuitem" style="display:flex;align-items:flex-start;gap:8px;padding:7px 9px;border-radius:7px">
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+            <span style="font:600 11px/1.2 ui-monospace,Menlo,monospace;color:var(--ink)">Remote</span>
+            <span style="font:400 10.5px/1.4 ui-monospace,Menlo,monospace;color:color-mix(in srgb, var(--ink) 52%, transparent)">Encrypted, available from any device</span>
+          </div>
+          <sc-if value="{{syncRemote}}" hint-placeholder-val="{{false}}"><span style="color:var(--ember);font:700 11px/1.2 ui-monospace,Menlo,monospace">✓</span></sc-if>
+        </div>
+        <div style="height:1px;background:color-mix(in srgb, var(--ink) 9%, transparent);margin:4px 2px"></div>
+        <button onClick="{{onSyncCta}}" style="border:1px solid color-mix(in srgb, var(--ink) 14%, transparent);background:var(--paper);border-radius:7px;padding:7px 9px;cursor:pointer;font:600 11px/1.2 ui-monospace,Menlo,monospace;color:var(--ink);text-align:center" style-hover="background: color-mix(in srgb, var(--ink) 6%, transparent)">{{syncCta}}</button>
+      </div>
+    </sc-if>
+    <sc-if value="{{showCells}}" hint-placeholder-val="{{true}}">
+      <div ref="{{listRef}}" onDoubleClick="{{onListDbl}}" style="flex:0 1 auto;overflow-y:auto;overscroll-behavior:contain;border-top:1px solid color-mix(in srgb, var(--ink) 9%, transparent)">
+        <sc-if value="{{isEmpty}}" hint-placeholder-val="{{false}}">
+          <div style="padding:26px 16px;text-align:center;font:400 12px/1.5 ui-monospace,Menlo,monospace;color:color-mix(in srgb, var(--ink) 40%, transparent)">Empty is the resting state.</div>
+        </sc-if>
+        <sc-for list="{{cells}}" as="c" key="{{c.id}}" hint-placeholder-count="4">
+          <div onMouseEnter="{{c.onEnter}}" onMouseLeave="{{c.onLeave}}" onDragOver="{{c.onDragOver}}" onDrop="{{c.onDrop}}" style="position:relative;display:flex;align-items:flex-start;gap:8px;padding:11px 14px 12px 6px;border-bottom:1px solid color-mix(in srgb, var(--ink) 7%, transparent)">
+            <sc-if value="{{c.wmOn}}" hint-placeholder-val="{{false}}">
+              <div aria-hidden="true" style="{{c.wmStyle}}"><span onClick="{{c.onWmClick}}" title="Click to keep this visible" style="pointer-events:auto;cursor:pointer">{{c.countdown}}</span></div>
+            </sc-if>
+            <span draggable="{{true}}" onDragStart="{{c.onDragStart}}" onDragEnd="{{c.onDragEnd}}" title="Drag to reorder" aria-label="Drag to reorder" style="flex:none;cursor:grab;color:color-mix(in srgb, var(--ink) 28%, transparent);font:400 14px/1.5 ui-monospace,Menlo,monospace;padding:0 3px;user-select:none;position:relative" style-hover="color: color-mix(in srgb, var(--ink) 62%, transparent)">⠿</span>
+            <textarea rows="1" value="{{c.text}}" ref="{{c.autoRef}}" autoFocus="{{c.autofocus}}" spellCheck="{{false}}" onChange="{{c.onEditLive}}" onCopy="{{c.onCopyReset}}" onFocus="{{c.onFocusCell}}" style="flex:1;min-width:0;min-height:21px;resize:none;overflow:hidden;border:none;background:transparent;outline:none;color:var(--ink);caret-color:var(--ember);font:400 13px/1.6 ui-monospace,Menlo,monospace;padding:0;margin:0;display:block"></textarea>
+            <div style="display:flex;align-items:center;gap:6px;flex:none;margin-top:3px;position:relative">
+              <sc-if value="{{showPlot}}" hint-placeholder-val="{{false}}">
+                <div title="Time left, plotted: across = hours axis, up = week axis" style="position:relative;width:22px;height:22px;border:1px solid color-mix(in srgb, var(--ink) 14%, transparent);border-radius:4px;flex:none;background:color-mix(in srgb, var(--ink) 3%, transparent);overflow:hidden">
+                  <div style="{{c.dot}}"></div>
+                </div>
+              </sc-if>
+              <button onClick="{{c.onCycle}}" title="Lasts up to {{c.rungTxt}} — click to change · added {{c.ageTxt}} ago" style="position:relative;border:none;background:transparent;cursor:pointer;color:color-mix(in srgb, var(--ink) 45%, transparent);font:500 10.5px/1 ui-monospace,Menlo,monospace;padding:3px 5px;border-radius:5px;min-width:24px;text-align:right" style-hover="color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent)">{{c.rungTxt}}<sc-if value="{{c.flashOn}}" hint-placeholder-val="{{false}}"><span key="{{c.flashKey}}" style="position:absolute;bottom:calc(100% + 5px);right:0;background:var(--ink);color:var(--paper);padding:4px 7px;border-radius:5px;font:600 11px/1 ui-monospace,Menlo,monospace;pointer-events:none;white-space:nowrap;animation:ttlpop .95s ease-out forwards;box-shadow:0 4px 12px rgba(0,0,0,.18)">{{c.rungTxt}}</span></sc-if></button>
+              <button onClick="{{c.onRemove}}" title="Move to Recently deleted" aria-label="Move this cell to Recently deleted" style="border:none;background:transparent;cursor:pointer;color:color-mix(in srgb, var(--ink) 32%, transparent);font:500 13px/1 ui-monospace,Menlo,monospace;padding:2px 4px;border-radius:5px" style-hover="color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent)">×</button>
+            </div>
+            <sc-if value="{{showAxes}}" hint-placeholder-val="{{true}}">
+              <div aria-hidden="true" style="position:absolute;left:0;right:0;bottom:0;height:2px;background:color-mix(in srgb, var(--ink) 6%, transparent)">
+                <div style="{{c.xBar}}"></div>
+              </div>
+            </sc-if>
+            <sc-if value="{{barRightOn}}" hint-placeholder-val="{{true}}">
+              <div aria-hidden="true" style="position:absolute;top:0;bottom:0;right:0;width:3px;background:color-mix(in srgb, var(--ink) 6%, transparent)">
+                <div style="{{c.yBar}}"></div>
+              </div>
+            </sc-if>
+            <sc-if value="{{barLeftOn}}" hint-placeholder-val="{{false}}">
+              <div aria-hidden="true" style="position:absolute;top:0;bottom:0;left:0;width:3px;background:color-mix(in srgb, var(--ink) 6%, transparent)">
+                <div style="{{c.yBar}}"></div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <div onClick="{{onFooterClick}}" style="flex:none;padding:12px 16px;display:flex;flex-direction:column;gap:8px;cursor:text">
+        <textarea rows="1" ref="{{dropRef}}" placeholder="Paste or type here" aria-label="New cell. This is a staging area — nothing is added until you press command return." onInput="{{onDropInput}}" onKeyDown="{{onDropKey}}" spellCheck="{{false}}" style="width:100%;box-sizing:border-box;min-height:21px;max-height:132px;overflow-y:auto;resize:none;border:none;border-radius:0;background:transparent;color:var(--ink);caret-color:var(--ember);font:400 13px/1.6 ui-monospace,Menlo,monospace;padding:0;outline:none"></textarea>
+        <div style="display:flex;align-items:center;gap:10px;min-height:20px">
+          <sc-if value="{{onDeck}}" hint-placeholder-val="{{false}}">
+            <span role="status" style="display:flex;align-items:center;gap:6px;font:500 11px/1 ui-monospace,Menlo,monospace;color:var(--ember)"><span style="width:6px;height:6px;border-radius:50%;background:var(--ember)"></span>On deck — not a cell yet</span>
+          </sc-if>
+          <span style="flex:1"></span>
+          <span style="display:flex;align-items:center;gap:5px;font:400 11px/1 ui-monospace,Menlo,monospace;color:color-mix(in srgb, var(--ink) 52%, transparent)">
+            <span style="display:inline-block;padding:3px 6px;border:1px solid color-mix(in srgb, var(--ink) 16%, transparent);border-bottom-width:2px;border-radius:4px;background:var(--chip);font:500 11px/1 ui-monospace,Menlo,monospace;color:color-mix(in srgb, var(--ink) 66%, transparent)">⌘⏎</span>
+            <span>Add cell</span>
+            <span style="opacity:.5;padding:0 2px">·</span>
+            <span style="display:inline-block;padding:3px 6px;border:1px solid color-mix(in srgb, var(--ink) 16%, transparent);border-bottom-width:2px;border-radius:4px;background:var(--chip);font:500 11px/1 ui-monospace,Menlo,monospace;color:color-mix(in srgb, var(--ink) 66%, transparent)">⏎</span>
+            <span>New line</span>
+          </span>
+          <button onClick="{{onOpenBin}}" title="Recently deleted — kept for 24 h" aria-label="{{binLabel}}" style="border:none;background:color-mix(in srgb, var(--ink) 7%, transparent);cursor:pointer;color:color-mix(in srgb, var(--ink) 62%, transparent);font:500 10.5px/1 ui-monospace,Menlo,monospace;padding:4px 8px;border-radius:6px" style-hover="background: color-mix(in srgb, var(--ink) 11%, transparent); color: var(--ink)">{{binBtnTxt}}</button>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{showBin}}" hint-placeholder-val="{{false}}">
+      <div style="flex:0 1 auto;overflow-y:auto;overscroll-behavior:contain;border-top:1px solid color-mix(in srgb, var(--ink) 9%, transparent)">
+        <div style="padding:9px 16px 8px;display:flex;align-items:baseline;gap:8px;border-bottom:1px solid color-mix(in srgb, var(--ink) 7%, transparent)">
+          <span style="font:600 10px/1 ui-monospace,Menlo,monospace;color:color-mix(in srgb, var(--ink) 45%, transparent);letter-spacing:.08em">RECENTLY DELETED</span>
+          <span style="flex:1"></span>
+          <span style="font:400 10px/1 ui-monospace,Menlo,monospace;color:color-mix(in srgb, var(--ink) 36%, transparent)">kept for 24 h</span>
+        </div>
+        <sc-if value="{{binEmpty}}" hint-placeholder-val="{{false}}">
+          <div style="padding:26px 16px;text-align:center;font:400 12px/1.5 ui-monospace,Menlo,monospace;color:color-mix(in srgb, var(--ink) 40%, transparent)">Nothing here. Deleted cells wait here for a day.</div>
+        </sc-if>
+        <sc-for list="{{binList}}" as="x" key="{{x.id}}" hint-placeholder-count="2">
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:11px 16px;border-bottom:1px solid color-mix(in srgb, var(--ink) 7%, transparent)">
+            <div style="flex:1;min-width:0;font:400 13px/1.6 ui-monospace,Menlo,monospace;color:color-mix(in srgb, var(--ink) 44%, transparent);white-space:pre-wrap;word-break:break-word">{{x.displayText}}</div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none;margin-top:1px">
+              <span style="font:400 10px/1 ui-monospace,Menlo,monospace;color:color-mix(in srgb, var(--ink) 36%, transparent)">{{x.sinceTxt}} ago</span>
+              <button onClick="{{x.onRestore}}" title="Bring this cell back with a fresh clock" style="border:1px solid color-mix(in srgb, var(--ink) 16%, transparent);background:var(--chip);cursor:pointer;color:var(--ink);font:500 10.5px/1 ui-monospace,Menlo,monospace;padding:4px 9px;border-radius:6px;min-width:104px" style-hover="background: color-mix(in srgb, var(--ink) 6%, transparent)">Restore</button>
+              <sc-if value="{{x.notArmed}}" hint-placeholder-val="{{true}}">
+                <button onClick="{{x.onDelete}}" title="Click twice to delete for good" style="border:1px solid color-mix(in srgb, var(--ink) 12%, transparent);background:transparent;cursor:pointer;color:color-mix(in srgb, var(--ink) 52%, transparent);font:500 10.5px/1 ui-monospace,Menlo,monospace;padding:4px 9px;border-radius:6px;min-width:104px" style-hover="color: var(--ink); border-color: color-mix(in srgb, var(--ink) 22%, transparent)">Delete</button>
+              </sc-if>
+              <sc-if value="{{x.armed}}" hint-placeholder-val="{{false}}">
+                <button onClick="{{x.onDelete}}" title="This removes it for good" style="border:1px solid var(--ember);background:rgba(212,90,42,.08);cursor:pointer;color:var(--ember);font:600 10.5px/1 ui-monospace,Menlo,monospace;padding:4px 9px;border-radius:6px;min-width:104px">Really delete?</button>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="flex:none;display:flex;align-items:center;padding:10px 12px;gap:8px">
+        <button onClick="{{onCloseBin}}" style="border:none;background:transparent;cursor:pointer;color:color-mix(in srgb, var(--ink) 62%, transparent);font:500 11px/1 ui-monospace,Menlo,monospace;padding:5px 8px;border-radius:6px" style-hover="background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink)">← Back</button>
+        <span style="flex:1"></span>
+        <button onClick="{{onClearBin}}" style="border:none;background:transparent;cursor:pointer;color:color-mix(in srgb, var(--ink) 52%, transparent);font:500 11px/1 ui-monospace,Menlo,monospace;padding:5px 8px;border-radius:6px" style-hover="background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink)">Clear all</button>
+      </div>
+    </sc-if>
+    <svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10" style="position:absolute;right:3px;bottom:3px;pointer-events:none;opacity:.35"><line x1="2" y1="9" x2="9" y2="2" stroke="color-mix(in srgb, var(--ink) 62%, transparent)" stroke-width="1"></line><line x1="6" y1="9" x2="9" y2="6" stroke="color-mix(in srgb, var(--ink) 62%, transparent)" stroke-width="1"></line></svg>
+    <div onPointerDown="{{onResizeR}}" title="Drag to resize" style="position:absolute;top:0;bottom:14px;right:0;width:6px;cursor:ew-resize;z-index:4;touch-action:none"></div>
+    <div onPointerDown="{{onResizeB}}" title="Drag to resize" style="position:absolute;left:14px;right:14px;bottom:0;height:6px;cursor:ns-resize;z-index:4;touch-action:none"></div>
+    <div onPointerDown="{{onResizeBR}}" title="Drag to resize" style="position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;z-index:4;touch-action:none"></div>
+    <div onPointerDown="{{onResizeBL}}" title="Drag to resize" style="position:absolute;left:0;bottom:0;width:14px;height:14px;cursor:nesw-resize;z-index:4;touch-action:none"></div>
+  </div>
+</div>
+<div style="flex:none;width:310px;display:flex;flex-direction:column;gap:10px;padding-top:2px">
+  <div style="font:600 11px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.55);letter-spacing:.06em">DESIGN NOTES</div>
+  <ul style="margin:0;padding:0 0 0 16px;font:12px/1.65 system-ui;color:rgba(0,0,0,.6);display:flex;flex-direction:column;gap:8px">
+    <li><b>Resize.</b> Right edge, bottom edge, and both bottom corners drag to resize. (Top/left stay anchored — the real panel docks to the screen edge.)</li>
+    <li><b>Time as geometry.</b> The full cell width is the horizon N (default 24&nbsp;h). Half the width = N/2 left. Beyond N the line pegs full — by design, 2&times;N vs 7&times;N doesn&rsquo;t matter visually. The thin right-edge column is the slow axis (up to N&times;7): it shows only the time <i>beyond</i> N, so at N or less it is empty and the width line alone carries the story. Ember only when under an hour.</li>
+    <li><b>The label is the rung.</b> The small label shows the TTL in use (8h, 3d…) and stays put; clicking cycles it, and the new rung pops up above the label so the cursor never hides it. Age since added lives in the tooltip; the exact remaining time appears on hover as a watermark countdown — click the watermark to keep it visible after the cursor leaves, click again to release — d&nbsp;hh:mm:ss, like a stopwatch. Tap-and-hold would do the same on touch (not built here).</li>
+    <li><b>Recently deleted, not &ldquo;Expired&rdquo;.</b> It behaves like the Trash: &times; sends a cell there, expiry sends it there, everything leaves after 24&nbsp;h unless restored. The time shown inside is since the cell expired or was removed.</li>
+    <li><b>Always reachable.</b> The &ldquo;0 deleted&rdquo; button stays visible even when empty — some people need to see the empty list to trust it&rsquo;s empty.</li>
+    <li><b>Two-click delete.</b> Below Restore: first click arms (&ldquo;Really delete?&rdquo;), second click deletes. It disarms itself after a few seconds.</li>
+    <li><b>Tweaks</b> (panel on the right): slow-axis on the left instead of right &middot; different N for the width &middot; different multiples of N for the column &middot; or swap both bars for a small 2-D plot per cell (across = hours axis, up = week axis; the dot walks toward the corner as time runs out).</li>
+    <li><b>Carried from v5:</b> no auto-sort (button/⌘S cycles time&nbsp;left&nbsp;/&nbsp;A&ndash;Z, dragging returns to manual order) &middot; empty cells valid &middot; on-deck staging &middot; editing or copying restarts the clock &middot; sync cloud &middot; pin.</li>
+  </ul>
+</div>
+</div>
+<p style="margin:28px 0 0;font:12px/1.7 system-ui;color:rgba(0,0,0,.5)">Try next: &ldquo;label the width axis so N is discoverable&rdquo; &middot; &ldquo;what does full (12 cells) look like&rdquo; &middot; &ldquo;dark appearance&rdquo; &middot; &ldquo;the watermark as the Reduce-Motion static form&rdquo;</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+ &quot;$preview&quot;: { &quot;width&quot;: 1040, &quot;height&quot;: 860 },
+ &quot;accent&quot;: { &quot;editor&quot;: &quot;color&quot;, &quot;default&quot;: &quot;#d45a2a&quot;, &quot;options&quot;: [&quot;#d45a2a&quot;, &quot;#c0542a&quot;, &quot;#8a6a3a&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Theme&quot; },
+ &quot;darkMode&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Theme&quot; },
+ &quot;timeStyle&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;axes&quot;, &quot;options&quot;: [&quot;axes&quot;, &quot;plot&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Time geometry&quot; },
+ &quot;barSide&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;right&quot;, &quot;options&quot;: [&quot;right&quot;, &quot;left&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Time geometry&quot; },
+ &quot;horizonN&quot;: { &quot;editor&quot;: &quot;range&quot;, &quot;default&quot;: 24, &quot;min&quot;: 6, &quot;max&quot;: 48, &quot;step&quot;: 6, &quot;unit&quot;: &quot;h&quot;, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;Time geometry&quot; },
+ &quot;yMultiple&quot;: { &quot;editor&quot;: &quot;range&quot;, &quot;default&quot;: 7, &quot;min&quot;: 2, &quot;max&quot;: 14, &quot;step&quot;: 1, &quot;unit&quot;: &quot;×N&quot;, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;Time geometry&quot; },
+ &quot;bigWatermark&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Watermark&quot; },
+ &quot;fastTime&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Demo&quot; },
+ &quot;signedIn&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Demo&quot; }
+}">
+class Component extends DCLogic {
+  presets = [60, 180, 480, 1440, 4320, 10080];
+  sortModes = ['ttl', 'alpha'];
+  state = { cells: this.seed(), bin: this.seedBin(), focusId: null, hoverId: null, view: 'cells', syncOpen: false, remote: null, pinned: true, sortLabel: '', dropOnDeck: false, armedId: null, pinnedWm: {}, flashId: null, flashN: 0 };
+
+  seed() {
+    this._id = 0;
+    this._sortIdx = 0;
+    const mk = (text, mins, remain, age) => ({ id: ++this._id, text, mins, remain, age });
+    return [
+      mk('boarding BA2490 · gate 14 · seat 22C', 60, 22, 38),
+      mk('14 Rue de la Paix\n75002 Paris\nFrance', 180, 130, 50),
+      mk('postgres://ops:s3cr3t@db-3.internal:5432/prod', 1440, 1100, 340),
+      mk('ghp_4kQ9zR1sT7wX2vB8nM3pL6dF0aH5jK', 4320, 4100, 220),
+      mk('https://example.com/d/ab8f2c', 10080, 8600, 1480),
+    ];
+  }
+
+  seedBin() {
+    return [{ id: 9001, text: 'meet at 6 — parking level 2', mins: 180, sinceGone: 32 }];
+  }
+
+  componentDidMount() {
+    this._timer = setInterval(() => {
+      const fast = this.props.fastTime ?? true;
+      const dm = (fast ? 90 : 1) / 60;
+      this.setState((s) => {
+        const next = [];
+        const gone = [];
+        s.cells.forEach((c) => {
+          const nr = c.remain - dm;
+          if (nr > 0) next.push({ ...c, remain: nr, age: c.age + dm });
+          else gone.push({ id: c.id, text: c.text, mins: c.mins, sinceGone: 0 });
+        });
+        const bin = [...s.bin, ...gone]
+          .map((x) => ({ ...x, sinceGone: x.sinceGone + dm }))
+          .filter((x) => x.sinceGone < 1440);
+        return { cells: next, bin };
+      });
+    }, 1000);
+    this._onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        this.cycleSort();
+      }
+    };
+    window.addEventListener('keydown', this._onKey);
+  }
+
+  componentWillUnmount() {
+    if (this._timer) clearInterval(this._timer);
+    if (this._onKey) window.removeEventListener('keydown', this._onKey);
+    if (this._armTimer) clearTimeout(this._armTimer);
+  }
+
+  cycleSort() {
+    const mode = this.sortModes[(this._sortIdx || 0) % this.sortModes.length];
+    this._sortIdx = (this._sortIdx || 0) + 1;
+    this.setState((s) => ({
+      sortLabel: mode === 'ttl' ? 'time' : 'a–z',
+      cells: s.cells.slice().sort(
+        mode === 'ttl'
+          ? (a, b) => a.remain - b.remain
+          : (a, b) => String(a.text).trim().localeCompare(String(b.text).trim())
+      ),
+    }));
+  }
+
+  fmtDur(m) {
+    if (m >= 2880) return Math.round(m / 1440) + 'd';
+    if (m >= 60) return Math.round(m / 60) + 'h';
+    if (m >= 1) return Math.round(m) + 'm';
+    return 'now';
+  }
+
+  fmtCountdown(min) {
+    const t = Math.max(0, Math.round(min * 60));
+    const d = Math.floor(t / 86400);
+    const h = Math.floor((t % 86400) / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    const s = t % 60;
+    const p = (n) => String(n).padStart(2, '0');
+    return (d > 0 ? d + 'd ' : '') + p(h) + ':' + p(m) + ':' + p(s);
+  }
+
+  rungLabel(mins) {
+    return mins >= 1440 ? Math.round(mins / 1440) + 'd' : Math.round(mins / 60) + 'h';
+  }
+
+  grow(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }
+
+  growDrop(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 132) + 'px';
+  }
+
+  addCell(text) {
+    this.setState((s) => ({ cells: [...s.cells, { id: ++this._id, text, mins: 480, remain: 480, age: 0 }] }));
+  }
+
+  addEmptyCell() {
+    const id = ++this._id;
+    this.setState((s) => ({ cells: [...s.cells, { id, text: '', mins: 480, remain: 480, age: 0 }], focusId: id }));
+  }
+
+  editCell(id, v) {
+    this.setState((s) => ({ cells: s.cells.map((c) => (c.id === id ? { ...c, text: v, remain: c.mins } : c)) }));
+  }
+
+  restartClock(id) {
+    this.setState((s) => ({ cells: s.cells.map((c) => (c.id === id ? { ...c, remain: c.mins } : c)) }));
+  }
+
+  removeCell(id) {
+    this.setState((s) => {
+      const c = s.cells.find((x) => x.id === id);
+      if (!c) return null;
+      return {
+        cells: s.cells.filter((x) => x.id !== id),
+        bin: [...s.bin, { id: c.id, text: c.text, mins: c.mins, sinceGone: 0 }],
+      };
+    });
+  }
+
+  cycleTtl(id) {
+    this.setState((s) => ({
+      cells: s.cells.map((c) => {
+        if (c.id !== id) return c;
+        let i = this.presets.findIndex((p) => p >= c.mins - 0.5);
+        if (i < 0) i = this.presets.length - 1;
+        const next = this.presets[(i + 1) % this.presets.length];
+        return { ...c, mins: next, remain: next };
+      }),
+      flashId: id,
+      flashN: s.flashN + 1,
+    }));
+    if (this._flashTimer) clearTimeout(this._flashTimer);
+    this._flashTimer = setTimeout(() => {
+      this.setState((s) => (s.flashId === id ? { flashId: null } : null));
+    }, 1000);
+  }
+
+  moveCell(dragId, overId) {
+    this.setState((s) => {
+      const arr = s.cells.slice();
+      const from = arr.findIndex((c) => c.id === dragId);
+      const to = arr.findIndex((c) => c.id === overId);
+      if (from < 0 || to < 0 || from === to) return null;
+      const [moved] = arr.splice(from, 1);
+      arr.splice(to, 0, moved);
+      return { cells: arr, sortLabel: '' };
+    });
+  }
+
+  restoreCell(id) {
+    this.setState((s) => {
+      const x = s.bin.find((e) => e.id === id);
+      if (!x) return null;
+      return {
+        bin: s.bin.filter((e) => e.id !== id),
+        cells: [...s.cells, { id: x.id, text: x.text, mins: x.mins, remain: x.mins, age: 0 }],
+        armedId: s.armedId === id ? null : s.armedId,
+      };
+    });
+  }
+
+  deleteForGood(id) {
+    if (this.state.armedId !== id) {
+      this.setState({ armedId: id });
+      if (this._armTimer) clearTimeout(this._armTimer);
+      this._armTimer = setTimeout(() => {
+        this.setState((s) => (s.armedId === id ? { armedId: null } : null));
+      }, 3500);
+      return;
+    }
+    this.setState((s) => ({ bin: s.bin.filter((e) => e.id !== id), armedId: null }));
+  }
+
+  panelRef = (el) => { this._panelEl = el; };
+  listRef = (el) => { this._listEl = el; };
+  dropRef = (el) => { this._dropEl = el; };
+
+  startResize(mode) {
+    return (e) => {
+      const el = this._panelEl;
+      if (!el) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      const sx = e.clientX, sy = e.clientY, sw = r.width, sh = r.height;
+      const move = (ev) => {
+        const dx = ev.clientX - sx, dy = ev.clientY - sy;
+        if (mode.indexOf('r') >= 0) el.style.width = Math.max(340, Math.min(680, sw + dx)) + 'px';
+        if (mode.indexOf('l') >= 0) el.style.width = Math.max(340, Math.min(680, sw - dx)) + 'px';
+        if (mode.indexOf('b') >= 0) {
+          el.style.height = Math.max(220, Math.min(820, sh + dy)) + 'px';
+          el.style.maxHeight = 'none';
+          if (this._listEl) this._listEl.style.flex = '1 1 auto';
+        }
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    };
+  }
+
+  onResizeR = this.startResize('r');
+  onResizeB = this.startResize('b');
+  onResizeBR = this.startResize('br');
+  onResizeBL = this.startResize('bl');
+
+  onDropInput = (e) => {
+    this.growDrop(e.target);
+    const has = e.target.value.length > 0;
+    if (has !== this.state.dropOnDeck) this.setState({ dropOnDeck: has });
+  };
+
+  onDropKey = (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      const el = e.target;
+      this.addCell(el.value);
+      el.value = '';
+      this.growDrop(el);
+      this.setState({ dropOnDeck: false });
+    }
+  };
+
+  onFooterClick = (e) => {
+    const t = e.target.tagName;
+    if (t !== 'BUTTON' && t !== 'TEXTAREA' && this._dropEl) this._dropEl.focus();
+  };
+
+  onListDbl = (e) => { if (e.target === e.currentTarget) this.addEmptyCell(); };
+  onSort = () => { this.cycleSort(); };
+  onPin = () => { this.setState((s) => ({ pinned: !s.pinned })); };
+  onSyncToggle = () => { this.setState((s) => ({ syncOpen: !s.syncOpen })); };
+  onSyncClose = () => { this.setState({ syncOpen: false }); };
+  onSyncCta = () => { this.setState((s) => ({ remote: !(s.remote ?? (this.props.signedIn ?? false)) })); };
+  onOpenBin = (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.setState({ view: 'bin' }); };
+  onCloseBin = () => { this.setState({ view: 'cells', armedId: null }); };
+  onClearBin = () => { this.setState({ bin: [], view: 'cells', armedId: null }); };
+
+  renderVals() {
+    const ember = this.props.accent ?? '#d45a2a';
+    const dark = this.props.darkMode ?? false;
+    const paper = dark ? '#232220' : '#fcfcfb';
+    const ink = dark ? '#e9e6e1' : '#26231f';
+    const chip = dark ? '#31302c' : '#ffffff';
+    const N = (this.props.horizonN ?? 24) * 60;
+    const yM = this.props.yMultiple ?? 7;
+    const plot = (this.props.timeStyle ?? 'axes') === 'plot';
+    const side = this.props.barSide ?? 'right';
+    const bigWm = this.props.bigWatermark ?? false;
+    const panelW = (this._panelEl && this._panelEl.clientWidth) || 440;
+    const cells = this.state.cells.map((c) => {
+      const low = c.remain < 60;
+      const fx = Math.max(0, Math.min(1, c.remain / N));
+      const fy = Math.max(0, Math.min(1, (c.remain - N) / (N * Math.max(1, yM - 1))));
+      const countdown = this.fmtCountdown(c.remain);
+      const lines = String(c.text).split('\n').length;
+      const rowH = lines * 20.8 + 23;
+      const fs = bigWm
+        ? Math.max(21, Math.min(rowH * 0.72, (panelW - 104) / (countdown.length * 0.62)))
+        : 21;
+      const wmPinned = !!this.state.pinnedWm[c.id];
+      return {
+        ...c,
+        ageTxt: this.fmtDur(c.age),
+        rungTxt: this.rungLabel(c.mins),
+        countdown,
+        flashOn: this.state.flashId === c.id,
+        flashKey: 'f' + this.state.flashN,
+        wmOn: this.state.hoverId === c.id || wmPinned,
+        onWmClick: () => this.setState((s) => ({ pinnedWm: { ...s.pinnedWm, [c.id]: !s.pinnedWm[c.id] } })),
+        wmStyle: {
+          position: 'absolute', inset: 0, zIndex: 2,
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+          paddingRight: '92px', overflow: 'hidden',
+          pointerEvents: 'none',
+          font: '700 ' + fs.toFixed(1) + 'px/1 ui-monospace,Menlo,monospace',
+          color: 'color-mix(in srgb, var(--ink) 18%, transparent)',
+          letterSpacing: '.02em', whiteSpace: 'nowrap',
+        },
+        hovered: this.state.hoverId === c.id,
+        autofocus: this.state.focusId === c.id,
+        autoRef: (el) => { if (el) this.grow(el); },
+        onEnter: () => this.setState({ hoverId: c.id }),
+        onLeave: () => { if (this.state.hoverId === c.id) this.setState({ hoverId: null }); },
+        onEditLive: (e) => { this.grow(e.target); this.editCell(c.id, e.target.value); },
+        onCopyReset: () => this.restartClock(c.id),
+        onFocusCell: () => { if (this.state.focusId === c.id) this.setState({ focusId: null }); },
+        onCycle: () => this.cycleTtl(c.id),
+        onRemove: () => this.removeCell(c.id),
+        onDragStart: (e) => {
+          this._dragId = c.id;
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', ''); } catch (err) {}
+          }
+        },
+        onDragEnd: () => { this._dragId = null; },
+        onDragOver: (e) => {
+          e.preventDefault();
+          if (this._dragId && this._dragId !== c.id) this.moveCell(this._dragId, c.id);
+        },
+        onDrop: (e) => { e.preventDefault(); },
+        xBar: {
+          height: '100%',
+          width: Math.max(0.8, fx * 100) + '%',
+          background: low ? 'var(--ember)' : 'color-mix(in srgb, var(--ink) 32%, transparent)',
+        },
+        yBar: {
+          position: 'absolute',
+          bottom: 0, left: 0, right: 0,
+          height: fy <= 0 ? '0%' : Math.max(2, fy * 100) + '%',
+          background: low ? 'var(--ember)' : 'color-mix(in srgb, var(--ink) 20%, transparent)',
+        },
+        dot: {
+          position: 'absolute',
+          width: '5px', height: '5px', borderRadius: '50%',
+          left: 'calc(' + (fx * 100) + '% - 2.5px)',
+          bottom: 'calc(' + (fy * 100) + '% - 2.5px)',
+          background: low ? 'var(--ember)' : 'color-mix(in srgb, var(--ink) 55%, transparent)',
+        },
+      };
+    });
+    const armedId = this.state.armedId;
+    const binList = this.state.bin.map((x) => ({
+      ...x,
+      displayText: x.text && x.text.trim() !== '' ? x.text : '(empty cell)',
+      sinceTxt: this.fmtDur(x.sinceGone),
+      armed: armedId === x.id,
+      notArmed: armedId !== x.id,
+      onRestore: () => this.restoreCell(x.id),
+      onDelete: () => this.deleteForGood(x.id),
+    }));
+    const remote = this.state.remote ?? (this.props.signedIn ?? false);
+    return {
+      ember, paper, ink, chip,
+      cells,
+      isEmpty: cells.length === 0,
+      showCells: this.state.view === 'cells',
+      showBin: this.state.view === 'bin',
+      binList,
+      binEmpty: binList.length === 0,
+      binBtnTxt: binList.length + ' deleted',
+      binLabel: 'Recently deleted: ' + binList.length + ' cells. Kept for 24 hours. Click to review, restore, or delete.',
+      showPlot: plot,
+      showAxes: !plot,
+      barRightOn: !plot && side === 'right',
+      barLeftOn: !plot && side === 'left',
+      onDeck: this.state.dropOnDeck,
+      syncOpen: this.state.syncOpen,
+      syncLocal: !remote,
+      syncRemote: remote,
+      syncCta: remote ? 'Sign out' : 'Log in to sync…',
+      syncTitle: remote ? 'Remote — encrypted, available from any device. Click for options.' : 'Local — cells stay on this device. Click for options.',
+      pinned: this.state.pinned,
+      unpinned: !this.state.pinned,
+      pinTitle: this.state.pinned ? 'Keeping this panel above other windows — click to turn off' : 'Click to keep this panel above other windows',
+      sortLabel: this.state.sortLabel,
+      sortLabelOn: this.state.sortLabel !== '',
+      onSort: this.onSort,
+      onPin: this.onPin,
+      onSyncToggle: this.onSyncToggle,
+      onSyncClose: this.onSyncClose,
+      onSyncCta: this.onSyncCta,
+      onOpenBin: this.onOpenBin,
+      onCloseBin: this.onCloseBin,
+      onClearBin: this.onClearBin,
+      onListDbl: this.onListDbl,
+      onDropInput: this.onDropInput,
+      onDropKey: this.onDropKey,
+      onFooterClick: this.onFooterClick,
+      panelRef: this.panelRef,
+      listRef: this.listRef,
+      dropRef: this.dropRef,
+      onResizeR: this.onResizeR,
+      onResizeB: this.onResizeB,
+      onResizeBR: this.onResizeBR,
+      onResizeBL: this.onResizeBL,
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<style>
+ body{margin:0;background:#ecebe8;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;--ember:#d45a2a}
+ .dv-turn{padding:44px 48px 40px}
+ .dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 6px}
+ .dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}
+ .dv-tname{font:600 13px/1.2 system-ui,sans-serif;color:#1a1a1a}
+ .dv-sub{margin:0 0 24px;font:13px/1.55 system-ui;color:rgba(0,0,0,.52);max-width:760px}
+ .dv-note{font:10.5px/1.5 ui-monospace,Menlo,monospace;color:#7a4a2c;background:rgba(160,100,50,.06);border:1px solid rgba(160,100,50,.2);padding:7px 10px;border-radius:8px}
+ a{color:var(--ember);text-decoration:none} a:hover{color:#a6421c}
+</style>
+</helmet>
+<section class="dv-turn" id="t5" style="--ember: {{ember}}">
+<div class="dv-thd"><a class="dv-tid" href="#t5">5</a><span class="dv-tname">New page &middot; notepad feel, manual sort, quiet colours &mdash; now with team feedback folded in</span></div>
+<p class="dv-sub">Keeps what worked in v4 (click the time to change how long a cell lasts &middot; paste or type &middot; multi-line) plus Delbo&rsquo;s round: drag the handle to reorder (this overrides any sort) &middot; empty cells are valid &mdash; prep as many blank ones as you like &middot; the input is a safe &ldquo;on deck&rdquo; staging area, clearly marked before anything becomes a cell &middot; editing or copying a cell restarts its clock &middot; expired cells collect in a counter at the bottom right, which flips to a list with Restore and Clear all &middot; the header dot is now a sync-status cloud with a Local / Remote menu &middot; the sort button cycles time-left / A&ndash;Z &middot; the pin is a real pin.</p>
+<div style="display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start">
+<div id="5a" style="flex:none;display:flex;flex-direction:column;gap:11px;max-width:440px">
+  <div class="dv-note">LIVE &middot; ⌘⏎ adds the field as a cell (empty is fine) &middot; drag ⠿ to reorder &middot; click a time to change it &middot; sort button or ⌘S cycles time&nbsp;left&nbsp;/&nbsp;A&ndash;Z &middot; editing or copying restarts a cell&rsquo;s clock &middot; expired cells land in the counter bottom-right &middot; time runs fast here</div>
+  <div style="position:relative;width:440px;max-height:640px;display:flex;flex-direction:column;border-radius:14px;overflow:hidden;background:#fcfcfb;border:1px solid rgba(0,0,0,.1);box-shadow:0 28px 80px rgba(20,16,12,.3), 0 2px 8px rgba(0,0,0,.08)">
+    <div style="display:flex;align-items:center;gap:4px;padding:8px 10px 7px;flex:none">
+      <button onClick="{{onSyncToggle}}" title="{{syncTitle}}" aria-label="{{syncTitle}}" style="border:none;background:transparent;cursor:pointer;padding:4px 6px;border-radius:6px;display:flex;align-items:center" style-hover="background: rgba(0,0,0,.05)">
+        <sc-if value="{{syncLocal}}" hint-placeholder-val="{{true}}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(40,36,32,.45)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+        </sc-if>
+        <sc-if value="{{syncRemote}}" hint-placeholder-val="{{false}}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ember)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path><polyline points="9 13.5 11.4 16 15.5 11.5"></polyline></svg>
+        </sc-if>
+      </button>
+      <span style="font:600 12px/1 ui-monospace,Menlo,monospace;color:#3a3733">Airlock</span>
+      <span style="flex:1"></span>
+      <button onClick="{{onSort}}" title="Sort — each click cycles: time left, A–Z (⌘S)" aria-label="Sort cells. Each click cycles between time left and alphabetical." style="border:none;background:transparent;cursor:pointer;color:rgba(40,36,32,.5);padding:4px 7px;border-radius:6px;display:flex;align-items:center;gap:5px" style-hover="color: #3a3733; background: rgba(0,0,0,.05)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16"></path><path d="M4 7l3-3 3 3"></path><path d="M17 20V4"></path><path d="M14 17l3 3 3-3"></path></svg>
+        <sc-if value="{{sortLabelOn}}" hint-placeholder-val="{{false}}">
+          <span style="font:600 10px/1 ui-monospace,Menlo,monospace">{{sortLabel}}</span>
+        </sc-if>
+      </button>
+      <button onClick="{{onPin}}" title="{{pinTitle}}" aria-label="{{pinTitle}}" style="border:none;background:transparent;cursor:pointer;padding:4px 6px;border-radius:6px;display:flex;align-items:center" style-hover="background: rgba(0,0,0,.05)">
+        <sc-if value="{{pinned}}" hint-placeholder-val="{{true}}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="var(--ember)" stroke="var(--ember)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"></path><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"></path></svg>
+        </sc-if>
+        <sc-if value="{{unpinned}}" hint-placeholder-val="{{false}}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(40,36,32,.45)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"></path><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"></path></svg>
+        </sc-if>
+      </button>
+    </div>
+    <sc-if value="{{syncOpen}}" hint-placeholder-val="{{false}}">
+      <div onClick="{{onSyncClose}}" style="position:fixed;inset:0;z-index:5"></div>
+      <div role="menu" style="position:absolute;top:36px;left:8px;z-index:6;width:240px;background:#ffffff;border:1px solid rgba(0,0,0,.12);border-radius:10px;box-shadow:0 14px 38px rgba(0,0,0,.18);padding:6px;display:flex;flex-direction:column;gap:2px">
+        <div role="menuitem" style="display:flex;align-items:flex-start;gap:8px;padding:7px 9px;border-radius:7px">
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+            <span style="font:600 11px/1.2 ui-monospace,Menlo,monospace;color:#26231f">Local</span>
+            <span style="font:400 10.5px/1.4 ui-monospace,Menlo,monospace;color:rgba(40,36,32,.5)">Cells stay on this device</span>
+          </div>
+          <sc-if value="{{syncLocal}}" hint-placeholder-val="{{true}}"><span style="color:var(--ember);font:700 11px/1.2 ui-monospace,Menlo,monospace">✓</span></sc-if>
+        </div>
+        <div role="menuitem" style="display:flex;align-items:flex-start;gap:8px;padding:7px 9px;border-radius:7px">
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+            <span style="font:600 11px/1.2 ui-monospace,Menlo,monospace;color:#26231f">Remote</span>
+            <span style="font:400 10.5px/1.4 ui-monospace,Menlo,monospace;color:rgba(40,36,32,.5)">Encrypted, available from any device</span>
+          </div>
+          <sc-if value="{{syncRemote}}" hint-placeholder-val="{{false}}"><span style="color:var(--ember);font:700 11px/1.2 ui-monospace,Menlo,monospace">✓</span></sc-if>
+        </div>
+        <div style="height:1px;background:rgba(0,0,0,.07);margin:4px 2px"></div>
+        <button onClick="{{onSyncCta}}" style="border:1px solid rgba(0,0,0,.12);background:#fcfcfb;border-radius:7px;padding:7px 9px;cursor:pointer;font:600 11px/1.2 ui-monospace,Menlo,monospace;color:#26231f;text-align:center" style-hover="background: rgba(0,0,0,.04)">{{syncCta}}</button>
+      </div>
+    </sc-if>
+    <sc-if value="{{showCells}}" hint-placeholder-val="{{true}}">
+      <div onDoubleClick="{{onListDbl}}" style="flex:0 1 auto;overflow-y:auto;overscroll-behavior:contain;border-top:1px solid rgba(0,0,0,.06)">
+        <sc-if value="{{isEmpty}}" hint-placeholder-val="{{false}}">
+          <div style="padding:26px 16px;text-align:center;font:400 12px/1.5 ui-monospace,Menlo,monospace;color:rgba(40,36,32,.38)">Empty is the resting state.</div>
+        </sc-if>
+        <sc-for list="{{cells}}" as="c" key="{{c.id}}" hint-placeholder-count="4">
+          <div onDragOver="{{c.onDragOver}}" onDrop="{{c.onDrop}}" style="display:flex;align-items:flex-start;gap:8px;padding:11px 14px 11px 6px;border-bottom:1px solid rgba(0,0,0,.05)">
+            <span draggable="{{true}}" onDragStart="{{c.onDragStart}}" onDragEnd="{{c.onDragEnd}}" title="Drag to reorder" aria-label="Drag to reorder" style="flex:none;cursor:grab;color:rgba(40,36,32,.25);font:400 14px/1.5 ui-monospace,Menlo,monospace;padding:0 3px;user-select:none" style-hover="color: rgba(40,36,32,.6)">⠿</span>
+            <textarea rows="1" value="{{c.text}}" ref="{{c.autoRef}}" autoFocus="{{c.autofocus}}" spellCheck="{{false}}" onChange="{{c.onEditLive}}" onCopy="{{c.onCopyReset}}" onFocus="{{c.onFocusCell}}" style="flex:1;min-width:0;min-height:21px;resize:none;overflow:hidden;border:none;background:transparent;outline:none;color:#26231f;caret-color:var(--ember);font:400 13px/1.6 ui-monospace,Menlo,monospace;padding:0;margin:0;display:block"></textarea>
+            <div style="display:flex;align-items:center;gap:7px;flex:none;margin-top:3px">
+              <div style="width:22px;height:3px;border-radius:2px;background:rgba(0,0,0,.07);overflow:hidden">
+                <div style="{{c.drain}}"></div>
+              </div>
+              <button onClick="{{c.onCycle}}" title="Change how long this lasts" style="border:none;background:transparent;cursor:pointer;color:rgba(40,36,32,.45);font:500 10.5px/1 ui-monospace,Menlo,monospace;padding:3px 5px;border-radius:5px;min-width:24px;text-align:right" style-hover="color: #26231f; background: rgba(0,0,0,.05)">{{c.ttlTxt}}</button>
+              <button onClick="{{c.onRemove}}" title="Remove now" aria-label="Remove this cell now" style="border:none;background:transparent;cursor:pointer;color:rgba(40,36,32,.3);font:500 13px/1 ui-monospace,Menlo,monospace;padding:2px 4px;border-radius:5px" style-hover="color: #26231f; background: rgba(0,0,0,.05)">×</button>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div onClick="{{onFooterClick}}" style="flex:none;padding:12px 16px;display:flex;flex-direction:column;gap:8px;cursor:text">
+        <textarea rows="1" ref="{{dropRef}}" placeholder="Paste or type here" aria-label="New cell. This is a staging area — nothing is added until you press command return." onInput="{{onDropInput}}" onKeyDown="{{onDropKey}}" spellCheck="{{false}}" style="width:100%;box-sizing:border-box;min-height:21px;max-height:132px;overflow-y:auto;resize:none;border:none;border-radius:0;background:transparent;color:#26231f;caret-color:var(--ember);font:400 13px/1.6 ui-monospace,Menlo,monospace;padding:0;outline:none"></textarea>
+        <div style="display:flex;align-items:center;gap:10px;min-height:20px">
+          <sc-if value="{{onDeck}}" hint-placeholder-val="{{false}}">
+            <span role="status" style="display:flex;align-items:center;gap:6px;font:500 11px/1 ui-monospace,Menlo,monospace;color:var(--ember)"><span style="width:6px;height:6px;border-radius:50%;background:var(--ember)"></span>On deck — not a cell yet</span>
+          </sc-if>
+          <span style="flex:1"></span>
+          <span style="display:flex;align-items:center;gap:5px;font:400 11px/1 ui-monospace,Menlo,monospace;color:rgba(40,36,32,.5)">
+            <span style="display:inline-block;padding:3px 6px;border:1px solid rgba(0,0,0,.14);border-bottom-width:2px;border-radius:4px;background:#ffffff;font:500 11px/1 ui-monospace,Menlo,monospace;color:rgba(40,36,32,.65)">⌘⏎</span>
+            <span>Add cell</span>
+            <span style="opacity:.5;padding:0 2px">·</span>
+            <span style="display:inline-block;padding:3px 6px;border:1px solid rgba(0,0,0,.14);border-bottom-width:2px;border-radius:4px;background:#ffffff;font:500 11px/1 ui-monospace,Menlo,monospace;color:rgba(40,36,32,.65)">⏎</span>
+            <span>New line</span>
+          </span>
+          <sc-if value="{{hasExpired}}" hint-placeholder-val="{{false}}">
+            <button onClick="{{onOpenArchive}}" title="Show expired cells" aria-label="{{expiredLabel}}" style="border:none;background:rgba(0,0,0,.05);cursor:pointer;color:rgba(40,36,32,.6);font:500 10.5px/1 ui-monospace,Menlo,monospace;padding:4px 8px;border-radius:6px" style-hover="background: rgba(0,0,0,.09); color: #26231f">{{expiredCount}} expired</button>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{showExpired}}" hint-placeholder-val="{{false}}">
+      <div style="flex:0 1 auto;overflow-y:auto;overscroll-behavior:contain;border-top:1px solid rgba(0,0,0,.06)">
+        <div style="padding:9px 16px 8px;font:600 10px/1 ui-monospace,Menlo,monospace;color:rgba(40,36,32,.45);letter-spacing:.08em;border-bottom:1px solid rgba(0,0,0,.05)">EXPIRED</div>
+        <sc-if value="{{expiredEmpty}}" hint-placeholder-val="{{false}}">
+          <div style="padding:26px 16px;text-align:center;font:400 12px/1.5 ui-monospace,Menlo,monospace;color:rgba(40,36,32,.38)">Nothing here.</div>
+        </sc-if>
+        <sc-for list="{{expiredList}}" as="x" key="{{x.id}}" hint-placeholder-count="2">
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:11px 16px;border-bottom:1px solid rgba(0,0,0,.05)">
+            <div style="flex:1;min-width:0;font:400 13px/1.6 ui-monospace,Menlo,monospace;color:rgba(40,36,32,.42);white-space:pre-wrap;word-break:break-word">{{x.displayText}}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex:none;margin-top:2px">
+              <span style="font:400 10px/1 ui-monospace,Menlo,monospace;color:rgba(40,36,32,.35)">was {{x.ttlLabel}}</span>
+              <button onClick="{{x.onRestore}}" title="Bring this cell back with a fresh clock" style="border:1px solid rgba(0,0,0,.14);background:#ffffff;cursor:pointer;color:#26231f;font:500 10.5px/1 ui-monospace,Menlo,monospace;padding:4px 9px;border-radius:6px" style-hover="background: rgba(0,0,0,.04)">Restore</button>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="flex:none;display:flex;align-items:center;padding:10px 12px;gap:8px">
+        <button onClick="{{onCloseArchive}}" style="border:none;background:transparent;cursor:pointer;color:rgba(40,36,32,.6);font:500 11px/1 ui-monospace,Menlo,monospace;padding:5px 8px;border-radius:6px" style-hover="background: rgba(0,0,0,.05); color: #26231f">← Back</button>
+        <span style="flex:1"></span>
+        <button onClick="{{onClearExpired}}" style="border:none;background:transparent;cursor:pointer;color:rgba(40,36,32,.5);font:500 11px/1 ui-monospace,Menlo,monospace;padding:5px 8px;border-radius:6px" style-hover="background: rgba(0,0,0,.05); color: #26231f">Clear all</button>
+      </div>
+    </sc-if>
+  </div>
+</div>
+<div style="flex:none;width:300px;display:flex;flex-direction:column;gap:10px;padding-top:2px">
+  <div style="font:600 11px/1 ui-monospace,Menlo,monospace;color:rgba(0,0,0,.55);letter-spacing:.06em">DESIGN NOTES</div>
+  <ul style="margin:0;padding:0 0 0 16px;font:12px/1.65 system-ui;color:rgba(0,0,0,.6);display:flex;flex-direction:column;gap:8px">
+    <li><b>No auto-sort.</b> Cells hold their position. The sort button (or ⌘S) cycles time&nbsp;left → A&ndash;Z; dragging a cell puts you back in manual order.</li>
+    <li><b>Empty cells are valid.</b> Prep blank cells ahead of time: ⌘⏎ with an empty field, or double-click empty space. Removal is explicit — the × on each cell. No more silent vanish-on-blur.</li>
+    <li><b>On deck.</b> The input is a staging area: safe to paste and hold. While it has content, an &ldquo;On deck — not a cell yet&rdquo; status shows (and is announced to screen readers). Clicking anywhere in the footer focuses it.</li>
+    <li><b>The clock restarts</b> when a cell is edited or copied, at its current rung.</li>
+    <li><b>Expired cells</b> collect in a counter at the bottom right; clicking flips to an expired list with per-cell Restore and Clear all. ⚠ The brief lists archives as an anti-goal — this needs a team decision before it ships.</li>
+    <li><b>Sync status.</b> The header cloud is Local by default (cells stay on-device). Signed in, it shows a check and cells sync encrypted. Clicking opens the Local/Remote menu with a log-in action (demo: the button just toggles).</li>
+    <li><b>Pin.</b> The keep-on-top toggle is now a real pin icon; filled = floating above other windows.</li>
+    <li><b>Masking removed for now.</b> To add back later: automatic masking for content that looks like a secret, with a visible, predictable trigger.</li>
+    <li><b>Stacking.</b> A cell is never shorter than one line. The window grows to 640px, then the list scrolls (normal two-finger scrolling).</li>
+  </ul>
+</div>
+</div>
+<p style="margin:28px 0 0;font:12px/1.7 system-ui;color:rgba(0,0,0,.5)">Try next: &ldquo;a sort animation so reordering is legible&rdquo; &middot; &ldquo;what does full (12 cells) look like&rdquo; &middot; &ldquo;dark appearance&rdquo; &middot; &ldquo;the real log-in flow from the sync menu&rdquo;</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+ &quot;$preview&quot;: { &quot;width&quot;: 1000, &quot;height&quot;: 820 },
+ &quot;accent&quot;: { &quot;editor&quot;: &quot;color&quot;, &quot;default&quot;: &quot;#d45a2a&quot;, &quot;options&quot;: [&quot;#d45a2a&quot;, &quot;#c0542a&quot;, &quot;#8a6a3a&quot;], &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Theme&quot; },
+ &quot;fastTime&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Demo&quot; },
+ &quot;signedIn&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Demo&quot; }
+}">
+class Component extends DCLogic {
+  presets = [60, 180, 480, 1440, 4320, 10080];
+  sortModes = ['ttl', 'alpha'];
+  state = { cells: this.seed(), expired: [], focusId: null, view: 'cells', syncOpen: false, remote: null, pinned: true, sortLabel: '', dropOnDeck: false };
+
+  seed() {
+    this._id = 0;
+    this._sortIdx = 0;
+    const mk = (text, mins, frac) => ({ id: ++this._id, text, mins, frac });
+    return [
+      mk('14 Rue de la Paix\n75002 Paris\nFrance', 180, 0.62),
+      mk('postgres://ops:s3cr3t@db-3.internal:5432/prod', 1440, 0.83),
+      mk('ghp_4kQ9zR1sT7wX2vB8nM3pL6dF0aH5jK', 4320, 0.99),
+      mk('https://example.com/d/ab8f2c', 10080, 0.86),
+    ];
+  }
+
+  componentDidMount() {
+    this._timer = setInterval(() => {
+      const fast = this.props.fastTime ?? true;
+      const speed = fast ? 90 : 1;
+      this.setState((s) => {
+        const next = [];
+        const gone = [];
+        s.cells.forEach((c) => {
+          const nf = c.frac - speed / (c.mins * 60);
+          if (nf > 0) next.push({ ...c, frac: nf });
+          else gone.push({ id: c.id, text: c.text, mins: c.mins });
+        });
+        if (!gone.length) return { cells: next };
+        return { cells: next, expired: [...s.expired, ...gone] };
+      });
+    }, 1000);
+    this._onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        this.cycleSort();
+      }
+    };
+    window.addEventListener('keydown', this._onKey);
+  }
+
+  componentWillUnmount() {
+    if (this._timer) clearInterval(this._timer);
+    if (this._onKey) window.removeEventListener('keydown', this._onKey);
+  }
+
+  cycleSort() {
+    const mode = this.sortModes[(this._sortIdx || 0) % this.sortModes.length];
+    this._sortIdx = (this._sortIdx || 0) + 1;
+    this.setState((s) => ({
+      sortLabel: mode === 'ttl' ? 'time' : 'a–z',
+      cells: s.cells.slice().sort(
+        mode === 'ttl'
+          ? (a, b) => (a.frac * a.mins) - (b.frac * b.mins)
+          : (a, b) => String(a.text).trim().localeCompare(String(b.text).trim())
+      ),
+    }));
+  }
+
+  fmtTtl(c) {
+    const m = c.frac * c.mins;
+    if (m >= 2880) return Math.round(m / 1440) + 'd';
+    if (m >= 60) return Math.round(m / 60) + 'h';
+    if (m >= 1) return Math.round(m) + 'm';
+    return Math.max(1, Math.round(m * 60)) + 's';
+  }
+
+  rungLabel(mins) {
+    return mins >= 1440 ? Math.round(mins / 1440) + 'd' : Math.round(mins / 60) + 'h';
+  }
+
+  grow(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }
+
+  growDrop(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 132) + 'px';
+  }
+
+  addCell(text) {
+    this.setState((s) => ({ cells: [...s.cells, { id: ++this._id, text, mins: 480, frac: 1 }] }));
+  }
+
+  addEmptyCell() {
+    const id = ++this._id;
+    this.setState((s) => ({ cells: [...s.cells, { id, text: '', mins: 480, frac: 1 }], focusId: id }));
+  }
+
+  editCell(id, v) {
+    this.setState((s) => ({ cells: s.cells.map((c) => (c.id === id ? { ...c, text: v, frac: 1 } : c)) }));
+  }
+
+  restartClock(id) {
+    this.setState((s) => ({ cells: s.cells.map((c) => (c.id === id ? { ...c, frac: 1 } : c)) }));
+  }
+
+  removeCell(id) {
+    this.setState((s) => ({ cells: s.cells.filter((c) => c.id !== id) }));
+  }
+
+  cycleTtl(id) {
+    this.setState((s) => ({
+      cells: s.cells.map((c) => {
+        if (c.id !== id) return c;
+        let i = this.presets.findIndex((p) => p >= c.mins - 0.5);
+        if (i < 0) i = this.presets.length - 1;
+        const next = this.presets[(i + 1) % this.presets.length];
+        return { ...c, mins: next, frac: 1 };
+      }),
+    }));
+  }
+
+  moveCell(dragId, overId) {
+    this.setState((s) => {
+      const arr = s.cells.slice();
+      const from = arr.findIndex((c) => c.id === dragId);
+      const to = arr.findIndex((c) => c.id === overId);
+      if (from < 0 || to < 0 || from === to) return null;
+      const [moved] = arr.splice(from, 1);
+      arr.splice(to, 0, moved);
+      return { cells: arr, sortLabel: '' };
+    });
+  }
+
+  restoreCell(id) {
+    this.setState((s) => {
+      const x = s.expired.find((e) => e.id === id);
+      if (!x) return null;
+      return {
+        expired: s.expired.filter((e) => e.id !== id),
+        cells: [...s.cells, { id: x.id, text: x.text, mins: x.mins, frac: 1 }],
+      };
+    });
+  }
+
+  onDropInput = (e) => {
+    this.growDrop(e.target);
+    const has = e.target.value.length > 0;
+    if (has !== this.state.dropOnDeck) this.setState({ dropOnDeck: has });
+  };
+
+  onDropKey = (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      const el = e.target;
+      this.addCell(el.value);
+      el.value = '';
+      this.growDrop(el);
+      this.setState({ dropOnDeck: false });
+    }
+  };
+
+  dropRef = (el) => { this._dropEl = el; };
+
+  onFooterClick = (e) => {
+    const t = e.target.tagName;
+    if (t !== 'BUTTON' && t !== 'TEXTAREA' && this._dropEl) this._dropEl.focus();
+  };
+
+  onListDbl = (e) => { if (e.target === e.currentTarget) this.addEmptyCell(); };
+  onSort = () => { this.cycleSort(); };
+  onPin = () => { this.setState((s) => ({ pinned: !s.pinned })); };
+  onSyncToggle = () => { this.setState((s) => ({ syncOpen: !s.syncOpen })); };
+  onSyncClose = () => { this.setState({ syncOpen: false }); };
+  onSyncCta = () => { this.setState((s) => ({ remote: !(s.remote ?? (this.props.signedIn ?? false)) })); };
+  onOpenArchive = (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.setState({ view: 'expired' }); };
+  onCloseArchive = () => { this.setState({ view: 'cells' }); };
+  onClearExpired = () => { this.setState({ expired: [], view: 'cells' }); };
+
+  renderVals() {
+    const ember = this.props.accent ?? '#d45a2a';
+    const cells = this.state.cells.map((c) => {
+      const remaining = c.frac * c.mins;
+      const low = remaining < 60;
+      return {
+        ...c,
+        ttlTxt: this.fmtTtl(c),
+        autofocus: this.state.focusId === c.id,
+        autoRef: (el) => { if (el) this.grow(el); },
+        onEditLive: (e) => { this.grow(e.target); this.editCell(c.id, e.target.value); },
+        onCopyReset: () => this.restartClock(c.id),
+        onFocusCell: () => { if (this.state.focusId === c.id) this.setState({ focusId: null }); },
+        onCycle: () => this.cycleTtl(c.id),
+        onRemove: () => this.removeCell(c.id),
+        onDragStart: (e) => {
+          this._dragId = c.id;
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', ''); } catch (err) {}
+          }
+        },
+        onDragEnd: () => { this._dragId = null; },
+        onDragOver: (e) => {
+          e.preventDefault();
+          if (this._dragId && this._dragId !== c.id) this.moveCell(this._dragId, c.id);
+        },
+        onDrop: (e) => { e.preventDefault(); },
+        drain: {
+          height: '100%',
+          width: Math.max(4, Math.round(c.frac * 100)) + '%',
+          borderRadius: '2px',
+          background: low ? 'var(--ember)' : 'rgba(0,0,0,.28)',
+        },
+      };
+    });
+    const expiredList = this.state.expired.map((x) => ({
+      ...x,
+      displayText: x.text && x.text.trim() !== '' ? x.text : '(empty cell)',
+      ttlLabel: this.rungLabel(x.mins),
+      onRestore: () => this.restoreCell(x.id),
+    }));
+    const remote = this.state.remote ?? (this.props.signedIn ?? false);
+    return {
+      ember,
+      cells,
+      isEmpty: cells.length === 0,
+      showCells: this.state.view === 'cells',
+      showExpired: this.state.view === 'expired',
+      expiredList,
+      expiredEmpty: expiredList.length === 0,
+      hasExpired: expiredList.length > 0 && this.state.view === 'cells',
+      expiredCount: expiredList.length,
+      expiredLabel: expiredList.length + ' expired cells. Click to review, restore, or clear them.',
+      onDeck: this.state.dropOnDeck,
+      syncOpen: this.state.syncOpen,
+      syncLocal: !remote,
+      syncRemote: remote,
+      syncCta: remote ? 'Sign out' : 'Log in to sync…',
+      syncTitle: remote ? 'Remote — encrypted, available from any device. Click for options.' : 'Local — cells stay on this device. Click for options.',
+      pinned: this.state.pinned,
+      unpinned: !this.state.pinned,
+      pinTitle: this.state.pinned ? 'Keeping this panel above other windows — click to turn off' : 'Click to keep this panel above other windows',
+      sortLabel: this.state.sortLabel,
+      sortLabelOn: this.state.sortLabel !== '',
+      onSort: this.onSort,
+      onPin: this.onPin,
+      onSyncToggle: this.onSyncToggle,
+      onSyncClose: this.onSyncClose,
+      onSyncCta: this.onSyncCta,
+      onOpenArchive: this.onOpenArchive,
+      onCloseArchive: this.onCloseArchive,
+      onClearExpired: this.onClearExpired,
+      onListDbl: this.onListDbl,
+      onDropInput: this.onDropInput,
+      onDropKey: this.onDropKey,
+      onFooterClick: this.onFooterClick,
+      dropRef: this.dropRef,
+    };
+  }
+}
+</script>
+</body>
+</html>

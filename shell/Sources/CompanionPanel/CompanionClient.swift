@@ -155,6 +155,16 @@ final class CompanionClient {
         decodeJSON(ChipInfo.self, from: companion_sheet_seal_from_pasteboard(handle, sheet))
     }
 
+    /// Drop-to-seal: the core reads the drag pasteboard itself while
+    /// the drag session's data is still on it — dropped bytes never
+    /// transit this process (the drag boundary decision,
+    /// docs/hardware-verification.md). Returns the new chip's face, or
+    /// nil when nothing readable was dragged.
+    @discardableResult
+    func sealFromDrag(sheet: UInt64) -> ChipInfo? {
+        decodeJSON(ChipInfo.self, from: companion_sheet_seal_from_drag(handle, sheet))
+    }
+
     /// The ⌘↩ retrofit: seal editor text the user selected. The one
     /// deliberate plaintext-in call — the text was visible ink already;
     /// after this returns, the caller deletes its copy from the view.
@@ -235,16 +245,6 @@ final class CompanionClient {
     /// Dead pages, newest first (⌘0) — dimmed ink and tombstones.
     func ledger() -> [LedgerEntry] {
         decodeJSON([LedgerEntry].self, from: companion_ledger_json(handle)) ?? []
-    }
-
-    // MARK: Dev scaffolding
-
-    /// DEV SCAFFOLDING: seed the pasteboard as an external app would,
-    /// so demo affordances have something to seal. Only present in
-    /// `--dev-scaffolding` builds of the core.
-    @discardableResult
-    func devSeedPasteboard(_ text: String) -> Bool {
-        text.withCString { companion_dev_seed_pasteboard(handle, $0) }
     }
 
     /// The core's version string.

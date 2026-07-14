@@ -392,6 +392,60 @@ pub unsafe extern "C" fn companion_sheet_seal_text(
     }
 }
 
+/// Drop-to-seal: the core reads the **drag pasteboard** itself
+/// (`NSPasteboardNameDrag` — the board an in-flight drag session's
+/// content rides on) and seals it onto the page. This is the
+/// boundary-lawful drag route (docs/hardware-verification.md): dropped
+/// bytes never transit the shell; the drop gesture is the consent, and
+/// the shell only names the page. Call it from the drop handler while
+/// the drag session's data is still on the board. Returns chip JSON as
+/// the other seal routes do (caller frees), or null — unknown page,
+/// empty or unreadable drag content, or an off-macOS build (no drag
+/// board exists there).
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_seal_from_drag(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (handle, sheet);
+        ptr::null_mut()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let Ok(mut guard) = handle.inner.lock() else {
+            return ptr::null_mut();
+        };
+        // Bound fresh per call: the drag board's content belongs to the
+        // current drag session, not to this handle's lifetime.
+        let Some(item) = SystemPasteboard::drag().read() else {
+            return ptr::null_mut();
+        };
+        let sheet = SheetId::from_raw(sheet);
+        let sealed = match item.content {
+            PasteboardContent::Text(mut text) => {
+                // Same custody rule as the sealed paste: wipe the owned
+                // transit copy once the core has taken its own.
+                let sealed = guard.store.seal_text(sheet, &text);
+                text.zeroize();
+                sealed
+            }
+            PasteboardContent::Image(bytes) => guard.store.seal_image(sheet, bytes),
+        };
+        match sealed {
+            Ok(chip) => chip_json(&guard.store, sheet, chip),
+            Err(_) => ptr::null_mut(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The synced document
 // ---------------------------------------------------------------------------
@@ -923,6 +977,47 @@ mod tests {
 
     fn cstring(s: &str) -> CString {
         CString::new(s).unwrap()
+    }
+
+    /// The drag route reads the real drag pasteboard core-side. macOS
+    /// only — the drag board exists only there; off macOS the entry
+    /// returns null by construction. Seeding the shared drag board is
+    /// safe: no drag session is in flight while tests run.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn drop_to_seal_reads_the_drag_board_core_side() {
+        use companion_pasteboard::SystemPasteboard;
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            assert_ne!(sheet, 0);
+
+            // Nothing dragged → null, no chip.
+            let mut drag = SystemPasteboard::drag();
+            let receipt = drag.write(
+                Zeroizing::new(Vec::new()),
+                ContentKind::Text,
+                WriteOptions { concealed: false },
+            );
+            drag.clear_if_unchanged(receipt);
+            assert!(companion_sheet_seal_from_drag(handle, sheet).is_null());
+
+            // A drag session's text on the board → sealed core-side.
+            let dragged = format!("xoxb-{}", "n0ts3cr3t".repeat(3));
+            drag.write(
+                Zeroizing::new(dragged.clone().into_bytes()),
+                ContentKind::Text,
+                WriteOptions { concealed: false },
+            );
+            let chip = take_json(companion_sheet_seal_from_drag(handle, sheet));
+            assert!(!chip.contains(&dragged), "drag bytes leaked into chip JSON");
+            assert!(chip.contains("\"kind\":\"text\""));
+
+            // Leave no residue on the shared board.
+            let receipt = drag.change_count();
+            drag.clear_if_unchanged(receipt);
+            companion_free(handle);
+        }
     }
 
     #[test]
