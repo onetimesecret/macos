@@ -92,12 +92,13 @@ Use scripts/quit-app.sh
 
 ## Naming note
 
-**Airlock** is a working title only: a small chamber between two
-environments that things pass through but never live in — the product in
-one image. It collides with at least one existing security vendor, so it
-will not survive to release without a trademark check (open question №8).
-The name appears nowhere in identifiers, so the eventual rename is a
-one-file change.
+**CompanionApp** is a deliberately generic working title. It replaced
+the earlier working title "Airlock" — a small chamber between two
+environments that things pass through but never live in, the product in
+one image — which collides with at least one existing security vendor
+(open question №8). The old name survives only in the design-history
+documents under `docs/Airlock Prototype/`. The final name still needs a
+shortlist and a trademark pass before any public artifact.
 
 ## License
 

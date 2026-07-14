@@ -60,7 +60,7 @@ struct WindowRootView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Circle().fill(Color.ember).frame(width: 6, height: 6)
-            Text(model.showingLedger ? "the ledger" : "Airlock")
+            Text(model.showingLedger ? "the ledger" : "CompanionApp")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
             Spacer()
