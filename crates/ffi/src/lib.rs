@@ -856,6 +856,11 @@ pub unsafe extern "C" fn companion_connection_configure(
 /// `{"configured", "server_url", "share_domain", "extid", "has_token"}`
 /// (or null on an invalid handle); free with [`companion_string_free`].
 ///
+/// `has_token` is an **existence** check — does the credential store
+/// hold a token — decided without reading the secret. So calling this
+/// at launch to render Settings never provokes the Keychain ACL prompt;
+/// that prompt is reserved for the read a promotion actually needs.
+///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
@@ -866,7 +871,10 @@ pub unsafe extern "C" fn companion_connection_json(handle: *mut CompanionHandle)
     let Ok(guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
-    let has_token = guard.credentials.load(TOKEN_ACCOUNT).is_ok();
+    // Existence, not a read: this must not decrypt the token (see the
+    // CredentialStore::exists contract). On a backend hiccup, fail to
+    // "no token" — rendering Settings must never wedge on the Keychain.
+    let has_token = guard.credentials.exists(TOKEN_ACCOUNT).unwrap_or(false);
     let json = match &guard.connection {
         Some(conn) => serde_json::json!({
             "configured": true,

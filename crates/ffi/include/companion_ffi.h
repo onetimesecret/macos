@@ -248,7 +248,10 @@ bool companion_connection_configure(CompanionHandle *handle, const char *json);
 /*
  * Connection state for Settings, never the token itself. Free with
  * companion_string_free(). Fields: configured, server_url,
- * share_domain, extid, has_token.
+ * share_domain, extid, has_token. has_token is an existence check —
+ * decided without reading the secret, so rendering Settings at launch
+ * never triggers the Keychain prompt; that is reserved for the read a
+ * promotion needs.
  */
 char *companion_connection_json(CompanionHandle *handle);
 
