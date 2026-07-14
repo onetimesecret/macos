@@ -228,6 +228,14 @@ struct InkEditorView: NSViewRepresentable {
             copy.target = self
             copy.representedObject = chipID as NSNumber
             menu.addItem(copy)
+            let promote = NSMenuItem(
+                title: "Promote to one-time link…",
+                action: #selector(promoteChip(_:)),
+                keyEquivalent: ""
+            )
+            promote.target = self
+            promote.representedObject = chipID as NSNumber
+            menu.addItem(promote)
             let remove = NSMenuItem(
                 title: "Remove chip",
                 action: #selector(removeChip(_:)),
@@ -242,6 +250,13 @@ struct InkEditorView: NSViewRepresentable {
         @objc private func copyOutChip(_ sender: NSMenuItem) {
             guard let id = (sender.representedObject as? NSNumber)?.uint64Value else { return }
             model.copyOutChip(id)
+        }
+
+        /// The chip's ↗: open the inline confirmation. The bytes stay
+        /// core-side; promotion moves them core → client → network.
+        @objc private func promoteChip(_ sender: NSMenuItem) {
+            guard let id = (sender.representedObject as? NSNumber)?.uint64Value else { return }
+            model.beginPromotion(.chip(id))
         }
 
         @objc private func removeChip(_ sender: NSMenuItem) {

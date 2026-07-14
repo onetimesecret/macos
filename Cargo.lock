@@ -63,7 +63,10 @@ name = "companion-ffi"
 version = "0.1.0"
 dependencies = [
  "companion-core",
+ "companion-credentials",
  "companion-pasteboard",
+ "companion-transport",
+ "ots-client",
  "serde_json",
  "zeroize",
 ]

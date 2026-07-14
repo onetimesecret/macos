@@ -27,6 +27,7 @@ struct TabStripView: View {
             }
             newPageTab
             Spacer(minLength: 8)
+            promotePageTab
             ledgerTab
         }
         .padding(.horizontal, 6)
@@ -45,6 +46,29 @@ struct TabStripView: View {
         .foregroundStyle(.secondary)
         .help("New page (⌥⌘N)")
         .accessibilityLabel(Text("New page"))
+    }
+
+    /// ↗ page (docs/spec/04, promotion flow): promote the visible page
+    /// into a one-time link. Opens the inline confirmation — nothing
+    /// leaves until its one confirming click.
+    private var promotePageTab: some View {
+        Button {
+            if let sheet = model.selection { model.beginPromotion(.page(sheet)) }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 9, weight: .medium))
+                Text("page")
+                    .font(.system(.caption2, design: .monospaced))
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .disabled(model.selection == nil || model.showingLedger)
+        .help("Promote this page to a one-time link")
+        .accessibilityLabel(Text("Promote page to one-time link"))
     }
 
     /// The dashed residue tab: expired and closed pages, dimmed (⌘0).

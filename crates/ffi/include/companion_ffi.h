@@ -228,6 +228,60 @@ bool companion_sheet_pause_press(CompanionHandle *handle, uint64_t id);
 char *companion_ledger_json(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */
+/* Promotion: the exit ramp, the app's only network action             */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Configure where promotion goes. json (non-secret except the token in
+ * transit):
+ *   { "server_url": "https://…",   // required, https only
+ *     "share_domain": "…",         // "" -> the server's host
+ *     "extid": "…",                // "" -> guest-only
+ *     "token": "…" }               // absent: keep stored token;
+ *                                  // "": delete it
+ * The token goes straight to the OS credential store (Keychain) and is
+ * never retained in config. Returns false on malformed JSON or a
+ * non-https URL.
+ */
+bool companion_connection_configure(CompanionHandle *handle, const char *json);
+
+/*
+ * Connection state for Settings, never the token itself. Free with
+ * companion_string_free(). Fields: configured, server_url,
+ * share_domain, extid, has_token.
+ */
+char *companion_connection_json(CompanionHandle *handle);
+
+/*
+ * The Settings "test" button: one GET /api/v3/status. BLOCKS for the
+ * round-trip — call from a background queue. Returns {"ok"} or
+ * {"ok": false, "error"}; free with companion_string_free().
+ */
+char *companion_connection_test(CompanionHandle *handle);
+
+/*
+ * Promote one sealed chip into a one-time link (the chip's hover ↗).
+ * opts_json: {"ttl_secs"?, "passphrase"?, "recipient"?} or NULL (TTL
+ * defaults to the page's remaining time snapped DOWN the ladder).
+ * Sealed bytes travel core -> client -> transport, never through the
+ * caller. On success the share link is on the clipboard (transient)
+ * and only the receipt id stays on the chip. BLOCKS for the round-trip
+ * — call from a background queue; the core mutex is released during
+ * the network call. Returns {"ok": true, "receipt_id"} or
+ * {"ok": false, "error"}; free with companion_string_free().
+ */
+char *companion_chip_promote(CompanionHandle *handle, uint64_t chip,
+                             const char *opts_json);
+
+/*
+ * Promote the whole page (the footer's ↗ page): ink verbatim, sealed
+ * bytes inlined in document order. Refuses a page holding an image
+ * chip. Options, blocking, and result shape as companion_chip_promote.
+ */
+char *companion_sheet_promote(CompanionHandle *handle, uint64_t sheet,
+                              const char *opts_json);
+
+/* ------------------------------------------------------------------ */
 /* Dev scaffolding                                                     */
 /* ------------------------------------------------------------------ */
 

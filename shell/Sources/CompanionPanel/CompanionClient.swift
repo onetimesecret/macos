@@ -102,10 +102,47 @@ enum Rung: Int32, CaseIterable {
     case oneHour = 0, threeHours, eightHours, twentyFourHours, threeDays, sevenDays
 }
 
+/// Connection state as Settings may render it (companion_ffi.h):
+/// configuration only, never the token — that rests in the Keychain,
+/// core-side.
+struct ConnectionInfo: Codable, Hashable {
+    let configured: Bool
+    let serverUrl: String
+    let shareDomain: String
+    let extid: String
+    let hasToken: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case configured, extid
+        case serverUrl = "server_url"
+        case shareDomain = "share_domain"
+        case hasToken = "has_token"
+    }
+}
+
+/// A promotion (or connection-test) result off the seam: success, or an
+/// inline-able error message. Never a link — on success the link is
+/// already on the clipboard, written core-side.
+struct PromotionOutcome: Codable, Hashable {
+    let ok: Bool
+    let receiptId: String?
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ok, error
+        case receiptId = "receipt_id"
+    }
+}
+
 /// A thin, memory-safe Swift wrapper over the C ABI. Owns the opaque
 /// handle for its lifetime and only ever sees ids, non-secret summaries,
 /// excerpts, and booleans. Sealed-byte movement runs inside the core.
-final class CompanionClient {
+///
+/// `@unchecked Sendable`: the handle is immutable after init and every
+/// call is serialized by the core's own mutex (companion_ffi.h) — the
+/// promotion routes are *meant* to be called off the main actor, since
+/// they block for a network round-trip.
+final class CompanionClient: @unchecked Sendable {
     private let handle: OpaquePointer
 
     init() {
@@ -238,6 +275,85 @@ final class CompanionClient {
     @discardableResult
     func pausePress(sheet: UInt64) -> Bool {
         companion_sheet_pause_press(handle, sheet)
+    }
+
+    // MARK: Promotion — the exit ramp, the app's only network action
+
+    /// Configure where promotion goes. The token, when passed, goes
+    /// straight to the OS credential store core-side and is never
+    /// retained here or in config; nil keeps the stored one, "" deletes
+    /// it. Returns false on a non-https URL or malformed input.
+    @discardableResult
+    func configureConnection(
+        serverUrl: String, shareDomain: String, extid: String, token: String?
+    ) -> Bool {
+        var object: [String: String] = [
+            "server_url": serverUrl,
+            "share_domain": shareDomain,
+            "extid": extid,
+        ]
+        if let token { object["token"] = token }
+        guard let json = Self.encodeJSON(object) else { return false }
+        return json.withCString { companion_connection_configure(handle, $0) }
+    }
+
+    /// Connection state for Settings — never the token itself.
+    func connectionInfo() -> ConnectionInfo? {
+        decodeJSON(ConnectionInfo.self, from: companion_connection_json(handle))
+    }
+
+    /// The Settings "test" button: one status round-trip. **Blocks** —
+    /// call off the main actor.
+    func testConnection() -> PromotionOutcome {
+        decodeJSON(PromotionOutcome.self, from: companion_connection_test(handle))
+            ?? PromotionOutcome(ok: false, receiptId: nil, error: "no connection configured")
+    }
+
+    /// Promote one sealed chip into a one-time link. The sealed bytes
+    /// travel core → client → transport and never enter this process;
+    /// on success the link is on the clipboard and only the receipt id
+    /// stays on the chip. **Blocks** for the round-trip — call off the
+    /// main actor.
+    func promoteChip(
+        id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
+    ) -> PromotionOutcome {
+        promote(id: id, ttlSecs: ttlSecs, passphrase: passphrase, recipient: recipient) {
+            companion_chip_promote($0, $1, $2)
+        }
+    }
+
+    /// Promote the whole page (ink verbatim, sealed bytes inlined,
+    /// core-side). Refused when the page holds an image chip. **Blocks**
+    /// — call off the main actor.
+    func promoteSheet(
+        id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
+    ) -> PromotionOutcome {
+        promote(id: id, ttlSecs: ttlSecs, passphrase: passphrase, recipient: recipient) {
+            companion_sheet_promote($0, $1, $2)
+        }
+    }
+
+    private func promote(
+        id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String,
+        via route: (OpaquePointer, UInt64, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
+    ) -> PromotionOutcome {
+        var object: [String: Any] = [:]
+        if let ttlSecs { object["ttl_secs"] = ttlSecs }
+        if !passphrase.isEmpty { object["passphrase"] = passphrase }
+        if !recipient.isEmpty { object["recipient"] = recipient }
+        guard let json = Self.encodeJSON(object) else {
+            return PromotionOutcome(ok: false, receiptId: nil, error: "malformed promotion options")
+        }
+        let outcome = json.withCString { opts in
+            decodeJSON(PromotionOutcome.self, from: route(handle, id, opts))
+        }
+        return outcome
+            ?? PromotionOutcome(ok: false, receiptId: nil, error: "the core refused the request")
+    }
+
+    private static func encodeJSON(_ object: [String: Any]) -> String? {
+        guard let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     // MARK: The ledger

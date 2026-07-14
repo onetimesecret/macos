@@ -23,6 +23,11 @@ struct WindowRootView: View {
                     .padding(.vertical, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if let draft = model.promotion, !model.showingLedger {
+                // The inline, in-place confirmation (never a modal):
+                // the network boundary is the one confirming click.
+                PromotionView(model: model, draft: draft)
+            }
             if let sheet = model.selectedSheet, !model.showingLedger {
                 // The page's bottom edge drains continuously.
                 GaugeBar(
