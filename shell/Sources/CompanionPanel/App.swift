@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: WindowController?
     private var statusItem: NSStatusItem?
     private var summonKey: GlobalHotKey?
+    private lazy var settings = SettingsWindowController(model: model)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // No Dock icon, no app menu — present, not central.
@@ -69,6 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                 keyEquivalent: ""
             ).target = NSApp
+            menu.addItem(
+                withTitle: "Settings…",
+                action: #selector(openSettings),
+                keyEquivalent: ","
+            ).target = self
             menu.addItem(.separator())
             menu.addItem(
                 withTitle: "Quit",
@@ -83,6 +89,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func openSettings() {
+        settings.show()
+    }
 }
 
 /// One run of a page's document, as the shell mirrors it to the core
@@ -90,6 +99,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 enum DocumentRun {
     case ink(String)
     case chip(UInt64)
+}
+
+/// An in-flight promotion: the inline, in-place confirmation's state
+/// (docs/spec/04 — not a modal). Holds options and outcome, never
+/// content: the payload stays core-side throughout.
+struct PromotionDraft {
+    enum Target: Equatable {
+        case chip(UInt64)
+        case page(UInt64)
+    }
+
+    let target: Target
+    /// Requested TTL, seeded from the page's remaining time snapped
+    /// down the ladder (the core applies the same default when nil).
+    var ttlSecs: UInt64
+    var passphrase = ""
+    var recipient = ""
+    /// The network call is out; the confirm button waits.
+    var inFlight = false
+    /// Inline failure — offline, auth, refusal — with retry. Content
+    /// never left the sheet.
+    var error: String?
+    /// Success: the link is on the clipboard; this is all we keep.
+    var receiptId: String?
+
+    /// The ladder rungs at or under the page's remaining time — the
+    /// promoted secret never outlives the local intent (doc 06 №13).
+    static func snappedTtl(remainingMs: UInt64) -> UInt64 {
+        let ladder: [UInt64] = [3600, 10800, 28800, 86400, 259_200, 604_800]
+        let remaining = remainingMs / 1000
+        return ladder.last { $0 <= remaining } ?? ladder[0]
+    }
 }
 
 /// The view model: wraps the core client and publishes non-secret
@@ -124,6 +165,13 @@ final class WindowModel: ObservableObject {
 
     /// The tab currently being drag-reordered, if any.
     @Published var draggingTab: UInt64?
+
+    /// The inline promotion confirmation, when one is open.
+    @Published var promotion: PromotionDraft?
+
+    /// Connection state for Settings and the promotion header (never
+    /// the token itself).
+    @Published private(set) var connection: ConnectionInfo?
 
     /// Whether the window floats above other apps' windows
     /// (`.statusBar` level) or behaves like a normal window others can
@@ -162,9 +210,27 @@ final class WindowModel: ObservableObject {
         if client.sheets().isEmpty {
             _ = client.newSheet()
         }
+        // The connection outlives the process in two non-secret halves:
+        // config in UserDefaults, the token in the Keychain (core-side).
+        // Configuring with a nil token keeps whatever the Keychain
+        // holds, so guest promotion works with zero setup and a saved
+        // token survives relaunch.
+        let defaults = UserDefaults.standard
+        _ = client.configureConnection(
+            serverUrl: defaults.string(forKey: Self.serverKey) ?? Self.defaultServer,
+            shareDomain: defaults.string(forKey: Self.shareDomainKey) ?? "",
+            extid: defaults.string(forKey: Self.extidKey) ?? "",
+            token: nil
+        )
+        connection = client.connectionInfo()
         refresh()
         selection = sheets.first?.id
     }
+
+    private static let defaultServer = "https://eu.onetimesecret.com"
+    private static let serverKey = "connection.serverURL"
+    private static let extidKey = "connection.extid"
+    private static let shareDomainKey = "connection.shareDomain"
 
     deinit {
         eventTimer?.invalidate()
@@ -330,6 +396,141 @@ final class WindowModel: ObservableObject {
         let accepted = client.syncDocument(sheet: sheet, json: json)
         assert(accepted, "core rejected a document snapshot")
         refresh()
+    }
+
+    // MARK: Promotion — the exit ramp
+
+    /// Open the inline confirmation for a chip's ↗ or the footer's
+    /// ↗ page. Everything after this is in-place: no modal, and the
+    /// network boundary is the one confirming click.
+    func beginPromotion(_ target: PromotionDraft.Target) {
+        notice = nil
+        let sheetId: UInt64? = switch target {
+        case .page(let id): id
+        case .chip: selection
+        }
+        let remaining = sheets.first { $0.id == sheetId }?.remainingMs ?? 0
+        promotion = PromotionDraft(
+            target: target,
+            ttlSecs: PromotionDraft.snappedTtl(remainingMs: remaining)
+        )
+    }
+
+    /// The confirming click: one POST, off the main actor — the core
+    /// releases its lock during the round-trip, so the window stays
+    /// live. On success the link is on the clipboard (written
+    /// core-side) and the confirmation offers Burn local copy.
+    func confirmPromotion() {
+        guard var draft = promotion, !draft.inFlight else { return }
+        draft.inFlight = true
+        draft.error = nil
+        promotion = draft
+        let client = self.client
+        let target = draft.target
+        let ttl = draft.ttlSecs
+        let passphrase = draft.passphrase
+        let recipient = draft.recipient
+        Task.detached(priority: .userInitiated) {
+            let outcome: PromotionOutcome = switch target {
+            case .chip(let id):
+                client.promoteChip(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
+            case .page(let id):
+                client.promoteSheet(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
+            }
+            await MainActor.run { [weak self] in
+                self?.finishPromotion(outcome)
+            }
+        }
+    }
+
+    private func finishPromotion(_ outcome: PromotionOutcome) {
+        guard var draft = promotion else { return }
+        draft.inFlight = false
+        if outcome.ok {
+            draft.error = nil
+            draft.receiptId = outcome.receiptId
+            notice = "the link is on the clipboard"
+        } else {
+            // Inline, with retry; content never left the sheet.
+            draft.error = outcome.error ?? "promotion failed"
+        }
+        promotion = draft
+        refresh()
+    }
+
+    /// Success's one offer: the content travelled, so the local copy
+    /// may go. A chip burns by leaving the document (the sync zeroizes
+    /// it core-side); a page burns by closing (it rests in the ledger).
+    func burnPromotedCopy() {
+        guard let draft = promotion, draft.receiptId != nil else { return }
+        switch draft.target {
+        case .chip(let id):
+            removeChipFromDocument(id)
+        case .page(let id):
+            close(id)
+        }
+        promotion = nil
+    }
+
+    func dismissPromotion() {
+        promotion = nil
+    }
+
+    /// Remove a chip's attachment character from whichever page's
+    /// document holds it, then mirror — the snapshot that omits the
+    /// chip is what zeroizes it core-side.
+    private func removeChipFromDocument(_ chipId: UInt64) {
+        for (sheet, storage) in storages {
+            var found: NSRange?
+            storage.enumerateAttribute(
+                .attachment, in: NSRange(location: 0, length: storage.length)
+            ) { value, range, stop in
+                if let chip = value as? ChipAttachment, chip.info.chipId == chipId {
+                    found = range
+                    stop.pointee = true
+                }
+            }
+            guard let range = found else { continue }
+            storage.replaceCharacters(in: range, with: "")
+            syncDocument(sheet: sheet, runs: InkEditorView.Coordinator.runs(of: storage))
+            return
+        }
+        // No storage holds it (already deleted editor-side): delete
+        // directly so the bytes still die.
+        _ = client.deleteChip(id: chipId)
+        refresh()
+    }
+
+    // MARK: Connection (Settings)
+
+    /// Save the connection. The token goes straight through the seam to
+    /// the Keychain — nil keeps the stored one, "" deletes it; the rest
+    /// persists as ordinary defaults. Returns false on a refused config
+    /// (non-https URL).
+    @discardableResult
+    func saveConnection(
+        serverUrl: String, shareDomain: String, extid: String, token: String?
+    ) -> Bool {
+        let accepted = client.configureConnection(
+            serverUrl: serverUrl, shareDomain: shareDomain, extid: extid, token: token
+        )
+        guard accepted else { return false }
+        let defaults = UserDefaults.standard
+        defaults.set(serverUrl, forKey: Self.serverKey)
+        defaults.set(shareDomain, forKey: Self.shareDomainKey)
+        defaults.set(extid, forKey: Self.extidKey)
+        connection = client.connectionInfo()
+        return true
+    }
+
+    /// The Settings test button: one status round-trip, off the main
+    /// actor, result to `completion` on the main actor.
+    func testConnection(completion: @escaping @MainActor (PromotionOutcome) -> Void) {
+        let client = self.client
+        Task.detached(priority: .userInitiated) {
+            let outcome = client.testConnection()
+            await MainActor.run { completion(outcome) }
+        }
     }
 
     // MARK: Timers

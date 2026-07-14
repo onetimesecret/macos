@@ -56,11 +56,18 @@
 //! `.xcframework` wraps (`scripts/build-core.sh`). ADR-0003.
 #![allow(unsafe_code)] // A C ABI requires raw pointers; every unsafe fn documents its contract.
 
+mod promotion;
+
 use std::ffi::CStr;
 use std::ffi::{CString, c_char, c_int};
 use std::ptr;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use companion_credentials::{CredentialStore, default_credential_store};
+use companion_transport::UreqTransport;
+use ots_client::Transport as _;
+use promotion::{Connection, PromoteOpts, Promoted, ladder_snapped_ttl, promote};
 
 use companion_core::{
     Cause, ChipId, ChipMeta, LedgerSegment, Segment, Sheet, SheetId, SheetStore, SystemClock,
@@ -185,7 +192,18 @@ struct Companion {
     store: SheetStore<SystemClock>,
     pasteboard: Board,
     last_write: Option<ChangeCount>,
+    /// Where promotion goes (non-secret). `None` until the shell
+    /// configures a connection; promotion refuses until then.
+    connection: Option<Connection>,
+    /// Where the API token rests: the macOS Keychain in the app, the
+    /// in-memory store in tests and off macOS. The token itself never
+    /// sits in `connection`.
+    credentials: Arc<dyn CredentialStore>,
 }
+
+/// The credential-store account holding the API token (scoped by the
+/// store's service name, `com.onetimesecret.companion`).
+const TOKEN_ACCOUNT: &str = "api-token";
 
 /// Opaque handle the shell holds. A mutex serializes calls from
 /// different threads (a menu-bar app mostly calls from one).
@@ -228,6 +246,8 @@ pub extern "C" fn companion_new() -> *mut CompanionHandle {
         store: SheetStore::new(SystemClock),
         pasteboard,
         last_write: None,
+        connection: None,
+        credentials: default_credential_store(),
     };
     Box::into_raw(Box::new(CompanionHandle {
         inner: Mutex::new(companion),
@@ -761,6 +781,335 @@ pub unsafe extern "C" fn companion_sheet_pause_press(
 }
 
 // ---------------------------------------------------------------------------
+// Promotion — the exit ramp, the app's only network action
+// ---------------------------------------------------------------------------
+
+/// Configure where promotion goes. `json` carries the non-secret
+/// connection config plus, optionally, the API token in transit to the
+/// credential store:
+///
+/// ```json
+/// { "server_url": "https://eu.onetimesecret.com",
+///   "share_domain": "",           // empty → the server's host
+///   "extid": "org_…",             // empty → guest-only
+///   "token": "…" }                // absent: keep stored token;
+///                                 // empty string: delete it
+/// ```
+///
+/// The token goes straight to the OS credential store (Keychain on
+/// macOS) and is never retained in config — the shell should pass it
+/// only when the user (re)enters it in Settings. Refuses (`false`) a
+/// malformed JSON object or a non-`https` server URL: the network
+/// boundary is TLS-only and enforcement starts here, not at the socket.
+///
+/// # Safety
+/// `handle` must be a valid handle. `json` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_connection_configure(
+    handle: *mut CompanionHandle,
+    json: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(json) = (unsafe { cstr(json) }) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return false;
+    };
+    let Some(server_url) = value.get("server_url").and_then(serde_json::Value::as_str) else {
+        return false;
+    };
+    let server_url = server_url.trim_end_matches('/');
+    if !server_url.starts_with("https://") || server_url.len() <= "https://".len() {
+        return false;
+    }
+    let field = |key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_owned()
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.connection = Some(Connection {
+        server_url: server_url.to_owned(),
+        share_domain: field("share_domain"),
+        extid: field("extid"),
+    });
+    match value.get("token").and_then(serde_json::Value::as_str) {
+        Some("") => guard.credentials.delete(TOKEN_ACCOUNT).is_ok(),
+        Some(token) => guard
+            .credentials
+            .store(TOKEN_ACCOUNT, token.as_bytes())
+            .is_ok(),
+        None => true,
+    }
+}
+
+/// The connection as the shell may render it — configuration state
+/// only, never the token itself. Returns
+/// `{"configured", "server_url", "share_domain", "extid", "has_token"}`
+/// (or null on an invalid handle); free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_connection_json(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let has_token = guard.credentials.load(TOKEN_ACCOUNT).is_ok();
+    let json = match &guard.connection {
+        Some(conn) => serde_json::json!({
+            "configured": true,
+            "server_url": conn.server_url,
+            "share_domain": conn.share_domain,
+            "extid": conn.extid,
+            "has_token": has_token,
+        }),
+        None => serde_json::json!({
+            "configured": false,
+            "server_url": "",
+            "share_domain": "",
+            "extid": "",
+            "has_token": has_token,
+        }),
+    };
+    into_c_string(json.to_string())
+}
+
+/// The Settings "test" button: one `GET /api/v3/status` against the
+/// configured server. **Blocks for the round-trip** — call from a
+/// background queue, never the main thread. The core mutex is held only
+/// long enough to copy the connection config; a summon during a slow
+/// test never waits on the network. Returns `{"ok"}` or
+/// `{"ok": false, "error"}`; free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_connection_test(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let conn = {
+        let Ok(guard) = handle.inner.lock() else {
+            return ptr::null_mut();
+        };
+        guard.connection.clone()
+    };
+    let Some(conn) = conn else {
+        return promotion_error("no connection configured");
+    };
+    let api = ots_client::Api::new(conn.server_url, Box::new(ots_client::NoAuth));
+    let result = match companion_transport::UreqTransport::new().send(api.status_request()) {
+        Ok(response) if (200..300).contains(&response.status) => {
+            serde_json::json!({ "ok": true })
+        }
+        Ok(response) => serde_json::json!({
+            "ok": false,
+            "error": format!("the server answered {}", response.status),
+        }),
+        Err(e) => serde_json::json!({
+            "ok": false,
+            "error": format!("could not reach the server: {e}"),
+        }),
+    };
+    into_c_string(result.to_string())
+}
+
+/// Promote one sealed chip into a one-time link: the ↗ on a chip's
+/// hover actions. `opts_json` is `{"ttl_secs"?, "passphrase"?,
+/// "recipient"?}` or null (all defaults; TTL defaults to the page's
+/// remaining time snapped **down** the ladder). The sealed bytes travel
+/// core → client → transport and never through the caller; on success
+/// the share link is on the clipboard (transient-marked) and only the
+/// receipt id stays on the chip. **Blocks for the round-trip** — call
+/// from a background queue. The core mutex is released during the
+/// network call; on failure nothing has left the sheet.
+///
+/// Returns `{"ok": true, "receipt_id"}` or `{"ok": false, "error"}`;
+/// free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle. `opts_json`, when non-null, must be
+/// a valid, NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_chip_promote(
+    handle: *mut CompanionHandle,
+    chip: u64,
+    opts_json: *const c_char,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Some(opts) = PromoteOpts::parse(unsafe { cstr(opts_json) }) else {
+        return promotion_error("malformed promotion options");
+    };
+    let chip = ChipId::from_raw(chip);
+
+    // Under the lock: assemble everything the network call needs, then
+    // let go — a slow server must never block a summon.
+    let staged = {
+        let Ok(guard) = handle.inner.lock() else {
+            return ptr::null_mut();
+        };
+        let Some(conn) = guard.connection.clone() else {
+            return promotion_error("no connection configured");
+        };
+        let holder = guard
+            .store
+            .sheets()
+            .find(|sheet| sheet.chip(chip).is_some());
+        let Some(sheet) = holder else {
+            return promotion_error("that content is gone");
+        };
+        if matches!(
+            sheet.chip(chip).map(companion_core::SealedChip::meta),
+            Some(ChipMeta::Image { .. })
+        ) {
+            return promotion_error(
+                "this chip holds an image, which cannot travel as a text secret yet",
+            );
+        }
+        let default_ttl = ladder_snapped_ttl(sheet.remaining(guard.store.now()));
+        let Some(bytes) = guard.store.chip_payload(chip) else {
+            return promotion_error("that content is gone");
+        };
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            return promotion_error("this chip is not text");
+        };
+        let payload = Zeroizing::new(text.to_owned());
+        (conn, load_token(&*guard.credentials), payload, default_ttl)
+    };
+    let (conn, token, payload, default_ttl) = staged;
+
+    match promote(
+        &conn,
+        token,
+        payload,
+        &opts,
+        default_ttl,
+        UreqTransport::new(),
+    ) {
+        Ok(promoted) => finish_promotion(handle, promoted, Some(chip)),
+        Err(message) => promotion_error(&message),
+    }
+}
+
+/// Promote the whole page: the ↗ page in the footer. The payload is the
+/// page in document order — ink verbatim, sealed bytes inlined where
+/// their chips sit — refused when the page holds an image chip. Options,
+/// blocking behaviour, locking, and the result shape match
+/// [`companion_chip_promote`]; no per-chip promotion mark is set (the
+/// link stands for the page — "burn local copy" on success is the
+/// shell closing the sheet).
+///
+/// # Safety
+/// `handle` must be a valid handle. `opts_json`, when non-null, must be
+/// a valid, NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_promote(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    opts_json: *const c_char,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Some(opts) = PromoteOpts::parse(unsafe { cstr(opts_json) }) else {
+        return promotion_error("malformed promotion options");
+    };
+    let sheet = SheetId::from_raw(sheet);
+
+    let staged = {
+        let Ok(guard) = handle.inner.lock() else {
+            return ptr::null_mut();
+        };
+        let Some(conn) = guard.connection.clone() else {
+            return promotion_error("no connection configured");
+        };
+        let payload = match guard.store.sheet_payload(sheet) {
+            Ok(payload) => payload,
+            Err(e) => return promotion_error(&e.to_string()),
+        };
+        if payload.trim().is_empty() {
+            return promotion_error("nothing to promote");
+        }
+        let default_ttl = guard
+            .store
+            .sheet(sheet)
+            .map_or(TTL_LADDER[0].as_secs(), |s| {
+                ladder_snapped_ttl(s.remaining(guard.store.now()))
+            });
+        (conn, load_token(&*guard.credentials), payload, default_ttl)
+    };
+    let (conn, token, payload, default_ttl) = staged;
+
+    match promote(
+        &conn,
+        token,
+        payload,
+        &opts,
+        default_ttl,
+        UreqTransport::new(),
+    ) {
+        Ok(promoted) => finish_promotion(handle, promoted, None),
+        Err(message) => promotion_error(&message),
+    }
+}
+
+/// The stored API token as a zeroizing string, if present and UTF-8.
+fn load_token(credentials: &dyn CredentialStore) -> Option<Zeroizing<String>> {
+    let bytes = credentials.load(TOKEN_ACCOUNT).ok()?;
+    std::str::from_utf8(&bytes)
+        .ok()
+        .map(|s| Zeroizing::new(s.to_owned()))
+}
+
+/// After a successful conceal: the link onto the clipboard (transient —
+/// the link is a capability, not the secret, but no pasteboard manager
+/// should archive it), the receipt id onto the chip when one was
+/// promoted, and the result JSON out.
+fn finish_promotion(
+    handle: &CompanionHandle,
+    promoted: Promoted,
+    chip: Option<ChipId>,
+) -> *mut c_char {
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let receipt = guard.pasteboard.write(
+        Zeroizing::new(promoted.link.into_bytes()),
+        ContentKind::Text,
+        WriteOptions { concealed: false },
+    );
+    guard.last_write = Some(receipt);
+    if let Some(chip) = chip {
+        // The chip may have expired mid-flight; the link is on the
+        // clipboard regardless, the mark just has nowhere to land.
+        guard
+            .store
+            .mark_chip_promoted(chip, promoted.receipt_id.clone());
+    }
+    into_c_string(serde_json::json!({ "ok": true, "receipt_id": promoted.receipt_id }).to_string())
+}
+
+/// A `{"ok": false, "error"}` result. Error strings are messages for
+/// the inline failure state and never carry secret material.
+fn promotion_error(message: &str) -> *mut c_char {
+    into_c_string(serde_json::json!({ "ok": false, "error": message }).to_string())
+}
+
+// ---------------------------------------------------------------------------
 // Dev scaffolding — a seed for demo/test affordances
 // ---------------------------------------------------------------------------
 
@@ -954,6 +1303,8 @@ mod tests {
             store: SheetStore::new(SystemClock),
             pasteboard: Board::Memory(MemoryPasteboard::new()),
             last_write: None,
+            connection: None,
+            credentials: Arc::new(companion_credentials::InMemoryCredentialStore::default()),
         };
         Box::into_raw(Box::new(CompanionHandle {
             inner: Mutex::new(companion),
@@ -1238,6 +1589,85 @@ mod tests {
                 cstring(r#"[{"ink": "just ink"}]"#).as_ptr()
             ));
             assert!(!companion_chip_copy_out(handle, chip_id), "no resurrection");
+
+            companion_free(handle);
+        }
+    }
+
+    /// Every promotion path that can refuse **without** a socket, plus
+    /// the connection-config contract: TLS-only, and the token goes to
+    /// the credential store and never comes back out in any JSON.
+    #[test]
+    fn connection_config_and_offline_promotion_refusals() {
+        let handle = handle();
+        unsafe {
+            // Promotion refuses before any network when unconfigured.
+            let sheet = companion_sheet_new(handle);
+            let chip = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring("hunter2 hunter2").as_ptr(),
+            ));
+            let chip_id = serde_json::from_str::<serde_json::Value>(&chip).unwrap()["chip_id"]
+                .as_u64()
+                .unwrap();
+            let refusal = take_json(companion_chip_promote(handle, chip_id, ptr::null()));
+            let v: serde_json::Value = serde_json::from_str(&refusal).unwrap();
+            assert_eq!(v["ok"], false);
+            assert!(v["error"].as_str().unwrap().contains("no connection"));
+
+            // The boundary is TLS-only from the config step.
+            assert!(!companion_connection_configure(
+                handle,
+                cstring(r#"{"server_url": "http://example.com"}"#).as_ptr()
+            ));
+            assert!(!companion_connection_configure(
+                handle,
+                cstring("not json").as_ptr()
+            ));
+
+            // A good config lands; the token is stored, not echoed.
+            assert!(companion_connection_configure(
+                handle,
+                cstring(
+                    r#"{"server_url": "https://eu.onetimesecret.com/",
+                        "extid": "org_1", "token": "sekrit-token"}"#
+                )
+                .as_ptr()
+            ));
+            let conn = take_json(companion_connection_json(handle));
+            assert!(!conn.contains("sekrit-token"), "token never in JSON");
+            let v: serde_json::Value = serde_json::from_str(&conn).unwrap();
+            assert_eq!(v["configured"], true);
+            assert_eq!(v["server_url"], "https://eu.onetimesecret.com");
+            assert_eq!(v["extid"], "org_1");
+            assert_eq!(v["has_token"], true);
+
+            // Malformed options refuse before any network.
+            let refusal = take_json(companion_chip_promote(
+                handle,
+                chip_id,
+                cstring("[]").as_ptr(),
+            ));
+            let v: serde_json::Value = serde_json::from_str(&refusal).unwrap();
+            assert_eq!(v["ok"], false);
+            assert!(v["error"].as_str().unwrap().contains("malformed"));
+
+            // A gone chip refuses; an empty page refuses.
+            let refusal = take_json(companion_chip_promote(handle, 424_242, ptr::null()));
+            assert!(refusal.contains("gone"));
+            let empty = companion_sheet_new(handle);
+            let refusal = take_json(companion_sheet_promote(handle, empty, ptr::null()));
+            assert!(refusal.contains("nothing to promote"));
+
+            // An empty token string deletes the stored one.
+            assert!(companion_connection_configure(
+                handle,
+                cstring(r#"{"server_url": "https://eu.onetimesecret.com", "token": ""}"#).as_ptr()
+            ));
+            let conn = take_json(companion_connection_json(handle));
+            let v: serde_json::Value = serde_json::from_str(&conn).unwrap();
+            assert_eq!(v["has_token"], false);
 
             companion_free(handle);
         }

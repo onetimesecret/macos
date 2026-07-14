@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The promotion flow** (issue #16, docs/spec/04) — the exit ramp, and
+  the app's only network action. Two affordances: **↗** on a chip's
+  hover actions and **↗ page** in the footer, both opening an inline,
+  in-place confirmation (never a modal) with the destination named, the
+  TTL seeded from the page's remaining time snapped *down* the ladder,
+  and optional passphrase/recipient — the network boundary is the one
+  confirming click. On success the share link is on the clipboard
+  (written core-side, transient-marked), only the receipt id stays on
+  the chip, and the confirmation offers **Burn local copy** (a chip
+  leaves the document and zeroizes; a page closes into the ledger).
+  Failure is inline with retry; content never leaves the sheet.
+  - **The seam stays lawful**: `companion_chip_promote` /
+    `companion_sheet_promote` move the sealed bytes core → `ots-client`
+    → transport directly — they never enter Swift. Page promotion
+    refuses image chips (the v3 payload is text-shaped, open question
+    №3). The core mutex is released for the network round-trip, so a
+    slow server never blocks a summon; both routes (and the Settings
+    test) block their own thread and are called off the main actor.
+  - **Connection config** (`companion_connection_configure` /
+    `_json` / `_test`): server URL (refused unless `https://` — the
+    TLS-only boundary enforced at config, not the socket), share
+    domain, org `extid` as non-secret config; the **API token goes
+    straight through the seam to the Keychain**
+    (`companion-credentials`) and is never retained in config, echoed
+    back in any JSON, or readable from the Settings UI again. Auth is
+    Basic (extid + token) when configured, the guest conceal route
+    otherwise — promotion works with zero setup against the default
+    server.
+  - **Settings → Connection** (right-click the menu-bar item): server
+    URL, share domain, extid, a write-only token field, and a test
+    button (`GET /api/v3/status`). Unlike the main window, Settings
+    activates normally — deliberate act, needs the keyboard.
+  - Tested sans-network: the conceal call is generic over the
+    transport, so Rust unit tests drive it with a mock (auth route
+    selection, guest fallback, TTL snapping, error shaping) and the
+    Swift contract test covers config round-trip and offline refusals;
+    CI never opens a socket, and the seam tests never write a real
+    Keychain.
+
 ## [0.1.0] - 2026-07-13
 
 The first tagged milestone. The rev C surface ran its first live

@@ -25,7 +25,10 @@ workspace = true
 
 [dependencies]
 companion-core = { path = "../core" }
+companion-credentials = { path = "../credentials" }
 companion-pasteboard = { path = "../pasteboard" }
+companion-transport = { path = "../transport" }
+ots-client = { path = "../ots-client" }
 serde_json = { workspace = true }
 # Named only to spell the `Pasteboard::write` signature the `Board`
 # backend delegates to; the bytes stay zeroizing end to end.

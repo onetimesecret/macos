@@ -87,6 +87,37 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(client.sheets().count, 9)
     }
 
+    /// The connection half of the promotion contract — config only, no
+    /// token and no socket: a token here would write the real Keychain
+    /// on a developer's machine, and the network paths are covered by
+    /// the Rust mock-transport tests.
+    func testConnectionConfigRoundTripsAndRefusesPlainHttp() throws {
+        let client = CompanionClient()
+
+        // TLS-only from the config step, not the socket.
+        XCTAssertFalse(client.configureConnection(
+            serverUrl: "http://example.com", shareDomain: "", extid: "", token: nil
+        ))
+
+        XCTAssertTrue(client.configureConnection(
+            serverUrl: "https://eu.onetimesecret.com/",
+            shareDomain: "share.example.com",
+            extid: "org_1",
+            token: nil
+        ))
+        let info = try XCTUnwrap(client.connectionInfo())
+        XCTAssertTrue(info.configured)
+        XCTAssertEqual(info.serverUrl, "https://eu.onetimesecret.com") // trailing slash trimmed
+        XCTAssertEqual(info.shareDomain, "share.example.com")
+        XCTAssertEqual(info.extid, "org_1")
+
+        // Promotion of a vanished chip refuses inline, before any
+        // network — the error is a message, never a crash.
+        let outcome = client.promoteChip(id: 424_242, ttlSecs: nil, passphrase: "", recipient: "")
+        XCTAssertFalse(outcome.ok)
+        XCTAssertNotNil(outcome.error)
+    }
+
     func testSealTextRefusesInteriorNul() {
         let client = CompanionClient()
         let sheetID = client.newSheet()
