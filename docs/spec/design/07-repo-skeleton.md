@@ -1,4 +1,4 @@
-# docs/spec/07-repo-skeleton.md
+# docs/spec/design/07-repo-skeleton.md
 ---
 
 # Repo Skeleton — Initialization Prescription

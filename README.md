@@ -32,18 +32,21 @@ promotion request (nothing is sent).
 
 ## Reading order
 
-The spec governs; code follows it. Start at
-[docs/spec/README.md](docs/spec/README.md):
+The spec governs; code follows it. The standing design spec lives under
+`docs/spec/design/`; feature specs written against it live under
+`docs/spec/feature/`. Start at
+[docs/spec/design/README.md](docs/spec/design/README.md):
 
 | Doc | Contents |
 | --- | --- |
-| [01-problem-space](docs/spec/01-problem-space.md) | The problem restated, the cache analogy taken seriously, anti-goals |
-| [02-overlooked-opportunities](docs/spec/02-overlooked-opportunities.md) | The landscape of neighbouring apps and the gaps they leave |
-| [03-design-principles](docs/spec/03-design-principles.md) | Six principles and the arguments they settle |
-| [04-interaction-model](docs/spec/04-interaction-model.md) | SleeperCell anatomy, TTL ladder, panel behaviour |
-| [05-technical-direction](docs/spec/05-technical-direction.md) | Shell survey, security posture, a11y, frugality budget |
-| [06-open-questions](docs/spec/06-open-questions.md) | Everything unresolved, honestly |
-| [07-repo-skeleton](docs/spec/07-repo-skeleton.md) | The prescription this repository was initialized from |
+| [01-problem-space](docs/spec/design/01-problem-space.md) | The problem restated, the cache analogy taken seriously, anti-goals |
+| [02-overlooked-opportunities](docs/spec/design/02-overlooked-opportunities.md) | The landscape of neighbouring apps and the gaps they leave |
+| [03-design-principles](docs/spec/design/03-design-principles.md) | Six principles and the arguments they settle |
+| [04-interaction-model](docs/spec/design/04-interaction-model.md) | SleeperCell anatomy, TTL ladder, panel behaviour |
+| [05-technical-direction](docs/spec/design/05-technical-direction.md) | Shell survey, security posture, a11y, frugality budget |
+| [06-open-questions](docs/spec/design/06-open-questions.md) | Everything unresolved, honestly |
+| [07-repo-skeleton](docs/spec/design/07-repo-skeleton.md) | The prescription this repository was initialized from |
+| [feature/byoe](docs/spec/feature/byoe/README.md) | Bring Your Own Encryption on the promotion path (draft feature spec) |
 
 Decisions land as ADRs in [docs/adr/](docs/adr/). ADR-0001 (Rust core,
 thin shell), ADR-0002 (Swift/AppKit shell, decided on the two-way
@@ -62,7 +65,8 @@ crates/ffi/          the C-ABI seam a non-Rust shell calls — plaintext never
                      crosses it, in either direction
 shell/               the Swift/AppKit shell (ADR-0002) — links the core only
                      through the xcframework built from crates/ffi
-docs/spec/           the governing spec   ·   docs/adr/  decisions
+docs/spec/design/    the governing spec   ·   docs/spec/feature/  feature specs
+docs/adr/            decisions
 ```
 
 ## Running
@@ -81,7 +85,7 @@ swift run remains fine for quick UI iteration where none of that matters (layout
 
 ### Summoning
 
-⌥Space (Option-Space). It toggles: one press summons the window and gives it the keyboard (the page is ready to type into), a second press dismisses it. This is documented in docs/spec/04-interaction-model.md and implemented in WindowController.summon().
+⌥Space (Option-Space). It toggles: one press summons the window and gives it the keyboard (the page is ready to type into), a second press dismisses it. This is documented in docs/spec/design/04-interaction-model.md and implemented in WindowController.summon().
 
 Related: Esc hands the keyboard back to whatever app had it, leaving the window visible. And with the new Spaces behavior in the working tree, if the window is visible on a different Space, ⌥Space brings it to your current Space instead of dismissing it.
 

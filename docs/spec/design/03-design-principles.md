@@ -1,4 +1,4 @@
-# docs/spec/03-design-principles.md
+# docs/spec/design/03-design-principles.md
 ---
 
 # Design Principles

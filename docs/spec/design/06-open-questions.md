@@ -1,4 +1,4 @@
-# docs/spec/06-open-questions.md
+# docs/spec/design/06-open-questions.md
 ---
 
 # Open Questions

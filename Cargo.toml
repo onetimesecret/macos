@@ -1,6 +1,6 @@
 # Virtual workspace for the Onetime Secret macOS companion.
 #
-# Layout follows docs/spec/07-repo-skeleton.md: logic crates (`core`,
+# Layout follows docs/spec/design/07-repo-skeleton.md: logic crates (`core`,
 # `ots-client`) carry no macOS dependencies and build/test on Linux;
 # `pasteboard` is the sole crate allowed to touch platform FFI.
 # `shell/` is the Swift/AppKit shell (ADR-0002, accepted) — not Rust,

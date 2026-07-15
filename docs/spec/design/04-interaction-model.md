@@ -1,4 +1,4 @@
-# docs/spec/04-interaction-model.md
+# docs/spec/design/04-interaction-model.md
 ---
 
 # Interaction Model (revision C — the window)

@@ -1,4 +1,4 @@
-# docs/spec/README.md
+# docs/spec/design/README.md
 ---
 
 # macOS Companion — Design Spec
@@ -37,10 +37,20 @@ machine.
 | [06-open-questions.md](06-open-questions.md) | Everything unresolved, honestly | Supporting — updated for rev C |
 | [07-repo-skeleton.md](07-repo-skeleton.md) | Prescription for initializing the app repository | Executed |
 
+## Feature specifications
+
+The documents above are the standing *design* spec. Specifications for
+individual features, written against it, live under
+[`docs/spec/feature/`](../feature/):
+
+| Feature | Contents | Status |
+| --- | --- | --- |
+| [feature/byoe](../feature/byoe/README.md) | Bring Your Own Encryption on the promotion path: envelope construction, key custody, wire changes | Draft |
+
 ## Design rounds and prototype
 
 The interaction model's revisions live as rendered documents in
-[`docs/Airlock Prototype/`](../Airlock%20Prototype/):
+[`docs/Airlock Prototype/`](../../Airlock%20Prototype/):
 
 - `Airlock Spec.dc.html` — **rev C**, the authoritative interaction
   model; doc 04 is its markdown consolidation (including the rev B
@@ -60,7 +70,7 @@ environments that things pass through but never live in, which is the
 product in one image — because that name collides with at least one
 existing security vendor (Airlock Digital) and would not survive to
 release without a trademark check. The old name remains only in the
-design-history documents under [`docs/Airlock Prototype/`](../Airlock%20Prototype/).
+design-history documents under [`docs/Airlock Prototype/`](../../Airlock%20Prototype/).
 Alternatives considered: Layover, Vestibule, Foyer, Waypoint, Holdover.
 The name matters less than the metaphor; every candidate is a word for
 *a place you pass through*. (Rev B retired the earlier "SleeperCell"

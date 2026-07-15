@@ -1,4 +1,4 @@
-# docs/spec/05-technical-direction.md
+# docs/spec/design/05-technical-direction.md
 ---
 
 # Technical Direction (draft — survey, not decisions)
