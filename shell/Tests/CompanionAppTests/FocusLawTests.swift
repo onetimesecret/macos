@@ -87,4 +87,40 @@ final class FocusLawTests: XCTestCase {
             target: .chip(42), closingSheet: 3, chipsOnSheet: [7]
         ))
     }
+
+    // MARK: Clearing the promotion draft on refresh/expiry (issue #19)
+
+    func testExpiringThePromotedPageClearsTheDraft() {
+        XCTAssertTrue(WindowModel.isRefreshOrphan(
+            target: .page(7), liveSheets: [3, 8], liveChips: []
+        ))
+    }
+
+    func testASurvivingPromotedPageKeepsTheDraft() {
+        XCTAssertFalse(WindowModel.isRefreshOrphan(
+            target: .page(7), liveSheets: [7, 8], liveChips: [42]
+        ))
+    }
+
+    func testAChipOnALivePageKeepsTheDraft() {
+        XCTAssertFalse(WindowModel.isRefreshOrphan(
+            target: .chip(42), liveSheets: [3, 8], liveChips: [41, 42]
+        ))
+    }
+
+    func testAChipWhosePageExpiredClearsTheDraftEvenWhileOthersRemain() {
+        // The P1 regression: the promoted chip's own page expired, but
+        // other pages stayed open. The old `sheets.isEmpty` test left
+        // the draft standing so a stray ↩ could fire a network call over
+        // a chip whose bytes are gone; the live-chip test clears it.
+        XCTAssertTrue(WindowModel.isRefreshOrphan(
+            target: .chip(42), liveSheets: [3, 8], liveChips: [41]
+        ))
+    }
+
+    func testAChipDraftClearsWhenEveryPageIsGone() {
+        XCTAssertTrue(WindowModel.isRefreshOrphan(
+            target: .chip(42), liveSheets: [], liveChips: []
+        ))
+    }
 }

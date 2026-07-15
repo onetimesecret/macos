@@ -413,15 +413,21 @@ final class WindowModel: ObservableObject {
         // A promotion whose subject died — expiry, mostly; `close`
         // clears its own — must not keep the confirmation standing:
         // ↩ lands on "Create link", and a stale draft would answer a
-        // stray keystroke with a network call (issue #19). A chip
-        // draft can only be declared orphaned wholesale: chip→page
-        // membership is unknowable once the page is gone.
+        // stray keystroke with a network call over a page (or a chip's
+        // page) that no longer exists (issue #19). A chip is orphaned
+        // when it survives on no live page: its host page has gone,
+        // even if others remain. The core is authoritative here, even
+        // for a page whose editor never mounted.
         if let draft = promotion {
-            let orphaned = switch draft.target {
-            case .page(let id): !live.contains(id)
-            case .chip: sheets.isEmpty
+            var liveChips: Set<UInt64> = []
+            if case .chip = draft.target {
+                liveChips = Set(sheets.flatMap { chipIds(onSheet: $0.id) })
             }
-            if orphaned { promotion = nil }
+            if Self.isRefreshOrphan(
+                target: draft.target, liveSheets: live, liveChips: liveChips
+            ) {
+                promotion = nil
+            }
         }
         ledgerEntries = client.ledger()
         armEventTimer()
@@ -651,6 +657,23 @@ final class WindowModel: ObservableObject {
         switch target {
         case .page(let id): id == closingSheet
         case .chip(let id): chipsOnSheet.contains(id)
+        }
+    }
+
+    /// Whether a refresh orphans the open promotion draft: its subject
+    /// is no longer among the live pages. A page draft dies when its id
+    /// drops from the live set; a chip draft dies when the chip rides
+    /// on no live page — which is exactly when its host page has gone,
+    /// whether it was the last page or one of several. Pure, so the
+    /// decision is testable without a core.
+    nonisolated static func isRefreshOrphan(
+        target: PromotionDraft.Target,
+        liveSheets: Set<UInt64>,
+        liveChips: Set<UInt64>
+    ) -> Bool {
+        switch target {
+        case .page(let id): !liveSheets.contains(id)
+        case .chip(let id): !liveChips.contains(id)
         }
     }
 
