@@ -1,4 +1,4 @@
-# docs/spec/01-problem-space.md
+# docs/spec/design/01-problem-space.md
 ---
 
 # Problem Space

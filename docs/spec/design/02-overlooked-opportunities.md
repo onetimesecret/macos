@@ -1,4 +1,4 @@
-# docs/spec/02-overlooked-opportunities.md
+# docs/spec/design/02-overlooked-opportunities.md
 ---
 
 # Overlooked Opportunities

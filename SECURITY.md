@@ -7,7 +7,7 @@ line "Vulnerability Report: [Brief Description]", per the
 
 ## Scope note
 
-The memory-hygiene claims in `docs/spec/05-technical-direction.md` —
+The memory-hygiene claims in `docs/spec/design/05-technical-direction.md` —
 zeroization of cell buffers on expiry/discard, no plaintext residence
 outside the core, pasteboard marking, capture exclusion — are explicitly
 **in scope** for reports. If the code does not do what the spec claims,

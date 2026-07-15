@@ -29,9 +29,11 @@ struct InkEditorView: NSViewRepresentable {
         ))
         container.widthTracksTextView = true
         let storage = model.storage(for: sheetID)
-        // The page's storage outlives any one editor instance (tab
-        // switches recreate the view); detach layout managers a torn-
-        // down editor left behind so exactly one drives this storage.
+        // The page's storage outlives any one editor instance — the
+        // ledger and the empty state unmount the editor, even though
+        // page↔page switches no longer do (ADR-0006). Detach layout
+        // managers a torn-down editor left behind so exactly one
+        // drives this storage.
         for stale in storage.layoutManagers {
             storage.removeLayoutManager(stale)
         }
@@ -74,13 +76,34 @@ struct InkEditorView: NSViewRepresentable {
         let coordinator = context.coordinator
         guard let textView = scroll.documentView as? InkTextView else { return }
         model.activeEditor = textView
-        if coordinator.currentSheet != sheetID {
-            // Tab switch: the same layout stack, the new page's storage.
-            textView.layoutManager?.replaceTextStorage(model.storage(for: sheetID))
-            coordinator.currentSheet = sheetID
-            coordinator.restyle()
-            textView.undoManager?.removeAllActions()
+        // Dead pages take their saved view state with them — the same
+        // pruning `refresh()` applies to the storage cache.
+        coordinator.pruneViewState(keeping: Set(model.sheets.map(\.id)))
+        guard coordinator.currentSheet != sheetID else { return }
+        // A page switch reaches this editor as data, not identity
+        // (ADR-0006): the view — and with it first responder, and the
+        // ember — persists, while the page's storage is swapped in
+        // underneath. Caret and scroll are saved for the page on its
+        // way out and restored for the one coming in; undo history
+        // follows `currentSheet` through the delegate's per-page
+        // manager and needs no hand-off here.
+        coordinator.saveViewState(textView: textView, scrollView: scroll)
+        let incoming = model.storage(for: sheetID)
+        // The one-layout-manager-per-storage invariant rests on this
+        // path now; makeNSView's detach loop runs only at mount. The
+        // incoming storage may still carry a layout manager some
+        // torn-down editor (a ledger round trip) left behind — shed
+        // those before wiring ours to it. `replaceTextStorage` then
+        // moves this editor's layout manager off the outgoing storage,
+        // leaving both sides with exactly the managers they should
+        // have: one here, none on the page going to the background.
+        for stale in incoming.layoutManagers where stale !== textView.layoutManager {
+            incoming.removeLayoutManager(stale)
         }
+        textView.layoutManager?.replaceTextStorage(incoming)
+        coordinator.currentSheet = sheetID
+        coordinator.restyle()
+        coordinator.restoreViewState(textView: textView, scrollView: scroll, for: sheetID)
     }
 
     // MARK: - Coordinator
@@ -91,8 +114,77 @@ struct InkEditorView: NSViewRepresentable {
         weak var textView: InkTextView?
         var currentSheet: UInt64?
 
+        /// Caret and scroll are view state. With one editor serving
+        /// every page (ADR-0006) they no longer die with a torn-down
+        /// view — they must be carried per page by hand: saved before
+        /// the storage swap takes the page away, restored after its
+        /// return.
+        private var savedCarets: [UInt64: NSRange] = [:]
+        private var savedScrolls: [UInt64: NSPoint] = [:]
+
         init(model: WindowModel) {
             self.model = model
+        }
+
+        // MARK: Per-page view state (ADR-0006)
+
+        /// Remember the outgoing page's caret and scroll before the
+        /// swap. The pending typing group settles first, so half a
+        /// word is not left open in a page that is going away.
+        func saveViewState(textView: InkTextView, scrollView: NSScrollView) {
+            guard let sheet = currentSheet else { return }
+            textView.breakUndoCoalescing()
+            savedCarets[sheet] = textView.selectedRange()
+            savedScrolls[sheet] = scrollView.contentView.bounds.origin
+        }
+
+        /// Return the incoming page's caret and scroll after the swap.
+        /// The caret is clamped — content can change while a page is
+        /// in the background (a burn, a restore) — and lands
+        /// synchronously, being character offsets that owe layout
+        /// nothing. The scroll cannot: the layout manager re-lays the
+        /// new storage out asynchronously, and a synchronous restore
+        /// is clobbered by the pass that follows. One main-queue hop
+        /// later the geometry is real — ADR-0005's timing discipline,
+        /// applied to scrolling.
+        func restoreViewState(textView: InkTextView, scrollView: NSScrollView, for sheet: UInt64) {
+            let caret = Self.clamped(
+                savedCarets[sheet] ?? NSRange(location: 0, length: 0),
+                to: textView.textStorage?.length ?? 0
+            )
+            textView.setSelectedRange(caret)
+            let offset = savedScrolls[sheet] ?? .zero
+            DispatchQueue.main.async { [weak scrollView] in
+                guard let scrollView else { return }
+                scrollView.contentView.scroll(to: offset)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            }
+        }
+
+        /// Dead pages take their view state with them — the same
+        /// pruning `refresh()` applies to the storage cache.
+        func pruneViewState(keeping live: Set<UInt64>) {
+            savedCarets = savedCarets.filter { live.contains($0.key) }
+            savedScrolls = savedScrolls.filter { live.contains($0.key) }
+        }
+
+        /// A caret saved against yesterday's content may overhang
+        /// today's. Clamp to what exists, so a shrunken page seats the
+        /// caret at its end instead of out of bounds.
+        nonisolated static func clamped(_ range: NSRange, to length: Int) -> NSRange {
+            let location = min(max(range.location, 0), length)
+            let span = min(max(range.length, 0), length - location)
+            return NSRange(location: location, length: span)
+        }
+
+        /// One undo history per page, from the model's cache: the text
+        /// view asks its delegate on every undo touch, so history
+        /// simply follows `currentSheet` across storage swaps — ⌘Z
+        /// after a switch rewrites the page it was typed on, never a
+        /// neighbour (ADR-0006).
+        func undoManager(for view: NSTextView) -> UndoManager? {
+            guard let sheet = currentSheet else { return nil }
+            return model.undoManager(for: sheet)
         }
 
         // MARK: Editing

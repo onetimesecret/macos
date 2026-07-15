@@ -1,4 +1,4 @@
-# docs/spec/04-interaction-model.md
+# docs/spec/design/04-interaction-model.md
 ---
 
 # Interaction Model (revision C — the window)
@@ -80,10 +80,17 @@ sense, while remaining a **non-activating accessory**:
 ### Focus: accept, never take
 
 None of the window behaviour changes the focus law. The window accepts
-the keyboard by deliberate act only — click into the page, or summon with
-⌥Space — and never becomes the key window for chrome interactions. Esc
-hands the keyboard back. An ember border shows while the page holds keys.
-Opening the window never deactivates the user's frontmost app.
+the keyboard by deliberate act only (click into the page, click into
+the emptiness where a page would be, or summon with ⌥Space) and never
+becomes the key window for chrome interactions. A click into emptiness
+creates the page it lands in; ⌥Space creates one when none exists, so
+summon always lands on a ready editor (ADR-0005). While the window
+holds the keys, Enter on emptiness creates a page too: the muscle
+memory of starting a new thought. Typing into an unkeyed empty window
+still falls through; the click or ⌥Space is the price of entry, by
+design. Esc hands the keyboard back. An ember border shows while the
+window holds keys. Opening the window never deactivates the user's
+frontmost app.
 
 ## The sheet: ink and sealed chips
 
