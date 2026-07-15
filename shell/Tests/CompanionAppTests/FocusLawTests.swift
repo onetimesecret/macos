@@ -42,19 +42,24 @@ final class FocusLawTests: XCTestCase {
         )
     }
 
-    // MARK: Handing back the keys (issue #19) — the ember never lies
+    // MARK: The Return grant (ADR-0005): keyed emptiness offers create
 
-    func testKeysGoBackWhenTheLastPageDiesWhileKey() {
-        XCTAssertTrue(WindowModel.shouldHandBackKeys(sheetsEmpty: true, holdsKeys: true))
+    func testAKeyedWindowKeepsTheKeysWhenTheLastPageDies() {
+        // The old policy handed the keyboard back at this moment; the
+        // new one keeps it, seats the empty state's catcher as first
+        // responder, and lets Return conjure the next page.
+        XCTAssertTrue(WindowModel.shouldOfferEnterCreate(sheetsEmpty: true, holdsKeys: true))
     }
 
-    func testAnUnkeyedWindowHasNoKeysToHandBack() {
-        XCTAssertFalse(WindowModel.shouldHandBackKeys(sheetsEmpty: true, holdsKeys: false))
+    func testAnUnkeyedEmptyWindowOffersNoReturnGrant() {
+        // Unkeyed emptiness never receives a keystroke; the click or
+        // summon stays the price of entry, by design.
+        XCTAssertFalse(WindowModel.shouldOfferEnterCreate(sheetsEmpty: true, holdsKeys: false))
     }
 
-    func testLivePagesKeepTheKeys() {
-        XCTAssertFalse(WindowModel.shouldHandBackKeys(sheetsEmpty: false, holdsKeys: true))
-        XCTAssertFalse(WindowModel.shouldHandBackKeys(sheetsEmpty: false, holdsKeys: false))
+    func testLivePagesLeaveTheKeyboardToTheEditor() {
+        XCTAssertFalse(WindowModel.shouldOfferEnterCreate(sheetsEmpty: false, holdsKeys: true))
+        XCTAssertFalse(WindowModel.shouldOfferEnterCreate(sheetsEmpty: false, holdsKeys: false))
     }
 
     // MARK: Clearing the promotion draft on close (issue #19)

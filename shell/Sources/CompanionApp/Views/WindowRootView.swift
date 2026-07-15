@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 /// The window's face (docs/spec/04): a quiet header where the title bar
@@ -45,8 +46,10 @@ struct WindowRootView: View {
         }
         .background(Color.panelBackground)
         .overlay(
-            // The ember border: the page holds the keyboard — visible
-            // state, never colour alone (the caret and focus ring agree).
+            // The ember border: the window holds the keyboard, and a
+            // keystroke lands somewhere (the editor when a page shows,
+            // the Return grant when none does). Visible state, never
+            // colour alone; the caret and focus ring agree.
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(Color.ember.opacity(model.holdsKeys ? 0.8 : 0), lineWidth: 1.5)
                 .allowsHitTesting(false)
@@ -140,19 +143,24 @@ struct WindowRootView: View {
             // discarded on every tab change.
             InkEditorView(model: model, sheetID: selection)
         } else {
-            // The empty state: static text over a click-catcher. The
-            // catcher is the focus law's third grant (ADR-0005) — a
-            // click into the emptiness creates a page and hands its
-            // editor the keyboard.
+            // The empty state: static text over a catcher that serves
+            // two grants (ADR-0005). A click into the emptiness, the
+            // third grant, creates a page and hands its editor the
+            // keyboard. While the window already holds the keys, the
+            // catcher holds first responder so Return, the fourth
+            // grant, creates a page too, and Esc still hands the
+            // keyboard back.
             ZStack {
-                EmptyStateKeyGrant { window in
-                    model.createPageAndFocus(in: window)
-                }
+                EmptyStateKeyGrant(
+                    sheetsEmpty: model.sheets.isEmpty,
+                    onCreate: { window in model.createPageAndFocus(in: window) },
+                    onEscape: { model.escape() }
+                )
                 VStack(spacing: 6) {
                     Text("Empty is the resting state.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                    Text("click — or ⌥Space — for a page")
+                    Text("click, ⌥Space, or ↩ for a page")
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.tertiary)
                 }
@@ -203,40 +211,70 @@ struct WindowRootView: View {
     }
 }
 
-// MARK: - The empty state's click catcher
+// MARK: - The empty state's catcher
 
-/// The focus law's third grant (ADR-0005). The window honours the law
-/// through `becomesKeyOnlyIfNeeded`: a click grants key status only
-/// when the clicked view answers `needsPanelToBecomeKey`. The empty
-/// state's static text answers no — so a pageless window could never
-/// accept the keyboard at all, and keystrokes fell through to the app
-/// underneath. This view answers yes, because a click into the
-/// emptiness is itself the deliberate act the law requires, and it
-/// reports the click so the model can conjure the page the grant
-/// promises. Chrome — tabs, header, pin — carries no such view and
-/// stays mute.
+/// The focus law's third and fourth grants (ADR-0005). The window
+/// honours the law through `becomesKeyOnlyIfNeeded`: a click grants
+/// key status only when the clicked view answers
+/// `needsPanelToBecomeKey`. The empty state's static text answers no,
+/// so a pageless window could never accept the keyboard at all, and
+/// keystrokes fell through to the app underneath. This view answers
+/// yes, because a click into the emptiness is itself the deliberate
+/// act the law requires, and it reports the click so the model can
+/// conjure the page the grant promises. While the window already
+/// holds the keys it also holds first responder, so Return conjures
+/// the page as well (the muscle memory of starting a new thought) and
+/// Esc hands the keyboard back. Chrome (tabs, header, pin) carries no
+/// such view and stays mute.
 private struct EmptyStateKeyGrant: NSViewRepresentable {
-    let onClick: (NSWindow?) -> Void
+    let sheetsEmpty: Bool
+    let onCreate: (NSWindow?) -> Void
+    let onEscape: () -> Void
 
     func makeNSView(context: Context) -> KeyGrantingClickView {
         let view = KeyGrantingClickView()
-        view.onClick = onClick
+        apply(to: view)
         return view
     }
 
     func updateNSView(_ view: KeyGrantingClickView, context: Context) {
-        view.onClick = onClick
+        apply(to: view)
+    }
+
+    private func apply(to view: KeyGrantingClickView) {
+        view.sheetsEmpty = sheetsEmpty
+        view.onCreate = onCreate
+        view.onEscape = onEscape
     }
 }
 
 /// The minimal view that satisfies the panel's question: it needs the
-/// panel to become key — that is its entire purpose — and it takes the
+/// panel to become key (that is its entire purpose) and it takes the
 /// very first click even from an unkeyed window, so granting and
-/// creating are one gesture, not two.
+/// creating are one gesture, not two. In a window that is already key
+/// it claims first responder, on mount and again whenever the window
+/// becomes key, so Return has somewhere to land; the window would
+/// otherwise answer every keystroke itself, with a beep.
 private final class KeyGrantingClickView: NSView {
-    var onClick: ((NSWindow?) -> Void)?
+    var onCreate: ((NSWindow?) -> Void)?
+    var onEscape: (() -> Void)?
+
+    /// The model's live fact, pushed by the representable: the claim
+    /// below consults it so first responder is never seized for a
+    /// page created in this very render pass.
+    var sheetsEmpty = true
+
+    // nonisolated(unsafe): deinit is always nonisolated, even on a
+    // main-actor class (Swift 6), and the observation token isn't
+    // Sendable. Safe here: removeObserver is documented thread-safe,
+    // and every other touch runs on the main actor.
+    private nonisolated(unsafe) var keyObserver: NSObjectProtocol?
 
     override var needsPanelToBecomeKey: Bool { true }
+
+    /// Return needs a responder to land on; the window's own fallback
+    /// answer to a keystroke is the beep this view exists to replace.
+    override var acceptsFirstResponder: Bool { true }
 
     /// The granting click must not be swallowed as "just focusing":
     /// the same click that keys the window creates the page.
@@ -245,6 +283,58 @@ private final class KeyGrantingClickView: NSView {
     /// The window is captured here, before the click's consequences
     /// unmount this view and sever it from the hierarchy.
     override func mouseDown(with event: NSEvent) {
-        onClick?(window)
+        onCreate?(window)
+    }
+
+    /// Return creates the page (the fourth grant) and Esc routes to
+    /// the model's escape, the same path the keyboard map serves.
+    /// Everything else takes NSView's default road, the beep, so an
+    /// unhandled keystroke is audible rather than silently eaten.
+    override func keyDown(with event: NSEvent) {
+        switch Int(event.keyCode) {
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            onCreate?(window)
+        case kVK_Escape:
+            onEscape?()
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    /// Rehome the key observation whenever the view lands in (or
+    /// leaves) a window, then claim first responder if the window is
+    /// key right now: the empty state can appear inside an already
+    /// keyed window, as when the last page dies, and no notification
+    /// replays for a state that predates the observer.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let keyObserver {
+            NotificationCenter.default.removeObserver(keyObserver)
+            self.keyObserver = nil
+        }
+        guard let window else { return }
+        keyObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.claimFirstResponderIfEntitled() }
+        }
+        claimFirstResponderIfEntitled()
+    }
+
+    /// The seat is taken exactly when the pure decision says the
+    /// fourth grant is on offer; the window's key status and the
+    /// model's sheet count are both consulted live.
+    private func claimFirstResponderIfEntitled() {
+        guard let window else { return }
+        guard WindowModel.shouldOfferEnterCreate(
+            sheetsEmpty: sheetsEmpty, holdsKeys: window.isKeyWindow
+        ) else { return }
+        window.makeFirstResponder(self)
+    }
+
+    deinit {
+        if let keyObserver {
+            NotificationCenter.default.removeObserver(keyObserver)
+        }
     }
 }

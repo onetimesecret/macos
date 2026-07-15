@@ -23,9 +23,16 @@ click into — a spec gap, not only a code bug (issue #19).
 A click in the empty content area is itself the deliberate act the
 focus law requires: it creates a page and focuses its editor. `summon()`
 creates a page when none exists, so ⌥Space always lands on a ready
-editor. The focus law now names three grants. Type-to-create without a
-prior grant stays out of scope — it would demand key status the window
-was never given.
+editor. A fourth grant rides on the other three: while the window
+already holds the keys, Enter on the empty state creates a page and
+focuses its editor, the muscle memory of starting a new thought. It
+spends key status an earlier grant conferred, never takes it, so the
+accept-never-take invariant is untouched. Keyed emptiness is therefore
+a legal state: closing or expiring the last page while key keeps the
+keyboard, the empty state's catcher takes first responder, and Esc
+remains the way to hand the keyboard back. The focus law now names
+four grants. Type-to-create in an unkeyed window stays out of scope;
+it would demand key status the window was never given.
 
 ## Consequences
 
@@ -39,19 +46,23 @@ was never given.
   `activeEditor` is nil synchronously and the focus call must defer to
   the next runloop turn. Anyone inlining `makeFirstResponder` at the
   create site reintroduces the beep.
-- docs/spec/04-interaction-model.md must name the third grant, or spec
-  and behaviour diverge again the moment someone reads the law as
-  exhaustive.
-- We give up true type-to-create: a keystroke into an unkeyed empty
-  window still goes to the app underneath. The click (or ⌥Space) is the
-  price of entry, by design.
+- docs/spec/04-interaction-model.md must name the third and fourth
+  grants, or spec and behaviour diverge again the moment someone reads
+  the law as exhaustive.
+- We give up type-to-create only where the window is unkeyed: a
+  keystroke into an unkeyed empty window still goes to the app
+  underneath, and the click (or ⌥Space) remains the price of entry, by
+  design. A keyed empty window honours Enter, so the ember over
+  emptiness is honest: a keystroke lands somewhere.
 
 ## Eject triggers
 
-- A future affordance needs type-to-create — key status before any
-  deliberate act — collapsing the premise this decision rests on.
-- The empty state gains a genuinely focusable view of its own, making
-  the synthetic create-on-click redundant.
+- A future affordance needs type-to-create in an unkeyed window (key
+  status before any deliberate act), collapsing the premise this
+  decision rests on.
+- The empty state gains a real content control that focuses itself,
+  beyond the key-grant catcher, making the synthetic create-on-click
+  redundant.
 - A macOS release changes `becomesKeyOnlyIfNeeded` semantics such that
   static views can accept key, observed as the empty state going key
   without the new grant path.

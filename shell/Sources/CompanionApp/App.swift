@@ -425,20 +425,11 @@ final class WindowModel: ObservableObject {
         }
         ledgerEntries = client.ledger()
         armEventTimer()
-        // The last page died while the window held the keyboard: hand
-        // it back. Keeping it would light the ember over nothing to
-        // type into — key status with no editor is exactly the state
-        // the focus law forbids (issue #19; ADR-0005).
-        if Self.shouldHandBackKeys(sheetsEmpty: sheets.isEmpty, holdsKeys: holdsKeys) {
-            onHandBackKeys?()
-        }
-    }
-
-    /// Whether the keyboard goes back to the app underneath: yes
-    /// exactly when the sheet list has emptied while the window holds
-    /// the keys. Pure, so the decision is testable without a window.
-    nonisolated static func shouldHandBackKeys(sheetsEmpty: Bool, holdsKeys: Bool) -> Bool {
-        sheetsEmpty && holdsKeys
+        // No hand-back when the last page dies while the window is
+        // key: keyed emptiness is a legal state (ADR-0005). The window
+        // keeps the keyboard it was granted, the empty state's catcher
+        // takes first responder, and Return conjures the next page.
+        // Esc remains the way to give the keyboard back.
     }
 
     /// The page's document, created on first use. A page restored from
@@ -572,20 +563,33 @@ final class WindowModel: ObservableObject {
         if created != 0 { select(created) }
     }
 
-    /// The focus law's third grant (ADR-0005): a click into the
-    /// pageless window's empty content area creates the page and hands
-    /// its editor the keys. The click itself already made the window
-    /// key — the empty state's catcher answers `needsPanelToBecomeKey`
-    /// — but the editor mounts a render pass after `selection` changes,
-    /// so the focus call waits one runloop turn. Inlining it here would
-    /// find `activeEditor` still nil and reintroduce the beep this
-    /// grant exists to cure.
+    /// The empty state's create-and-focus, shared by the third and
+    /// fourth grants (ADR-0005): a click into the pageless window's
+    /// empty content area, or Return while the window already holds
+    /// the keys, creates the page and hands its editor the keyboard.
+    /// The window is key by the time this runs (the click keyed it
+    /// through `needsPanelToBecomeKey`; Return required it already),
+    /// but the editor mounts a render pass after `selection` changes,
+    /// so the focus call waits one runloop turn. Inlining it here
+    /// would find `activeEditor` still nil and reintroduce the beep
+    /// this grant exists to cure.
     func createPageAndFocus(in window: NSWindow?) {
         newPage()
         Task { @MainActor [weak self] in
             guard let self, let editor = self.activeEditor else { return }
             window?.makeFirstResponder(editor)
         }
+    }
+
+    /// Whether the empty state's catcher should hold first responder,
+    /// which is the whole of the fourth grant's availability: yes
+    /// exactly when the sheet list is empty while the window holds the
+    /// keys. The grant spends key status an earlier grant conferred,
+    /// never takes it; an unkeyed window still receives no keystrokes
+    /// at all, so it has nothing to offer Return. Pure, so the
+    /// decision is testable without a window.
+    nonisolated static func shouldOfferEnterCreate(sheetsEmpty: Bool, holdsKeys: Bool) -> Bool {
+        sheetsEmpty && holdsKeys
     }
 
     /// Close the page; it rests in the ledger. Closing also clears any

@@ -210,7 +210,9 @@ final class WindowController: NSObject, NSWindowDelegate {
     }
 
     /// The ember border tracks key status: it shows exactly while the
-    /// page holds the keyboard (docs/spec/04, "accept, never take").
+    /// window holds the keyboard (docs/spec/04, "accept, never take").
+    /// Over a keyed empty window it stays honest, because Return
+    /// conjures a page there (ADR-0005).
     func windowDidBecomeKey(_ notification: Notification) {
         model.holdsKeys = true
     }
