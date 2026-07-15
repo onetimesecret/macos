@@ -132,15 +132,14 @@ final class WindowController: NSObject, NSWindowDelegate {
             if model.sheets.isEmpty {
                 model.newPage()
             }
-            // Focus defers one runloop turn: a page born this instant
-            // reaches `activeEditor` only after SwiftUI's next render
-            // pass. Asking now would find nil, skip the hand-off, and
-            // leave typing to beep at the window (ADR-0005). An editor
-            // already mounted simply gets the keys a turn later.
-            Task { @MainActor [weak self] in
-                guard let self, let editor = self.model.activeEditor else { return }
-                self.panel.makeFirstResponder(editor)
-            }
+            // Focus waits for the editor to mount: a page born this
+            // instant reaches `activeEditor` only after SwiftUI's next
+            // render pass, and a single hop can miss it — leaving typing
+            // to beep at the window (ADR-0005). `focusEditorWhenMounted`
+            // polls a bounded span of turns, so an editor that mounts
+            // late still gets the keys; one already mounted gets them at
+            // once.
+            model.focusEditorWhenMounted(in: panel)
         }
     }
 

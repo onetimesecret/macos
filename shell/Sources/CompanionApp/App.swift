@@ -520,9 +520,33 @@ final class WindowModel: ObservableObject {
     /// the law only ever accepts.
     private func refocusEditorIfKeyed() {
         guard holdsKeys else { return }
+        focusEditorWhenMounted(in: nil, requireKeys: true)
+    }
+
+    /// Hand the editor the keys once SwiftUI has mounted it. A page born
+    /// this instant reaches `activeEditor` only a render pass after
+    /// `selection` changes, and a single main-actor hop can land before
+    /// that pass — finding `activeEditor` still nil, skipping the
+    /// hand-off, and leaving the key window with no first responder so
+    /// every keystroke beeps (the issue #19 symptom the grants exist to
+    /// cure). Poll a bounded span of runloop turns instead: focus the
+    /// moment the editor appears, give up quietly if it never does.
+    /// `requireKeys` bails the instant the window stops holding the
+    /// keys, so a focus meant for a keyed window never fires against one
+    /// that handed the keyboard back mid-wait. `window` nil defers to
+    /// the editor's own window. The first turn checks before waiting, so
+    /// an already-mounted editor is focused with no delay.
+    func focusEditorWhenMounted(in window: NSWindow?, requireKeys: Bool = false) {
         Task { @MainActor [weak self] in
-            guard let self, self.holdsKeys, let editor = self.activeEditor else { return }
-            editor.window?.makeFirstResponder(editor)
+            for _ in 0..<10 {
+                guard let self else { return }
+                if requireKeys, !self.holdsKeys { return }
+                if let editor = self.activeEditor {
+                    (window ?? editor.window)?.makeFirstResponder(editor)
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 16_000_000)
+            }
         }
     }
 
@@ -570,15 +594,16 @@ final class WindowModel: ObservableObject {
     /// The window is key by the time this runs (the click keyed it
     /// through `needsPanelToBecomeKey`; Return required it already),
     /// but the editor mounts a render pass after `selection` changes,
-    /// so the focus call waits one runloop turn. Inlining it here
-    /// would find `activeEditor` still nil and reintroduce the beep
-    /// this grant exists to cure.
+    /// so the focus call waits for the mount (`focusEditorWhenMounted`).
+    /// Inlining a bare focus here would find `activeEditor` still nil
+    /// and reintroduce the beep this grant exists to cure.
     func createPageAndFocus(in window: NSWindow?) {
-        newPage()
-        Task { @MainActor [weak self] in
-            guard let self, let editor = self.activeEditor else { return }
-            window?.makeFirstResponder(editor)
-        }
+        // The grant promises one page, not one per keystroke: a rapid
+        // second Return (or another create path that won the race before
+        // SwiftUI unmounted the catcher) finds the model already peopled,
+        // so focus the page that exists rather than stack a blank one.
+        if sheets.isEmpty { newPage() }
+        focusEditorWhenMounted(in: window)
     }
 
     /// Whether the empty state's catcher should hold first responder,
