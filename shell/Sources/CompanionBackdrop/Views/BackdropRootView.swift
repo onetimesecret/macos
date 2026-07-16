@@ -30,11 +30,6 @@ struct BackdropRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(keyboardMap)
-        .onChange(of: model.stance) { stance in
-            // The raise made the window key (controller-side, before
-            // this render); the editor takes first responder with it.
-            inkFocused = stance == .raised
-        }
     }
 
     private var card: some View {
@@ -127,6 +122,21 @@ struct BackdropRootView: View {
                 .frame(minHeight: 220)
                 .onChange(of: model.ink) { text in
                     model.inkEdited(text)
+                }
+                .onAppear {
+                    // The keyboard hand-off, from the editor's own side
+                    // of the mount. The editor exists only while raised,
+                    // so `onAppear` is by definition after the raise made
+                    // the window key (controller-side) *and* after the
+                    // conditional view is in the hierarchy — a stance
+                    // observer could fire before the mount and lose the
+                    // request, the same race the panel's
+                    // `focusEditorWhenMounted` bounds (issue #19). The
+                    // second request one main-actor turn later covers
+                    // AppKit wiring the field editor up an instant after
+                    // SwiftUI reports the appearance.
+                    inkFocused = true
+                    Task { @MainActor in inkFocused = true }
                 }
         } else if model.ink.isEmpty {
             // The empty state: a single calm line (docs/spec/03, tone).

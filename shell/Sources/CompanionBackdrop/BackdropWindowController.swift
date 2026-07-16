@@ -74,16 +74,52 @@ final class BackdropWindowController: NSObject {
             // or deactivating the user's frontmost one.
             panel.makeKeyAndOrderFront(nil)
         case .resting:
-            // A non-activating panel has no "resign key" verb. The
-            // order-out round trip hands the keyboard back to the
-            // active app; at desktop level the blink lands behind
-            // every window, where nobody sees it.
+            // A non-activating panel has no "resign key" verb, and an
+            // order-out round trip would blink the card mid-transition.
+            // As in the panel's `handBackKeys`: pass key status through
+            // an invisible relay and order *it* out — the window server
+            // hands the keyboard to the active app while the surface
+            // never leaves the screen.
+            panel.makeFirstResponder(nil)
             if panel.isKeyWindow {
-                panel.orderOut(nil)
+                keyRelay.setFrameOrigin(panel.frame.origin)
+                keyRelay.makeKeyAndOrderFront(nil)
+                keyRelay.orderOut(nil)
+                if panel.isKeyWindow {
+                    // The relay was refused key status (or key bounced
+                    // back); fall back to the round trip rather than
+                    // keep the keys — the blink is the lesser wrong.
+                    panel.orderOut(nil)
+                }
             }
             panel.orderBack(nil)
         }
     }
+
+    /// The keyboard's waypoint on its way back to the active app: a
+    /// zero-alpha, borderless speck that exists only to take key status
+    /// from the surface and immediately vanish with it.
+    private lazy var keyRelay: NSPanel = {
+        let relay = BackdropKeyRelayPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            styleMask: [.nonactivatingPanel, .borderless],
+            backing: .buffered,
+            defer: true
+        )
+        relay.alphaValue = 0
+        relay.isReleasedWhenClosed = false
+        relay.isExcludedFromWindowsMenu = true
+        relay.sharingType = .none
+        relay.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        return relay
+    }()
+}
+
+/// A borderless panel AppKit would otherwise refuse key status (no
+/// title bar); it exists only as `keyRelay`'s class — a waypoint for
+/// the keyboard on its way back to the active app.
+private final class BackdropKeyRelayPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
 }
 
 /// The window itself. Plash's desktop-window recipe, adapted: a
