@@ -42,6 +42,53 @@ final class FocusLawTests: XCTestCase {
         )
     }
 
+    // MARK: Scroll clamping (issue #24) — a saved offset meets today's geometry
+
+    func testAnOffsetWithinTheDocumentComesBackUntouched() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.clampedScrollOffset(
+                NSPoint(x: 0, y: 120), documentHeight: 500, clipHeight: 200
+            ),
+            NSPoint(x: 0, y: 120)
+        )
+    }
+
+    func testAnOffsetBeyondShrunkenContentIsClampedToTheBottom() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.clampedScrollOffset(
+                NSPoint(x: 0, y: 400), documentHeight: 300, clipHeight: 200
+            ),
+            NSPoint(x: 0, y: 100)
+        )
+    }
+
+    func testANegativeOffsetSeatsAtTheTop() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.clampedScrollOffset(
+                NSPoint(x: 0, y: -50), documentHeight: 500, clipHeight: 200
+            ),
+            NSPoint(x: 0, y: 0)
+        )
+    }
+
+    func testAZeroOffsetStaysAtZero() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.clampedScrollOffset(
+                .zero, documentHeight: 500, clipHeight: 200
+            ),
+            .zero
+        )
+    }
+
+    func testADocumentShorterThanTheClipCannotScrollAtAll() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.clampedScrollOffset(
+                NSPoint(x: 0, y: 80), documentHeight: 150, clipHeight: 200
+            ),
+            NSPoint(x: 0, y: 0)
+        )
+    }
+
     // MARK: The Return grant (ADR-0005): keyed emptiness offers create
 
     func testAKeyedWindowKeepsTheKeysWhenTheLastPageDies() {
