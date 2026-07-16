@@ -146,7 +146,19 @@ struct InkEditorView: NSViewRepresentable {
         /// new storage out asynchronously, and a synchronous restore
         /// is clobbered by the pass that follows. One main-queue hop
         /// later the geometry is real — ADR-0005's timing discipline,
-        /// applied to scrolling.
+        /// applied to scrolling. The hop carries its sheet with it: a
+        /// switch that lands before the queue drains retires the stale
+        /// closure, which checks `currentSheet` and declines to scroll
+        /// a page it was never scheduled for. It does not leave empty
+        /// handed, though. A switch that fast has already saved the
+        /// live origin over this sheet's entry, because the next
+        /// `saveViewState` ran before the restore landed; the retired
+        /// closure still holds the true offset, so it writes that back
+        /// on its way out. A sheet pruned in the interim stays gone:
+        /// the write-back repairs entries, it never resurrects them.
+        /// And because content can shrink while a page is in the
+        /// background, the offset is clamped against the geometry that
+        /// exists on arrival, not the geometry that was saved.
         func restoreViewState(textView: InkTextView, scrollView: NSScrollView, for sheet: UInt64) {
             let caret = Self.clamped(
                 savedCarets[sheet] ?? NSRange(location: 0, length: 0),
@@ -154,9 +166,21 @@ struct InkEditorView: NSViewRepresentable {
             )
             textView.setSelectedRange(caret)
             let offset = savedScrolls[sheet] ?? .zero
-            DispatchQueue.main.async { [weak scrollView] in
+            DispatchQueue.main.async { [weak self, weak scrollView] in
+                guard let self else { return }
+                guard self.currentSheet == sheet else {
+                    if self.savedScrolls[sheet] != nil {
+                        self.savedScrolls[sheet] = offset
+                    }
+                    return
+                }
                 guard let scrollView else { return }
-                scrollView.contentView.scroll(to: offset)
+                let clamped = Self.clampedScrollOffset(
+                    offset,
+                    documentHeight: scrollView.documentView?.frame.height ?? 0,
+                    clipHeight: scrollView.contentView.bounds.height
+                )
+                scrollView.contentView.scroll(to: clamped)
                 scrollView.reflectScrolledClipView(scrollView.contentView)
             }
         }
@@ -175,6 +199,19 @@ struct InkEditorView: NSViewRepresentable {
             let location = min(max(range.location, 0), length)
             let span = min(max(range.length, 0), length - location)
             return NSRange(location: location, length: span)
+        }
+
+        /// A scroll offset saved against yesterday's geometry may
+        /// overhang today's. `NSClipView.scroll(to:)` does not clamp,
+        /// so a page that shrank in the background would come back
+        /// showing blank space below its document. Clamp y to what the
+        /// document can actually scroll; x stays as saved, since the
+        /// page never scrolls horizontally.
+        nonisolated static func clampedScrollOffset(
+            _ offset: NSPoint, documentHeight: CGFloat, clipHeight: CGFloat
+        ) -> NSPoint {
+            let maxY = max(0, documentHeight - clipHeight)
+            return NSPoint(x: offset.x, y: min(max(offset.y, 0), maxY))
         }
 
         /// One undo history per page, from the model's cache: the text
