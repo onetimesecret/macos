@@ -152,7 +152,7 @@ struct WindowRootView: View {
             // keyboard back.
             ZStack {
                 EmptyStateKeyGrant(
-                    sheetsEmpty: model.sheets.isEmpty,
+                    sheetsEmpty: { [model] in model.sheets.isEmpty },
                     onCreate: { window in model.createPageAndFocus(in: window) },
                     onEscape: { model.escape() }
                 )
@@ -227,7 +227,7 @@ struct WindowRootView: View {
 /// Esc hands the keyboard back. Chrome (tabs, header, pin) carries no
 /// such view and stays mute.
 private struct EmptyStateKeyGrant: NSViewRepresentable {
-    let sheetsEmpty: Bool
+    let sheetsEmpty: () -> Bool
     let onCreate: (NSWindow?) -> Void
     let onEscape: () -> Void
 
@@ -259,10 +259,15 @@ private final class KeyGrantingClickView: NSView {
     var onCreate: ((NSWindow?) -> Void)?
     var onEscape: (() -> Void)?
 
-    /// The model's live fact, pushed by the representable: the claim
-    /// below consults it so first responder is never seized for a
-    /// page created in this very render pass.
-    var sheetsEmpty = true
+    /// The model's live fact, read through a closure rather than cached
+    /// as a bool: a page created this instant flips `model.sheets` at
+    /// once, but the representable only pushes a cached snapshot on the
+    /// next render pass. The `didBecomeKey` observer can fire inside
+    /// that gap — after the editor already took focus — and a stale
+    /// `true` would let the catcher seize first responder back from the
+    /// editor, then unmount and strand it (issue #23). Reading live
+    /// closes the gap.
+    var sheetsEmpty: () -> Bool = { true }
 
     // nonisolated(unsafe): deinit is always nonisolated, even on a
     // main-actor class (Swift 6), and the observation token isn't
@@ -327,7 +332,7 @@ private final class KeyGrantingClickView: NSView {
     private func claimFirstResponderIfEntitled() {
         guard let window else { return }
         guard WindowModel.shouldOfferEnterCreate(
-            sheetsEmpty: sheetsEmpty, holdsKeys: window.isKeyWindow
+            sheetsEmpty: sheetsEmpty(), holdsKeys: window.isKeyWindow
         ) else { return }
         window.makeFirstResponder(self)
     }

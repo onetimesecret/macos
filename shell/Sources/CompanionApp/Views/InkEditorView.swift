@@ -23,6 +23,12 @@ struct InkEditorView: NSViewRepresentable {
         // Explicit TextKit 1 stack: chips render through
         // NSTextAttachmentCell, and swapping pages swaps the storage
         // under one layout manager (`replaceTextStorage`).
+        // A fresh editor mount follows a teardown (a ledger round trip,
+        // or the empty state after the last page died). Every cached
+        // undo manager still holds operations bound to the torn-down
+        // view; shed them before this view registers its own, so ⌘Z
+        // rewrites live text instead of firing at a zombie (issue #23).
+        model.discardUndoHistory()
         let layoutManager = NSLayoutManager()
         let container = NSTextContainer(size: NSSize(
             width: 0, height: CGFloat.greatestFiniteMagnitude
@@ -85,6 +91,17 @@ struct InkEditorView: NSViewRepresentable {
         // way out and restored for the one coming in; undo history
         // follows `currentSheet` through the delegate's per-page
         // manager and needs no hand-off here.
+        // An in-progress IME composition is anchored to the outgoing
+        // page's offsets. The dropped `.id(selection)` used to discard
+        // it by tearing the view down; the persistent view must do it by
+        // hand, or the pending marked text commits into the incoming
+        // page's storage — the wrong page — or leaves the input context
+        // pointing at a stale range (ADR-0006 eject-trigger #3, issue
+        // #23). Discard before the swap so nothing crosses the boundary.
+        if textView.hasMarkedText() {
+            textView.inputContext?.discardMarkedText()
+            textView.unmarkText()
+        }
         coordinator.saveViewState(textView: textView, scrollView: scroll)
         let incoming = model.storage(for: sheetID)
         // The one-layout-manager-per-storage invariant rests on this

@@ -546,6 +546,19 @@ final class WindowModel: ObservableObject {
         return created
     }
 
+    /// Discard every page's undo history. One editor serves all pages
+    /// (ADR-0006), so every registered undo operation is bound to that
+    /// single NSTextView. When the view is torn down — a ledger round
+    /// trip, or the empty state after the last page dies — and a fresh
+    /// editor later mounts, those cached managers still hold operations
+    /// targeting the dead view: replaying one drives a zombie reference,
+    /// not the live editor (issue #23). A mount clears them so ⌘Z after
+    /// a remount is a clean no-op rather than a misfire. Page↔page
+    /// swaps keep the same view and are untouched.
+    func discardUndoHistory() {
+        undoManagers.values.forEach { $0.removeAllActions() }
+    }
+
     // MARK: Navigation — the keyboard map
 
     func select(_ id: UInt64) {
