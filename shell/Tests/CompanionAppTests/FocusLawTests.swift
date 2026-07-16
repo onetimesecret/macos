@@ -123,4 +123,37 @@ final class FocusLawTests: XCTestCase {
             target: .chip(42), liveSheets: [], liveChips: []
         ))
     }
+
+    // MARK: Pruning per-page view state (ADR-0006), the pure half.
+    // The MainActor gate in `pruneViewState` (skip when the live set
+    // is unchanged) is coordinator state and stays hand-tested.
+
+    func testADeadPagesEntryIsPruned() {
+        let table: [UInt64: Int] = [1: 10, 2: 20, 3: 30]
+        XCTAssertEqual(
+            InkEditorView.Coordinator.pruned(table, keeping: [1, 3]),
+            [1: 10, 3: 30]
+        )
+    }
+
+    func testLivePagesKeepTheirEntriesUntouched() {
+        let table: [UInt64: Int] = [1: 10, 2: 20]
+        XCTAssertEqual(
+            InkEditorView.Coordinator.pruned(table, keeping: [1, 2]),
+            table
+        )
+    }
+
+    func testAnEmptyLiveSetClearsEveryEntry() {
+        let table: [UInt64: Int] = [1: 10, 2: 20]
+        XCTAssertTrue(InkEditorView.Coordinator.pruned(table, keeping: []).isEmpty)
+    }
+
+    func testLiveKeysWithoutEntriesAskNothingOfTheTable() {
+        let table: [UInt64: Int] = [1: 10]
+        XCTAssertEqual(
+            InkEditorView.Coordinator.pruned(table, keeping: [1, 99]),
+            table
+        )
+    }
 }
