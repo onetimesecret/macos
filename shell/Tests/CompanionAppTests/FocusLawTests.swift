@@ -123,4 +123,64 @@ final class FocusLawTests: XCTestCase {
             target: .chip(42), liveSheets: [], liveChips: []
         ))
     }
+
+    // MARK: Selection reconciliation after a reload (issue #22 family)
+
+    func testASurvivingSelectionStaysPutAcrossAReload() {
+        // The page the user was on is still live; a reload of the world
+        // around it must not move the selection.
+        XCTAssertEqual(
+            WindowModel.reconciledSelection(current: 7, live: [3, 7, 8]),
+            7
+        )
+    }
+
+    func testAVanishedSelectionFallsToTheFirstLivePage() {
+        // The selected page expired (or was closed, or reordered out).
+        // The selection lands on the first live page in tab order: 30
+        // here, though not the smallest id, which also proves the
+        // fallback follows tab order and not id order.
+        XCTAssertEqual(
+            WindowModel.reconciledSelection(current: 7, live: [30, 10, 20]),
+            30
+        )
+    }
+
+    func testANilSelectionSeatsTheFirstLivePage() {
+        // Nothing was selected (a fresh reveal, say); the first live
+        // page in tab order takes it.
+        XCTAssertEqual(
+            WindowModel.reconciledSelection(current: nil, live: [30, 10, 20]),
+            30
+        )
+    }
+
+    func testAVanishedSelectionOverAnEmptyModelSelectsNothing() {
+        // Every page is gone: the keyed-empty state, selecting nothing.
+        XCTAssertNil(WindowModel.reconciledSelection(current: 7, live: []))
+    }
+
+    func testANilSelectionOverAnEmptyModelStaysNil() {
+        // Nothing was selected and nothing is live; still nothing.
+        XCTAssertNil(WindowModel.reconciledSelection(current: nil, live: []))
+    }
+
+    // MARK: Page-step clamp, ⌥⌘←/→ (issue #22 family)
+
+    func testAStepOffTheLastPageStaysOnTheLast() {
+        // ⌥⌘→ from the last of five pages holds at the last, never
+        // wrapping or running past the end.
+        XCTAssertEqual(WindowModel.steppedIndex(from: 4, by: 1, within: 5), 4)
+    }
+
+    func testAStepOffTheFirstPageStaysOnTheFirst() {
+        // ⌥⌘← from the first page holds at the first.
+        XCTAssertEqual(WindowModel.steppedIndex(from: 0, by: -1, within: 5), 0)
+    }
+
+    func testAPlainStepMovesByTheDelta() {
+        // A step with room to move lands one tab over, either way.
+        XCTAssertEqual(WindowModel.steppedIndex(from: 2, by: 1, within: 5), 3)
+        XCTAssertEqual(WindowModel.steppedIndex(from: 2, by: -1, within: 5), 1)
+    }
 }

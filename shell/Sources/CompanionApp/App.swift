@@ -468,10 +468,7 @@ final class WindowModel: ObservableObject {
         // editor-side document, and its undo history with it.
         storages = storages.filter { live.contains($0.key) }
         undoManagers = undoManagers.filter { live.contains($0.key) }
-        if let current = selection, !live.contains(current) {
-            selection = sheets.first?.id
-        }
-        if selection == nil { selection = sheets.first?.id }
+        selection = Self.reconciledSelection(current: selection, live: sheets.map(\.id))
         // A promotion whose subject died — expiry, mostly; `close`
         // clears its own — must not keep the confirmation standing:
         // ↩ lands on "Create link", and a stale draft would answer a
@@ -498,6 +495,21 @@ final class WindowModel: ObservableObject {
         // keeps the keyboard it was granted, the empty state's catcher
         // takes first responder, and Return conjures the next page.
         // Esc remains the way to give the keyboard back.
+    }
+
+    /// Which page holds the selection after the model reloads. A
+    /// selection that still names a live page keeps it: the reload
+    /// changed the world around the page, not the page itself. A
+    /// selection whose page is gone (expiry, a close, a reorder that
+    /// dropped it) falls to the first live page in tab order, the same
+    /// page a nil selection seats, so the "it died" path and the
+    /// "nothing was selected" path land together. An empty model
+    /// selects nothing: the keyed-empty state ADR-0005's grants are
+    /// built to hold. Pure, so the decision is testable without a
+    /// window; `live` is ordered, so "first" is the first visible tab.
+    nonisolated static func reconciledSelection(current: UInt64?, live: [UInt64]) -> UInt64? {
+        if let current, live.contains(current) { return current }
+        return live.first
     }
 
     /// The page's document, created on first use. A page restored from
@@ -557,8 +569,17 @@ final class WindowModel: ObservableObject {
             refocusEditorIfKeyed()
         }
         let current = sheets.firstIndex { $0.id == selection } ?? 0
-        let next = min(max(current + delta, 0), sheets.count - 1)
+        let next = Self.steppedIndex(from: current, by: delta, within: sheets.count)
         selection = sheets[next].id
+    }
+
+    /// The next tab index after a ⌥⌘←/→ step, clamped to the ends. A
+    /// step off the last page holds on the last; a step off the first
+    /// holds on the first, so the walk never wraps. `step` guards a
+    /// non-empty list, so `count` is at least one and `count - 1` is a
+    /// real index. Pure, so the clamp is testable without a window.
+    nonisolated static func steppedIndex(from current: Int, by delta: Int, within count: Int) -> Int {
+        min(max(current + delta, 0), count - 1)
     }
 
     /// ⌘0: the ledger.
