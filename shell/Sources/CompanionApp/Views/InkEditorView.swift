@@ -145,8 +145,14 @@ struct InkEditorView: NSViewRepresentable {
         /// nothing. The scroll cannot: the layout manager re-lays the
         /// new storage out asynchronously, and a synchronous restore
         /// is clobbered by the pass that follows. One main-queue hop
-        /// later the geometry is real — ADR-0005's timing discipline,
-        /// applied to scrolling. The hop carries its sheet with it: a
+        /// later the geometry can be made real: the restore forces
+        /// layout for the text container and measures the used rect,
+        /// rather than trusting a `frame` height that a relayout still
+        /// in flight may report as zero and so collapse the clamp to the
+        /// top of the page. This is ADR-0005's timing discipline applied
+        /// to scrolling, with the height forced current rather than
+        /// merely hoped current after the hop. The hop carries its sheet
+        /// with it: a
         /// switch that lands before the queue drains retires the stale
         /// closure, which checks `currentSheet` and declines to scroll
         /// a page it was never scheduled for. It does not leave empty
@@ -166,7 +172,7 @@ struct InkEditorView: NSViewRepresentable {
             )
             textView.setSelectedRange(caret)
             let offset = savedScrolls[sheet] ?? .zero
-            DispatchQueue.main.async { [weak self, weak scrollView] in
+            DispatchQueue.main.async { [weak self, weak textView, weak scrollView] in
                 guard let self else { return }
                 guard self.currentSheet == sheet else {
                     if self.savedScrolls[sheet] != nil {
@@ -175,14 +181,39 @@ struct InkEditorView: NSViewRepresentable {
                     return
                 }
                 guard let scrollView else { return }
+                // Measure against layout that has been forced current,
+                // not the `frame` height a relayout still in flight can
+                // report as zero. The text view is the document view;
+                // when its TextKit stack is somehow gone, fall back to
+                // the frame the clamp used to trust.
+                let documentHeight = textView.flatMap { self.documentHeight(of: $0) }
+                    ?? scrollView.documentView?.frame.height ?? 0
                 let clamped = Self.clampedScrollOffset(
                     offset,
-                    documentHeight: scrollView.documentView?.frame.height ?? 0,
+                    documentHeight: documentHeight,
                     clipHeight: scrollView.contentView.bounds.height
                 )
                 scrollView.contentView.scroll(to: clamped)
                 scrollView.reflectScrolledClipView(scrollView.contentView)
             }
+        }
+
+        /// The document's true height, forced current. One main-queue
+        /// hop gives the layout manager room to re-lay the swapped
+        /// storage, but room is not the same as done, so the height is
+        /// made certain rather than assumed: ensure layout for the text
+        /// container, then measure its used rect plus the top and bottom
+        /// text inset. A height read straight off `frame` can still be
+        /// zero here, and a zero height collapses the clamp's ceiling to
+        /// the top of the page, discarding a perfectly valid saved
+        /// offset. Returns nil only when the TextKit stack is missing,
+        /// leaving the caller to fall back to the frame.
+        private func documentHeight(of textView: InkTextView) -> CGFloat? {
+            guard let layoutManager = textView.layoutManager,
+                  let container = textView.textContainer else { return nil }
+            layoutManager.ensureLayout(for: container)
+            return layoutManager.usedRect(for: container).height
+                + textView.textContainerInset.height * 2
         }
 
         /// Dead pages take their view state with them — the same
