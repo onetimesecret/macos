@@ -46,6 +46,7 @@ individual features, written against it, live under
 | Feature | Contents | Status |
 | --- | --- | --- |
 | [feature/byoe](../feature/byoe/README.md) | Bring Your Own Encryption on the promotion path: envelope construction, key custody, wire changes | Draft |
+| [feature/background-surface](../feature/background-surface/README.md) | A second form factor: an ambient desktop-level surface, raised to edit — with the research on what macOS permits | Exploration (ADR-0010) |
 
 ## Design rounds and prototype
 

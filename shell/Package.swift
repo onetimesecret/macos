@@ -24,5 +24,18 @@ let package = Package(
             dependencies: ["CompanionApp"],
             path: "Tests/CompanionAppTests"
         ),
+        // The background-surface form factor (ADR-0010): a sibling
+        // target over the same core, exploring the desktop-canvas
+        // posture without touching the panel app's sources.
+        .executableTarget(
+            name: "CompanionBackdrop",
+            dependencies: ["CompanionCore"],
+            path: "Sources/CompanionBackdrop"
+        ),
+        .testTarget(
+            name: "CompanionBackdropTests",
+            dependencies: ["CompanionBackdrop"],
+            path: "Tests/CompanionBackdropTests"
+        ),
     ]
 )

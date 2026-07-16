@@ -1,4 +1,13 @@
-# shell/ — the Swift/AppKit shell
+# shell/ — the Swift/AppKit shells
+
+Form factors are sibling executable targets over the one core
+(ADR-0010): `Sources/CompanionApp` is the panel this document
+describes; `Sources/CompanionBackdrop` is the background-surface
+exploration (docs/spec/feature/background-surface), packaged by
+`scripts/build-backdrop.sh`. Siblings never modify each other's
+sources.
+
+## The panel (CompanionApp)
 
 The shell selected by ADR-0002 (accepted 2026-07-13): Swift/AppKit over
 the Rust core, driven end-to-end through the C-ABI seam (`crates/ffi`,

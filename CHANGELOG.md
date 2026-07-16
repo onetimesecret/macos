@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A second form factor: the background surface (exploration)** —
+  `CompanionBackdrop`, a sibling executable target over the same Rust
+  core (ADR-0010: form factors are sibling shell targets; the panel
+  app's sources are untouched). An ambient pane resting at the window
+  server's desktop level — above the wallpaper, below the icons and
+  every normal window, mouse-transparent, refusing the keyboard by
+  construction — raised to a floating, non-activating editor by
+  ⌃⌥Space, the menu-bar item, or rested again with Esc. v0 is one page
+  of visible ink on the standard TTL ladder: no chips, no persistence,
+  no Keychain, no network — exploration targets start with less
+  authority, and each arrives only by an argued spec amendment.
+  Capture exclusion is doubly load-bearing on an always-visible
+  surface and holds in both stances; frugality holds by cadence (a
+  30 s repaint at rest, 1 Hz only while raised; expiry stays
+  scheduled, never polled). Spec:
+  docs/spec/feature/background-surface/ (with the underlying macOS
+  research as research.md); packaging: scripts/build-backdrop.sh →
+  dist/CompanionBackdrop.app (`com.onetimesecret.companion.backdrop`).
+
 - **Pages persist across relaunch, sealed at rest** — quit is the one
   moment state touches disk: `applicationShouldTerminate` asks the core
   to snapshot the whole store (live pages, chips, the ledger, clocks)
