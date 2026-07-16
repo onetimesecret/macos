@@ -34,9 +34,7 @@ struct InkEditorView: NSViewRepresentable {
         // page↔page switches no longer do (ADR-0006). Detach layout
         // managers a torn-down editor left behind so exactly one
         // drives this storage.
-        for stale in storage.layoutManagers {
-            storage.removeLayoutManager(stale)
-        }
+        Coordinator.shedLayoutManagers(from: storage, keeping: nil)
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
 
@@ -97,9 +95,7 @@ struct InkEditorView: NSViewRepresentable {
         // moves this editor's layout manager off the outgoing storage,
         // leaving both sides with exactly the managers they should
         // have: one here, none on the page going to the background.
-        for stale in incoming.layoutManagers where stale !== textView.layoutManager {
-            incoming.removeLayoutManager(stale)
-        }
+        Coordinator.shedLayoutManagers(from: incoming, keeping: textView.layoutManager)
         textView.layoutManager?.replaceTextStorage(incoming)
         coordinator.currentSheet = sheetID
         coordinator.restyle()
@@ -121,6 +117,11 @@ struct InkEditorView: NSViewRepresentable {
         /// return.
         private var savedCarets: [UInt64: NSRange] = [:]
         private var savedScrolls: [UInt64: NSPoint] = [:]
+
+        /// The live set the last prune saw. `pruneViewState` runs on
+        /// every `updateNSView` pass, and the set rarely changes, so
+        /// this gate lets the common pass skip the dictionary filters.
+        private var lastLiveSheets: Set<UInt64> = []
 
         init(model: WindowModel) {
             self.model = model
@@ -164,8 +165,28 @@ struct InkEditorView: NSViewRepresentable {
         /// Dead pages take their view state with them — the same
         /// pruning `refresh()` applies to the storage cache.
         func pruneViewState(keeping live: Set<UInt64>) {
-            savedCarets = savedCarets.filter { live.contains($0.key) }
-            savedScrolls = savedScrolls.filter { live.contains($0.key) }
+            guard live != lastLiveSheets else { return }
+            lastLiveSheets = live
+            savedCarets = Self.pruned(savedCarets, keeping: live)
+            savedScrolls = Self.pruned(savedScrolls, keeping: live)
+        }
+
+        /// The pure half of `pruneViewState`: keep only the entries
+        /// whose keys are still live.
+        nonisolated static func pruned<Value>(
+            _ table: [UInt64: Value], keeping live: Set<UInt64>
+        ) -> [UInt64: Value] {
+            table.filter { live.contains($0.key) }
+        }
+
+        /// Enforce the one-layout-manager-per-storage invariant
+        /// (ADR-0006): detach every layout manager on `storage` except
+        /// `keeper`. Pass `nil` to shed them all, as at mount, before
+        /// this editor's own manager is attached.
+        static func shedLayoutManagers(from storage: NSTextStorage, keeping keeper: NSLayoutManager?) {
+            for stale in storage.layoutManagers where stale !== keeper {
+                storage.removeLayoutManager(stale)
+            }
         }
 
         /// A caret saved against yesterday's content may overhang
