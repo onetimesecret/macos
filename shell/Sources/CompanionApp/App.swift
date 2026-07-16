@@ -579,7 +579,8 @@ final class WindowModel: ObservableObject {
     /// non-empty list, so `count` is at least one and `count - 1` is a
     /// real index. Pure, so the clamp is testable without a window.
     nonisolated static func steppedIndex(from current: Int, by delta: Int, within count: Int) -> Int {
-        min(max(current + delta, 0), count - 1)
+        precondition(count > 0, "steppedIndex needs a non-empty list; count - 1 is the last index")
+        return min(max(current + delta, 0), count - 1)
     }
 
     /// ⌘0: the ledger.
@@ -674,7 +675,6 @@ final class WindowModel: ObservableObject {
         }
         refresh()
         if created != 0 {
-            select(created)
             // A new page cannot borrow a plain tab switch's assumption
             // that the editor still holds the keys (issue #22). A switch
             // keeps one persistent editor focused and swaps its content
@@ -682,11 +682,16 @@ final class WindowModel: ObservableObject {
             // ledger. Conjuring a page can instead tear the mount whole:
             // an empty window's catcher gives way to a freshly built
             // editor, and the + tab is chrome whose click resigns first
-            // responder before we arrive. Left to `select` alone the page
-            // mounts with nothing focused and every keystroke beeps, so
-            // hand its editor the keys once it appears.
+            // responder before we arrive. Left to `select`'s conditional
+            // refocus alone the page mounts with nothing focused and every
+            // keystroke beeps, so this path always hands the editor the
+            // keys once it appears. Set selection inline rather than
+            // through `select`, whose own leaving-ledger refocus would
+            // otherwise schedule a second, redundant focus poll here.
             // `refocusEditorIfKeyed` only ever accepts, staying a quiet
             // no-op on the switch paths where focus never left.
+            showingLedger = false
+            selection = created
             refocusEditorIfKeyed()
         }
     }
