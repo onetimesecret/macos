@@ -23,6 +23,12 @@ struct InkEditorView: NSViewRepresentable {
         // Explicit TextKit 1 stack: chips render through
         // NSTextAttachmentCell, and swapping pages swaps the storage
         // under one layout manager (`replaceTextStorage`).
+        // A fresh editor mount follows a teardown (a ledger round trip,
+        // or the empty state after the last page died). Every cached
+        // undo manager still holds operations bound to the torn-down
+        // view; shed them before this view registers its own, so ⌘Z
+        // rewrites live text instead of firing at a zombie (issue #23).
+        model.discardUndoHistory()
         let layoutManager = NSLayoutManager()
         let container = NSTextContainer(size: NSSize(
             width: 0, height: CGFloat.greatestFiniteMagnitude
@@ -34,9 +40,7 @@ struct InkEditorView: NSViewRepresentable {
         // page↔page switches no longer do (ADR-0006). Detach layout
         // managers a torn-down editor left behind so exactly one
         // drives this storage.
-        for stale in storage.layoutManagers {
-            storage.removeLayoutManager(stale)
-        }
+        Coordinator.shedLayoutManagers(from: storage, keeping: nil)
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
 
@@ -87,6 +91,17 @@ struct InkEditorView: NSViewRepresentable {
         // way out and restored for the one coming in; undo history
         // follows `currentSheet` through the delegate's per-page
         // manager and needs no hand-off here.
+        // An in-progress IME composition is anchored to the outgoing
+        // page's offsets. The dropped `.id(selection)` used to discard
+        // it by tearing the view down; the persistent view must do it by
+        // hand, or the pending marked text commits into the incoming
+        // page's storage — the wrong page — or leaves the input context
+        // pointing at a stale range (ADR-0006 eject-trigger #3, issue
+        // #23). Discard before the swap so nothing crosses the boundary.
+        if textView.hasMarkedText() {
+            textView.inputContext?.discardMarkedText()
+            textView.unmarkText()
+        }
         coordinator.saveViewState(textView: textView, scrollView: scroll)
         let incoming = model.storage(for: sheetID)
         // The one-layout-manager-per-storage invariant rests on this
@@ -97,9 +112,7 @@ struct InkEditorView: NSViewRepresentable {
         // moves this editor's layout manager off the outgoing storage,
         // leaving both sides with exactly the managers they should
         // have: one here, none on the page going to the background.
-        for stale in incoming.layoutManagers where stale !== textView.layoutManager {
-            incoming.removeLayoutManager(stale)
-        }
+        Coordinator.shedLayoutManagers(from: incoming, keeping: textView.layoutManager)
         textView.layoutManager?.replaceTextStorage(incoming)
         coordinator.currentSheet = sheetID
         coordinator.restyle()
@@ -121,6 +134,11 @@ struct InkEditorView: NSViewRepresentable {
         /// return.
         private var savedCarets: [UInt64: NSRange] = [:]
         private var savedScrolls: [UInt64: NSPoint] = [:]
+
+        /// The live set the last prune saw. `pruneViewState` runs on
+        /// every `updateNSView` pass, and the set rarely changes, so
+        /// this gate lets the common pass skip the dictionary filters.
+        private var lastLiveSheets: Set<UInt64> = []
 
         init(model: WindowModel) {
             self.model = model
@@ -188,8 +206,28 @@ struct InkEditorView: NSViewRepresentable {
         /// Dead pages take their view state with them — the same
         /// pruning `refresh()` applies to the storage cache.
         func pruneViewState(keeping live: Set<UInt64>) {
-            savedCarets = savedCarets.filter { live.contains($0.key) }
-            savedScrolls = savedScrolls.filter { live.contains($0.key) }
+            guard live != lastLiveSheets else { return }
+            lastLiveSheets = live
+            savedCarets = Self.pruned(savedCarets, keeping: live)
+            savedScrolls = Self.pruned(savedScrolls, keeping: live)
+        }
+
+        /// The pure half of `pruneViewState`: keep only the entries
+        /// whose keys are still live.
+        nonisolated static func pruned<Value>(
+            _ table: [UInt64: Value], keeping live: Set<UInt64>
+        ) -> [UInt64: Value] {
+            table.filter { live.contains($0.key) }
+        }
+
+        /// Enforce the one-layout-manager-per-storage invariant
+        /// (ADR-0006): detach every layout manager on `storage` except
+        /// `keeper`. Pass `nil` to shed them all, as at mount, before
+        /// this editor's own manager is attached.
+        static func shedLayoutManagers(from storage: NSTextStorage, keeping keeper: NSLayoutManager?) {
+            for stale in storage.layoutManagers where stale !== keeper {
+                storage.removeLayoutManager(stale)
+            }
         }
 
         /// A caret saved against yesterday's content may overhang
