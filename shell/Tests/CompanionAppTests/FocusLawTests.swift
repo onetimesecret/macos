@@ -216,5 +216,4 @@ final class FocusLawTests: XCTestCase {
             table
         )
     }
-    }
 }
