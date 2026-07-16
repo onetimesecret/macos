@@ -673,7 +673,22 @@ final class WindowModel: ObservableObject {
             flash("the window holds 9 pages — let one expire, or close one")
         }
         refresh()
-        if created != 0 { select(created) }
+        if created != 0 {
+            select(created)
+            // A new page cannot borrow a plain tab switch's assumption
+            // that the editor still holds the keys (issue #22). A switch
+            // keeps one persistent editor focused and swaps its content
+            // beneath it, so `select` refocuses only when it leaves the
+            // ledger. Conjuring a page can instead tear the mount whole:
+            // an empty window's catcher gives way to a freshly built
+            // editor, and the + tab is chrome whose click resigns first
+            // responder before we arrive. Left to `select` alone the page
+            // mounts with nothing focused and every keystroke beeps, so
+            // hand its editor the keys once it appears.
+            // `refocusEditorIfKeyed` only ever accepts, staying a quiet
+            // no-op on the switch paths where focus never left.
+            refocusEditorIfKeyed()
+        }
     }
 
     /// The empty state's create-and-focus, shared by the third and
