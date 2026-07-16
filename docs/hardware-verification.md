@@ -127,6 +127,56 @@ over and unrecoverable is an ADR-0002 eject trigger.
 - [ ] Idle CPU ~0.0% with the window hidden (the 1 Hz redraw must not
       run while not visible).
 
+## §F: Focus law for the #22 regressions and the invariants
+
+Issue #22 was a freshly conjured page that mounted with nothing
+focused: the window held the keys, yet the first keystroke beeped
+instead of typing. The unit tests fix which page ends up selected; the
+focus itself is AppKit first-responder timing across a torn-down and
+rebuilt editor, and only a person at the machine can see it land. Do
+this on the bundled app. Unless a step says otherwise the window is
+**key** (summon with ⌥Space first). The expected result for every item
+in §F.1 and §F.2 is the same: **the editor is focused and the first
+keystroke types, with no beep.**
+
+### §F.1: The regressions (must now hold)
+
+- [ ] Viewing a page, press ⌥⌘N: the new page mounts focused; type at
+      once.
+- [ ] Click the **+** tab: the new page mounts focused; type at once.
+- [ ] From a keyed empty window (close the last page so the keys stay
+      and the calm sentence shows), press ⌥⌘N: the conjured page mounts
+      focused; type at once.
+
+### §F.2: The paths that must still work (no regression)
+
+- [ ] ⌘0 to the ledger, then Esc back to the page: focused, type at
+      once. (Esc here leaves the ledger; it does not hand the keys
+      back.)
+- [ ] ⌘0 to the ledger, then ⌘0 again back to the page: focused, type
+      at once.
+- [ ] Plain switch ⌘1 through ⌘9 across several pages: each lands
+      focused; type at once.
+- [ ] ⌥⌘←/→ walk across the pages: each lands focused; type at once.
+
+### §F.3: Accept, never take (the invariant that outranks §F.1)
+
+The law only ever accepts keys an earlier deliberate act conferred; it
+never seizes them. An **unkeyed** window must stay unkeyed through
+every path in §F.1, so bring another app frontmost first (`lsappinfo
+front` names it) and leave this window visible but not key.
+
+- [ ] Click the **+** tab on the unkeyed window: a page is created, but
+      the panel does **not** become key, the editor is **not** focused,
+      and keystrokes still land in the front app. `lsappinfo front` is
+      unchanged.
+- [ ] Click a page **tab** and the **countdown** label on the unkeyed
+      window: chrome clicks never grant keys, so the front app keeps
+      them (`needsPanelToBecomeKey` is false for chrome; the empty
+      content area and a real editor are the only key-granting
+      surfaces, and those are the lawful third and fourth grants of
+      ADR-0005, not violations of this invariant).
+
 ## Recording results
 
 Append findings to this file under a dated `## Results — YYYY-MM-DD`
