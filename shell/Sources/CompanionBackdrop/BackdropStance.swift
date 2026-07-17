@@ -58,9 +58,13 @@ enum BackdropStance: Equatable {
 
 extension NSWindow.Level {
     /// AppKit exposes no `.desktop` constant; the window server does
-    /// (CGWindowLevelForKey — above the wallpaper, below the desktop
-    /// icons and every normal window). This is Plash's exact recipe.
+    /// (CGWindowLevelForKey). One *above* it, deliberately: the
+    /// wallpaper image is itself a window at the desktop level, so a
+    /// surface parked at that same level can resolve behind the
+    /// wallpaper and be invisible on a bare desktop. +1 clears the
+    /// wallpaper while staying far below the desktop icons
+    /// (`.desktopIconWindow` is 20 levels up) and every normal window.
     static let backdropDesktop = NSWindow.Level(
-        rawValue: Int(CGWindowLevelForKey(.desktopWindow))
+        rawValue: Int(CGWindowLevelForKey(.desktopWindow)) + 1
     )
 }

@@ -11,10 +11,20 @@ import XCTest
 final class BackdropStanceTests: XCTestCase {
     // MARK: Resting — a passive pane behind everything
 
-    func testRestingSitsAtTheWindowServersDesktopLevel() {
+    func testRestingSitsJustAboveTheWallpapersOwnLevel() {
+        // One above, not at: the wallpaper image is itself a window at
+        // the desktop level, and a surface parked at that same level
+        // can resolve behind it — invisible on a bare desktop.
         XCTAssertEqual(
             BackdropStance.resting.level.rawValue,
-            Int(CGWindowLevelForKey(.desktopWindow))
+            Int(CGWindowLevelForKey(.desktopWindow)) + 1
+        )
+    }
+
+    func testRestingStaysBelowTheDesktopIcons() {
+        XCTAssertLessThan(
+            BackdropStance.resting.level.rawValue,
+            Int(CGWindowLevelForKey(.desktopIconWindow))
         )
     }
 

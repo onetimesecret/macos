@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import os
 
 /// The background surface's window: a borderless pane covering the
 /// primary screen, resting at desktop level (above the wallpaper, below
@@ -92,9 +93,23 @@ final class BackdropWindowController: NSObject {
                     panel.orderOut(nil)
                 }
             }
-            panel.orderBack(nil)
+            // Front of the *resting* level, not `orderBack`: the level
+            // itself keeps the surface under the icons and every normal
+            // window, while back-of-level ordering could resolve behind
+            // the wallpaper's own window and vanish on a bare desktop.
+            panel.orderFrontRegardless()
         }
+        Self.logger.info(
+            "stance=\(stance == .raised ? "raised" : "resting", privacy: .public) level=\(self.panel.level.rawValue, privacy: .public) visible=\(self.panel.isVisible, privacy: .public) frame=\(NSStringFromRect(self.panel.frame), privacy: .public)"
+        )
     }
+
+    /// The surface's mechanics in the unified log — stance, level,
+    /// visibility, frame; never content. Watch with:
+    /// `log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'`
+    private static let logger = Logger(
+        subsystem: "com.onetimesecret.companion.backdrop", category: "surface"
+    )
 
     /// The keyboard's waypoint on its way back to the active app: a
     /// zero-alpha, borderless speck that exists only to take key status

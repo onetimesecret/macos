@@ -39,7 +39,7 @@ exactly one of two stances:
 
 | | **Resting** | **Raised** |
 | --- | --- | --- |
-| Level | window-server desktop level (above wallpaper, below icons) | `.floating` |
+| Level | one above the window-server desktop level (clear of the wallpaper's *own window*, below icons) | `.floating` |
 | Mouse | ignored — clicks fall through to the desktop | interactive |
 | Keyboard | refused outright (`canBecomeKey` = false) | may become key, never main |
 | Countdown repaint | every 30 s | 1 Hz |
@@ -52,6 +52,12 @@ deliberate act that entitles the window to the keyboard — the panel's
 focus law, unchanged. The window is a `.nonactivatingPanel` (set at
 init; the style-mask bit is inert if toggled later), so even the raised
 editor never activates its app or deactivates the user's frontmost one.
+
+A resting surface is exactly as visible as the desktop is: behind every
+window, it shows only when the desktop shows (a bare corner of screen,
+Show Desktop, Mission Control). That is the form factor, not a defect —
+"is ambient actually ambient on a full screen of windows?" is one of
+the questions the exploration exists to answer with lived experience.
 
 Mechanics follow Plash's recovered recipe exactly where the postures
 agree: `.borderless`, transparent, shadowless,

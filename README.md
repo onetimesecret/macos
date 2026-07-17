@@ -111,6 +111,16 @@ macOS research: docs/spec/feature/background-surface/. Build it with
 `scripts/build-backdrop.sh` → `dist/CompanionBackdrop.app`; both apps
 can run at once.
 
+At rest the card lives *behind* every window — you see it exactly when
+you see the desktop (a bare patch of screen, Show Desktop, Mission
+Control). Left-click the menu-bar icon or press ⌃⌥Space to raise it
+into the floating editor; Esc, ⌃⌥Space again, or a click outside the
+card rests it. The surface's mechanics log to the unified log:
+
+```sh
+log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
+```
+
 
 ## Naming note
 
