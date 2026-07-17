@@ -110,7 +110,7 @@ topology — a local service needs them *more* than a remote proxy does:
   **before any plaintext leaves the page**. A squatter binds the port and
   wins nothing.
 
-See protocol feedback №5 for what the handshake needs to sign for this to
+See protocol feedback №2 for what the handshake needs to sign for this to
 be sound.
 
 ### Browser reachability and cross-origin hygiene
@@ -121,8 +121,13 @@ be sound.
   the preflight response to grant it
   (`Access-Control-Allow-Private-Network: true`); the handler must
   implement that preflight.
-- CORS allowlist is **exactly** the configured connection's origins (the
-  server URL and its share domains) — never `*`, never credentials.
+- CORS allowlist is an **explicit, per-connection list of permitted web
+  origins** — its own setting, seeded from the connection's server URL
+  and share domains as a convenient default but never merely inferred
+  from them: the page hosting the web create flow may live on a
+  different application origin than the API or the share links, and an
+  inferred list would silently reject its preflight. Never `*`, never
+  credentials.
 - Reject any request whose `Host` is not the bound loopback address
   (kills DNS-rebinding, where `evil.example` resolves to `127.0.0.1` and
   the browser happily sends a same-"site" request).
@@ -173,7 +178,8 @@ Phase 2's honest blocker mirrors the create path's: it delivers nothing
 until the **web app** knows how to find, verify, and call the local
 service. That is a protocol + web-client work item, not a companion one,
 and it should land in the `byoe/1` spec rather than be invented here
-(feedback №5–6).
+(the client-verifiable handshake and derive-only items in the feedback
+below, №2 and №4).
 
 ## Feedback on the `byoe/1` protocol
 
@@ -223,16 +229,22 @@ against `docs/byoe-protocol.md` directly).
    be indistinguishable to the caller) — costs nothing, removes a
    probing dimension.
 4. **Consider a derive-only mode (`byoe/1.1`).** `/v1/encrypt` moves
-   plaintext into the service. An optional key-issuance endpoint — client
-   sends `pid` (and receives `link_key` + `data_key`, or sends its own
-   `link_key` and receives `data_key`) — lets the *client* run the AEAD
-   locally, so plaintext never crosses HTTP and never resides in the
-   service. The trust boundary is identical (the service holds the master
-   key either way); what shrinks is the plaintext handling surface, which
-   is most valuable exactly in the local topology. Cost: web clients need
-   XChaCha20-Poly1305, which WebCrypto lacks — a vetted JS/WASM
-   implementation is required, so this is a companion endpoint, not a
-   replacement.
+   plaintext into the service. An optional key-issuance endpoint — the
+   service mints a fresh `pid` and `link_key` **itself** and returns
+   `(pid, link_key, data_key)` — lets the *client* run the AEAD locally,
+   so plaintext never crosses HTTP and never resides in the service. The
+   endpoint must **never accept caller-supplied derivation inputs**: the
+   HKDF is deterministic, so a caller allowed to present an existing
+   envelope's `pid` + `link_key` would receive that envelope's
+   `data_key` back — exactly the decryption oracle №3 warns about, just
+   one HKDF short of `/v1/decrypt`. With service-minted inputs each
+   response is a key for a *new* envelope only, and the mode stays
+   encrypt-equivalent. The trust boundary is identical (the service
+   holds the master key either way); what shrinks is the plaintext
+   handling surface, which is most valuable exactly in the local
+   topology. Cost: web clients need XChaCha20-Poly1305, which WebCrypto
+   lacks — a vetted JS/WASM implementation is required, so this is a
+   companion endpoint, not a replacement.
 5. **Declare passphrase layering as "outside".** Server-side passphrase
    gating of the opaque envelope is the only option that keeps the
    envelope opaque, keeps the reference decrypt path working, and needs
