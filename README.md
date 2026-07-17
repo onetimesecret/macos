@@ -47,6 +47,7 @@ The spec governs; code follows it. The standing design spec lives under
 | [06-open-questions](docs/spec/design/06-open-questions.md) | Everything unresolved, honestly |
 | [07-repo-skeleton](docs/spec/design/07-repo-skeleton.md) | The prescription this repository was initialized from |
 | [feature/byoe](docs/spec/feature/byoe/README.md) | Bring Your Own Encryption on the promotion path (draft feature spec) |
+| [feature/background-surface](docs/spec/feature/background-surface/README.md) | The background-surface form factor, and the macOS research behind it (exploration) |
 
 Decisions land as ADRs in [docs/adr/](docs/adr/). ADR-0001 (Rust core,
 thin shell), ADR-0002 (Swift/AppKit shell, decided on the two-way
@@ -63,8 +64,12 @@ crates/credentials/  credential-store contract; macOS Keychain impl (cfg-gated)
 crates/pasteboard/   pasteboard hygiene contract; NSPasteboard adapter lands here
 crates/ffi/          the C-ABI seam a non-Rust shell calls — plaintext never
                      crosses it, in either direction
-shell/               the Swift/AppKit shell (ADR-0002) — links the core only
-                     through the xcframework built from crates/ffi
+shell/               the Swift/AppKit shells (ADR-0002) — form factors are
+                     sibling targets (ADR-0010) linking the core only through
+                     the xcframework built from crates/ffi:
+                       Sources/CompanionApp       the panel (alpha)
+                       Sources/CompanionBackdrop  the background surface
+                                                  (exploration)
 docs/spec/design/    the governing spec   ·   docs/spec/feature/  feature specs
 docs/adr/            decisions
 ```
@@ -92,6 +97,35 @@ Related: Esc hands the keyboard back to whatever app had it, leaving the window 
 ### Force close
 
 Use scripts/quit-app.sh
+
+## Form factors
+
+The panel above is the primary form factor. A second one is under
+exploration: **the background surface** (`CompanionBackdrop`) — an
+ambient pane resting at desktop level behind every window, raised to a
+floating editor with ⌃⌥Space and rested again with Esc. Same Rust core
+through the same seam; a sibling target that never touches the panel's
+code (ADR-0010). It carries deliberately less authority: one page of
+ink, no chips, no persistence, no network. Spec and the underlying
+macOS research: docs/spec/feature/background-surface/. Build it with
+`scripts/build-backdrop.sh` → `dist/CompanionBackdrop.app`; both apps
+can run at once.
+
+At rest the card lives *behind* every window — you see it exactly when
+you see the desktop (a bare patch of screen, Show Desktop, Mission
+Control). Summon it with ⌃⌥Space, a left-click on the menu-bar icon,
+⌘Tab, or the Dock icon (unlike the panel, the backdrop is a regular
+app — an argued amendment in the feature spec): the card raises into a
+floating editor on your current Space, over full-screen apps included.
+A summon focuses before it dismisses — if the card is raised but
+you're working beside it, ⌃⌥Space brings the keyboard back; only when
+it already holds the keyboard does the gesture rest it. Esc or a click
+outside the card also rests it. The surface's mechanics log to the
+unified log:
+
+```sh
+log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
+```
 
 
 ## Naming note

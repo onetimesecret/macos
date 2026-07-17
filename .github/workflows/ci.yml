@@ -70,6 +70,8 @@ jobs:
       # bundle assembly (Info.plist, stamping, codesign) from rotting.
       - name: Assemble CompanionApp.app
         run: ./scripts/build-app.sh --debug
+      - name: Assemble CompanionBackdrop.app
+        run: ./scripts/build-backdrop.sh --debug
 
   # A backstop for the "never commit a secret" rule (adopted from the
   # prototype skeleton, PR #5). Scans the full history, so checkout is
