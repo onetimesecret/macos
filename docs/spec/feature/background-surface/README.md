@@ -42,16 +42,27 @@ exactly one of two stances:
 | Level | one above the window-server desktop level (clear of the wallpaper's *own window*, below icons) | `.floating` |
 | Mouse | ignored — clicks fall through to the desktop | interactive |
 | Keyboard | refused outright (`canBecomeKey` = false) | may become key, never main |
+| Spaces | stationary desktop furniture; never in a full-screen Space | joins the user's active Space, full-screen included |
 | Countdown repaint | every 30 s | 1 Hz |
 | Reading | dimmed ink, one comfortable measure (max 640 pt) | the same ink, same measure, editable |
 
-Raise and rest are ⌃⌥Space (two modifiers, deliberately: ⌥Space belongs
-to the panel app, and option-only global shortcuts broke outright on
-macOS 15.0–15.1), the menu-bar item, and Esc to rest. Raising is the
-deliberate act that entitles the window to the keyboard — the panel's
-focus law, unchanged. The window is a `.nonactivatingPanel` (set at
-init; the style-mask bit is inert if toggled later), so even the raised
-editor never activates its app or deactivates the user's frontmost one.
+The summon gestures are ⌃⌥Space (two modifiers, deliberately: ⌥Space
+belongs to the panel app, and option-only global shortcuts broke
+outright on macOS 15.0–15.1), the menu-bar item, and — per the ⌘Tab
+amendment below — ⌘Tab and the Dock icon. A summon is a summon first
+and a dismissal last: a resting surface raises; a raised surface that
+lost the keyboard (the user clicked or ⌘Tabbed away to work beside the
+card) gets the keys back and is pulled to the active Space; only a
+surface *already holding the keyboard* reads the gesture as "put it
+away". Esc and a click outside the card always rest it.
+
+Raising is the deliberate act that entitles the window to the keyboard
+— the panel's focus law, unchanged. The window is a
+`.nonactivatingPanel` (set at init; the style-mask bit is inert if
+toggled later), so the hotkey summon never activates the app or
+deactivates the user's frontmost one; ⌘Tab is the one route where the
+user chose activation itself, and there the raise is activation's
+consequence, not its cause.
 
 A resting surface is exactly as visible as the desktop is: behind every
 window, it shows only when the desktop shows (a bare corner of screen,
@@ -59,13 +70,37 @@ Show Desktop, Mission Control). That is the form factor, not a defect —
 "is ambient actually ambient on a full screen of windows?" is one of
 the questions the exploration exists to answer with lived experience.
 
-Mechanics follow Plash's recovered recipe exactly where the postures
-agree: `.borderless`, transparent, shadowless,
+Mechanics follow Plash's recovered recipe where the postures agree:
+`.borderless`, transparent, shadowless; at rest,
 `collectionBehavior = [.stationary, .ignoresCycle, .fullScreenNone]` —
-a full-screen Space is another app's room, and the backdrop does not
-follow the user there. That is the honest limit of the form factor, not
-a bug: the panel (`.fullScreenAuxiliary`) remains the tool that can be
-summoned over a full-screen app.
+a full-screen Space is another app's room, and a *resting* backdrop
+does not follow the user there. A summon does follow: the raised
+stance swaps to `[.moveToActiveSpace, .fullScreenAuxiliary]` (the
+panel's summon recipe), holding the invariant the stances exist to
+protect — **a surface that holds the keyboard is visible where the
+user is looking**. The failure mode this forecloses is real: a hotkey
+pressed from a full-screen app or another desktop would otherwise key
+an off-screen window and silently swallow whatever was typed.
+
+## The ⌘Tab amendment
+
+The backdrop is a **regular app** — Dock icon, ⌘Tab membership — where
+the panel is an accessory. First hands-on use found the core loop is
+*alternation*: copy in the work window, switch, paste in the surface,
+switch back. Mid-loop, muscle memory reaches for ⌘Tab, not a bespoke
+chord, and an app absent from the switcher loses half of every
+exchange. So activation is a summon route: ⌘Tab or a Dock-icon click
+raises the surface, pulled to the user's Space and keyed;
+resting from a ⌘Tab summon hands the *activation* back
+(`NSApp.deactivate()`), not just key status, so the keyboard returns
+to the app the user came from. The launch's own activation is exempt —
+the backdrop starts resting, present but not summoned.
+
+This knowingly amends "present, not centre stage": docs/spec/03 §2
+settles "Dock icon?" with *No* — for the panel, whose whole posture is
+invisibility between uses. The backdrop's posture is presence, and
+presence that cannot be switched to is friction. Whether the fee is
+too high is open question №7.
 
 ## v0 scope — and what is deliberately absent
 
@@ -127,13 +162,19 @@ and needs the project's hand-verification pass on real hardware:
 3. Neither stance appears in a screenshot, screen share, or the
    screen-capture picker (and `COMPANION_ALLOW_CAPTURE=1` debug builds
    do).
-4. Spaces: what `.stationary` actually does across desktop Spaces on
-   current macOS; the surface stays out of full-screen Spaces; Stage
+4. Spaces: what `.stationary` actually does across desktop Spaces at
+   rest; a resting surface stays out of full-screen Spaces while a
+   summoned one appears over them and lands on the active Space; Stage
    Manager neither relays out nor hides it surprisingly.
-5. Both form factors running at once: hotkeys don't collide, status
+5. ⌘Tab, both directions: switching to the backdrop raises and keys it
+   wherever the user is (including from a full-screen app); resting
+   from a ⌘Tab summon returns activation to the previous app and its
+   window regains the keyboard (`NSApp.deactivate()` is doing that
+   work — verify it actually lands).
+6. Both form factors running at once: hotkeys don't collide, status
    items coexist, and the panel's behaviour is byte-for-byte what it
    was alone.
-6. VoiceOver: the raised editor is operable; the resting surface is
+7. VoiceOver: the raised editor is operable; the resting surface is
    honestly absent from the accessibility hierarchy or honestly present
    — not a phantom.
 
@@ -158,3 +199,9 @@ and needs the project's hand-verification pass on real hardware:
 6. **The name.** "Backdrop" is a working name held to the same rule as
    the rest (docs/spec/design README): UI string and display name only,
    never an identifier beyond the reserved bundle id.
+7. **Is the Dock icon too much presence?** The ⌘Tab amendment trades
+   the panel's furniture-like invisibility for switcher membership,
+   because alternation is the observed core loop. If the Dock icon
+   makes the surface feel like an app to manage rather than a place
+   that exists, the amendment reverses (accessory + hotkey only) or
+   becomes a setting.

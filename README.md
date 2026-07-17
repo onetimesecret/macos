@@ -113,9 +113,15 @@ can run at once.
 
 At rest the card lives *behind* every window — you see it exactly when
 you see the desktop (a bare patch of screen, Show Desktop, Mission
-Control). Left-click the menu-bar icon or press ⌃⌥Space to raise it
-into the floating editor; Esc, ⌃⌥Space again, or a click outside the
-card rests it. The surface's mechanics log to the unified log:
+Control). Summon it with ⌃⌥Space, a left-click on the menu-bar icon,
+⌘Tab, or the Dock icon (unlike the panel, the backdrop is a regular
+app — an argued amendment in the feature spec): the card raises into a
+floating editor on your current Space, over full-screen apps included.
+A summon focuses before it dismisses — if the card is raised but
+you're working beside it, ⌃⌥Space brings the keyboard back; only when
+it already holds the keyboard does the gesture rest it. Esc or a click
+outside the card also rests it. The surface's mechanics log to the
+unified log:
 
 ```sh
 log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'

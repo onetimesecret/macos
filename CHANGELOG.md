@@ -16,7 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server's desktop level — above the wallpaper, below the icons and
   every normal window, mouse-transparent, refusing the keyboard by
   construction — raised to a floating, non-activating editor by
-  ⌃⌥Space, the menu-bar item, or rested again with Esc. v0 is one page
+  ⌃⌥Space, the menu-bar item, ⌘Tab, or the Dock icon (the backdrop is
+  a regular app by an argued spec amendment: alternating between the
+  work window and the surface is the core loop, and ⌘Tab is the
+  reflex), and rested again with Esc. A summon focuses before it
+  dismisses — raised-but-keyboard-less re-keys rather than rests — and
+  a raised surface joins the user's active Space, full-screen apps
+  included: a surface that holds the keyboard is visible where the
+  user is looking. v0 is one page
   of visible ink on the standard TTL ladder: no chips, no persistence,
   no Keychain, no network — exploration targets start with less
   authority, and each arrives only by an argued spec amendment.

@@ -43,6 +43,21 @@ enum BackdropStance: Equatable {
         }
     }
 
+    /// How the surface relates to Spaces. Resting is furniture on the
+    /// desktop: unaffected by Mission Control transitions, skipped by
+    /// the window cycle, absent from full-screen Spaces (Plash's
+    /// recipe). Raised follows the user instead: it moves to the
+    /// active Space — full-screen ones included — because a surface
+    /// that holds the keyboard must be visible where the user is
+    /// looking; keys landing on an off-Space window would silently
+    /// swallow ink.
+    var collectionBehavior: NSWindow.CollectionBehavior {
+        switch self {
+        case .resting: [.stationary, .ignoresCycle, .fullScreenNone]
+        case .raised: [.moveToActiveSpace, .fullScreenAuxiliary]
+        }
+    }
+
     /// The countdown redraw cadence. The backdrop is always on screen,
     /// so — unlike the panel, whose 1 Hz tick runs only while visible —
     /// its redraw never stops. The frugality budget (docs/spec/03 §4)

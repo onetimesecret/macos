@@ -47,11 +47,13 @@ struct BackdropRootView: View {
                 .fill(.ultraThinMaterial)
         )
         .overlay(
-            // The ember border: the surface holds the keyboard exactly
-            // while raised — visible state, never colour alone (the
-            // caret and focus ring agree).
+            // The ember border shows exactly while the surface holds
+            // the keyboard — raised and keyed are distinct facts (a
+            // card the user ⌘Tabbed away from is raised, unkeyed, and
+            // unlit). Visible state, never colour alone; the caret and
+            // focus ring agree.
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.ember.opacity(raised ? 0.8 : 0), lineWidth: 1.5)
+                .strokeBorder(Color.ember.opacity(model.holdsKeys ? 0.8 : 0), lineWidth: 1.5)
                 .allowsHitTesting(false)
         )
     }
@@ -137,6 +139,12 @@ struct BackdropRootView: View {
                     // SwiftUI reports the appearance.
                     inkFocused = true
                     Task { @MainActor in inkFocused = true }
+                }
+                .onChange(of: model.holdsKeys) { holdsKeys in
+                    // The keyboard came back to a still-raised surface
+                    // (a ⌘Tab return, a re-summon): re-seat the editor,
+                    // in case first responder was lost while away.
+                    if holdsKeys { inkFocused = true }
                 }
         } else if model.ink.isEmpty {
             // The empty state: a single calm line (docs/spec/03, tone).

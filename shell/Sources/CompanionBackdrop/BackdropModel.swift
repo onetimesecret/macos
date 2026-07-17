@@ -17,6 +17,12 @@ final class BackdropModel: ObservableObject {
     /// The one page's non-secret face — title, countdown, gauge.
     @Published private(set) var sheet: BackdropSheetSummary?
 
+    /// True while the surface holds the keyboard — set by the window
+    /// controller from key status. Raised and keyed are distinct
+    /// facts: the user can ⌘Tab away to work beside a raised card.
+    /// Drives the ember border and the summon decision.
+    @Published var holdsKeys = false
+
     /// The page's visible ink, the editor's binding. One-way mirror:
     /// the editor owns the text; `inkEdited` pushes snapshots to the
     /// core, which owns the title and the lifecycle.
@@ -49,23 +55,43 @@ final class BackdropModel: ObservableObject {
 
     // MARK: Stance
 
-    func toggle() {
-        if stance == .resting {
+    /// ⌃⌥Space and the menu-bar item: a summon first, a dismissal only
+    /// from a fully summoned state. A raised card that lost the
+    /// keyboard — the user clicked or ⌘Tabbed away to work beside it —
+    /// summons the keys back rather than resting.
+    func summon() {
+        if Self.stanceAfterSummon(current: stance, holdsKeys: holdsKeys) == .raised {
             raise()
         } else {
             rest()
         }
     }
 
-    /// Summon the surface for a moment of editing (⌃⌥Space, or the
-    /// menu-bar item). Summoning by deliberate act is what entitles the
-    /// window to the keyboard — the same law the panel lives by.
+    /// The summon decision, pure: resting always raises; raised
+    /// without the keyboard re-keys (stays raised); only raised *and*
+    /// holding the keyboard reads the gesture as "put it away".
+    nonisolated static func stanceAfterSummon(
+        current: BackdropStance, holdsKeys: Bool
+    ) -> BackdropStance {
+        switch current {
+        case .resting: .raised
+        case .raised: holdsKeys ? .resting : .raised
+        }
+    }
+
+    /// Raise the surface for a moment of editing. Summoning by
+    /// deliberate act is what entitles the window to the keyboard —
+    /// the same law the panel lives by. Setting `.raised` over
+    /// `.raised` is meaningful, not a no-op: the publisher emits on
+    /// every set, and the controller answers by pulling the surface to
+    /// the active Space and re-keying it — the re-summon path.
     func raise() {
         stance = .raised
         startRedraw()
     }
 
-    /// Esc, or the toggle again: back behind everything.
+    /// Esc, a click outside the card, or a summon from a keyed
+    /// surface: back behind everything.
     func rest() {
         stance = .resting
         startRedraw()

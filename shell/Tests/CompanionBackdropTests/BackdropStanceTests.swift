@@ -38,6 +38,13 @@ final class BackdropStanceTests: XCTestCase {
         XCTAssertFalse(BackdropStance.resting.acceptsKey)
     }
 
+    func testRestingIsDesktopFurnitureAcrossSpaces() {
+        XCTAssertEqual(
+            BackdropStance.resting.collectionBehavior,
+            [.stationary, .ignoresCycle, .fullScreenNone]
+        )
+    }
+
     func testRestingRepaintsCoarsely() {
         // Always on screen, so frugality lives in the cadence: one
         // repaint every 30 s at a glance, never a 1 Hz idle tick.
@@ -60,6 +67,40 @@ final class BackdropStanceTests: XCTestCase {
 
     func testRaisedEarnsTheOneHertzTick() {
         XCTAssertEqual(BackdropStance.raised.tickInterval, 1)
+    }
+
+    func testRaisedFollowsTheUserToTheActiveSpace() {
+        // A surface that holds the keyboard must be visible where the
+        // user is looking — full-screen Spaces included.
+        XCTAssertEqual(
+            BackdropStance.raised.collectionBehavior,
+            [.moveToActiveSpace, .fullScreenAuxiliary]
+        )
+    }
+
+    // MARK: The summon decision — a summon first, a dismissal last
+
+    func testSummonRaisesARestingSurface() {
+        XCTAssertEqual(
+            BackdropModel.stanceAfterSummon(current: .resting, holdsKeys: false),
+            .raised
+        )
+    }
+
+    func testSummonRekeysARaisedSurfaceThatLostTheKeyboard() {
+        // Raised but keyboard-less — the user worked beside the card —
+        // summons the keys back; it does NOT read as "put it away".
+        XCTAssertEqual(
+            BackdropModel.stanceAfterSummon(current: .raised, holdsKeys: false),
+            .raised
+        )
+    }
+
+    func testSummonRestsOnlyARaisedSurfaceHoldingTheKeyboard() {
+        XCTAssertEqual(
+            BackdropModel.stanceAfterSummon(current: .raised, holdsKeys: true),
+            .resting
+        )
     }
 
     // MARK: The desktop level is genuinely below normal windows

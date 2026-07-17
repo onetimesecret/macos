@@ -38,8 +38,9 @@
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
-	<key>LSUIElement</key>
-	<true/>
+	<!-- No LSUIElement, unlike the panel: the backdrop is a regular
+	     app (Dock icon, ⌘Tab membership) by an argued amendment in the
+	     feature spec — activation is one of its summon routes. -->
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>

@@ -17,7 +17,8 @@ final class BackdropHotKey {
 
     /// Registers `keyCode` + `modifiers` (Carbon codes) system-wide;
     /// nil when the combination is taken or registration fails — the
-    /// app still works, toggled by the menu-bar item.
+    /// app still works, summoned by the menu-bar item, ⌘Tab, or the
+    /// Dock icon.
     init?(keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) {
         self.action = action
         var eventType = EventTypeSpec(

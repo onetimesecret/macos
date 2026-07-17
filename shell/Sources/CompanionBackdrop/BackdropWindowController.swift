@@ -10,7 +10,7 @@ import os
 /// the panel's focus law: the stance split lives in `BackdropStance`;
 /// this controller only applies it.
 @MainActor
-final class BackdropWindowController: NSObject {
+final class BackdropWindowController: NSObject, NSWindowDelegate {
     private let panel: BackdropPanel
     private let model: BackdropModel
     private var observers: [AnyCancellable] = []
@@ -26,6 +26,7 @@ final class BackdropWindowController: NSObject {
         panel = BackdropPanel()
         panel.contentView = NSHostingView(rootView: BackdropRootView(model: model))
         super.init()
+        panel.delegate = self
         // The stance is the single source of truth; the window follows.
         model.$stance
             .sink { [weak self] stance in self?.apply(stance) }
@@ -68,21 +69,42 @@ final class BackdropWindowController: NSObject {
         panel.isInteractive = stance.acceptsKey
         panel.ignoresMouseEvents = stance.ignoresMouse
         panel.level = stance.level
+        panel.collectionBehavior = stance.collectionBehavior
         switch stance {
         case .raised:
+            // A summon means *here*: if the surface is up on some other
+            // Space, order it out first so ordering front lands it on
+            // this one — `.moveToActiveSpace` covers the well-behaved
+            // cases; the explicit round trip makes it a guarantee (the
+            // panel's summon does the same). A keyed surface the user
+            // cannot see would silently swallow ink.
+            if panel.isVisible && !panel.isOnActiveSpace {
+                panel.orderOut(nil)
+            }
             // `.nonactivatingPanel` (set at init — the style-mask bit is
             // inert if toggled later): key without activating this app
-            // or deactivating the user's frontmost one.
+            // or deactivating the user's frontmost one. (⌘Tab is the
+            // one route that activates first; the raise is then its
+            // consequence, not its cause.)
             panel.makeKeyAndOrderFront(nil)
         case .resting:
-            // A non-activating panel has no "resign key" verb, and an
-            // order-out round trip would blink the card mid-transition.
-            // As in the panel's `handBackKeys`: pass key status through
-            // an invisible relay and order *it* out — the window server
-            // hands the keyboard to the active app while the surface
-            // never leaves the screen.
             panel.makeFirstResponder(nil)
-            if panel.isKeyWindow {
+            if NSApp.isActive {
+                // A ⌘Tab or Dock summon made this app active; resting
+                // hands the whole activation back, not just key status
+                // — an active app with no key-able window would strand
+                // the keyboard.
+                NSApp.deactivate()
+            } else if panel.isKeyWindow {
+                // The hotkey path: the app never activated, so there is
+                // no activation to return — only key status. A
+                // non-activating panel has no "resign key" verb, and an
+                // order-out round trip would blink the card
+                // mid-transition. As in the panel's `handBackKeys`:
+                // pass key status through an invisible relay and order
+                // *it* out — the window server hands the keyboard to
+                // the active app while the surface never leaves the
+                // screen.
                 keyRelay.setFrameOrigin(panel.frame.origin)
                 keyRelay.makeKeyAndOrderFront(nil)
                 keyRelay.orderOut(nil)
@@ -110,6 +132,20 @@ final class BackdropWindowController: NSObject {
     private static let logger = Logger(
         subsystem: "com.onetimesecret.companion.backdrop", category: "surface"
     )
+
+    // MARK: NSWindowDelegate
+
+    /// Key status feeds the model: the ember border shows exactly
+    /// while the surface holds the keyboard, and the summon decision
+    /// distinguishes raised-and-keyed (summon rests it) from
+    /// raised-but-keyboard-less (summon re-keys it).
+    func windowDidBecomeKey(_ notification: Notification) {
+        model.holdsKeys = true
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        model.holdsKeys = false
+    }
 
     /// The keyboard's waypoint on its way back to the active app: a
     /// zero-alpha, borderless speck that exists only to take key status
@@ -167,7 +203,8 @@ final class BackdropPanel: NSPanel {
         isMovableByWindowBackground = false
         isExcludedFromWindowsMenu = true
         animationBehavior = .none
-        collectionBehavior = [.stationary, .ignoresCycle, .fullScreenNone]
+        // Collection behavior is stance-owned (`BackdropStance`) and
+        // applied by the controller on every transition.
         // Capture exclusion (docs/spec/05), doubly load-bearing here:
         // the panel is hidden between uses, but the backdrop is *always
         // on screen* — without this, every screen share and screenshot
