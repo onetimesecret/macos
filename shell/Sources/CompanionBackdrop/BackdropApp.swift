@@ -54,18 +54,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // feature spec's open question №7.
         NSApp.setActivationPolicy(.regular)
 
+        // The ㊙️ maruhi ("secret"), shared with the panel app: the Dock
+        // icon and the ⌘Tab card both draw from `applicationIconImage`,
+        // so one colour rendering serves both. The menu-bar item gets the
+        // monochrome template below.
+        NSApp.applicationIconImage = Self.maruhiColorImage(side: 256)
+
         let controller = BackdropWindowController(model: model)
         self.controller = controller
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let image = NSImage(
-            systemSymbolName: "rectangle.on.rectangle",
-            accessibilityDescription: "CompanionBackdrop"
-        ) {
-            item.button?.image = image
-        } else {
-            item.button?.title = "◳"
-        }
+        item.button?.image = Self.maruhiTemplateImage()
         item.button?.setAccessibilityLabel("CompanionBackdrop")
         item.button?.target = self
         item.button?.action = #selector(statusItemClicked)
@@ -109,10 +108,16 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Left click summons (raise, or re-key, or rest — the summon
-    /// decision); right click gets the boring
+    /// decision); right click — or ⌥-held left click, the conventional
+    /// tray affordance for "give me the menu" — gets the boring
     /// necessities (About, Quit — not features).
     @objc private func statusItemClicked() {
-        if NSApp.currentEvent?.type == .rightMouseUp {
+        // The live hardware state, not the event's flags: a status-bar
+        // event can misreport modifiers, and an accessibility press
+        // arrives with a stale currentEvent. ⌥ physically held right now
+        // is the one honest signal.
+        let optionHeld = NSEvent.modifierFlags.contains(.option)
+        if NSApp.currentEvent?.type == .rightMouseUp || optionHeld {
             let menu = NSMenu()
             menu.addItem(
                 withTitle: "About CompanionBackdrop",
@@ -139,6 +144,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     @objc private func showAbout() {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "CompanionBackdrop",
+            .applicationIcon: Self.maruhiColorImage(side: 256),
             .applicationVersion: BackdropCore.version,
         ])
         // The app is usually inactive when About is chosen from the
@@ -149,5 +155,44 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // no notification to consume the flag).
         aboutActivation = !NSApp.isActive
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// The ㊙ glyph rendered monochrome (U+FE0E forces text presentation
+    /// over emoji) onto a template image: the menu bar tints template
+    /// images to match its appearance, which a colour emoji never gets.
+    private static func maruhiTemplateImage() -> NSImage {
+        let side: CGFloat = 18
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            let glyph = "㊙\u{FE0E}" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 15, weight: .regular),
+                .foregroundColor: NSColor.black,
+            ]
+            let size = glyph.size(withAttributes: attributes)
+            glyph.draw(
+                at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
+                withAttributes: attributes
+            )
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    /// The ㊙️ emoji (U+FE0F keeps the colour presentation) rendered at
+    /// the given side length — the Dock icon, ⌘Tab card, and About panel.
+    private static func maruhiColorImage(side: CGFloat) -> NSImage {
+        NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            let glyph = "㊙\u{FE0F}" as NSString
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: side * 0.78)
+            ]
+            let size = glyph.size(withAttributes: attributes)
+            glyph.draw(
+                at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
+                withAttributes: attributes
+            )
+            return true
+        }
     }
 }
