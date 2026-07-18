@@ -52,11 +52,22 @@ final class BackdropCore {
         companion_free(handle)
     }
 
-    /// A new page; 0 means the store refused at the cap (the backdrop
-    /// only ever holds one page, so this is unreachable in practice).
+    /// The rung a fresh backdrop page opens on. The backdrop favours a
+    /// week, a span you can reason about by the calendar ("still need
+    /// this next Friday?") rather than by counting work hours, where the
+    /// panel opens shorter. Code 5 is the 7d rung (companion_ffi.h).
+    private static let defaultRung: Int32 = 5
+
+    /// A new page, opened on the backdrop's default rung; 0 means the
+    /// store refused at the cap (the backdrop only ever holds one page,
+    /// so this is unreachable in practice).
     @discardableResult
     func newSheet() -> UInt64 {
-        companion_sheet_new(handle)
+        let id = companion_sheet_new(handle)
+        if id != 0 {
+            _ = companion_sheet_set_rung(handle, id, Self.defaultRung)
+        }
+        return id
     }
 
     /// Current pages — the backdrop uses only the first.
