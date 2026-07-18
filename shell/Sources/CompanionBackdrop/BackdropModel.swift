@@ -28,8 +28,33 @@ final class BackdropModel: ObservableObject {
     /// core, which owns the title and the lifecycle.
     @Published var ink = ""
 
+    /// The card's place and measure within the pane, clamped and
+    /// persisted. The window controller reports pane sizes; the views
+    /// read this and propose changes through `setGeometry(_:)`.
+    @Published private(set) var geometry: BackdropGeometry
+
     private let core = BackdropCore()
     private var started = false
+
+    /// The backdrop's own suite (ADR-0010: never CompanionApp's),
+    /// injectable so tests can point at a throwaway domain.
+    private let geometryDefaults: UserDefaults?
+
+    /// The last pane size the controller reported. Until the first fit
+    /// arrives, an effectively boundless pane means clamping enforces
+    /// only the absolute bounds, never a spurious collapse to zero.
+    private var paneSize = CGSize(
+        width: CGFloat.greatestFiniteMagnitude,
+        height: CGFloat.greatestFiniteMagnitude
+    )
+
+    init(
+        geometryDefaults: UserDefaults? =
+            UserDefaults(suiteName: BackdropGeometry.defaultsSuiteName)
+    ) {
+        self.geometryDefaults = geometryDefaults
+        geometry = BackdropGeometry.load(from: geometryDefaults)
+    }
 
     // nonisolated(unsafe): deinit is always nonisolated, even on a
     // @MainActor class (Swift 6), and Timer isn't Sendable. Safe here —
@@ -95,6 +120,38 @@ final class BackdropModel: ObservableObject {
     func rest() {
         stance = .resting
         startRedraw()
+    }
+
+    // MARK: Geometry
+
+    /// A drag or resize settled: clamp the proposal to the known pane,
+    /// persist, publish.
+    func setGeometry(_ proposed: BackdropGeometry) {
+        applyGeometry(proposed.clamped(to: paneSize))
+    }
+
+    /// The Settings escape hatch: back to the layout the card shipped
+    /// with, still clamped in case the current display is smaller than
+    /// the default assumes.
+    func resetGeometry() {
+        applyGeometry(BackdropGeometry.default.clamped(to: paneSize))
+    }
+
+    /// The controller re-fit the pane: a display disconnect or a
+    /// resolution change must pull a now-stranded card back within
+    /// reach of the new pane.
+    func reclamp(paneSize: CGSize) {
+        self.paneSize = paneSize
+        applyGeometry(geometry.clamped(to: paneSize))
+    }
+
+    /// Persist and publish, but only a real change: the screen
+    /// observer can fire in bursts, and an unchanged geometry should
+    /// cost neither a repaint nor a defaults write.
+    private func applyGeometry(_ new: BackdropGeometry) {
+        guard new != geometry else { return }
+        geometry = new
+        new.save(to: geometryDefaults)
     }
 
     // MARK: The page

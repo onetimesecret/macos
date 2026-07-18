@@ -60,6 +60,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     private func fitToScreen() {
         guard let screen = NSScreen.screens.first else { return }
         panel.setFrame(screen.frame, display: true)
+        // The pane changed shape, so the card's geometry may now point
+        // off the edge of it; the model pulls the card back on screen.
+        model.reclamp(paneSize: screen.frame.size)
     }
 
     private func apply(_ stance: BackdropStance) {
