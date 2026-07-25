@@ -24,7 +24,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # If scripts/local.env exists it is the source of truth for CODESIGN_IDENTITY.
-[[ -f scripts/local.env ]] && source scripts/local.env
+# Sourcing sits inside an if so a local.env whose final statement returns
+# non zero fails here with a message instead of killing the script silently.
+if [[ -f scripts/local.env ]]; then
+  source scripts/local.env || { echo "failed to source scripts/local.env" >&2; exit 1; }
+fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build-backdrop.sh must run on macOS (needs swift + codesign)." >&2

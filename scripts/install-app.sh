@@ -11,7 +11,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # If scripts/local.env exists it is the source of truth for CODESIGN_IDENTITY.
-[[ -f scripts/local.env ]] && source scripts/local.env
+# Sourcing sits inside an if so a local.env whose final statement returns
+# non zero fails here with a message instead of killing the script silently.
+if [[ -f scripts/local.env ]]; then
+  source scripts/local.env || { echo "failed to source scripts/local.env" >&2; exit 1; }
+fi
 
 NO_LAUNCH=0
 if [[ $# -gt 1 ]]; then
@@ -24,6 +28,15 @@ elif [[ -n "${1:-}" ]]; then
   exit 1
 fi
 
+# Refuse to point the destructive steps below at anything but a real
+# absolute destination, and refuse before any build work starts so a
+# bad invocation costs nothing.
+APP_DEST="${APP_DEST-/Applications}"
+if [[ -z "$APP_DEST" || "$APP_DEST" != /* ]]; then
+  echo "APP_DEST must be a non-empty absolute path (got \"$APP_DEST\")." >&2
+  exit 1
+fi
+
 if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
   echo "WARNING: CODESIGN_IDENTITY is unset, so this install will be ad-hoc" >&2
   echo "signed. TCC grants and Keychain confirmations will reset on every" >&2
@@ -31,13 +44,16 @@ if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
 fi
 
 # Rebuild the core only when it is stale: missing outright, or older
-# than any Rust source or manifest under crates/.
+# than any Rust source, manifest, or C header it is built from. The
+# workspace manifest and lockfile live at the repo root, so a cargo
+# update that touches only root files must still trigger a rebuild,
+# and the packaged FFI header is a direct input too.
 XCF=bindings/CompanionCore.xcframework
 if [[ ! -d "$XCF" ]]; then
   echo "==> $XCF is missing; running scripts/build-core.sh"
   scripts/build-core.sh
-elif [[ -n "$(find crates -type f \( -name '*.rs' -o -name Cargo.toml -o -name Cargo.lock \) -newer "$XCF" -print -quit)" ]]; then
-  echo "==> crates/ changed since $XCF was built; running scripts/build-core.sh"
+elif [[ -n "$(find crates Cargo.toml Cargo.lock -type f \( -name '*.rs' -o -name 'Cargo.*' -o -name '*.h' \) -newer "$XCF" -print -quit)" ]]; then
+  echo "==> core inputs changed since $XCF was built; running scripts/build-core.sh"
   scripts/build-core.sh
 fi
 
@@ -46,29 +62,36 @@ scripts/build-app.sh
 echo "==> scripts/build-backdrop.sh"
 scripts/build-backdrop.sh
 
-# Refuse to point the destructive steps below at anything but a real
-# absolute destination.
-APP_DEST="${APP_DEST-/Applications}"
-if [[ -z "$APP_DEST" || "$APP_DEST" != /* ]]; then
-  echo "APP_DEST must be a non-empty absolute path (got \"$APP_DEST\")." >&2
-  exit 1
-fi
-
 # Ask a running installed copy to quit before replacing it. Only the
 # graceful AppleScript path runs the quit-time persistence snapshot, so
 # we never escalate to signals here; if the app will not quit, we stop
 # rather than replace it live.
+
+# pgrep -f reads its pattern as an extended regex, so an APP_DEST with
+# metacharacters would silently match nothing (or error, which callers
+# would read as not running). Escape the path so the match is literal.
+running_from() { # <absolute path>
+  pgrep -f "$(printf '%s' "$1" | sed 's/[][\.|$(){}?+*^]/\\&/g')" >/dev/null
+}
+
 quit_installed() { # <app name>
   local name="$1"
   local macos_dir="$APP_DEST/$name.app/Contents/MacOS"
-  pgrep -f "$macos_dir" >/dev/null || return 0
-  local bundle_id
-  bundle_id="$(plutil -extract CFBundleIdentifier raw "$APP_DEST/$name.app/Contents/Info.plist")"
-  echo "==> Asking $name ($bundle_id) to quit"
-  osascript -e "tell application id \"$bundle_id\" to quit" >/dev/null 2>&1 || true
+  running_from "$macos_dir" || return 0
+  echo "==> Asking $name at $APP_DEST to quit"
+  # Address the app by path, not bundle id: a release copy running from
+  # dist/ shares the installed copy's id, and an id-addressed quit can
+  # land on the wrong process. Surface osascript failures so a denied
+  # Automation consent gets named instead of blamed on the app below.
+  local quit_err
+  if ! quit_err="$(osascript -e 'on run argv' -e 'tell application (item 1 of argv) to quit' -e 'end run' "$APP_DEST/$name.app" 2>&1 >/dev/null)"; then
+    echo "osascript could not deliver the quit event: $quit_err" >&2
+    echo "If that reads like a permissions failure, allow this terminal under" >&2
+    echo "System Settings > Privacy & Security > Automation." >&2
+  fi
   local deadline=$((SECONDS + 10))
   while ((SECONDS < deadline)); do
-    pgrep -f "$macos_dir" >/dev/null || return 0
+    running_from "$macos_dir" || return 0
     sleep 0.2
   done
   echo "$name is still running from $macos_dir; refusing to replace a live app." >&2
