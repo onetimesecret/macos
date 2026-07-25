@@ -20,6 +20,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# If scripts/local.env exists it is the source of truth for CODESIGN_IDENTITY.
+[[ -f scripts/local.env ]] && source scripts/local.env
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build-backdrop.sh must run on macOS (needs swift + codesign)." >&2
   exit 1
