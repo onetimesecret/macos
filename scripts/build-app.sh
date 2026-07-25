@@ -14,6 +14,9 @@
 # of release). `open` does not forward the caller's environment; pass
 # the variable explicitly:
 #   open --env COMPANION_ALLOW_CAPTURE=1 dist/CompanionApp.app
+# Debug builds get a .dev bundle id so a dev instance and the installed
+# copy can coexist without contending for the menu bar, defaults, and
+# state.
 #
 # Signing: ad-hoc by default. Enough for local TCC and pickers, but the
 # code identity changes on every rebuild, so TCC grants reset AND the
@@ -69,6 +72,15 @@ cp shell/Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
+
+if [[ "$CONFIG" == "debug" ]]; then
+  # A distinct identity for the dev instance, so it and the installed
+  # copy read as separate apps to macOS and to the eye.
+  BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
+  plutil -replace CFBundleIdentifier -string "$BUNDLE_ID.dev" "$APP/Contents/Info.plist"
+  BUNDLE_NAME="$(plutil -extract CFBundleName raw "$APP/Contents/Info.plist")"
+  plutil -replace CFBundleName -string "$BUNDLE_NAME Dev" "$APP/Contents/Info.plist"
+fi
 
 echo "==> codesign (${CODESIGN_IDENTITY:-ad-hoc})"
 codesign --force --sign "${CODESIGN_IDENTITY:--}" "$APP"
