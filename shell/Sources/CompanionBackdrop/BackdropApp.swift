@@ -65,9 +65,14 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
         // The ㊙️ maruhi ("secret"), shared with the panel app: the Dock
         // icon and the ⌘Tab card both draw from `applicationIconImage`,
-        // so one colour rendering serves both. The menu-bar item gets the
-        // monochrome template below.
-        NSApp.applicationIconImage = Self.maruhiColorImage(side: 256)
+        // so one colour rendering serves both. Only for a bare
+        // `swift run`, which has no bundle: the bundled app carries
+        // AppIcon.icns (scripts/build-icons.sh), and this override
+        // would shadow it. The menu-bar item gets the monochrome
+        // template below either way.
+        if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil {
+            NSApp.applicationIconImage = Self.maruhiColorImage(side: 256)
+        }
 
         let controller = BackdropWindowController(model: model)
         self.controller = controller
@@ -210,11 +215,16 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// same source the bundle's plist is stamped from), because a bare
     /// `swift run` binary has no Info.plist to read it from.
     @objc private func showAbout() {
-        NSApp.orderFrontStandardAboutPanel(options: [
+        var aboutOptions: [NSApplication.AboutPanelOptionKey: Any] = [
             .applicationName: "CompanionBackdrop",
-            .applicationIcon: Self.maruhiColorImage(side: 256),
             .applicationVersion: CompanionClient.version,
-        ])
+        ]
+        // A bare `swift run` has no bundle icon to fall back on; the
+        // bundled app shows its AppIcon.icns without help.
+        if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil {
+            aboutOptions[.applicationIcon] = Self.maruhiColorImage(side: 256)
+        }
+        NSApp.orderFrontStandardAboutPanel(options: aboutOptions)
         // The app is usually inactive when About is chosen from the
         // status item; without activation the panel appears behind
         // whatever is frontmost. This activation is About's, not a

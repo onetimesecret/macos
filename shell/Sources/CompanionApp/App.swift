@@ -207,11 +207,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and the bundled app (scripts/build-app.sh) stamps its plist from
     /// the same source this version string is baked from.
     @objc func showAbout() {
-        NSApp.orderFrontStandardAboutPanel(options: [
+        var aboutOptions: [NSApplication.AboutPanelOptionKey: Any] = [
             .applicationName: "CompanionApp",
-            .applicationIcon: Self.maruhiAboutIcon(),
             .applicationVersion: CompanionClient.version,
-        ])
+        ]
+        // A bare `swift run` has no bundle icon to fall back on; the
+        // bundled app shows its AppIcon.icns without help.
+        if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil {
+            aboutOptions[.applicationIcon] = Self.maruhiAboutIcon()
+        }
+        NSApp.orderFrontStandardAboutPanel(options: aboutOptions)
         // An accessory app's panel would otherwise appear behind
         // whatever is frontmost.
         NSApp.activate(ignoringOtherApps: true)
