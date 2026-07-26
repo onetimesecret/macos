@@ -37,4 +37,27 @@ final class BackdropStateLicenceTests: XCTestCase {
         XCTAssertEqual(BackdropCore.credentialService, "com.onetimesecret.companion.backdrop")
         XCTAssertNotEqual(BackdropCore.credentialService, "com.onetimesecret.companion")
     }
+
+    /// The restore's last mile, against the live core: what the surface
+    /// mirrors out through `inkRunsJSON` is what `documentInk` hands
+    /// back to the editor. A restore replays the document the same way,
+    /// so a drift here is a page that reopens wrong. No Keychain and no
+    /// state file are touched: constructing the core reaches neither.
+    @MainActor
+    func testInkRoundTripsThroughTheDocumentMirror() throws {
+        let core = BackdropCore()
+        let id = core.newSheet()
+        XCTAssertNotEqual(id, 0)
+
+        let ink = "wifi guest pw rotates friday\nask ops for the new one"
+        let json = try XCTUnwrap(BackdropCore.inkRunsJSON(ink))
+        XCTAssertTrue(core.syncDocument(sheet: id, json: json))
+        XCTAssertEqual(core.documentInk(sheet: id), ink)
+
+        // An emptied page mirrors back empty rather than keeping the
+        // last non-empty snapshot.
+        let empty = try XCTUnwrap(BackdropCore.inkRunsJSON(""))
+        XCTAssertTrue(core.syncDocument(sheet: id, json: empty))
+        XCTAssertEqual(core.documentInk(sheet: id), "")
+    }
 }
