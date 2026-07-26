@@ -68,7 +68,7 @@ use std::ptr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use companion_credentials::{CredentialStore, default_credential_store};
+use companion_credentials::{CredentialStore, credential_store_for, default_credential_store};
 use companion_transport::UreqTransport;
 use ots_client::Transport as _;
 use promotion::{Connection, PromoteOpts, Promoted, ladder_snapped_ttl, promote};
@@ -246,6 +246,29 @@ pub extern "C" fn companion_version() -> *const c_char {
 /// the process.
 #[unsafe(no_mangle)]
 pub extern "C" fn companion_new() -> *mut CompanionHandle {
+    new_handle(default_credential_store())
+}
+
+/// Same, but with credentials scoped to `service` instead of the
+/// default `com.onetimesecret.companion`. A second form factor passes
+/// its own bundle id here so its state key is its own item, granted to
+/// its own code identity: sharing one item across two signed binaries
+/// would make each one's first read a Keychain confirmation prompt for
+/// the other's key. A null or non-UTF-8 `service` falls back to the
+/// default rather than inventing an unnamed scope.
+///
+/// # Safety
+/// `service` must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_new_scoped(service: *const c_char) -> *mut CompanionHandle {
+    let credentials = match unsafe { cstr(service) } {
+        Some(service) if !service.is_empty() => credential_store_for(service),
+        _ => default_credential_store(),
+    };
+    new_handle(credentials)
+}
+
+fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
     companion_core::harden_process();
     // The one place the backend is chosen: the real system clipboard on
     // macOS, the in-process board elsewhere. Everything above this line is
@@ -259,7 +282,7 @@ pub extern "C" fn companion_new() -> *mut CompanionHandle {
         pasteboard,
         last_write: None,
         connection: None,
-        credentials: default_credential_store(),
+        credentials,
     };
     Box::into_raw(Box::new(CompanionHandle {
         inner: Mutex::new(companion),

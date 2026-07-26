@@ -66,12 +66,25 @@ pub trait CredentialStore: Send + Sync {
 /// in-memory dev fallback elsewhere.
 #[must_use]
 pub fn default_credential_store() -> Arc<dyn CredentialStore> {
+    credential_store_for(SERVICE)
+}
+
+/// A store scoped to `service` rather than [`SERVICE`]. Every form
+/// factor gets its own service name so each owns its items outright:
+/// Keychain ACLs are granted to the code identity that created an item,
+/// so a second app reaching into the first's service would raise a
+/// confirmation prompt for a key it has no business holding. Separate
+/// services mean separate keys, separate prompts, and a state file that
+/// only the app that wrote it can open.
+#[must_use]
+pub fn credential_store_for(service: &str) -> Arc<dyn CredentialStore> {
     #[cfg(target_os = "macos")]
     {
-        Arc::new(KeychainStore::new(SERVICE))
+        Arc::new(KeychainStore::new(service))
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = service;
         Arc::new(InMemoryCredentialStore::default())
     }
 }
@@ -132,6 +145,13 @@ impl KeychainStore {
         Self {
             service: service.to_string(),
         }
+    }
+
+    /// The service every item of this store is scoped to. Readable so
+    /// the scoping can be asserted without a Keychain round-trip.
+    #[must_use]
+    pub fn service(&self) -> &str {
+        &self.service
     }
 }
 
@@ -219,4 +239,18 @@ mod tests {
     // The KeychainStore path is deliberately untested here: exercising
     // the real Keychain belongs to the on-device spike, not a CI runner's
     // default keychain. The platform lane still compiles it.
+
+    /// Scoping is what keeps two form factors out of each other's
+    /// items, so it is asserted on the store's own service name rather
+    /// than by writing to the Keychain: constructing a store touches
+    /// nothing, and this catches a scope silently collapsing to the
+    /// default.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_scoped_store_keeps_the_service_it_was_given() {
+        assert_eq!(KeychainStore::new(SERVICE).service(), SERVICE);
+        let backdrop = "com.onetimesecret.companion.backdrop";
+        assert_eq!(KeychainStore::new(backdrop).service(), backdrop);
+        assert_ne!(KeychainStore::new(backdrop).service(), SERVICE);
+    }
 }

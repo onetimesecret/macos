@@ -173,10 +173,23 @@ public struct PromotionOutcome: Codable, Hashable, Sendable {
 public final class CompanionClient: @unchecked Sendable {
     private let handle: OpaquePointer
 
-    public init() {
+    /// `credentialService` scopes this client's Keychain items. Nil
+    /// takes the core's default, `com.onetimesecret.companion`, which
+    /// is the panel's. A second form factor passes its own bundle id:
+    /// Keychain ACLs are granted to the code identity that created an
+    /// item, so two signed binaries sharing one state key would each
+    /// meet a confirmation prompt for the other's, and a state file
+    /// either could open is a state file neither one owns.
+    public init(credentialService: String? = nil) {
         companion_init()
-        guard let created = companion_new() else {
-            fatalError("companion_new returned null")
+        let created =
+            if let credentialService {
+                credentialService.withCString { companion_new_scoped($0) }
+            } else {
+                companion_new()
+            }
+        guard let created else {
+            fatalError("the core refused to create a handle")
         }
         handle = created
     }

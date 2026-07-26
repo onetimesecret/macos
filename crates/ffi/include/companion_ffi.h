@@ -60,6 +60,15 @@ const char *companion_version(void);
 
 /* Lifecycle. Freeing the handle wipes every sealed byte it holds. */
 CompanionHandle *companion_new(void);
+
+/* As companion_new(), with Keychain items scoped to `service` rather
+ * than the default "com.onetimesecret.companion". A second form factor
+ * passes its own bundle id so its state key is its own item, granted to
+ * its own code identity; sharing one item across two signed binaries
+ * would make each one's first read a confirmation prompt for the
+ * other's key. Null or empty falls back to the default scope. */
+CompanionHandle *companion_new_scoped(const char *service);
+
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */
