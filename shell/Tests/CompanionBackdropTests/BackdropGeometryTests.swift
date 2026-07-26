@@ -59,6 +59,46 @@ final class BackdropGeometryTests: XCTestCase {
         XCTAssertEqual(clamped.origin, .zero)
     }
 
+    // MARK: An inset pane — the menu bar and Dock own their strips
+
+    /// The screen with a 25 pt menu bar and an 80 pt Dock carved off,
+    /// in the pane's top-leading coordinates.
+    private let insetPane = CGRect(x: 0, y: 25, width: 1920, height: 975)
+
+    func testACardCannotBeParkedUnderTheMenuBar() {
+        // The defect that motivated the rect: a zoomed card whose
+        // header sat under the menu bar could never be double-clicked
+        // back down.
+        var geometry = BackdropGeometry.default
+        geometry.origin = CGPoint(x: 48, y: 0)
+        XCTAssertEqual(geometry.clamped(to: insetPane).origin.y, insetPane.minY)
+    }
+
+    func testACardCannotHangIntoTheDockStrip() {
+        var geometry = BackdropGeometry.default
+        geometry.origin = CGPoint(x: 48, y: 5000)
+        let clamped = geometry.clamped(to: insetPane)
+        XCTAssertEqual(clamped.origin.y, insetPane.maxY - clamped.height)
+    }
+
+    func testAFullHeightCardFillsExactlyTheInsetPane() {
+        var geometry = BackdropGeometry.default
+        geometry.origin.y = insetPane.minY
+        geometry.height = insetPane.height
+        let clamped = geometry.clamped(to: insetPane)
+        XCTAssertEqual(clamped.origin.y, insetPane.minY)
+        XCTAssertEqual(clamped.height, insetPane.height)
+    }
+
+    func testTheSizeClampIsTheRectClampAtZero() {
+        var geometry = BackdropGeometry.default
+        geometry.origin = CGPoint(x: 5000, y: -50)
+        XCTAssertEqual(
+            geometry.clamped(to: roomyPane),
+            geometry.clamped(to: CGRect(origin: .zero, size: roomyPane))
+        )
+    }
+
     // MARK: The absolute bounds
 
     func testWidthIsHeldAboveItsFloorOnARoomyPane() {
@@ -90,7 +130,7 @@ final class BackdropGeometryTests: XCTestCase {
     // MARK: Degenerate panes collapse gracefully, never through a crash
 
     func testAZeroPaneCollapsesEverythingToZero() {
-        let clamped = BackdropGeometry.default.clamped(to: .zero)
+        let clamped = BackdropGeometry.default.clamped(to: CGSize.zero)
         XCTAssertEqual(clamped.origin, .zero)
         XCTAssertEqual(clamped.width, 0)
         XCTAssertEqual(clamped.height, 0)

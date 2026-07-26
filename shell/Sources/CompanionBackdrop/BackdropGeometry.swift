@@ -64,21 +64,35 @@ struct BackdropGeometry: Codable, Equatable {
     /// pane (zero, or smaller than any sensible card) collapses the
     /// geometry gracefully to whatever fits, never below zero and
     /// never through a crash.
-    func clamped(to paneSize: CGSize) -> BackdropGeometry {
-        let paneWidth = max(0, paneSize.width)
-        let paneHeight = max(0, paneSize.height)
+    ///
+    /// The pane is a rect, not a size: the window spans the whole
+    /// screen, but the menu bar and Dock own strips of it that a
+    /// floating card cannot outrank. A card allowed under the menu bar
+    /// keeps its header where no click can reach it, so the usable
+    /// region the clamp confines to starts below that strip.
+    func clamped(to pane: CGRect) -> BackdropGeometry {
+        // Raw components, not the rect accessors: CGRect normalizes a
+        // negative size (`width` turns absolute, `minX` shifts), which
+        // would quietly promote a degenerate pane to a real one.
+        let paneWidth = max(0, pane.size.width)
+        let paneHeight = max(0, pane.size.height)
 
         let fitWidth = min(max(width, Self.minWidth), paneWidth)
         let fitHeight = min(max(height, Self.minHeight), paneHeight)
 
-        let x = min(max(origin.x, 0), max(0, paneWidth - fitWidth))
-        let y = min(max(origin.y, 0), max(0, paneHeight - fitHeight))
+        let x = min(max(origin.x, pane.origin.x), pane.origin.x + max(0, paneWidth - fitWidth))
+        let y = min(max(origin.y, pane.origin.y), pane.origin.y + max(0, paneHeight - fitHeight))
 
         return BackdropGeometry(
             origin: CGPoint(x: x, y: y),
             width: fitWidth,
             height: fitHeight
         )
+    }
+
+    /// The whole-pane clamp, for a pane with nothing carved out of it.
+    func clamped(to paneSize: CGSize) -> BackdropGeometry {
+        clamped(to: CGRect(origin: .zero, size: paneSize))
     }
 }
 
