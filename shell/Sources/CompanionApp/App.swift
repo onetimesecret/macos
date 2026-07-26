@@ -74,6 +74,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Opening an already-running copy (Finder, Spotlight, the Dock's
+    /// recents, `open -a`) arrives here as a reopen event and nothing
+    /// else. An accessory app has no Dock icon and no document window
+    /// for AppKit to unminiaturize, so without this the launch looks
+    /// broken: the process is alive, the event lands, no window appears.
+    ///
+    /// `show()`, not `summon()`: reopening asks for the window, and a
+    /// summon toggles, so a second open would dismiss the very window
+    /// the user just asked to see. Showing also matches the menu-bar
+    /// click this most resembles, keyboard left where it was.
+    ///
+    /// False because the reveal is complete: AppKit's normal reopen
+    /// tasks would only unminiaturize a window we do not have.
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication, hasVisibleWindows: Bool
+    ) -> Bool {
+        controller?.show()
+        return false
+    }
+
     /// Quit is the one moment state touches disk: seal everything into
     /// the state file so the next launch opens where this one left off.
     /// Intercepted here rather than in `applicationWillTerminate` so a
