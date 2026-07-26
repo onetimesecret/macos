@@ -101,11 +101,16 @@ final class WindowController: NSObject, NSWindowDelegate {
     /// answers this click — not the launch).
     func show() {
         model.loadStateIfNeeded()
+        // Each reveal looks at the board once (never a poll): the
+        // panel coming forward is the moment the offer is worth
+        // making (ADR-0007 Amendment 1).
+        model.refreshPasteboardOffer()
         pullToActiveSpace()
         panel.orderFrontRegardless()
     }
 
     func hide() {
+        model.withdrawPasteboardOffer()
         panel.orderOut(nil)
     }
 
@@ -124,6 +129,7 @@ final class WindowController: NSObject, NSWindowDelegate {
             hide()
         } else {
             model.loadStateIfNeeded()
+            model.refreshPasteboardOffer()
             pullToActiveSpace()
             panel.makeKeyAndOrderFront(nil)
             // A pageless window would leave the grant with nothing to

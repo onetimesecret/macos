@@ -16,7 +16,9 @@
 //!
 //! - **Sealed paste (⇧⌘V)**: the core reads the pasteboard itself
 //!   ([`companion_sheet_seal_from_pasteboard`]); the shell asks, the
-//!   core takes.
+//!   core takes — and clears the board in the same operation, so the
+//!   secret's pasteboard dwell ends the moment it is staged (ADR-0007
+//!   Amendment 1).
 //! - **Copy-out**: the core writes the pasteboard itself
 //!   ([`companion_chip_copy_out`]), applying the hygiene contract
 //!   (transient + concealed marks, change-count-guarded clear). The
@@ -185,6 +187,14 @@ impl Pasteboard for Board {
             Board::System(pb) => pb.clear_if_unchanged(expected),
         }
     }
+
+    fn holds_external_content(&self) -> bool {
+        match self {
+            Board::Memory(pb) => pb.holds_external_content(),
+            #[cfg(target_os = "macos")]
+            Board::System(pb) => pb.holds_external_content(),
+        }
+    }
 }
 
 /// The core state behind the seam: the sheet store, the pasteboard the
@@ -339,26 +349,45 @@ pub unsafe extern "C" fn companion_sheet_move(
 // Sealing — the gesture routes; bytes stay core-side
 // ---------------------------------------------------------------------------
 
-/// The sealed paste (⇧⌘V): the core reads the pasteboard itself and
-/// seals whatever it holds onto the page — text or image, unread and
-/// unclassified; consent is the gesture. Returns the new chip's
+/// The sealed paste (⇧⌘V): the core reads the pasteboard itself, seals
+/// whatever it holds onto the page — text or image, unread and
+/// unclassified; consent is the gesture — and clears the board in the
+/// same locked operation, so the secret's pasteboard dwell ends the
+/// moment it is staged (ADR-0007 Amendment 1). Returns the new chip's
 /// non-secret JSON (see the header; caller frees with
 /// [`companion_string_free`]), or null when the board was empty, the
-/// page unknown, or the content zero-length.
+/// page unknown, or the content zero-length. A refused seal clears
+/// nothing: the app did not take the content, so it does not destroy
+/// it either.
+///
+/// `cleared_out` (nullable) reports the clear: true when the board was
+/// wiped, false when the board's change count moved between the read
+/// and the clear — another writer got in, the guarded clear stood
+/// down, and the shell must say so, because a paste that leaves
+/// content on the board is the failure this route exists to prevent.
 ///
 /// # Safety
-/// `handle` must be a valid handle.
+/// `handle` must be a valid handle. `cleared_out`, when non-null, must
+/// point to writable memory.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
     handle: *mut CompanionHandle,
     sheet: u64,
+    cleared_out: *mut bool,
 ) -> *mut c_char {
+    if !cleared_out.is_null() {
+        unsafe { cleared_out.write(false) };
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
     let Ok(mut guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
+    // Observed before the read: if another writer lands after this
+    // count is taken, the guarded clear below refuses — never wiping
+    // content the read did not see.
+    let count = guard.pasteboard.change_count();
     let Some(item) = guard.pasteboard.read() else {
         return ptr::null_mut();
     };
@@ -375,9 +404,35 @@ pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
         PasteboardContent::Image(bytes) => guard.store.seal_image(sheet, bytes),
     };
     match sealed {
-        Ok(chip) => chip_json(&guard.store, sheet, chip),
+        Ok(chip) => {
+            let cleared = guard.pasteboard.clear_if_unchanged(count);
+            if !cleared_out.is_null() {
+                unsafe { cleared_out.write(cleared) };
+            }
+            chip_json(&guard.store, sheet, chip)
+        }
         Err(_) => ptr::null_mut(),
     }
+}
+
+/// Whether the system pasteboard currently holds content a sealed
+/// paste could take: non-empty, representable (text or image), and not
+/// the companion's own transient write — offering to re-ingest a
+/// copy-out would be a loop, not a service. Answered from type
+/// metadata alone; no content bytes cross into the process. Powers the
+/// summon-time offer (ADR-0007 Amendment 1).
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_pasteboard_has_content(handle: *mut CompanionHandle) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.pasteboard.holds_external_content()
 }
 
 /// The ⌘↩ retrofit: seal `text` — the selection, or the current line —
@@ -1630,7 +1685,11 @@ mod tests {
 
             // Route 2: the sealed paste.
             seed(handle, &secret);
-            let chip2 = take_json(companion_sheet_seal_from_pasteboard(handle, sheet));
+            let chip2 = take_json(companion_sheet_seal_from_pasteboard(
+                handle,
+                sheet,
+                ptr::null_mut(),
+            ));
             assert!(!chip2.contains("n0ts3cr3t"), "{chip2}");
 
             // Summaries carry counts and titles, never chip contents.
@@ -1675,9 +1734,91 @@ mod tests {
         seed(handle, "on its way somewhere else");
         unsafe {
             let sheet = companion_sheet_new(handle);
-            let chip = take_json(companion_sheet_seal_from_pasteboard(handle, sheet));
+            let chip = take_json(companion_sheet_seal_from_pasteboard(
+                handle,
+                sheet,
+                ptr::null_mut(),
+            ));
             assert!(chip.contains("\"kind\":\"text\""), "{chip}");
             assert!(chip.contains("size_label"), "{chip}");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn sealed_paste_drains_the_board_in_the_same_operation() {
+        // ADR-0007 Amendment 1: taking the content ends its pasteboard
+        // dwell, and the take reports the clear so the shell can
+        // surface a board left un-drained.
+        let handle = handle();
+        seed(handle, "hunter2");
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            assert!(companion_pasteboard_has_content(handle));
+
+            let mut cleared = false;
+            let chip = take_json(companion_sheet_seal_from_pasteboard(
+                handle,
+                sheet,
+                &raw mut cleared,
+            ));
+            assert!(chip.contains("\"kind\":\"text\""), "{chip}");
+            assert!(cleared, "the take must report the drain");
+
+            // The board is empty now: nothing to offer, nothing to
+            // seal a second time.
+            assert!(!companion_pasteboard_has_content(handle));
+            cleared = true;
+            let again = companion_sheet_seal_from_pasteboard(handle, sheet, &raw mut cleared);
+            assert!(again.is_null(), "an empty board seals nothing");
+            assert!(!cleared, "an empty board reports no clear");
+
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_refused_seal_leaves_the_board_alone() {
+        // Sealing onto an unknown page takes nothing, so it must
+        // destroy nothing: the user's content stays where it was.
+        let handle = handle();
+        seed(handle, "still theirs");
+        unsafe {
+            let mut cleared = true;
+            let refused = companion_sheet_seal_from_pasteboard(handle, 424242, &raw mut cleared);
+            assert!(refused.is_null());
+            assert!(!cleared);
+            assert!(companion_pasteboard_has_content(handle));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_offer_probe_skips_our_own_copy_out() {
+        let handle = handle();
+        unsafe {
+            assert!(!companion_pasteboard_has_content(handle), "empty board");
+
+            let sheet = companion_sheet_new(handle);
+            let chip = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring("hunter2").as_ptr(),
+            ));
+            let chip: serde_json::Value = serde_json::from_str(&chip).unwrap();
+            let chip_id = chip["chip_id"].as_u64().unwrap();
+
+            // Copy-out leaves our transient-marked write on the board;
+            // offering to ingest it back would be a loop, not a
+            // service.
+            assert!(companion_chip_copy_out(handle, chip_id));
+            assert!(!companion_pasteboard_has_content(handle));
+
+            // External content, by contrast, is exactly what the offer
+            // exists for.
+            seed(handle, "from elsewhere");
+            assert!(companion_pasteboard_has_content(handle));
+
             companion_free(handle);
         }
     }
@@ -1698,7 +1839,11 @@ mod tests {
         }
         unsafe {
             let sheet = companion_sheet_new(handle);
-            let chip_json = take_json(companion_sheet_seal_from_pasteboard(handle, sheet));
+            let chip_json = take_json(companion_sheet_seal_from_pasteboard(
+                handle,
+                sheet,
+                ptr::null_mut(),
+            ));
             assert!(chip_json.contains("\"kind\":\"image\""), "{chip_json}");
             assert!(
                 chip_json.contains("PNG image"),
@@ -1991,7 +2136,10 @@ mod tests {
             assert!(!companion_sheet_pause_press(ptr::null_mut(), 1));
             assert_eq!(companion_next_event_ms(ptr::null_mut()), -1);
             assert!(companion_sheet_seal_text(ptr::null_mut(), 1, cstring("x").as_ptr()).is_null());
-            assert!(companion_sheet_seal_from_pasteboard(ptr::null_mut(), 1).is_null());
+            assert!(
+                companion_sheet_seal_from_pasteboard(ptr::null_mut(), 1, ptr::null_mut()).is_null()
+            );
+            assert!(!companion_pasteboard_has_content(ptr::null_mut()));
             companion_free(ptr::null_mut()); // no-op
             companion_string_free(ptr::null_mut()); // no-op
         }
