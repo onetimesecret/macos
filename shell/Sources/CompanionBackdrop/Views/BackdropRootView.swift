@@ -54,6 +54,12 @@ struct BackdropRootView: View {
                     .offset(x: placed.origin.x, y: placed.origin.y)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // The drag gestures measure in this space, not their own
+            // view's: a grip moves with the card it is resizing, so a
+            // translation read in the grip's local space re-subtracts
+            // each delta already applied and the edge falls to half the
+            // pointer's speed. The pane holds still; measure there.
+            .coordinateSpace(name: Self.paneSpace)
         }
         // The keyboard map is mounted only while raised: a resting
         // surface refuses key status outright, so a map it carried
@@ -180,7 +186,7 @@ struct BackdropRootView: View {
     /// plain click on the header from registering as a zero-length
     /// drag.
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 2)
+        DragGesture(minimumDistance: 2, coordinateSpace: .named(Self.paneSpace))
             .onChanged { value in
                 dragTranslation = value.translation
             }
@@ -252,6 +258,10 @@ struct BackdropRootView: View {
     private static let gripThickness: CGFloat = 6
     private static let cornerSide: CGFloat = 12
 
+    /// The stationary space the drag gestures measure in; the pane
+    /// covers the screen and does not move with the card.
+    private static let paneSpace = "backdrop-pane"
+
     private func grip(_ edge: CardEdge) -> some View {
         Color.clear
             .contentShape(Rectangle())
@@ -269,7 +279,7 @@ struct BackdropRootView: View {
     /// pull into a proposal, and the commit goes through the model's
     /// clamp like every other proposal.
     private func resizeGesture(_ edge: CardEdge) -> some Gesture {
-        DragGesture(minimumDistance: 2)
+        DragGesture(minimumDistance: 2, coordinateSpace: .named(Self.paneSpace))
             .onChanged { value in
                 resizingEdge = edge
                 resizeTranslation = value.translation
