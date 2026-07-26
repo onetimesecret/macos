@@ -12,6 +12,9 @@
 # of release). `open` does not forward the caller's environment; pass
 # the variable explicitly:
 #   open --env COMPANION_ALLOW_CAPTURE=1 dist/CompanionBackdrop.app
+# Debug builds get a .dev bundle id so a dev instance and the installed
+# copy can coexist without contending for the menu bar, defaults, and
+# state.
 #
 # Signing: ad-hoc by default; set CODESIGN_IDENTITY to a real
 # certificate for an identity that survives rebuilds. (The backdrop
@@ -19,6 +22,13 @@
 # than it does for the panel app — TCC grants still reset.)
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+# If scripts/local.env exists it is the source of truth for CODESIGN_IDENTITY.
+# Sourcing sits inside an if so a local.env whose final statement returns
+# non zero fails here with a message instead of killing the script silently.
+if [[ -f scripts/local.env ]]; then
+  source scripts/local.env || { echo "failed to source scripts/local.env" >&2; exit 1; }
+fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build-backdrop.sh must run on macOS (needs swift + codesign)." >&2
@@ -63,6 +73,15 @@ cp shell/Backdrop-Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
+
+if [[ "$CONFIG" == "debug" ]]; then
+  # A distinct identity for the dev instance, so it and the installed
+  # copy read as separate apps to macOS and to the eye.
+  BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
+  plutil -replace CFBundleIdentifier -string "$BUNDLE_ID.dev" "$APP/Contents/Info.plist"
+  BUNDLE_NAME="$(plutil -extract CFBundleName raw "$APP/Contents/Info.plist")"
+  plutil -replace CFBundleName -string "$BUNDLE_NAME Dev" "$APP/Contents/Info.plist"
+fi
 
 echo "==> codesign (${CODESIGN_IDENTITY:-ad-hoc})"
 codesign --force --sign "${CODESIGN_IDENTITY:--}" "$APP"
