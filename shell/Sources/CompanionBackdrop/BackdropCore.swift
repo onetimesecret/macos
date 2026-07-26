@@ -11,7 +11,12 @@ import Foundation
 /// is visible ink the user typed into this surface. The kit carries no
 /// sealed byte across the seam either.
 final class BackdropCore {
-    private let client = CompanionClient()
+    /// The backdrop's own Keychain scope, never the panel's (ADR-0010
+    /// keeps the form factors out of each other's storage). The state
+    /// key this names is created by, and granted to, this app alone.
+    static let credentialService = "com.onetimesecret.companion.backdrop"
+
+    private let client = CompanionClient(credentialService: BackdropCore.credentialService)
 
     /// The rung a fresh backdrop page opens on. The backdrop favours a
     /// week, a span you can reason about by the calendar ("still need
@@ -63,6 +68,33 @@ final class BackdropCore {
     @discardableResult
     func expireDue() -> UInt64 {
         client.expireDue()
+    }
+
+    /// Seal the store into `path`. Ciphertext only; the key rests in
+    /// the Keychain under this app's own service.
+    @discardableResult
+    func persistSave(to path: String) -> Bool {
+        client.persistSave(to: path)
+    }
+
+    /// Open a sealed file back into the store. False covers both a
+    /// fresh start (no file) and a refusal (missing key, failed
+    /// authentication); the caller tells them apart by whether the file
+    /// was there.
+    @discardableResult
+    func persistRestore(from path: String) -> Bool {
+        client.persistRestore(from: path)
+    }
+
+    /// The restored page's ink, for the editor to open onto. The
+    /// backdrop's document is ink and nothing else, so the runs join
+    /// back into the one string the surface edits; a chip run cannot
+    /// occur here, and is dropped rather than rendered, because this
+    /// surface has no way to show one.
+    func documentInk(sheet: UInt64) -> String {
+        client.documentRuns(sheet: sheet)
+            .compactMap { if case .ink(let text) = $0 { text } else { nil } }
+            .joined()
     }
 
     /// The core's version string.

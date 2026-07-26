@@ -50,7 +50,9 @@ scoped by docs/spec/feature/background-surface/README.md.
 
 An exploration target starts with strictly less authority than the
 panel app: no persistence, no Keychain items, no network. Each of those
-arrives only by an argued amendment to its feature spec.
+arrives only by an argued amendment to its feature spec. (Persistence
+and its Keychain item arrived that way on 2026-07-25; the network has
+not.)
 
 ## Consequences
 
@@ -78,6 +80,13 @@ arrives only by an argued amendment to its feature spec.
   promotion, or a release artifact): extract the shared `CompanionKit`
   library target then, as its own change, and both form factors move
   onto it together.
+  **Fired 2026-07-25.** CompanionBackdrop gained persistence (argued in
+  docs/spec/feature/background-surface/README.md, "The persistence
+  amendment"), so the wrapper moved to a `CompanionKit` target and both
+  form factors depend on it. The two-instances-two-stores stance below
+  survives the graduation intact: the backdrop seals to its own file
+  under its own Keychain service, reached through
+  `companion_new_scoped`, and neither app reads the other's.
 - **A third form factor appears**: three copies of the seam wrapper is
   two too many; same extraction, whatever the maturity.
 - **The duplicated wrapper drifts** — a seam change lands in one copy

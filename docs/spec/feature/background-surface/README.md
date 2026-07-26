@@ -102,6 +102,50 @@ invisibility between uses. The backdrop's posture is presence, and
 presence that cannot be switched to is friction. Whether the fee is
 too high is open question №7.
 
+## The persistence amendment
+
+The backdrop **persists its page**, sealed at quit and opened at
+launch, in its own state file under its own Keychain service.
+
+The v0 stance below argued amnesia from the exploration's smaller
+authority. Dogfooding overturned it on a plainer ground: a surface that
+is always on screen is one you write *into*, not one you visit, and
+every quit silently threw the writing away. The failure was not
+experienced as scoping. It was experienced as a bug, and the closest
+neighbouring app losing nothing on quit made it read as a broken app
+rather than a deliberate one. An always-visible surface that forgets is
+not a smaller product than one that remembers; it is a worse one.
+
+What the amendment grants, and what it holds back:
+
+- **Its own storage, both halves.** A separate state file
+  (`~/Library/Application Support/CompanionBackdrop/state.sealed`) and
+  a separate Keychain service (`com.onetimesecret.companion.backdrop`,
+  reached through `companion_new_scoped`). Two form factors remain two
+  stores, per ADR-0010. Sharing the panel's key would put two signed
+  binaries on one Keychain item, where each one's first read is a
+  confirmation prompt for the other's key.
+- **Restore at launch, not at first summon.** The panel defers its
+  restore so that launching at login raises no prompt for a window
+  nobody asked to see (ADR-0004). This surface has no later moment to
+  defer to: it is on screen from launch, and a resting card showing an
+  empty page it does not hold would lie at exactly the glance the form
+  factor exists to serve. Launch and reveal are one act here. The cost
+  is bounded by the scope above: the key is this app's own, created by
+  and granted to this app's code identity, so the prompt arrives once
+  per identity rather than once per launch.
+- **The same refusal discipline as the panel.** A restore that fails
+  over an existing file leaves the surface usable but withholds the
+  licence to save, so a bad key or a damaged snapshot cannot overwrite
+  yesterday's page with today's empty one. A refused save at quit is an
+  alert, not a silent loss.
+- **Still no chips, no promotion, no network.** Persistence was the one
+  authority argued for here. The rest of the v0 absences stand.
+
+This graduates the backdrop out of exploration, which fires ADR-0010's
+first eject trigger: the seam wrapper is extracted to a shared
+`CompanionKit` target and both form factors sit on it.
+
 ## v0 scope — and what is deliberately absent
 
 v0 is **one page of visible ink with the standard TTL ladder**, resting
@@ -118,10 +162,13 @@ Absent, each on purpose:
   is an open question (№3), not a default. Consequence: the boundary
   law holds trivially in this target — no sealed byte exists on either
   side of its seam.
-- **No persistence, no Keychain.** The backdrop starts empty; quit is
+- ~~**No persistence, no Keychain.** The backdrop starts empty; quit is
   total amnesia (the core zeroizes on drop). It stores nothing, so it
   can never raise a prompt, and it cannot fight the panel app over the
-  state file. Exploration targets start with less authority (ADR-0010).
+  state file. Exploration targets start with less authority
+  (ADR-0010).~~ **Superseded by the persistence amendment above.** The
+  no-fighting half of the reasoning survives it: the backdrop still
+  never touches the panel's state file or its Keychain service.
 - **No promotion, no network.** The exit ramp stays in the panel until
   the backdrop earns it by an amendment here.
 - **No ledger.** An expired page is silently replaced by a fresh empty
@@ -189,9 +236,13 @@ and needs the project's hand-verification pass on real hardware:
 3. **Chip faces on the backdrop.** If chips ever appear, is even the
    mechanical excerpt too much standing exposure? A count-only face
    ("3 sealed items, 2h") may be the ceiling.
-4. **Shared pages across form factors.** Two apps are two stores
-   (ADR-0010). If the backdrop earns persistence, does it share the
-   panel's sealed state or keep its own? Core-level question.
+4. ~~**Shared pages across form factors.**~~ **Settled by the
+   persistence amendment: its own.** The backdrop seals to its own file
+   under its own Keychain service, and two apps remain two stores. What
+   stays open is the harder question underneath, which the amendment
+   did not touch: whether the *same* page should ever appear in both
+   form factors at once. That needs a single owning process or a shared
+   store with locking, and it is core-level work, never shell work.
 5. **Idle redaction.** Should resting ink dim to illegibility (or to
    first-line-only) after N minutes untouched, as a shoulder-surfing
    backstop? It trades away the entire point of ambience; perhaps a

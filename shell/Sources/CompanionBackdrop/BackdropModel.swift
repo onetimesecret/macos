@@ -1,6 +1,7 @@
 import AppKit
 import CompanionKit
 import Foundation
+import os
 
 /// The backdrop's view model: one page of visible ink, its clock, and
 /// the stance the surface is in. It follows the panel's frugality
@@ -69,15 +70,93 @@ final class BackdropModel: ObservableObject {
         redrawTimer?.invalidate()
     }
 
-    /// Launch: conjure the page (no Keychain, no state file — the
-    /// backdrop starts empty by design) and start the clocks.
+    /// Launch: open yesterday's page, conjure one if there was none,
+    /// and start the clocks.
+    ///
+    /// The panel defers its restore to the first reveal so that
+    /// launching at login never raises a Keychain prompt for a window
+    /// nobody asked to see (ADR-0004). This surface has no such moment
+    /// to defer to: it is on screen from launch, and a resting card
+    /// showing an empty page it does not actually hold would be a lie
+    /// told at exactly the glance the form factor exists to serve.
+    /// Launch and reveal are one act here, so the restore rides it.
     func start() {
         guard !started else { return }
         started = true
+        loadState()
         ensureSheet()
         refresh()
         startRedraw()
     }
+
+    /// Open the sealed file, and decide whether this session may write
+    /// one back. A missing file is a fresh start and keeps the licence
+    /// (nothing exists to protect); an existing file that will not open
+    /// leaves the surface usable but unlicensed, so quitting cannot
+    /// overwrite yesterday's page with today's empty consolation.
+    private func loadState() {
+        let path = Self.stateFileURL.path
+        let fileExists = FileManager.default.fileExists(atPath: path)
+        let restored = core.persistRestore(from: path)
+        saveLicence = Self.grantsSaveLicence(fileExists: fileExists, restored: restored)
+        if !saveLicence {
+            Self.logger.error(
+                "restore failed over an existing state file; withholding the quit-save licence"
+            )
+            return
+        }
+        if let id = core.sheets().first?.id {
+            ink = core.documentInk(sheet: id)
+        }
+    }
+
+    /// The licence's truth table, shared in shape with the panel's: the
+    /// core folds "no file yet" and "refused" into one false, and the
+    /// file's presence on disk is what tells them apart.
+    nonisolated static func grantsSaveLicence(fileExists: Bool, restored: Bool) -> Bool {
+        restored || !fileExists
+    }
+
+    /// Quit: seal the page into the state file. Returns true when the
+    /// file is settled, written or deliberately left alone; false means
+    /// the save was attempted and refused, and this session's page will
+    /// not survive.
+    ///
+    /// A session that never started never loaded, and must not overwrite
+    /// a good file with an empty store.
+    @discardableResult
+    func saveState() -> Bool {
+        guard started, saveLicence else { return true }
+        let url = Self.stateFileURL
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        let saved = core.persistSave(to: url.path)
+        if !saved {
+            Self.logger.error("quit-save refused; the sealed state file was not rewritten")
+        }
+        return saved
+    }
+
+    /// Where the sealed page rests between runs. The backdrop's own
+    /// directory, never the panel's (ADR-0010): two form factors, two
+    /// stores, and neither one reads the other's.
+    nonisolated static var stateFileURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("CompanionBackdrop", isDirectory: true)
+            .appendingPathComponent("state.sealed")
+    }
+
+    /// The persistence trail in the unified log: refusals only, never
+    /// content — the file is ciphertext and these lines carry only what
+    /// happened to it.
+    private static let logger = Logger(
+        subsystem: BackdropCore.credentialService, category: "persistence"
+    )
+
+    /// The licence `saveState` requires: a restore that failed over an
+    /// existing file leaves the session usable but unlicensed.
+    private var saveLicence = false
 
     // MARK: Stance
 
