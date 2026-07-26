@@ -14,16 +14,23 @@ let package = Package(
             name: "CompanionCore",
             path: "../bindings/CompanionCore.xcframework"
         ),
-        // The shared seam wrapper. ADR-0010 let the two form factors
-        // carry a copy each while the backdrop was an exploration, and
-        // named the extraction as what happens when a sibling
-        // graduates. The backdrop gaining persistence graduated it, so
-        // both form factors sit on this one wrapper now.
+        // Everything both form factors are: the seam wrapper, the page
+        // model, and the views that render pages, chips, the ledger and
+        // the exit ramp. ADR-0010 let the two targets carry a copy each
+        // while the backdrop was an exploration, and named the
+        // extraction as what happens when a sibling graduates.
+        // Persistence graduated it once, for the wrapper; feature parity
+        // graduated the rest. What is left in a form factor's own target
+        // is its window and its posture.
         .target(
             name: "CompanionKit",
             dependencies: ["CompanionCore"],
             path: "Sources/CompanionKit"
         ),
+        // The shared code's tests, which is now every unit-testable
+        // decision either app makes. The form-factor targets keep only
+        // AppKit plumbing, which the project tests by hand on hardware
+        // (docs/hardware-verification.md) rather than by mocking.
         .testTarget(
             name: "CompanionKitTests",
             dependencies: ["CompanionKit"],
@@ -33,11 +40,6 @@ let package = Package(
             name: "CompanionApp",
             dependencies: ["CompanionKit"],
             path: "Sources/CompanionApp"
-        ),
-        .testTarget(
-            name: "CompanionAppTests",
-            dependencies: ["CompanionApp"],
-            path: "Tests/CompanionAppTests"
         ),
         // The background-surface form factor (ADR-0010): a sibling
         // target over the same core, exploring the desktop-canvas

@@ -1,12 +1,15 @@
-import CompanionKit
 import SwiftUI
 
 /// The bottom-edge tab strip, Excel-anchored (docs/spec/04): one tab
 /// per page carrying its own gauge, a + for a new page, and the
 /// permanent dashed ◌ ledger tab at the right end. Click selects;
 /// double-click holds the clock; drag reorders; ✕ on hover closes.
-struct TabStripView: View {
-    @ObservedObject var model: WindowModel
+public struct TabStripView: View {
+    @ObservedObject var model: PageModel
+
+    public init(model: PageModel) {
+        self.model = model
+    }
 
     /// Each tab's frame in the strip's space, kept fresh by preference
     /// so a drag knows which slot the pointer is over. A plain mouse
@@ -14,7 +17,7 @@ struct TabStripView: View {
     /// panel never grants the latter its session.
     @State private var tabFrames: [UInt64: CGRect] = [:]
 
-    var body: some View {
+    public var body: some View {
         HStack(spacing: 2) {
             ForEach(model.sheets) { sheet in
                 SheetTab(
@@ -132,7 +135,7 @@ struct TabStripView: View {
 private struct SheetTab: View {
     let sheet: SheetSummary
     let selected: Bool
-    @ObservedObject var model: WindowModel
+    @ObservedObject var model: PageModel
 
     @State private var hovering = false
 
@@ -222,12 +225,18 @@ private struct TabFramesKey: PreferenceKey {
 /// A tab's gauge: the page's remaining life as geometry. Ember with a
 /// hatched texture under one hour — urgency is never colour-only; a
 /// held clock draws dashed — state as geometry (docs/spec/04).
-struct GaugeBar: View {
+public struct GaugeBar: View {
     let fraction: Double
     let paused: Bool
     let lastHour: Bool
 
-    var body: some View {
+    public init(fraction: Double, paused: Bool, lastHour: Bool) {
+        self.fraction = fraction
+        self.paused = paused
+        self.lastHour = lastHour
+    }
+
+    public var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width * max(0, min(1, fraction))
             ZStack(alignment: .leading) {

@@ -1,5 +1,4 @@
 import AppKit
-import CompanionKit
 import SwiftUI
 
 /// The page: a little text file of **ink** (visible, editable text) and
@@ -12,15 +11,20 @@ import SwiftUI
 /// the selection or the current line; a drop from outside seals from
 /// the drag pasteboard. Nothing is sealed without a gesture, and
 /// nothing sealed ever renders.
-struct InkEditorView: NSViewRepresentable {
-    @ObservedObject var model: WindowModel
+public struct InkEditorView: NSViewRepresentable {
+    @ObservedObject var model: PageModel
     let sheetID: UInt64
 
-    func makeCoordinator() -> Coordinator {
+    public init(model: PageModel, sheetID: UInt64) {
+        self.model = model
+        self.sheetID = sheetID
+    }
+
+    public func makeCoordinator() -> Coordinator {
         Coordinator(model: model)
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    public func makeNSView(context: Context) -> NSScrollView {
         // Explicit TextKit 1 stack: chips render through
         // NSTextAttachmentCell, and swapping pages swaps the storage
         // under one layout manager (`replaceTextStorage`).
@@ -83,7 +87,7 @@ struct InkEditorView: NSViewRepresentable {
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    public func updateNSView(_ scroll: NSScrollView, context: Context) {
         let coordinator = context.coordinator
         guard let textView = scroll.documentView as? InkTextView else { return }
         model.activeEditor = textView
@@ -129,8 +133,8 @@ struct InkEditorView: NSViewRepresentable {
     // MARK: - Coordinator
 
     @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        let model: WindowModel
+    public final class Coordinator: NSObject, NSTextViewDelegate {
+        let model: PageModel
         weak var textView: InkTextView?
         var currentSheet: UInt64?
 
@@ -147,7 +151,7 @@ struct InkEditorView: NSViewRepresentable {
         /// this gate lets the common pass skip the dictionary filters.
         private var lastLiveSheets: Set<UInt64> = []
 
-        init(model: WindowModel) {
+        init(model: PageModel) {
             self.model = model
         }
 
@@ -295,14 +299,14 @@ struct InkEditorView: NSViewRepresentable {
         /// simply follows `currentSheet` across storage swaps — ⌘Z
         /// after a switch rewrites the page it was typed on, never a
         /// neighbour (ADR-0006).
-        func undoManager(for view: NSTextView) -> UndoManager? {
+        public func undoManager(for view: NSTextView) -> UndoManager? {
             guard let sheet = currentSheet else { return nil }
             return model.undoManager(for: sheet)
         }
 
         // MARK: Editing
 
-        func textDidChange(_ notification: Notification) {
+        public func textDidChange(_ notification: Notification) {
             restyle()
             pushSync()
         }
@@ -416,7 +420,7 @@ struct InkEditorView: NSViewRepresentable {
 
         // MARK: Chip actions — hover/click reveals actions, never content
 
-        func textView(
+        public func textView(
             _ view: NSTextView,
             clickedOn cell: NSTextAttachmentCellProtocol,
             in cellFrame: NSRect,
@@ -671,10 +675,10 @@ final class ChipCell: NSTextAttachmentCell {
 /// The page's type ramp: monospaced ink; headings by weight and size,
 /// their markup dimmed in place (docs/spec/04).
 @MainActor
-enum InkStyle {
-    static let baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+public enum InkStyle {
+    public static let baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
-    static func headingFont(level: Int) -> NSFont {
+    public static func headingFont(level: Int) -> NSFont {
         switch level {
         case 1: NSFont.monospacedSystemFont(ofSize: 17, weight: .semibold)
         case 2: NSFont.monospacedSystemFont(ofSize: 15, weight: .semibold)
@@ -685,7 +689,7 @@ enum InkStyle {
 
     /// `### deploy friday` → (level 3, markerLength 4). Scope for rev C
     /// is headings only; inline emphasis is deliberately deferred.
-    static func headingMarker(of line: String) -> (level: Int, length: Int)? {
+    public static func headingMarker(of line: String) -> (level: Int, length: Int)? {
         var level = 0
         var index = line.startIndex
         while index < line.endIndex, line[index] == "#" {

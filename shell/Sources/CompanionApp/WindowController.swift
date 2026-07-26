@@ -1,4 +1,5 @@
 import AppKit
+import CompanionKit
 import Combine
 import SwiftUI
 
@@ -12,7 +13,7 @@ import SwiftUI
 @MainActor
 final class WindowController: NSObject, NSWindowDelegate {
     private let panel: NSPanel
-    private let model: WindowModel
+    private let model: PageModel
     private var observers: [AnyCancellable] = []
 
     // nonisolated(unsafe): deinit is always nonisolated, even on a
@@ -21,7 +22,7 @@ final class WindowController: NSObject, NSWindowDelegate {
     // and every other touch runs on the main actor.
     private nonisolated(unsafe) var screenObserver: NSObjectProtocol?
 
-    init(model: WindowModel) {
+    init(model: PageModel) {
         self.model = model
         let hosting = NSHostingController(
             rootView: WindowRootView(model: model)

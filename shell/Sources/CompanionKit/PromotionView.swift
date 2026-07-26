@@ -6,9 +6,14 @@ import SwiftUI
 /// boundary is explicit — nothing leaves until "Create link". Failure
 /// is inline with retry; success says the link is on the clipboard and
 /// offers Burn local copy.
-struct PromotionView: View {
-    @ObservedObject var model: WindowModel
+public struct PromotionView: View {
+    @ObservedObject var model: PageModel
     let draft: PromotionDraft
+
+    public init(model: PageModel, draft: PromotionDraft) {
+        self.model = model
+        self.draft = draft
+    }
 
     /// The ladder as (seconds, label) — the same rungs the countdown
     /// speaks (docs/spec/04).
@@ -17,7 +22,7 @@ struct PromotionView: View {
         (86400, "24 hours"), (259_200, "3 days"), (604_800, "7 days"),
     ]
 
-    var body: some View {
+    public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
             if draft.receiptId != nil {

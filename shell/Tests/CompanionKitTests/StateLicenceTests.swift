@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import CompanionApp
+@testable import CompanionKit
 
 /// The quit-save licence's truth table (App.swift). The core folds
 /// "no file yet" and "refused" into one false from
@@ -11,17 +11,17 @@ final class StateLicenceTests: XCTestCase {
     func testFreshStartEarnsTheLicence() {
         // No file on disk: nothing exists to protect, and the session
         // owns its future.
-        XCTAssertTrue(WindowModel.grantsSaveLicence(fileExists: false, restored: false))
+        XCTAssertTrue(PageModel.grantsSaveLicence(fileExists: false, restored: false))
     }
 
     func testRestoredSessionKeepsTheLicence() {
-        XCTAssertTrue(WindowModel.grantsSaveLicence(fileExists: true, restored: true))
+        XCTAssertTrue(PageModel.grantsSaveLicence(fileExists: true, restored: true))
     }
 
     func testRefusedRestoreWithholdsTheLicence() {
         // The file exists but would not open — Keychain key denied or
         // missing, damaged snapshot. Quit must not overwrite it with
         // this session's consolation page.
-        XCTAssertFalse(WindowModel.grantsSaveLicence(fileExists: true, restored: false))
+        XCTAssertFalse(PageModel.grantsSaveLicence(fileExists: true, restored: false))
     }
 }

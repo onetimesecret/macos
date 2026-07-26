@@ -1,14 +1,17 @@
-import CompanionKit
 import SwiftUI
 
 /// The ledger (⌘0): dead pages as dimmed, read-only ink — records, not
 /// pages. A chip appears only as its excerpt, struck through and
 /// labelled "zeroized"; the sealed bytes died with the page. Session-
 /// bound, capacity a dozen; Esc leaves (docs/spec/04).
-struct LedgerView: View {
+public struct LedgerView: View {
     let entries: [LedgerEntry]
 
-    var body: some View {
+    public init(entries: [LedgerEntry]) {
+        self.entries = entries
+    }
+
+    public var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 if entries.isEmpty {

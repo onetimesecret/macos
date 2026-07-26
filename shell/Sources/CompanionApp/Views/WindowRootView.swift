@@ -8,7 +8,7 @@ import SwiftUI
 /// gauge, and the bottom-edge tab strip. An ember border shows exactly
 /// while the page holds the keyboard.
 struct WindowRootView: View {
-    @ObservedObject var model: WindowModel
+    @ObservedObject var model: PageModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,7 +18,7 @@ struct WindowRootView: View {
             Divider()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if WindowModel.shouldShowPasteboardOffer(
+            if PageModel.shouldShowPasteboardOffer(
                 boardHolds: model.pasteboardOffer,
                 hasPage: model.selection != nil,
                 ledgerShowing: model.showingLedger
@@ -354,7 +354,7 @@ private final class KeyGrantingClickView: NSView {
     /// model's sheet count are both consulted live.
     private func claimFirstResponderIfEntitled() {
         guard let window else { return }
-        guard WindowModel.shouldOfferEnterCreate(
+        guard PageModel.shouldOfferEnterCreate(
             sheetsEmpty: sheetsEmpty(), holdsKeys: window.isKeyWindow
         ) else { return }
         window.makeFirstResponder(self)
