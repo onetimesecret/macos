@@ -16,10 +16,13 @@ enum BackdropStance: Equatable {
     /// borrows it exactly as long as the user is typing.
     case raised
 
-    /// Where the window sits in the stacking order.
-    var level: NSWindow.Level {
+    /// Where the window sits in the stacking order. The pin lifts the
+    /// resting pane above normal windows without changing its
+    /// passivity: a pinned rest still ignores the mouse and refuses
+    /// the keyboard, so the hard split's central lesson holds.
+    func level(pinned: Bool) -> NSWindow.Level {
         switch self {
-        case .resting: .backdropDesktop
+        case .resting: pinned ? .floating : .backdropDesktop
         case .raised: .floating
         }
     }
@@ -51,9 +54,18 @@ enum BackdropStance: Equatable {
     /// that holds the keyboard must be visible where the user is
     /// looking; keys landing on an off-Space window would silently
     /// swallow ink.
-    var collectionBehavior: NSWindow.CollectionBehavior {
+    ///
+    /// A pinned rest joins every Space instead, full-screen ones
+    /// included: the pin exists to keep the card readable beside
+    /// whatever the user is writing, and a pin that vanished on a
+    /// Space switch would fail its one purpose. `.ignoresCycle` stays;
+    /// the window cycle must never land on a mouse-transparent pane.
+    func collectionBehavior(pinned: Bool) -> NSWindow.CollectionBehavior {
         switch self {
-        case .resting: [.stationary, .ignoresCycle, .fullScreenNone]
+        case .resting:
+            pinned
+                ? [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+                : [.stationary, .ignoresCycle, .fullScreenNone]
         case .raised: [.moveToActiveSpace, .fullScreenAuxiliary]
         }
     }

@@ -29,9 +29,23 @@ final class BackdropModel: ObservableObject {
     /// service and state file by `FormFactor.backdrop`.
     let pages: PageModel
 
-    /// Where the geometry rests between runs, injectable so tests can
-    /// point at a throwaway domain.
-    private let geometryDefaults: UserDefaults
+    /// Whether the resting card floats above other windows (pinned) or
+    /// lies at the desktop behind them (the default, the form factor's
+    /// native posture). The pin changes altitude and nothing else: a
+    /// pinned rest still ignores the mouse and refuses the keyboard,
+    /// which is what makes it safe to read beside while writing in
+    /// another window. Persisted; the window controller follows it.
+    /// The panel's `floatsOnTop` is deliberately not reused: that bool
+    /// levels a normal window, this one levels a stance.
+    @Published var pinned: Bool {
+        didSet { defaults.set(pinned, forKey: Self.pinnedKey) }
+    }
+    private static let pinnedKey = "restingPinned"
+
+    /// Where the surface's own settings (the card's geometry, the pin)
+    /// rest between runs, injectable so tests can point at a throwaway
+    /// domain.
+    private let defaults: UserDefaults
 
     /// The usable region the controller last reported, in the pane's
     /// own top-leading coordinates: the screen minus the menu bar and
@@ -49,8 +63,9 @@ final class BackdropModel: ObservableObject {
     private var started = false
 
     init(defaults: UserDefaults = FormFactor.settingsDefaults) {
-        geometryDefaults = defaults
+        self.defaults = defaults
         geometry = BackdropGeometry.load(from: defaults)
+        pinned = defaults.bool(forKey: Self.pinnedKey)
         pages = PageModel(formFactor: .backdrop, defaults: defaults)
     }
 
@@ -196,7 +211,7 @@ final class BackdropModel: ObservableObject {
     private func applyGeometry(_ new: BackdropGeometry) {
         guard new != geometry else { return }
         geometry = new
-        new.save(to: geometryDefaults)
+        new.save(to: defaults)
     }
 
     /// A drag or resize by hand retires the zoom: the card is where the

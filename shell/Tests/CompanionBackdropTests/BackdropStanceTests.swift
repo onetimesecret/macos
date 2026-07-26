@@ -16,14 +16,14 @@ final class BackdropStanceTests: XCTestCase {
         // the desktop level, and a surface parked at that same level
         // can resolve behind it — invisible on a bare desktop.
         XCTAssertEqual(
-            BackdropStance.resting.level.rawValue,
+            BackdropStance.resting.level(pinned: false).rawValue,
             Int(CGWindowLevelForKey(.desktopWindow)) + 1
         )
     }
 
     func testRestingStaysBelowTheDesktopIcons() {
         XCTAssertLessThan(
-            BackdropStance.resting.level.rawValue,
+            BackdropStance.resting.level(pinned: false).rawValue,
             Int(CGWindowLevelForKey(.desktopIconWindow))
         )
     }
@@ -40,7 +40,7 @@ final class BackdropStanceTests: XCTestCase {
 
     func testRestingIsDesktopFurnitureAcrossSpaces() {
         XCTAssertEqual(
-            BackdropStance.resting.collectionBehavior,
+            BackdropStance.resting.collectionBehavior(pinned: false),
             [.stationary, .ignoresCycle, .fullScreenNone]
         )
     }
@@ -54,7 +54,7 @@ final class BackdropStanceTests: XCTestCase {
     // MARK: Raised — the panel model, borrowed for the moment of editing
 
     func testRaisedFloats() {
-        XCTAssertEqual(BackdropStance.raised.level, .floating)
+        XCTAssertEqual(BackdropStance.raised.level(pinned: false), .floating)
     }
 
     func testRaisedTakesTheMouse() {
@@ -73,7 +73,40 @@ final class BackdropStanceTests: XCTestCase {
         // A surface that holds the keyboard must be visible where the
         // user is looking — full-screen Spaces included.
         XCTAssertEqual(
-            BackdropStance.raised.collectionBehavior,
+            BackdropStance.raised.collectionBehavior(pinned: false),
+            [.moveToActiveSpace, .fullScreenAuxiliary]
+        )
+    }
+
+    // MARK: The pin, a resting altitude and nothing else
+
+    func testAPinnedRestFloatsAboveNormalWindows() {
+        XCTAssertEqual(BackdropStance.resting.level(pinned: true), .floating)
+    }
+
+    func testAPinnedRestStaysPassive() {
+        // Passivity is what makes the pin safe: the card can be read
+        // above another window while every click and keystroke still
+        // lands in that window. A pinned rest that took either would
+        // be a raise in disguise.
+        XCTAssertTrue(BackdropStance.resting.ignoresMouse)
+        XCTAssertFalse(BackdropStance.resting.acceptsKey)
+    }
+
+    func testAPinnedRestIsReadableOnEverySpace() {
+        // The pin exists to keep the card in view while the user
+        // writes elsewhere, full-screen apps included; a pin that
+        // vanished on a Space switch would fail its one purpose.
+        XCTAssertEqual(
+            BackdropStance.resting.collectionBehavior(pinned: true),
+            [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        )
+    }
+
+    func testThePinLeavesARaisedSurfaceAlone() {
+        XCTAssertEqual(BackdropStance.raised.level(pinned: true), .floating)
+        XCTAssertEqual(
+            BackdropStance.raised.collectionBehavior(pinned: true),
             [.moveToActiveSpace, .fullScreenAuxiliary]
         )
     }

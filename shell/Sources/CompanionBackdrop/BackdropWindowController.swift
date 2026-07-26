@@ -5,8 +5,8 @@ import os
 
 /// The background surface's window: a borderless pane covering the
 /// primary screen, resting at desktop level (above the wallpaper, below
-/// the icons and every normal window) and raised to floating for a
-/// moment of editing. The mechanics follow Plash's recovered recipe and
+/// the icons and every normal window; the pin lifts a rest to floating
+/// instead) and raised to floating for a moment of editing. The mechanics follow Plash's recovered recipe and
 /// the panel's focus law: the stance split lives in `BackdropStance`;
 /// this controller only applies it.
 @MainActor
@@ -30,6 +30,19 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // The stance is the single source of truth; the window follows.
         model.$stance
             .sink { [weak self] stance in self?.apply(stance) }
+            .store(in: &observers)
+        // The pin re-altitudes the current stance in place: level and
+        // Space membership follow, but none of the stance choreography
+        // (key relay, activation hand-back, ordering) runs for a mere
+        // altitude change. The closure's value, not the model's: a
+        // @Published emits on willSet, before the property lands.
+        model.$pinned
+            .dropFirst()
+            .sink { [weak self] pinned in
+                guard let self else { return }
+                panel.level = model.stance.level(pinned: pinned)
+                panel.collectionBehavior = model.stance.collectionBehavior(pinned: pinned)
+            }
             .store(in: &observers)
         // Debug-only escape hatch: the Settings toggle (seeded by
         // COMPANION_ALLOW_CAPTURE=1 for scripted runs) lifts the
@@ -98,8 +111,8 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // time it is made key.
         panel.isInteractive = stance.acceptsKey
         panel.ignoresMouseEvents = stance.ignoresMouse
-        panel.level = stance.level
-        panel.collectionBehavior = stance.collectionBehavior
+        panel.level = stance.level(pinned: model.pinned)
+        panel.collectionBehavior = stance.collectionBehavior(pinned: model.pinned)
         switch stance {
         case .raised:
             // A summon means *here*: if the surface is up on some other

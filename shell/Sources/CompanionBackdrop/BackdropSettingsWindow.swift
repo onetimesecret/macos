@@ -37,11 +37,12 @@ final class BackdropSettingsWindowController {
             window.center()
             self.window = window
         }
-        // A raised card floats above normal windows; a .normal-level
-        // Settings window would open key yet invisible beneath it, since
-        // level beats key status for stacking. Match the card's current
-        // level so ordering front actually reveals it.
-        window?.level = model.stance == .raised ? .floating : .normal
+        // A raised card floats above normal windows, and so does a
+        // pinned resting one; a .normal-level Settings window would
+        // open key yet invisible beneath it, since level beats key
+        // status for stacking. Match the card's current level so
+        // ordering front actually reveals it.
+        window?.level = model.stance == .raised || model.pinned ? .floating : .normal
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

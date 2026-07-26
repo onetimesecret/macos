@@ -161,6 +161,7 @@ struct BackdropRootView: View {
             if let sheet = pages.selectedSheet, !pages.showingLedger {
                 CountdownButton(sheet: sheet) { pages.cycleRung(sheet.id) }
             }
+            pinToggle
         }
         // The header doubles as the card's handle while raised. The
         // gesture rides the header itself, above the pane's tap
@@ -176,6 +177,26 @@ struct BackdropRootView: View {
         .simultaneousGesture(
             TapGesture(count: 2).onEnded { if raised { model.toggleZoom() } }
         )
+    }
+
+    /// The resting altitude, as a real `Toggle` so VoiceOver announces
+    /// a switch with on and off state (the panel's pin, ported).
+    /// Pinned, the card rests floating above other windows, readable
+    /// beside whatever the user is writing; it stays mouse-transparent
+    /// there, so the toggle itself is reachable only while raised. The
+    /// glyph shows in both stances: a floating rest should say why it
+    /// floats.
+    private var pinToggle: some View {
+        Toggle(isOn: $model.pinned) {
+            Image(systemName: model.pinned ? "pin.fill" : "pin")
+                .font(.system(size: 9))
+        }
+        .toggleStyle(.button)
+        .controlSize(.small)
+        .help(model.pinned
+            ? "Rests above other windows; click to send the card back to the desktop"
+            : "Rests at the desktop; click to keep the card above other windows")
+        .accessibilityLabel(Text("Keep resting card above other windows"))
     }
 
     /// The header drag: live translation while the mouse is down, one
