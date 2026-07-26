@@ -117,3 +117,46 @@ not.)
   becomes a core-level design problem (single daemon process, or a
   shared sealed store with locking) and this ADR's
   two-instances-two-stores stance is superseded.
+
+## Amendment 1: two apps, not one app with two windows (2026-07-25)
+
+The decision above argues why the second form factor arrived as a
+sibling target rather than a branch or a restructuring. It never states
+why two postures should keep shipping as two apps now that both are
+products, and "one app owning both windows" is the consolidation an
+outside reader would reach for. The answer was implicit in the
+consequences; this amendment states it once.
+
+A posture is made of per-app properties, and the two postures need
+opposite values for each of them:
+
+- **Activation policy is per process.** The panel is an accessory
+  app: no Dock icon, no ⌘Tab card, invisible between uses. The
+  backdrop is a regular app: Dock icon, ⌘Tab membership, activation as
+  a summon route. One process holds one policy at a time. A merged app
+  would either flip the policy at runtime as one window or the other
+  came forward, making both postures intermittent, or freeze one
+  posture out entirely.
+- **The permission system addresses bundle ids.** TCC grants, per-app
+  capture pickers, and Automation consents accrue to the app, not the
+  window. A merged app pools the two surfaces' authority into one
+  grant the user cannot inspect or revoke separately. (Capture
+  exclusion itself is per window and would survive a merge; the
+  separate addressability would not.)
+- **Launch stories differ.** The backdrop exists by being at the
+  desktop from login; the panel is summoned when wanted. Launch at
+  login is a per-app choice, so a merged app imposes one story on both
+  surfaces.
+- **Lifecycles are independent.** Each app quits, crashes, and updates
+  alone: the dogfood channel replaces one while the other keeps
+  running, and each runs its own quit-time persistence snapshot. The
+  two-instances-two-stores stance (own Keychain service, own state
+  file) is enforced by process identity rather than by discipline
+  inside a shared process.
+
+The consolidation would also buy almost nothing. After the CompanionKit
+extraction each target holds only its window and its posture, so a
+merge would deduplicate exactly the part that is genuinely different.
+And if state sharing ever fires the last eject trigger above, the
+likely answer is still two shells over a core-side store or daemon, not
+one app.
