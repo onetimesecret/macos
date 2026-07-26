@@ -35,32 +35,30 @@ struct BackdropRootView: View {
     private var raised: Bool { model.stance == .raised }
 
     var body: some View {
-        GeometryReader { pane in
-            let placed = displayedGeometry(in: pane.size)
-            ZStack(alignment: .topLeading) {
-                // The raised window spans the screen, so without this a
-                // click beside the card would be swallowed by our own
-                // transparent pane. Clicking outside the card rests the
-                // surface instead, the click's plain meaning. (While
-                // resting the window ignores the mouse entirely, so the
-                // gesture is unreachable there.)
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if raised { model.rest() }
-                    }
-                card
-                    .frame(width: placed.width, height: placed.height)
-                    .offset(x: placed.origin.x, y: placed.origin.y)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            // The drag gestures measure in this space, not their own
-            // view's: a grip moves with the card it is resizing, so a
-            // translation read in the grip's local space re-subtracts
-            // each delta already applied and the edge falls to half the
-            // pointer's speed. The pane holds still; measure there.
-            .coordinateSpace(name: Self.paneSpace)
+        let placed = displayedGeometry()
+        ZStack(alignment: .topLeading) {
+            // The raised window spans the screen, so without this a
+            // click beside the card would be swallowed by our own
+            // transparent pane. Clicking outside the card rests the
+            // surface instead, the click's plain meaning. (While
+            // resting the window ignores the mouse entirely, so the
+            // gesture is unreachable there.)
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if raised { model.rest() }
+                }
+            card
+                .frame(width: placed.width, height: placed.height)
+                .offset(x: placed.origin.x, y: placed.origin.y)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // The drag gestures measure in this space, not their own
+        // view's: a grip moves with the card it is resizing, so a
+        // translation read in the grip's local space re-subtracts
+        // each delta already applied and the edge falls to half the
+        // pointer's speed. The pane holds still; measure there.
+        .coordinateSpace(name: Self.paneSpace)
         // The keyboard map is mounted only while raised: a resting
         // surface refuses key status outright, so a map it carried
         // could never fire, and not carrying one says so structurally.
@@ -77,17 +75,17 @@ struct BackdropRootView: View {
 
     /// The geometry to draw right now: the settled model value with any
     /// in-flight drag or resize applied, run through the same pure
-    /// clamp that will judge the commit. Live feedback and the settled
-    /// result therefore agree; the card never previews a place it will
-    /// not be allowed to keep.
-    private func displayedGeometry(in paneSize: CGSize) -> BackdropGeometry {
+    /// clamp — against the same pane rect — that will judge the
+    /// commit. Live feedback and the settled result therefore agree;
+    /// the card never previews a place it will not be allowed to keep.
+    private func displayedGeometry() -> BackdropGeometry {
         var proposed = model.geometry
         if let resizingEdge {
             proposed = resizingEdge.resized(proposed, by: resizeTranslation)
         }
         proposed.origin.x += dragTranslation.width
         proposed.origin.y += dragTranslation.height
-        return proposed.clamped(to: paneSize)
+        return proposed.clamped(to: model.pane)
     }
 
     private var card: some View {
