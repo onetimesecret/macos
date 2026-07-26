@@ -78,7 +78,18 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         panel.setFrame(screen.frame, display: true)
         // The pane changed shape, so the card's geometry may now point
         // off the edge of it; the model pulls the card back on screen.
-        model.reclamp(paneSize: screen.frame.size)
+        // The window spans the whole screen, but the card is confined
+        // to the visible frame — the menu bar and Dock outrank a
+        // floating card, and a header parked under the menu bar could
+        // never be clicked again. AppKit's bottom-left frames convert
+        // to the pane's top-leading coordinates here.
+        let usable = CGRect(
+            x: screen.visibleFrame.minX - screen.frame.minX,
+            y: screen.frame.maxY - screen.visibleFrame.maxY,
+            width: screen.visibleFrame.width,
+            height: screen.visibleFrame.height
+        )
+        model.reclamp(pane: usable)
     }
 
     private func apply(_ stance: BackdropStance) {

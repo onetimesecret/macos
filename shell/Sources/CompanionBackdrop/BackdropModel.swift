@@ -33,10 +33,15 @@ final class BackdropModel: ObservableObject {
     /// point at a throwaway domain.
     private let geometryDefaults: UserDefaults
 
-    /// The last pane size the controller reported. Until the first fit
-    /// arrives, an effectively boundless pane means clamping enforces
-    /// only the absolute bounds, never a spurious collapse to zero.
-    private var paneSize = CGSize(
+    /// The usable region the controller last reported, in the pane's
+    /// own top-leading coordinates: the screen minus the menu bar and
+    /// Dock strips, which a floating card cannot outrank. Until the
+    /// first fit arrives, an effectively boundless pane means clamping
+    /// enforces only the absolute bounds, never a spurious collapse to
+    /// zero. The views read this to clamp their live previews by the
+    /// same rule that will judge the commit.
+    private(set) var pane = CGRect(
+        x: 0, y: 0,
         width: CGFloat.greatestFiniteMagnitude,
         height: CGFloat.greatestFiniteMagnitude
     )
@@ -141,40 +146,43 @@ final class BackdropModel: ObservableObject {
     /// A drag or resize settled: clamp the proposal to the known pane,
     /// persist, publish.
     func setGeometry(_ proposed: BackdropGeometry) {
-        applyGeometry(proposed.clamped(to: paneSize))
+        applyGeometry(proposed.clamped(to: pane))
     }
 
     /// The Settings escape hatch: back to the layout the card shipped
     /// with, still clamped in case the current display is smaller than
     /// the default assumes.
     func resetGeometry() {
-        applyGeometry(BackdropGeometry.default.clamped(to: paneSize))
+        applyGeometry(BackdropGeometry.default.clamped(to: pane))
     }
 
     /// The controller re-fit the pane: a display disconnect or a
     /// resolution change must pull a now-stranded card back within
     /// reach of the new pane.
-    func reclamp(paneSize: CGSize) {
-        self.paneSize = paneSize
-        applyGeometry(geometry.clamped(to: paneSize))
+    func reclamp(pane: CGRect) {
+        self.pane = pane
+        applyGeometry(geometry.clamped(to: pane))
     }
 
     /// Double-click the header: the card takes the pane's full working
     /// height, and a second double-click returns it. The zoom verb
     /// every macOS window has, in the one dimension a card can spend.
     /// The restored geometry is remembered rather than recomputed, so
-    /// the return lands exactly where the card was.
+    /// the return lands exactly where the card was. Working height,
+    /// not screen height: the pane starts below the menu bar, so the
+    /// zoomed header stays where a double-click can still reach it to
+    /// come back down.
     func toggleZoom() {
         if let restored = zoomRestore {
             zoomRestore = nil
-            applyGeometry(restored.clamped(to: paneSize))
+            applyGeometry(restored.clamped(to: pane))
             return
         }
         zoomRestore = geometry
         var zoomed = geometry
-        zoomed.origin.y = 0
-        zoomed.height = paneSize.height
-        applyGeometry(zoomed.clamped(to: paneSize))
+        zoomed.origin.y = pane.minY
+        zoomed.height = pane.height
+        applyGeometry(zoomed.clamped(to: pane))
     }
 
     /// The geometry a zoom is holding for its return trip, if the card
