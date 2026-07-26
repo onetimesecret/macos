@@ -22,6 +22,8 @@
 	<string>CompanionBackdrop</string>
 	<key>CFBundleExecutable</key>
 	<string>CompanionBackdrop</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.onetimesecret.companion.backdrop</string>
 	<key>CFBundleInfoDictionaryVersion</key>

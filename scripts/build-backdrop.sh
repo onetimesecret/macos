@@ -71,6 +71,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/CompanionBackdrop"
 cp shell/Backdrop-Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
+scripts/build-icons.sh
+cp dist/icons/CompanionBackdrop.icns "$APP/Contents/Resources/AppIcon.icns"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
 

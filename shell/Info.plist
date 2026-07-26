@@ -23,6 +23,8 @@
 	<string>CompanionApp</string>
 	<key>CFBundleExecutable</key>
 	<string>CompanionApp</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.onetimesecret.companion</string>
 	<key>CFBundleInfoDictionaryVersion</key>
