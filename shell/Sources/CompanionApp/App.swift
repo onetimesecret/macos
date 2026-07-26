@@ -128,6 +128,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let event = NSApp.currentEvent
         if event?.type == .rightMouseUp {
             let menu = NSMenu()
+            // "Which build am I on" answered at a glance: the stamped
+            // bundle version (which carries the git SHA on dogfood
+            // builds) alongside the core the binary actually linked.
+            // No action, so the menu leaves it disabled: it is a fact,
+            // not a feature.
+            menu.addItem(
+                withTitle: Self.versionTitle(
+                    core: CompanionClient.version,
+                    bundleVersion: Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+                ),
+                action: nil,
+                keyEquivalent: ""
+            )
+            menu.addItem(.separator())
             menu.addItem(
                 withTitle: "About CompanionApp",
                 action: #selector(showAbout),
@@ -163,6 +177,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openSettings() {
         settings.show()
+    }
+
+    /// The tray menu's version line. A bare `swift run` has no bundle
+    /// version, so the core speaks for itself; a bundled build shows
+    /// the stamped version (build-app.sh appends the git SHA), and a
+    /// bundle whose version does not extend the core's own reveals a
+    /// stale xcframework instead of hiding it.
+    nonisolated static func versionTitle(core: String, bundleVersion: String?) -> String {
+        guard let bundleVersion else { return "core \(core)" }
+        if bundleVersion.hasPrefix(core) {
+            return "build \(bundleVersion)"
+        }
+        return "build \(bundleVersion), core \(core)"
     }
 
     /// The standard About panel, dressed up: the colour ㊙️ at icon
