@@ -128,6 +128,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let event = NSApp.currentEvent
         if event?.type == .rightMouseUp {
             let menu = NSMenu()
+            // "Which build am I on" answered at a glance: the stamped
+            // bundle version (which carries the git SHA on dogfood
+            // builds) alongside the core the binary actually linked.
+            // No action, so the menu leaves it disabled: it is a fact,
+            // not a feature.
+            menu.addItem(
+                withTitle: Self.versionTitle(
+                    core: CompanionClient.version,
+                    bundleVersion: Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+                ),
+                action: nil,
+                keyEquivalent: ""
+            )
+            menu.addItem(.separator())
             menu.addItem(
                 withTitle: "About CompanionApp",
                 action: #selector(showAbout),
@@ -163,6 +177,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openSettings() {
         settings.show()
+    }
+
+    /// The tray menu's version line. A bare `swift run` has no bundle
+    /// version, so the core speaks for itself; a bundled build shows
+    /// the stamped version (build-app.sh appends the git SHA), and a
+    /// bundle whose version does not extend the core's own reveals a
+    /// stale xcframework instead of hiding it.
+    nonisolated static func versionTitle(core: String, bundleVersion: String?) -> String {
+        guard let bundleVersion else { return "core \(core)" }
+        if bundleVersion.hasPrefix(core) {
+            return "build \(bundleVersion)"
+        }
+        return "build \(bundleVersion), core \(core)"
     }
 
     /// The standard About panel, dressed up: the colour ㊙️ at icon
@@ -277,6 +304,18 @@ final class WindowModel: ObservableObject {
 
     /// The tab currently being drag-reordered, if any.
     @Published var draggingTab: UInt64?
+
+    /// The summon-time offer (ADR-0007 Amendment 1): the board holds
+    /// external content and the panel offers to take it. Set at each
+    /// reveal, withdrawn on hide and the moment a seal takes the
+    /// content — a snapshot of the board at summon, not a live watch
+    /// (the app never polls the pasteboard).
+    @Published private(set) var pasteboardOffer = false
+
+    /// Set by the editor's coordinator: the offer's button routes
+    /// through the same path as ⇧⌘V, so the chip lands at the caret
+    /// and this model never places document content itself.
+    var performSealedPaste: (() -> Void)?
 
     /// The inline promotion confirmation, when one is open.
     @Published var promotion: PromotionDraft?
@@ -833,14 +872,47 @@ final class WindowModel: ObservableObject {
 
     // MARK: Sealing — called by the editor, which places the chip
 
-    /// The sealed paste (⇧⌘V): the core reads the pasteboard itself and
-    /// the content lands as an opaque chip. Consent is the gesture.
+    /// The sealed paste (⇧⌘V): the core reads the pasteboard itself,
+    /// the content lands as an opaque chip, and the board is cleared
+    /// in the same operation (ADR-0007 Amendment 1) — the app drains
+    /// the pasteboard rather than avoiding it. Consent is the gesture.
+    /// A take that could not clear is said out loud: a paste that
+    /// leaves the secret on the board is the failure this route
+    /// exists to prevent.
     func sealPasteboard() -> ChipInfo? {
         notice = nil
         guard let sheet = selection else { return nil }
-        let chip = client.sealFromPasteboard(sheet: sheet)
-        if chip == nil { flash("nothing to seal") }
+        let (chip, cleared) = client.sealFromPasteboard(sheet: sheet)
+        guard let chip else {
+            flash("nothing to seal")
+            return nil
+        }
+        pasteboardOffer = false
+        flash(
+            cleared
+                ? "sealed; the clipboard is clear"
+                : "sealed, but the clipboard changed mid-take and was left untouched")
         return chip
+    }
+
+    /// Reveal-time check for the offer: consult the core's probe once
+    /// per reveal. Never a poll — the board is looked at exactly when
+    /// the panel comes forward.
+    func refreshPasteboardOffer() {
+        pasteboardOffer = client.pasteboardHasContent()
+    }
+
+    func withdrawPasteboardOffer() {
+        pasteboardOffer = false
+    }
+
+    /// Whether the offer row should show: the board must hold content
+    /// and a page must be there to take it; the ledger is a reading
+    /// surface, not an ingest one.
+    nonisolated static func shouldShowPasteboardOffer(
+        boardHolds: Bool, hasPage: Bool, ledgerShowing: Bool
+    ) -> Bool {
+        boardHolds && hasPage && !ledgerShowing
     }
 
     /// Drop-to-seal: the core reads the drag pasteboard itself; the

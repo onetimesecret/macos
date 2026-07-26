@@ -79,7 +79,9 @@ Choose terminology by what is defensible, not by what is aspirational:
 
 ## Amendment 1: paste is a supported ingress path
 
-- **Status:** proposed
+- **Status:** accepted, implemented 2026-07-25 (seal-from-pasteboard
+  clears the board in the same locked operation and reports a failed
+  clear; summoning the panel offers to take what is on the board)
 - **Date:** 2026-07-24
 
 Folded into this ADR rather than filed separately. The ADR is still

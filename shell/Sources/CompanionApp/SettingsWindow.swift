@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 /// Settings — one small window (docs/spec/04), Connection first: server
@@ -42,6 +43,42 @@ final class SettingsWindowController {
     }
 }
 
+/// Launch at login, through `SMAppService.mainApp` (macOS 13+). The
+/// registration belongs to exactly one bundle: the installed copy in
+/// /Applications. A dev build running from .build/ or dist/ must never
+/// claim the login item, or login would resurrect whichever build ran
+/// Settings last.
+enum LaunchAtLogin {
+    /// The guard, as a pure decision on the bundle's path so the rule
+    /// is testable without a bundle: only a copy installed under
+    /// /Applications may register.
+    nonisolated static func pathMayRegister(_ bundlePath: String) -> Bool {
+        bundlePath.hasPrefix("/Applications/")
+    }
+
+    static var mayRegister: Bool {
+        pathMayRegister(Bundle.main.bundleURL.path)
+    }
+
+    static var isEnabled: Bool {
+        SMAppService.mainApp.status == .enabled
+    }
+
+    /// Registration can land in `.requiresApproval`: macOS holds the
+    /// item disabled until the user approves it in System Settings.
+    static var awaitingApproval: Bool {
+        SMAppService.mainApp.status == .requiresApproval
+    }
+
+    static func set(enabled: Bool) throws {
+        if enabled {
+            try SMAppService.mainApp.register()
+        } else {
+            try SMAppService.mainApp.unregister()
+        }
+    }
+}
+
 /// Connection settings. The token field is write-only by design: what
 /// is stored can never be read back out of the Keychain into this UI —
 /// the placeholder just says one is held.
@@ -56,6 +93,8 @@ struct ConnectionSettingsView: View {
     @State private var statusIsError = false
     @State private var testing = false
     @State private var confirmingClear = false
+    @State private var launchAtLogin = false
+    @State private var loginStatus: String?
 
     var body: some View {
         Form {
@@ -85,6 +124,19 @@ struct ConnectionSettingsView: View {
                 }
             } header: {
                 Text("The token goes straight to the Keychain and is never shown again.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("Start at login", isOn: loginBinding)
+                    .disabled(!LaunchAtLogin.mayRegister)
+                if let loginStatus {
+                    Text(loginStatus)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Color.ember)
+                }
+            } header: {
+                Text(loginCaption)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -123,7 +175,35 @@ struct ConnectionSettingsView: View {
         (model.connection?.hasToken ?? false) ? "•••• stored in the Keychain" : "paste your API token"
     }
 
+    /// The toggle speaks to `SMAppService` directly; a refused
+    /// registration reverts the switch to the system's actual state
+    /// rather than showing a wish as a fact.
+    private var loginBinding: Binding<Bool> {
+        Binding(
+            get: { launchAtLogin },
+            set: { wanted in
+                do {
+                    try LaunchAtLogin.set(enabled: wanted)
+                    launchAtLogin = wanted
+                    loginStatus = wanted && LaunchAtLogin.awaitingApproval
+                        ? "waiting for approval under System Settings, Login Items"
+                        : nil
+                } catch {
+                    launchAtLogin = LaunchAtLogin.isEnabled
+                    loginStatus = "macOS refused: \(error.localizedDescription)"
+                }
+            }
+        )
+    }
+
+    private var loginCaption: String {
+        LaunchAtLogin.mayRegister
+            ? "Brings the menu-bar presence back when you log in."
+            : "Only the installed copy in /Applications can register at login, so a dev build never claims the login item."
+    }
+
     private func load() {
+        launchAtLogin = LaunchAtLogin.isEnabled
         guard let connection = model.connection else { return }
         serverUrl = connection.serverUrl
         extid = connection.extid

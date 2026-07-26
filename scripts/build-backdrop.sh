@@ -74,6 +74,15 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
 
+# Dogfood builds carry the commit in CFBundleVersion so "which build am
+# I on" has a one-glance answer. An uncommitted tree is part of the
+# answer: the SHA alone would claim a build the repo cannot reproduce.
+# Outside a git checkout the plain version stands.
+if SHA="$(git rev-parse --short HEAD 2>/dev/null)"; then
+  git diff --quiet HEAD 2>/dev/null || SHA="$SHA.dirty"
+  plutil -replace CFBundleVersion -string "$VERSION+$SHA" "$APP/Contents/Info.plist"
+fi
+
 if [[ "$CONFIG" == "debug" ]]; then
   # A distinct identity for the dev instance, so it and the installed
   # copy read as separate apps to macOS and to the eye.

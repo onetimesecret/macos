@@ -17,6 +17,28 @@ struct WindowRootView: View {
             Divider()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if WindowModel.shouldShowPasteboardOffer(
+                boardHolds: model.pasteboardOffer,
+                hasPage: model.selection != nil,
+                ledgerShowing: model.showingLedger
+            ) {
+                // The summon-time offer (ADR-0007 Amendment 1): one
+                // gesture from "secret in hand" to "chip with a TTL,
+                // off the clipboard". Routed through the editor's own
+                // sealed-paste path so the chip lands at the caret.
+                HStack(spacing: 8) {
+                    Text("the clipboard holds content")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Button("seal it (⇧⌘V)") { model.performSealedPaste?() }
+                        .font(.system(.caption, design: .monospaced))
+                        .controlSize(.small)
+                        .accessibilityLabel(Text("Seal the clipboard's content onto this page"))
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+            }
             if let notice = model.notice {
                 Text(notice)
                     .font(.system(.caption, design: .monospaced))

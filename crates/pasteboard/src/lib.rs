@@ -88,6 +88,14 @@ pub trait Pasteboard {
     /// by `expected` — the clear-after-copy guard. Returns true when a
     /// clear happened.
     fn clear_if_unchanged(&mut self, expected: ChangeCount) -> bool;
+
+    /// Whether the board holds content a sealed paste could take:
+    /// something representable (text or image) that is not the
+    /// companion's own transient write. Implementations answer from
+    /// type metadata alone — the content bytes are never copied into
+    /// this process just to say yes or no. Powers the summon-time
+    /// offer (ADR-0007 Amendment 1).
+    fn holds_external_content(&self) -> bool;
 }
 
 /// What kind of bytes a write holds.
@@ -189,6 +197,10 @@ impl Pasteboard for MemoryPasteboard {
             false
         }
     }
+
+    fn holds_external_content(&self) -> bool {
+        self.item.as_ref().is_some_and(|item| !item.transient)
+    }
 }
 
 #[cfg(test)]
@@ -247,5 +259,22 @@ mod tests {
         let c2 = write_text(&mut pb, "b", false);
         assert!(c2.0 > c1.0);
         assert_eq!(pb.change_count(), c2);
+    }
+
+    #[test]
+    fn external_content_is_offered_and_our_own_write_is_not() {
+        let mut pb = MemoryPasteboard::new();
+        assert!(!pb.holds_external_content()); // empty
+
+        pb.put_external(PasteboardContent::Text("from elsewhere".into()), false);
+        assert!(pb.holds_external_content());
+
+        // Our own copy-out is transient-marked: offering to ingest it
+        // back would be a loop, not a service.
+        let receipt = write_text(&mut pb, "our copy-out", true);
+        assert!(!pb.holds_external_content());
+
+        pb.clear_if_unchanged(receipt);
+        assert!(!pb.holds_external_content()); // cleared
     }
 }

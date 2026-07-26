@@ -68,6 +68,12 @@ struct InkEditorView: NSViewRepresentable {
         context.coordinator.currentSheet = sheetID
         context.coordinator.restyle()
         model.activeEditor = textView
+        // The summon-time offer's button takes the same road as ⇧⌘V,
+        // so the chip lands at the caret and consent stays a gesture
+        // aimed at this page (ADR-0007 Amendment 1).
+        model.performSealedPaste = { [weak coordinator = context.coordinator] in
+            coordinator?.sealedPaste()
+        }
 
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true

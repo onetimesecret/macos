@@ -105,15 +105,30 @@ char *companion_sheets_json(CompanionHandle *handle);
 /*
  * The sealed paste (shift-cmd-V): the core reads the pasteboard itself
  * and seals whatever it holds — text or image, unread, unclassified;
- * consent is the gesture. Returns the chip's JSON (free with
- * companion_string_free()):
+ * consent is the gesture — then clears the board in the same locked
+ * operation, so the secret's pasteboard dwell ends the moment it is
+ * staged (ADR-0007 Amendment 1). A refused seal clears nothing.
+ * Returns the chip's JSON (free with companion_string_free()):
  *   chip_id, kind ("text"|"image"), excerpt (the mechanical face —
  *   the only rendering the content ever gets), size_label ("40 ch",
  *   "5 ln", "212 KB"), promoted (bool).
  * Null when the board is empty, the page unknown, or content empty.
+ * cleared_out (nullable) reports the clear: false after a successful
+ * seal means another writer moved the change count mid-take, the
+ * guarded clear stood down, and the shell must say so.
  */
 char *companion_sheet_seal_from_pasteboard(CompanionHandle *handle,
-                                           uint64_t sheet);
+                                           uint64_t sheet,
+                                           bool *cleared_out);
+
+/*
+ * Whether the pasteboard holds content a sealed paste could take:
+ * non-empty, representable (text or image), and not the companion's
+ * own transient copy-out. Answered from type metadata alone; content
+ * bytes never cross for a yes/no. Powers the summon-time offer
+ * (ADR-0007 Amendment 1).
+ */
+bool companion_pasteboard_has_content(CompanionHandle *handle);
 
 /*
  * The cmd-return retrofit: seal `text` (the selection, or the current

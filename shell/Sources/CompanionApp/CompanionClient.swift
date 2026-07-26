@@ -206,11 +206,25 @@ final class CompanionClient: @unchecked Sendable {
 
     // MARK: Sealing — the gesture routes
 
-    /// The sealed paste (⇧⌘V): the core reads the pasteboard itself.
-    /// Returns the new chip's face, or nil.
+    /// The sealed paste (⇧⌘V): the core reads the pasteboard itself
+    /// and clears it in the same locked operation (ADR-0007 Amendment
+    /// 1). Returns the new chip's face (or nil), plus whether the
+    /// board was actually cleared: false alongside a chip means
+    /// another writer moved the change count mid-take, the guarded
+    /// clear stood down, and the caller must say so.
     @discardableResult
-    func sealFromPasteboard(sheet: UInt64) -> ChipInfo? {
-        decodeJSON(ChipInfo.self, from: companion_sheet_seal_from_pasteboard(handle, sheet))
+    func sealFromPasteboard(sheet: UInt64) -> (chip: ChipInfo?, cleared: Bool) {
+        var cleared = false
+        let chip = decodeJSON(
+            ChipInfo.self, from: companion_sheet_seal_from_pasteboard(handle, sheet, &cleared))
+        return (chip, cleared)
+    }
+
+    /// Whether the board holds content a sealed paste could take —
+    /// external, representable, not our own transient copy-out. Type
+    /// metadata only; no content bytes cross for the answer.
+    func pasteboardHasContent() -> Bool {
+        companion_pasteboard_has_content(handle)
     }
 
     /// Drop-to-seal: the core reads the drag pasteboard itself while

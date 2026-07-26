@@ -159,6 +159,19 @@ impl Pasteboard for SystemPasteboard {
         self.pasteboard.clearContents();
         true
     }
+
+    fn holds_external_content(&self) -> bool {
+        let types = self.types_present();
+        if types.iter().any(|t| t == TRANSIENT_TYPE) {
+            return false;
+        }
+        // The same two types read() can represent, answered from the
+        // declared-type list alone — no content bytes cross into this
+        // process for a yes/no.
+        let string_type = unsafe { NSPasteboardTypeString }.to_string();
+        let png_type = unsafe { NSPasteboardTypePNG }.to_string();
+        types.iter().any(|t| *t == string_type || *t == png_type)
+    }
 }
 
 #[cfg(test)]
@@ -216,5 +229,24 @@ mod tests {
         let c2 = write_text(&mut pb, "b", false);
         assert!(c2.0 > c1.0);
         assert_eq!(pb.change_count(), c2);
+    }
+
+    #[test]
+    fn our_own_transient_write_is_not_offered() {
+        let mut pb = SystemPasteboard::for_testing();
+        assert!(!pb.holds_external_content()); // empty board
+
+        let receipt = write_text(&mut pb, "our copy-out", true);
+        assert!(!pb.holds_external_content()); // transient-marked
+
+        pb.clear_if_unchanged(receipt);
+        assert!(!pb.holds_external_content()); // cleared
+
+        // An unmarked write, as another app would leave it.
+        pb.pasteboard.clearContents();
+        let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
+        pb.pasteboard
+            .setString_forType(&NSString::from_str("from elsewhere"), string_type);
+        assert!(pb.holds_external_content());
     }
 }
