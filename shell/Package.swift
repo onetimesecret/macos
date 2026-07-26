@@ -14,9 +14,24 @@ let package = Package(
             name: "CompanionCore",
             path: "../bindings/CompanionCore.xcframework"
         ),
+        // The shared seam wrapper. ADR-0010 let the two form factors
+        // carry a copy each while the backdrop was an exploration, and
+        // named the extraction as what happens when a sibling
+        // graduates. The backdrop gaining persistence graduated it, so
+        // both form factors sit on this one wrapper now.
+        .target(
+            name: "CompanionKit",
+            dependencies: ["CompanionCore"],
+            path: "Sources/CompanionKit"
+        ),
+        .testTarget(
+            name: "CompanionKitTests",
+            dependencies: ["CompanionKit"],
+            path: "Tests/CompanionKitTests"
+        ),
         .executableTarget(
             name: "CompanionApp",
-            dependencies: ["CompanionCore"],
+            dependencies: ["CompanionKit"],
             path: "Sources/CompanionApp"
         ),
         .testTarget(
@@ -29,7 +44,7 @@ let package = Package(
         // posture without touching the panel app's sources.
         .executableTarget(
             name: "CompanionBackdrop",
-            dependencies: ["CompanionCore"],
+            dependencies: ["CompanionKit"],
             path: "Sources/CompanionBackdrop"
         ),
         .testTarget(

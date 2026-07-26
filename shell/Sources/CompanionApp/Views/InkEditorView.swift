@@ -1,4 +1,5 @@
 import AppKit
+import CompanionKit
 import SwiftUI
 
 /// The page: a little text file of **ink** (visible, editable text) and

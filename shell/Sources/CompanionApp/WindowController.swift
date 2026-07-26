@@ -15,6 +15,12 @@ final class WindowController: NSObject, NSWindowDelegate {
     private let model: WindowModel
     private var observers: [AnyCancellable] = []
 
+    // nonisolated(unsafe): deinit is always nonisolated, even on a
+    // @MainActor class (Swift 6), and the observation token isn't
+    // Sendable. Safe here: removeObserver is documented thread-safe,
+    // and every other touch runs on the main actor.
+    private nonisolated(unsafe) var screenObserver: NSObjectProtocol?
+
     init(model: WindowModel) {
         self.model = model
         let hosting = NSHostingController(
@@ -65,6 +71,23 @@ final class WindowController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         super.init()
         panel.delegate = self
+        // The restored frame (above) is whatever was last saved verbatim
+        // — including a zoom (`windowWillUseStandardFrame`) that
+        // stretched it to a taller screen's full working height.
+        // `constrainToScreen()` brings an oversized restore back within
+        // the *current* screen right away, rather than leaving it
+        // hanging off the bottom until the next manual resize.
+        constrainToScreen()
+        // Displays come and go (external monitor unplugged, resolution
+        // change, sleep/wake); a saved frame that fit the old screen may
+        // not fit this one.
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.constrainToScreen() }
+        }
         // The pin decides the altitude among ordinary windows: pinned
         // floats above them (`.statusBar`, panel-floating); unpinned is
         // a normal window others can cover.
@@ -93,6 +116,26 @@ final class WindowController: NSObject, NSWindowDelegate {
         #endif
     }
 
+    deinit {
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+        }
+    }
+
+    /// Keeps the panel's frame within whichever screen now contains it —
+    /// `NSWindow`'s own remedy for a saved or zoomed frame that no
+    /// longer fits (Apple's documented mechanism for exactly this:
+    /// `constrainFrameRect(_:to:)`). Runs at init (a frame restored from
+    /// a previous, larger screen) and on every screen-parameter change
+    /// while live.
+    private func constrainToScreen() {
+        guard let screen = panel.screen ?? NSScreen.main else { return }
+        let constrained = panel.constrainFrameRect(panel.frame, to: screen)
+        if constrained != panel.frame {
+            panel.setFrame(constrained, display: panel.isVisible)
+        }
+    }
+
     // MARK: Summon & dismiss
 
     /// Menu-bar click: show without taking the keyboard — clicking into
@@ -105,6 +148,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         // panel coming forward is the moment the offer is worth
         // making (ADR-0007 Amendment 1).
         model.refreshPasteboardOffer()
+        constrainToScreen()
         pullToActiveSpace()
         panel.orderFrontRegardless()
     }
@@ -130,6 +174,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         } else {
             model.loadStateIfNeeded()
             model.refreshPasteboardOffer()
+            constrainToScreen()
             pullToActiveSpace()
             panel.makeKeyAndOrderFront(nil)
             // A pageless window would leave the grant with nothing to

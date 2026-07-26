@@ -1,4 +1,5 @@
 import AppKit
+import CompanionKit
 import SwiftUI
 import os
 

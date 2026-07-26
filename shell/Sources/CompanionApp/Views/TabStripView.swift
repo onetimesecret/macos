@@ -1,3 +1,4 @@
+import CompanionKit
 import SwiftUI
 
 /// The bottom-edge tab strip, Excel-anchored (docs/spec/04): one tab

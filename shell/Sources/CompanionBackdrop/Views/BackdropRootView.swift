@@ -1,4 +1,5 @@
 import AppKit
+import CompanionKit
 import SwiftUI
 
 /// The surface's face: one card of ink at a comfortable reading measure
@@ -183,7 +184,7 @@ struct BackdropRootView: View {
     /// The countdown label: remaining time on the current rung; click
     /// cycles the ladder and resets the clock (docs/spec/04). Only
     /// reachable while raised — the resting window ignores the mouse.
-    private func countdownButton(_ sheet: BackdropSheetSummary) -> some View {
+    private func countdownButton(_ sheet: SheetSummary) -> some View {
         Button {
             model.cycleRung()
         } label: {
@@ -210,7 +211,7 @@ struct BackdropRootView: View {
 
     /// The page's draining gauge, the resting surface's one honest
     /// motion (repainted at the stance's cadence, not animated).
-    private func gauge(_ sheet: BackdropSheetSummary) -> some View {
+    private func gauge(_ sheet: SheetSummary) -> some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 Capsule().fill(.quaternary)

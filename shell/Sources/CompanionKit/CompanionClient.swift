@@ -1,25 +1,32 @@
 import Foundation
 import CompanionCore
 
+// The shared seam wrapper, one copy for every form factor. ADR-0010
+// carried two copies deliberately while the backdrop was an
+// exploration, and named the extraction as the trigger that fires when
+// a sibling graduates: the backdrop gaining persistence is that
+// graduation. Everything here is a window onto the core, never logic.
+// Logic that would need adding twice belongs in the core once.
+
 /// A non-secret snapshot of a sheet — a page of ink and sealed chips —
 /// decoded from the core's JSON (see crates/ffi/include/companion_ffi.h
 /// for the field contract). There is deliberately no content field of
 /// any kind: sealed bytes have no display form at all (the boundary
 /// law, hard form), and the live ink belongs to the shell's editor, not
 /// the summary.
-struct SheetSummary: Identifiable, Codable, Hashable {
-    let id: UInt64
-    let title: String
-    let rungCode: Int32
-    let rungLabel: String
-    let remainingMs: UInt64
-    let remainingLabel: String
-    let spokenRemaining: String
-    let fractionRemaining: Double
-    let paused: Bool
-    let holdRemainingMs: UInt64
-    let chipCount: UInt64
-    let lastHour: Bool
+public struct SheetSummary: Identifiable, Codable, Hashable, Sendable {
+    public let id: UInt64
+    public let title: String
+    public let rungCode: Int32
+    public let rungLabel: String
+    public let remainingMs: UInt64
+    public let remainingLabel: String
+    public let spokenRemaining: String
+    public let fractionRemaining: Double
+    public let paused: Bool
+    public let holdRemainingMs: UInt64
+    public let chipCount: UInt64
+    public let lastHour: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, title, paused
@@ -38,12 +45,12 @@ struct SheetSummary: Identifiable, Codable, Hashable {
 /// A freshly sealed chip's non-secret face, returned by the seal
 /// routes: the mechanical excerpt and counts are the only rendering the
 /// content ever gets — never revealable, at any privilege.
-struct ChipInfo: Codable, Hashable {
-    let chipId: UInt64
-    let kind: String
-    let excerpt: String
-    let sizeLabel: String
-    let promoted: Bool
+public struct ChipInfo: Codable, Hashable, Sendable {
+    public let chipId: UInt64
+    public let kind: String
+    public let excerpt: String
+    public let sizeLabel: String
+    public let promoted: Bool
 
     enum CodingKeys: String, CodingKey {
         case kind, excerpt, promoted
@@ -54,16 +61,16 @@ struct ChipInfo: Codable, Hashable {
 
 /// One run of a dead page in the ledger: dimmed ink, or the tombstone
 /// of a chip (its excerpt; the bytes were zeroized at death).
-enum LedgerRun: Hashable {
+public enum LedgerRun: Hashable, Sendable {
     case ink(String)
     case tombstone(String)
 }
 
 /// A dead page, resting in the ledger (⌘0): session-bound, read-only.
-struct LedgerEntry: Codable, Hashable {
-    let cause: String
-    let title: String
-    let ageMs: UInt64
+public struct LedgerEntry: Codable, Hashable, Sendable {
+    public let cause: String
+    public let title: String
+    public let ageMs: UInt64
     private let segments: [[String: SegmentValue]]
 
     enum CodingKeys: String, CodingKey {
@@ -88,7 +95,7 @@ struct LedgerEntry: Codable, Hashable {
     }
 
     /// The page's runs, in document order.
-    var runs: [LedgerRun] {
+    public var runs: [LedgerRun] {
         segments.compactMap { object in
             if case .string(let text)? = object["ink"] { return .ink(text) }
             if case .string(let excerpt)? = object["tombstone"] { return .tombstone(excerpt) }
@@ -100,7 +107,7 @@ struct LedgerEntry: Codable, Hashable {
 /// One run of a live page's document, as the core replays it for an
 /// editor rebuilding after a restore: visible ink, or a chip's
 /// non-secret face (never its bytes).
-enum RestoredRun: Decodable {
+public enum RestoredRun: Decodable, Sendable {
     case ink(String)
     case chip(ChipInfo)
 
@@ -108,7 +115,7 @@ enum RestoredRun: Decodable {
         case ink, chip
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if let text = try container.decodeIfPresent(String.self, forKey: .ink) {
             self = .ink(text)
@@ -119,19 +126,19 @@ enum RestoredRun: Decodable {
 }
 
 /// The TTL ladder (docs/spec/04). Raw values are the C ABI rung codes.
-enum Rung: Int32, CaseIterable {
+public enum Rung: Int32, CaseIterable, Sendable {
     case oneHour = 0, threeHours, eightHours, twentyFourHours, threeDays, sevenDays
 }
 
 /// Connection state as Settings may render it (companion_ffi.h):
 /// configuration only, never the token — that rests in the Keychain,
 /// core-side.
-struct ConnectionInfo: Codable, Hashable {
-    let configured: Bool
-    let serverUrl: String
-    let shareDomain: String
-    let extid: String
-    let hasToken: Bool
+public struct ConnectionInfo: Codable, Hashable, Sendable {
+    public let configured: Bool
+    public let serverUrl: String
+    public let shareDomain: String
+    public let extid: String
+    public let hasToken: Bool
 
     enum CodingKeys: String, CodingKey {
         case configured, extid
@@ -144,10 +151,10 @@ struct ConnectionInfo: Codable, Hashable {
 /// A promotion (or connection-test) result off the seam: success, or an
 /// inline-able error message. Never a link — on success the link is
 /// already on the clipboard, written core-side.
-struct PromotionOutcome: Codable, Hashable {
-    let ok: Bool
-    let receiptId: String?
-    let error: String?
+public struct PromotionOutcome: Codable, Hashable, Sendable {
+    public let ok: Bool
+    public let receiptId: String?
+    public let error: String?
 
     enum CodingKeys: String, CodingKey {
         case ok, error
@@ -163,10 +170,10 @@ struct PromotionOutcome: Codable, Hashable {
 /// call is serialized by the core's own mutex (companion_ffi.h) — the
 /// promotion routes are *meant* to be called off the main actor, since
 /// they block for a network round-trip.
-final class CompanionClient: @unchecked Sendable {
+public final class CompanionClient: @unchecked Sendable {
     private let handle: OpaquePointer
 
-    init() {
+    public init() {
         companion_init()
         guard let created = companion_new() else {
             fatalError("companion_new returned null")
@@ -183,24 +190,24 @@ final class CompanionClient: @unchecked Sendable {
     /// A new page at the end of the tab strip; 0 means the store
     /// refused at the cap of 9 (refuse-don't-evict — say so).
     @discardableResult
-    func newSheet() -> UInt64 {
+    public func newSheet() -> UInt64 {
         companion_sheet_new(handle)
     }
 
     /// Close a page; it rests in the ledger, sealed bytes zeroized.
     @discardableResult
-    func closeSheet(id: UInt64) -> Bool {
+    public func closeSheet(id: UInt64) -> Bool {
         companion_sheet_close(handle, id)
     }
 
     /// Move a page in the visible order (drag-to-reorder).
     @discardableResult
-    func moveSheet(id: UInt64, to index: UInt64) -> Bool {
+    public func moveSheet(id: UInt64, to index: UInt64) -> Bool {
         companion_sheet_move(handle, id, index)
     }
 
     /// Current pages, in visible (tab) order.
-    func sheets() -> [SheetSummary] {
+    public func sheets() -> [SheetSummary] {
         decodeJSON([SheetSummary].self, from: companion_sheets_json(handle)) ?? []
     }
 
@@ -213,7 +220,7 @@ final class CompanionClient: @unchecked Sendable {
     /// another writer moved the change count mid-take, the guarded
     /// clear stood down, and the caller must say so.
     @discardableResult
-    func sealFromPasteboard(sheet: UInt64) -> (chip: ChipInfo?, cleared: Bool) {
+    public func sealFromPasteboard(sheet: UInt64) -> (chip: ChipInfo?, cleared: Bool) {
         var cleared = false
         let chip = decodeJSON(
             ChipInfo.self, from: companion_sheet_seal_from_pasteboard(handle, sheet, &cleared))
@@ -223,7 +230,7 @@ final class CompanionClient: @unchecked Sendable {
     /// Whether the board holds content a sealed paste could take —
     /// external, representable, not our own transient copy-out. Type
     /// metadata only; no content bytes cross for the answer.
-    func pasteboardHasContent() -> Bool {
+    public func pasteboardHasContent() -> Bool {
         companion_pasteboard_has_content(handle)
     }
 
@@ -233,7 +240,7 @@ final class CompanionClient: @unchecked Sendable {
     /// docs/hardware-verification.md). Returns the new chip's face, or
     /// nil when nothing readable was dragged.
     @discardableResult
-    func sealFromDrag(sheet: UInt64) -> ChipInfo? {
+    public func sealFromDrag(sheet: UInt64) -> ChipInfo? {
         decodeJSON(ChipInfo.self, from: companion_sheet_seal_from_drag(handle, sheet))
     }
 
@@ -241,7 +248,7 @@ final class CompanionClient: @unchecked Sendable {
     /// deliberate plaintext-in call — the text was visible ink already;
     /// after this returns, the caller deletes its copy from the view.
     @discardableResult
-    func sealText(sheet: UInt64, _ text: String) -> ChipInfo? {
+    public func sealText(sheet: UInt64, _ text: String) -> ChipInfo? {
         // A C string truncates at an interior NUL; sealing a silently
         // truncated secret and telling the editor to delete the whole
         // thing would lose the remainder. Refuse instead — the editor
@@ -255,7 +262,7 @@ final class CompanionClient: @unchecked Sendable {
     /// Push the page's document snapshot (JSON runs) to the core —
     /// authoritative for chip liveness.
     @discardableResult
-    func syncDocument(sheet: UInt64, json: String) -> Bool {
+    public func syncDocument(sheet: UInt64, json: String) -> Bool {
         json.withCString { companion_sheet_sync_document(handle, sheet, $0) }
     }
 
@@ -264,19 +271,19 @@ final class CompanionClient: @unchecked Sendable {
     /// Copy a chip back out. The core writes the pasteboard itself,
     /// marked transient + concealed; this process never holds the bytes.
     @discardableResult
-    func copyOutChip(id: UInt64) -> Bool {
+    public func copyOutChip(id: UInt64) -> Bool {
         companion_chip_copy_out(handle, id)
     }
 
     /// ⌫ on a chip: removes it whole, bytes zeroized, no resurrection.
     @discardableResult
-    func deleteChip(id: UInt64) -> Bool {
+    public func deleteChip(id: UInt64) -> Bool {
         companion_chip_delete(handle, id)
     }
 
     /// Change-count-guarded clear of our own last copy-out.
     @discardableResult
-    func clearClipboardIfOurs() -> Bool {
+    public func clearClipboardIfOurs() -> Bool {
         companion_clear_clipboard_if_ours(handle)
     }
 
@@ -284,31 +291,31 @@ final class CompanionClient: @unchecked Sendable {
 
     /// Milliseconds until the next scheduled instant — page expiry or
     /// hold lapse — the ONE timer to arm. -1 means nothing to schedule.
-    func nextEventMs() -> Int64 {
+    public func nextEventMs() -> Int64 {
         companion_next_event_ms(handle)
     }
 
     /// Settle the clock: normalize lapsed holds, expire due pages;
     /// returns how many pages expired.
     @discardableResult
-    func expireDue() -> UInt64 {
+    public func expireDue() -> UInt64 {
         companion_expire_due(handle)
     }
 
     /// Click the countdown label: next rung, clock reset.
     @discardableResult
-    func cycleRung(sheet: UInt64) -> Rung? {
+    public func cycleRung(sheet: UInt64) -> Rung? {
         Rung(rawValue: companion_sheet_cycle_rung(handle, sheet))
     }
 
     @discardableResult
-    func setRung(sheet: UInt64, rung: Rung) -> Bool {
+    public func setRung(sheet: UInt64, rung: Rung) -> Bool {
         companion_sheet_set_rung(handle, sheet, rung.rawValue)
     }
 
     /// Double-click the tab: hold 1h, then top-up to 24h from now.
     @discardableResult
-    func pausePress(sheet: UInt64) -> Bool {
+    public func pausePress(sheet: UInt64) -> Bool {
         companion_sheet_pause_press(handle, sheet)
     }
 
@@ -319,7 +326,7 @@ final class CompanionClient: @unchecked Sendable {
     /// retained here or in config; nil keeps the stored one, "" deletes
     /// it. Returns false on a non-https URL or malformed input.
     @discardableResult
-    func configureConnection(
+    public func configureConnection(
         serverUrl: String, shareDomain: String, extid: String, token: String?
     ) -> Bool {
         var object: [String: String] = [
@@ -333,13 +340,13 @@ final class CompanionClient: @unchecked Sendable {
     }
 
     /// Connection state for Settings — never the token itself.
-    func connectionInfo() -> ConnectionInfo? {
+    public func connectionInfo() -> ConnectionInfo? {
         decodeJSON(ConnectionInfo.self, from: companion_connection_json(handle))
     }
 
     /// The Settings "test" button: one status round-trip. **Blocks** —
     /// call off the main actor.
-    func testConnection() -> PromotionOutcome {
+    public func testConnection() -> PromotionOutcome {
         decodeJSON(PromotionOutcome.self, from: companion_connection_test(handle))
             ?? PromotionOutcome(ok: false, receiptId: nil, error: "no connection configured")
     }
@@ -349,7 +356,7 @@ final class CompanionClient: @unchecked Sendable {
     /// on success the link is on the clipboard and only the receipt id
     /// stays on the chip. **Blocks** for the round-trip — call off the
     /// main actor.
-    func promoteChip(
+    public func promoteChip(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
     ) -> PromotionOutcome {
         promote(id: id, ttlSecs: ttlSecs, passphrase: passphrase, recipient: recipient) {
@@ -360,7 +367,7 @@ final class CompanionClient: @unchecked Sendable {
     /// Promote the whole page (ink verbatim, sealed bytes inlined,
     /// core-side). Refused when the page holds an image chip. **Blocks**
     /// — call off the main actor.
-    func promoteSheet(
+    public func promoteSheet(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
     ) -> PromotionOutcome {
         promote(id: id, ttlSecs: ttlSecs, passphrase: passphrase, recipient: recipient) {
@@ -394,7 +401,7 @@ final class CompanionClient: @unchecked Sendable {
     // MARK: The ledger
 
     /// Dead pages, newest first (⌘0) — dimmed ink and tombstones.
-    func ledger() -> [LedgerEntry] {
+    public func ledger() -> [LedgerEntry] {
         decodeJSON([LedgerEntry].self, from: companion_ledger_json(handle)) ?? []
     }
 
@@ -402,7 +409,7 @@ final class CompanionClient: @unchecked Sendable {
 
     /// A live page's document runs, for rebuilding the editor after a
     /// restore: ink verbatim, chips as their non-secret faces.
-    func documentRuns(sheet: UInt64) -> [RestoredRun] {
+    public func documentRuns(sheet: UInt64) -> [RestoredRun] {
         decodeJSON([RestoredRun].self, from: companion_sheet_document_json(handle, sheet)) ?? []
     }
 
@@ -410,7 +417,7 @@ final class CompanionClient: @unchecked Sendable {
     /// rests in the Keychain; only ciphertext touches disk). Call at
     /// quit — nothing saves on its own.
     @discardableResult
-    func persistSave(to path: String) -> Bool {
+    public func persistSave(to path: String) -> Bool {
         path.withCString { companion_persist_save(handle, $0) }
     }
 
@@ -418,12 +425,12 @@ final class CompanionClient: @unchecked Sendable {
     /// is created. False means a fresh start (no file) as much as a
     /// refused one (missing key, failed authentication).
     @discardableResult
-    func persistRestore(from path: String) -> Bool {
+    public func persistRestore(from path: String) -> Bool {
         path.withCString { companion_persist_restore(handle, $0) }
     }
 
     /// The core's version string.
-    static var version: String {
+    public static var version: String {
         String(cString: companion_version())
     }
 

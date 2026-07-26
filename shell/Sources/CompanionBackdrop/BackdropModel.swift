@@ -1,4 +1,5 @@
 import AppKit
+import CompanionKit
 import Foundation
 
 /// The backdrop's view model: one page of visible ink, its clock, and
@@ -15,7 +16,7 @@ final class BackdropModel: ObservableObject {
     @Published private(set) var stance: BackdropStance = .resting
 
     /// The one page's non-secret face — title, countdown, gauge.
-    @Published private(set) var sheet: BackdropSheetSummary?
+    @Published private(set) var sheet: SheetSummary?
 
     /// True while the surface holds the keyboard — set by the window
     /// controller from key status. Raised and keyed are distinct

@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import CompanionKit
 import SwiftUI
 
 /// The window's face (docs/spec/04): a quiet header where the title bar
