@@ -108,27 +108,4 @@ final class BackdropStanceTests: XCTestCase {
     func testDesktopLevelSitsBelowNormalWindows() {
         XCTAssertLessThan(NSWindow.Level.backdropDesktop.rawValue, NSWindow.Level.normal.rawValue)
     }
-
-    // MARK: The document mirror — ink runs on the wire
-
-    func testEmptyInkMirrorsAnEmptyDocument() {
-        XCTAssertEqual(BackdropCore.inkRunsJSON(""), "[]")
-    }
-
-    func testInkMirrorsAsASingleRun() throws {
-        let json = try XCTUnwrap(BackdropCore.inkRunsJSON("meet at 4 — badge code inside"))
-        let decoded = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: String]]
-        )
-        XCTAssertEqual(decoded, [["ink": "meet at 4 — badge code inside"]])
-    }
-
-    func testInkWithQuotesAndNewlinesSurvivesTheEncoding() throws {
-        let ink = "line one\nline \"two\"\n\ttabbed"
-        let json = try XCTUnwrap(BackdropCore.inkRunsJSON(ink))
-        let decoded = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: String]]
-        )
-        XCTAssertEqual(decoded, [["ink": ink]])
-    }
 }

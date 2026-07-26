@@ -1,4 +1,5 @@
 import AppKit
+import CompanionKit
 import SwiftUI
 
 /// The background-surface form factor (docs/spec/feature/background-surface):
@@ -70,6 +71,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
         let controller = BackdropWindowController(model: model)
         self.controller = controller
+        // Esc, and every other hand-back route, rests the surface: the
+        // backdrop's way of giving the keyboard back is to step behind
+        // everything again.
+        model.pages.onHandBackKeys = { [weak model] in model?.rest() }
+        model.pages.onOpenSettings = { [weak self] in self?.openSettings() }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.maruhiTemplateImage()
@@ -144,6 +150,20 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     @objc private func statusItemClicked() {
         if NSApp.currentEvent?.type == .rightMouseUp {
             let menu = NSMenu()
+            // "Which build am I on" answered at a glance: the stamped
+            // bundle version (which carries the git SHA on dogfood
+            // builds) alongside the core the binary actually linked.
+            // No action, so the menu leaves it disabled: it is a fact,
+            // not a feature.
+            menu.addItem(
+                withTitle: BuildVersion.trayTitle(
+                    core: CompanionClient.version,
+                    bundleVersion: Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+                ),
+                action: nil,
+                keyEquivalent: ""
+            )
+            menu.addItem(.separator())
             menu.addItem(
                 withTitle: "About CompanionBackdrop",
                 action: #selector(showAbout),
@@ -193,7 +213,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "CompanionBackdrop",
             .applicationIcon: Self.maruhiColorImage(side: 256),
-            .applicationVersion: BackdropCore.version,
+            .applicationVersion: CompanionClient.version,
         ])
         // The app is usually inactive when About is chosen from the
         // status item; without activation the panel appears behind

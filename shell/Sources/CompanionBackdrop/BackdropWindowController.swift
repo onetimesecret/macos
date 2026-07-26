@@ -31,6 +31,22 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         model.$stance
             .sink { [weak self] stance in self?.apply(stance) }
             .store(in: &observers)
+        // Debug-only escape hatch: the Settings toggle (seeded by
+        // COMPANION_ALLOW_CAPTURE=1 for scripted runs) lifts the
+        // capture exclusion so the surface can be screenshotted while
+        // diagnosing the UI. A release build compiles this out.
+        #if DEBUG
+        model.pages.$allowCapture
+            .sink { [weak self] allow in
+                self?.panel.sharingType = allow ? .readOnly : .none
+                if allow {
+                    FileHandle.standardError.write(Data(
+                        "[backdrop] DEBUG: capture exclusion OFF — surface is screenshot-able\n".utf8
+                    ))
+                }
+            }
+            .store(in: &observers)
+        #endif
         // Displays come and go; the surface re-fits the primary screen.
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -212,18 +228,11 @@ final class BackdropPanel: NSPanel {
         // the panel is hidden between uses, but the backdrop is *always
         // on screen* — without this, every screen share and screenshot
         // would carry the surface's ink.
+        // The debug opt-out lives on the shared model, which seeds
+        // itself from COMPANION_ALLOW_CAPTURE and is never persisted;
+        // the controller observes it. Starting closed here means a
+        // failure to observe leaves the exclusion on.
         sharingType = .none
-        #if DEBUG
-        // Debug builds only: COMPANION_ALLOW_CAPTURE=1 lifts the
-        // exclusion so the surface can be screenshotted while
-        // diagnosing the UI. Not persisted, compiled out of release.
-        if ProcessInfo.processInfo.environment["COMPANION_ALLOW_CAPTURE"] != nil {
-            sharingType = .readOnly
-            FileHandle.standardError.write(Data(
-                "[backdrop] DEBUG: capture exclusion OFF — surface is screenshot-able\n".utf8
-            ))
-        }
-        #endif
     }
 
     /// Resting refuses the keyboard outright; raised may take it. A

@@ -1,12 +1,15 @@
 import AppKit
+import CompanionKit
 import SwiftUI
 
-/// Settings, backdrop edition: one small window, mirroring the panel
-/// app's SettingsWindowController by shape rather than by import
-/// (ADR-0010 keeps the targets apart). Connection settings are out of
-/// scope for this surface; the window's whole business today is the
-/// surface's own geometry. Unlike the backdrop itself this window
-/// activates normally: opening Settings is a deliberate act.
+/// Settings, backdrop edition: one small window holding the same
+/// Connection form the panel shows plus the surface's own section.
+/// Unlike the backdrop itself this window activates normally: opening
+/// Settings is a deliberate act, and its fields need the keyboard.
+///
+/// The form is shared, the stores are not: this window's model reaches
+/// the backdrop's own Keychain service, so a token saved here is the
+/// backdrop's and never the panel's (ADR-0010).
 @MainActor
 final class BackdropSettingsWindowController {
     private var window: NSWindow?
@@ -25,9 +28,12 @@ final class BackdropSettingsWindowController {
             hosted.sizingOptions = []
             let window = NSWindow(contentViewController: hosted)
             window.title = "Settings"
-            window.styleMask = [.titled, .closable]
+            window.styleMask = [.titled, .closable, .resizable]
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 420, height: 160))
+            window.setContentSize(NSSize(width: 420, height: 440))
+            // Vertical resize only: the form is built for one width.
+            window.contentMinSize = NSSize(width: 420, height: 320)
+            window.contentMaxSize = NSSize(width: 420, height: CGFloat.greatestFiniteMagnitude)
             window.center()
             self.window = window
         }
@@ -41,27 +47,33 @@ final class BackdropSettingsWindowController {
     }
 }
 
-/// The surface section: one honest button. The geometry the drag and
-/// resize gestures persist can wander somewhere unhelpful; this puts
-/// the card back where a fresh install would have it.
+/// The backdrop's Settings: the shared Connection form, and above it
+/// the one setting only this form factor has — where the card sits.
 struct BackdropSettingsView: View {
     @ObservedObject var model: BackdropModel
 
     var body: some View {
-        Form {
-            Section {
-                Button("Reset to default position and size") {
-                    model.resetGeometry()
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    Button("Reset to default position and size") {
+                        model.resetGeometry()
+                    }
+                } header: {
+                    Text("Surface")
+                } footer: {
+                    Text("Returns the card to its original place and size. Takes effect immediately.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-            } header: {
-                Text("Surface")
-            } footer: {
-                Text("Returns the card to its original place and size. Takes effect immediately.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
+            .formStyle(.grouped)
+            .frame(height: 120)
+            ConnectionSettingsView(
+                model: model.pages,
+                loginPresence: "the surface"
+            )
         }
-        .formStyle(.grouped)
         .frame(width: 420)
     }
 }

@@ -1,46 +1,37 @@
 import AppKit
 import CompanionKit
 import Foundation
-import os
 
-/// The backdrop's view model: one page of visible ink, its clock, and
-/// the stance the surface is in. It follows the panel's frugality
-/// contract where the form factor allows — expiry is *scheduled* (one
-/// timer at the core's next event, re-armed after it fires) — and
-/// departs where it must: the surface is always on screen, so the
-/// countdown redraw never stops; instead it coarsens to one repaint
-/// every 30 s while resting (`BackdropStance.tickInterval`).
+/// The backdrop's own state: the stance the surface is in and where the
+/// card sits within the pane. The pages themselves — their ink, chips,
+/// clocks, ledger and exit ramp — belong to the shared `PageModel`,
+/// which is the same behaviour the panel shows; what this type adds is
+/// the posture that behaviour is shown in.
+///
+/// It follows the panel's frugality contract where the form factor
+/// allows — expiry is *scheduled* by the shared model, one timer at the
+/// core's next event — and departs where it must: the surface is always
+/// on screen, so the countdown redraw never stops; instead it coarsens
+/// to one repaint every 30 s while resting (`BackdropStance.tickInterval`).
 @MainActor
 final class BackdropModel: ObservableObject {
     /// The surface's posture. The window controller follows this; the
     /// view styles by it.
     @Published private(set) var stance: BackdropStance = .resting
 
-    /// The one page's non-secret face — title, countdown, gauge.
-    @Published private(set) var sheet: SheetSummary?
-
-    /// True while the surface holds the keyboard — set by the window
-    /// controller from key status. Raised and keyed are distinct
-    /// facts: the user can ⌘Tab away to work beside a raised card.
-    /// Drives the ember border and the summon decision.
-    @Published var holdsKeys = false
-
-    /// The page's visible ink, the editor's binding. One-way mirror:
-    /// the editor owns the text; `inkEdited` pushes snapshots to the
-    /// core, which owns the title and the lifecycle.
-    @Published var ink = ""
-
     /// The card's place and measure within the pane, clamped and
     /// persisted. The window controller reports pane sizes; the views
     /// read this and propose changes through `setGeometry(_:)`.
     @Published private(set) var geometry: BackdropGeometry
 
-    private let core = BackdropCore()
-    private var started = false
+    /// The pages, their clocks, and everything done to them. Shared
+    /// with the panel; scoped to this form factor's own Keychain
+    /// service and state file by `FormFactor.backdrop`.
+    let pages: PageModel
 
-    /// The backdrop's own suite (ADR-0010: never CompanionApp's),
-    /// injectable so tests can point at a throwaway domain.
-    private let geometryDefaults: UserDefaults?
+    /// Where the geometry rests between runs, injectable so tests can
+    /// point at a throwaway domain.
+    private let geometryDefaults: UserDefaults
 
     /// The last pane size the controller reported. Until the first fit
     /// arrives, an effectively boundless pane means clamping enforces
@@ -50,27 +41,25 @@ final class BackdropModel: ObservableObject {
         height: CGFloat.greatestFiniteMagnitude
     )
 
-    init(
-        geometryDefaults: UserDefaults? =
-            UserDefaults(suiteName: BackdropGeometry.defaultsSuiteName)
-    ) {
-        self.geometryDefaults = geometryDefaults
-        geometry = BackdropGeometry.load(from: geometryDefaults)
+    private var started = false
+
+    init(defaults: UserDefaults = FormFactor.settingsDefaults) {
+        geometryDefaults = defaults
+        geometry = BackdropGeometry.load(from: defaults)
+        pages = PageModel(formFactor: .backdrop, defaults: defaults)
     }
 
-    // nonisolated(unsafe): deinit is always nonisolated, even on a
-    // @MainActor class (Swift 6), and Timer isn't Sendable. Safe here —
-    // Timer.invalidate() is documented thread-safe, and every other
-    // touch of these properties already runs on the main actor.
-    private nonisolated(unsafe) var eventTimer: Timer?
-    private nonisolated(unsafe) var redrawTimer: Timer?
-
-    deinit {
-        eventTimer?.invalidate()
-        redrawTimer?.invalidate()
+    /// True while the surface holds the keyboard — set by the window
+    /// controller from key status, and kept on the shared model because
+    /// the editor's focus rules read it there. Raised and keyed are
+    /// distinct facts: the user can ⌘Tab away to work beside a raised
+    /// card.
+    var holdsKeys: Bool {
+        get { pages.holdsKeys }
+        set { pages.holdsKeys = newValue }
     }
 
-    /// Launch: open yesterday's page, conjure one if there was none,
+    /// Launch: open yesterday's pages, conjure one if there were none,
     /// and start the clocks.
     ///
     /// The panel defers its restore to the first reveal so that
@@ -83,80 +72,17 @@ final class BackdropModel: ObservableObject {
     func start() {
         guard !started else { return }
         started = true
-        loadState()
-        ensureSheet()
-        refresh()
-        startRedraw()
+        pages.loadStateIfNeeded()
+        pages.startRedraw(interval: stance.tickInterval)
     }
 
-    /// Open the sealed file, and decide whether this session may write
-    /// one back. A missing file is a fresh start and keeps the licence
-    /// (nothing exists to protect); an existing file that will not open
-    /// leaves the surface usable but unlicensed, so quitting cannot
-    /// overwrite yesterday's page with today's empty consolation.
-    private func loadState() {
-        let path = Self.stateFileURL.path
-        let fileExists = FileManager.default.fileExists(atPath: path)
-        let restored = core.persistRestore(from: path)
-        saveLicence = Self.grantsSaveLicence(fileExists: fileExists, restored: restored)
-        if !saveLicence {
-            Self.logger.error(
-                "restore failed over an existing state file; withholding the quit-save licence"
-            )
-            return
-        }
-        if let id = core.sheets().first?.id {
-            ink = core.documentInk(sheet: id)
-        }
-    }
-
-    /// The licence's truth table, shared in shape with the panel's: the
-    /// core folds "no file yet" and "refused" into one false, and the
-    /// file's presence on disk is what tells them apart.
-    nonisolated static func grantsSaveLicence(fileExists: Bool, restored: Bool) -> Bool {
-        restored || !fileExists
-    }
-
-    /// Quit: seal the page into the state file. Returns true when the
+    /// Quit: seal the pages into the state file. Returns true when the
     /// file is settled, written or deliberately left alone; false means
-    /// the save was attempted and refused, and this session's page will
-    /// not survive.
-    ///
-    /// A session that never started never loaded, and must not overwrite
-    /// a good file with an empty store.
+    /// the save was attempted and refused.
     @discardableResult
     func saveState() -> Bool {
-        guard started, saveLicence else { return true }
-        let url = Self.stateFileURL
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
-        let saved = core.persistSave(to: url.path)
-        if !saved {
-            Self.logger.error("quit-save refused; the sealed state file was not rewritten")
-        }
-        return saved
+        pages.saveState()
     }
-
-    /// Where the sealed page rests between runs. The backdrop's own
-    /// directory, never the panel's (ADR-0010): two form factors, two
-    /// stores, and neither one reads the other's.
-    nonisolated static var stateFileURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("CompanionBackdrop", isDirectory: true)
-            .appendingPathComponent("state.sealed")
-    }
-
-    /// The persistence trail in the unified log: refusals only, never
-    /// content — the file is ciphertext and these lines carry only what
-    /// happened to it.
-    private static let logger = Logger(
-        subsystem: BackdropCore.credentialService, category: "persistence"
-    )
-
-    /// The licence `saveState` requires: a restore that failed over an
-    /// existing file leaves the session usable but unlicensed.
-    private var saveLicence = false
 
     // MARK: Stance
 
@@ -192,14 +118,22 @@ final class BackdropModel: ObservableObject {
     /// the active Space and re-keying it — the re-summon path.
     func raise() {
         stance = .raised
-        startRedraw()
+        pages.startRedraw(interval: stance.tickInterval)
+        // Each raise looks at the board once, never a poll: coming
+        // forward is the moment the offer is worth making (ADR-0007
+        // Amendment 1), and it is the same moment the panel picks.
+        pages.refreshPasteboardOffer()
     }
 
     /// Esc, a click outside the card, or a summon from a keyed
     /// surface: back behind everything.
     func rest() {
         stance = .resting
-        startRedraw()
+        pages.startRedraw(interval: stance.tickInterval)
+        // The offer is a summon-time thing; a resting card makes no
+        // offers, and one standing from the last raise would be stale
+        // by the next.
+        pages.withdrawPasteboardOffer()
     }
 
     // MARK: Geometry
@@ -225,90 +159,42 @@ final class BackdropModel: ObservableObject {
         applyGeometry(geometry.clamped(to: paneSize))
     }
 
+    /// Double-click the header: the card takes the pane's full working
+    /// height, and a second double-click returns it — the zoom verb
+    /// every macOS window has, in the one dimension a card can spend.
+    /// The restored geometry is remembered rather than recomputed, so
+    /// the return lands exactly where the card was.
+    func toggleZoom() {
+        if let restored = zoomRestore {
+            zoomRestore = nil
+            applyGeometry(restored.clamped(to: paneSize))
+            return
+        }
+        zoomRestore = geometry
+        var zoomed = geometry
+        zoomed.origin.y = 0
+        zoomed.height = paneSize.height
+        applyGeometry(zoomed.clamped(to: paneSize))
+    }
+
+    /// The geometry a zoom is holding for its return trip, if the card
+    /// is zoomed right now.
+    private var zoomRestore: BackdropGeometry?
+
     /// Persist and publish, but only a real change: the screen
     /// observer can fire in bursts, and an unchanged geometry should
-    /// cost neither a repaint nor a defaults write.
+    /// cost neither a repaint nor a defaults write. A geometry the user
+    /// moved themselves ends the zoom's claim on a return trip.
     private func applyGeometry(_ new: BackdropGeometry) {
         guard new != geometry else { return }
         geometry = new
         new.save(to: geometryDefaults)
     }
 
-    // MARK: The page
-
-    /// The editor changed: mirror the ink to the core. A refused
-    /// encoding (it will not happen for a string) skips the sync
-    /// rather than mirror a wrongly emptied page.
-    func inkEdited(_ text: String) {
-        guard let id = sheet?.id, let json = BackdropCore.inkRunsJSON(text) else { return }
-        _ = core.syncDocument(sheet: id, json: json)
-        refreshSummary()
-    }
-
-    /// Click the countdown label: next rung, clock reset (docs/spec/04).
-    func cycleRung() {
-        guard let id = sheet?.id else { return }
-        _ = core.cycleRung(sheet: id)
-        refresh()
-    }
-
-    private func ensureSheet() {
-        if core.sheets().isEmpty {
-            _ = core.newSheet()
-        }
-    }
-
-    private func refresh() {
-        refreshSummary()
-        armEventTimer()
-    }
-
-    private func refreshSummary() {
-        sheet = core.sheets().first
-    }
-
-    // MARK: Timers
-
-    /// The countdown repaint, at the stance's cadence. Restarted on
-    /// every stance change so a raise tightens the tick and a rest
-    /// relaxes it.
-    private func startRedraw() {
-        redrawTimer?.invalidate()
-        let timer = Timer(timeInterval: stance.tickInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshSummary() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        redrawTimer = timer
-    }
-
-    /// Arm exactly one timer, at the core's next event. When it fires,
-    /// settle the clock and re-arm. No event → no timer.
-    private func armEventTimer() {
-        eventTimer?.invalidate()
-        eventTimer = nil
-        let ms = core.nextEventMs()
-        guard ms >= 0 else { return }
-        let timer = Timer(
-            timeInterval: max(0.05, Double(ms) / 1000.0),
-            repeats: false
-        ) { [weak self] _ in
-            Task { @MainActor in self?.settleClock() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        eventTimer = timer
-    }
-
-    /// The scheduled instant arrived: expire what is due. The backdrop
-    /// keeps no ledger — an expired page is simply gone (zeroized
-    /// core-side, silently, per docs/spec/03 §1), and a fresh empty
-    /// page takes its place so the surface never shows nothing.
-    private func settleClock() {
-        _ = core.expireDue()
-        if core.sheets().isEmpty {
-            // The page died; the editor's mirror of its ink dies too.
-            ink = ""
-            _ = core.newSheet()
-        }
-        refresh()
+    /// A drag or resize by hand retires the zoom: the card is where the
+    /// user just put it, and a later double-click should zoom from
+    /// there rather than snap back to a place they have left behind.
+    func endZoom() {
+        zoomRestore = nil
     }
 }

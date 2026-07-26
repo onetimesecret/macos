@@ -19,7 +19,7 @@ final class BackdropGeometryTests: XCTestCase {
         let geometry = BackdropGeometry.default
         XCTAssertEqual(geometry.origin, CGPoint(x: 48, y: 48))
         XCTAssertEqual(geometry.width, 640)
-        XCTAssertEqual(geometry.minEditorHeight, 220)
+        XCTAssertEqual(geometry.height, 316)
     }
 
     func testDefaultSurvivesItsOwnClampOnARoomyPane() {
@@ -35,10 +35,7 @@ final class BackdropGeometryTests: XCTestCase {
         geometry.origin = CGPoint(x: 5000, y: 5000)
         let clamped = geometry.clamped(to: roomyPane)
         XCTAssertEqual(clamped.origin.x, roomyPane.width - clamped.width)
-        XCTAssertEqual(
-            clamped.origin.y,
-            roomyPane.height - (clamped.minEditorHeight + BackdropGeometry.cardChromeHeight)
-        )
+        XCTAssertEqual(clamped.origin.y, roomyPane.height - clamped.height)
     }
 
     func testANegativeOriginPinsToTheTopLeadingCorner() {
@@ -53,40 +50,41 @@ final class BackdropGeometryTests: XCTestCase {
         let geometry = BackdropGeometry(
             origin: CGPoint(x: 400, y: 300),
             width: 900,
-            minEditorHeight: 600
+            height: 700
         )
         let pane = CGSize(width: 800, height: 500)
         let clamped = geometry.clamped(to: pane)
         XCTAssertEqual(clamped.width, 800)
-        XCTAssertEqual(
-            clamped.minEditorHeight,
-            pane.height - BackdropGeometry.cardChromeHeight
-        )
+        XCTAssertEqual(clamped.height, 500)
         XCTAssertEqual(clamped.origin, .zero)
     }
 
     // MARK: The absolute bounds
 
-    func testWidthIsHeldWithinItsBoundsOnARoomyPane() {
+    func testWidthIsHeldAboveItsFloorOnARoomyPane() {
         var geometry = BackdropGeometry.default
         geometry.width = 100
         XCTAssertEqual(geometry.clamped(to: roomyPane).width, BackdropGeometry.minWidth)
-        geometry.width = 5000
-        XCTAssertEqual(geometry.clamped(to: roomyPane).width, BackdropGeometry.maxWidth)
     }
 
-    func testEditorHeightIsHeldWithinItsBoundsOnARoomyPane() {
+    func testHeightIsHeldAboveItsFloorOnARoomyPane() {
         var geometry = BackdropGeometry.default
-        geometry.minEditorHeight = 10
-        XCTAssertEqual(
-            geometry.clamped(to: roomyPane).minEditorHeight,
-            BackdropGeometry.minReadableEditorHeight
-        )
-        geometry.minEditorHeight = 5000
-        XCTAssertEqual(
-            geometry.clamped(to: roomyPane).minEditorHeight,
-            BackdropGeometry.maxEditorHeight
-        )
+        geometry.height = 10
+        XCTAssertEqual(geometry.clamped(to: roomyPane).height, BackdropGeometry.minHeight)
+    }
+
+    /// Sized like a window: the pane is the only ceiling, so a card
+    /// dragged out to fill a large display keeps every point of it.
+    /// (The card once carried 900 × 600 ceilings, from when it held one
+    /// page of ink and a reading measure was the whole argument.)
+    func testTheOnlyCeilingIsThePane() {
+        var geometry = BackdropGeometry.default
+        geometry.origin = .zero
+        geometry.width = 5000
+        geometry.height = 5000
+        let clamped = geometry.clamped(to: roomyPane)
+        XCTAssertEqual(clamped.width, roomyPane.width)
+        XCTAssertEqual(clamped.height, roomyPane.height)
     }
 
     // MARK: Degenerate panes collapse gracefully, never through a crash
@@ -95,7 +93,7 @@ final class BackdropGeometryTests: XCTestCase {
         let clamped = BackdropGeometry.default.clamped(to: .zero)
         XCTAssertEqual(clamped.origin, .zero)
         XCTAssertEqual(clamped.width, 0)
-        XCTAssertEqual(clamped.minEditorHeight, 0)
+        XCTAssertEqual(clamped.height, 0)
     }
 
     func testATinyPaneKeepsTheCardWithinItAndAboveZero() {
@@ -104,7 +102,8 @@ final class BackdropGeometryTests: XCTestCase {
         XCTAssertEqual(clamped.origin, .zero)
         XCTAssertGreaterThanOrEqual(clamped.width, 0)
         XCTAssertLessThanOrEqual(clamped.width, pane.width)
-        XCTAssertGreaterThanOrEqual(clamped.minEditorHeight, 0)
+        XCTAssertGreaterThanOrEqual(clamped.height, 0)
+        XCTAssertLessThanOrEqual(clamped.height, pane.height)
     }
 
     func testANegativePaneIsTreatedAsEmptyNotACrash() {
@@ -113,25 +112,46 @@ final class BackdropGeometryTests: XCTestCase {
         )
         XCTAssertEqual(clamped.origin, .zero)
         XCTAssertEqual(clamped.width, 0)
-        XCTAssertEqual(clamped.minEditorHeight, 0)
+        XCTAssertEqual(clamped.height, 0)
     }
 
-    // MARK: The wire and the suite
+    // MARK: The wire and the defaults
 
     func testGeometrySurvivesAJSONRoundTrip() throws {
         let geometry = BackdropGeometry(
             origin: CGPoint(x: 123.5, y: 67),
             width: 480,
-            minEditorHeight: 240
+            height: 340
         )
         let data = try JSONEncoder().encode(geometry)
         let decoded = try JSONDecoder().decode(BackdropGeometry.self, from: data)
         XCTAssertEqual(decoded, geometry)
     }
 
+    /// A card placed before the geometry carried a real height still
+    /// opens where it was left: the old editor floor plus the chrome
+    /// that sat around it is the height it was drawing.
+    func testAGeometryWrittenWithAnEditorFloorStillDecodes() throws {
+        // Encoded through a stand-in for the old shape rather than a
+        // hand-written blob, so the fixture cannot drift from how
+        // CGPoint actually writes itself.
+        struct LegacyGeometry: Encodable {
+            var origin: CGPoint
+            var width: CGFloat
+            var minEditorHeight: CGFloat
+        }
+        let legacy = try JSONEncoder().encode(
+            LegacyGeometry(origin: CGPoint(x: 12, y: 34), width: 500, minEditorHeight: 220)
+        )
+        let decoded = try JSONDecoder().decode(BackdropGeometry.self, from: legacy)
+        XCTAssertEqual(decoded.origin, CGPoint(x: 12, y: 34))
+        XCTAssertEqual(decoded.width, 500)
+        XCTAssertEqual(decoded.height, 316)
+    }
+
     func testGeometrySurvivesADefaultsRoundTripInAThrowawaySuite() throws {
         // A throwaway domain, wiped on the way out: tests never touch
-        // the backdrop's real suite, let alone CompanionApp's.
+        // the backdrop's real domain, let alone CompanionApp's.
         let suiteName = "com.onetimesecret.companion.backdrop.tests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -141,7 +161,7 @@ final class BackdropGeometryTests: XCTestCase {
         let geometry = BackdropGeometry(
             origin: CGPoint(x: 12, y: 34),
             width: 500,
-            minEditorHeight: 300
+            height: 300
         )
         geometry.save(to: defaults)
         XCTAssertEqual(BackdropGeometry.load(from: defaults), geometry)

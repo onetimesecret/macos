@@ -15,9 +15,16 @@ public struct InkEditorView: NSViewRepresentable {
     @ObservedObject var model: PageModel
     let sheetID: UInt64
 
-    public init(model: PageModel, sheetID: UInt64) {
+    /// Refuse edits while still showing the page: the backdrop's
+    /// resting glance. One editor over one storage in both stances
+    /// (ADR-0006's invariant), so raising and resting change what the
+    /// editor accepts, never what it renders or where the text sits.
+    let readOnly: Bool
+
+    public init(model: PageModel, sheetID: UInt64, readOnly: Bool = false) {
         self.model = model
         self.sheetID = sheetID
+        self.readOnly = readOnly
     }
 
     public func makeCoordinator() -> Coordinator {
@@ -56,6 +63,7 @@ public struct InkEditorView: NSViewRepresentable {
         // user-facing surface is still plain — ⌘V pastes plain text and
         // no ruler/font UI exists. Styling is ours alone (restyle()).
         textView.isRichText = true
+        textView.isEditable = !readOnly
         textView.allowsUndo = true
         textView.usesFindPanel = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -91,6 +99,9 @@ public struct InkEditorView: NSViewRepresentable {
         let coordinator = context.coordinator
         guard let textView = scroll.documentView as? InkTextView else { return }
         model.activeEditor = textView
+        // The stance can change without the page changing, so editing
+        // is re-gated on every pass rather than at mount alone.
+        textView.isEditable = !readOnly
         // Dead pages take their saved view state with them — the same
         // pruning `refresh()` applies to the storage cache.
         coordinator.pruneViewState(keeping: Set(model.sheets.map(\.id)))
