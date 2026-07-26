@@ -9,7 +9,7 @@ import SwiftUI
 ///
 /// What the card *contains* is the shared surface (`PageSurface.swift`
 /// in CompanionKit): the same content area, status lines, countdown and
-/// tab strip the panel window shows. What is here is the card itself —
+/// tab strip the panel window shows. What is here is the card itself:
 /// where it sits, how it is sized, and how the two stances look.
 struct BackdropRootView: View {
     @ObservedObject var model: BackdropModel
@@ -93,7 +93,7 @@ struct BackdropRootView: View {
             PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // The glance is the same ink at the same measure,
-                // dimmed — promote and demote must not make the text
+                // dimmed. Promote and demote must not make the text
                 // jump, so only the opacity changes.
                 .opacity(raised ? 1 : 0.72)
             PageStatusStack(model: pages)

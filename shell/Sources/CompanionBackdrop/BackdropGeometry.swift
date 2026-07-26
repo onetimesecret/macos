@@ -44,7 +44,7 @@ struct BackdropGeometry: Codable, Equatable {
     static let minWidth: CGFloat = 360
 
     /// Shorter than this and the header, the page, and the tab strip
-    /// stop fitting together — the card's equivalent of the panel
+    /// stop fitting together: the card's equivalent of the panel
     /// window's 300 pt floor.
     static let minHeight: CGFloat = 260
 

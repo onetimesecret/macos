@@ -7,10 +7,11 @@ import SwiftUI
 /// gauge, and the bottom-edge tab strip. An ember border shows exactly
 /// while the page holds the keyboard.
 ///
-/// What a page *is* — the content area, the status lines, the countdown,
-/// the keyboard map — is shared with the backdrop (`PageSurface.swift`).
-/// What lives here is the panel's own chrome: the header standing in for
-/// the title bar, the pin, and the window-shaped layout around them.
+/// What a page *is*, meaning the content area, the status lines, the
+/// countdown and the keyboard map, is shared with the backdrop
+/// (`PageSurface.swift`). What lives here is the panel's own chrome: the
+/// header standing in for the title bar, the pin, and the window-shaped
+/// layout around them.
 struct WindowRootView: View {
     @ObservedObject var model: PageModel
 

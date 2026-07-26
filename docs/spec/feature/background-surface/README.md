@@ -3,8 +3,10 @@
 
 # Feature: the background surface (working name: Backdrop)
 
-- **Status:** exploration — implemented as the `CompanionBackdrop`
-  target (ADR-0010); v0 scope below
+- **Status:** graduated from exploration. Implemented as the
+  `CompanionBackdrop` target (ADR-0010), at feature parity with the
+  panel since the parity amendment below; the v0 scope is kept as the
+  record of what was argued first
 - **Research:** [research.md](research.md) — what macOS makes possible
   for ambient, non-focus-stealing surfaces, and what it forbids
 - **Structure decision:**
@@ -44,7 +46,7 @@ exactly one of two stances:
 | Keyboard | refused outright (`canBecomeKey` = false) | may become key, never main |
 | Spaces | stationary desktop furniture; never in a full-screen Space | joins the user's active Space, full-screen included |
 | Countdown repaint | every 30 s | 1 Hz |
-| Reading | dimmed ink, one comfortable measure (max 640 pt) | the same ink, same measure, editable |
+| Reading | the same page, dimmed, editing refused | the same page, editable |
 
 The summon gestures are ⌃⌥Space (two modifiers, deliberately: ⌥Space
 belongs to the panel app, and option-only global shortcuts broke
@@ -146,17 +148,83 @@ This graduates the backdrop out of exploration, which fires ADR-0010's
 first eject trigger: the seam wrapper is extracted to a shared
 `CompanionKit` target and both form factors sit on it.
 
+## The parity amendment
+
+The backdrop holds **pages**, not a page, and shows everything the panel
+shows: the tab strip and its whole keyboard map, sealed chips and the
+gestures that make them, the ledger, and the exit ramp with its own
+connection settings. The absences below are reversed, each with its own
+argument, and the v0 list is kept underneath as the record of what was
+argued before.
+
+The general reason is the one the persistence amendment found, followed
+one step further. A surface that is always on screen is one you write
+*into*, and once you are writing into it you want the things writing
+needs. Every absence was individually defensible and collectively read
+as a worse copy of the app sitting next to it, which is not the
+difference this exploration exists to learn from. The difference worth
+learning from is the posture, and the posture is exactly what this
+amendment leaves alone.
+
+Each absence, and why it falls:
+
+- **More than one page.** The cap is the core's nine, refused rather
+  than evicted, as everywhere. One page was a floor set for an
+  exploration, and an always-present surface accumulates more than one
+  thing by the same logic that a desk does.
+- **Chips and the sealing gestures.** The original argument was that a
+  chip excerpt on an always-visible surface is standing shoulder-surfing
+  exposure the summoned panel never has. True, and it points the other
+  way once the surface holds real content: before this, the only way to
+  keep something on the backdrop was as **plaintext ink**, fully
+  legible to the room. A chip is strictly less exposure than the thing
+  it replaces. Refusing to seal did not keep secrets off the surface,
+  it kept them on the surface unsealed.
+- **The ledger.** "Residue on an always-visible surface" was the worry,
+  and it does not describe what the ledger is: a tab you visit, holding
+  dead pages, showing nothing until asked. Nothing about it stands on
+  the resting glance.
+- **Promotion and the network.** The exit ramp was to stay in the panel
+  until the backdrop earned it by an amendment here. This is that
+  amendment. The backdrop reaches its own connection settings, and a
+  token saved there is stored under the backdrop's own Keychain
+  service: two form factors, two stores, unchanged.
+
+What this amendment does **not** change is the stance model, the focus
+law, or the capture exclusion. A resting surface still refuses the
+keyboard outright, still passes clicks through to the desktop, and still
+never appears in a screenshot or a screen share. The resting card shows
+the same editor over the same page with editing refused, so raising it
+reflows nothing.
+
+The shoulder-surfing tradeoff is restated rather than resolved: ink on
+this surface is as visible as a paper note taped to the monitor, and
+that visibility is the form factor's whole proposition. What changed is
+that the surface now offers a way to *stop* content being ink. Whether
+the excerpt on a chip is itself too much standing exposure is still open
+(question №3 below), and a count-only face remains the fallback if lived
+use says so.
+
+Structurally, this fires ADR-0010's eject trigger a second time. The
+first firing moved the seam wrapper into `CompanionKit`; parity moves
+the page model and every form-factor-neutral view there too, since the
+same code touching sealed content must not exist in two targets. What
+stays in each target is its window and its posture.
+
 ## v0 scope — and what is deliberately absent
 
-v0 is **one page of visible ink with the standard TTL ladder**, resting
-on the primary screen. It exercises the two things this exploration is
+**Superseded by the parity amendment above**, and kept because the
+arguments are worth having on the record. v0 was **one page of visible
+ink with the standard TTL ladder**, resting on the primary screen. It exercises the two things this exploration is
 for: the window mechanics macOS makes hard, and a second consumer of
 the C-ABI seam (proof the core is as shell-agnostic as ADR-0001
 claims).
 
 Absent, each on purpose:
 
-- **No sealed chips, no sealing gestures.** A sealed chip's excerpt on
+- ~~**No sealed chips, no sealing gestures.**~~ **Superseded by the
+  parity amendment: a chip is less exposure than the plaintext it
+  replaces.** The original argument: a sealed chip's excerpt on
   an always-visible surface is a standing shoulder-surfing exposure the
   summoned panel never has. Whether any chip face belongs on a backdrop
   is an open question (№3), not a default. Consequence: the boundary
@@ -169,10 +237,13 @@ Absent, each on purpose:
   (ADR-0010).~~ **Superseded by the persistence amendment above.** The
   no-fighting half of the reasoning survives it: the backdrop still
   never touches the panel's state file or its Keychain service.
-- **No promotion, no network.** The exit ramp stays in the panel until
-  the backdrop earns it by an amendment here.
-- **No ledger.** An expired page is silently replaced by a fresh empty
-  one — zero means zeroized (docs/spec/03 §1), and residue on an
+- ~~**No promotion, no network.**~~ **Superseded by the parity
+  amendment, which is the amendment this bullet asked for.** The exit
+  ramp was to stay in the panel until the backdrop earned it here.
+- ~~**No ledger.**~~ **Superseded by the parity amendment: the ledger
+  is a tab you visit, not residue standing on the glance.** The
+  original argument: an expired page is silently replaced by a fresh
+  empty one, zero means zeroized (docs/spec/03 §1), and residue on an
   always-visible surface is a different, unargued thing.
 
 ## Security posture
@@ -225,6 +296,27 @@ and needs the project's hand-verification pass on real hardware:
    honestly absent from the accessibility hierarchy or honestly present
    — not a phantom.
 
+Added by the parity amendment:
+
+8. Chips: the sealing gestures work from a raised card (⇧⌘V takes the
+   clipboard and clears it, ⌘↩ seals the selection or line, an external
+   drop seals), and the resting glance draws the resulting excerpt
+   capsules with no affordance to reveal anything.
+9. Promotion: a link created from the backdrop reaches the server and
+   lands on the clipboard, and a token saved in the backdrop's Settings
+   goes under `com.onetimesecret.companion.backdrop` in the Keychain.
+   The panel's own token is untouched and neither app prompts for the
+   other's item.
+10. Tabs: ⌘1 through ⌘9, ⌥⌘N (including the refusal at nine), ⌥⌘←/→,
+    ⌘W, drag to reorder, double-click to hold the clock, and the ledger
+    tab, all from a raised card and none of them reachable from a
+    resting one.
+11. Sizing: the card resizes from each of the eight grips, zooms on a
+    header double-click and returns on the next, and its place and
+    measure survive quitting and relaunching **the installed copy**
+    (the defaults-suite defect made this work under `swift run` and
+    nowhere else, so the dev build is not evidence).
+
 ## Open questions
 
 1. **Is glanceable-but-capture-excluded coherent?** The surface hides
@@ -233,9 +325,11 @@ and needs the project's hand-verification pass on real hardware:
    visible one. Needs lived experience, not argument.
 2. **Per-display backdrops.** v0 is primary-screen only. One surface
    per display is mechanical to add and probably right.
-3. **Chip faces on the backdrop.** If chips ever appear, is even the
-   mechanical excerpt too much standing exposure? A count-only face
-   ("3 sealed items, 2h") may be the ceiling.
+3. **Chip faces on the backdrop.** Chips appear now (the parity
+   amendment), rendered as the same excerpt capsule the panel draws.
+   What stays open is whether even that mechanical excerpt is too much
+   standing exposure on a surface nobody dismisses. A count-only face
+   ("3 sealed items, 2h") remains the fallback if lived use says so.
 4. ~~**Shared pages across form factors.**~~ **Settled by the
    persistence amendment: its own.** The backdrop seals to its own file
    under its own Keychain service, and two apps remain two stores. What

@@ -5,8 +5,8 @@ import SwiftUI
 /// The parts of a surface that are the same wherever pages are shown:
 /// what fills the content area, the status lines under it, the countdown
 /// label, and the keyboard map. A form factor supplies its own chrome
-/// around these — the panel a window with a title bar, the backdrop a
-/// card on the desktop — and neither one re-describes what a page is.
+/// around these (the panel a window with a title bar, the backdrop a
+/// card on the desktop), and neither one re-describes what a page is.
 
 // MARK: - The content area
 

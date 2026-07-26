@@ -48,7 +48,7 @@ final class BackdropSettingsWindowController {
 }
 
 /// The backdrop's Settings: the shared Connection form, and above it
-/// the one setting only this form factor has — where the card sits.
+/// the one setting only this form factor has: where the card sits.
 struct BackdropSettingsView: View {
     @ObservedObject var model: BackdropModel
 

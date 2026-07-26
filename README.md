@@ -67,9 +67,10 @@ crates/ffi/          the C-ABI seam a non-Rust shell calls — plaintext never
 shell/               the Swift/AppKit shells (ADR-0002) — form factors are
                      sibling targets (ADR-0010) linking the core only through
                      the xcframework built from crates/ffi:
+                       Sources/CompanionKit       the shared page model,
+                                                  views and seam wrapper
                        Sources/CompanionApp       the panel (alpha)
                        Sources/CompanionBackdrop  the background surface
-                                                  (exploration)
 docs/spec/design/    the governing spec   ·   docs/spec/feature/  feature specs
 docs/adr/            decisions
 ```
@@ -100,14 +101,16 @@ Use scripts/quit-app.sh
 
 ## Form factors
 
-The panel above is the primary form factor. A second one is under
-exploration: **the background surface** (`CompanionBackdrop`) — an
-ambient pane resting at desktop level behind every window, raised to a
-floating editor with ⌃⌥Space and rested again with Esc. Same Rust core
-through the same seam; a sibling target that never touches the panel's
-code (ADR-0010). It carries deliberately less authority: one page of
-ink, no chips, no persistence, no network. Spec and the underlying
-macOS research: docs/spec/feature/background-surface/. Build it with
+The panel above is the primary form factor. The second is **the
+background surface** (`CompanionBackdrop`): an ambient pane resting at
+desktop level behind every window, raised to a floating editor with
+⌃⌥Space and rested again with Esc. Same Rust core through the same
+seam, and since the parity amendment the same pages, tabs, chips,
+ledger and exit ramp; what differs is the posture. Both form factors
+share `CompanionKit` and keep their own window, bundle id, Keychain
+service and state file, so neither can read the other's pages
+(ADR-0010). Spec and the underlying macOS research:
+docs/spec/feature/background-surface/. Build it with
 `scripts/build-backdrop.sh` → `dist/CompanionBackdrop.app`; both apps
 can run at once.
 

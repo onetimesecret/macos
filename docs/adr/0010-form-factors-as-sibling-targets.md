@@ -59,6 +59,14 @@ not.)
 - The panel app is untouched: no source edits, no import changes, no
   behaviour risk. Killing a failed exploration is `git rm -r` of one
   directory plus two Package.swift entries.
+  **Held until 2026-07-25, then spent as designed.** The parity
+  amendment moved the panel's model and views into `CompanionKit`, so
+  the panel's sources did change: this consequence bought an
+  exploration the room to fail cheaply, and it lasted exactly as long
+  as the exploration did. What survives it is the shape underneath:
+  each form factor still owns its window, its posture, its bundle id,
+  its Keychain service and its state file, and killing one is still
+  deleting one directory.
 - Both form factors ride the existing CI shell lane for free —
   `swift build` / `swift test` cover the whole package — so the
   exploration cannot silently rot the way a branch would.
@@ -87,6 +95,19 @@ not.)
   survives the graduation intact: the backdrop seals to its own file
   under its own Keychain service, reached through
   `companion_new_scoped`, and neither app reads the other's.
+  **Fired again the same day, wider.** The parity amendment gave the
+  backdrop tabs, chips, the ledger and promotion, which would have put
+  roughly eighteen hundred lines of secret-touching view code in both
+  targets. So the extraction went past the wrapper: the page model
+  (`PageModel`) and every form-factor-neutral view moved to
+  `CompanionKit` as well, and what varies became a value the shared
+  model reads (`FormFactor`: Keychain service, state directory, log
+  subsystem, opening rung). The bound in the consequences below was
+  "~150 lines of seam wrapper"; parity made the duplication an order of
+  magnitude larger and pointed at sealed content, which is the case the
+  bound existed to catch. Each target now holds only its window and its
+  posture: the delegate, the window controller, the root view, and for
+  the backdrop the stance and the card's geometry.
 - **A third form factor appears**: three copies of the seam wrapper is
   two too many; same extraction, whatever the maturity.
 - **The duplicated wrapper drifts** — a seam change lands in one copy

@@ -7,7 +7,7 @@ import CoreGraphics
 ///
 /// Pure, like `BackdropGeometry.clamped(to:)` beside it: the decision is
 /// tested directly rather than by driving AppKit. The clamp still has
-/// the last word — this only says what the user asked for.
+/// the last word; this only says what the user asked for.
 enum CardEdge: CaseIterable {
     case top, bottom, leading, trailing
     case topLeading, topTrailing, bottomLeading, bottomTrailing
@@ -46,8 +46,8 @@ enum CardEdge: CaseIterable {
 
     /// The geometry this pull proposes.
     ///
-    /// A leading or top pull moves two things at once — the origin and
-    /// the measure — so the pull is capped at the point where the card
+    /// A leading or top pull moves two things at once, the origin and
+    /// the measure, so the pull is capped at the point where the card
     /// would cross its minimum. Without the cap, dragging the top edge
     /// past the floor would keep walking the origin down while the
     /// clamp held the height, and the card would slide away from a

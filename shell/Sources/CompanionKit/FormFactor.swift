@@ -9,9 +9,9 @@ import Foundation
 /// the tab strip, the ink editor, the ledger, and the promotion flow are
 /// the same code, and the same code touching sealed content must not
 /// exist twice. What is genuinely per-form-factor is small enough to fit
-/// here — where the Keychain items live, where the sealed file rests,
+/// here (where the Keychain items live, where the sealed file rests,
 /// which defaults domain holds the settings, which rung a fresh page
-/// opens on — so the difference is data the shared model reads rather
+/// opens on), so the difference is data the shared model reads rather
 /// than a second copy of the model.
 public struct FormFactor: Sendable {
     /// The name in the About panel, the alerts, and the tray item.
@@ -25,7 +25,7 @@ public struct FormFactor: Sendable {
     public let credentialService: String?
 
     /// The directory under Application Support holding the sealed state
-    /// file. Two form factors, two stores — neither reads the other's.
+    /// file. Two form factors, two stores: neither reads the other's.
     public let stateDirectory: String
 
     /// The unified-log subsystem for this form factor's trails.
@@ -51,7 +51,7 @@ public struct FormFactor: Sendable {
         self.defaultRung = defaultRung
     }
 
-    /// Where the sealed store rests between runs. Ciphertext only — the
+    /// Where the sealed store rests between runs. Ciphertext only: the
     /// key lives in the Keychain, so the file alone says nothing.
     public var stateFileURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -88,18 +88,18 @@ extension FormFactor {
     ///
     /// `UserDefaults.standard`, deliberately, and for both form factors:
     /// an app's standard domain *is* its bundle identifier's domain, so
-    /// two apps with two bundle ids already have two separate stores —
+    /// two apps with two bundle ids already have two separate stores;
     /// ADR-0010's separation holds without a named suite doing anything.
     ///
     /// A named suite was the earlier approach here, and it was worse
     /// than a no-op: `UserDefaults(suiteName:)` is documented to refuse
     /// the current application's own bundle identifier, and the name
     /// asked for was exactly the backdrop's bundle id. It returned nil
-    /// in the installed copy — every geometry write went nowhere and
-    /// the card reset its place and measure at each launch — while a
-    /// bare `swift run` binary, having no bundle id to collide with,
-    /// got a real suite and persisted fine. A bug that only shows in
-    /// the build people actually run.
+    /// in the installed copy, so every geometry write went nowhere and
+    /// the card reset its place and measure at each launch. A bare
+    /// `swift run` binary, having no bundle id to collide with, got a
+    /// real suite and persisted fine: a bug that only shows in the
+    /// build people actually run.
     public static var settingsDefaults: UserDefaults { .standard }
 }
 

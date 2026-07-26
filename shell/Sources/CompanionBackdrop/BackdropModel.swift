@@ -3,16 +3,16 @@ import CompanionKit
 import Foundation
 
 /// The backdrop's own state: the stance the surface is in and where the
-/// card sits within the pane. The pages themselves — their ink, chips,
-/// clocks, ledger and exit ramp — belong to the shared `PageModel`,
-/// which is the same behaviour the panel shows; what this type adds is
-/// the posture that behaviour is shown in.
+/// card sits within the pane. The pages themselves, with their ink,
+/// chips, clocks, ledger and exit ramp, belong to the shared
+/// `PageModel`, which is the same behaviour the panel shows; what this
+/// type adds is the posture that behaviour is shown in.
 ///
 /// It follows the panel's frugality contract where the form factor
-/// allows — expiry is *scheduled* by the shared model, one timer at the
-/// core's next event — and departs where it must: the surface is always
-/// on screen, so the countdown redraw never stops; instead it coarsens
-/// to one repaint every 30 s while resting (`BackdropStance.tickInterval`).
+/// allows, expiry being *scheduled* by the shared model at the core's
+/// next event, and departs where it must: the surface is always on
+/// screen, so the countdown redraw never stops; instead it coarsens to
+/// one repaint every 30 s while resting (`BackdropStance.tickInterval`).
 @MainActor
 final class BackdropModel: ObservableObject {
     /// The surface's posture. The window controller follows this; the
@@ -49,8 +49,8 @@ final class BackdropModel: ObservableObject {
         pages = PageModel(formFactor: .backdrop, defaults: defaults)
     }
 
-    /// True while the surface holds the keyboard — set by the window
-    /// controller from key status, and kept on the shared model because
+    /// True while the surface holds the keyboard, set by the window
+    /// controller from key status and kept on the shared model because
     /// the editor's focus rules read it there. Raised and keyed are
     /// distinct facts: the user can ⌘Tab away to work beside a raised
     /// card.
@@ -160,7 +160,7 @@ final class BackdropModel: ObservableObject {
     }
 
     /// Double-click the header: the card takes the pane's full working
-    /// height, and a second double-click returns it — the zoom verb
+    /// height, and a second double-click returns it. The zoom verb
     /// every macOS window has, in the one dimension a card can spend.
     /// The restored geometry is remembered rather than recomputed, so
     /// the return lands exactly where the card was.
