@@ -6,7 +6,9 @@ import os
 /// The background surface's window: a borderless pane covering the
 /// primary screen, resting at desktop level (above the wallpaper, below
 /// the icons and every normal window; the pin lifts a rest to floating
-/// instead) and raised to floating for a moment of editing. The mechanics follow Plash's recovered recipe and
+/// and shrinks the window to the card's own rect, so clicks beside the
+/// card stay someone else's) and raised to floating for a moment of
+/// editing. The mechanics follow Plash's recovered recipe and
 /// the panel's focus law: the stance split lives in `BackdropStance`;
 /// this controller only applies it.
 @MainActor
@@ -31,17 +33,34 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         model.$stance
             .sink { [weak self] stance in self?.apply(stance) }
             .store(in: &observers)
-        // The pin re-altitudes the current stance in place: level and
-        // Space membership follow, but none of the stance choreography
-        // (key relay, activation hand-back, ordering) runs for a mere
-        // altitude change. The closure's value, not the model's: a
-        // @Published emits on willSet, before the property lands.
+        // The pin re-altitudes the current stance in place: level,
+        // Space membership, mouse transparency and window extent
+        // follow, but none of the stance choreography (key relay,
+        // activation hand-back, ordering) runs for a mere altitude
+        // change. The closure's value, not the model's: a @Published
+        // emits on willSet, before the property lands.
         model.$pinned
             .dropFirst()
             .sink { [weak self] pinned in
                 guard let self else { return }
+                panel.ignoresMouseEvents = model.stance.ignoresMouse(pinned: pinned)
                 panel.level = model.stance.level(pinned: pinned)
                 panel.collectionBehavior = model.stance.collectionBehavior(pinned: pinned)
+                applyFrame(stance: model.stance, pinned: pinned, geometry: model.geometry)
+            }
+            .store(in: &observers)
+        // While the window hugs the card (a pinned rest), the card's
+        // geometry IS the window's frame, so a geometry change made
+        // outside a raise (Settings' reset, a screen-change reclamp)
+        // must move the window too. Raised drags redraw within the
+        // full pane and land here as no-ops.
+        model.$geometry
+            .dropFirst()
+            .sink { [weak self] geometry in
+                guard let self else { return }
+                if !model.stance.spansPane(pinned: model.pinned) {
+                    applyFrame(stance: model.stance, pinned: model.pinned, geometry: geometry)
+                }
             }
             .store(in: &observers)
         // Debug-only escape hatch: the Settings toggle (seeded by
@@ -88,10 +107,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// open question in the feature spec.
     private func fitToScreen() {
         guard let screen = NSScreen.screens.first else { return }
-        panel.setFrame(screen.frame, display: true)
         // The pane changed shape, so the card's geometry may now point
         // off the edge of it; the model pulls the card back on screen.
-        // The window spans the whole screen, but the card is confined
+        // The pane spans the whole screen, but the card is confined
         // to the visible frame — the menu bar and Dock outrank a
         // floating card, and a header parked under the menu bar could
         // never be clicked again. AppKit's bottom-left frames convert
@@ -103,6 +121,35 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             height: screen.visibleFrame.height
         )
         model.reclamp(pane: usable)
+        // Reclamp first, frame second: a card-hugging window must be
+        // framed from the geometry the new pane has already judged.
+        applyFrame(stance: model.stance, pinned: model.pinned, geometry: model.geometry)
+    }
+
+    /// The window's extent for a given posture: the whole screen when
+    /// the stance spans the pane, the card's own rect (translated from
+    /// the pane's top-leading coordinates to AppKit's bottom-left
+    /// screen coordinates) when it hugs the card. Parameters are
+    /// explicit because the pin and geometry sinks fire on willSet,
+    /// before the model's own property has landed.
+    private func applyFrame(
+        stance: BackdropStance, pinned: Bool, geometry: BackdropGeometry
+    ) {
+        guard let screen = NSScreen.screens.first else { return }
+        let target: NSRect
+        if stance.spansPane(pinned: pinned) {
+            target = screen.frame
+        } else {
+            target = NSRect(
+                x: screen.frame.minX + geometry.origin.x,
+                y: screen.frame.maxY - geometry.origin.y - geometry.height,
+                width: geometry.width,
+                height: geometry.height
+            )
+        }
+        if panel.frame != target {
+            panel.setFrame(target, display: true)
+        }
     }
 
     private func apply(_ stance: BackdropStance) {
@@ -110,9 +157,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // by the time it is ordered back, and already accept it by the
         // time it is made key.
         panel.isInteractive = stance.acceptsKey
-        panel.ignoresMouseEvents = stance.ignoresMouse
+        panel.ignoresMouseEvents = stance.ignoresMouse(pinned: model.pinned)
         panel.level = stance.level(pinned: model.pinned)
         panel.collectionBehavior = stance.collectionBehavior(pinned: model.pinned)
+        // Extent before ordering: a raise must already cover the pane
+        // when it takes key (the click-outside catcher), and a pinned
+        // rest must already hug the card when it orders front.
+        applyFrame(stance: stance, pinned: model.pinned, geometry: model.geometry)
         switch stance {
         case .raised:
             // A summon means *here*: if the surface is up on some other

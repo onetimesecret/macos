@@ -36,13 +36,19 @@ struct BackdropRootView: View {
 
     var body: some View {
         let placed = displayedGeometry()
+        // While the window hugs the card (a pinned rest), the window's
+        // own frame carries the card's place on screen; drawing the
+        // card at its pane offset too would push it out of its own
+        // window.
+        let hugging = !model.stance.spansPane(pinned: model.pinned)
         ZStack(alignment: .topLeading) {
             // The raised window spans the screen, so without this a
             // click beside the card would be swallowed by our own
             // transparent pane. Clicking outside the card rests the
             // surface instead, the click's plain meaning. (While
-            // resting the window ignores the mouse entirely, so the
-            // gesture is unreachable there.)
+            // resting the gesture is unreachable: the unpinned rest
+            // ignores the mouse entirely, and the pinned rest's window
+            // is exactly the card, with no beside-the-card left.)
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -50,7 +56,10 @@ struct BackdropRootView: View {
                 }
             card
                 .frame(width: placed.width, height: placed.height)
-                .offset(x: placed.origin.x, y: placed.origin.y)
+                .offset(
+                    x: hugging ? 0 : placed.origin.x,
+                    y: hugging ? 0 : placed.origin.y
+                )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // The drag gestures measure in this space, not their own
@@ -124,18 +133,39 @@ struct BackdropRootView: View {
             // The resize affordances exist only while raised. The
             // resting glance keeps its chrome-free face, and by the
             // stance invariant it could not take the drag anyway: the
-            // resting window ignores the mouse entirely.
+            // resting window either ignores the mouse (unpinned) or
+            // gives every click one meaning (pinned, below).
             if raised {
                 resizeFrame
+            }
+        }
+        .overlay {
+            // A pinned rest takes the mouse (its window would otherwise
+            // let clicks fall into whatever it covers), and this shield
+            // gives the whole card a single meaning for them: a click
+            // raises, the same deliberate act as any other summon. It
+            // sits above every control, so a resting countdown button
+            // or pin cannot be worked without raising first. On the
+            // unpinned rest it is mounted but unreachable; the window
+            // itself ignores the mouse.
+            if !raised {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.raise() }
+                    .help("Click to raise the card")
             }
         }
     }
 
     /// The empty state names the gesture that actually conjures a page
-    /// on this surface. A resting card can be neither clicked nor typed
-    /// into, so it points at the summon that would change that.
+    /// on this surface. A resting card cannot be typed into, so it
+    /// points at the summon that would change that; the pinned rest is
+    /// clickable, so its hint says so.
     private var emptyHint: String {
-        raised ? "click, ⌃⌥Space, or ↩ for a page" : "⌃⌥Space raises the surface"
+        if raised { return "click, ⌃⌥Space, or ↩ for a page" }
+        return model.pinned
+            ? "click or ⌃⌥Space raises the surface"
+            : "⌃⌥Space raises the surface"
     }
 
     private var header: some View {
@@ -168,8 +198,8 @@ struct BackdropRootView: View {
         // catcher, so a drag can never fall through and read as a
         // click-outside rest; the countdown button, being a child,
         // still wins a plain click. While resting the mask yields the
-        // gesture to subviews, which leaves the handle inert (and the
-        // resting window ignores the mouse regardless).
+        // gesture to subviews, which leaves the handle inert (and any
+        // resting click stops at the raise shield anyway).
         .contentShape(Rectangle())
         .gesture(dragGesture, including: raised ? .all : .subviews)
         // A window zooms on a title-bar double-click; the header is
@@ -182,10 +212,10 @@ struct BackdropRootView: View {
     /// The resting altitude, as a real `Toggle` so VoiceOver announces
     /// a switch with on and off state (the panel's pin, ported).
     /// Pinned, the card rests floating above other windows, readable
-    /// beside whatever the user is writing; it stays mouse-transparent
-    /// there, so the toggle itself is reachable only while raised. The
-    /// glyph shows in both stances: a floating rest should say why it
-    /// floats.
+    /// beside whatever the user is writing; a click on that resting
+    /// card raises it (the shield overlay above every control), so the
+    /// toggle itself is workable only while raised. The glyph shows in
+    /// both stances: a floating rest should say why it floats.
     private var pinToggle: some View {
         Toggle(isOn: $model.pinned) {
             Image(systemName: model.pinned ? "pin.fill" : "pin")

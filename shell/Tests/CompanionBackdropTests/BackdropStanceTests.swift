@@ -29,7 +29,13 @@ final class BackdropStanceTests: XCTestCase {
     }
 
     func testRestingLetsClicksFallThroughToTheDesktop() {
-        XCTAssertTrue(BackdropStance.resting.ignoresMouse)
+        XCTAssertTrue(BackdropStance.resting.ignoresMouse(pinned: false))
+    }
+
+    func testRestingSpansTheWholePane() {
+        // Desktop furniture covers the desktop; mouse transparency
+        // makes the acreage free.
+        XCTAssertTrue(BackdropStance.resting.spansPane(pinned: false))
     }
 
     func testRestingRefusesTheKeyboardOutright() {
@@ -58,7 +64,15 @@ final class BackdropStanceTests: XCTestCase {
     }
 
     func testRaisedTakesTheMouse() {
-        XCTAssertFalse(BackdropStance.raised.ignoresMouse)
+        XCTAssertFalse(BackdropStance.raised.ignoresMouse(pinned: false))
+        XCTAssertFalse(BackdropStance.raised.ignoresMouse(pinned: true))
+    }
+
+    func testRaisedSpansTheWholePane() {
+        // The pane is the click-outside-to-rest catcher; the pin does
+        // not change that.
+        XCTAssertTrue(BackdropStance.raised.spansPane(pinned: false))
+        XCTAssertTrue(BackdropStance.raised.spansPane(pinned: true))
     }
 
     func testRaisedMayTakeTheKeyboard() {
@@ -78,19 +92,28 @@ final class BackdropStanceTests: XCTestCase {
         )
     }
 
-    // MARK: The pin, a resting altitude and nothing else
+    // MARK: The pin, a resting altitude (plus the click that undoes it)
 
     func testAPinnedRestFloatsAboveNormalWindows() {
         XCTAssertEqual(BackdropStance.resting.level(pinned: true), .floating)
     }
 
-    func testAPinnedRestStaysPassive() {
-        // Passivity is what makes the pin safe: the card can be read
-        // above another window while every click and keystroke still
-        // lands in that window. A pinned rest that took either would
-        // be a raise in disguise.
-        XCTAssertTrue(BackdropStance.resting.ignoresMouse)
+    func testAPinnedRestTakesTheMouseButNeverTheKeyboard() {
+        // A floating card that stayed mouse-transparent would route
+        // clicks into the window it covers, where the user cannot see
+        // them land: the click-through trap. So the pinned rest takes
+        // the mouse (a click means "raise", nothing else), while the
+        // keyboard refusal stands; keys still belong to the window the
+        // user is writing in.
+        XCTAssertFalse(BackdropStance.resting.ignoresMouse(pinned: true))
         XCTAssertFalse(BackdropStance.resting.acceptsKey)
+    }
+
+    func testAPinnedRestHugsTheCard() {
+        // Taking the mouse is safe only because the window shrinks to
+        // the card: mouse transparency is per-window, so a full-pane
+        // window that took clicks would block the whole screen.
+        XCTAssertFalse(BackdropStance.resting.spansPane(pinned: true))
     }
 
     func testAPinnedRestIsReadableOnEverySpace() {

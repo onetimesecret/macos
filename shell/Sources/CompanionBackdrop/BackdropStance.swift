@@ -17,9 +17,10 @@ enum BackdropStance: Equatable {
     case raised
 
     /// Where the window sits in the stacking order. The pin lifts the
-    /// resting pane above normal windows without changing its
-    /// passivity: a pinned rest still ignores the mouse and refuses
-    /// the keyboard, so the hard split's central lesson holds.
+    /// resting pane above normal windows. A pinned rest still refuses
+    /// the keyboard (the hard split's central lesson holds); its one
+    /// concession to the mouse is that a click raises it, the same
+    /// deliberate act any other summon is.
     func level(pinned: Bool) -> NSWindow.Level {
         switch self {
         case .resting: pinned ? .floating : .backdropDesktop
@@ -27,12 +28,34 @@ enum BackdropStance: Equatable {
         }
     }
 
-    /// Whether clicks pass through to the desktop beneath. The resting
-    /// surface must never intercept a click meant for a desktop icon.
-    var ignoresMouse: Bool {
+    /// Whether clicks pass through to whatever lies beneath. Mouse
+    /// transparency is all-or-nothing per window, decided at the
+    /// window server. The unpinned rest must never intercept a click
+    /// meant for a desktop icon, so it stays transparent. A pinned
+    /// rest floats above other windows; a card that stayed transparent
+    /// there would route clicks into windows the user cannot see (the
+    /// click-through trap this replaces), so it takes the mouse, and
+    /// `spansPane` shrinks the window to the card so only the card
+    /// takes it. The click's one meaning while resting is "raise".
+    func ignoresMouse(pinned: Bool) -> Bool {
         switch self {
-        case .resting: true
+        case .resting: !pinned
         case .raised: false
+        }
+    }
+
+    /// Whether the window covers the whole pane or shrinks to the
+    /// card's own rect. Full coverage is the norm: the unpinned rest
+    /// is desktop furniture (and mouse-transparent, so its acreage
+    /// costs nothing), and the raised editor needs the pane as its
+    /// click-outside-to-rest catcher. The pinned rest is the one
+    /// posture where window extent decides click routing above other
+    /// apps' windows, so there the window hugs the card and the rest
+    /// of the screen stays someone else's to click.
+    func spansPane(pinned: Bool) -> Bool {
+        switch self {
+        case .resting: !pinned
+        case .raised: true
         }
     }
 

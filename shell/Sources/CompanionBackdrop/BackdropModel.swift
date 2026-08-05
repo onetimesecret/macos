@@ -31,10 +31,13 @@ final class BackdropModel: ObservableObject {
 
     /// Whether the resting card floats above other windows (pinned) or
     /// lies at the desktop behind them (the default, the form factor's
-    /// native posture). The pin changes altitude and nothing else: a
-    /// pinned rest still ignores the mouse and refuses the keyboard,
-    /// which is what makes it safe to read beside while writing in
-    /// another window. Persisted; the window controller follows it.
+    /// native posture). A pinned rest still refuses the keyboard, which
+    /// is what makes it safe to read beside while writing in another
+    /// window; the mouse it takes, because a floating card that let
+    /// clicks fall through to the window beneath would be a trap, and
+    /// a click on it means exactly one thing: raise. The window shrinks
+    /// to the card there, so clicks beside it still land where they
+    /// look. Persisted; the window controller follows it.
     /// The panel's `floatsOnTop` is deliberately not reused: that bool
     /// levels a normal window, this one levels a stance.
     @Published var pinned: Bool {
