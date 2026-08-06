@@ -12,14 +12,20 @@
 # of release). `open` does not forward the caller's environment; pass
 # the variable explicitly:
 #   open --env COMPANION_ALLOW_CAPTURE=1 dist/CompanionBackdrop.app
-# Debug builds get a .dev bundle id so a dev instance and the installed
-# copy can coexist without contending for the menu bar, defaults, and
-# state.
+# Debug builds get a .debug bundle id so a dev instance and the
+# installed copy can coexist without contending for the menu bar,
+# defaults, keychain items, and state (ADR-0012).
 #
 # Signing: ad-hoc by default; set CODESIGN_IDENTITY to a real
 # certificate for an identity that survives rebuilds. (The backdrop
 # stores nothing in the Keychain, so identity churn costs less here
-# than it does for the panel app — TCC grants still reset.)
+# than it does for the panel app, though TCC grants still reset.) Only a real
+# identity can carry scripts/Companion.entitlements; an ad-hoc build
+# omits it and runs the documented login keychain fallback.
+#
+# Before signing, the assembled bundle is hashed into
+# dist/CompanionBackdrop.presig.sha256, the reproducible pre-signature
+# artifact ADR-0012 publishes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -89,13 +95,64 @@ if [[ "$CONFIG" == "debug" ]]; then
   # A distinct identity for the dev instance, so it and the installed
   # copy read as separate apps to macOS and to the eye.
   BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
-  plutil -replace CFBundleIdentifier -string "$BUNDLE_ID.dev" "$APP/Contents/Info.plist"
+  plutil -replace CFBundleIdentifier -string "$BUNDLE_ID.debug" "$APP/Contents/Info.plist"
   BUNDLE_NAME="$(plutil -extract CFBundleName raw "$APP/Contents/Info.plist")"
   plutil -replace CFBundleName -string "$BUNDLE_NAME Dev" "$APP/Contents/Info.plist"
 fi
 
+# The published artifact is the bundle as assembled, before any
+# signature touches it. Hash every regular file by relative path and
+# content: relative so the digest reproduces from a different checkout
+# directory, and LC_ALL=C so the sort order is byte order rather than
+# whatever the caller's locale collates to.
+DIGEST_FILE="dist/$(basename "$APP" .app).presig.sha256"
+echo "==> Pre-signature digest"
+DIGEST="$(cd "$APP" && LC_ALL=C find . -type f -print0 \
+  | LC_ALL=C sort -z \
+  | xargs -0 shasum -a 256 \
+  | shasum -a 256 \
+  | cut -d ' ' -f 1)"
+if [[ -z "$DIGEST" ]]; then
+  echo "pre-signature digest came out empty" >&2
+  exit 1
+fi
+printf '%s  %s\n' "$DIGEST" "${APP##*/}" > "$DIGEST_FILE"
+echo "$DIGEST  ${APP##*/} (pre-signature, $DIGEST_FILE)"
+
+IDENTITY="${CODESIGN_IDENTITY:--}"
 echo "==> codesign (${CODESIGN_IDENTITY:-ad-hoc})"
-codesign --force --sign "${CODESIGN_IDENTITY:--}" "$APP"
+if [[ "$IDENTITY" == "-" ]]; then
+  # An ad-hoc signature has no Team ID, so it cannot carry
+  # keychain-access-groups. Expected for local builds, not a failure:
+  # the credentials layer sees errSecMissingEntitlement and falls back
+  # (ADR-0012).
+  echo "    warning: ad-hoc signature, so scripts/Companion.entitlements is not applied." >&2
+  echo "    warning: the data protection keychain is unavailable in this build; the" >&2
+  echo "    warning: credentials layer falls back to the file based login keychain." >&2
+  echo "    warning: set CODESIGN_IDENTITY to a real certificate for the modern store." >&2
+  codesign --force --sign "$IDENTITY" "$APP"
+else
+  # $(AppIdentifierPrefix) is an Xcode build setting, and codesign does
+  # not expand it. Left literal it signs in an access group that cannot
+  # exist. Substitute the signing certificate's Team ID (the OU field)
+  # at sign time, trailing dot included, matching Xcode.
+  TEAM_ID="$(security find-certificate -c "$IDENTITY" -p 2>/dev/null \
+    | openssl x509 -noout -subject 2>/dev/null \
+    | sed -n 's/.*OU *= *\([A-Za-z0-9]\{6,\}\).*/\1/p' | head -n1)"
+  if [[ -z "$TEAM_ID" ]]; then
+    echo "    warning: could not read a Team ID from the signing certificate, so" >&2
+    echo "    warning: scripts/Companion.entitlements is not applied and the data" >&2
+    echo "    warning: protection keychain stays unavailable (login keychain fallback)." >&2
+    codesign --force --sign "$IDENTITY" "$APP"
+  else
+    SIGN_ENTITLEMENTS="$(mktemp -t companion-entitlements)"
+    sed "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" scripts/Companion.entitlements \
+      > "$SIGN_ENTITLEMENTS"
+    echo "==> entitlements: keychain-access-group ${TEAM_ID}.com.onetimesecret.companion"
+    codesign --force --entitlements "$SIGN_ENTITLEMENTS" --sign "$IDENTITY" "$APP"
+    rm -f "$SIGN_ENTITLEMENTS"
+  fi
+fi
 
 echo "==> Verifying"
 plutil -lint "$APP/Contents/Info.plist"
