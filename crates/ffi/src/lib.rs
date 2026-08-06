@@ -75,6 +75,7 @@ use companion_transport::UreqTransport;
 use ots_client::Transport as _;
 use promotion::{Connection, PromoteOpts, Promoted, ladder_snapped_ttl, promote};
 
+use companion_core::clock::sleep_inclusive_ns;
 use companion_core::{
     ChipId, ChipMeta, DestinationClass, LedgerEvent, Segment, Sheet, SheetId, SheetStore,
     SizeClass, SystemClock, TTL_LADDER, Ttl,
@@ -923,20 +924,31 @@ pub unsafe extern "C" fn companion_expire_due(handle: *mut CompanionHandle) -> u
 }
 
 // ---------------------------------------------------------------------------
-// Persistence — the sealed state file (JIT encryption at quit)
+// Persistence: the sealed state file, bound to this boot session
 // ---------------------------------------------------------------------------
 
-/// Save the staged content (sheets, sealed chips, clocks) to
-/// `path`, encrypted with ChaCha20-Poly1305 under a 32-byte key that
-/// rests in the OS credential store (`state-key` account, minted on
-/// first save). The ledger is **not** in this file; it has its own,
-/// under its own key ([`companion_ledger_save`]), because content is
-/// boot-session-bound and the audit record is not.
-/// Only ciphertext touches disk; the plaintext snapshot is
-/// wiped before this returns. The write is atomic (temp file + rename)
-/// and owner-only. The shell calls this on every mutation, debounced,
-/// and again at quit to flush what is still pending (ADR-0012); the
-/// core still saves nothing on its own.
+/// Save the staged content (sheets, sealed chips, clocks) to `path`,
+/// encrypted with ChaCha20-Poly1305 under a key that exists only while
+/// this boot session does: `HKDF(keychain_half, boot_half)`. The
+/// keychain half rests in the data protection keychain (lock gated,
+/// this device only, ADR-0012); the boot half is a file in the per-user
+/// temp directory whose very *name* is derived from the current boot
+/// session, so a later session cannot find it whether or not the
+/// directory was cleared. Neither half alone unwraps anything, and no
+/// key byte crosses this seam.
+///
+/// The envelope stamps itself with `kern.bootsessionuuid` and with both
+/// clocks at the save, all of it authenticated, so a file cannot be
+/// re-dated and cannot be opened by a later boot session. The ledger is
+/// **not** in this file; it has its own, under its own long-lived key
+/// ([`companion_ledger_save`]), because content is boot-session-bound
+/// and the audit record is not.
+///
+/// Only ciphertext touches disk; the plaintext snapshot is wiped before
+/// this returns. The write is atomic (temp file + rename) and
+/// owner-only. The shell calls this on every mutation, debounced, and
+/// again at quit to flush what is still pending (ADR-0012); the core
+/// still saves nothing on its own.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid NUL-terminated
@@ -962,24 +974,43 @@ pub unsafe extern "C" fn companion_persist_save(
         return false;
     };
     let snapshot = guard.store.snapshot(wall_ms);
-    let Some(sealed) = persist::seal_state(&key, &snapshot) else {
+    // The same wall stamp the snapshot carries inside itself, plus the
+    // sleep-inclusive monotonic reading restore ages from.
+    let Some(sealed) = persist::seal_state(&key, &snapshot, wall_ms, sleep_inclusive_ns()) else {
         return false;
     };
     persist::write_private(Path::new(path), &sealed)
 }
 
 /// Restore the store from a state file [`companion_persist_save`]
-/// wrote: decrypt (the key comes from the credential store — never
-/// minted here), replace the store's sheets, and drain every
-/// countdown by the wall time that passed while the app was closed.
-/// The ledger is untouched here; it loads through
-/// [`companion_ledger_restore`], and either call may succeed while the
-/// other fails.
-/// Pages that came due while away expire into the ledger immediately.
-/// Meant for startup, before the first page is created. Returns whether
-/// a state was restored — false covers "no file yet" (a fresh start,
-/// not an error) as well as a missing key, failed authentication, or a
-/// damaged snapshot.
+/// wrote: decrypt (both key halves are loaded, never minted here),
+/// replace the store's sheets, and drain every countdown by the time
+/// that passed while the app was closed. The ledger is untouched here;
+/// it loads through [`companion_ledger_restore`], and either call may
+/// succeed while the other fails. Pages that came due while away expire
+/// into the ledger immediately. Meant for startup, before the first
+/// page is created.
+///
+/// A file from another boot session is discarded before anything in it
+/// is decrypted: the halves are rotated first, and the file is dropped
+/// from disk only once that rotation actually removed one. A rotation
+/// the keychain refused leaves the file in place deliberately, because
+/// the file is the only thing that triggers the retry. The ledger key is
+/// not touched either way, so the audit record survives the restart that
+/// discards the content it describes.
+///
+/// Time away is measured from the sealed file's monotonic stamp, not
+/// from the calendar, so stepping the system clock backwards buys a page
+/// no extra life. Comparing two readings of that clock is only
+/// meaningful inside one boot session, which is the only case that
+/// reaches this arm at all. A stamp that reads later than now is not
+/// such a reading: it is treated as suspect and charged the maximum
+/// time away rather than none, so no path through here can hand a page
+/// back with more life than it had.
+///
+/// Returns whether a state was restored. False covers "no file yet" (a
+/// fresh start, not an error) and a discarded foreign-session file, as
+/// well as a missing key, failed authentication, or a damaged snapshot.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid NUL-terminated
@@ -1001,21 +1032,110 @@ pub unsafe extern "C" fn companion_persist_restore(
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    let Some(key) = persist::load_state_key(guard.credentials.as_ref()) else {
-        return false;
-    };
-    let Some(plaintext) = persist::open_state(&key, &file) else {
-        return false;
-    };
-    let Some(wall_ms) = wall_now_ms() else {
-        return false;
-    };
-    if guard.store.restore(&plaintext, wall_ms).is_err() {
-        return false;
+    // The key is loaded only for a file this boot session sealed, so a
+    // discarded one costs no keychain access.
+    let opened = persist::open_state(&file, || {
+        persist::load_state_key(guard.credentials.as_ref())
+    });
+    match opened {
+        persist::Opened::Refused => false,
+        persist::Opened::BootMismatch => {
+            // Rotation is what actually forgets the content: the file's
+            // key cannot be re-derived once the keychain half is gone.
+            // The erase is a best-effort tidy on top of that, never the
+            // mechanism, and it goes second on purpose. This file is the
+            // only thing that triggers this arm, so dropping it after a
+            // rotation the keychain refused (locked at launch, an ACL
+            // dismissed) would consume the trigger and leave both halves
+            // alive with nothing left to retry against. A rotation that
+            // removed nothing leaves the file exactly where it is, and
+            // the next launch tries again.
+            if persist::rotate_key_halves(guard.credentials.as_ref()) {
+                persist::erase_state(Path::new(path));
+            }
+            false
+        }
+        persist::Opened::Plaintext {
+            plaintext,
+            saved_wall_ms,
+            saved_mono_ns,
+        } => {
+            // Time away, monotonic: the core drains by the difference
+            // between the snapshot's own wall stamp and the "now" passed
+            // here, so handing it the stamp plus the monotonic elapsed
+            // makes the drain immune to a stepped calendar clock.
+            //
+            // Direction-safe, not just monotonic: a saved stamp that
+            // reads later than now cannot have come from this session's
+            // clock, so it is suspect and is charged the ceiling rather
+            // than credited zero. The core clamps the span it acts on;
+            // what matters here is that the error can only ever cost a
+            // page life. Granting life past a page's TTL is the one
+            // outcome that must be impossible.
+            let away_ms = match sleep_inclusive_ns().checked_sub(saved_mono_ns) {
+                Some(elapsed_ns) => elapsed_ns / 1_000_000,
+                None => u64::MAX,
+            };
+            if guard
+                .store
+                .restore(&plaintext, saved_wall_ms.saturating_add(away_ms))
+                .is_err()
+            {
+                return false;
+            }
+            // Deaths-while-away leave ledger residue like any other death.
+            guard.store.expire_due();
+            true
+        }
     }
-    // Deaths-while-away leave ledger residue like any other death.
-    guard.store.expire_due();
-    true
+}
+
+/// Drop the state file at `path`: overwrite, truncate, sync, unlink.
+/// Returns whether nothing is left there, including when there was
+/// nothing to begin with.
+///
+/// **Not erasure, and it must not be described as erasure anywhere.**
+/// The filesystem is copy on write and every previous generation the
+/// atomic rename unlinked is out of reach; what actually forgets staged
+/// content is crypto-erasure, the boot half dying with the boot session
+/// and the halves rotating on a session mismatch. Call this when the
+/// store empties, so the last ciphertext generation does not sit on disk
+/// for the rest of the session describing nothing.
+///
+/// The in-memory store is untouched: this deletes a file, not a page.
+///
+/// `path` is not authenticated and is not trusted. The open refuses a
+/// final symlink and refuses to block, and the writes refuse anything
+/// that is not a regular file, but those checks are narrower than they
+/// sound: a hard link at the path is a regular file and IS zeroed and
+/// truncated, and a symlinked parent directory is never examined. The
+/// containment is that the path lives in an owner-only, app-owned
+/// directory. See `persist::erase_state`, which is the canonical
+/// statement of this contract; do not restate it here.
+///
+/// Returns whether the path is confirmed empty. A stat that will not
+/// answer counts as not empty.
+///
+/// # Safety
+/// `handle` must be a valid handle; `path` a valid NUL-terminated
+/// UTF-8 path.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_persist_erase(
+    handle: *mut CompanionHandle,
+    path: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(path) = (unsafe { cstr(path) }) else {
+        return false;
+    };
+    // Taken for its exclusion, not its contents: a save in flight owns
+    // the same path.
+    let Ok(_guard) = handle.inner.lock() else {
+        return false;
+    };
+    persist::erase_state(Path::new(path))
 }
 
 /// Save the ledger to `path`, sealed with ChaCha20-Poly1305 under its
@@ -1029,7 +1149,11 @@ pub unsafe extern "C" fn companion_persist_restore(
 ///
 /// The bytes are metadata plus capped titles, never content, so this
 /// file resting on disk indefinitely is the intended outcome rather
-/// than a leak. Returns success.
+/// than a leak. The 90-day retention window is swept off here, under the
+/// same lock, immediately before the snapshot is taken: nothing sweeps
+/// the ledger on a timer, so without this a session that never appends a
+/// record would re-persist titles past the window on every save. Returns
+/// success.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid NUL-terminated
@@ -1045,12 +1169,20 @@ pub unsafe extern "C" fn companion_ledger_save(
     let Some(path) = (unsafe { cstr(path) }) else {
         return false;
     };
-    let Ok(guard) = handle.inner.lock() else {
+    let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
     let Some(key) = persist::ensure_ledger_key(guard.credentials.as_ref()) else {
         return false;
     };
+    let Some(wall_ms) = wall_now_ms() else {
+        return false;
+    };
+    // Retention is explicit: no timer sweeps the ledger, so the write
+    // path takes the window off before it writes. The sweep and the
+    // snapshot share this one lock acquisition, or a record appended
+    // between them is persisted against a stale sweep.
+    guard.store.evict_ledger(wall_ms);
     let snapshot = guard.store.ledger_snapshot();
     let Some(sealed) = persist::seal_ledger(&key, &snapshot) else {
         return false;
@@ -1413,7 +1545,7 @@ pub unsafe extern "C" fn companion_chip_promote(
         default_ttl,
         UreqTransport::new(),
     ) {
-        Ok(promoted) => finish_promotion(handle, promoted, Some(chip)),
+        Ok(promoted) => finish_promotion(handle, promoted, Promotable::Chip(chip)),
         Err(message) => promotion_error(&message),
     }
 }
@@ -1424,7 +1556,9 @@ pub unsafe extern "C" fn companion_chip_promote(
 /// blocking behaviour, locking, and the result shape match
 /// [`companion_chip_promote`]; no per-chip promotion mark is set (the
 /// link stands for the page — "burn local copy" on success is the
-/// shell closing the sheet).
+/// shell closing the sheet). The egress is recorded: one `sent` record
+/// against the page's own identity, destination `link`, with a size
+/// class and no content.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `opts_json`, when non-null, must be
@@ -1475,7 +1609,7 @@ pub unsafe extern "C" fn companion_sheet_promote(
         default_ttl,
         UreqTransport::new(),
     ) {
-        Ok(promoted) => finish_promotion(handle, promoted, None),
+        Ok(promoted) => finish_promotion(handle, promoted, Promotable::Page(sheet)),
         Err(message) => promotion_error(&message),
     }
 }
@@ -1488,16 +1622,28 @@ fn load_token(credentials: &dyn CredentialStore) -> Option<Zeroizing<String>> {
         .map(|s| Zeroizing::new(s.to_owned()))
 }
 
+/// What a promotion put on the wire: one chip, or a whole page.
+#[derive(Clone, Copy)]
+enum Promotable {
+    /// The ↗ on a chip. The receipt id lands on that chip.
+    Chip(ChipId),
+    /// The ↗ page in the footer. Nothing is marked, the link stands
+    /// for the page, but the egress is still recorded.
+    Page(SheetId),
+}
+
 /// After a successful conceal: the link onto the clipboard (transient —
 /// the link is a capability, not the secret, but no pasteboard manager
-/// should archive it), the receipt id onto the chip when one was
+/// should archive it), the receipt id onto the chip when a chip was
 /// promoted, one `sent` record with destination `link` in the ledger,
 /// and the result JSON out.
-fn finish_promotion(
-    handle: &CompanionHandle,
-    promoted: Promoted,
-    chip: Option<ChipId>,
-) -> *mut c_char {
+///
+/// The record is written for both shapes of promotion. A page leaving
+/// as one link is the largest egress this app performs, so it is the
+/// last one that should be missing from the audit trail; the record
+/// carries the page's own identity, its title and a size class, and no
+/// content, exactly like the chip's.
+fn finish_promotion(handle: &CompanionHandle, promoted: Promoted, sent: Promotable) -> *mut c_char {
     let Ok(mut guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
@@ -1507,13 +1653,20 @@ fn finish_promotion(
         WriteOptions { concealed: false },
     );
     guard.last_write = Some(receipt);
-    if let Some(chip) = chip {
-        // The chip may have expired mid-flight; the link is on the
-        // clipboard regardless, the mark just has nowhere to land.
-        guard
-            .store
-            .mark_chip_promoted(chip, promoted.receipt_id.clone());
-        guard.store.record_sent(chip, DestinationClass::OneTimeLink);
+    match sent {
+        // The chip or page may have expired mid-flight; the link is on
+        // the clipboard regardless, the record just has nowhere to land.
+        Promotable::Chip(chip) => {
+            guard
+                .store
+                .mark_chip_promoted(chip, promoted.receipt_id.clone());
+            guard.store.record_sent(chip, DestinationClass::OneTimeLink);
+        }
+        Promotable::Page(sheet) => {
+            guard
+                .store
+                .record_sheet_sent(sheet, DestinationClass::OneTimeLink);
+        }
     }
     into_c_string(serde_json::json!({ "ok": true, "receipt_id": promoted.receipt_id }).to_string())
 }
@@ -2462,7 +2615,7 @@ mod tests {
                     link: "https://example.invalid/secret/abc".to_string(),
                     receipt_id: "rcpt-1".to_string(),
                 },
-                Some(ChipId::from_raw(chip_id)),
+                Promotable::Chip(ChipId::from_raw(chip_id)),
             ));
             assert!(result.contains("\"ok\":true"), "{result}");
 
@@ -2491,6 +2644,402 @@ mod tests {
             );
             companion_free(handle);
         }
+    }
+
+    /// Promoting a whole page is the largest egress this app performs,
+    /// and it leaves the same kind of line in the ledger a chip does:
+    /// destination `link`, the page's own identity, a size class, and
+    /// nothing of what was sent.
+    #[test]
+    fn promoting_a_whole_page_leaves_one_sent_record() {
+        let secret = format!("ghp_{}", "n0ts3cr3t".repeat(4));
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            let chip_json = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring(&secret).as_ptr(),
+            ));
+            let chip: serde_json::Value = serde_json::from_str(&chip_json).unwrap();
+            let chip_id = chip["chip_id"].as_u64().unwrap();
+            assert!(companion_sheet_sync_document(
+                handle,
+                sheet,
+                cstring(&format!(
+                    r##"[{{"ink": "# rotate on friday\n"}}, {{"chip": {chip_id}}}]"##
+                ))
+                .as_ptr()
+            ));
+
+            // The network half is exercised elsewhere; what this test
+            // owns is the record the successful finish leaves.
+            let result = take_json(finish_promotion(
+                &*handle,
+                Promoted {
+                    link: "https://example.invalid/secret/abc".to_string(),
+                    receipt_id: "rcpt-page".to_string(),
+                },
+                Promotable::Page(SheetId::from_raw(sheet)),
+            ));
+            assert!(result.contains("\"ok\":true"), "{result}");
+
+            let ledger = take_json(companion_ledger_json(handle));
+            assert!(!ledger.contains("n0ts3cr3t"), "{ledger}");
+            let records: Vec<serde_json::Value> = serde_json::from_str(&ledger).unwrap();
+            let sent: Vec<&serde_json::Value> =
+                records.iter().filter(|r| r["event"] == "sent").collect();
+            assert_eq!(sent.len(), 1, "one page promotion, one record: {ledger}");
+            assert_eq!(sent[0]["destination"], "link");
+            assert_eq!(sent[0]["title"], "rotate on friday");
+            assert_eq!(sent[0]["size"], "tiny");
+            // The page's identity, not the chip's: the created record
+            // for this page carries the same one.
+            let created = records
+                .iter()
+                .find(|r| r["event"] == "created")
+                .expect("a page creation is recorded");
+            assert_eq!(sent[0]["item"], created["item"]);
+
+            // The page is still live; a send is not a death.
+            let sheets = take_json(companion_sheets_json(handle));
+            assert!(
+                sheets.contains("\"title\":\"rotate on friday\""),
+                "{sheets}"
+            );
+            companion_free(handle);
+        }
+    }
+
+    /// The first staged page's remaining milliseconds, or `None` when
+    /// the store holds no page at all.
+    unsafe fn first_remaining_ms(handle: *mut CompanionHandle) -> Option<u64> {
+        let sheets: Vec<serde_json::Value> =
+            serde_json::from_str(&unsafe { take_json(companion_sheets_json(handle)) }).unwrap();
+        sheets.first()?["remaining_ms"].as_u64()
+    }
+
+    /// Cross-restart aging is monotonic. The file's wall stamp is
+    /// hours in the past while its monotonic stamp says the app was
+    /// away for no time at all, which is what a system clock stepped
+    /// forward looks like: the page must keep its remaining time.
+    /// Stepping the clock the other way is the attack this closes.
+    #[test]
+    fn time_away_is_measured_by_the_monotonic_stamp_not_the_calendar() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            // A page with an hour on it, snapshotted under a wall stamp
+            // from 2023: an app that trusted the calendar would read
+            // that as years away and expire it on the spot.
+            let first = handle_with(Arc::clone(&credentials));
+            let sheet = companion_sheet_new(first);
+            assert!(companion_sheet_set_rung(first, sheet, 0));
+            let stale_wall_ms = 1_700_000_000_000;
+            let remaining_before = first_remaining_ms(first).unwrap();
+            let snapshot = {
+                let guard = (*first).inner.lock().unwrap();
+                guard.store.snapshot(stale_wall_ms)
+            };
+            let key = persist::ensure_state_key(&*credentials).unwrap();
+            let mono_ns = sleep_inclusive_ns();
+            let sealed = persist::seal_state(&key, &snapshot, stale_wall_ms, mono_ns).unwrap();
+            assert!(persist::write_private(&path, &sealed));
+            companion_free(first);
+
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(second, c_path.as_ptr()));
+            let remaining_after =
+                first_remaining_ms(second).expect("the page expired by the calendar");
+            assert!(
+                remaining_before.abs_diff(remaining_after) < 60_000,
+                "the page aged by the calendar: {remaining_before} then {remaining_after}"
+            );
+            companion_free(second);
+
+            // The same file with a monotonic stamp two hours back does
+            // drain the page: the backstop still works, it just works
+            // off a clock nobody can step.
+            let two_hours_ns = 2 * 60 * 60 * 1_000_000_000;
+            let aged = persist::seal_state(
+                &key,
+                &snapshot,
+                stale_wall_ms,
+                mono_ns.saturating_sub(two_hours_ns),
+            )
+            .unwrap();
+            assert!(persist::write_private(&path, &aged));
+            let third = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(third, c_path.as_ptr()));
+            assert_eq!(
+                first_remaining_ms(third),
+                None,
+                "an hour-long page outlived two monotonic hours away"
+            );
+            let _ = sheet;
+            companion_free(third);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The deterministic backstop, over the seam. A restart discards the
+    /// content file and rotates the halves that could have opened it,
+    /// while the ledger, long-lived by design, comes back untouched.
+    #[test]
+    fn a_reboot_discards_the_content_file_and_keeps_the_ledger() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let state_path = dir.join("state.sealed");
+        let ledger_path = dir.join("ledger.sealed");
+        let c_state = cstring(state_path.to_str().unwrap());
+        let c_ledger = cstring(ledger_path.to_str().unwrap());
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            let sheet = companion_sheet_new(first);
+            let _ = take_json(companion_sheet_seal_text(
+                first,
+                sheet,
+                cstring("hunter2-the-sealed-bytes").as_ptr(),
+            ));
+            assert!(companion_persist_save(first, c_state.as_ptr()));
+            assert!(companion_ledger_save(first, c_ledger.as_ptr()));
+            let ledger_before = take_json(companion_ledger_json(first));
+            companion_free(first);
+
+            // The machine restarts: a different boot session, and the
+            // boot half would be gone with the temp directory.
+            persist::boot_uuid_override::set([0x7E; 16]);
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(
+                !companion_persist_restore(second, c_state.as_ptr()),
+                "content from a dead boot session was restored"
+            );
+            assert!(
+                !state_path.exists(),
+                "the discarded state file is still on disk"
+            );
+            assert!(
+                persist::load_state_key(&*credentials).is_none(),
+                "the content key halves survived the boot mismatch"
+            );
+
+            // The ledger is not boot-bound and must not have been
+            // rotated away with the content.
+            assert!(companion_ledger_restore(second, c_ledger.as_ptr()));
+            assert_eq!(take_json(companion_ledger_json(second)), ledger_before);
+            companion_free(second);
+            persist::boot_uuid_override::clear();
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A boot mismatch whose rotation the keychain refused must not
+    /// consume its own trigger. The state file is the only thing that
+    /// brings the app back to this arm, so erasing it after a rotation
+    /// that removed nothing would strand both halves alive with no
+    /// retry: the next launch would find no file, decide nothing is
+    /// wrong, and keep deriving the very key that opens the content it
+    /// meant to discard.
+    #[test]
+    fn a_refused_rotation_keeps_the_file_that_triggers_the_retry() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(persist::test_stores::RefusesToDelete::default());
+        let dir = scratch_dir();
+        let state_path = dir.join("state.sealed");
+        let c_state = cstring(state_path.to_str().unwrap());
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            let sheet = companion_sheet_new(first);
+            let _ = take_json(companion_sheet_seal_text(
+                first,
+                sheet,
+                cstring("hunter2-the-sealed-bytes").as_ptr(),
+            ));
+            assert!(companion_persist_save(first, c_state.as_ptr()));
+            companion_free(first);
+
+            // The machine restarts into a keychain that is still locked.
+            persist::boot_uuid_override::set([0x3C; 16]);
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(!companion_persist_restore(second, c_state.as_ptr()));
+            assert!(
+                state_path.exists(),
+                "the trigger was consumed by a rotation that removed nothing"
+            );
+            companion_free(second);
+            persist::boot_uuid_override::clear();
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Key material moves to the data protection keychain; the API
+    /// token does not. The token's Keychain ACL prompt behaviour is the
+    /// login keychain's, and moving it would change what the user is
+    /// asked and when, for a secret ADR-0012 never asked to move.
+    #[test]
+    fn the_token_stays_on_the_handle_store_while_key_material_moves() {
+        let credentials = Arc::new(persist::test_stores::SplitKeyStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials) as Arc<dyn CredentialStore>);
+            assert!(companion_connection_configure(
+                handle,
+                cstring(
+                    r#"{"server_url":"https://eu.onetimesecret.com","token":"tok_not-key-material"}"#
+                )
+                .as_ptr()
+            ));
+            let sheet = companion_sheet_new(handle);
+            let _ = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring("hunter2-the-sealed-bytes").as_ptr(),
+            ));
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+
+            assert!(
+                credentials.handed().exists(TOKEN_ACCOUNT).unwrap(),
+                "the token left the store the handle was built with"
+            );
+            assert!(
+                !credentials.keys().exists(TOKEN_ACCOUNT).unwrap(),
+                "the token followed the key material into the key store"
+            );
+            assert!(
+                credentials.keys().exists("state-key").unwrap(),
+                "the content key's keychain half never reached the key store"
+            );
+            assert!(!credentials.handed().exists("state-key").unwrap());
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The aging math is direction-safe. A monotonic stamp that reads
+    /// later than now cannot be an honest reading from this session, so
+    /// it must cost the page its life rather than grant it: the
+    /// alternative, treating it as zero time away, restores every page
+    /// at its full pre-save TTL, which is precisely the outcome the
+    /// stamp exists to prevent.
+    #[test]
+    fn a_monotonic_stamp_from_the_future_costs_life_rather_than_granting_it() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            let sheet = companion_sheet_new(first);
+            assert!(companion_sheet_set_rung(first, sheet, 0));
+            let wall_ms = 1_700_000_000_000;
+            let snapshot = {
+                let guard = (*first).inner.lock().unwrap();
+                guard.store.snapshot(wall_ms)
+            };
+            let key = persist::ensure_state_key(&*credentials).unwrap();
+            // A day ahead of this session's clock: no reading taken in
+            // this boot session can be later than the one taken now.
+            let ahead_ns = sleep_inclusive_ns().saturating_add(24 * 60 * 60 * 1_000_000_000);
+            let sealed = persist::seal_state(&key, &snapshot, wall_ms, ahead_ns).unwrap();
+            assert!(persist::write_private(&path, &sealed));
+            companion_free(first);
+
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(second, c_path.as_ptr()));
+            assert_eq!(
+                first_remaining_ms(second),
+                None,
+                "a stamp from the future bought the page its whole TTL back"
+            );
+            companion_free(second);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The ledger's retention window is only a real bound on the write
+    /// path if the write path sweeps. Nothing sweeps on a timer, so a
+    /// save that snapshots without evicting first re-persists titles
+    /// past 90 days under the long-lived key, every save, forever.
+    #[test]
+    fn the_ledger_save_path_evicts_before_it_snapshots() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let ledger_path = dir.join("ledger.sealed");
+        let c_ledger = cstring(ledger_path.to_str().unwrap());
+
+        // A record stamped in November 2023 (the manual clock's fixed
+        // base), which is far outside the window by any real "now".
+        let stale = {
+            let mut aged = SheetStore::new(companion_core::ManualClock::new());
+            aged.new_sheet().unwrap();
+            aged.ledger_snapshot()
+        };
+        let stale_wall_ms = 1_700_000_000_000;
+
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            {
+                let mut guard = (*handle).inner.lock().unwrap();
+                // Loaded as of the moment it was written, so the load
+                // path's own sweep keeps it: the write path is what is
+                // on trial here.
+                assert_eq!(
+                    guard.store.restore_ledger(&stale, stale_wall_ms).unwrap(),
+                    1
+                );
+            }
+            assert!(companion_ledger_save(handle, c_ledger.as_ptr()));
+
+            let file = std::fs::read(&ledger_path).unwrap();
+            let key = persist::load_ledger_key(&*credentials).unwrap();
+            let plaintext = persist::open_ledger(&key, &file).unwrap();
+            let mut probe = SheetStore::new(companion_core::ManualClock::new());
+            assert_eq!(
+                probe.restore_ledger(&plaintext, stale_wall_ms).unwrap(),
+                0,
+                "a record 90 days past the window was written back to disk"
+            );
+            assert_eq!(
+                take_json(companion_ledger_json(handle)),
+                "[]",
+                "the sweep must take the record off the live ledger too"
+            );
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Erasing is a file operation, not a store operation, and "nothing
+    /// there" is a success rather than a failure.
+    #[test]
+    fn erase_removes_the_state_file_and_tolerates_its_absence() {
+        let handle = handle();
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            assert!(path.exists());
+            assert!(companion_persist_erase(handle, c_path.as_ptr()));
+            assert!(!path.exists());
+            assert!(companion_persist_erase(handle, c_path.as_ptr()));
+            // The page is still staged: this deletes a file, not a page.
+            assert_ne!(sheet, 0);
+            assert!(first_remaining_ms(handle).unwrap() > 0);
+            assert!(!companion_persist_erase(ptr::null_mut(), c_path.as_ptr()));
+            assert!(!companion_persist_erase(handle, ptr::null()));
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// A fresh directory under the system temp dir, removed on success;

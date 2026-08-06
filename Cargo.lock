@@ -69,6 +69,7 @@ dependencies = [
  "companion-credentials",
  "companion-pasteboard",
  "companion-transport",
+ "libc",
  "ots-client",
  "ring",
  "serde_json",

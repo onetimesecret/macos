@@ -324,7 +324,18 @@ void companion_ledger_clear(CompanionHandle *handle);
  * The bytes are metadata plus capped titles, never content, so this
  * file resting on disk indefinitely is the intended outcome. The write
  * is atomic and owner-only. Call it beside companion_persist_save(),
- * behind the same debounce. Returns success.
+ * behind the same debounce.
+ *
+ * A save first sweeps the rolling 90-day window off the LIVE ledger,
+ * so this mutates the in-memory records and not only the file: a
+ * record that aged out is gone from companion_ledger_json() after a
+ * save, without waiting for a restart to load it away. The window is
+ * the same one companion_ledger_restore() applies, so the two paths
+ * cannot disagree about what is retained.
+ *
+ * Returns success. False now also covers an unreadable wall clock,
+ * because the sweep has no window to measure without one and writing
+ * an unswept file would put records back that the load path drops.
  */
 bool companion_ledger_save(CompanionHandle *handle, const char *path);
 
@@ -343,31 +354,88 @@ bool companion_ledger_save(CompanionHandle *handle, const char *path);
 bool companion_ledger_restore(CompanionHandle *handle, const char *path);
 
 /* ------------------------------------------------------------------ */
-/* Persistence: the sealed state file                                  */
+/* Persistence: the sealed state file, bound to this boot session      */
 /* ------------------------------------------------------------------ */
 
 /*
  * Save the staged content (sheets, sealed chips, clocks) to `path`,
- * encrypted (ChaCha20-Poly1305) under a 32-byte key resting in the OS
- * credential store ("state-key" account, minted on first save). The
- * ledger is NOT in this file; it has its own file under its own key
+ * encrypted (ChaCha20-Poly1305) under a key that exists only while this
+ * boot session does: HKDF of a keychain half and a boot half, the boot
+ * half living in the per-user temp directory macOS clears at restart
+ * (ADR-0012). Neither half alone unwraps anything, and no key byte
+ * crosses this seam: the shell passes a path and receives a bool.
+ *
+ * The envelope stamps itself with kern.bootsessionuuid and with both
+ * clocks at the save, all of it authenticated, so a file cannot be
+ * re-dated and cannot be opened by a later boot session. The ledger is
+ * NOT in this file; it has its own file under its own long-lived key
  * (companion_ledger_save), because content is boot-session-bound and
  * the audit record is not.
+ *
  * Only ciphertext touches disk; the write is atomic and owner-only.
- * Call at quit — nothing saves on its own. Returns success.
+ * Call on every mutation, debounced, and once more at quit to flush
+ * what is still pending; the core saves nothing on its own. Returns
+ * success.
  */
 bool companion_persist_save(CompanionHandle *handle, const char *path);
 
 /*
- * Restore from a state file companion_persist_save() wrote: decrypt,
- * replace the store's sheets, and drain every countdown by
- * the wall time that passed while the app was closed; pages that came
- * due while away expire into the ledger immediately. Call at startup,
- * before creating the first page. Returns whether a state was restored
- * — false covers "no file yet" (a fresh start, not an error) as well
- * as a missing key, failed authentication, or a damaged snapshot.
+ * Restore from a state file companion_persist_save() wrote: decrypt
+ * (both key halves loaded, never minted), replace the store's sheets,
+ * and drain every countdown by the time that passed while the app was
+ * closed; pages that came due while away expire into the ledger
+ * immediately. Call at startup, before creating the first page.
+ *
+ * A file from another boot session is discarded before anything in it
+ * is decrypted: both content key halves are rotated FIRST, and the
+ * file is dropped from disk only if that rotation succeeded. The
+ * rotation is what actually forgets the content; the unlink is a tidy
+ * on top of it. A keychain that refuses the delete (locked at launch,
+ * an ACL dismissed) therefore leaves the file exactly where it is,
+ * because that file is the only thing that triggers this path and
+ * dropping it would consume the trigger while both halves stayed
+ * alive. The next launch tries again. The ledger key is untouched
+ * either way, so the audit record survives the restart that discards
+ * the content it describes.
+ *
+ * Time away is measured from the file's monotonic stamp, not from the
+ * calendar, so stepping the system clock backwards buys a page no extra
+ * life.
+ *
+ * Returns whether a state was restored. False covers "no file yet" (a
+ * fresh start, not an error) and a discarded foreign-session file, as
+ * well as a missing key, failed authentication, or a damaged snapshot.
  */
 bool companion_persist_restore(CompanionHandle *handle, const char *path);
+
+/*
+ * Drop the state file at `path`: overwrite, truncate, sync, unlink.
+ * The open refuses to follow a FINAL symlink and refuses to block, so a
+ * FIFO planted at the name cannot park the call; the writes then refuse
+ * anything that is not a regular file. That is the whole of the check,
+ * and it is narrower than it sounds: a HARD link at the path is a
+ * regular file and IS zeroed and truncated, a symlinked PARENT
+ * directory is never examined, and the link and blocking refusals are
+ * open flags the shipping platform happens to carry. What contains this
+ * is that `path` lives in the owner-only, app-owned state directory the
+ * shell chose; the checks only limit what a foothold there is worth.
+ *
+ * Returns whether nothing is at the path, answered WITHOUT following a
+ * link, including when there was nothing to begin with. A dangling
+ * symlink left at the path is something, so that reports false even
+ * though the name resolves to nothing.
+ *
+ * NOT erasure, and it must not be described as erasure. The filesystem
+ * is copy on write and every earlier generation the atomic rename
+ * unlinked is out of reach; what actually forgets staged content is
+ * crypto-erasure: the boot half dying with the boot session, and the
+ * halves rotating on a session mismatch. Call this when the store
+ * empties, so the last ciphertext generation does not sit on disk for
+ * the rest of the session describing nothing.
+ *
+ * The in-memory store is untouched: this deletes a file, not a page.
+ */
+bool companion_persist_erase(CompanionHandle *handle, const char *path);
 
 /* ------------------------------------------------------------------ */
 /* Promotion: the exit ramp, the app's only network action             */
@@ -422,6 +490,9 @@ char *companion_chip_promote(CompanionHandle *handle, uint64_t chip,
  * Promote the whole page (the footer's ↗ page): ink verbatim, sealed
  * bytes inlined in document order. Refuses a page holding an image
  * chip. Options, blocking, and result shape as companion_chip_promote.
+ * No per-chip mark is set, the link stands for the page, but the
+ * egress is recorded: one "sent" record against the page's own
+ * identity, destination "link", with a size class and no content.
  */
 char *companion_sheet_promote(CompanionHandle *handle, uint64_t sheet,
                               const char *opts_json);
