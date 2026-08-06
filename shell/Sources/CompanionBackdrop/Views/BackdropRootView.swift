@@ -171,7 +171,7 @@ struct BackdropRootView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Circle().fill(Color.ember).frame(width: 6, height: 6)
-            Text(pages.showingLedger ? "the ledger" : "backdrop")
+            Text(pages.showingLedger ? "the ledger" : BackdropAppDelegate.productName)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 16)

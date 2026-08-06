@@ -10,6 +10,14 @@
   must be separately addressable citizens of the permission system —
   especially since both may run at once during the exploration.
 
+  CFBundleName / CFBundleDisplayName are the user-facing name and are
+  free to change; the bundle id is not. The id keys the Keychain
+  service, the state directory, and every TCC grant the app has been
+  given, so renaming the product means editing these two keys and
+  nothing else. CFBundleExecutable, the target, and the .app filename
+  stay CompanionBackdrop for the same reason a variable keeps its name
+  when a label changes: they are build plumbing, not the product.
+
   CFBundleVersion / CFBundleShortVersionString hold a placeholder; the
   build script stamps both from crates/ffi's CARGO_PKG_VERSION — the
   same source companion_version() is baked from.
@@ -19,7 +27,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>CompanionBackdrop</string>
+	<string>OnetimePad</string>
 	<key>CFBundleExecutable</key>
 	<string>CompanionBackdrop</string>
 	<key>CFBundleIconFile</key>
@@ -29,7 +37,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>CompanionBackdrop</string>
+	<string>OnetimePad</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

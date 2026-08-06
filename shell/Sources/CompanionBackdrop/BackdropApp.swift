@@ -84,7 +84,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.maruhiTemplateImage()
-        item.button?.setAccessibilityLabel("CompanionBackdrop")
+        item.button?.setAccessibilityLabel(Self.productName)
         item.button?.target = self
         item.button?.action = #selector(statusItemClicked)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -172,7 +172,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             )
             menu.addItem(.separator())
             menu.addItem(
-                withTitle: "About CompanionBackdrop",
+                withTitle: "About \(Self.productName)",
                 action: #selector(showAbout),
                 keyEquivalent: ""
             ).target = self
@@ -218,7 +218,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// `swift run` binary has no Info.plist to read it from.
     @objc private func showAbout() {
         var aboutOptions: [NSApplication.AboutPanelOptionKey: Any] = [
-            .applicationName: "CompanionBackdrop",
+            .applicationName: Self.productName,
             .applicationVersion: CompanionClient.version,
         ]
         // A bare `swift run` has no bundle icon to fall back on; the
@@ -236,6 +236,15 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         aboutActivation = !NSApp.isActive
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    /// What this app calls itself to the user, for the places a bundle
+    /// cannot answer: a bare `swift run` has no Info.plist, so the
+    /// About panel, the tray menu and the status item's accessibility
+    /// label would otherwise fall back to the executable name. The
+    /// bundled app takes the same name from CFBundleName /
+    /// CFBundleDisplayName in shell/Backdrop-Info.plist, and the two
+    /// must agree. Neither is the bundle id, which never changes.
+    static let productName = "OnetimePad"
 
     /// The ㊙ glyph rendered monochrome (U+FE0E forces text presentation
     /// over emoji) onto a template image: the menu bar tints template
