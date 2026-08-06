@@ -22,9 +22,11 @@
 # code identity changes on every rebuild, so TCC grants reset AND the
 # Keychain re-confirms access to stored items (the API token, the state
 # key) each time. Set CODESIGN_IDENTITY to a real certificate for an
-# identity that survives rebuilds. Only a real identity can carry
-# scripts/Companion.entitlements, so only a real identity reaches the
-# data protection keychain; ad-hoc builds run the documented fallback.
+# identity that survives rebuilds. Carrying
+# scripts/Companion.entitlements takes a real identity AND an embedded
+# provisioning profile (PROVISIONING_PROFILE); only that pairing
+# reaches the data protection keychain. Every other build runs the
+# documented login keychain fallback.
 #
 # Before signing, the assembled bundle is hashed into
 # dist/CompanionApp.presig.sha256. That digest is the reproducible
@@ -157,12 +159,38 @@ else
     echo "    warning: protection keychain stays unavailable (login keychain fallback)." >&2
     codesign --force --sign "$IDENTITY" "$APP"
   else
-    SIGN_ENTITLEMENTS="$(mktemp -t companion-entitlements)"
-    sed "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" scripts/Companion.entitlements \
-      > "$SIGN_ENTITLEMENTS"
-    echo "==> entitlements: keychain-access-group ${TEAM_ID}.com.onetimesecret.companion"
-    codesign --force --entitlements "$SIGN_ENTITLEMENTS" --sign "$IDENTITY" "$APP"
-    rm -f "$SIGN_ENTITLEMENTS"
+    # A Team ID is still not enough. keychain-access-groups sits on
+    # AMFI's restricted list: the bundle must also embed a provisioning
+    # profile that authorizes the group, or launchd refuses to spawn
+    # the app entirely (amfid -413, "No matching profile found"). So
+    # the entitlement is applied only when PROVISIONING_PROFILE points
+    # at a profile; see scripts/local.env.example for how to mint one.
+    if [[ -n "${PROVISIONING_PROFILE:-}" && ! -f "$PROVISIONING_PROFILE" ]]; then
+      echo "PROVISIONING_PROFILE is set but no file exists at: $PROVISIONING_PROFILE" >&2
+      exit 1
+    fi
+    if [[ -n "${PROVISIONING_PROFILE:-}" ]]; then
+      # The profile is machine-bound signing material, embedded after
+      # the pre-signature digest on purpose: hashing it would make the
+      # digest differ per machine.
+      cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
+      echo "==> embedded provisioning profile: $PROVISIONING_PROFILE"
+      SIGN_ENTITLEMENTS="$(mktemp -t companion-entitlements)"
+      sed "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" scripts/Companion.entitlements \
+        > "$SIGN_ENTITLEMENTS"
+      echo "==> entitlements: keychain-access-group ${TEAM_ID}.com.onetimesecret.companion"
+      codesign --force --entitlements "$SIGN_ENTITLEMENTS" --sign "$IDENTITY" "$APP"
+      rm -f "$SIGN_ENTITLEMENTS"
+    else
+      echo "    warning: PROVISIONING_PROFILE is unset, so scripts/Companion.entitlements" >&2
+      echo "    warning: is not applied: the keychain-access-groups entitlement needs an" >&2
+      echo "    warning: embedded provisioning profile, and claiming it without one" >&2
+      echo "    warning: produces an app AMFI refuses to launch. The data protection" >&2
+      echo "    warning: keychain is unavailable in this build; the credentials layer" >&2
+      echo "    warning: falls back to the file based login keychain. See" >&2
+      echo "    warning: scripts/local.env.example for how to mint a profile." >&2
+      codesign --force --sign "$IDENTITY" "$APP"
+    fi
   fi
 fi
 
