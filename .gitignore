@@ -24,6 +24,9 @@ xcuserdata/
 *.provisionprofile
 secrets/
 
+# Session tooling — local workflow scripts, not source
+/.claude/workflows/
+
 # macOS
 .DS_Store
 *.txt
