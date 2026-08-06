@@ -1,12 +1,17 @@
-//! The sealed state file: JIT encryption at quit, decryption at launch.
+//! The sealed state file: encryption on every mutation, decryption at
+//! launch.
 //!
 //! The core hands over its plaintext snapshot
 //! ([`companion_core::persist`]) only ever inside a [`Zeroizing`]
 //! buffer; this module seals it with ChaCha20-Poly1305 under a 32-byte
 //! key that rests in the OS credential store (the same store, and the
 //! same service scope, as the API token) and writes only ciphertext to
-//! the path the shell chose. Restore is the mirror: read, authenticate,
-//! decrypt in place, feed the core, and the plaintext wipes on drop.
+//! the path the shell chose. A save runs whenever the store changes,
+//! behind the shell's debounce, and once more at quit to flush whatever
+//! the debounce still held; the crash-loss window is that interval, not
+//! the whole process lifetime (ADR-0012). Restore is the mirror: read,
+//! authenticate, decrypt in place, feed the core, and the plaintext
+//! wipes on drop.
 //!
 //! The file is useless without the keychain item, and the item names
 //! nothing without the file — deleting either forgets everything.
@@ -144,16 +149,33 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> bool {
 /// Flush the directory entry the rename just created. The file's own
 /// bytes are already durable, but a power loss before the directory is
 /// written can still lose the name that points at them, leaving the
-/// previous state file (or none). Best effort: a parent we cannot open
-/// or sync, and a bare filename with no directory component at all,
-/// leave the bytes written either way, so neither unwrites the save.
+/// previous state file (or none). Best effort by design: a parent we
+/// cannot open or sync leaves the bytes written either way, so a failure
+/// here must never unwrite the save.
 fn sync_parent_dir(path: &Path) {
-    let Some(parent) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) else {
-        return;
-    };
-    if let Ok(dir) = std::fs::File::open(parent) {
-        let _ = dir.sync_all();
+    if let Some(parent) = parent_to_sync(path) {
+        let _ = sync_dir(parent);
     }
+}
+
+/// The directory that holds `path`'s entry, the one whose flush makes
+/// the rename durable. A path with no directory component has parent
+/// `Some("")` rather than `None`, and its entry lands in the working
+/// directory, so that case resolves to `.` instead of skipping the sync.
+/// Only a root path has nothing above it.
+fn parent_to_sync(path: &Path) -> Option<&Path> {
+    match path.parent() {
+        None => None,
+        Some(parent) if parent.as_os_str().is_empty() => Some(Path::new(".")),
+        Some(parent) => Some(parent),
+    }
+}
+
+/// The fallible half of the flush, split out so a test can see it fail:
+/// opening a directory read-only and syncing the fd is what commits the
+/// entry (on APFS this is `fcntl(F_FULLFSYNC)`).
+fn sync_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::File::open(dir)?.sync_all()
 }
 
 fn aead_key(key: &[u8]) -> Option<LessSafeKey> {
@@ -273,29 +295,62 @@ mod tests {
             std::fs::read(&target).unwrap(),
             b"second save, longer than the first"
         );
-        // The post-rename directory sync must not turn a landed write
-        // into a failure, nor strand the temp file it just renamed.
-        assert!(write_private(&target, b"third"));
-        assert_eq!(std::fs::read(&target).unwrap(), b"third");
         assert_eq!(temp_litter(&dir), Vec::<std::ffi::OsString>::new());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Which directory a given path's entry lives in, decided without a
+    /// filesystem and without touching the process-wide working
+    /// directory (which `cargo test` shares across every test thread).
     #[test]
-    fn a_bare_filename_writes_without_a_parent_to_sync() {
+    fn the_directory_to_sync_covers_the_bare_filename_case() {
+        assert_eq!(parent_to_sync(Path::new("/a/b")), Some(Path::new("/a")));
+        assert_eq!(
+            parent_to_sync(Path::new("state.sealed")),
+            Some(Path::new(".")),
+            "a bare filename lands in the working directory, so sync that"
+        );
+        assert_eq!(
+            parent_to_sync(Path::new("a/")),
+            Some(Path::new(".")),
+            "a trailing slash still leaves the empty parent"
+        );
+        assert_eq!(
+            parent_to_sync(Path::new("/")),
+            None,
+            "the root has no directory above it to flush"
+        );
+    }
+
+    /// The flush is best effort: an unopenable parent must leave the
+    /// bytes written and the write reported as a success. Losing that
+    /// property (an early `return false`, a `?`) is the regression this
+    /// catches; the directory sync being a no-op is the other.
+    #[cfg(unix)]
+    #[test]
+    fn an_unsyncable_parent_still_lands_the_write() {
+        use std::os::unix::fs::PermissionsExt;
         let dir = scratch_dir();
-        // The only test that touches the process-wide working
-        // directory; every other one names its files absolutely, so a
-        // parallel run sees nothing move.
-        let previous = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&dir).unwrap();
-        let wrote = write_private(Path::new("state.sealed"), b"sealed bytes");
-        let contents = std::fs::read(dir.join("state.sealed"));
-        let litter = temp_litter(&dir);
-        std::env::set_current_dir(&previous).unwrap();
-        assert!(wrote, "a path with no directory component still writes");
-        assert_eq!(contents.unwrap(), b"sealed bytes");
-        assert_eq!(litter, Vec::<std::ffi::OsString>::new());
+        let target = dir.join("state.sealed");
+        assert!(write_private(&target, b"first save"));
+        // Write plus search, no read: create, rename and lookup still
+        // work, but opening the directory itself fails with EACCES.
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o300)).unwrap();
+        let unopenable = sync_dir(&dir).is_err();
+        if unopenable {
+            assert!(
+                write_private(&target, b"second save"),
+                "a parent that cannot be synced must not unwrite the save"
+            );
+            assert_eq!(std::fs::read(&target).unwrap(), b"second save");
+        }
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        // Running as root, or on a filesystem that ignores the mode, the
+        // branch under test is simply unreachable here.
+        if unopenable {
+            assert_eq!(temp_litter(&dir), Vec::<std::ffi::OsString>::new());
+        }
+        assert!(sync_dir(&dir).is_ok(), "a readable parent syncs");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
