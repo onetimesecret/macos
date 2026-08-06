@@ -100,7 +100,10 @@ pub struct SheetStore<C: Clock> {
     /// The audit trail, newest first. Append-only from the store's side
     /// (the user may clear it whole), bounded by a rolling 90 day window
     /// on wall-clock time rather than by a record count: see
-    /// [`evict_expired`].
+    /// [`evict_expired`]. The window is swept on append, on load
+    /// ([`SheetStore::restore_ledger`]), and on the write path
+    /// ([`SheetStore::evict_ledger`]). Append alone is not enough: a
+    /// session can run for months without recording anything.
     pub(crate) ledger: VecDeque<LedgerRecord>,
     pub(crate) cap: usize,
     pub(crate) default_rung: Ttl,
@@ -463,6 +466,38 @@ impl<C: Clock> SheetStore<C> {
         true
     }
 
+    /// Record that a whole page's bytes left for `destination`. The
+    /// page-level twin of [`SheetStore::record_sent`]: promoting a page
+    /// ([`SheetStore::sheet_payload`]) is the largest egress this app
+    /// performs, so it leaves the same kind of line the chip path and
+    /// the pasteboard path leave. Without it the ledger's `sent` claim
+    /// would be silently incomplete (ADR-0012).
+    ///
+    /// The record carries the page's own [`ItemId`] and the title the
+    /// page already owned; nothing is derived from ink here. The size
+    /// class is the page's sealed byte total, the same figure
+    /// [`SheetStore::close_sheet`] and [`SheetStore::expire_due`] record,
+    /// and the stamp is the wall clock, as for every other record.
+    /// Returns whether the page existed.
+    pub fn record_sheet_sent(&mut self, sheet: SheetId, destination: DestinationClass) -> bool {
+        let Some(page) = self.sheet(sheet) else {
+            return false;
+        };
+        let uuid = page.uuid;
+        let title = page.title.clone();
+        let created = page.created_wall_ms;
+        let sealed_bytes: usize = page.chips.iter().map(|c| c.bytes.len()).sum();
+        self.record(
+            LedgerEvent::Sent,
+            uuid,
+            title,
+            created,
+            SizeClass::of(sealed_bytes),
+            destination,
+        );
+        true
+    }
+
     /// Record a successful promotion: only the receipt identifier stays
     /// on the live chip (no link, no history — doc 03 §5).
     pub fn mark_chip_promoted(&mut self, id: ChipId, receipt_id: String) -> bool {
@@ -657,6 +692,27 @@ impl<C: Clock> SheetStore<C> {
     /// never content.
     pub fn ledger(&self) -> impl Iterator<Item = &LedgerRecord> {
         self.ledger.iter()
+    }
+
+    /// Take the retention window off the ledger as of `now_wall_ms`
+    /// (Unix epoch milliseconds), dropping every record older than the
+    /// 90 day bound ([`evict_expired`]). Returns how many records fell
+    /// off.
+    ///
+    /// The append path already evicts while the ledger is in hand, but
+    /// append is not a bound on its own: a menu-bar app stays up for
+    /// weeks, and a user who staged a page on day 0 and since then only
+    /// edits ink in existing pages never records another event, so
+    /// nothing sweeps the tail. The title is the ledger's one residual
+    /// exposure and the time window is the only thing that shrinks it,
+    /// so the persistence seam calls this immediately before
+    /// [`SheetStore::ledger_snapshot`] — which takes `&self` and so
+    /// cannot evict on its own — and the debounced write then persists a
+    /// ledger that is actually inside the window (ADR-0012).
+    pub fn evict_ledger(&mut self, now_wall_ms: u64) -> usize {
+        let before = self.ledger.len();
+        evict_expired(&mut self.ledger, now_wall_ms);
+        before - self.ledger.len()
     }
 
     /// Throw the whole ledger away. The user-facing "clear the ledger"
@@ -1183,6 +1239,49 @@ mod tests {
                 LedgerEvent::Sealed,
                 LedgerEvent::Created
             ]
+        );
+    }
+
+    #[test]
+    fn promoting_a_whole_page_lands_one_content_free_sent_record() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let chip = seal(&mut store, id, TOKEN);
+        // The token sits in the ink as well as in the chip, and never on
+        // the first line: the title is the one field allowed to be
+        // content-derived, and this test is about the other six.
+        assert!(store.sync_document(
+            id,
+            vec![
+                Segment::Ink(format!("rotate on friday\n{TOKEN}\n")),
+                Segment::Chip(chip),
+            ]
+        ));
+        let page = store.sheet(id).unwrap();
+        let uuid = page.uuid();
+        // The payload that leaves is ink plus sealed bytes; the record's
+        // size class is the sealed total, as at death.
+        assert!(store.sheet_payload(id).unwrap().contains(TOKEN));
+
+        assert!(store.record_sheet_sent(id, DestinationClass::OneTimeLink));
+        let record = store.ledger().next().unwrap();
+        assert_eq!(record.event(), LedgerEvent::Sent);
+        assert_eq!(record.destination(), DestinationClass::OneTimeLink);
+        assert_eq!(record.item(), uuid, "the page's own identity");
+        assert_eq!(record.title(), "rotate on friday");
+        assert_eq!(record.size(), SizeClass::of(TOKEN.len()));
+        assert_eq!(record.item_created_wall_ms(), 1_700_000_000_000);
+        assert_eq!(record.at_wall_ms(), 1_700_000_000_000);
+
+        // The load-bearing assertion: the largest egress this app can
+        // perform leaves no fragment of what it moved.
+        assert_content_free(&store);
+
+        // The page is still live; recording a send is not a death.
+        assert_eq!(store.len(), 1);
+        assert!(
+            !store.record_sheet_sent(SheetId(999), DestinationClass::OneTimeLink),
+            "no such page"
         );
     }
 

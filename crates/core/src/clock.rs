@@ -95,8 +95,16 @@ fn continuous_now() -> Instant {
 /// Darwin `CLOCK_MONOTONIC` continues to increment while the system is
 /// asleep (the frozen one is `CLOCK_UPTIME_RAW`, which `Instant` uses);
 /// on Linux that role belongs to `CLOCK_BOOTTIME`.
+///
+/// Public because the persistence seam stamps sealed files with this
+/// exact reading and ages them by the difference on restore: the file
+/// and the store must be measuring the same clock, or a page would
+/// drain by one clock and be checked against another. The reading is
+/// only comparable within a boot session, which is the same bound the
+/// sealed file already carries.
+#[must_use]
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn sleep_inclusive_ns() -> u64 {
+pub fn sleep_inclusive_ns() -> u64 {
     #[cfg(target_os = "macos")]
     const SLEEP_INCLUSIVE: libc::clockid_t = libc::CLOCK_MONOTONIC;
     #[cfg(target_os = "linux")]
@@ -116,8 +124,10 @@ fn sleep_inclusive_ns() -> u64 {
 
 /// Elsewhere: no portable sleep-inclusive clock — fall back to the
 /// process-monotonic one (the pre-existing behaviour, status quo).
+/// Public for the same reason as its Darwin and Linux siblings.
+#[must_use]
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn sleep_inclusive_ns() -> u64 {
+pub fn sleep_inclusive_ns() -> u64 {
     static FALLBACK_BASE: OnceLock<Instant> = OnceLock::new();
     let base = *FALLBACK_BASE.get_or_init(Instant::now);
     u64::try_from(base.elapsed().as_nanos()).unwrap_or(u64::MAX)
@@ -251,6 +261,21 @@ mod tests {
         // Fails loudly if the epoch math is wrong: any sane host reads
         // later than November 2023.
         assert!(SystemClock.wall_ms() > 1_700_000_000_000);
+    }
+
+    /// The reading the sealed file stamps itself with. It must never
+    /// run backwards, or time away would come out negative and a page
+    /// would gain life across a relaunch.
+    #[test]
+    fn the_sleep_inclusive_reading_never_runs_backwards() {
+        let first = sleep_inclusive_ns();
+        let mut last = first;
+        for _ in 0..1000 {
+            let next = sleep_inclusive_ns();
+            assert!(next >= last, "the sleep-inclusive clock ran backwards");
+            last = next;
+        }
+        assert!(last >= first);
     }
 
     #[test]

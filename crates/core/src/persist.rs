@@ -11,7 +11,10 @@
 //! - **Explicit.** Nothing here runs on its own. The shell asks for a
 //!   [`SheetStore::snapshot`] on its own debounced write path and hands
 //!   it back to [`SheetStore::restore`] at launch. This module starts no
-//!   timer and keeps no shadow copy.
+//!   timer and keeps no shadow copy. Retention is explicit for the same
+//!   reason: no timer sweeps the ledger, so the write path evicts
+//!   ([`SheetStore::evict_ledger`]) before it snapshots, and the load
+//!   path evicts as it reads.
 //! - **Two snapshots, two lifetimes.** Content and ledger are separate
 //!   buffers with separate magics, so the shell can seal them to
 //!   separate files under separate keys: the content under the
@@ -175,6 +178,14 @@ impl<C: Clock> SheetStore<C> {
     /// because a ledger outlives the reboot that makes an `Instant`
     /// meaningless. No sealed bytes are written; the titles are, and are
     /// treated as content.
+    ///
+    /// This is a `&self` read and evicts nothing: it writes down exactly
+    /// the records the store is holding. The retention window is only a
+    /// real bound on the write path if the caller sweeps first, so the
+    /// seam above calls [`SheetStore::evict_ledger`] with the current
+    /// wall time immediately before this, in the same critical section.
+    /// Skip that and a session that never appends a record re-persists
+    /// titles past 90 days under the long-lived key (ADR-0012).
     #[must_use]
     pub fn ledger_snapshot(&self) -> Zeroizing<Vec<u8>> {
         let mut sizer = Sizer(0);
@@ -749,6 +760,71 @@ mod tests {
             original.ledger().next().unwrap().at_wall_ms() + crate::LEDGER_RETENTION_MS + 1;
         assert_eq!(revived.restore_ledger(&ledger, far_future).unwrap(), 0);
         assert_eq!(revived.ledger().count(), 0);
+    }
+
+    #[test]
+    fn the_write_path_evicts_an_aged_title_with_no_new_event_recorded() {
+        // The scenario the append-only sweep never covered: a menu-bar
+        // app up for months, a page staged on day 0, and nothing since
+        // but ink edits, which record nothing. Without a sweep on the
+        // write path the title keeps being re-persisted under the
+        // long-lived key forever.
+        const TITLE: &str = "prod DB credentials";
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.sync_document(id, vec![Segment::Ink(format!("# {TITLE}\n"))]));
+        let chip = store.seal_text(id, "hunter2-rotate-me").unwrap();
+        assert!(store.sync_document(
+            id,
+            vec![Segment::Ink(format!("# {TITLE}\n")), Segment::Chip(chip)],
+        ));
+        let needle = TITLE.as_bytes();
+        let held = |bytes: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+        assert_eq!(store.ledger().count(), 2, "created, sealed");
+        assert!(held(&store.ledger_snapshot()), "the control");
+
+        // Ninety days and a millisecond pass with the app still up. The
+        // user keeps typing; no record is ever appended, so nothing on
+        // the append path can sweep.
+        clock.advance(Duration::from_millis(crate::LEDGER_RETENTION_MS + 1));
+        assert!(store.sync_document(
+            id,
+            vec![
+                Segment::Ink(format!("# {TITLE}\nstill editing\n")),
+                Segment::Chip(chip),
+            ],
+        ));
+        assert_eq!(store.ledger().count(), 2, "nothing was recorded");
+
+        // The write path sweeps, and only then does the snapshot stop
+        // carrying the aged title.
+        assert_eq!(store.evict_ledger(clock.wall_ms()), 2, "both fell off");
+        assert_eq!(store.ledger().count(), 0);
+        assert!(
+            !held(&store.ledger_snapshot()),
+            "an aged title was re-persisted past the retention window"
+        );
+        // The page itself is untouched: eviction is a ledger sweep, not
+        // a death.
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.sheet(id).unwrap().chip_count(), 1);
+    }
+
+    #[test]
+    fn the_write_path_sweep_keeps_records_inside_the_window() {
+        let (mut store, clock) = store();
+        store.new_sheet().unwrap();
+        clock.advance(Duration::from_millis(crate::LEDGER_RETENTION_MS));
+        store.new_sheet().unwrap();
+        // Exactly 90 days old is inside the window, as on load.
+        assert_eq!(store.evict_ledger(clock.wall_ms()), 0);
+        assert_eq!(store.ledger().count(), 2);
+        clock.advance(Duration::from_millis(1));
+        assert_eq!(store.evict_ledger(clock.wall_ms()), 1);
+        assert_eq!(store.ledger().count(), 1);
+        // A sweep on an empty ledger, or one wholly inside the window,
+        // is a no-op rather than an error.
+        assert_eq!(store.evict_ledger(clock.wall_ms()), 0);
     }
 
     #[test]

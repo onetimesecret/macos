@@ -3,7 +3,7 @@
 //!
 //! The Onetime Secret **API token** (the password half of Basic auth,
 //! see `ots-client`) is itself a secret. This crate defines a portable
-//! [`CredentialStore`] contract with two implementations:
+//! [`CredentialStore`] contract with three implementations:
 //!
 //! - [`KeychainStore`] — macOS Keychain via `security-framework`,
 //!   compiled only on macOS (the platform CI lane validates it). This is
@@ -20,11 +20,19 @@
 //! - [`InMemoryCredentialStore`] — a **dev/test-only**, non-persistent
 //!   fallback so everything above this crate builds and tests off macOS.
 //!
+//! The two keychain tiers are not two unrelated stores a caller picks
+//! between. A caller holding one store asks it for the other with
+//! [`CredentialStore::key_material_store`], which is the only way a
+//! consumer that sees the trait object (the FFI persistence module holds
+//! a `&dyn CredentialStore` and nothing else) can reach a data
+//! protection store scoped to the same service. Key material moves
+//! there; the API token does not.
+//!
 //! Loaded secrets come back wrapped in [`Zeroizing`] so they wipe on
 //! drop. Error messages never embed secret material.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, Once, PoisonError};
+use std::sync::{Arc, Mutex, Once, OnceLock, PoisonError};
 
 use zeroize::Zeroizing;
 
@@ -70,6 +78,35 @@ pub trait CredentialStore: Send + Sync {
     /// `load(...).is_ok()` would return `false`. It answers "is a token
     /// stored?", not "can we read it right now?".
     fn exists(&self, account: &str) -> Result<bool, CredentialError>;
+
+    /// The store that **key material** for this store's service belongs
+    /// in: on macOS the data protection keychain
+    /// (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, lock gated, this
+    /// device only) that ADR-0012 requires for the content key's
+    /// keychain half and for the ledger key.
+    ///
+    /// This exists because the trait object is all a consumer gets. The
+    /// FFI persistence module is handed a `&dyn CredentialStore` and no
+    /// service name, so without this method it cannot name the service
+    /// it would have to construct a data protection store for, and the
+    /// key halves silently stay in the login keychain. Asking the store
+    /// itself keeps the scoping exact by construction: the returned
+    /// store is always the same service as `self`, never the default
+    /// [`SERVICE`] and never a service the caller had to spell again.
+    ///
+    /// **The API token does not move.** Only key material does. The
+    /// token stays on `self`, which is the legacy login keychain path
+    /// its ACL confirmation prompt depends on. A caller that stores the
+    /// token through the returned store has changed the token's prompt
+    /// behaviour, which is not what this method is for.
+    ///
+    /// Implementations must return a store that is stable for the life
+    /// of the process rather than a freshly built one per call: the
+    /// missing-entitlement fallback is decided once and announced once
+    /// per store (see [`EntitlementGate`]), so a new store per call
+    /// would re-probe the keychain on every credential access and repeat
+    /// the degradation notice forever.
+    fn key_material_store(&self) -> Arc<dyn CredentialStore>;
 }
 
 /// The platform default: the macOS Keychain where available, the
@@ -107,8 +144,36 @@ pub fn credential_store_for(service: &str) -> Arc<dyn CredentialStore> {
 /// ADR-0012 puts the keychain half of the content wrapping key, and the
 /// ledger key, in this store. The API token stays in
 /// [`credential_store_for`] so its ACL prompt behaviour is untouched.
+/// Callers holding only a trait object reach this through
+/// [`CredentialStore::key_material_store`] rather than naming the
+/// service a second time.
+///
+/// **One store per service, per process.** The instance is memoized on
+/// the service name, so every caller for a service shares one
+/// [`EntitlementGate`]: the missing-entitlement fallback is probed once
+/// and announced once for the whole process, not once per call site and
+/// not once per credential access. Building a fresh store per call would
+/// make that guarantee false, which is precisely what the once-decided,
+/// once-logged contract in [`EntitlementGate`] promises.
 #[must_use]
 pub fn data_protection_store_for(service: &str) -> Arc<dyn CredentialStore> {
+    static STORES: OnceLock<Mutex<HashMap<String, Arc<dyn CredentialStore>>>> = OnceLock::new();
+    let mut stores = STORES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    Arc::clone(
+        stores
+            .entry(service.to_string())
+            .or_insert_with(|| new_data_protection_store(service)),
+    )
+}
+
+/// The platform's data protection store, built fresh. Private because
+/// an unshared instance carries its own [`EntitlementGate`]: only
+/// [`data_protection_store_for`] may call this, and only once per
+/// service.
+fn new_data_protection_store(service: &str) -> Arc<dyn CredentialStore> {
     #[cfg(target_os = "macos")]
     {
         Arc::new(DataProtectionKeychainStore::new(service))
@@ -255,9 +320,27 @@ impl EntitlementGate {
 /// memory (wiped on drop, but never written to an OS keychain). The
 /// portable build uses it so credential-consuming paths are exercisable
 /// off macOS.
+///
+/// The map is behind an [`Arc`] so
+/// [`key_material_store`](CredentialStore::key_material_store) can hand
+/// back a second handle onto the *same* map. Off macOS there is no
+/// second keychain tier to move key material into, and a fresh empty
+/// store would silently drop every key written through it: a save would
+/// mint a key into a map the matching restore never sees.
 #[derive(Default)]
 pub struct InMemoryCredentialStore {
-    inner: Mutex<HashMap<String, Zeroizing<Vec<u8>>>>,
+    inner: Arc<Mutex<HashMap<String, Zeroizing<Vec<u8>>>>>,
+}
+
+impl InMemoryCredentialStore {
+    /// Another handle onto this store's map. Not a copy: writes through
+    /// either handle are visible through both.
+    #[must_use]
+    fn sharing(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
 }
 
 impl CredentialStore for InMemoryCredentialStore {
@@ -283,6 +366,15 @@ impl CredentialStore for InMemoryCredentialStore {
     fn exists(&self, account: &str) -> Result<bool, CredentialError> {
         let map = self.inner.lock().map_err(|_| poisoned())?;
         Ok(map.contains_key(account))
+    }
+
+    /// This same store, sharing one map. Deliberately not
+    /// [`data_protection_store_for`]: that is keyed by service name and
+    /// an in-memory store has no service, so two unrelated test stores
+    /// would collide in one map and a store's key material would outlive
+    /// the store itself.
+    fn key_material_store(&self) -> Arc<dyn CredentialStore> {
+        Arc::new(self.sharing())
     }
 }
 
@@ -362,6 +454,15 @@ impl CredentialStore for KeychainStore {
             Err(e) if e.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(false),
             Err(e) => Err(CredentialError::Backend(e.to_string())),
         }
+    }
+
+    /// The data protection store for **this store's** service. This is
+    /// the hop ADR-0012 requires: the API token stays here in the login
+    /// keychain, where its ACL prompt path is, and the key material
+    /// crosses to a lock gated, this device only item under the same
+    /// service name.
+    fn key_material_store(&self) -> Arc<dyn CredentialStore> {
+        data_protection_store_for(&self.service)
     }
 }
 
@@ -712,6 +813,16 @@ impl CredentialStore for DataProtectionKeychainStore {
             Err(status) => Err(Self::backend(status)),
         }
     }
+
+    /// The shared store for this service, which is already a data
+    /// protection store. Routed through [`data_protection_store_for`]
+    /// rather than cloning `self` so the process keeps one gate per
+    /// service: a store built directly with
+    /// [`DataProtectionKeychainStore::new`] would otherwise hand out a
+    /// second gate that probes and announces on its own.
+    fn key_material_store(&self) -> Arc<dyn CredentialStore> {
+        data_protection_store_for(&self.service)
+    }
 }
 
 #[cfg(test)]
@@ -762,6 +873,63 @@ mod tests {
         let backdrop = "com.onetimesecret.companion.backdrop";
         assert_eq!(KeychainStore::new(backdrop).service(), backdrop);
         assert_ne!(KeychainStore::new(backdrop).service(), SERVICE);
+    }
+
+    // ---- reaching the key material store ------------------------------
+
+    /// The whole point of the accessor: one store per service, so the
+    /// entitlement decision and its notice happen once for the process.
+    /// Asserted on pointer identity, which construction alone settles;
+    /// no keychain is touched.
+    #[test]
+    fn one_data_protection_store_per_service() {
+        let a = data_protection_store_for("svc.identity.a");
+        let again = data_protection_store_for("svc.identity.a");
+        let b = data_protection_store_for("svc.identity.b");
+        assert!(Arc::ptr_eq(&a, &again), "one store per service");
+        assert!(!Arc::ptr_eq(&a, &b), "services do not share a store");
+    }
+
+    /// A login-keychain store hands back the data protection store for
+    /// its **own** service, never the default one. Pointer identity
+    /// against the registry is what proves the service matched: the
+    /// registry is keyed by service name, so a mismatch would be a
+    /// different instance.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn key_material_crosses_to_the_same_service() {
+        let backdrop = "com.onetimesecret.companion.test.backdrop";
+        let store = KeychainStore::new(backdrop);
+        let keys = store.key_material_store();
+        assert!(Arc::ptr_eq(&keys, &data_protection_store_for(backdrop)));
+        assert!(!Arc::ptr_eq(&keys, &data_protection_store_for(SERVICE)));
+    }
+
+    /// Off macOS, and in every test that fakes a store, key material has
+    /// to land somewhere a later read can find it. A fresh empty store
+    /// here would break save-then-restore silently rather than loudly:
+    /// the save would succeed and the restore would find no key.
+    #[test]
+    fn the_in_memory_key_store_shares_one_map() {
+        let store = InMemoryCredentialStore::default();
+        let keys = store.key_material_store();
+
+        keys.store("state-key", b"thirty-two-bytes-in-real-life")
+            .unwrap();
+        assert_eq!(
+            &*store.load("state-key").unwrap(),
+            b"thirty-two-bytes-in-real-life"
+        );
+        // And a second reach finds the same map, not a new one.
+        assert!(store.key_material_store().exists("state-key").unwrap());
+
+        // Two unrelated stores stay unrelated: no global map keyed by a
+        // service name an in-memory store does not have.
+        let other = InMemoryCredentialStore::default();
+        assert!(!other.key_material_store().exists("state-key").unwrap());
+
+        store.delete("state-key").unwrap();
+        assert!(!keys.exists("state-key").unwrap());
     }
 
     // ---- the degradation decision -------------------------------------
