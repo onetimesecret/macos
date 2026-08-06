@@ -24,36 +24,22 @@ struct BackdropRootView: View {
         pages = model.pages
     }
 
-    /// Live translation of a header drag, in points. Zero except while
-    /// a drag is in flight; the settled position lives in the model.
-    @State private var dragTranslation: CGSize = .zero
-
-    /// The edge being pulled and how far, while a resize is in flight.
-    @State private var resizingEdge: CardEdge?
-    @State private var resizeTranslation: CGSize = .zero
+    /// Where the pointer was when the manipulation in flight began, in
+    /// AppKit's screen coordinates. Nil except while the mouse is down;
+    /// its presence is what tells `onEnded` there is a real gesture to
+    /// commit rather than one a mid-drag rest already voided.
+    @State private var gestureAnchor: CGPoint?
 
     private var raised: Bool { model.stance == .raised }
 
     var body: some View {
-        let placed = displayedGeometry()
-        // While the window hugs the card (a pinned rest), the window's
-        // own frame carries the card's place on screen; drawing the
-        // card at its pane offset too would push it out of its own
-        // window.
+        let placed = model.displayedGeometry
+        // While the window hugs the card (a pinned rest, and every
+        // raise), the window's own frame carries the card's place on
+        // screen; drawing the card at its pane offset too would push it
+        // out of its own window.
         let hugging = !model.stance.spansPane(pinned: model.pinned)
         ZStack(alignment: .topLeading) {
-            // The raised window spans the screen, so without this a
-            // click beside the card would be swallowed by our own
-            // transparent pane. Clicking outside the card rests the
-            // surface instead, the click's plain meaning. (While
-            // resting the gesture is unreachable: the unpinned rest
-            // ignores the mouse entirely, and the pinned rest's window
-            // is exactly the card, with no beside-the-card left.)
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    if raised { model.rest() }
-                }
             card
                 .frame(width: placed.width, height: placed.height)
                 .offset(
@@ -62,12 +48,6 @@ struct BackdropRootView: View {
                 )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // The drag gestures measure in this space, not their own
-        // view's: a grip moves with the card it is resizing, so a
-        // translation read in the grip's local space re-subtracts
-        // each delta already applied and the edge falls to half the
-        // pointer's speed. The pane holds still; measure there.
-        .coordinateSpace(name: Self.paneSpace)
         // The keyboard map is mounted only while raised: a resting
         // surface refuses key status outright, so a map it carried
         // could never fire, and not carrying one says so structurally.
@@ -75,26 +55,45 @@ struct BackdropRootView: View {
         .onChange(of: model.stance) { _ in
             // A rest mid-drag (Esc works while the mouse is down)
             // cancels the gesture without an `onEnded`; discard the
-            // in-flight delta so the card does not stick askew.
-            dragTranslation = .zero
-            resizingEdge = nil
-            resizeTranslation = .zero
+            // in-flight proposal so the card does not stick askew.
+            gestureAnchor = nil
+            model.discardProposal()
         }
     }
 
-    /// The geometry to draw right now: the settled model value with any
-    /// in-flight drag or resize applied, run through the same pure
-    /// clamp — against the same pane rect — that will judge the
-    /// commit. Live feedback and the settled result therefore agree;
-    /// the card never previews a place it will not be allowed to keep.
-    private func displayedGeometry() -> BackdropGeometry {
-        var proposed = model.geometry
-        if let resizingEdge {
-            proposed = resizingEdge.resized(proposed, by: resizeTranslation)
-        }
-        proposed.origin.x += dragTranslation.width
-        proposed.origin.y += dragTranslation.height
-        return proposed.clamped(to: model.pane)
+    /// How far the pointer has travelled since the manipulation began,
+    /// in the pane's own top-leading coordinates.
+    ///
+    /// Measured against the screen, not against a SwiftUI coordinate
+    /// space. Every space available here (the view's own, the
+    /// window's, `.global`) now travels with the card, because the
+    /// raised window *is* the card: a translation read in a moving
+    /// space re-subtracts each delta already applied, and the card
+    /// falls to half the pointer's speed or stalls outright. The
+    /// screen is the one frame of reference that holds still. AppKit's
+    /// y grows upward and the pane's grows downward, hence the flip.
+    private func paneTranslation(from anchor: CGPoint) -> CGSize {
+        let mouse = NSEvent.mouseLocation
+        return CGSize(width: mouse.x - anchor.x, height: anchor.y - mouse.y)
+    }
+
+    /// The manipulation's anchor in screen coordinates, seeded on the
+    /// first change of a gesture and held for the rest of it.
+    ///
+    /// The seed backs the gesture's own translation out of the current
+    /// pointer position, recovering the exact point the mouse went
+    /// down: on the first change the card has not moved yet, so
+    /// SwiftUI's local measure is still trustworthy, and using it
+    /// keeps the card from lagging the pointer by the two points the
+    /// gesture spent activating. Every change after that is measured
+    /// from the screen, because by then the window is travelling with
+    /// the pointer. SwiftUI's y grows downward, AppKit's upward.
+    private func anchor(seededBy translation: CGSize) -> CGPoint {
+        if let gestureAnchor { return gestureAnchor }
+        let mouse = NSEvent.mouseLocation
+        let seed = CGPoint(x: mouse.x - translation.width, y: mouse.y + translation.height)
+        gestureAnchor = seed
+        return seed
     }
 
     private var card: some View {
@@ -229,28 +228,39 @@ struct BackdropRootView: View {
         .accessibilityLabel(Text("Keep resting card above other windows"))
     }
 
-    /// The header drag: live translation while the mouse is down, one
+    /// The header drag: live proposals while the mouse is down, one
     /// committed origin when it settles. The model clamps and
     /// persists; the view only proposes. The minimum distance keeps a
     /// plain click on the header from registering as a zero-length
     /// drag.
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 2, coordinateSpace: .named(Self.paneSpace))
+        DragGesture(minimumDistance: 2)
             .onChanged { value in
-                dragTranslation = value.translation
+                guard raised else { return }
+                let anchor = anchor(seededBy: value.translation)
+                model.proposeGeometry(dragged(by: paneTranslation(from: anchor)))
             }
-            .onEnded { value in
-                dragTranslation = .zero
+            .onEnded { _ in
+                let started = gestureAnchor
+                gestureAnchor = nil
                 // A rest mid-drag (Esc) cancels the manipulation, but
                 // the window that captured the mouse-down still gets
                 // the mouse-up; the abandoned proposal must not land.
-                guard raised else { return }
-                var proposed = model.geometry
-                proposed.origin.x += value.translation.width
-                proposed.origin.y += value.translation.height
+                guard raised, let started else {
+                    model.discardProposal()
+                    return
+                }
                 model.endZoom()
-                model.setGeometry(proposed)
+                model.setGeometry(dragged(by: paneTranslation(from: started)))
             }
+    }
+
+    /// The settled geometry moved by a pane translation.
+    private func dragged(by translation: CGSize) -> BackdropGeometry {
+        var proposed = model.geometry
+        proposed.origin.x += translation.width
+        proposed.origin.y += translation.height
+        return proposed
     }
 
     // MARK: Resizing
@@ -307,10 +317,6 @@ struct BackdropRootView: View {
     private static let gripThickness: CGFloat = 6
     private static let cornerSide: CGFloat = 12
 
-    /// The stationary space the drag gestures measure in; the pane
-    /// covers the screen and does not move with the card.
-    private static let paneSpace = "backdrop-pane"
-
     private func grip(_ edge: CardEdge) -> some View {
         Color.clear
             .contentShape(Rectangle())
@@ -328,19 +334,27 @@ struct BackdropRootView: View {
     /// pull into a proposal, and the commit goes through the model's
     /// clamp like every other proposal.
     private func resizeGesture(_ edge: CardEdge) -> some Gesture {
-        DragGesture(minimumDistance: 2, coordinateSpace: .named(Self.paneSpace))
+        DragGesture(minimumDistance: 2)
             .onChanged { value in
-                resizingEdge = edge
-                resizeTranslation = value.translation
+                guard raised else { return }
+                let anchor = anchor(seededBy: value.translation)
+                model.proposeGeometry(
+                    edge.resized(model.geometry, by: paneTranslation(from: anchor))
+                )
             }
-            .onEnded { value in
-                resizingEdge = nil
-                resizeTranslation = .zero
+            .onEnded { _ in
+                let started = gestureAnchor
+                gestureAnchor = nil
                 // Same cancellation rule as the header drag: a rest
                 // mid-gesture voids the proposal.
-                guard raised else { return }
+                guard raised, let started else {
+                    model.discardProposal()
+                    return
+                }
                 model.endZoom()
-                model.setGeometry(edge.resized(model.geometry, by: value.translation))
+                model.setGeometry(
+                    edge.resized(model.geometry, by: paneTranslation(from: started))
+                )
             }
     }
 }
