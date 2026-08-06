@@ -88,7 +88,17 @@ revision log; Peritext (Ink and Switch) for rich text with anchors and
 marks that survive concurrent editing; Automerge, which implements
 Peritext marks and carries actor, timestamp and message on every
 change; yrs, the Rust Yjs port, faster and shipping an `UndoManager`
-with origin scoping.
+with origin scoping; Loro, the youngest of the three Rust CRDTs, whose
+commits carry optional timestamps and metadata, whose rich text is
+Peritext-informed, and whose shallow-snapshot export truncates history
+at a frontier while keeping current state.
+
+Within this architecture the rich-text merge semantics are not
+interchangeable. Automerge and Loro ship Peritext-derived marks;
+Y.Text's attribute model has known concurrent-formatting anomalies
+(bold expanding over concurrently inserted text, mark boundary drift).
+If per-paragraph metadata and annotations are the feature, mark
+behavior under concurrency is a selection criterion, not a footnote.
 
 Cost: the shell and core seam inverts. Edits flow core-ward as
 operations instead of documents flowing shell-ward as snapshots, and
@@ -156,6 +166,33 @@ within the compaction horizon, a materialized summary beyond it, and no
 reconstructible record of deleted content past that boundary. Bounded
 memory, matching bounded pages.
 
+### What collaboration does to forgetting
+
+The claims above are exact only while the document is locally
+authoritative. The moment a second peer exists, garbage collection and
+compaction stop being erasure. Deleted content was encoded into update
+messages and broadcast the moment it was typed; every peer that
+persisted incremental updates, and every relay that stored them, holds
+the history regardless of what the local document has since discarded.
+End-to-end encryption sharpens this rather than softening it: if
+updates are encrypted before transport, the relay cannot merge or
+compact, only store and forward, which makes it precisely the kind of
+durable op-log archive the compaction ceremony exists to destroy.
+
+Library-level tombstone GC (yrs collects deleted content by default;
+Automerge retains it) is therefore a difference in local hygiene, not
+in the security claim. Under any CRDT, the honest statement once peers
+exist is "this device verifiably forgot, and peers were asked to,"
+never "the document forgot."
+
+The consequence is that forgetting and compaction are the same
+ceremony, and under collaboration it is a coordinated protocol event,
+not a local one: all peers drop and resync from a fresh document (new
+actor identity, no inherited history), and the relay purges its stored
+updates. The TTL clock can propose the ceremony; it cannot execute it
+silently. This is a product-truth question that belongs in the
+security model before the library choice does.
+
 ## Consequences
 
 If architecture 3 is chosen:
@@ -187,11 +224,29 @@ If architecture 3 is chosen:
   constrains it, since discarding history is precisely what a syncing
   peer cannot tolerate. That conflict is better settled deliberately
   now than discovered later.
-- Library choice would be Automerge over yrs: change objects carry
-  actor, timestamp and message natively, marks are Peritext, and the
-  history API is the provenance query surface. yrs wins on speed and
-  free undo, and would be the pick if realtime sync were the driving
-  requirement rather than provenance.
+- Library choice is a three-way call, and the Swift binding situation
+  weighs more than feature tables suggest for a macOS-native app.
+  Automerge: change objects carry actor, timestamp and message
+  natively, marks are Peritext, the history API is the provenance
+  query surface, and automerge-swift is the actively polished Apple
+  binding — but no shipped undo, and history retention is what the
+  compaction ceremony must fight. yrs: fastest, free origin-scoped
+  undo, and the TipTap/ProseMirror ecosystem if a web client ever
+  matters — but no timestamps or change metadata anywhere (created,
+  modified and origin all become stored fields), no history API, and
+  yswift is an experimental binding that lags yrs releases, so
+  choosing yrs means budgeting to own a UniFFI binding. Loro: commit
+  timestamps and metadata recover the provenance-rides-the-change
+  property, Peritext-informed marks, a shipped undo manager, a native
+  tree type for blocks, first-party Swift bindings, and shallow
+  snapshots that are very nearly the compaction ceremony as a library
+  primitive — the cost is the smallest community, the youngest sync
+  story, and no editor-binding ecosystem. Ranked against this ADR's
+  criteria (provenance, forgetting, Swift-native, collaboration at
+  handful-of-peers scale rather than Docs scale): Loro, then
+  Automerge, then yrs — with the explicit caveat that Loro's youth is
+  the bet, and that yrs moves to the front only if a web client
+  becomes load-bearing.
 
 Under any architecture, page-level created and modified are cheap: the
 mutation sites that already route through `markDirty` are exactly the
@@ -202,6 +257,11 @@ ledger, whose content-free claim survives timestamps but not URLs.
 
 ## What would settle this
 
+- A product answer on what "verifiably forgets" means once a second
+  device or peer exists. If the claim must survive collaboration, the
+  coordinated forgetting ceremony above is a requirement and shapes
+  what a relay is allowed to be; if the claim is scoped per-device,
+  the library choice relaxes considerably.
 - A product answer on multi-device. If sync is on the horizon,
   architecture 3 is the only option that does not get rewritten, and
   the compaction horizon becomes a negotiated constraint rather than a
@@ -223,9 +283,15 @@ Once decided, this ADR gets revisited when:
 
 - Apple ships block identity in TextKit 2 as a first-class contract,
   removing the reason to own paragraph bookkeeping under architecture 2.
-- Automerge or yrs ships true history truncation with sync compatible
+- Automerge or yrs ships true history truncation with sync-compatible
   semantics, which would make the compaction ceremony redundant and
-  change the retention argument.
+  change the retention argument. Loro's shallow snapshot is already
+  most of this primitive; what remains open is whether its sync
+  protocol lets peers adopt a truncated frontier without a full
+  resync, which should be verified rather than assumed.
+- yswift graduates to a maintained, release-tracking binding, or
+  automerge-swift ships undo, either of which reshuffles the library
+  ranking above.
 - Provenance data appears in a threat model as an asset in its own
   right, rather than as metadata about assets, which would move the
   compaction horizon from a convenience to a requirement.
