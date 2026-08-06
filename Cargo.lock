@@ -54,7 +54,9 @@ dependencies = [
 name = "companion-credentials"
 version = "0.1.0"
 dependencies = [
+ "core-foundation",
  "security-framework",
+ "security-framework-sys",
  "zeroize",
 ]
 
