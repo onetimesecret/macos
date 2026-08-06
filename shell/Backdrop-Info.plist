@@ -45,6 +45,12 @@
 	     feature spec — activation is one of its summon routes. -->
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<!-- Matches the panel: opting in is what makes PageModel's
+	     SuddenTerminationLatch the real gate on the logout kill, rather
+	     than leaving the ADR-0012 clause satisfied by the accident of
+	     never having opted in. -->
+	<key>NSSupportsSuddenTermination</key>
+	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© Onetime Secret</string>
 </dict>

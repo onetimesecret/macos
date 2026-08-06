@@ -95,14 +95,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    /// Quit is the one moment state touches disk: seal everything into
-    /// the state file so the next launch opens where this one left off.
-    /// Intercepted here rather than in `applicationWillTerminate` so a
-    /// refused save — Keychain denied, disk full, a failed rename —
-    /// still reaches the user while there is time to choose. One alert,
-    /// two honest exits: quit anyway and accept the loss, or stay and
-    /// try again later. Never a retry loop; cancelling simply returns
-    /// to the app.
+    /// Quit flushes whatever the debounce still holds; it is not what
+    /// gets state onto disk. Every mutation arms a debounced write
+    /// (ADR-0012), so the next launch opens where this one left off even
+    /// when quit never runs. Intercepted here rather than in
+    /// `applicationWillTerminate` so a refused save — Keychain denied,
+    /// disk full, a failed rename — still reaches the user while there is
+    /// time to choose. One alert, two honest exits: quit anyway and
+    /// accept the loss, or stay and try again later. Never a retry loop;
+    /// cancelling simply returns to the app.
+    ///
+    /// The bundle opts into sudden termination, so this handler is
+    /// reached at logout only while no write is pending. When one is,
+    /// PageModel's hold is what keeps the process alive long enough.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !model.saveState() else { return .terminateNow }
         let alert = NSAlert()

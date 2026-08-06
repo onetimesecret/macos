@@ -63,6 +63,19 @@ public struct PromotionDraft {
 /// the disable/enable pair can never go unbalanced. The two effects are
 /// injectable so the balance is testable without AppKit and without
 /// moving the test runner's own termination policy.
+///
+/// What this does *not* currently do: neither bundle declares
+/// `NSSupportsSuddenTermination`, so macOS starts both processes with
+/// the counter at 1 and they are never sudden-termination candidates in
+/// the first place. `disableSuddenTermination` takes that counter 1 → 2
+/// and the matching enable returns it 2 → 1; it never reaches 0. The
+/// logout and shutdown kill window is therefore closed today by the
+/// absence of the opt-in, not by this latch. The latch is deliberate
+/// anyway: the opt-in is a launch-responsiveness win someone will
+/// plausibly want later, and adding the key must not silently convert
+/// the window from "always safe" to "safe if the hold is correct" with
+/// no code to make it so. Do not read the hold as the thing currently
+/// providing the guarantee.
 public struct SuddenTerminationLatch {
     /// Outstanding holds. Never negative.
     public private(set) var depth = 0
@@ -102,6 +115,57 @@ public struct SuddenTerminationLatch {
     public mutating func settle(saved: Bool) {
         guard saved else { return }
         release()
+    }
+}
+
+/// The debounce's bookkeeping, kept apart from the timer that runs it so
+/// the two rules the ADR's loss window actually rests on are testable
+/// without a run loop.
+///
+/// First rule, anchoring: the window belongs to the first mark of a
+/// burst, not the last. A trailing debounce restarted on every mark
+/// defers the write for as long as the marks keep coming, and marks come
+/// one per typed character, so someone entering a long credential at any
+/// pace faster than the interval would get no write at all until they
+/// stopped. That is unbounded, and it is unbounded in exactly the case
+/// the persistence exists for. Anchored, a burst costs one write no
+/// later than `interval` after it began.
+///
+/// Second rule, generations: `Timer.invalidate` cannot recall a body
+/// that has already fired, and the body hops to the main actor before it
+/// writes, so between the fire and the hop a quit-time write can slip in
+/// underneath it. Every deferred body carries the generation it was
+/// armed with and stands down when a write has since moved it on, which
+/// is what keeps quit a flush rather than a duplicate write.
+public struct SaveSchedule {
+    /// Bumped by every arm and every write; a deferred body holding an
+    /// older value has been overtaken.
+    public private(set) var generation = 0
+
+    /// A write is armed and has not started yet.
+    public private(set) var pending = false
+
+    /// A mutation landed. Returns the generation the deferred write must
+    /// carry when this call is the one that arms the timer, or nil when a
+    /// write is already pending and the burst keeps the window its first
+    /// mark opened.
+    public mutating func arm() -> Int? {
+        guard !pending else { return nil }
+        pending = true
+        generation += 1
+        return generation
+    }
+
+    /// Whether a deferred body armed at `generation` may still run.
+    public func isCurrent(_ generation: Int) -> Bool {
+        pending && generation == self.generation
+    }
+
+    /// A write is starting. The window closes, and anything still queued
+    /// behind an already-fired timer is stale from here.
+    public mutating func begin() {
+        pending = false
+        generation += 1
     }
 }
 
@@ -225,16 +289,34 @@ public final class PageModel: ObservableObject {
     private nonisolated(unsafe) var redrawTimer: Timer?
     private nonisolated(unsafe) var saveTimer: Timer?
 
+    // nonisolated(unsafe) for the same reason as the timers: deinit is
+    // nonisolated even on a @MainActor class, and deinit is where a
+    // model that dies dirty gives its hold back. Every other touch is on
+    // the main actor, and the two effects it calls (`ProcessInfo`) are
+    // themselves thread-safe.
+    //
     /// Held from the first mutation after a write until the next write
-    /// settles the file (ADR-0012). Not `nonisolated(unsafe)`: unlike
-    /// the timers, nothing outside the main actor touches it.
-    private var terminationLatch = SuddenTerminationLatch()
+    /// settles the file (ADR-0012).
+    private nonisolated(unsafe) var terminationLatch = SuddenTerminationLatch()
+
+    /// The debounce's state, separate from the timer running it: which
+    /// deferred write is current, and whether one is already armed. See
+    /// `SaveSchedule` for why both matter.
+    private var saveSchedule = SaveSchedule()
 
     /// The debounce ADR-0012 states as a tradeoff rather than a free
     /// win: shorter shrinks the crash-loss window, longer leaves fewer
     /// ciphertext generations behind on disk (each atomic replace
-    /// unlinks the prior one, it does not erase it).
+    /// unlinks the prior one, it does not erase it). Measured from the
+    /// first mutation of a burst, so it is the whole loss window and not
+    /// a per-keystroke restart.
     private static let saveDebounce: TimeInterval = 2.0
+
+    /// The interval after a refused write. Longer than the debounce: a
+    /// full volume or a denied Keychain prompt does not clear in two
+    /// seconds, and retrying at the debounce cadence would spend the
+    /// session hammering a path that keeps saying no.
+    private static let saveRetryDebounce: TimeInterval = 10.0
 
     /// `defaults` is injectable so tests can point at a throwaway
     /// domain; both shipping form factors take their own standard one
@@ -298,7 +380,7 @@ public final class PageModel: ObservableObject {
         saveLicence = Self.grantsSaveLicence(fileExists: fileExists, restored: restored)
         if !saveLicence {
             logger.error(
-                "restore failed over an existing state file; withholding the quit-save licence"
+                "restore failed over an existing state file; withholding the save licence"
             )
         }
         if client.sheets().isEmpty {
@@ -323,11 +405,12 @@ public final class PageModel: ObservableObject {
     private static let shareDomainKey = "connection.shareDomain"
 
     /// A mutation landed: the store now differs from the sealed file.
-    /// Take the sudden-termination hold and restart the debounce, so a
-    /// burst of edits costs one write shortly after the last of them
-    /// rather than one write per keystroke. This, not the quit-time
-    /// flush, is the mechanism (ADR-0012): a crash, a force quit or a
-    /// logout loses at most the debounce window.
+    /// Take the sudden-termination hold and make sure a write is armed.
+    /// This, not the quit-time flush, is the mechanism (ADR-0012): a
+    /// crash, a force quit or a logout loses at most one debounce
+    /// window's worth of edits, because the window is measured from the
+    /// first mark of a burst (see `SaveSchedule`). Quit flushing what is
+    /// still pending is an optimization on top.
     ///
     /// A session with no licence to write takes no hold: there is no
     /// write it could be waiting for, and blocking shutdown over a
@@ -335,17 +418,35 @@ public final class PageModel: ObservableObject {
     private func markDirty() {
         guard stateLoaded, saveLicence else { return }
         terminationLatch.acquire()
-        saveTimer?.invalidate()
-        let timer = Timer(timeInterval: Self.saveDebounce, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.saveState() }
+        scheduleSave()
+    }
+
+    /// Arm the deferred write, unless one is already armed. The timer
+    /// runs in `.common` so a tracked menu cannot stall the write past
+    /// its window; the failure retry runs in `.default` instead, so it
+    /// cannot fire underneath the terminate path's modal alert and make
+    /// that alert's text false while the user reads it.
+    private func scheduleSave(
+        after interval: TimeInterval = saveDebounce, mode: RunLoop.Mode = .common
+    ) {
+        guard let generation = saveSchedule.arm() else { return }
+        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                // The hop is why this check exists: the timer has fired
+                // and can no longer be invalidated, so a write that ran
+                // in the meantime (quit, most likely) is what stands
+                // this one down.
+                guard let self, self.saveSchedule.isCurrent(generation) else { return }
+                self.saveState()
+            }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        RunLoop.main.add(timer, forMode: mode)
         saveTimer = timer
     }
 
     /// Seal the whole store — live pages, chips, the ledger — into the
     /// state file in one core call. The debounce's far end, and the
-    /// same call the terminate path makes: quit cancels whatever the
+    /// same call the terminate path makes: quit stands down whatever the
     /// debounce still holds and writes once, so it flushes rather than
     /// duplicating a write. A session that never loaded must not
     /// overwrite yesterday's file with its empty store; nor may one
@@ -366,6 +467,7 @@ public final class PageModel: ObservableObject {
     public func saveState() -> Bool {
         saveTimer?.invalidate()
         saveTimer = nil
+        saveSchedule.begin()
         guard stateLoaded, saveLicence else { return true }
         let url = formFactor.stateFileURL
         try? FileManager.default.createDirectory(
@@ -374,6 +476,12 @@ public final class PageModel: ObservableObject {
         let saved = client.persistSave(to: url.path)
         if !saved {
             logger.error("save refused; the sealed state file was not rewritten")
+            // The buffer is still dirty and nothing else is going to ask
+            // for it: the debounce only arms on a mutation, so a session
+            // that fails one write and then goes quiet would keep its
+            // pages nowhere but in memory. Arm the retry here. The hold
+            // stays taken either way: holding is not writing.
+            scheduleSave(after: Self.saveRetryDebounce, mode: .default)
         }
         terminationLatch.settle(saved: saved)
         return saved
@@ -386,6 +494,12 @@ public final class PageModel: ObservableObject {
         // outlives everything but the process, and the process's own
         // exit routes through `saveState` first.
         saveTimer?.invalidate()
+        // A model that dies dirty still owes the hold back. Nothing else
+        // can return it once the object is gone, and a stranded disable
+        // is process-wide: in a test that builds a model against a
+        // throwaway domain it would be the runner that stopped being
+        // killable.
+        terminationLatch.release()
     }
 
     // MARK: State
@@ -1091,9 +1205,16 @@ public final class PageModel: ObservableObject {
                 guard let self else { return }
                 // Expiry is a mutation nobody typed: pages and chips
                 // left the store on their own, and the sealed file is
-                // stale until this is written. Zero due means the timer
-                // fired on a hold lapse that settled nothing.
-                if self.client.expireDue() != 0 { self.markDirty() }
+                // stale until this is written. The timer is armed at the
+                // core's next event and only fires on one, and both
+                // kinds move persisted state: an expiry entombs pages,
+                // and a hold lapse rewrites the page's clock and adds to
+                // its held total inside `expire_due`'s normalize pass,
+                // which reports no expired ids. So mark on the fire, not
+                // on the count, because a lapse that returns zero ids has
+                // changed the store.
+                _ = self.client.expireDue()
+                self.markDirty()
                 self.refresh() // re-arms for the next event
             }
         }

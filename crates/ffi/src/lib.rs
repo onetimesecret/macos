@@ -843,7 +843,9 @@ pub unsafe extern "C" fn companion_expire_due(handle: *mut CompanionHandle) -> u
 /// rests in the OS credential store (`state-key` account, minted on
 /// first save). Only ciphertext touches disk; the plaintext snapshot is
 /// wiped before this returns. The write is atomic (temp file + rename)
-/// and owner-only. Call at quit; nothing saves on its own.
+/// and owner-only. The shell calls this on every mutation, debounced,
+/// and again at quit to flush what is still pending (ADR-0012); the
+/// core still saves nothing on its own.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid NUL-terminated

@@ -45,6 +45,16 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<!-- Opting in is what makes the dirty-buffer hold real. Without this
+	     key macOS never lowers the termination counter to zero, so
+	     PageModel's SuddenTerminationLatch would guard nothing and the
+	     logout window would be closed by accident rather than by design
+	     (ADR-0012). With it, logout and shutdown stop serializing through
+	     a quit handler, and the debounced mutation write becomes the
+	     mechanism the ADR says it is: the hold blocks the kill only while
+	     a write is genuinely pending. -->
+	<key>NSSupportsSuddenTermination</key>
+	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© Onetime Secret</string>
 </dict>

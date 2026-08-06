@@ -102,11 +102,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         controller.show()
     }
 
-    /// Quit is the one moment the page touches disk. Intercepted here
-    /// rather than in `applicationWillTerminate` so a refused save
-    /// reaches the user while there is still a choice to make: accept
-    /// the loss, or stay and try again. Never a retry loop; cancelling
-    /// simply returns to the surface.
+    /// Quit flushes whatever the debounce still holds; the debounced
+    /// mutation write is what actually gets the page onto disk
+    /// (ADR-0012). Intercepted here rather than in
+    /// `applicationWillTerminate` so a refused save reaches the user
+    /// while there is still a choice to make: accept the loss, or stay
+    /// and try again. Never a retry loop; cancelling simply returns to
+    /// the surface.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !model.saveState() else { return .terminateNow }
         let alert = NSAlert()
