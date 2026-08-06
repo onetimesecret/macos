@@ -64,18 +64,15 @@ public struct PromotionDraft {
 /// injectable so the balance is testable without AppKit and without
 /// moving the test runner's own termination policy.
 ///
-/// What this does *not* currently do: neither bundle declares
-/// `NSSupportsSuddenTermination`, so macOS starts both processes with
-/// the counter at 1 and they are never sudden-termination candidates in
-/// the first place. `disableSuddenTermination` takes that counter 1 → 2
-/// and the matching enable returns it 2 → 1; it never reaches 0. The
-/// logout and shutdown kill window is therefore closed today by the
-/// absence of the opt-in, not by this latch. The latch is deliberate
-/// anyway: the opt-in is a launch-responsiveness win someone will
-/// plausibly want later, and adding the key must not silently convert
-/// the window from "always safe" to "safe if the hold is correct" with
-/// no code to make it so. Do not read the hold as the thing currently
-/// providing the guarantee.
+/// Load-bearing, not decorative: both bundles declare
+/// `NSSupportsSuddenTermination`, which lowers the per-process counter
+/// macOS starts at 1 down to 0 and makes each app a genuine
+/// sudden-termination candidate. `disableSuddenTermination` then takes
+/// the counter 0 → 1 and the matching enable returns it 1 → 0, so this
+/// latch is what actually stands between a pending write and a logout
+/// that kills the process where it sits. An unbalanced enable here
+/// hands away a hold the model still needs; an unbalanced disable leaves
+/// the machine waiting on a process with nothing left to write.
 public struct SuddenTerminationLatch {
     /// Outstanding holds. Never negative.
     public private(set) var depth = 0
@@ -363,7 +360,20 @@ public final class PageModel: ObservableObject {
     /// reasons, so one refusing to open says nothing about the other: a
     /// damaged ledger must not cost the session its pages, and a ledger
     /// that would not open must not be overwritten by an empty one. The
-    /// rule is identical, hence the same truth table.
+    /// rule is identical at launch, hence the same truth table.
+    ///
+    /// It parts company with the content licence afterwards, because the
+    /// two refusals cost different things. Withholding the content
+    /// licence protects yesterday's pages, and there is nothing better to
+    /// do than keep protecting them. Withholding this one protects a file
+    /// of metadata at the price of recording nothing further, and since
+    /// nothing removes the file, one transient refusal (a keychain that
+    /// said no while the machine was locked) would end the audit trail
+    /// for every future launch as well. So this licence has one deliberate
+    /// way back: the user clearing the ledger in Settings, which discards
+    /// the file they were told could not be read and re-grants the licence
+    /// (`licencesAfterLedgerClear`). Nothing auto-clears a refused ledger;
+    /// the recovery is always the user's instruction.
     private var ledgerLicence = false
 
     /// The persistence trail in the unified log: restore refusals and
@@ -374,19 +384,23 @@ public final class PageModel: ObservableObject {
     /// The first reveal loads yesterday's pages: the core decrypts the
     /// state file (the key comes from the Keychain — a prompt, if the
     /// ACL raises one, answers the user's own summon, per ADR-0004's
-    /// spirit of prompting only on use) and drains the wall-clock time
-    /// the app was closed, expiring what didn't survive it. A missing
-    /// file is a fresh start; an existing file that refuses to open
-    /// still gets a working page but forfeits the save licence,
-    /// keeping the refusal recoverable. Either way a page awaits — the
-    /// surface never opens onto nothing.
+    /// spirit of prompting only on use) and drains the time the app was
+    /// closed, expiring what didn't survive it. A missing file is a
+    /// fresh start; an existing file that refuses to open still gets a
+    /// working page but forfeits the save licence, keeping the refusal
+    /// recoverable. Either way a page awaits, and the surface never opens
+    /// onto nothing.
+    ///
+    /// The probe runs **after** the restore, and that ordering is
+    /// load-bearing: see `grantsSaveLicence`.
     public func loadStateIfNeeded() {
         guard !stateLoaded else { return }
         stateLoaded = true
         let path = formFactor.stateFileURL.path
-        let fileExists = FileManager.default.fileExists(atPath: path)
         let restored = client.persistRestore(from: path)
-        saveLicence = Self.grantsSaveLicence(fileExists: fileExists, restored: restored)
+        saveLicence = Self.grantsSaveLicence(
+            fileExists: FileManager.default.fileExists(atPath: path), restored: restored
+        )
         if !saveLicence {
             logger.error(
                 "restore failed over an existing state file; withholding the save licence"
@@ -399,12 +413,34 @@ public final class PageModel: ObservableObject {
         // go back any further, and this session may not overwrite the
         // file it could not read.
         let ledgerPath = formFactor.ledgerFileURL.path
-        let ledgerExisted = FileManager.default.fileExists(atPath: ledgerPath)
         let ledgerRestored = client.ledgerRestore(from: ledgerPath)
-        ledgerLicence = Self.grantsSaveLicence(fileExists: ledgerExisted, restored: ledgerRestored)
+        // Probed after the restore for the same reason as above, though
+        // the restore itself never has cause to discard this file: the
+        // ledger is long-lived by design and is not boot-session bound.
+        // The one thing that unlinks it is the user's own Clear
+        // (`clearLedger`), which cannot race a probe that already ran.
+        // Asking both files the question the same way is what keeps the
+        // content file's ordering from looking like an accident someone
+        // may straighten out.
+        ledgerLicence = Self.grantsSaveLicence(
+            fileExists: FileManager.default.fileExists(atPath: ledgerPath),
+            restored: ledgerRestored
+        )
         if !ledgerLicence {
+            // Said plainly, because the consequence is invisible in the
+            // interface: the ledger tab still opens, it simply stops
+            // gaining records, and it will keep stopping on every future
+            // launch until someone acts. Metadata only, as everywhere on
+            // this trail: a path, never a title and never a byte of the
+            // file.
             logger.error(
-                "restore failed over an existing ledger file; withholding the ledger save licence"
+                """
+                the ledger file exists but would not open, so this session is \
+                NOT recording to the audit trail and will not overwrite that \
+                file. Every later launch does the same until the ledger is \
+                cleared from Settings, which discards the unreadable file and \
+                starts a new trail. Pages are unaffected.
+                """
             )
         }
         if client.sheets().isEmpty {
@@ -419,8 +455,103 @@ public final class PageModel: ObservableObject {
     /// tells them apart. A restore that succeeded keeps the licence, a
     /// missing file grants it fresh (nothing exists to protect), and
     /// only an existing file that would not open withholds it.
+    ///
+    /// **`fileExists` is the probe taken after the restore, never
+    /// before, and the order is part of the rule.** A state file stamped
+    /// with an earlier boot session is dropped from disk *by the restore
+    /// itself*, which then answers false. The core will not open a
+    /// session's content into another session, and it rotates both key
+    /// halves on the way past. Probed beforehand, that reads as "a file
+    /// was there and would not open", which is the one combination that
+    /// withholds the licence: the app would then refuse to write for the
+    /// whole session, and it would do it on the first launch after every
+    /// reboot. Probed afterwards, the discarded file reads as "no file",
+    /// which is what it now is, and the session starts clean with its
+    /// licence. A file that genuinely refused is still sitting there
+    /// when the probe runs, so that case still withholds. The table
+    /// below did not change; only what feeds it.
+    ///
+    /// The drop is conditional on that rotation succeeding, so there is
+    /// one more way to reach the probe with the file still present: a
+    /// keychain that refused to delete the state key. This session then
+    /// withholds the licence, which is the outcome to want. A keychain
+    /// that will not delete a key is one this session cannot trust to
+    /// hand back the halves a write would need, and the file it declined
+    /// to overwrite is the trigger that makes the next launch rotate
+    /// again.
     public nonisolated static func grantsSaveLicence(fileExists: Bool, restored: Bool) -> Bool {
         restored || !fileExists
+    }
+
+    /// Whether a mutation in this session has any file it could reach,
+    /// which is what decides both the sudden-termination hold and the
+    /// debounce. Either licence is enough: the state file and the
+    /// ledger are sealed under different keys, fail for different
+    /// reasons and are written by different calls, so a session that may
+    /// not touch one of them still owes the other its write. Asking for
+    /// both, as this once did through `saveLicence` alone, meant a
+    /// session whose content restore was refused wrote no ledger at all,
+    /// and a Clear the ledger in such a session never reached disk.
+    public nonisolated static func writesEitherFile(
+        loaded: Bool, contentLicence: Bool, ledgerLicence: Bool
+    ) -> Bool {
+        loaded && (contentLicence || ledgerLicence)
+    }
+
+    /// Whether this write should drop the state file rather than seal an
+    /// empty store over it. Nothing is staged, so the ciphertext on disk
+    /// describes nothing, and leaving the generation there for the rest
+    /// of the session buys the user nothing (ADR-0012: the last
+    /// generation should not outlive what it held).
+    ///
+    /// All three conditions are the write's own preconditions, restated
+    /// because deleting a file is the one thing that cannot be taken
+    /// back: a session that never loaded knows nothing about what is on
+    /// disk, and a session without the content licence could not read
+    /// the file it would be deleting.
+    ///
+    /// The ledger deliberately has no say here. It is a second file
+    /// under a second key with a lifetime that outlives the boot
+    /// session, and an expiry that empties the store is precisely the
+    /// moment the ledger gains records, so letting a non-empty ledger
+    /// veto this would leave the erase permanently unreachable in the
+    /// case it was written for.
+    public nonisolated static func erasesContentFile(
+        loaded: Bool, contentLicence: Bool, storeEmpty: Bool
+    ) -> Bool {
+        loaded && contentLicence && storeEmpty
+    }
+
+    /// The pair of licences after the user clears the ledger, which is
+    /// the only thing in the app that moves a licence after launch.
+    ///
+    /// The ledger licence comes back unconditionally. A clear is an
+    /// explicit instruction to discard the trail, so the file this
+    /// session refused to overwrite is exactly the file the user just
+    /// asked to be rid of, and the reason for withholding goes with it.
+    /// Without this the withholding is permanent by construction: nothing
+    /// else removes the file, so a single transient refusal (a keychain
+    /// that said no while the machine was locked) would silently end the
+    /// audit trail on this launch and on every launch after it. The
+    /// re-grant is what makes that recoverable, and it is deliberately
+    /// reachable only through the user's own gesture, never automatic.
+    ///
+    /// The content licence is passed through untouched, including when it
+    /// is false. Clearing the ledger says nothing about the state file:
+    /// it is a different file under a different key that the user did not
+    /// ask about, and there is no such auto-heal on that side, because
+    /// withholding there protects real pages rather than costing a
+    /// metadata record.
+    ///
+    /// `ledger` is the licence as it stood and is deliberately not read:
+    /// the whole point is that the outcome does not depend on it. It
+    /// stays in the signature so the rule takes the pair in and hands the
+    /// pair back, which is what lets a caller and a test say "withheld,
+    /// then cleared" in one call.
+    public nonisolated static func licencesAfterLedgerClear(
+        content: Bool, ledger: Bool
+    ) -> (content: Bool, ledger: Bool) {
+        (content: content, ledger: true)
     }
 
     private static let defaultServer = "https://eu.onetimesecret.com"
@@ -436,11 +567,14 @@ public final class PageModel: ObservableObject {
     /// first mark of a burst (see `SaveSchedule`). Quit flushing what is
     /// still pending is an optimization on top.
     ///
-    /// A session with no licence to write takes no hold: there is no
+    /// A session that may write neither file takes no hold: there is no
     /// write it could be waiting for, and blocking shutdown over a
-    /// buffer that may never reach disk buys nothing.
+    /// buffer that may never reach disk buys nothing. One licence is
+    /// enough, though: the ledger's write is not the content file's.
     private func markDirty() {
-        guard stateLoaded, saveLicence else { return }
+        guard Self.writesEitherFile(
+            loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence
+        ) else { return }
         terminationLatch.acquire()
         scheduleSave()
     }
@@ -471,13 +605,23 @@ public final class PageModel: ObservableObject {
     /// Seal the store into its two files: live pages and their chips
     /// into the state file, the audit trail into the ledger file. Two
     /// files because they are sealed under two different keys with two
-    /// different lifetimes, so each carries its own licence and each can
-    /// refuse on its own. The debounce's far end, and the
-    /// same call the terminate path makes: quit stands down whatever the
-    /// debounce still holds and writes once, so it flushes rather than
-    /// duplicating a write. A session that never loaded must not
-    /// overwrite yesterday's file with its empty store; nor may one
-    /// whose restore was refused (`saveLicence`).
+    /// different lifetimes, so each carries its own licence, each can
+    /// refuse on its own, and neither one's licence gates the other's
+    /// write. The debounce's far end, and the same call the terminate
+    /// path makes: quit stands down whatever the debounce still holds
+    /// and writes once, so it flushes rather than duplicating a write. A
+    /// session that never loaded must not overwrite yesterday's files
+    /// with its empty store; nor may one whose restore of that
+    /// particular file was refused.
+    ///
+    /// When nothing at all is staged, the content leg drops the file
+    /// instead of sealing an empty store over it
+    /// (`erasesContentFile`). No write ever drops the ledger's own file:
+    /// it is long-lived by design, and an emptied ledger is written as an
+    /// empty ledger. The single thing that unlinks it is the user's own
+    /// Clear, which does it from `clearLedger` rather than from here,
+    /// because it is that gesture and not a write that decides the trail
+    /// may end.
     ///
     /// Main-actor and synchronous by design. The terminate path answers
     /// `applicationShouldTerminate` with this result, so the write must
@@ -495,28 +639,56 @@ public final class PageModel: ObservableObject {
         saveTimer?.invalidate()
         saveTimer = nil
         saveSchedule.begin()
-        guard stateLoaded, saveLicence else { return true }
-        let url = formFactor.stateFileURL
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
-        let saved = client.persistSave(to: url.path)
+        guard Self.writesEitherFile(
+            loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence
+        ) else { return true }
+        // Both files rest in this directory, so one preparation covers
+        // them: it is created if missing, and marked so Time Machine
+        // leaves the ciphertext generations alone (`.noindex` in the
+        // name keeps Spotlight out the same way). A refusal here is not
+        // fatal on its own: the write below reports what actually
+        // happened, and the retry it arms comes back to try again.
+        let url = (try? formFactor.prepareStateDirectory()) ?? formFactor.stateFileURL
+        // The content leg, under its own licence. Emptiness is asked of
+        // the core rather than of the published summaries, which a write
+        // can reach before the refresh does, and a store with no pages
+        // has no chips either: chips ride on pages.
+        let saved: Bool
+        if !saveLicence {
+            // Deliberately left alone, which is settled, not refused:
+            // this session could not read the file and so may not write
+            // over it. The ledger below is a different file under a
+            // different key and is not held back by this.
+            saved = true
+        } else if Self.erasesContentFile(
+            loaded: stateLoaded, contentLicence: saveLicence, storeEmpty: client.sheets().isEmpty
+        ) {
+            saved = client.persistErase(at: url.path)
+            if !saved {
+                logger.error("the emptied state file could not be dropped")
+            }
+        } else {
+            saved = client.persistSave(to: url.path)
+            if !saved {
+                logger.error("save refused; the sealed state file was not rewritten")
+            }
+        }
         // The ledger's own write, under its own licence and its own key.
         // One debounce covers both files: the ledger only ever changes
         // on a mutation that already marked the store dirty.
         let ledgerSaved = ledgerLicence
             ? client.ledgerSave(to: formFactor.ledgerFileURL.path)
             : true
-        if !saved {
-            logger.error("save refused; the sealed state file was not rewritten")
-        }
         if !ledgerSaved {
             logger.error("save refused; the sealed ledger file was not rewritten")
         }
         // A refused ledger write is a refused write. The audit trail is
         // the record of what this app did with the user's secrets, so
         // losing it to a logout is not a lesser failure than losing a
-        // page: it keeps the hold and it arms the same retry.
+        // page: it keeps the hold and it arms the same retry. The hold
+        // therefore stays taken while EITHER file still owes a write,
+        // which is what the conjunction says. A leg with no licence
+        // reports true because it owes nothing, not because it wrote.
         let settled = saved && ledgerSaved
         if !settled {
             // The buffer is still dirty and nothing else is going to ask
@@ -697,11 +869,45 @@ public final class PageModel: ObservableObject {
     /// Drop the whole audit trail (Settings, behind a confirmation).
     /// The ledger now survives reboots under a long-lived key and its
     /// titles are often the secret's own label, so the user must be able
-    /// to end that record on demand. The core clears in memory only, so
-    /// this marks the store dirty: the write that follows puts an empty
-    /// ledger over the old file.
+    /// to end that record on demand.
+    ///
+    /// Three things, in this order, and it runs the same way whether or
+    /// not this session holds the ledger licence. Clearing is the user
+    /// saying the file may go, which is a stronger instruction than the
+    /// licence's caution about overwriting it.
+    ///
+    /// 1. The in-memory ledger goes, core-side.
+    /// 2. The file goes, by path. This is the half that works when the
+    ///    licence is withheld: an unreadable ledger cannot be replaced by
+    ///    a write, so without the unlink the user's Clear would leave the
+    ///    old ciphertext sitting there, and the licence would have nothing
+    ///    to come back for. A refusal here is not fatal; the write below
+    ///    still tries to put an empty ledger over it.
+    /// 3. The ledger licence comes back
+    ///    (`licencesAfterLedgerClear`), so a session that was recording
+    ///    nothing starts recording again from here. Before `markDirty`,
+    ///    which consults it.
+    ///
+    /// The content file and its licence are not in this path at all: a
+    /// different file, a different key, and a gesture that did not ask
+    /// about pages.
     public func clearLedger() {
         client.clearLedger()
+        // Path-scoped: overwrite, truncate, sync, unlink, and it refuses
+        // symlinks and anything that is not a regular file, so this
+        // reaches the ledger file and nothing else. No key is touched and
+        // no page is touched.
+        let ledgerPath = formFactor.ledgerFileURL.path
+        if !client.persistErase(at: ledgerPath) {
+            logger.error(
+                "the ledger file could not be dropped on a user clear; an empty ledger follows"
+            )
+        }
+        let licences = Self.licencesAfterLedgerClear(
+            content: saveLicence, ledger: ledgerLicence
+        )
+        saveLicence = licences.content
+        ledgerLicence = licences.ledger
         markDirty()
         refresh()
     }

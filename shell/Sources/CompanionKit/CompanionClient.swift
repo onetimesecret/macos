@@ -446,6 +446,12 @@ public final class CompanionClient: @unchecked Sendable {
     /// associated data, so this file and the state file are not
     /// interchangeable in either direction. Call it beside
     /// `persistSave(to:)`, behind the same debounce.
+    ///
+    /// The save sweeps the rolling 90-day window off the live records
+    /// before it writes, so this mutates the in-memory ledger too: a
+    /// record that aged out is gone from `ledger()` after a save, not
+    /// only after the next restore. False now also covers an unreadable
+    /// wall clock, which leaves the sweep no window to measure.
     @discardableResult
     public func ledgerSave(to path: String) -> Bool {
         path.withCString { companion_ledger_save(handle, $0) }
@@ -483,10 +489,49 @@ public final class CompanionClient: @unchecked Sendable {
 
     /// Restore the store from `path` at startup, before the first page
     /// is created. False means a fresh start (no file) as much as a
-    /// refused one (missing key, failed authentication).
+    /// refused one (missing key, failed authentication), and, since the
+    /// envelope carries the boot session, a file from an earlier session.
+    /// That last case rotates both content key halves and then drops the
+    /// file, in that order and only if the rotation took: a keychain that
+    /// refuses the delete leaves the file in place so the next launch can
+    /// try again. The caller tells the cases apart by probing the path
+    /// *after* this returns, never before (see
+    /// `PageModel.loadStateIfNeeded`).
     @discardableResult
     public func persistRestore(from path: String) -> Bool {
         path.withCString { companion_persist_restore(handle, $0) }
+    }
+
+    /// Drop the file at `path`: overwrite, truncate, sync, unlink. The
+    /// call is path-scoped rather than state-specific: it touches no key
+    /// and no store, so it serves the state file and equally the ledger
+    /// file on a user clear.
+    /// The open refuses a final symlink and refuses to block, and the
+    /// writes refuse anything that is not a regular file. Those checks
+    /// are narrower than they sound: a hard link at the path is a
+    /// regular file and IS zeroed and truncated, and a symlinked parent
+    /// directory is never examined. What contains this is that the path
+    /// lives in an owner-only, app-owned directory. The canonical
+    /// statement of the contract lives on `erase_state` in the core's
+    /// persist module; this comment deliberately does not restate it.
+    ///
+    /// True when the path is confirmed empty, answered without following
+    /// a link, including when there was nothing to begin with. A dangling
+    /// symlink is still something, and a stat that will not answer counts
+    /// as not empty, so both report false.
+    ///
+    /// Not erasure, and not to be described as erasure: the filesystem is
+    /// copy on write and every generation an atomic rename already
+    /// unlinked is out of reach. What forgets staged content is
+    /// crypto-erasure: the boot half dying with the boot session and the
+    /// halves rotating on a session mismatch. This is for the moment the
+    /// store empties, so the last ciphertext generation does not sit
+    /// there for the rest of the session describing nothing.
+    ///
+    /// The in-memory store is untouched: this deletes a file, not a page.
+    @discardableResult
+    public func persistErase(at path: String) -> Bool {
+        path.withCString { companion_persist_erase(handle, $0) }
     }
 
     /// The core's version string.

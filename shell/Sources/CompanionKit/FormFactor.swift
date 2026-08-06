@@ -17,15 +17,23 @@ public struct FormFactor: Sendable {
     /// The name in the About panel, the alerts, and the tray item.
     public let displayName: String
 
-    /// Scopes this form factor's Keychain items. Nil takes the core's
-    /// default (`com.onetimesecret.companion`, the panel's). Keychain
-    /// ACLs are granted to the code identity that created an item, so
-    /// two signed binaries sharing one state key would each meet a
-    /// confirmation prompt for the other's.
-    public let credentialService: String?
+    /// Scopes this form factor's Keychain items, always the running
+    /// build's own identifier (ADR-0012: services derive from the bundle
+    /// id, and the debug lane's `.debug` suffix splits dev from release
+    /// structurally). Keychain ACLs are granted to the code identity
+    /// that created an item, so two signed binaries sharing one state
+    /// key would each meet a confirmation prompt for the other's.
+    ///
+    /// Never nil now, so `companion_new_scoped` is the only constructor
+    /// path: the core's own unscoped default would put a `.debug` build
+    /// and an installed release build on one key again.
+    public let credentialService: String
 
     /// The directory under Application Support holding the sealed state
-    /// file. Two form factors, two stores: neither reads the other's.
+    /// file, named for the running build's bundle id and carrying a
+    /// `.noindex` suffix so Spotlight leaves the ciphertext generations
+    /// alone. Two form factors, two stores, and two configurations, two
+    /// stores: neither reads the other's.
     public let stateDirectory: String
 
     /// The unified-log subsystem for this form factor's trails.
@@ -39,7 +47,7 @@ public struct FormFactor: Sendable {
 
     public init(
         displayName: String,
-        credentialService: String?,
+        credentialService: String,
         stateDirectory: String,
         loggerSubsystem: String,
         defaultRung: Rung?
@@ -74,26 +82,105 @@ public struct FormFactor: Sendable {
             .appendingPathComponent("ledger.sealed")
     }
 
+    /// Makes the state directory ready to be written into, and hands
+    /// back the state file URL the caller was after.
+    ///
+    /// Two properties beyond "the directory exists". The `.noindex`
+    /// suffix in the directory's name keeps Spotlight out, and
+    /// `isExcludedFromBackup` keeps Time Machine out: every debounced
+    /// write renames a fresh sealed file over the old one, and a rename
+    /// unlinks rather than erases, so a backup or a local snapshot that
+    /// captured the directory would hold ciphertext generations the app
+    /// believes it has replaced. Crypto-erasure at the next boot session
+    /// still covers those generations, but there is no reason to hand
+    /// them out in the first place.
+    ///
+    /// The ledger rests in this same directory, so it inherits both
+    /// without a second preparation path.
+    @discardableResult
+    public func prepareStateDirectory() throws -> URL {
+        let stateFile = stateFileURL
+        var directory = stateFile.deletingLastPathComponent()
+
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try directory.setResourceValues(values)
+
+        return stateFile
+    }
+
+    /// The base identifier the panel ships under, and the prefix every
+    /// identifier this app answers to must carry.
+    public static let panelBundleIdentifier = "com.onetimesecret.companion"
+
+    /// The base identifier the backdrop ships under.
+    public static let backdropBundleIdentifier = "com.onetimesecret.companion.backdrop"
+
+    /// The identifier this build actually runs under, or `fallback` when
+    /// the running process is not one of ours.
+    ///
+    /// The guard is load bearing, not a formality. A bare `swift run`
+    /// binary has no bundle identifier at all, and `swift test` runs
+    /// under the xctest tool's identifier, so an unguarded
+    /// `Bundle.main.bundleIdentifier` would point the panel's state
+    /// directory and Keychain items at another process's name.
+    ///
+    /// Accepted: `fallback` itself, or `fallback` plus one dot-free
+    /// configuration suffix, which is exactly what the build lane
+    /// produces (`build-app.sh --debug` appends `.debug`). That second
+    /// clause is what keeps the panel from resolving to the backdrop's
+    /// identifier inside the backdrop process, since the backdrop's id
+    /// does carry the panel's id as a prefix.
+    public static func resolvedBundleIdentifier(fallback: String) -> String {
+        guard let running = Bundle.main.bundleIdentifier,
+              running.hasPrefix(panelBundleIdentifier)
+        else { return fallback }
+
+        if running == fallback { return running }
+
+        guard running.hasPrefix(fallback + ".") else { return fallback }
+        let suffix = running.dropFirst(fallback.count + 1)
+        guard !suffix.isEmpty, !suffix.contains(".") else { return fallback }
+        return running
+    }
+
     /// The summoned panel (docs/spec/04): accessory posture, the core's
-    /// default Keychain service, the core's default opening rung.
-    public static let panel = FormFactor(
-        displayName: "CompanionApp",
-        credentialService: nil,
-        stateDirectory: "CompanionApp",
-        loggerSubsystem: "com.onetimesecret.companion",
-        defaultRung: nil
-    )
+    /// default opening rung.
+    ///
+    /// Computed rather than stored, because the identifier it derives
+    /// everything from is a property of the running build: a `.debug`
+    /// copy and an installed release copy are two apps to LaunchServices
+    /// and must be two stores here, or two processes on one debounce
+    /// clobber one another's `state.sealed`.
+    public static var panel: FormFactor {
+        let id = resolvedBundleIdentifier(fallback: panelBundleIdentifier)
+        return FormFactor(
+            displayName: "CompanionApp",
+            credentialService: id,
+            stateDirectory: "\(id).noindex",
+            loggerSubsystem: id,
+            defaultRung: nil
+        )
+    }
 
     /// The background surface (docs/spec/feature/background-surface):
     /// its own Keychain service and its own state file, reached through
     /// `companion_new_scoped`.
-    public static let backdrop = FormFactor(
-        displayName: "CompanionBackdrop",
-        credentialService: "com.onetimesecret.companion.backdrop",
-        stateDirectory: "CompanionBackdrop",
-        loggerSubsystem: "com.onetimesecret.companion.backdrop",
-        defaultRung: .sevenDays
-    )
+    public static var backdrop: FormFactor {
+        let id = resolvedBundleIdentifier(fallback: backdropBundleIdentifier)
+        return FormFactor(
+            displayName: "CompanionBackdrop",
+            credentialService: id,
+            stateDirectory: "\(id).noindex",
+            loggerSubsystem: id,
+            defaultRung: .sevenDays
+        )
+    }
 }
 
 // MARK: - Where settings rest

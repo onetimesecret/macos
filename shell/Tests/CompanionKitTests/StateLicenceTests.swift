@@ -75,6 +75,30 @@ final class StateLicenceTests: XCTestCase {
         XCTAssertTrue(granted.ledger)
     }
 
+    func testADiscardedForeignSessionFileEarnsTheLicence() {
+        // The ordering `loadStateIfNeeded` depends on, stated as the two
+        // readings of one restore. A state file stamped with an earlier
+        // boot session is dropped from disk by the restore itself, which
+        // then answers false.
+        //
+        // Probed before the restore, the file was still there and the
+        // restore said no, which is indistinguishable from a refusal and
+        // withholds the licence, for the whole session, on the first
+        // launch after every reboot, which is the ordinary case.
+        XCTAssertFalse(PageModel.grantsSaveLicence(fileExists: true, restored: false))
+        // Probed after, the file is gone, because it was discarded. That
+        // is a fresh start, and a fresh start is licensed.
+        XCTAssertTrue(PageModel.grantsSaveLicence(fileExists: false, restored: false))
+    }
+
+    func testAFileThatGenuinelyRefusedIsStillThereWhenTheProbeRuns() {
+        // The other half of the reorder: moving the probe later must not
+        // hand the licence to a session that could not read a file which
+        // is still sitting on disk. A refusal leaves the file alone, so
+        // the later probe still sees it and still withholds.
+        XCTAssertFalse(PageModel.grantsSaveLicence(fileExists: true, restored: false))
+    }
+
     func testAMissingLedgerBesideARestoredStateFileIsLicensed() {
         // The first launch after this change, and every launch after the
         // ledger has been cleared: state.sealed opens, ledger.sealed is
@@ -86,6 +110,138 @@ final class StateLicenceTests: XCTestCase {
         )
         XCTAssertTrue(granted.content)
         XCTAssertTrue(granted.ledger)
+    }
+}
+
+/// The two licences are independent, and the write path must treat them
+/// that way: the files are sealed under two keys, fail for two reasons
+/// and have two lifetimes, so neither one's refusal may silence the
+/// other's write.
+final class LicenceIndependenceTests: XCTestCase {
+    func testAWithheldContentLicenceStillArmsTheWriteForTheLedger() {
+        // The defect this exists to prevent: the debounce used to arm on
+        // the content licence alone, so a session whose state file would
+        // not open wrote NO ledger, and a Clear the ledger in such a
+        // session never reached disk at all.
+        XCTAssertTrue(
+            PageModel.writesEitherFile(loaded: true, contentLicence: false, ledgerLicence: true))
+    }
+
+    func testAWithheldLedgerLicenceStillArmsTheWriteForTheContent() {
+        // The direction that already worked, and must keep working: a
+        // broken ledger never costs the user their pages.
+        XCTAssertTrue(
+            PageModel.writesEitherFile(loaded: true, contentLicence: true, ledgerLicence: false))
+    }
+
+    func testASessionThatMayWriteNeitherFileArmsNothing() {
+        // No write to wait for, so no debounce and no hold: blocking
+        // logout over a buffer that can never reach disk buys nothing.
+        XCTAssertFalse(
+            PageModel.writesEitherFile(loaded: true, contentLicence: false, ledgerLicence: false))
+    }
+
+    func testASessionThatNeverLoadedArmsNothing() {
+        // Licences are meaningless before the restore ran; an unloaded
+        // model must not put its empty store over yesterday's files.
+        XCTAssertFalse(
+            PageModel.writesEitherFile(loaded: false, contentLicence: true, ledgerLicence: true))
+    }
+}
+
+/// The ledger licence's one way back. Withholding it is not symmetric
+/// with withholding the content licence: nothing removes the ledger file,
+/// so a single transient refusal (a keychain that said no while the
+/// machine was locked) would otherwise end the audit trail on this launch
+/// and on every launch after it, silently, for a file that holds metadata
+/// rather than pages. Clearing the ledger in Settings is the deliberate,
+/// user-driven recovery, and it is the only one.
+final class LedgerClearRecoveryTests: XCTestCase {
+    func testAUserClearRegrantsAWithheldLedgerLicence() {
+        // The permanent-loss case, closed. The session could not read the
+        // ledger and was recording nothing; the user discards it, and
+        // records start being kept again in this same session.
+        let after = PageModel.licencesAfterLedgerClear(content: true, ledger: false)
+        XCTAssertTrue(after.ledger)
+    }
+
+    func testAClearLeavesAGrantedLedgerLicenceAlone() {
+        // The ordinary case: clearing a working ledger is not a state
+        // change for the licence.
+        let after = PageModel.licencesAfterLedgerClear(content: true, ledger: true)
+        XCTAssertTrue(after.ledger)
+    }
+
+    func testTheRegrantedLicenceIsWhatArmsTheWriteThatEmptiesTheFile() {
+        // The re-grant is not bookkeeping: a clear in a session that is
+        // still withholding must reach disk, and the debounce is gated on
+        // the licences. Before the clear this session owed the ledger
+        // nothing; after it, the empty ledger is a write it owes.
+        XCTAssertFalse(
+            PageModel.writesEitherFile(loaded: true, contentLicence: false, ledgerLicence: false))
+        let after = PageModel.licencesAfterLedgerClear(content: false, ledger: false)
+        XCTAssertTrue(
+            PageModel.writesEitherFile(
+                loaded: true, contentLicence: after.content, ledgerLicence: after.ledger))
+    }
+
+    func testAClearNeverTouchesTheContentLicence() {
+        // A different file under a different key, about which the user
+        // said nothing. Both directions, so the pass-through cannot be
+        // mistaken for a constant.
+        XCTAssertTrue(PageModel.licencesAfterLedgerClear(content: true, ledger: false).content)
+        XCTAssertFalse(PageModel.licencesAfterLedgerClear(content: false, ledger: true).content)
+        XCTAssertFalse(PageModel.licencesAfterLedgerClear(content: false, ledger: false).content)
+    }
+
+    func testARefusedContentLicenceDoesNotAutoHeal() {
+        // The asymmetry, stated. Withholding the content licence protects
+        // yesterday's pages from being overwritten by this session's
+        // consolation page, and there is nothing better to do than keep
+        // protecting them, so no gesture in the app hands it back. The
+        // one licence-moving path leaves it exactly as it found it, and
+        // the launch rule keeps answering false for as long as the file
+        // is there and will not open.
+        XCTAssertFalse(PageModel.grantsSaveLicence(fileExists: true, restored: false))
+        XCTAssertFalse(PageModel.licencesAfterLedgerClear(content: false, ledger: false).content)
+        XCTAssertFalse(PageModel.licencesAfterLedgerClear(content: false, ledger: true).content)
+        // And erasing the content file stays out of reach of a session
+        // that could not read it, clear or no clear.
+        let after = PageModel.licencesAfterLedgerClear(content: false, ledger: false)
+        XCTAssertFalse(
+            PageModel.erasesContentFile(
+                loaded: true, contentLicence: after.content, storeEmpty: true))
+    }
+}
+
+/// Dropping the state file when nothing is staged (ADR-0012): the last
+/// ciphertext generation should not sit on disk for the rest of the
+/// session describing nothing. Deleting a file is the one move that
+/// cannot be taken back, so every precondition of the write is restated
+/// on it.
+final class ContentFileEraseTests: XCTestCase {
+    func testAnEmptiedStoreDropsTheFile() {
+        XCTAssertTrue(
+            PageModel.erasesContentFile(loaded: true, contentLicence: true, storeEmpty: true))
+    }
+
+    func testAStoreWithPagesIsSealedNotDropped() {
+        XCTAssertFalse(
+            PageModel.erasesContentFile(loaded: true, contentLicence: true, storeEmpty: false))
+    }
+
+    func testASessionWithoutTheContentLicenceNeverDropsTheFile() {
+        // It could not read that file. Deleting what it was not allowed
+        // to overwrite would be the same loss by another route.
+        XCTAssertFalse(
+            PageModel.erasesContentFile(loaded: true, contentLicence: false, storeEmpty: true))
+    }
+
+    func testASessionThatNeverLoadedNeverDropsTheFile() {
+        // An empty store before the restore has run is not an emptied
+        // store; it is a store that has not been filled yet.
+        XCTAssertFalse(
+            PageModel.erasesContentFile(loaded: false, contentLicence: true, storeEmpty: true))
     }
 }
 
@@ -225,10 +381,10 @@ final class SaveScheduleTests: XCTestCase {
 /// never given back leaves the machine waiting on us forever, and one
 /// given back early loses the pages it was taken to protect.
 ///
-/// These check the arithmetic only. Neither bundle declares
-/// `NSSupportsSuddenTermination` today, so the hold is not what closes
-/// the logout window in the shipped apps; see the type's own comment.
-/// Adding that key is what makes these tests load-bearing.
+/// These check the arithmetic only, but the arithmetic is now what the
+/// guarantee rests on: both bundles declare `NSSupportsSuddenTermination`,
+/// so each app is a real sudden-termination candidate and this latch is
+/// the only thing holding the kill off while a write is pending.
 final class SuddenTerminationLatchTests: XCTestCase {
     /// The injected effects, counted. A class so the latch's escaping
     /// closures and the assertions share one instance.

@@ -9,16 +9,57 @@ import XCTest
 /// entirely this value, so it is worth checking by name.
 final class FormFactorTests: XCTestCase {
     /// The backdrop's sealed file must not land in the panel's
-    /// directory.
+    /// directory, and neither directory may be a name Spotlight will
+    /// walk into: the directory is named for the running build's bundle
+    /// id and carries the `.noindex` suffix (ADR-0012).
     func testEachFormFactorSealsToItsOwnFile() {
         let panel = FormFactor.panel.stateFileURL
         let backdrop = FormFactor.backdrop.stateFileURL
 
         XCTAssertEqual(panel.lastPathComponent, "state.sealed")
         XCTAssertEqual(backdrop.lastPathComponent, "state.sealed")
-        XCTAssertEqual(panel.deletingLastPathComponent().lastPathComponent, "CompanionApp")
-        XCTAssertEqual(backdrop.deletingLastPathComponent().lastPathComponent, "CompanionBackdrop")
+
+        let panelDirectory = panel.deletingLastPathComponent().lastPathComponent
+        let backdropDirectory = backdrop.deletingLastPathComponent().lastPathComponent
+
+        XCTAssertTrue(panelDirectory.hasSuffix(".noindex"), panelDirectory)
+        XCTAssertTrue(backdropDirectory.hasSuffix(".noindex"), backdropDirectory)
+
+        XCTAssertEqual(panelDirectory, "\(FormFactor.panel.credentialService).noindex")
+        XCTAssertEqual(backdropDirectory, "\(FormFactor.backdrop.credentialService).noindex")
+
         XCTAssertNotEqual(panel, backdrop)
+    }
+
+    /// Under the test runner `Bundle.main` is xctest, so both form
+    /// factors take their fallbacks; the panel's directory is the panel's
+    /// identifier and nothing else. Naming the directory after whatever
+    /// process happens to host the code is the failure this guards.
+    func testTheStateDirectoryTakesTheFallbackIdentifierOffBundle() {
+        XCTAssertEqual(
+            FormFactor.resolvedBundleIdentifier(fallback: FormFactor.panelBundleIdentifier),
+            "com.onetimesecret.companion"
+        )
+        XCTAssertEqual(
+            FormFactor.resolvedBundleIdentifier(fallback: FormFactor.backdropBundleIdentifier),
+            "com.onetimesecret.companion.backdrop"
+        )
+
+        // Not ours, so never adopted, whatever the host process is.
+        XCTAssertEqual(
+            FormFactor.resolvedBundleIdentifier(fallback: "com.example.other"),
+            "com.example.other"
+        )
+
+        // And nothing leaks the runner's own identity into a path.
+        let runner = Bundle.main.bundleIdentifier ?? ""
+        if !runner.hasPrefix(FormFactor.panelBundleIdentifier) {
+            XCTAssertNotEqual(FormFactor.panel.credentialService, runner)
+            XCTAssertFalse(
+                FormFactor.panel.stateFileURL.path.contains("xctest"),
+                FormFactor.panel.stateFileURL.path
+            )
+        }
     }
 
     /// The ledger is a sibling of the state file, never the state file
@@ -48,6 +89,15 @@ final class FormFactorTests: XCTestCase {
         // Two form factors, two ledgers.
         XCTAssertNotEqual(panelLedger, backdropLedger)
 
+        // Resting there means it inherits the state directory's naming,
+        // its `.noindex` suffix, and its backup exclusion for free.
+        for ledger in [panelLedger, backdropLedger] {
+            XCTAssertTrue(
+                ledger.deletingLastPathComponent().lastPathComponent.hasSuffix(".noindex"),
+                ledger.path
+            )
+        }
+
         // No ledger is ever any state file.
         for ledger in [panelLedger, backdropLedger] {
             XCTAssertNotEqual(ledger, panelState)
@@ -55,13 +105,26 @@ final class FormFactorTests: XCTestCase {
         }
     }
 
-    /// The same rule one layer down: sharing the panel's Keychain
-    /// service would put both apps on one state key, which is the
-    /// prompt-storm `companion_new_scoped` exists to prevent. The panel
-    /// passes nil and takes the core's own default.
+    /// The same rule one layer down: sharing a Keychain service would
+    /// put both apps on one state key, which is the prompt storm
+    /// `companion_new_scoped` exists to prevent. Both form factors now
+    /// name a service of their own, so the core's unscoped default is
+    /// unreachable and a `.debug` build cannot land on the release
+    /// build's key.
     func testTheBackdropScopesItsCredentialsToItself() {
         XCTAssertEqual(FormFactor.backdrop.credentialService, "com.onetimesecret.companion.backdrop")
-        XCTAssertNil(FormFactor.panel.credentialService)
+        XCTAssertEqual(FormFactor.panel.credentialService, "com.onetimesecret.companion")
+        XCTAssertNotEqual(
+            FormFactor.panel.credentialService,
+            FormFactor.backdrop.credentialService
+        )
+    }
+
+    /// The logger subsystem rides on the same identifier, so a trail
+    /// reads back as the build that wrote it.
+    func testTheLoggerSubsystemFollowsTheResolvedIdentifier() {
+        XCTAssertEqual(FormFactor.panel.loggerSubsystem, FormFactor.panel.credentialService)
+        XCTAssertEqual(FormFactor.backdrop.loggerSubsystem, FormFactor.backdrop.credentialService)
     }
 
     /// The backdrop opens a week out, where the panel takes the core's
