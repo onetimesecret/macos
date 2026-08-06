@@ -115,9 +115,10 @@ before the decision lands.
 First, it removes work rather than adding it. The full-document resync
 per keystroke is the step that destroys identity; sending operations
 instead of snapshots is a fix to an existing weak seam, and provenance
-falls out of it rather than being bolted on. Automerge cursors are
-stable positions that survive edits underneath them, which would delete
-the clamping and forced-layout machinery in
+falls out of it rather than being bolted on. All three candidate
+libraries carry stable position types that survive edits underneath
+them (Automerge and Loro cursors, yrs sticky indices), which would
+delete the clamping and forced-layout machinery in
 `InkEditorView.Coordinator.restoreViewState` outright.
 
 Second, it puts the record on the correct side of the security
@@ -126,15 +127,25 @@ and when, including what they thought better of. The core is where
 zeroizing and crypto erasure already live (ADR-0012). Keeping the
 record anywhere else creates a second, weaker retention story.
 
-Third, the metadata becomes correct by construction. Created is the
+Third, the metadata can become correct by construction. Created is the
 earliest op touching a block, modified is the latest, with no update
 site to forget and no drift. The origin URL rides on the change that
 introduced the text rather than on the characters, since a paste is one
-change and Automerge changes carry a message: provenance attaches to
-the event, where editing cannot erode it. The core would read
-`public.url` and the HTML flavor's source metadata during its own
-pasteboard read, so the sealed-paste contract in ADR-0007 Amendment 1
-holds unchanged and the shell still never touches the pasteboard.
+change: provenance attaches to the event, where editing cannot erode
+it. The core would read `public.url` and the HTML flavor's source
+metadata during its own pasteboard read, so the sealed-paste contract
+in ADR-0007 Amendment 1 holds unchanged and the shell still never
+touches the pasteboard.
+
+That third reason is conditional, and the condition is the library, not
+the architecture. It requires change-level metadata: Automerge changes
+carry actor, timestamp and message, and Loro commits carry optional
+timestamps and metadata, so both deliver it. yrs carries none, so under
+yrs created, modified and origin all revert to stored fields that
+mutation sites must maintain, which is architecture 2's weakness
+wearing architecture 3's shell. Choosing yrs therefore costs this
+reason outright, and the leaning below is a leaning toward
+architecture 3 as implemented by a library with change metadata.
 
 Block identity remains policy under any option. The CRDT gives
 characters intrinsic identity, but split keeping the original id and
@@ -161,10 +172,13 @@ them are being destroyed. Provenance is derived while it is young and
 cheap to recompute, then frozen into a summary the instant its evidence
 expires.
 
-That yields a defensible claim for the security model: full provenance
-within the compaction horizon, a materialized summary beyond it, and no
-reconstructible record of deleted content past that boundary. Bounded
-memory, matching bounded pages.
+That yields a defensible claim for the security model, scoped to a
+locally authoritative document: full provenance within the compaction
+horizon, a materialized summary beyond it, and no reconstructible
+record of deleted content past that boundary on this device. Bounded
+memory, matching bounded pages. The scope qualifier is load-bearing and
+the unqualified version of this sentence must not travel; the next
+section is why.
 
 ### What collaboration does to forgetting
 
@@ -179,11 +193,12 @@ updates are encrypted before transport, the relay cannot merge or
 compact, only store and forward, which makes it precisely the kind of
 durable op-log archive the compaction ceremony exists to destroy.
 
-Library-level tombstone GC (yrs collects deleted content by default;
-Automerge retains it) is therefore a difference in local hygiene, not
-in the security claim. Under any CRDT, the honest statement once peers
-exist is "this device verifiably forgot, and peers were asked to,"
-never "the document forgot."
+Library-level tombstone GC (yrs collects deleted content by default,
+keeping only the delete set; Automerge retains it; Loro discards it at
+a shallow-snapshot frontier) is therefore a difference in local
+hygiene, not in the security claim. Under any CRDT, the honest
+statement once peers exist is "this device verifiably forgot, and peers
+were asked to," never "the document forgot."
 
 The consequence is that forgetting and compaction are the same
 ceremony, and under collaboration it is a coordinated protocol event,
@@ -197,11 +212,14 @@ security model before the library choice does.
 
 If architecture 3 is chosen:
 
-- Undo becomes ours. `NSTextView` gives it away today; with an
-  authoritative core it is inverse patches scoped per page, replacing
-  the per-sheet `UndoManager` wiring. This is the largest real cost and
-  the one most likely to be underestimated. yrs ships an `UndoManager`;
-  Automerge does not, and it would be built from the patch API.
+- Undo moves out of the shell regardless. `NSTextView` gives it away
+  today; with an authoritative core the per-sheet `UndoManager` wiring
+  is replaced either by the library's own undo manager (yrs and Loro
+  both ship one, origin-scoped) or, under Automerge, by inverse patches
+  scoped per page that we build and own. So this is a large cost only
+  under Automerge, and it is that option's main liability. Under the
+  leading option the largest costs are Loro's youth and the TextKit 2
+  maturity tax below, which is where estimation effort should go.
 - The view layer wants TextKit 2. If the core owns blocks, flat TextKit
   1 storage fights it at every step, whereas `NSTextContentStorage`
   vends paragraph elements and a custom content manager can back them
@@ -269,10 +287,19 @@ ledger, whose content-free claim survives timestamps but not URLs.
   for 3 rests on provenance exactness alone and 2 becomes defensible.
 - A product answer on whether the page stays "a little text file."
   Architecture 1 is a block editor and changes what the product is.
-- A measured cost for owning undo. Building inverse-patch undo for one
-  page, against the real gestures (including the seal gestures, which
-  are already deliberately not undoable), would price the largest
-  unknown.
+- Verified mark behavior under concurrency for the shortlisted
+  libraries. The selection criterion is stated above but rests on
+  reputation rather than measurement. Two concurrent edits against one
+  annotated paragraph, checked for boundary drift and for annotations
+  expanding over text inserted concurrently, would either confirm the
+  Peritext-derived candidates or move the ranking. Assume nothing here;
+  it is the criterion most likely to be wrong by the time it matters.
+- A measured cost for owning undo, if Automerge is in contention.
+  Building inverse-patch undo for one page, against the real gestures
+  (including the seal gestures, which are already deliberately not
+  undoable), would price that option's main liability. Under yrs or
+  Loro the equivalent question is whether their undo managers respect
+  the seal gestures' non-undoable rule without a fight.
 - Whether per-block TTL is wanted. Blocks with rungs of their own are
   natural under 3, awkward under 2, and would tip the decision on their
   own.
@@ -283,7 +310,7 @@ Once decided, this ADR gets revisited when:
 
 - Apple ships block identity in TextKit 2 as a first-class contract,
   removing the reason to own paragraph bookkeeping under architecture 2.
-- Automerge or yrs ships true history truncation with sync-compatible
+- Any of the three ships true history truncation with sync-compatible
   semantics, which would make the compaction ceremony redundant and
   change the retention argument. Loro's shallow snapshot is already
   most of this primitive; what remains open is whether its sync
