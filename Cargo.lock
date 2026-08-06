@@ -43,6 +43,7 @@ dependencies = [
  "companion-credentials",
  "companion-pasteboard",
  "companion-transport",
+ "getrandom",
  "libc",
  "ots-client",
  "serde",

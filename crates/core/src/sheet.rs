@@ -16,6 +16,61 @@ use std::time::{Duration, Instant};
 use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
 
+/// A random 128-bit item identifier (a version 4 UUID), minted at
+/// creation. The sequential [`SheetId`] and [`ChipId`] counters stay for
+/// internal ordering; this is the only identifier that may appear in the
+/// ledger or in any persisted artifact (ADR-0012).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ItemId([u8; 16]);
+
+impl ItemId {
+    /// Mint a fresh identity from the operating system CSPRNG.
+    ///
+    /// Panicking when the CSPRNG is unavailable is deliberate: a fallback
+    /// identifier would be predictable, and an unpredictable identity is
+    /// the whole point. `getentropy` does not fail on a healthy Darwin or
+    /// Linux host, so this panic is a genuine "the machine is broken"
+    /// signal rather than a condition worth handling.
+    #[must_use]
+    pub fn random() -> Self {
+        let mut bytes = [0u8; 16];
+        getrandom::getrandom(&mut bytes).expect("the OS CSPRNG must be available");
+        // Version 4 in the high nibble of byte 6, RFC 4122 variant in the
+        // top two bits of byte 8.
+        bytes[6] = (bytes[6] & 0x0F) | 0x40;
+        bytes[8] = (bytes[8] & 0x3F) | 0x80;
+        Self(bytes)
+    }
+
+    /// The raw 16 bytes, for writing into a snapshot.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8; 16] {
+        &self.0
+    }
+
+    /// Rebuild an identity from its raw bytes. Used only when reading a
+    /// snapshot back, so that a restore preserves identity instead of
+    /// minting a new one.
+    #[must_use]
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(bytes)
+    }
+}
+
+/// Lowercase hyphenated 8-4-4-4-12 hex. This is the only rendering of an
+/// item identity that crosses the FFI seam.
+impl std::fmt::Display for ItemId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, byte) in self.0.iter().enumerate() {
+            if matches!(index, 4 | 6 | 8 | 10) {
+                f.write_str("-")?;
+            }
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
 /// Opaque, monotonically assigned sheet identifier. `0` is never issued.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SheetId(pub(crate) u64);
@@ -101,6 +156,10 @@ pub struct Promotion {
 /// Not `Debug` — it owns a [`SecretBuffer`], and chips are never logged.
 pub struct SealedChip {
     pub(crate) id: ChipId,
+    /// Minted once, when the chip is sealed, and never re-minted: a
+    /// restore carries the stored identity through rather than issuing a
+    /// fresh one.
+    pub(crate) uuid: ItemId,
     pub(crate) bytes: SecretBuffer,
     pub(crate) meta: ChipMeta,
     pub(crate) excerpt: String,
@@ -113,9 +172,17 @@ impl SealedChip {
     /// once, mechanically — they are the only rendering this content
     /// will ever get.
     pub(crate) fn text(id: ChipId, text: &str) -> Self {
+        Self::text_with_uuid(id, ItemId::random(), text)
+    }
+
+    /// Seal UTF-8 text under an identity that already exists. This form
+    /// exists solely so a restore preserves the stored identity instead
+    /// of re-minting it.
+    pub(crate) fn text_with_uuid(id: ChipId, uuid: ItemId, text: &str) -> Self {
         let (excerpt, size_label, meta) = text_face(text);
         Self {
             id,
+            uuid,
             bytes: SecretBuffer::from_text(text),
             meta,
             excerpt,
@@ -130,10 +197,17 @@ impl SealedChip {
     /// `mlock` and documented as such (doc 05): still zeroized on death,
     /// but never pinned against swap.
     pub(crate) fn image(id: ChipId, bytes: Vec<u8>) -> Self {
+        Self::image_with_uuid(id, ItemId::random(), bytes)
+    }
+
+    /// Seal image bytes under an identity that already exists, for the
+    /// restore path.
+    pub(crate) fn image_with_uuid(id: ChipId, uuid: ItemId, bytes: Vec<u8>) -> Self {
         let byte_len = bytes.len();
         let excerpt = format!("{} image", sniff_image_kind(&bytes));
         Self {
             id,
+            uuid,
             bytes: SecretBuffer::new_unlocked(bytes),
             meta: ChipMeta::Image { byte_len },
             excerpt,
@@ -146,6 +220,13 @@ impl SealedChip {
     #[must_use]
     pub fn id(&self) -> ChipId {
         self.id
+    }
+
+    /// The random item identity, minted when this chip was sealed. The
+    /// only identifier of this chip that may leave the process.
+    #[must_use]
+    pub fn uuid(&self) -> ItemId {
+        self.uuid
     }
 
     /// What the bytes are, described without reading them.
@@ -199,8 +280,24 @@ pub(crate) enum SheetClock {
 
 /// A sheet: the synced document snapshot, the chips it owns, and one
 /// countdown. Not `Debug` — it holds [`SealedChip`]s.
+///
+/// The `uuid` is minted once, at creation, and never re-minted: a
+/// restore carries the stored identity through, so a page keeps the same
+/// identity across a relaunch.
 pub struct Sheet {
     pub(crate) id: SheetId,
+    pub(crate) uuid: ItemId,
+    /// The page's name, held as state. Derived at creation and
+    /// re-derived on edit, never recomputed at read time and never
+    /// derived at ledger time (ADR-0012).
+    pub(crate) title: String,
+    /// Set once the user names the page by hand. While it is set, no
+    /// edit re-derives the title.
+    pub(crate) title_is_user_set: bool,
+    /// Unix epoch milliseconds at creation, kept solely so the
+    /// placeholder title stays the same string for the page's whole
+    /// life. Expiry math never reads it.
+    pub(crate) created_wall_ms: u64,
     pub(crate) segments: Vec<Segment>,
     pub(crate) chips: Vec<SealedChip>,
     pub(crate) rung: Ttl,
@@ -210,13 +307,20 @@ pub struct Sheet {
     pub(crate) total_held: Duration,
 }
 
-/// Tab titles show at most the first typed line; the ledger keeps the
-/// same derivation.
+/// A title is a page property, not a projection: the tab strip and the
+/// ledger both read the same stored string.
 impl Sheet {
     /// Identifier.
     #[must_use]
     pub fn id(&self) -> SheetId {
         self.id
+    }
+
+    /// The random item identity, minted when this page was created. The
+    /// only identifier of this page that may leave the process.
+    #[must_use]
+    pub fn uuid(&self) -> ItemId {
+        self.uuid
     }
 
     /// The synced document snapshot, in document order.
@@ -325,19 +429,46 @@ impl Sheet {
         !remaining.is_zero() && remaining <= Duration::from_secs(60 * 60)
     }
 
-    /// The tab title: the sheet's first typed line, markdown heading
-    /// markup stripped — a title is a name, not a document (doc 04). A
-    /// page with no typed line is "untitled". Chips never contribute:
-    /// the author's own typed line does the naming.
+    /// The tab title: a name the page owns, not a rendering of its
+    /// content. It is the first typed line with markdown syntax
+    /// stripped, or the creation-stamp placeholder, or whatever the
+    /// user named it. Chips never contribute: the author's own typed
+    /// line does the naming.
     #[must_use]
-    pub fn title(&self) -> String {
-        derive_title(&self.segments)
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// Whether the user named this page by hand. While true, an edit
+    /// never re-derives the title (ADR-0012).
+    #[must_use]
+    pub fn title_is_user_set(&self) -> bool {
+        self.title_is_user_set
+    }
+
+    /// Unix epoch milliseconds at creation, the stamp the placeholder
+    /// title is rendered from. Never used for expiry math.
+    #[must_use]
+    pub fn created_wall_ms(&self) -> u64 {
+        self.created_wall_ms
     }
 }
 
-/// First non-blank ink line across the document, heading markup
-/// stripped; "untitled" when there is none.
-pub(crate) fn derive_title(segments: &[Segment]) -> String {
+/// A title is a name, not a document: 80 characters, counted in `char`s
+/// so a multibyte secret can never be split mid-scalar.
+pub(crate) const TITLE_CAP: usize = 80;
+
+/// First non-blank ink line across the document, markdown syntax
+/// stripped and capped at [`TITLE_CAP`] characters; the creation-stamp
+/// placeholder when there is none.
+///
+/// The word "untitled" no longer exists in the core: an unnamed page
+/// reads as `MMDD-HHmm`, which tells the user when they opened it.
+pub(crate) fn derive_title(
+    segments: &[Segment],
+    created_wall_ms: u64,
+    utc_offset_seconds: i32,
+) -> String {
     segments
         .iter()
         .filter_map(|s| match s {
@@ -345,9 +476,90 @@ pub(crate) fn derive_title(segments: &[Segment]) -> String {
             Segment::Chip(_) => None,
         })
         .flat_map(|text| text.lines())
-        .map(strip_heading_markup)
+        .map(strip_markdown)
         .find(|line| !line.is_empty())
-        .map_or_else(|| "untitled".to_string(), str::to_string)
+        .map_or_else(
+            || placeholder_title(created_wall_ms, utc_offset_seconds),
+            |line| line.chars().take(TITLE_CAP).collect(),
+        )
+}
+
+/// `MMDD-HHmm` in the user's local time, from the page's creation
+/// stamp. The common case: a page whose first line is still empty.
+pub(crate) fn placeholder_title(wall_ms: u64, utc_offset_seconds: i32) -> String {
+    let epoch_seconds = i64::try_from(wall_ms / 1000).unwrap_or(i64::MAX);
+    let local_seconds = epoch_seconds.saturating_add(i64::from(utc_offset_seconds));
+    let days = local_seconds.div_euclid(86_400);
+    let secs_of_day = local_seconds.rem_euclid(86_400);
+    let (month, day) = civil_month_day(days);
+    let hour = secs_of_day / 3_600;
+    let minute = (secs_of_day % 3_600) / 60;
+    format!("{month:02}{day:02}-{hour:02}{minute:02}")
+}
+
+/// Month and day from days since the Unix epoch: Howard Hinnant's
+/// `civil_from_days`, integer arithmetic only, no calendar dependency.
+/// The era starts in March, which is why the month wraps by three.
+fn civil_month_day(days_since_epoch: i64) -> (i64, i64) {
+    // Shift the epoch to 0000-03-01, the start of a 400-year era.
+    let z = days_since_epoch + 719_468;
+    let era = z.div_euclid(146_097);
+    let day_of_era = z - era * 146_097; // [0, 146096]
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let march_month = (5 * day_of_year + 2) / 153; // [0, 11], 0 is March
+    let day = day_of_year - (153 * march_month + 2) / 5 + 1; // [1, 31]
+    let month = if march_month < 10 {
+        march_month + 3
+    } else {
+        march_month - 9
+    };
+    (month, day)
+}
+
+/// Reduce one line of markdown to the name inside it. Deliberately not
+/// a parser: it handles the syntax a person types on a first line and
+/// nothing more, in a fixed order: blockquote markers, one list bullet,
+/// heading hashes, inline emphasis and code runs, then link syntax
+/// collapsed to its label.
+fn strip_markdown(line: &str) -> String {
+    let mut rest = line.trim();
+
+    // Blockquote markers, however deeply nested: "> > note" → "note".
+    while let Some(after) = rest.strip_prefix('>') {
+        rest = after.trim_start();
+    }
+
+    rest = strip_list_bullet(rest);
+    rest = strip_heading_markup(rest);
+
+    // Emphasis, strikethrough and inline code are decoration; the
+    // characters simply drop out.
+    let bare: String = rest
+        .chars()
+        .filter(|c| !matches!(c, '`' | '*' | '_' | '~'))
+        .collect();
+
+    flatten_links(&bare).trim().to_string()
+}
+
+/// One leading list bullet: `- item`, `* item`, `+ item`, `3. item`.
+/// The marker must be followed by whitespace, so `-30C` is content.
+fn strip_list_bullet(line: &str) -> &str {
+    if let Some(rest) = line.strip_prefix(['-', '*', '+'])
+        && rest.starts_with(char::is_whitespace)
+    {
+        return rest.trim_start();
+    }
+    let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    if digits > 0
+        && let Some(rest) = line[digits..].strip_prefix('.')
+        && rest.starts_with(char::is_whitespace)
+    {
+        return rest.trim_start();
+    }
+    line
 }
 
 /// `### deploy friday` → `deploy friday`. Headings only (#, ## and
@@ -366,6 +578,28 @@ fn strip_heading_markup(line: &str) -> &str {
         }
     }
     trimmed
+}
+
+/// `[label](https://example.test)` → `label`, in one forward scan. An
+/// unterminated link is left exactly as typed.
+fn flatten_links(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('[') {
+        let after_open = &rest[open + 1..];
+        let Some(label_end) = after_open.find("](") else {
+            break;
+        };
+        let target = &after_open[label_end + 2..];
+        let Some(target_end) = target.find(')') else {
+            break;
+        };
+        out.push_str(&rest[..open]);
+        out.push_str(&after_open[..label_end]);
+        rest = &target[target_end + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The mechanical excerpt rule (doc 04; reference implementation in the
@@ -448,6 +682,44 @@ mod tests {
     fn face(text: &str) -> (String, String) {
         let (excerpt, label, _) = text_face(text);
         (excerpt, label)
+    }
+
+    #[test]
+    fn item_ids_are_random_version_four() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..1000 {
+            let id = ItemId::random();
+            let bytes = *id.as_bytes();
+            assert_eq!(bytes[6] >> 4, 0x4, "version nibble");
+            assert_eq!(bytes[8] >> 6, 0b10, "variant bits");
+            assert!(seen.insert(bytes), "a minted identity repeated");
+        }
+    }
+
+    #[test]
+    fn item_id_renders_as_hyphenated_lowercase_hex() {
+        let id = ItemId::random();
+        let text = id.to_string();
+        assert_eq!(text.len(), 36);
+        let hyphens: Vec<usize> = text
+            .char_indices()
+            .filter_map(|(i, c)| (c == '-').then_some(i))
+            .collect();
+        assert_eq!(hyphens, vec![8, 13, 18, 23]);
+        assert!(
+            text.chars()
+                .all(|c| c == '-' || c.is_ascii_digit() || ('a'..='f').contains(&c))
+        );
+        assert_eq!(ItemId::from_bytes(*id.as_bytes()), id);
+    }
+
+    #[test]
+    fn a_sealed_chip_carries_its_own_uuid() {
+        // Identity is minted, not derived from content: identical text
+        // seals to two chips that are still distinguishable.
+        let first = SealedChip::text(ChipId(1), "same text");
+        let second = SealedChip::text(ChipId(2), "same text");
+        assert_ne!(first.uuid(), second.uuid());
     }
 
     #[test]
@@ -541,12 +813,58 @@ mod tests {
         assert_eq!(chip.size_label(), "64 B");
     }
 
+    /// The fixed stamp `ManualClock::new()` reports, so every title
+    /// test below reads the same placeholder.
+    const STAMP: u64 = 1_700_000_000_000;
+
+    fn title_of(line: &str) -> String {
+        derive_title(&[Segment::Ink(line.into())], STAMP, 0)
+    }
+
     #[test]
     fn titles_strip_heading_markup_only_when_it_is_markup() {
         let segs = vec![Segment::Ink("### deploy friday\nrest".into())];
-        assert_eq!(derive_title(&segs), "deploy friday");
+        assert_eq!(derive_title(&segs, STAMP, 0), "deploy friday");
         let segs = vec![Segment::Ink("#hashtag stays".into())];
-        assert_eq!(derive_title(&segs), "#hashtag stays");
+        assert_eq!(derive_title(&segs, STAMP, 0), "#hashtag stays");
+    }
+
+    #[test]
+    fn titles_strip_the_markdown_a_first_line_carries() {
+        assert_eq!(title_of("- shopping list"), "shopping list");
+        assert_eq!(title_of("* shopping list"), "shopping list");
+        assert_eq!(title_of("3. third thing"), "third thing");
+        assert_eq!(title_of("> quoted note"), "quoted note");
+        assert_eq!(title_of("> > deeply quoted"), "deeply quoted");
+        assert_eq!(title_of("**bold plan**"), "bold plan");
+        assert_eq!(title_of("_italic plan_"), "italic plan");
+        assert_eq!(title_of("~~struck plan~~"), "struck plan");
+        assert_eq!(title_of("`rotate the key`"), "rotate the key");
+        assert_eq!(
+            title_of("[runbook](https://example.test/runbook)"),
+            "runbook"
+        );
+        assert_eq!(
+            title_of("> - ## **[the works](https://example.test)**"),
+            "the works"
+        );
+        // Not markup: a marker needs whitespace after it.
+        assert_eq!(title_of("-30C in the freezer"), "-30C in the freezer");
+        assert_eq!(title_of("2.5x the budget"), "2.5x the budget");
+        // An unterminated link is left exactly as typed.
+        assert_eq!(title_of("[unclosed label"), "[unclosed label");
+    }
+
+    #[test]
+    fn titles_cap_at_eighty_characters() {
+        let long = "x".repeat(200);
+        assert_eq!(title_of(&long).chars().count(), TITLE_CAP);
+        // Counted in chars, not bytes: a multibyte line caps at 80
+        // scalars and never splits one in half.
+        let multibyte = "é".repeat(200);
+        let capped = title_of(&multibyte);
+        assert_eq!(capped.chars().count(), TITLE_CAP);
+        assert_eq!(capped.len(), TITLE_CAP * 2);
     }
 
     #[test]
@@ -555,14 +873,32 @@ mod tests {
             Segment::Chip(ChipId(9)),
             Segment::Ink("\n\n  \nerrands".into()),
         ];
-        assert_eq!(derive_title(&segs), "errands");
+        assert_eq!(derive_title(&segs, STAMP, 0), "errands");
     }
 
     #[test]
-    fn empty_page_is_untitled() {
-        assert_eq!(derive_title(&[]), "untitled");
+    fn an_empty_page_takes_the_creation_stamp_placeholder() {
+        // 1_700_000_000_000 ms is 2023-11-14 22:13:20 UTC.
+        assert_eq!(derive_title(&[], STAMP, 0), "1114-2213");
         let segs = vec![Segment::Ink("   \n".into()), Segment::Chip(ChipId(1))];
-        assert_eq!(derive_title(&segs), "untitled");
+        assert_eq!(derive_title(&segs, STAMP, 0), "1114-2213");
+    }
+
+    #[test]
+    fn placeholder_respects_the_local_offset() {
+        assert_eq!(placeholder_title(STAMP, 0), "1114-2213");
+        assert_eq!(placeholder_title(STAMP, -8 * 3600), "1114-1413");
+        // A day boundary crossed by the offset moves MMDD too.
+        assert_eq!(placeholder_title(STAMP, 2 * 3600), "1115-0013");
+    }
+
+    #[test]
+    fn the_placeholder_calendar_holds_across_leap_years_and_epochs() {
+        assert_eq!(placeholder_title(0, 0), "0101-0000");
+        // 2024-02-29T12:34:00Z, the leap day the naive math gets wrong.
+        assert_eq!(placeholder_title(1_709_210_040_000, 0), "0229-1234");
+        // 2000-03-01T00:00:00Z, just past a century leap year.
+        assert_eq!(placeholder_title(951_868_800_000, 0), "0301-0000");
     }
 
     #[test]

@@ -1,8 +1,9 @@
 //! The working set: nine sheets, never a thousand rows of history.
 //!
 //! Rev C (doc 04): the unit is the sheet — ink plus sealed chips, one
-//! pausable countdown per page. Dead pages rest in the [`ledger`]
-//! (ink only, sealed bytes zeroized). The cap is the keyboard wall.
+//! pausable countdown per page. What a page did is recorded in the
+//! [`ledger`] as metadata; the page itself, ink and sealed bytes alike,
+//! is gone. The cap is the keyboard wall.
 //!
 //! [`ledger`]: crate::ledger
 
@@ -12,8 +13,11 @@ use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
 use crate::clock::Clock;
-use crate::ledger::{Cause, LedgerRecord, LedgerSegment};
-use crate::sheet::{ChipId, ChipMeta, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId};
+use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
+use crate::sheet::{
+    ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId,
+    TITLE_CAP, derive_title,
+};
 use crate::ttl::Ttl;
 
 /// The sheet cap: 9, the natural limit of the keyboard map (⌘1–⌘9;
@@ -23,10 +27,6 @@ use crate::ttl::Ttl;
 /// never LRU surprise. Whether 9 is too generous is open question №4;
 /// the constant stays easy to lower.
 pub const DEFAULT_SHEET_CAP: usize = 9;
-
-/// The ledger keeps the newest dozen dead pages; older records fall off
-/// silently (doc 04).
-pub const LEDGER_CAP: usize = 12;
 
 /// The first double-click holds a page's clock for one hour…
 const HOLD_FIRST: Duration = Duration::from_secs(60 * 60);
@@ -97,6 +97,10 @@ impl std::error::Error for PayloadError {}
 pub struct SheetStore<C: Clock> {
     pub(crate) clock: C,
     pub(crate) sheets: Vec<Sheet>,
+    /// The audit trail, newest first. Append-only from the store's side
+    /// (the user may clear it whole), bounded by a rolling 90 day window
+    /// on wall-clock time rather than by a record count: see
+    /// [`evict_expired`].
     pub(crate) ledger: VecDeque<LedgerRecord>,
     pub(crate) cap: usize,
     pub(crate) default_rung: Ttl,
@@ -144,10 +148,20 @@ impl<C: Clock> SheetStore<C> {
             return Err(Refusal::AtCapacity { cap: self.cap });
         }
         let now = self.clock.now();
+        // A page names itself the moment it exists, so no record can
+        // ever reach the ledger without a title already on it.
+        let created_wall_ms = self.clock.wall_ms();
+        let offset = self.clock.local_offset_seconds();
         let id = SheetId(self.next_sheet_id);
         self.next_sheet_id += 1;
+        let uuid = ItemId::random();
+        let title = derive_title(&[], created_wall_ms, offset);
         self.sheets.push(Sheet {
             id,
+            uuid,
+            title: title.clone(),
+            title_is_user_set: false,
+            created_wall_ms,
             segments: Vec::new(),
             chips: Vec::new(),
             rung: self.default_rung,
@@ -156,19 +170,26 @@ impl<C: Clock> SheetStore<C> {
             },
             total_held: Duration::ZERO,
         });
+        self.record(
+            LedgerEvent::Created,
+            uuid,
+            title,
+            created_wall_ms,
+            SizeClass::Tiny,
+            DestinationClass::None,
+        );
         Ok(id)
     }
 
-    /// Close a page: it rests in the ledger like an expired one
-    /// (doc 04), its sealed bytes zeroized on the way. Returns whether
+    /// Close a page: its sealed bytes zeroize on the way out and the
+    /// ledger keeps one `Discarded` record of the fact. Returns whether
     /// the page existed.
     pub fn close_sheet(&mut self, id: SheetId) -> bool {
         let Some(index) = self.sheets.iter().position(|s| s.id == id) else {
             return false;
         };
         let sheet = self.sheets.remove(index);
-        let now = self.clock.now();
-        self.entomb(sheet, Cause::Closed, now);
+        self.entomb(sheet, LedgerEvent::Discarded);
         true
     }
 
@@ -241,10 +262,18 @@ impl<C: Clock> SheetStore<C> {
         let id = ChipId(self.next_chip_id);
         self.next_chip_id += 1;
         let chip = SealedChip::text(id, text);
-        self.sheet_mut(sheet)
-            .expect("checked above")
-            .chips
-            .push(chip);
+        let uuid = chip.uuid;
+        let host = self.sheet_mut(sheet).expect("checked above");
+        host.chips.push(chip);
+        let (title, created) = (host.title.clone(), host.created_wall_ms);
+        self.record(
+            LedgerEvent::Sealed,
+            uuid,
+            title,
+            created,
+            SizeClass::of(text.len()),
+            DestinationClass::None,
+        );
         Ok(id)
     }
 
@@ -259,11 +288,20 @@ impl<C: Clock> SheetStore<C> {
         }
         let id = ChipId(self.next_chip_id);
         self.next_chip_id += 1;
+        let size = SizeClass::of(bytes.len());
         let chip = SealedChip::image(id, bytes);
-        self.sheet_mut(sheet)
-            .expect("checked above")
-            .chips
-            .push(chip);
+        let uuid = chip.uuid;
+        let host = self.sheet_mut(sheet).expect("checked above");
+        host.chips.push(chip);
+        let (title, created) = (host.title.clone(), host.created_wall_ms);
+        self.record(
+            LedgerEvent::Sealed,
+            uuid,
+            title,
+            created,
+            size,
+            DestinationClass::None,
+        );
         Ok(id)
     }
 
@@ -283,6 +321,8 @@ impl<C: Clock> SheetStore<C> {
     /// malformed and rejected whole. Returns whether the snapshot was
     /// accepted.
     pub fn sync_document(&mut self, id: SheetId, segments: Vec<Segment>) -> bool {
+        // Read the clock before the mutable borrow of the sheet.
+        let offset = self.clock.local_offset_seconds();
         let Some(sheet) = self.sheet_mut(id) else {
             return false;
         };
@@ -296,8 +336,56 @@ impl<C: Clock> SheetStore<C> {
             }
         }
         sheet.segments = segments;
+        // The title is re-derived here, on edit, and never later: by
+        // the time a record reaches the ledger the page already knows
+        // its name (ADR-0012).
+        if !sheet.title_is_user_set {
+            sheet.title = derive_title(&sheet.segments, sheet.created_wall_ms, offset);
+        }
         // Chips the document no longer holds die now (zeroize on drop).
-        sheet.chips.retain(|c| referenced.contains(&c.id));
+        // A chip removed with ⌫ is as gone as one removed by
+        // `delete_chip`, so it leaves the same record.
+        let mut dropped: Vec<(ItemId, usize)> = Vec::new();
+        sheet.chips.retain(|chip| {
+            let referenced = referenced.contains(&chip.id);
+            if !referenced {
+                dropped.push((chip.uuid, chip.bytes.len()));
+            }
+            referenced
+        });
+        let title = sheet.title.clone();
+        let created = sheet.created_wall_ms;
+        for (uuid, len) in dropped {
+            self.record(
+                LedgerEvent::Discarded,
+                uuid,
+                title.clone(),
+                created,
+                SizeClass::of(len),
+                DestinationClass::None,
+            );
+        }
+        true
+    }
+
+    /// Set a page's title explicitly. An empty or all-whitespace title
+    /// clears the override and re-derives from the page's content;
+    /// anything else is capped at 80 characters and is never overwritten
+    /// by re-derivation afterwards (ADR-0012). Returns whether the page
+    /// existed.
+    pub fn set_title(&mut self, id: SheetId, title: &str) -> bool {
+        let offset = self.clock.local_offset_seconds();
+        let Some(sheet) = self.sheet_mut(id) else {
+            return false;
+        };
+        let trimmed = title.trim();
+        if trimmed.is_empty() {
+            sheet.title_is_user_set = false;
+            sheet.title = derive_title(&sheet.segments, sheet.created_wall_ms, offset);
+        } else {
+            sheet.title_is_user_set = true;
+            sheet.title = trimmed.chars().take(TITLE_CAP).collect();
+        }
         true
     }
 
@@ -326,15 +414,53 @@ impl<C: Clock> SheetStore<C> {
     /// no resurrection path (open question №5: undo never un-seals).
     /// Returns whether the chip existed.
     pub fn delete_chip(&mut self, id: ChipId) -> bool {
+        let mut removed: Option<(ItemId, usize, String, u64)> = None;
         for sheet in &mut self.sheets {
-            let before = sheet.chips.len();
-            sheet.chips.retain(|c| c.id != id);
-            if sheet.chips.len() != before {
-                sheet.segments.retain(|s| *s != Segment::Chip(id));
-                return true;
-            }
+            let Some(index) = sheet.chips.iter().position(|c| c.id == id) else {
+                continue;
+            };
+            let chip = &sheet.chips[index];
+            removed = Some((
+                chip.uuid,
+                chip.bytes.len(),
+                sheet.title.clone(),
+                sheet.created_wall_ms,
+            ));
+            sheet.chips.remove(index); // zeroizes as it drops
+            sheet.segments.retain(|s| *s != Segment::Chip(id));
+            break;
         }
-        false
+        let Some((uuid, len, title, created)) = removed else {
+            return false;
+        };
+        self.record(
+            LedgerEvent::Discarded,
+            uuid,
+            title,
+            created,
+            SizeClass::of(len),
+            DestinationClass::None,
+        );
+        true
+    }
+
+    /// Record that a chip's bytes left for `destination`. Copy-out
+    /// itself is a `&self` read ([`SheetStore::copy_out_chip`]) and
+    /// stays that way, so the caller that actually lands the bytes
+    /// somewhere reports it here. Egress to the pasteboard is the single
+    /// most useful line in the ledger (ADR-0012). Returns whether the
+    /// chip existed.
+    pub fn record_sent(&mut self, chip: ChipId, destination: DestinationClass) -> bool {
+        let Some((sheet_id, sealed)) = self.chip_home(chip) else {
+            return false;
+        };
+        let uuid = sealed.uuid;
+        let size = SizeClass::of(sealed.bytes.len());
+        let host = self.sheet(sheet_id).expect("chip_home found it");
+        let title = host.title.clone();
+        let created = host.created_wall_ms;
+        self.record(LedgerEvent::Sent, uuid, title, created, size, destination);
+        true
     }
 
     /// Record a successful promotion: only the receipt identifier stays
@@ -518,7 +644,7 @@ impl<C: Clock> SheetStore<C> {
         self.sheets = live;
         let ids: Vec<SheetId> = dead.iter().map(|s| s.id).collect();
         for sheet in dead {
-            self.entomb(sheet, Cause::Expired, now);
+            self.entomb(sheet, LedgerEvent::Expired);
         }
         ids
     }
@@ -527,21 +653,54 @@ impl<C: Clock> SheetStore<C> {
     // The ledger
     // -----------------------------------------------------------------
 
-    /// Dead pages, newest first: dimmed ink and chip tombstones,
-    /// session-bound, read-only.
+    /// The audit trail, newest first: metadata and the page-owned title,
+    /// never content.
     pub fn ledger(&self) -> impl Iterator<Item = &LedgerRecord> {
         self.ledger.iter()
     }
 
-    /// Build the ledger record and drop the sheet — every chip's bytes
-    /// zeroize as it falls. A page with nothing on it (no chips, no
-    /// non-blank ink) leaves no record: an empty tombstone is noise,
-    /// not residue.
+    /// Throw the whole ledger away. The user-facing "clear the ledger"
+    /// affordance: the records are the only thing that outlives a boot
+    /// session, so a way to end them on demand is part of the bargain.
+    pub fn clear_ledger(&mut self) {
+        self.ledger.clear();
+    }
+
+    /// Append one record, newest first, and take the retention window
+    /// off the tail while the ledger is already in hand
+    /// ([`evict_expired`]).
+    fn record(
+        &mut self,
+        event: LedgerEvent,
+        item: ItemId,
+        title: String,
+        item_created_wall_ms: u64,
+        size: SizeClass,
+        destination: DestinationClass,
+    ) {
+        let at_wall_ms = self.clock.wall_ms();
+        self.ledger.push_front(LedgerRecord {
+            event,
+            item,
+            title,
+            at_wall_ms,
+            item_created_wall_ms,
+            size,
+            destination,
+        });
+        evict_expired(&mut self.ledger, at_wall_ms);
+    }
+
+    /// Record the page's death and drop it. Every chip's bytes zeroize
+    /// as it falls. One record for the page, whatever it was carrying:
+    /// the chips on it already have records of their own, from the
+    /// moment they were sealed. A page with nothing on it (no chips, no
+    /// non-blank ink) records nothing: it did nothing worth auditing.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "consuming is the point: the page dies here, and its SecretBuffers zeroize as it drops"
     )]
-    fn entomb(&mut self, sheet: Sheet, cause: Cause, now: Instant) {
+    fn entomb(&mut self, sheet: Sheet, event: LedgerEvent) {
         let has_ink = sheet.segments.iter().any(|s| match s {
             Segment::Ink(text) => !text.trim().is_empty(),
             Segment::Chip(_) => false,
@@ -549,38 +708,18 @@ impl<C: Clock> SheetStore<C> {
         if !has_ink && sheet.chips.is_empty() {
             return;
         }
-        let title = sheet.title();
-        let mut segments: Vec<LedgerSegment> = Vec::new();
-        let mut entombed: Vec<ChipId> = Vec::new();
-        for segment in &sheet.segments {
-            match segment {
-                Segment::Ink(text) => segments.push(LedgerSegment::Ink(text.clone())),
-                Segment::Chip(chip_id) => {
-                    if let Some(chip) = sheet.chip(*chip_id) {
-                        entombed.push(*chip_id);
-                        segments.push(LedgerSegment::Tombstone {
-                            excerpt: chip.excerpt.clone(),
-                        });
-                    }
-                }
-            }
-        }
-        // A chip sealed but not yet synced into the snapshot still gets
-        // its tombstone — nothing sealed vanishes unaccounted.
-        for chip in &sheet.chips {
-            if !entombed.contains(&chip.id) {
-                segments.push(LedgerSegment::Tombstone {
-                    excerpt: chip.excerpt.clone(),
-                });
-            }
-        }
-        self.ledger.push_front(LedgerRecord {
-            cause,
-            title,
-            segments,
-            died_at: now,
-        });
-        self.ledger.truncate(LEDGER_CAP);
+        // The inversion (ADR-0012): the ledger copies a name the page
+        // already owned. Nothing is derived from ink at death, and no
+        // ink, excerpt or byte count crosses into the record.
+        let sealed_bytes: usize = sheet.chips.iter().map(|c| c.bytes.len()).sum();
+        self.record(
+            event,
+            sheet.uuid,
+            sheet.title.clone(),
+            sheet.created_wall_ms,
+            SizeClass::of(sealed_bytes),
+            DestinationClass::None,
+        );
         // `sheet` drops here; every SecretBuffer zeroizes on the way down.
     }
 }
@@ -618,6 +757,7 @@ fn set_clock(sheet: &mut Sheet, rung: Ttl, now: Instant) {
 mod tests {
     use super::*;
     use crate::clock::ManualClock;
+    use crate::ledger::LEDGER_RETENTION_MS;
 
     fn store() -> (SheetStore<ManualClock>, ManualClock) {
         let clock = ManualClock::new();
@@ -626,8 +766,17 @@ mod tests {
 
     const HOUR: Duration = Duration::from_secs(60 * 60);
 
+    /// The placeholder title a page created on a fresh [`ManualClock`]
+    /// is born with: 2023-11-14 22:13:20, in the clock's UTC locale.
+    const PLACEHOLDER: &str = "1114-2213";
+
     fn seal(store: &mut SheetStore<ManualClock>, sheet: SheetId, text: &str) -> ChipId {
         store.seal_text(sheet, text).unwrap()
+    }
+
+    /// Every recorded event, newest first.
+    fn events(store: &SheetStore<ManualClock>) -> Vec<LedgerEvent> {
+        store.ledger().map(LedgerRecord::event).collect()
     }
 
     #[test]
@@ -708,6 +857,79 @@ mod tests {
     }
 
     #[test]
+    fn a_fresh_page_is_titled_by_its_creation_stamp() {
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        let sheet = store.sheet(id).unwrap();
+        assert_eq!(sheet.title(), PLACEHOLDER);
+        assert!(!sheet.title_is_user_set());
+        assert_eq!(sheet.created_wall_ms(), 1_700_000_000_000);
+
+        // The stamp is the page's birthday, not the current time: an
+        // hour later the placeholder still reads the same.
+        clock.advance(HOUR);
+        assert!(store.sync_document(id, vec![Segment::Ink("   ".into())]));
+        assert_eq!(store.sheet(id).unwrap().title(), PLACEHOLDER);
+    }
+
+    #[test]
+    fn a_page_renames_itself_from_the_first_typed_line() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.sync_document(
+            id,
+            vec![Segment::Ink("## prod DB credentials\nrotate after".into())]
+        ));
+        assert_eq!(store.sheet(id).unwrap().title(), "prod DB credentials");
+        assert!(!store.sheet(id).unwrap().title_is_user_set());
+    }
+
+    #[test]
+    fn a_user_title_survives_every_re_derivation() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.set_title(id, "  the vault  "));
+        let sheet = store.sheet(id).unwrap();
+        assert_eq!(sheet.title(), "the vault", "trimmed, not stored raw");
+        assert!(sheet.title_is_user_set());
+
+        // Editing the page does not take the name back.
+        assert!(store.sync_document(id, vec![Segment::Ink("something else\n".into())]));
+        assert_eq!(store.sheet(id).unwrap().title(), "the vault");
+
+        // Nor does closing it: the ledger copies what the page owned.
+        assert!(store.close_sheet(id));
+        assert_eq!(store.ledger().next().unwrap().title(), "the vault");
+    }
+
+    #[test]
+    fn an_empty_set_title_hands_the_name_back_to_derivation() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.sync_document(id, vec![Segment::Ink("derived name\n".into())]));
+        assert!(store.set_title(id, "chosen name"));
+        assert_eq!(store.sheet(id).unwrap().title(), "chosen name");
+
+        assert!(store.set_title(id, "   "));
+        let sheet = store.sheet(id).unwrap();
+        assert!(!sheet.title_is_user_set());
+        assert_eq!(sheet.title(), "derived name");
+
+        // And with no ink at all, back to the creation stamp.
+        assert!(store.sync_document(id, Vec::new()));
+        assert_eq!(store.sheet(id).unwrap().title(), PLACEHOLDER);
+        assert!(!store.set_title(SheetId(999), "nowhere"));
+    }
+
+    #[test]
+    fn a_user_title_is_capped_like_a_derived_one() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.set_title(id, &"é".repeat(200)));
+        assert_eq!(store.sheet(id).unwrap().title().chars().count(), 80);
+    }
+
+    #[test]
     fn a_sync_that_omits_a_chip_zeroizes_it() {
         let (mut store, _) = store();
         let id = store.new_sheet().unwrap();
@@ -761,76 +983,238 @@ mod tests {
         assert_eq!(store.next_event(), None, "nothing left to arm");
     }
 
+    /// A token chosen so that no run of four or more of its characters
+    /// can plausibly appear in a record's `Debug` rendering for an
+    /// innocent reason: mixed case, no English words, and never four
+    /// digits in a row (an `ItemId` prints its bytes as decimals).
+    const TOKEN: &str = "Zq7Xv-Marmalade-Bt94kL-Wp2Rn";
+
+    /// Every contiguous run of `TOKEN`, four characters or longer.
+    /// Testing whole-token absence would be trivially satisfiable by a
+    /// truncating excerpt; this is the assertion that is hard to weaken.
+    fn token_fragments() -> Vec<String> {
+        let chars: Vec<char> = TOKEN.chars().collect();
+        let mut out = Vec::new();
+        for start in 0..chars.len() {
+            for end in (start + 4)..=chars.len() {
+                out.push(chars[start..end].iter().collect());
+            }
+        }
+        assert!(out.len() > 300, "the fragment set must be exhaustive");
+        out
+    }
+
+    /// The ledger's whole claim, mechanised: no record, in any field,
+    /// may carry a fragment of what was sealed.
+    fn assert_content_free(store: &SheetStore<ManualClock>) {
+        let fragments = token_fragments();
+        let mut checked = 0usize;
+        for record in store.ledger() {
+            let rendered = format!("{record:?}");
+            for fragment in &fragments {
+                assert!(
+                    !rendered.contains(fragment.as_str()),
+                    "ledger record leaked {fragment:?} of the sealed token: {rendered}"
+                );
+            }
+            checked += 1;
+        }
+        assert!(
+            checked > 0,
+            "nothing was checked; the walk found no records"
+        );
+    }
+
     #[test]
-    fn dead_pages_rest_in_the_ledger_ink_and_tombstones_in_order() {
+    fn a_dead_page_leaves_metadata_and_nothing_else() {
         let (mut store, clock) = store();
         let id = store.new_sheet().unwrap();
-        let chip = seal(&mut store, id, "hunter2-hunter2-hunter2");
+        let chip = seal(&mut store, id, TOKEN);
         assert!(store.sync_document(
             id,
             vec![
-                Segment::Ink("### deploy friday\nin order —\n".into()),
+                Segment::Ink("### deploy friday\nin order\n".into()),
                 Segment::Chip(chip),
             ]
         ));
+        // Drive the page through the whole lifecycle, so every kind of
+        // record the store can write is in the ledger when we look.
+        let (bytes, _) = store.copy_out_chip(chip).unwrap();
+        assert_eq!(&**bytes, TOKEN.as_bytes());
+        drop(bytes);
+        assert!(store.record_sent(chip, DestinationClass::Clipboard));
+        let uuid = store.sheet(id).unwrap().uuid();
         store.set_rung(id, Ttl::MIN).unwrap();
         clock.advance(HOUR);
         store.expire_due();
 
         let record = store.ledger().next().unwrap();
-        assert_eq!(record.cause(), Cause::Expired);
+        assert_eq!(record.event(), LedgerEvent::Expired);
         assert_eq!(record.title(), "deploy friday");
-        assert_eq!(record.segments().len(), 2);
-        assert!(matches!(&record.segments()[0], LedgerSegment::Ink(t) if t.contains("in order")));
-        match &record.segments()[1] {
-            LedgerSegment::Tombstone { excerpt } => {
-                assert!(
-                    !excerpt.contains("hunter2-hunter2"),
-                    "the middle stays hidden"
-                );
-            }
-            LedgerSegment::Ink(_) => panic!("chip position must be a tombstone"),
-        }
+        assert_eq!(record.item(), uuid, "the page's own identity");
+        assert_ne!(record.item(), ItemId::from_bytes([0u8; 16]));
+        assert_eq!(record.size(), SizeClass::of(TOKEN.len()));
+        assert_eq!(record.destination(), DestinationClass::None);
+
+        // The load-bearing assertion.
+        assert_eq!(store.ledger().count(), 4, "created, sealed, sent, expired");
+        assert_content_free(&store);
     }
 
     #[test]
-    fn closing_a_page_ledgers_it_and_an_unsynced_chip_still_gets_a_tombstone() {
+    fn a_sealed_chip_is_content_free_in_the_ledger_from_the_moment_it_exists() {
+        // Not only at death: the Sealed record is written while the
+        // bytes are still live and reachable, which is exactly when a
+        // convenience excerpt would be tempting.
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let chip = seal(&mut store, id, TOKEN);
+        assert_content_free(&store);
+        assert!(store.delete_chip(chip));
+        assert_content_free(&store);
+    }
+
+    #[test]
+    fn closing_a_page_records_the_page_and_the_chip_separately() {
         let (mut store, _) = store();
         let id = store.new_sheet().unwrap();
         let _chip = seal(&mut store, id, "sealed then never synced");
         assert!(store.close_sheet(id));
         assert!(!store.close_sheet(id), "already gone");
-        let record = store.ledger().next().unwrap();
-        assert_eq!(record.cause(), Cause::Closed);
-        assert_eq!(record.title(), "untitled");
-        assert!(matches!(
-            record.segments()[0],
-            LedgerSegment::Tombstone { .. }
-        ));
+
+        assert_eq!(
+            events(&store),
+            vec![
+                LedgerEvent::Discarded,
+                LedgerEvent::Sealed,
+                LedgerEvent::Created
+            ]
+        );
+        let page = store.ledger().next().unwrap();
+        // No ink was ever typed, so the page kept the name it was born
+        // with: its creation stamp, in local time.
+        assert_eq!(page.title(), PLACEHOLDER);
+        // A chip sealed but never synced is still accounted for: its own
+        // record was written at seal time and outlives the page.
+        let chip_record = store.ledger().nth(1).unwrap();
+        assert_ne!(chip_record.item(), page.item());
+        assert_eq!(
+            chip_record.size(),
+            SizeClass::of("sealed then never synced".len())
+        );
+        assert_eq!(chip_record.title(), PLACEHOLDER, "the host page's name");
     }
 
     #[test]
-    fn empty_pages_leave_no_record() {
+    fn empty_pages_leave_no_death_record() {
         let (mut store, _) = store();
         let id = store.new_sheet().unwrap();
         assert!(store.sync_document(id, vec![Segment::Ink("   \n".into())]));
         store.close_sheet(id);
-        assert_eq!(store.ledger().count(), 0);
+        // The page's birth is on the record; its death is not, because
+        // a page that held nothing did nothing worth auditing.
+        assert_eq!(events(&store), vec![LedgerEvent::Created]);
     }
 
     #[test]
-    fn the_ledger_keeps_the_newest_dozen() {
-        let (mut store, _) = store();
-        for i in 0..(LEDGER_CAP + 3) {
+    fn the_ledger_is_a_rolling_window_not_a_record_cap() {
+        let (mut store, clock) = store();
+        for i in 0..50 {
             let id = store.new_sheet().unwrap();
             assert!(store.sync_document(id, vec![Segment::Ink(format!("page {i}"))]));
-            store.close_sheet(id);
+            assert!(store.close_sheet(id));
         }
-        assert_eq!(store.ledger().count(), LEDGER_CAP);
-        // Newest first; the oldest three fell off silently.
+        // A hundred records, none of them old. A count cap would have
+        // thrown most of these away; the window keeps every one.
+        assert_eq!(store.ledger().count(), 100);
         let titles: Vec<&str> = store.ledger().map(LedgerRecord::title).collect();
-        assert_eq!(titles.first(), Some(&"page 14"));
-        assert_eq!(titles.last(), Some(&"page 3"));
+        assert_eq!(titles.first(), Some(&"page 49"), "newest first");
+
+        // Ninety days and one millisecond later the whole lot has aged
+        // out, and the next write is what sweeps it: no timer runs.
+        clock.advance(Duration::from_millis(LEDGER_RETENTION_MS + 1));
+        assert_eq!(store.ledger().count(), 100, "nothing ran on its own");
+        store.new_sheet().unwrap();
+        assert_eq!(events(&store), vec![LedgerEvent::Created]);
+    }
+
+    #[test]
+    fn the_window_boundary_keeps_a_record_exactly_ninety_days_old() {
+        let (mut store, clock) = store();
+        store.new_sheet().unwrap();
+        clock.advance(Duration::from_millis(LEDGER_RETENTION_MS));
+        store.new_sheet().unwrap();
+        assert_eq!(store.ledger().count(), 2, "the boundary is inclusive");
+        clock.advance(Duration::from_millis(1));
+        store.new_sheet().unwrap();
+        assert_eq!(store.ledger().count(), 2, "the oldest fell off");
+    }
+
+    #[test]
+    fn every_lifecycle_step_lands_exactly_one_record() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        assert_eq!(events(&store), vec![LedgerEvent::Created]);
+
+        let chip = seal(&mut store, id, "one secret");
+        assert_eq!(
+            events(&store),
+            vec![LedgerEvent::Sealed, LedgerEvent::Created]
+        );
+
+        // Reading the bytes out is a `&self` call and records nothing on
+        // its own; the caller that lands them somewhere reports it.
+        let _ = store.copy_out_chip(chip).unwrap();
+        assert_eq!(store.ledger().count(), 2);
+
+        assert!(store.record_sent(chip, DestinationClass::Clipboard));
+        let sent = store.ledger().next().unwrap();
+        assert_eq!(sent.event(), LedgerEvent::Sent);
+        assert_eq!(sent.destination(), DestinationClass::Clipboard);
+        assert_eq!(sent.size(), SizeClass::of("one secret".len()));
+        assert!(!store.record_sent(ChipId(999), DestinationClass::Clipboard));
+
+        assert!(store.close_sheet(id));
+        assert_eq!(
+            events(&store),
+            vec![
+                LedgerEvent::Discarded,
+                LedgerEvent::Sent,
+                LedgerEvent::Sealed,
+                LedgerEvent::Created
+            ]
+        );
+    }
+
+    #[test]
+    fn a_chip_removed_in_the_editor_records_the_same_as_an_explicit_delete() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let chip = seal(&mut store, id, "removed with a backspace");
+        assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
+        assert!(store.sync_document(id, vec![Segment::Ink("just ink now".into())]));
+        assert_eq!(
+            events(&store),
+            vec![
+                LedgerEvent::Discarded,
+                LedgerEvent::Sealed,
+                LedgerEvent::Created
+            ]
+        );
+    }
+
+    #[test]
+    fn clearing_the_ledger_leaves_nothing_behind() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        seal(&mut store, id, "something");
+        assert!(store.ledger().count() > 0);
+        store.clear_ledger();
+        assert_eq!(store.ledger().count(), 0);
+        // The live page is untouched: clearing the ledger is not closing
+        // anything.
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.sheet(id).unwrap().chip_count(), 1);
     }
 
     #[test]

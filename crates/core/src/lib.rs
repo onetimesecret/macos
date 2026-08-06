@@ -37,9 +37,9 @@ pub mod ttl;
 
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use harden::harden_process;
-pub use ledger::{Cause, LedgerRecord, LedgerSegment};
+pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecord, SizeClass};
 pub use persist::RestoreError;
 pub use secret::SecretBuffer;
-pub use sheet::{ChipId, ChipMeta, Promotion, SealedChip, Segment, Sheet, SheetId};
-pub use store::{DEFAULT_SHEET_CAP, LEDGER_CAP, PayloadError, Refusal, SheetStore};
+pub use sheet::{ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetId};
+pub use store::{DEFAULT_SHEET_CAP, PayloadError, Refusal, SheetStore};
 pub use ttl::{TTL_LADDER, Ttl};

@@ -12,13 +12,22 @@
 #![allow(unsafe_code)]
 
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// A monotonic clock the store reads instead of calling
 /// [`Instant::now`] directly.
 pub trait Clock {
     /// The current monotonic instant.
     fn now(&self) -> Instant;
+
+    /// Unix epoch milliseconds. Never used for expiry math (that stays
+    /// monotonic, see the module doc); only for stamping records a human
+    /// reads and for the creation-time title placeholder.
+    fn wall_ms(&self) -> u64;
+
+    /// Seconds east of UTC for the user's current locale, so a placeholder
+    /// title reads as the local wall clock.
+    fn local_offset_seconds(&self) -> i32;
 }
 
 /// The real thing: monotonic, and it keeps counting while the system
@@ -30,6 +39,45 @@ impl Clock for SystemClock {
     fn now(&self) -> Instant {
         continuous_now()
     }
+
+    fn wall_ms(&self) -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+    }
+
+    fn local_offset_seconds(&self) -> i32 {
+        local_offset_seconds()
+    }
+}
+
+/// Seconds east of UTC for the current locale. This is the one place the
+/// crate reads calendar-aware state from the OS: `localtime_r` consults
+/// the time zone database, which no monotonic clock can do.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn local_offset_seconds() -> i32 {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let time = libc::time_t::try_from(secs).unwrap_or(libc::time_t::MAX);
+    // SAFETY: `tm` is a plain C struct of integers and one pointer, for
+    // which all-zero is a valid bit pattern; `localtime_r` overwrites it
+    // before anything reads it.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    // SAFETY: `localtime_r` reads the `time_t` behind a valid pointer and
+    // writes to a valid, stack-allocated `tm`; both live for the call, and
+    // the reentrant form touches no shared buffer.
+    unsafe {
+        libc::localtime_r(&raw const time, &raw mut tm);
+    }
+    i32::try_from(tm.tm_gmtoff).unwrap_or(0)
+}
+
+/// Elsewhere: no portable time zone query worth an unsafe block, so a
+/// placeholder title reads as UTC.
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn local_offset_seconds() -> i32 {
+    0
 }
 
 /// An [`Instant`] that advances during system sleep: a process-wide
@@ -75,21 +123,45 @@ fn sleep_inclusive_ns() -> u64 {
     u64::try_from(base.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
+/// Wall time a fresh [`ManualClock`] reports: a fixed instant in
+/// November 2023, so title and timestamp tests never depend on the host
+/// clock.
+const MANUAL_CLOCK_BASE_WALL_MS: u64 = 1_700_000_000_000;
+
 /// A clock that only moves when told to — for tests and the demo.
 #[derive(Debug, Clone)]
 pub struct ManualClock {
     base: Instant,
     offset: Arc<Mutex<Duration>>,
+    base_wall_ms: u64,
+    offset_seconds: i32,
 }
 
 impl ManualClock {
-    /// A manual clock anchored at construction time.
+    /// A manual clock anchored at construction time. Its wall clock
+    /// starts at a fixed 2023 instant in UTC, never at the host's.
     #[must_use]
     pub fn new() -> Self {
         Self {
             base: Instant::now(),
             offset: Arc::new(Mutex::new(Duration::ZERO)),
+            base_wall_ms: MANUAL_CLOCK_BASE_WALL_MS,
+            offset_seconds: 0,
         }
+    }
+
+    /// Anchor the wall clock at `ms` since the Unix epoch.
+    #[must_use]
+    pub fn with_wall_ms(mut self, ms: u64) -> Self {
+        self.base_wall_ms = ms;
+        self
+    }
+
+    /// Report `seconds` east of UTC as the local offset.
+    #[must_use]
+    pub fn with_local_offset_seconds(mut self, seconds: i32) -> Self {
+        self.offset_seconds = seconds;
+        self
     }
 
     /// Advance the clock by `delta`.
@@ -114,6 +186,18 @@ impl Clock for ManualClock {
         let offset = self.offset.lock().expect("clock lock poisoned");
         self.base + *offset
     }
+
+    /// Wall time moves with [`ManualClock::advance`], so a test that ages
+    /// an item sees both clocks agree on how much time passed.
+    fn wall_ms(&self) -> u64 {
+        let offset = self.offset.lock().expect("clock lock poisoned");
+        let advanced = u64::try_from(offset.as_millis()).unwrap_or(u64::MAX);
+        self.base_wall_ms.saturating_add(advanced)
+    }
+
+    fn local_offset_seconds(&self) -> i32 {
+        self.offset_seconds
+    }
 }
 
 #[cfg(test)]
@@ -135,6 +219,43 @@ mod tests {
         let other = clock.clone();
         clock.advance(Duration::from_secs(5));
         assert_eq!(other.now(), clock.now());
+    }
+
+    #[test]
+    fn manual_clock_wall_time_advances_with_the_monotonic_one() {
+        let clock = ManualClock::new();
+        let before = clock.wall_ms();
+        clock.advance(Duration::from_secs(90));
+        assert_eq!(clock.wall_ms() - before, 90_000);
+    }
+
+    #[test]
+    fn manual_clock_wall_time_is_fixed_not_the_host_clock() {
+        assert_eq!(ManualClock::new().wall_ms(), MANUAL_CLOCK_BASE_WALL_MS);
+        assert_eq!(ManualClock::new().local_offset_seconds(), 0);
+    }
+
+    #[test]
+    fn manual_clock_builders_override_the_defaults() {
+        let clock = ManualClock::new()
+            .with_wall_ms(1_000)
+            .with_local_offset_seconds(-8 * 3600);
+        assert_eq!(clock.wall_ms(), 1_000);
+        assert_eq!(clock.local_offset_seconds(), -8 * 3600);
+        clock.advance(Duration::from_secs(1));
+        assert_eq!(clock.wall_ms(), 2_000);
+    }
+
+    #[test]
+    fn system_clock_wall_time_is_plausible() {
+        // Fails loudly if the epoch math is wrong: any sane host reads
+        // later than November 2023.
+        assert!(SystemClock.wall_ms() > 1_700_000_000_000);
+    }
+
+    #[test]
+    fn local_offset_is_within_a_day() {
+        assert!(SystemClock.local_offset_seconds().abs() <= 14 * 3600);
     }
 
     #[test]

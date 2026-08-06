@@ -13,6 +13,10 @@ workspace = true
 
 [dependencies]
 zeroize = { workspace = true }
+# The OS CSPRNG, for minting random 128-bit item identities (ADR-0012).
+# Already in the workspace lock by way of ring, so this adds no new
+# supply chain.
+getrandom = "0.2"
 
 [target.'cfg(unix)'.dependencies]
 # SecretBuffer page locking (mlock/munlock) and core-dump disabling.
