@@ -68,11 +68,30 @@ final class BackdropStanceTests: XCTestCase {
         XCTAssertFalse(BackdropStance.raised.ignoresMouse(pinned: true))
     }
 
-    func testRaisedSpansTheWholePane() {
-        // The pane is the click-outside-to-rest catcher; the pin does
-        // not change that.
-        XCTAssertTrue(BackdropStance.raised.spansPane(pinned: false))
-        XCTAssertTrue(BackdropStance.raised.spansPane(pinned: true))
+    func testRaisedHugsTheCard() {
+        // The raise takes the mouse, so its window must be exactly the
+        // card. A pane-wide window that took clicks would swallow every
+        // press aimed past the card, which is how the click-outside
+        // catcher this replaces stranded the keyboard: the surface
+        // rested, but the app the user clicked never activated. The pin
+        // does not change it either way.
+        XCTAssertFalse(BackdropStance.raised.spansPane(pinned: false))
+        XCTAssertFalse(BackdropStance.raised.spansPane(pinned: true))
+    }
+
+    func testEveryStanceThatTakesTheMouseHugsTheCard() {
+        // The invariant the two postures above are instances of: mouse
+        // transparency is decided per window at the window server, so
+        // window extent is the only thing that keeps a click-taking
+        // surface from owning the whole screen.
+        for pinned in [false, true] {
+            for stance in [BackdropStance.resting, .raised] where !stance.ignoresMouse(pinned: pinned) {
+                XCTAssertFalse(
+                    stance.spansPane(pinned: pinned),
+                    "a stance that takes the mouse must not span the pane"
+                )
+            }
+        }
     }
 
     func testRaisedMayTakeTheKeyboard() {

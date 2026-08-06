@@ -24,6 +24,18 @@ final class BackdropModel: ObservableObject {
     /// read this and propose changes through `setGeometry(_:)`.
     @Published private(set) var geometry: BackdropGeometry
 
+    /// A drag or resize under the pointer right now, clamped but not
+    /// yet settled or persisted. Since no stance that takes the mouse
+    /// spans the pane, the window *is* the card in every manipulable
+    /// posture, so live feedback has to move the window rather than
+    /// redraw within a stationary one. Nil whenever nothing is in
+    /// flight.
+    @Published private(set) var inFlight: BackdropGeometry?
+
+    /// Where the card is drawn right now: the in-flight proposal while
+    /// the pointer is down, the settled geometry otherwise.
+    var displayedGeometry: BackdropGeometry { inFlight ?? geometry }
+
     /// The pages, their clocks, and everything done to them. Shared
     /// with the panel; scoped to this form factor's own Keychain
     /// service and state file by `FormFactor.backdrop`.
@@ -161,10 +173,29 @@ final class BackdropModel: ObservableObject {
 
     // MARK: Geometry
 
+    /// A drag or resize under the pointer: clamp by the same rule that
+    /// will judge the commit, so the card never previews a place it
+    /// will not be allowed to keep, and publish for the window to
+    /// follow. Nothing is persisted until the pointer lifts.
+    func proposeGeometry(_ proposed: BackdropGeometry) {
+        inFlight = proposed.clamped(to: pane)
+    }
+
+    /// The gesture was abandoned (a rest mid-drag, an `onEnded` with no
+    /// anchor to measure from): the card returns to where it settled
+    /// last, never askew.
+    func discardProposal() {
+        guard inFlight != nil else { return }
+        inFlight = nil
+    }
+
     /// A drag or resize settled: clamp the proposal to the known pane,
-    /// persist, publish.
+    /// persist, publish. The proposal is cleared *after* the settled
+    /// value lands, so the window is never framed from a stale
+    /// geometry for the moment in between.
     func setGeometry(_ proposed: BackdropGeometry) {
         applyGeometry(proposed.clamped(to: pane))
+        inFlight = nil
     }
 
     /// The Settings escape hatch: back to the layout the card shipped

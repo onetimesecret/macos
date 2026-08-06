@@ -37,6 +37,8 @@ enum BackdropStance: Equatable {
     /// click-through trap this replaces), so it takes the mouse, and
     /// `spansPane` shrinks the window to the card so only the card
     /// takes it. The click's one meaning while resting is "raise".
+    /// The raised editor takes the mouse for its own controls, and
+    /// hugs the card for the same reason the pinned rest does.
     func ignoresMouse(pinned: Bool) -> Bool {
         switch self {
         case .resting: !pinned
@@ -45,17 +47,25 @@ enum BackdropStance: Equatable {
     }
 
     /// Whether the window covers the whole pane or shrinks to the
-    /// card's own rect. Full coverage is the norm: the unpinned rest
-    /// is desktop furniture (and mouse-transparent, so its acreage
-    /// costs nothing), and the raised editor needs the pane as its
-    /// click-outside-to-rest catcher. The pinned rest is the one
-    /// posture where window extent decides click routing above other
-    /// apps' windows, so there the window hugs the card and the rest
-    /// of the screen stays someone else's to click.
+    /// card's own rect. Only the unpinned rest spans it: that stance is
+    /// desktop furniture and mouse-transparent, so its acreage costs
+    /// nothing. Every stance that takes the mouse hugs the card,
+    /// because window extent is what decides click routing above other
+    /// apps' windows and a transparent pane over the whole screen
+    /// swallows every click aimed past the card.
+    ///
+    /// The raised editor used to span the pane and use it as a
+    /// click-outside-to-rest catcher. That catcher ate the click: the
+    /// surface rested, but the app the user actually clicked never
+    /// activated, so the keyboard went back to whichever app happened
+    /// to be frontmost and their keystrokes landed somewhere they were
+    /// not looking. Resting on an outside click is now a passive
+    /// global event monitor's job (`BackdropWindowController`), which
+    /// observes the press without consuming it.
     func spansPane(pinned: Bool) -> Bool {
         switch self {
         case .resting: !pinned
-        case .raised: true
+        case .raised: false
         }
     }
 

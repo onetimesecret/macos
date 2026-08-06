@@ -46,21 +46,32 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                 panel.ignoresMouseEvents = model.stance.ignoresMouse(pinned: pinned)
                 panel.level = model.stance.level(pinned: pinned)
                 panel.collectionBehavior = model.stance.collectionBehavior(pinned: pinned)
-                applyFrame(stance: model.stance, pinned: pinned, geometry: model.geometry)
+                applyFrame(
+                    stance: model.stance, pinned: pinned,
+                    geometry: model.displayedGeometry
+                )
             }
             .store(in: &observers)
-        // While the window hugs the card (a pinned rest), the card's
-        // geometry IS the window's frame, so a geometry change made
-        // outside a raise (Settings' reset, a screen-change reclamp)
-        // must move the window too. Raised drags redraw within the
-        // full pane and land here as no-ops.
+        // Wherever the window hugs the card (a pinned rest, and every
+        // raise), the card's geometry IS the window's frame, so any
+        // change to it must move the window. Settled changes and
+        // in-flight ones both: a drag under the pointer publishes
+        // proposals, and the window following them is what makes the
+        // card appear to move at all. A @Published emits on willSet,
+        // so the effective geometry is composed from the closure's
+        // value and whichever of the pair has already landed.
         model.$geometry
             .dropFirst()
             .sink { [weak self] geometry in
                 guard let self else { return }
-                if !model.stance.spansPane(pinned: model.pinned) {
-                    applyFrame(stance: model.stance, pinned: model.pinned, geometry: geometry)
-                }
+                follow(geometry: model.inFlight ?? geometry)
+            }
+            .store(in: &observers)
+        model.$inFlight
+            .dropFirst()
+            .sink { [weak self] inFlight in
+                guard let self else { return }
+                follow(geometry: inFlight ?? model.geometry)
             }
             .store(in: &observers)
         // Debug-only escape hatch: the Settings toggle (seeded by
@@ -93,6 +104,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
         }
+        if let outsideClickMonitor {
+            NSEvent.removeMonitor(outsideClickMonitor)
+        }
     }
 
     /// Launch: the backdrop takes its place at the desktop immediately —
@@ -123,7 +137,17 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         model.reclamp(pane: usable)
         // Reclamp first, frame second: a card-hugging window must be
         // framed from the geometry the new pane has already judged.
-        applyFrame(stance: model.stance, pinned: model.pinned, geometry: model.geometry)
+        applyFrame(
+            stance: model.stance, pinned: model.pinned, geometry: model.displayedGeometry
+        )
+    }
+
+    /// The window follows a geometry, but only in the postures where
+    /// the window is the card. The unpinned rest spans the pane, so a
+    /// card moved within it is a redraw, not a window move.
+    private func follow(geometry: BackdropGeometry) {
+        guard !model.stance.spansPane(pinned: model.pinned) else { return }
+        applyFrame(stance: model.stance, pinned: model.pinned, geometry: geometry)
     }
 
     /// The window's extent for a given posture: the whole screen when
@@ -160,12 +184,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         panel.ignoresMouseEvents = stance.ignoresMouse(pinned: model.pinned)
         panel.level = stance.level(pinned: model.pinned)
         panel.collectionBehavior = stance.collectionBehavior(pinned: model.pinned)
-        // Extent before ordering: a raise must already cover the pane
-        // when it takes key (the click-outside catcher), and a pinned
-        // rest must already hug the card when it orders front.
-        applyFrame(stance: stance, pinned: model.pinned, geometry: model.geometry)
+        // Extent before ordering: a card-hugging window must already
+        // hug when it orders front, or the frame change would be
+        // visible as a snap after the fact.
+        applyFrame(stance: stance, pinned: model.pinned, geometry: model.displayedGeometry)
         switch stance {
         case .raised:
+            watchForOutsideClicks()
             // A summon means *here*: if the surface is up on some other
             // Space, order it out first so ordering front lands it on
             // this one — `.moveToActiveSpace` covers the well-behaved
@@ -182,6 +207,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // consequence, not its cause.)
             panel.makeKeyAndOrderFront(nil)
         case .resting:
+            stopWatchingForOutsideClicks()
             panel.makeFirstResponder(nil)
             if NSApp.isActive {
                 // A ⌘Tab or Dock summon made this app active; resting
@@ -219,6 +245,52 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             "stance=\(stance == .raised ? "raised" : "resting", privacy: .public) level=\(self.panel.level.rawValue, privacy: .public) visible=\(self.panel.isVisible, privacy: .public) frame=\(NSStringFromRect(self.panel.frame), privacy: .public)"
         )
     }
+
+    // MARK: Resting on an outside click
+
+    /// Watch for a click landing anywhere that is not this app, and
+    /// rest the surface when one does.
+    ///
+    /// A *global* monitor deliberately: it observes the press and
+    /// consumes nothing, so the click goes on to the window it was
+    /// aimed at and macOS activates that app in the ordinary way. The
+    /// pane-wide catcher view this replaces did consume it: the
+    /// surface rested, but the clicked app never activated, so the
+    /// keyboard fell back to whichever app happened to be frontmost
+    /// and the user's next keystrokes went somewhere they were not
+    /// looking. (Mouse monitors need no Accessibility grant; only
+    /// keyboard ones do.)
+    ///
+    /// Only while raised. A resting surface has nothing to dismiss,
+    /// and a monitor that outlived the raise would be a standing
+    /// observer of every click the user makes all day.
+    private func watchForOutsideClicks() {
+        guard outsideClickMonitor == nil else { return }
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            // Hopped to a later turn deliberately, not merely to reach
+            // the main actor: the clicked app's activation and our own
+            // resign-key are still in flight when this fires, and
+            // `apply(.resting)` reads `isKeyWindow` to decide whether
+            // to run the key relay. Resting synchronously could read
+            // stale key status and pull the keyboard back out of the
+            // app the user just chose, which is the very fault this
+            // whole change exists to remove.
+            Task { @MainActor in self?.model.rest() }
+        }
+    }
+
+    private func stopWatchingForOutsideClicks() {
+        guard let outsideClickMonitor else { return }
+        NSEvent.removeMonitor(outsideClickMonitor)
+        self.outsideClickMonitor = nil
+    }
+
+    // nonisolated(unsafe) for the same reason as `screenObserver`: deinit
+    // is nonisolated even on a @MainActor class, and the monitor token
+    // is not Sendable. Every other touch is on the main actor.
+    private nonisolated(unsafe) var outsideClickMonitor: Any?
 
     /// The surface's mechanics in the unified log — stance, level,
     /// visibility, frame; never content. Watch with:
