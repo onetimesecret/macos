@@ -1,7 +1,7 @@
 # ADR-0012: OTS macOS staging companion — framing, threat boundary, and persistence model
 
 Status: Proposed (revised)
-Date: 2026-07-15, revised 2026-08-05
+Date: 2026-07-15, revised 2026-08-06 (incorporates external review + implementation findings)
 
 ## Context
 
@@ -15,7 +15,7 @@ Constraints that break the literal claim:
 - Swift `String` cannot be reliably zeroed: immutable, ARC-copied, backing store scattered.
 - The system pasteboard is the existential risk. Copy/paste writes to `NSPasteboard` (system-wide, persistent, scraped by clipboard managers, synced off-device via Universal Clipboard). If content arrives by paste, the "forgets" claim is already false before staging begins.
 
-The first implementation also revealed a persistence defect: the entire store was sealed in a single write at quit. `applicationWillTerminate` is not guaranteed (sudden termination at logout/shutdown, force quit, crash, power loss), so the design persisted exactly when nothing went wrong and lost everything in the cases persistence exists for. It also extended content lifetime indefinitely across OS restarts without acknowledging the disk artifact.
+The first implementation also revealed a persistence defect: the entire store was sealed in a single write at quit. `applicationWillTerminate` is not guaranteed (sudden termination at logout/shutdown, force quit, crash, power loss), so the design persisted exactly when nothing went wrong and lost everything in the cases persistence exists for. It also extended content lifetime indefinitely across OS restarts without acknowledging the disk artifact. Separately, the shipped ledger stored dead-page ink verbatim (`LedgerSegment::Ink`), plaintext head/tail excerpts in tombstones, and ink-derived titles — making the "ledger" an unbounded content archive under a long-lived key.
 
 ## Decision
 
@@ -29,6 +29,8 @@ The first implementation also revealed a persistence defect: the entire store wa
 
 The store splits into two files with different keys, lifetimes, and write policies. The module that writes staged content to disk is the only code path that touches secret ciphertext, and it is small enough to audit in one sitting.
 
+**Item identity.** Every sheet/chip gets a random 128-bit identifier (UUIDv4) at creation, minted in the Rust core. The sequential u64 counters may remain for internal ordering but never appear in the ledger or any persisted artifact. The UUID is stored plainly in ledger records — no digest, no salt: a random identifier is content-free by construction, which is simpler and strictly stronger than the previously specified salted digest (a digest over the shipped sequential counters would have been trivially enumerable).
+
 **Staged content — bounded to the boot session.**
 
 Key derivation: the content wrapping key is `HKDF(keychain_half, boot_half)`.
@@ -37,6 +39,8 @@ Key derivation: the content wrapping key is `HKDF(keychain_half, boot_half)`.
 - `boot_half`: random secret generated at first launch after boot, stored only in the per-user temp directory (`_CS_DARWIN_USER_TEMP_DIR`, mode 0600).
 
 Neither half alone unwraps content. **Crypto-erasure at reboot is the primary mechanism**: the temp dir is cleared at boot (observed empirically: on a test machine whose temp directory itself predated the boot by 90+ days, zero of 637 entries predated the current boot — a consistent but undocumented heuristic, hence the backstop below), so the derived key is unrecoverable after reboot without the app ever running. The keychain half exists so that a same-session process running as the user, reading the 0600 temp file, still gets nothing without passing the keychain ACL. **Deterministic backstop (policy)**: the sealed record embeds `kern.bootsessionuuid` — opaque and stable for the whole boot session, unlike `kern.boottime`, which the kernel re-derives when the calendar clock steps and which would spuriously discard content mid-session — and a mismatch at load discards the file and rotates both key halves unconditionally.
+
+*Keychain availability (implementation constraint).* `keychain-access-groups` is not a restricted entitlement: any Team-ID-backed signing identity gets the implicit app-identifier group. Ad-hoc-signed builds have no team identity and cannot use the data protection keychain. The credentials crate therefore attempts `SecItemAdd` with `kSecUseDataProtectionKeychain: true` (raw SecItem dictionaries; the pinned security-framework 2.11.1 does not expose this option) and on `errSecMissingEntitlement` (-34018) falls back to the file-based login keychain, logging the degradation once. Signed installs (install-app.sh) get the modern store; ad-hoc dev builds degrade gracefully. The fallback store weakens the keychain half only; the boot half and boot-UUID backstop are unaffected.
 
 Boot session is the chosen bound, considered against the user session: staged content therefore survives logout/login and fast user switching within a boot. The keychain half is lock-gated (`WhenUnlocked`), which covers the locked/switched-away window; binding to the login session was rejected as adding a second lifetime mechanism for marginal benefit. OS crash takes the identical path as restart: new boot session UUID, dead boot half, clean slate. No special case.
 
@@ -51,10 +55,21 @@ TTL:
 - Each item carries a TTL enforced primarily by a **live timer** in the resident process (a menu-bar app can stay up for weeks; a load-path-only check would never fire). The load path is the backstop for TTLs that elapsed while the process was not running. Expiry math uses the monotonic clock (with the existing sleep-aware handling), not wall clock, so stepping the system clock back does not extend an item's life.
 - On expiry, send, or discard: delete the file (overwrite-then-truncate best effort, not claimed as erasure — crypto-erasure via key rotation is the real mechanism), `zeroize` the in-memory buffer.
 
-**Ledger — long-lived, metadata-only, compliance-adjacent.**
+**Titles — a page concern, not a ledger concern.**
 
-- The ledger never contains content. It records events — item created, sealed, sent, expired, discarded — with timestamps, size class, and destination class. The correlation digest covers **the item's random identifier, never content or anything derived from content**, salted per install with the salt stored alongside the ledger key. This sentence is what makes "content-free by construction" structural: a digest over content would make low-entropy secrets brute-forceable from the ledger.
-- Sealed under its own long-lived key in the data protection keychain (same attributes as above, separate item).
+The title is a property of the page, set in the core at page creation and updated on edit, before any record reaches the ledger:
+
+- Derived from the first non-empty line of content with markdown syntax stripped, capped at 80 characters.
+- If the first line is empty (the common case), a placeholder `MMDD-HHmm` from the creation timestamp.
+- User-editable; an explicit user title is never overwritten by re-derivation.
+
+A content-derived title carried into the persistent ledger is content-derived data under the long-lived key. This is a deliberate, documented exception: first lines are often the secret's *label* ("prod DB credentials"), which is precisely what makes a ledger useful — but the derivation cap and strip exist so a one-line secret is not swallowed whole, and the exception narrows the ledger claim below.
+
+**Ledger — long-lived, metadata-plus-title, compliance-adjacent.**
+
+- The ledger stores **no content**: no ink, no excerpts, no tombstone head/tail. `LedgerSegment::Ink` and excerpt-bearing tombstones are removed; implementing this ADR deletes that behavior deliberately. If post-death recall of ink is ever wanted as a feature, it belongs in the content store under the boot-bound key with a TTL — never in the ledger.
+- A record carries: event type (created, sealed, sent, expired, discarded), timestamps, size class, destination class, the item's random UUID (plain), and the title. The title is the single content-derived field, per the exception above; the honest claim is "content-free by construction, except the capped title."
+- Sealed under its own long-lived key in the data protection keychain (same attributes and ad-hoc fallback as above, separate item).
 - Same write discipline: on mutation, debounced, atomic replace.
 
 **Settings** remain in `UserDefaults` (never secrets).
@@ -63,13 +78,14 @@ TTL:
 
 - All store paths, defaults domains, and keychain service strings derive from `Bundle.main.bundleIdentifier`; dev builds use a `.debug` bundle-id suffix per configuration, splitting Application Support, defaults, and keychain items structurally. Note: changing the bundle id changes keychain ACL identity, so existing dev keychain items become inaccessible — accepted as a one-time dev-only reset; no migration code.
 - Application Support directory named by bundle identifier per the File System Programming Guide convention (also preserves automatic container migration if App Sandbox is adopted).
-- Raw key material lives solely in the Rust core (`zeroize`/`secrecy`, opaque handles across FFI); Swift never holds secret bytes in `String`/`Data`.
+- **Secret-handling discipline, scoped.** Staged content never persists in Swift-owned types and crosses the FFI boundary at exactly two documented points: one ingress (plaintext as `const char*`, copied immediately into mlock'd Rust memory) and one egress (send). Transient Swift-side copies created by the input path and the FFI bridge are accepted residual exposure, already covered by the Context section's admission that Swift `String` cannot be zeroed. The API token is a credential, not staged content; its SecureField-bound `String` is platform-conventional and in scope for the keychain, not for the content discipline. Raw key material lives solely in the Rust core (`zeroize`/`secrecy`, opaque handles across FFI).
 - Input path unchanged: direct entry or drop target, not paste; concealed-type + clear on any pasteboard egress; mlock'd buffers while live; `explicit_bzero` on send, timeout, and quit.
 
 ## Consequences
 
+- Implementing this ADR removes shipped behavior: verbatim ink in the ledger, tombstone excerpts, and ink-derived record titles are deleted, replaced by the page-owned title. This is intentional feature removal, not regression.
 - A ciphertext artifact for staged content exists on disk during a boot session, plus unlinked prior generations until APFS reclaims them. Acknowledged, bounded residual exposure: unreadable without both key halves; both dead or rotated after reboot.
 - Crash-survival is a delivered feature; the loss window is the debounce interval.
-- The audit story is concrete: one small module writes secret ciphertext; its lifetime bound is one derivation (two key halves) and two mechanical checks (boot session UUID, TTL) an auditor can read in minutes; the ledger is provably content-free by construction (digest-of-identifier rule).
-- Accepted residual exposure (documented, not claimed away): swap under FileVault key, window-server capture surfaces, memory not provably zeroed at the language level, per-boot ciphertext and its unlinked generations as above, content surviving logout within a boot session (lock-gated).
+- The audit story is concrete: one small module writes secret ciphertext; its lifetime bound is one derivation (two key halves) and two mechanical checks (boot session UUID, TTL) an auditor can read in minutes; the ledger is content-free by construction except the capped, user-visible title field.
+- Accepted residual exposure (documented, not claimed away): swap under FileVault key, window-server capture surfaces, memory not provably zeroed at the language level (including transient Swift copies at the FFI ingress and SecureField), per-boot ciphertext and its unlinked generations, content surviving logout within a boot session (lock-gated), the ledger title as content-derived metadata, and the file-based keychain fallback on ad-hoc dev builds.
 - Brand tension resolved as before: a bounded, non-persistent-beyond-boot safer clipboard stays strictly better than current user behavior while keeping "in transition between origin and destination" as marketing rather than a security guarantee.
