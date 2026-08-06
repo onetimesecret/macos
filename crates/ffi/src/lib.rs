@@ -2,8 +2,9 @@
 //!
 //! A thin C ABI over the core, speaking interaction-model rev C:
 //! sheets of ink and sealed chips. It hands the shell **handles**
-//! (sheet and chip ids as `u64`), **non-secret metadata** (summary and
-//! ledger JSON, chip excerpts), and **action results** (booleans,
+//! (sheet and chip ids as `u64`), **non-secret metadata** (summary
+//! JSON with chip excerpts, and ledger JSON that is metadata only), and
+//! **action results** (booleans,
 //! counts) — and never a sealed byte. The boundary law, hard form
 //! (docs/spec/05, amended by rev C):
 //!
@@ -46,10 +47,11 @@
 //! ## Auditing the boundary
 //!
 //! Scan the exported functions: none returns sealed bytes. Summaries
-//! and ledger records carry excerpts and counts; sealing returns a chip
-//! id and its excerpt; copy-out returns a boolean. A test below seals a
-//! secret through every route and asserts the raw bytes never appear in
-//! any output.
+//! carry excerpts and counts; sealing returns a chip id and its
+//! excerpt; copy-out returns a boolean. Ledger records carry no
+//! content at all beyond the page-owned title, which the core caps.
+//! A test below seals a secret through every route and asserts the raw
+//! bytes never appear in any output.
 //!
 //! ## Codegen
 //!
@@ -74,8 +76,8 @@ use ots_client::Transport as _;
 use promotion::{Connection, PromoteOpts, Promoted, ladder_snapped_ttl, promote};
 
 use companion_core::{
-    Cause, ChipId, ChipMeta, LedgerSegment, Segment, Sheet, SheetId, SheetStore, SystemClock,
-    TTL_LADDER, Ttl,
+    ChipId, ChipMeta, DestinationClass, LedgerEvent, Segment, Sheet, SheetId, SheetStore,
+    SizeClass, SystemClock, TTL_LADDER, Ttl,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -290,8 +292,9 @@ fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
 }
 
 /// Release a handle created by [`companion_new`], wiping every sealed
-/// byte it holds — sheets and ledger alike; exit is total amnesia.
-/// Passing null is a no-op.
+/// byte it holds; exit is total amnesia for staged content. What the
+/// ledger recorded about it survives on disk, by design, and carries no
+/// content to wipe. Passing null is a no-op.
 ///
 /// # Safety
 /// `handle` must be a pointer returned by [`companion_new`] and not
@@ -366,6 +369,42 @@ pub unsafe extern "C" fn companion_sheet_move(
     };
     let index = usize::try_from(index).unwrap_or(usize::MAX);
     guard.store.move_sheet(SheetId::from_raw(id), index)
+}
+
+/// Name a page explicitly (the rename gesture in the tab context menu).
+///
+/// An empty or all-whitespace `title` clears the user override and
+/// re-derives the title from the page's own content, which is the
+/// escape hatch back to the default. Anything else is trimmed, capped
+/// at 80 characters, and from then on **sticky**: editing the page
+/// never overwrites it again (ADR-0012).
+///
+/// The title is the one piece of page-owned text that reaches the
+/// ledger, so a user who types a secret into the rename field has put
+/// it into the audit record. That is the documented exception, not an
+/// accident; the cap bounds it.
+///
+/// Returns whether the page existed.
+///
+/// # Safety
+/// `handle` must be a valid handle. `title` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_set_title(
+    handle: *mut CompanionHandle,
+    id: u64,
+    title: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(title) = (unsafe { cstr(title) }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.set_title(SheetId::from_raw(id), title)
 }
 
 // ---------------------------------------------------------------------------
@@ -598,6 +637,11 @@ pub unsafe extern "C" fn companion_sheet_sync_document(
 /// Copy-out does **not** consume the chip — multi-paste is a core
 /// moment. Returns whether the chip existed.
 ///
+/// A successful copy-out is an **auditable egress**: it leaves one
+/// `sent` record with destination `clipboard` in the ledger. The
+/// pasteboard is the boundary the app cannot follow the bytes past, so
+/// crossing it is the single most useful line in the record.
+///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
@@ -619,6 +663,9 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
         .pasteboard
         .write(bytes, kind, WriteOptions { concealed: true });
     guard.last_write = Some(receipt);
+    guard
+        .store
+        .record_sent(ChipId::from_raw(chip), DestinationClass::Clipboard);
     true
 }
 
@@ -693,9 +740,29 @@ pub unsafe extern "C" fn companion_sheets_json(handle: *mut CompanionHandle) -> 
     }
 }
 
-/// The ledger (⌘0): dead pages, newest first — dimmed ink and chip
-/// tombstones, session-bound, read-only. Sealed bytes were zeroized at
-/// death; a tombstone carries only the excerpt that always rendered.
+/// The ledger (⌘0): an audit trail of what the app did with items,
+/// newest first, read-only, held to a rolling 90-day window on the
+/// records' own wall-clock stamps.
+///
+/// **Metadata only.** A record names an item by its random
+/// [`ItemId`](companion_core::ItemId), in the clear: no digest, no
+/// salt, nothing to reverse and nothing to correlate against outside
+/// this machine (ADR-0012). It carries no ink, no excerpts and no
+/// tombstones: those are gone from this surface. The single piece of
+/// page-owned text on a record is `title`, which the core derives from
+/// the page's first line or the user set explicitly, capped at 80
+/// characters. Sizes are coarse buckets, never byte counts.
+///
+/// Each record is an object:
+///
+/// - `event`: `created` | `sealed` | `sent` | `expired` | `discarded`
+/// - `item`: the item's UUID, lowercase hyphenated, 36 characters
+/// - `title`: the host page's title at the moment of the event
+/// - `at_ms`: when it happened, Unix epoch milliseconds
+/// - `created_at_ms`: when the item's page was created, epoch ms
+/// - `size`: `tiny` | `small` | `medium` | `large` | `huge`
+/// - `destination`: `none` | `clipboard` | `link`
+///
 /// The caller owns the returned string and must release it with
 /// [`companion_string_free`]. Returns null on error.
 ///
@@ -709,31 +776,34 @@ pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> 
     let Ok(guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
-    let now = guard.store.now();
     let records: Vec<serde_json::Value> = guard
         .store
         .ledger()
         .map(|record| {
-            let segments: Vec<serde_json::Value> = record
-                .segments()
-                .iter()
-                .map(|segment| match segment {
-                    LedgerSegment::Ink(text) => serde_json::json!({ "ink": text }),
-                    LedgerSegment::Tombstone { excerpt } => {
-                        serde_json::json!({ "tombstone": excerpt })
-                    }
-                })
-                .collect();
             serde_json::json!({
-                "cause": match record.cause() {
-                    Cause::Expired => "expired",
-                    Cause::Closed => "closed",
+                "event": match record.event() {
+                    LedgerEvent::Created => "created",
+                    LedgerEvent::Sealed => "sealed",
+                    LedgerEvent::Sent => "sent",
+                    LedgerEvent::Expired => "expired",
+                    LedgerEvent::Discarded => "discarded",
                 },
+                "item": record.item().to_string(),
                 "title": record.title(),
-                "age_ms": u64::try_from(
-                    now.saturating_duration_since(record.died_at()).as_millis()
-                ).unwrap_or(u64::MAX),
-                "segments": segments,
+                "at_ms": record.at_wall_ms(),
+                "created_at_ms": record.item_created_wall_ms(),
+                "size": match record.size() {
+                    SizeClass::Tiny => "tiny",
+                    SizeClass::Small => "small",
+                    SizeClass::Medium => "medium",
+                    SizeClass::Large => "large",
+                    SizeClass::Huge => "huge",
+                },
+                "destination": match record.destination() {
+                    DestinationClass::None => "none",
+                    DestinationClass::Clipboard => "clipboard",
+                    DestinationClass::OneTimeLink => "link",
+                },
             })
         })
         .collect();
@@ -741,6 +811,24 @@ pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> 
         Ok(json) => into_c_string(json),
         Err(_) => ptr::null_mut(),
     }
+}
+
+/// Throw the whole ledger away: the user-facing "clear the ledger"
+/// affordance. The records outlive the boot session by design, so a way
+/// to end them on demand is part of that bargain. In-memory only: the
+/// shell must save afterwards for the empty ledger to reach the file.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_ledger_clear(handle: *mut CompanionHandle) {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return;
+    };
+    guard.store.clear_ledger();
 }
 
 /// A live page's document, replayed for a shell rebuilding its editor
@@ -838,10 +926,13 @@ pub unsafe extern "C" fn companion_expire_due(handle: *mut CompanionHandle) -> u
 // Persistence — the sealed state file (JIT encryption at quit)
 // ---------------------------------------------------------------------------
 
-/// Save the whole store — sheets, sealed chips, clocks, the ledger — to
+/// Save the staged content (sheets, sealed chips, clocks) to
 /// `path`, encrypted with ChaCha20-Poly1305 under a 32-byte key that
 /// rests in the OS credential store (`state-key` account, minted on
-/// first save). Only ciphertext touches disk; the plaintext snapshot is
+/// first save). The ledger is **not** in this file; it has its own,
+/// under its own key ([`companion_ledger_save`]), because content is
+/// boot-session-bound and the audit record is not.
+/// Only ciphertext touches disk; the plaintext snapshot is
 /// wiped before this returns. The write is atomic (temp file + rename)
 /// and owner-only. The shell calls this on every mutation, debounced,
 /// and again at quit to flush what is still pending (ADR-0012); the
@@ -879,8 +970,11 @@ pub unsafe extern "C" fn companion_persist_save(
 
 /// Restore the store from a state file [`companion_persist_save`]
 /// wrote: decrypt (the key comes from the credential store — never
-/// minted here), replace the store's sheets and ledger, and drain every
+/// minted here), replace the store's sheets, and drain every
 /// countdown by the wall time that passed while the app was closed.
+/// The ledger is untouched here; it loads through
+/// [`companion_ledger_restore`], and either call may succeed while the
+/// other fails.
 /// Pages that came due while away expire into the ledger immediately.
 /// Meant for startup, before the first page is created. Returns whether
 /// a state was restored — false covers "no file yet" (a fresh start,
@@ -922,6 +1016,90 @@ pub unsafe extern "C" fn companion_persist_restore(
     // Deaths-while-away leave ledger residue like any other death.
     guard.store.expire_due();
     true
+}
+
+/// Save the ledger to `path`, sealed with ChaCha20-Poly1305 under its
+/// **own** 32-byte key (`ledger-key` account, minted on first save) and
+/// its own envelope magic. That key is deliberately long-lived: it is
+/// not derived from the boot session, so the audit record survives the
+/// reboot that discards staged content, and a state-key rotation must
+/// never touch it. The write is atomic (temp file + rename) and
+/// owner-only. Call it beside [`companion_persist_save`], behind the
+/// same debounce.
+///
+/// The bytes are metadata plus capped titles, never content, so this
+/// file resting on disk indefinitely is the intended outcome rather
+/// than a leak. Returns success.
+///
+/// # Safety
+/// `handle` must be a valid handle; `path` a valid NUL-terminated
+/// UTF-8 path whose parent directory exists.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_ledger_save(
+    handle: *mut CompanionHandle,
+    path: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(path) = (unsafe { cstr(path) }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    let Some(key) = persist::ensure_ledger_key(guard.credentials.as_ref()) else {
+        return false;
+    };
+    let snapshot = guard.store.ledger_snapshot();
+    let Some(sealed) = persist::seal_ledger(&key, &snapshot) else {
+        return false;
+    };
+    persist::write_private(Path::new(path), &sealed)
+}
+
+/// Restore the ledger from a file [`companion_ledger_save`] wrote:
+/// decrypt under `ledger-key` (loaded, never minted), replace the
+/// in-memory records, and drop everything outside the rolling 90-day
+/// retention window as it loads. Nothing here ages a countdown and
+/// nothing expires a page: a ledger record is stamped absolutely and is
+/// already dead history.
+///
+/// Meant for startup, beside [`companion_persist_restore`] and
+/// independent of it. Returns whether a ledger was restored. False
+/// covers "no file yet" (a fresh start, not an error) as well as a
+/// missing key, failed authentication, or a damaged snapshot.
+///
+/// # Safety
+/// `handle` must be a valid handle; `path` a valid NUL-terminated
+/// UTF-8 path.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_ledger_restore(
+    handle: *mut CompanionHandle,
+    path: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(path) = (unsafe { cstr(path) }) else {
+        return false;
+    };
+    let Ok(file) = std::fs::read(path) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    let Some(key) = persist::load_ledger_key(guard.credentials.as_ref()) else {
+        return false;
+    };
+    let Some(plaintext) = persist::open_ledger(&key, &file) else {
+        return false;
+    };
+    let Some(wall_ms) = wall_now_ms() else {
+        return false;
+    };
+    guard.store.restore_ledger(&plaintext, wall_ms).is_ok()
 }
 
 /// Unix epoch milliseconds, for stamping and aging snapshots.
@@ -1313,7 +1491,8 @@ fn load_token(credentials: &dyn CredentialStore) -> Option<Zeroizing<String>> {
 /// After a successful conceal: the link onto the clipboard (transient —
 /// the link is a capability, not the secret, but no pasteboard manager
 /// should archive it), the receipt id onto the chip when one was
-/// promoted, and the result JSON out.
+/// promoted, one `sent` record with destination `link` in the ledger,
+/// and the result JSON out.
 fn finish_promotion(
     handle: &CompanionHandle,
     promoted: Promoted,
@@ -1334,6 +1513,7 @@ fn finish_promotion(
         guard
             .store
             .mark_chip_promoted(chip, promoted.receipt_id.clone());
+        guard.store.record_sent(chip, DestinationClass::OneTimeLink);
     }
     into_c_string(serde_json::json!({ "ok": true, "receipt_id": promoted.receipt_id }).to_string())
 }
@@ -1403,9 +1583,9 @@ pub unsafe extern "C" fn companion_string_free(s: *mut c_char) {
 // ---------------------------------------------------------------------------
 
 /// One page's non-secret snapshot. There is deliberately no field that
-/// could carry sealed content — excerpts live in the chip JSON returned
-/// at seal time and in ledger tombstones, and those are the only
-/// rendering sealed content ever gets.
+/// could carry sealed content. The excerpt lives in the chip JSON
+/// returned at seal time and in the replayed document, and that is the
+/// only rendering sealed content ever gets. The ledger has none of it.
 fn summary_json(sheet: &Sheet, now: std::time::Instant) -> serde_json::Value {
     let remaining = sheet.remaining(now);
     serde_json::json!({
@@ -1722,12 +1902,15 @@ mod tests {
             assert!(!sheets.contains("n0ts3cr3t"), "{sheets}");
             assert!(sheets.contains("\"chip_count\":2"), "{sheets}");
 
-            // And after death, the ledger holds tombstones — excerpts,
-            // struck through shell-side, never bytes.
+            // And after death, the ledger holds metadata only: no
+            // bytes, and no excerpt of them either. The excerpt was the
+            // last rendering of sealed content that reached this
+            // surface, and it is gone.
             assert!(companion_sheet_close(handle, sheet));
             let ledger = take_json(companion_ledger_json(handle));
             assert!(!ledger.contains("n0ts3cr3t"), "{ledger}");
-            assert!(ledger.contains("tombstone"), "{ledger}");
+            assert!(!ledger.contains("tombstone"), "{ledger}");
+            assert!(!ledger.contains("excerpt"), "{ledger}");
 
             companion_free(handle);
         }
@@ -2129,24 +2312,261 @@ mod tests {
         }
     }
 
+    /// The ledger inverted at ADR-0012: it used to carry a dead page's
+    /// ink verbatim, and now it carries none of it. What it does carry
+    /// is the item's random UUID in the clear, with no digest and no
+    /// salt, because an identifier that cannot be reversed is exactly
+    /// what an auditor needs to line two records up.
     #[test]
-    fn ledger_json_reports_cause_title_and_age() {
+    fn ledger_json_reports_events_uuids_and_never_ink() {
+        // The second line never becomes a title, so nothing in the
+        // ledger has any excuse to be carrying it.
+        let token = "zzsentinelzz-second-line-of-ink";
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            let doc = format!(r#"[{{"ink": "errands\n{token}"}}]"#);
+            assert!(companion_sheet_sync_document(
+                handle,
+                sheet,
+                cstring(&doc).as_ptr()
+            ));
+            assert!(companion_sheet_close(handle, sheet));
+            let ledger = take_json(companion_ledger_json(handle));
+
+            assert!(
+                !ledger.contains(token),
+                "page ink reached the ledger: {ledger}"
+            );
+            assert!(!ledger.contains("segments"), "{ledger}");
+            assert!(!ledger.contains("age_ms"), "{ledger}");
+            assert!(ledger.contains("\"event\":\"discarded\""), "{ledger}");
+            assert!(ledger.contains("\"event\":\"created\""), "{ledger}");
+            // The title is the one documented content exception, and it
+            // is the derived first line, capped core-side.
+            assert!(ledger.contains("\"title\":\"errands\""), "{ledger}");
+
+            let records: Vec<serde_json::Value> = serde_json::from_str(&ledger).unwrap();
+            assert_eq!(records.len(), 2, "one birth, one death: {ledger}");
+            for record in &records {
+                let item = record["item"].as_str().unwrap();
+                assert_eq!(item.len(), 36, "not a hyphenated UUID: {item}");
+                assert_eq!(
+                    item.split('-').map(str::len).collect::<Vec<_>>(),
+                    vec![8, 4, 4, 4, 12],
+                    "not a hyphenated UUID: {item}"
+                );
+                assert!(
+                    item.chars().all(|c| c == '-' || c.is_ascii_hexdigit()),
+                    "not a hyphenated UUID: {item}"
+                );
+                assert!(record["at_ms"].as_u64().unwrap() > 0, "{record}");
+                assert_eq!(record["destination"], "none");
+                assert!(record["size"].is_string());
+            }
+            // Both records name the same page.
+            assert_eq!(records[0]["item"], records[1]["item"]);
+
+            companion_ledger_clear(handle);
+            assert_eq!(take_json(companion_ledger_json(handle)), "[]");
+            companion_free(handle);
+        }
+    }
+
+    /// The rename gesture: an explicit title outlives every later edit,
+    /// and an empty one hands the page back to derivation.
+    #[test]
+    fn set_title_sticks_until_cleared() {
         let handle = handle();
         unsafe {
             let sheet = companion_sheet_new(handle);
             assert!(companion_sheet_sync_document(
                 handle,
                 sheet,
-                cstring(r#"[{"ink": "errands\nmilk"}]"#).as_ptr()
+                cstring(r#"[{"ink": "first line"}]"#).as_ptr()
             ));
-            assert!(companion_sheet_close(handle, sheet));
-            let ledger = take_json(companion_ledger_json(handle));
-            assert!(ledger.contains("\"cause\":\"closed\""), "{ledger}");
-            assert!(ledger.contains("\"title\":\"errands\""), "{ledger}");
-            assert!(ledger.contains("age_ms"), "{ledger}");
-            assert!(ledger.contains("milk"), "ink survives dimmed: {ledger}");
+            let sheets = take_json(companion_sheets_json(handle));
+            assert!(sheets.contains("\"title\":\"first line\""), "{sheets}");
+
+            assert!(companion_sheet_set_title(
+                handle,
+                sheet,
+                cstring("  Payroll Q3  ").as_ptr()
+            ));
+            let sheets = take_json(companion_sheets_json(handle));
+            assert!(
+                sheets.contains("\"title\":\"Payroll Q3\""),
+                "trimmed: {sheets}"
+            );
+
+            // Editing the page no longer renames it.
+            assert!(companion_sheet_sync_document(
+                handle,
+                sheet,
+                cstring(r#"[{"ink": "a different first line"}]"#).as_ptr()
+            ));
+            let sheets = take_json(companion_sheets_json(handle));
+            assert!(sheets.contains("\"title\":\"Payroll Q3\""), "{sheets}");
+
+            // The empty submission clears the override and re-derives.
+            assert!(companion_sheet_set_title(
+                handle,
+                sheet,
+                cstring("   ").as_ptr()
+            ));
+            let sheets = take_json(companion_sheets_json(handle));
+            assert!(
+                sheets.contains("\"title\":\"a different first line\""),
+                "{sheets}"
+            );
+
+            assert!(!companion_sheet_set_title(
+                handle,
+                424_242,
+                cstring("nobody").as_ptr()
+            ));
+            assert!(!companion_sheet_set_title(handle, sheet, ptr::null()));
+            assert!(!companion_sheet_set_title(
+                ptr::null_mut(),
+                sheet,
+                cstring("x").as_ptr()
+            ));
             companion_free(handle);
         }
+    }
+
+    /// Both egress routes are auditable, and they are distinguishable:
+    /// the pasteboard is a boundary the app cannot follow the bytes
+    /// past, and a one-time link is a capability handed to someone else.
+    #[test]
+    fn a_copy_out_and_a_promotion_each_leave_one_sent_record() {
+        let secret = format!("ghp_{}", "n0ts3cr3t".repeat(4));
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            let chip_json = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring(&secret).as_ptr(),
+            ));
+            let chip: serde_json::Value = serde_json::from_str(&chip_json).unwrap();
+            let chip_id = chip["chip_id"].as_u64().unwrap();
+
+            assert!(companion_chip_copy_out(handle, chip_id));
+
+            // The promotion's network half is exercised elsewhere; what
+            // this test owns is the record the successful finish leaves.
+            let result = take_json(finish_promotion(
+                &*handle,
+                Promoted {
+                    link: "https://example.invalid/secret/abc".to_string(),
+                    receipt_id: "rcpt-1".to_string(),
+                },
+                Some(ChipId::from_raw(chip_id)),
+            ));
+            assert!(result.contains("\"ok\":true"), "{result}");
+
+            let ledger = take_json(companion_ledger_json(handle));
+            assert!(!ledger.contains("n0ts3cr3t"), "{ledger}");
+            let records: Vec<serde_json::Value> = serde_json::from_str(&ledger).unwrap();
+            let sent: Vec<&serde_json::Value> =
+                records.iter().filter(|r| r["event"] == "sent").collect();
+            assert_eq!(sent.len(), 2, "one per egress: {ledger}");
+            // Newest first.
+            assert_eq!(sent[0]["destination"], "link");
+            assert_eq!(sent[1]["destination"], "clipboard");
+            assert_eq!(sent[0]["item"], sent[1]["item"], "the same chip");
+            // 40 bytes: a coarse bucket, never a byte count.
+            assert_eq!(sent[0]["size"], "tiny");
+
+            // A chip that is gone reports nothing.
+            assert!(companion_chip_delete(handle, chip_id));
+            assert!(!companion_chip_copy_out(handle, chip_id));
+            let ledger = take_json(companion_ledger_json(handle));
+            let records: Vec<serde_json::Value> = serde_json::from_str(&ledger).unwrap();
+            assert_eq!(
+                records.iter().filter(|r| r["event"] == "sent").count(),
+                2,
+                "a refused copy-out must not record an egress: {ledger}"
+            );
+            companion_free(handle);
+        }
+    }
+
+    /// A fresh directory under the system temp dir, removed on success;
+    /// a failure leaves it behind for inspection.
+    fn scratch_dir() -> std::path::PathBuf {
+        let mut tag = [0u8; 8];
+        ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut tag).unwrap();
+        let dir = std::env::temp_dir().join(format!(
+            "companion-ledger-seam-{:016x}",
+            u64::from_be_bytes(tag)
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        dir
+    }
+
+    /// The ledger is its own file under its own long-lived key, so it
+    /// comes back across a relaunch even though the content file is
+    /// boot-session-bound. The two files are not interchangeable.
+    #[test]
+    fn ledger_save_and_restore_round_trip_through_a_scratch_file() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let ledger_path = dir.join("ledger.sealed");
+        let state_path = dir.join("state.sealed");
+        let c_ledger = cstring(ledger_path.to_str().unwrap());
+        let c_state = cstring(state_path.to_str().unwrap());
+        let secret = "hunter2-the-sealed-bytes";
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            let sheet = companion_sheet_new(first);
+            let _ = take_json(companion_sheet_seal_text(
+                first,
+                sheet,
+                cstring(secret).as_ptr(),
+            ));
+            assert!(companion_sheet_sync_document(
+                first,
+                sheet,
+                cstring(r##"[{"ink": "# deploy notes\n"}]"##).as_ptr()
+            ));
+            assert!(companion_persist_save(first, c_state.as_ptr()));
+            assert!(companion_ledger_save(first, c_ledger.as_ptr()));
+            let before = take_json(companion_ledger_json(first));
+            companion_free(first);
+
+            let raw = std::fs::read(&ledger_path).unwrap();
+            assert!(
+                !raw.windows(secret.len()).any(|w| w == secret.as_bytes()),
+                "sealed bytes visible in the ledger file"
+            );
+
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(companion_ledger_restore(second, c_ledger.as_ptr()));
+            assert_eq!(take_json(companion_ledger_json(second)), before);
+            // The two files are sealed under different keys with
+            // different associated data; neither opens as the other.
+            assert!(!companion_persist_restore(second, c_ledger.as_ptr()));
+            assert!(!companion_ledger_restore(second, c_state.as_ptr()));
+            companion_free(second);
+
+            // A different keychain opens nothing, and a path with no
+            // file is a fresh start rather than an error.
+            let stranger = handle();
+            assert!(!companion_ledger_restore(stranger, c_ledger.as_ptr()));
+            assert!(!companion_ledger_restore(
+                stranger,
+                cstring(dir.join("absent.sealed").to_str().unwrap()).as_ptr()
+            ));
+            assert!(!companion_ledger_restore(
+                ptr::null_mut(),
+                c_ledger.as_ptr()
+            ));
+            companion_free(stranger);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -2155,6 +2575,15 @@ mod tests {
             assert_eq!(companion_sheet_new(ptr::null_mut()), 0);
             assert!(companion_sheets_json(ptr::null_mut()).is_null());
             assert!(companion_ledger_json(ptr::null_mut()).is_null());
+            companion_ledger_clear(ptr::null_mut()); // no-op
+            assert!(!companion_ledger_save(
+                ptr::null_mut(),
+                cstring("/nowhere").as_ptr()
+            ));
+            assert!(!companion_ledger_restore(
+                ptr::null_mut(),
+                cstring("/nowhere").as_ptr()
+            ));
             assert!(!companion_sheet_close(ptr::null_mut(), 1));
             assert!(!companion_chip_copy_out(ptr::null_mut(), 1));
             assert!(!companion_chip_delete(ptr::null_mut(), 1));

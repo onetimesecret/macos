@@ -4,7 +4,9 @@
  * This is the *entire* surface a non-Rust shell may call, speaking
  * interaction-model rev C (docs/spec/04): sheets of ink and sealed
  * chips. By construction it hands out only opaque handles, non-secret
- * JSON metadata (titles, excerpts, counts), and action results — never
+ * JSON metadata (titles, counts, and a chip's mechanical excerpt in the
+ * sheet-facing JSON; the ledger carries no excerpt at all), and action
+ * results. It never hands out
  * a sealed byte. Sealed-byte movement stays in Rust: the sealed paste
  * reads the pasteboard in the core, copy-out writes it in the core.
  * The one deliberate plaintext-in entry is companion_sheet_seal_text()
@@ -97,9 +99,28 @@ bool companion_sheet_move(CompanionHandle *handle, uint64_t id,
                           uint64_t index);
 
 /*
+ * Name a page explicitly (the rename gesture in the tab context menu).
+ * An empty or all-whitespace title clears the user override and
+ * re-derives from the page's own content, the way back to the default.
+ * Anything else is trimmed, capped at 80 characters, and from then on
+ * sticky: editing the page never overwrites it again. Returns whether
+ * the page existed.
+ *
+ * The title is the one piece of page-owned text that reaches the
+ * ledger, so a secret typed into the rename field lands in the audit
+ * record. Documented exception, not an accident; the cap bounds it.
+ */
+bool companion_sheet_set_title(CompanionHandle *handle, uint64_t id,
+                               const char *title);
+
+/*
  * JSON array of non-secret page summaries, in visible (tab) order.
  * Free with companion_string_free(). Fields per page:
- *   id, title (first typed line, heading markup stripped; "untitled"),
+ *   id, title (the page's own name): the first non-empty line of its
+ *     ink with markdown markup stripped, capped at 80 characters;
+ *     "MMDD-HHmm" from the page's creation stamp in LOCAL time while
+ *     there is no ink to derive from; or whatever
+ *     companion_sheet_set_title() last set, which then sticks,
  *   rung_code (CompanionRung), rung_label ("8h"), remaining_ms,
  *   remaining_label ("3h 40m"), spoken_remaining ("about 3 hours
  *   remaining" — the VoiceOver value), fraction_remaining (0.0..1.0),
@@ -196,6 +217,10 @@ char *companion_sheet_document_json(CompanionHandle *handle, uint64_t sheet);
  * transient AND concealed (a chip is sealed by definition). Does not
  * consume the chip — multi-paste is a core moment. Returns whether the
  * chip existed.
+ *
+ * A successful copy-out is an auditable egress: it leaves one "sent"
+ * ledger record with destination "clipboard". The pasteboard is the
+ * boundary the app cannot follow the bytes past.
  */
 bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
 
@@ -251,25 +276,83 @@ bool companion_sheet_pause_press(CompanionHandle *handle, uint64_t id);
 /* ------------------------------------------------------------------ */
 
 /*
- * The ledger (cmd-0): dead pages, newest first — read-only, capped at
- * the newest dozen, carried across relaunch only inside the sealed
- * state file. Free with companion_string_free(). Fields per record:
- *   cause ("expired"|"closed"), title, age_ms (since death),
- *   segments: array of {"ink": "…"} | {"tombstone": "<excerpt>"} in
- *   document order. Sealed bytes were zeroized at death; a tombstone
- *   carries only the excerpt that always rendered (struck through
- *   shell-side, labelled "zeroized").
+ * The ledger (cmd-0): an audit trail of what the app did with items,
+ * newest first, read-only, held to a rolling 90-day window on the
+ * records' own wall-clock stamps. It is METADATA ONLY: no ink, no
+ * excerpts, no tombstones. Free with companion_string_free().
+ *
+ * Fields per record:
+ *   event         "created"|"sealed"|"sent"|"expired"|"discarded"
+ *   item          the item's random UUID, lowercase hyphenated 8-4-4-
+ *                 4-12, 36 characters. PLAIN: no digest and no salt,
+ *                 because an identifier an auditor cannot line up
+ *                 across records is not an audit trail
+ *   title         the host page's title at the moment of the event.
+ *                 The only page-owned text on a record, capped at 80
+ *                 characters core-side
+ *   at_ms         when it happened, Unix epoch milliseconds
+ *   created_at_ms when the item's page was created, epoch milliseconds
+ *   size          "tiny"|"small"|"medium"|"large"|"huge", a coarse
+ *                 bucket, never a byte count
+ *   destination   "none"|"clipboard"|"link"
+ *
+ * Records accumulate on ordinary use, not only on death: a page's
+ * creation, each seal, each egress, each discard. Do not assume an
+ * empty ledger for a session in which pages were merely opened.
  */
 char *companion_ledger_json(CompanionHandle *handle);
+
+/*
+ * Throw the whole ledger away: the user-facing "clear the ledger"
+ * affordance. The records outlive the boot session by design, so a way
+ * to end them on demand is part of that bargain. In-memory only: call
+ * companion_ledger_save() afterwards for the empty ledger to reach the
+ * file.
+ */
+void companion_ledger_clear(CompanionHandle *handle);
+
+/*
+ * Save the ledger to `path`, sealed with ChaCha20-Poly1305 under its
+ * OWN 32-byte key ("ledger-key" account, minted on first save) and its
+ * own envelope magic. That key is SEPARATE and LONG-LIVED: it is not
+ * derived from the boot session, unlike the content key. That is the whole
+ * point: the audit record survives the reboot that discards staged
+ * content, and a content-key rotation must never touch it. The two
+ * files are not interchangeable; each magic is its own AEAD associated
+ * data, so presenting one as the other fails authentication.
+ *
+ * The bytes are metadata plus capped titles, never content, so this
+ * file resting on disk indefinitely is the intended outcome. The write
+ * is atomic and owner-only. Call it beside companion_persist_save(),
+ * behind the same debounce. Returns success.
+ */
+bool companion_ledger_save(CompanionHandle *handle, const char *path);
+
+/*
+ * Restore the ledger from a file companion_ledger_save() wrote:
+ * decrypt under "ledger-key" (loaded, never minted), replace the
+ * in-memory records, and drop everything outside the rolling 90-day
+ * window as it loads. Nothing here ages a countdown and nothing
+ * expires a page. Call at startup, beside and independent of
+ * companion_persist_restore(): either may succeed while the other
+ * fails, and the shell should licence each save on its own restore.
+ * Returns whether a ledger was restored. False covers "no file yet"
+ * (a fresh start, not an error) as well as a missing key, failed
+ * authentication, or a damaged snapshot.
+ */
+bool companion_ledger_restore(CompanionHandle *handle, const char *path);
 
 /* ------------------------------------------------------------------ */
 /* Persistence: the sealed state file                                  */
 /* ------------------------------------------------------------------ */
 
 /*
- * Save the whole store — sheets, sealed chips, clocks, the ledger — to
- * `path`, encrypted (ChaCha20-Poly1305) under a 32-byte key resting in
- * the OS credential store ("state-key" account, minted on first save).
+ * Save the staged content (sheets, sealed chips, clocks) to `path`,
+ * encrypted (ChaCha20-Poly1305) under a 32-byte key resting in the OS
+ * credential store ("state-key" account, minted on first save). The
+ * ledger is NOT in this file; it has its own file under its own key
+ * (companion_ledger_save), because content is boot-session-bound and
+ * the audit record is not.
  * Only ciphertext touches disk; the write is atomic and owner-only.
  * Call at quit — nothing saves on its own. Returns success.
  */
@@ -277,7 +360,7 @@ bool companion_persist_save(CompanionHandle *handle, const char *path);
 
 /*
  * Restore from a state file companion_persist_save() wrote: decrypt,
- * replace the store's sheets and ledger, and drain every countdown by
+ * replace the store's sheets, and drain every countdown by
  * the wall time that passed while the app was closed; pages that came
  * due while away expire into the ledger immediately. Call at startup,
  * before creating the first page. Returns whether a state was restored

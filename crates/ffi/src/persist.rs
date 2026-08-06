@@ -1,7 +1,19 @@
-//! The sealed state file: encryption on every mutation, decryption at
+//! The sealed files: encryption on every mutation, decryption at
 //! launch.
 //!
-//! The core hands over its plaintext snapshot
+//! There are two of them, with two keys and two envelope magics, and
+//! the split is the point (ADR-0012).
+//!
+//! - **The state file** holds staged content: sheets, sealed chips,
+//!   clocks. It rests under `state-key` and is bound to the boot
+//!   session, so a reboot discards it.
+//! - **The ledger file** holds metadata plus the capped, page-owned
+//!   title, never content. It rests under `ledger-key`, a single
+//!   long-lived keychain half that is deliberately not boot-bound: an
+//!   audit record that vanished on every restart would not be an audit
+//!   record.
+//!
+//! The core hands over each plaintext snapshot
 //! ([`companion_core::persist`]) only ever inside a [`Zeroizing`]
 //! buffer; this module seals it with ChaCha20-Poly1305 under a 32-byte
 //! key that rests in the OS credential store (the same store, and the
@@ -13,8 +25,13 @@
 //! authenticate, decrypt in place, feed the core, and the plaintext
 //! wipes on drop.
 //!
-//! The file is useless without the keychain item, and the item names
-//! nothing without the file — deleting either forgets everything.
+//! Each envelope's magic is its own AEAD associated data, so a ledger
+//! file presented as a state file (or the reverse) fails authentication
+//! rather than misparsing.
+//!
+//! A file is useless without its keychain item, and an item names
+//! nothing without its file: deleting either forgets everything on
+//! that side.
 
 use std::io::Write;
 use std::path::Path;
@@ -24,28 +41,44 @@ use ring::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, NONCE_LEN, Nonce, UnboundK
 use ring::rand::{SecureRandom, SystemRandom};
 use zeroize::Zeroizing;
 
-/// Magic + version prefix of the sealed file. A format change gets a
-/// new final byte; the prefix doubles as the AEAD's associated data, so
-/// a relabeled file fails authentication rather than misparsing.
+/// Magic + version prefix of the sealed state file. A format change
+/// gets a new final byte; the prefix doubles as the AEAD's associated
+/// data, so a relabeled file fails authentication rather than
+/// misparsing.
 const FILE_MAGIC: &[u8; 8] = b"OTSSEAL1";
+
+/// Magic + version prefix of the sealed ledger file. Distinct from
+/// [`FILE_MAGIC`] on purpose: it is the associated data too, so the two
+/// envelopes cannot be swapped even by a caller holding both keys.
+const LEDGER_MAGIC: &[u8; 8] = b"OTSLEDG1";
 
 /// The credential-store account holding the state key (scoped by the
 /// store's service, `com.onetimesecret.companion`).
 const STATE_KEY_ACCOUNT: &str = "state-key";
 
+/// The credential-store account holding the ledger key.
+///
+/// This is a SINGLE keychain half and is deliberately not run through
+/// the two-half boot-session HKDF the content key gets: its whole
+/// purpose is to outlive the boot session. A boot-session mismatch
+/// discards staged content and rotates the content halves; the ledger
+/// key must survive that untouched, so any future `rotate_key_halves`
+/// must never touch `ledger-key`.
+const LEDGER_KEY_ACCOUNT: &str = "ledger-key";
+
 /// ChaCha20-Poly1305 key length.
 const KEY_LEN: usize = 32;
 
-/// The state key for saving: load it, or mint and store a fresh one on
-/// first save. `None` when the backend refuses (locked keychain, denied
-/// ACL) or a stored key has the wrong shape — refuse rather than guess.
-pub(crate) fn ensure_state_key(credentials: &dyn CredentialStore) -> Option<Zeroizing<Vec<u8>>> {
-    match credentials.load(STATE_KEY_ACCOUNT) {
+/// A key for saving: load it, or mint and store a fresh one on first
+/// save. `None` when the backend refuses (locked keychain, denied ACL)
+/// or a stored key has the wrong shape: refuse rather than guess.
+fn ensure_key_for(credentials: &dyn CredentialStore, account: &str) -> Option<Zeroizing<Vec<u8>>> {
+    match credentials.load(account) {
         Ok(key) if key.len() == KEY_LEN => Some(key),
         Err(CredentialError::NotFound) => {
             let mut key = Zeroizing::new(vec![0u8; KEY_LEN]);
             SystemRandom::new().fill(&mut key).ok()?;
-            credentials.store(STATE_KEY_ACCOUNT, &key).ok()?;
+            credentials.store(account, &key).ok()?;
             Some(key)
         }
         // A wrongly-shaped key or a refusing backend (locked keychain,
@@ -54,21 +87,43 @@ pub(crate) fn ensure_state_key(credentials: &dyn CredentialStore) -> Option<Zero
     }
 }
 
-/// The state key for restoring: load only, never mint — with no key
-/// there is nothing decryptable, and a fresh key would only orphan the
-/// file that exists.
-pub(crate) fn load_state_key(credentials: &dyn CredentialStore) -> Option<Zeroizing<Vec<u8>>> {
-    match credentials.load(STATE_KEY_ACCOUNT) {
+/// A key for restoring: load only, never mint. With no key there is
+/// nothing decryptable, and a fresh key would only orphan the file that
+/// exists.
+fn load_key_for(credentials: &dyn CredentialStore, account: &str) -> Option<Zeroizing<Vec<u8>>> {
+    match credentials.load(account) {
         Ok(key) if key.len() == KEY_LEN => Some(key),
         _ => None,
     }
 }
 
+/// The state key for saving ([`ensure_key_for`] on `state-key`).
+pub(crate) fn ensure_state_key(credentials: &dyn CredentialStore) -> Option<Zeroizing<Vec<u8>>> {
+    ensure_key_for(credentials, STATE_KEY_ACCOUNT)
+}
+
+/// The state key for restoring ([`load_key_for`] on `state-key`).
+pub(crate) fn load_state_key(credentials: &dyn CredentialStore) -> Option<Zeroizing<Vec<u8>>> {
+    load_key_for(credentials, STATE_KEY_ACCOUNT)
+}
+
+/// The ledger key for saving. Long-lived by design: see
+/// [`LEDGER_KEY_ACCOUNT`].
+pub(crate) fn ensure_ledger_key(credentials: &dyn CredentialStore) -> Option<Zeroizing<Vec<u8>>> {
+    ensure_key_for(credentials, LEDGER_KEY_ACCOUNT)
+}
+
+/// The ledger key for restoring. Load only, never mint.
+pub(crate) fn load_ledger_key(credentials: &dyn CredentialStore) -> Option<Zeroizing<Vec<u8>>> {
+    load_key_for(credentials, LEDGER_KEY_ACCOUNT)
+}
+
 /// Seal a plaintext snapshot into file bytes:
 /// `magic ‖ nonce ‖ ciphertext ‖ tag`, nonce fresh per save. The
 /// plaintext copy inside the work buffer is overwritten by the
-/// ciphertext in place, so sealing strands nothing.
-pub(crate) fn seal_state(key: &[u8], plaintext: &[u8]) -> Option<Vec<u8>> {
+/// ciphertext in place, so sealing strands nothing. `magic` is the
+/// associated data as well as the prefix.
+fn seal_with(magic: &[u8; 8], key: &[u8], plaintext: &[u8]) -> Option<Vec<u8>> {
     let key = aead_key(key)?;
     let mut nonce_bytes = [0u8; NONCE_LEN];
     SystemRandom::new().fill(&mut nonce_bytes).ok()?;
@@ -76,12 +131,12 @@ pub(crate) fn seal_state(key: &[u8], plaintext: &[u8]) -> Option<Vec<u8>> {
     body.extend_from_slice(plaintext);
     key.seal_in_place_append_tag(
         Nonce::assume_unique_for_key(nonce_bytes),
-        Aad::from(FILE_MAGIC),
+        Aad::from(magic),
         &mut body,
     )
     .ok()?;
-    let mut file = Vec::with_capacity(FILE_MAGIC.len() + NONCE_LEN + body.len());
-    file.extend_from_slice(FILE_MAGIC);
+    let mut file = Vec::with_capacity(magic.len() + NONCE_LEN + body.len());
+    file.extend_from_slice(magic);
     file.extend_from_slice(&nonce_bytes);
     file.extend_from_slice(&body);
     Some(file)
@@ -89,10 +144,11 @@ pub(crate) fn seal_state(key: &[u8], plaintext: &[u8]) -> Option<Vec<u8>> {
 
 /// Open a sealed file back into its plaintext snapshot, authenticated
 /// end to end. The returned buffer wipes on drop; `None` for anything
-/// that is not our file sealed under this key, bit for bit.
-pub(crate) fn open_state(key: &[u8], file: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+/// that is not a file of this `magic` sealed under this key, bit for
+/// bit.
+fn open_with(magic: &[u8; 8], key: &[u8], file: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
     let key = aead_key(key)?;
-    let rest = file.strip_prefix(FILE_MAGIC.as_slice())?;
+    let rest = file.strip_prefix(magic.as_slice())?;
     if rest.len() < NONCE_LEN {
         return None;
     }
@@ -102,11 +158,31 @@ pub(crate) fn open_state(key: &[u8], file: &[u8]) -> Option<Zeroizing<Vec<u8>>> 
     // the front; truncate to its length and let the wipe cover the rest.
     let mut buffer = Zeroizing::new(ciphertext.to_vec());
     let plaintext_len = key
-        .open_in_place(nonce, Aad::from(FILE_MAGIC), &mut buffer)
+        .open_in_place(nonce, Aad::from(magic), &mut buffer)
         .ok()?
         .len();
     buffer.truncate(plaintext_len);
     Some(buffer)
+}
+
+/// Seal a content snapshot under the state envelope.
+pub(crate) fn seal_state(key: &[u8], plaintext: &[u8]) -> Option<Vec<u8>> {
+    seal_with(FILE_MAGIC, key, plaintext)
+}
+
+/// Open a content snapshot from the state envelope.
+pub(crate) fn open_state(key: &[u8], file: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+    open_with(FILE_MAGIC, key, file)
+}
+
+/// Seal a ledger snapshot under the ledger envelope.
+pub(crate) fn seal_ledger(key: &[u8], plaintext: &[u8]) -> Option<Vec<u8>> {
+    seal_with(LEDGER_MAGIC, key, plaintext)
+}
+
+/// Open a ledger snapshot from the ledger envelope.
+pub(crate) fn open_ledger(key: &[u8], file: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+    open_with(LEDGER_MAGIC, key, file)
 }
 
 /// Write `bytes` to `path` atomically (temp file, fsync, rename, fsync
@@ -226,6 +302,50 @@ mod tests {
             );
         }
         assert!(open_state(&key, &sealed[..sealed.len() - 1]).is_none());
+
+        // The ledger envelope is the same construction and must hold to
+        // the same standard.
+        let sealed = seal_ledger(&key, b"one audit record").unwrap();
+        for index in 0..sealed.len() {
+            let mut bent = sealed.clone();
+            bent[index] ^= 0x01;
+            assert!(
+                open_ledger(&key, &bent).is_none(),
+                "a flipped bit at {index} still opened the ledger"
+            );
+        }
+        assert!(open_ledger(&key, &sealed[..sealed.len() - 1]).is_none());
+    }
+
+    /// The ledger rests under its own long-lived credential, so a
+    /// content key that is rotated or discarded leaves the audit record
+    /// readable, and a store that has only ever saved content cannot
+    /// pretend to hold a ledger key.
+    #[test]
+    fn the_ledger_key_is_a_separate_credential() {
+        let store = InMemoryCredentialStore::default();
+        let state = ensure_state_key(&store).unwrap();
+        let ledger = ensure_ledger_key(&store).unwrap();
+        assert_ne!(&*state, &*ledger, "one key sealing both files");
+        assert_eq!(&*ensure_ledger_key(&store).unwrap(), &*ledger, "stable");
+
+        let content_only = InMemoryCredentialStore::default();
+        ensure_state_key(&content_only).unwrap();
+        assert!(
+            load_ledger_key(&content_only).is_none(),
+            "restore must never mint a ledger key"
+        );
+    }
+
+    /// The magic is the associated data, so the envelopes cannot be
+    /// swapped even by a caller holding the right key.
+    #[test]
+    fn a_ledger_file_cannot_be_opened_as_a_state_file() {
+        let key = key();
+        let as_ledger = seal_ledger(&key, b"one audit record").unwrap();
+        assert!(open_state(&key, &as_ledger).is_none());
+        let as_state = seal_state(&key, b"staged content").unwrap();
+        assert!(open_ledger(&key, &as_state).is_none());
     }
 
     #[test]
