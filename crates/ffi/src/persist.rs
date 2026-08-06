@@ -104,15 +104,15 @@ pub(crate) fn open_state(key: &[u8], file: &[u8]) -> Option<Zeroizing<Vec<u8>>> 
     Some(buffer)
 }
 
-/// Write `bytes` to `path` atomically (temp file, fsync, rename) with
-/// owner-only permissions. The temp file carries a fresh random suffix
-/// and is opened create-new, so concurrent savers never truncate each
-/// other's half-written file and anything planted at the name — a
-/// crash leftover, a symlink — is an open error, never followed. Two
-/// writers still race on the final rename (last one wins the state
-/// file), but every write lands whole or not at all. The content is
-/// ciphertext, but a state file readable by other accounts would still
-/// be a needless gift.
+/// Write `bytes` to `path` atomically (temp file, fsync, rename, fsync
+/// the directory) with owner-only permissions. The temp file carries a
+/// fresh random suffix and is opened create-new, so concurrent savers
+/// never truncate each other's half-written file and anything planted
+/// at the name — a crash leftover, a symlink — is an open error, never
+/// followed. Two writers still race on the final rename (last one wins
+/// the state file), but every write lands whole or not at all. The
+/// content is ciphertext, but a state file readable by other accounts
+/// would still be a needless gift.
 pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> bool {
     let mut suffix = [0u8; 8];
     if SystemRandom::new().fill(&mut suffix).is_err() {
@@ -137,7 +137,23 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> bool {
         let _ = std::fs::remove_file(tmp);
         return false;
     }
+    sync_parent_dir(path);
     true
+}
+
+/// Flush the directory entry the rename just created. The file's own
+/// bytes are already durable, but a power loss before the directory is
+/// written can still lose the name that points at them, leaving the
+/// previous state file (or none). Best effort: a parent we cannot open
+/// or sync, and a bare filename with no directory component at all,
+/// leave the bytes written either way, so neither unwrites the save.
+fn sync_parent_dir(path: &Path) {
+    let Some(parent) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) else {
+        return;
+    };
+    if let Ok(dir) = std::fs::File::open(parent) {
+        let _ = dir.sync_all();
+    }
 }
 
 fn aead_key(key: &[u8]) -> Option<LessSafeKey> {
@@ -257,7 +273,29 @@ mod tests {
             std::fs::read(&target).unwrap(),
             b"second save, longer than the first"
         );
+        // The post-rename directory sync must not turn a landed write
+        // into a failure, nor strand the temp file it just renamed.
+        assert!(write_private(&target, b"third"));
+        assert_eq!(std::fs::read(&target).unwrap(), b"third");
         assert_eq!(temp_litter(&dir), Vec::<std::ffi::OsString>::new());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_bare_filename_writes_without_a_parent_to_sync() {
+        let dir = scratch_dir();
+        // The only test that touches the process-wide working
+        // directory; every other one names its files absolutely, so a
+        // parallel run sees nothing move.
+        let previous = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        let wrote = write_private(Path::new("state.sealed"), b"sealed bytes");
+        let contents = std::fs::read(dir.join("state.sealed"));
+        let litter = temp_litter(&dir);
+        std::env::set_current_dir(&previous).unwrap();
+        assert!(wrote, "a path with no directory component still writes");
+        assert_eq!(contents.unwrap(), b"sealed bytes");
+        assert_eq!(litter, Vec::<std::ffi::OsString>::new());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

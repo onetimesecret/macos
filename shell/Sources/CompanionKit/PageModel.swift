@@ -50,6 +50,61 @@ public struct PromotionDraft {
     }
 }
 
+/// The hold ADR-0012 requires while the in-memory store differs from
+/// the sealed file. macOS may kill a cooperating process outright at
+/// logout or shutdown (no quit, no delegate, no flush), which is
+/// exactly the window a debounced write leaves open, so a dirty buffer
+/// takes the hold and only a write that settled gives it back.
+///
+/// Counted, because mutations arrive far faster than writes: a burst of
+/// marks stacks into one hold, and the single write that follows
+/// discharges all of them at once. Only the 0 → 1 and the n → 0
+/// transitions reach `ProcessInfo`, and the depth floors at zero, so
+/// the disable/enable pair can never go unbalanced. The two effects are
+/// injectable so the balance is testable without AppKit and without
+/// moving the test runner's own termination policy.
+public struct SuddenTerminationLatch {
+    /// Outstanding holds. Never negative.
+    public private(set) var depth = 0
+
+    private let disable: () -> Void
+    private let enable: () -> Void
+
+    public init(
+        disable: @escaping () -> Void = { ProcessInfo.processInfo.disableSuddenTermination() },
+        enable: @escaping () -> Void = { ProcessInfo.processInfo.enableSuddenTermination() }
+    ) {
+        self.disable = disable
+        self.enable = enable
+    }
+
+    /// Take a hold. Only the first one reaches `ProcessInfo`.
+    public mutating func acquire() {
+        depth += 1
+        if depth == 1 { disable() }
+    }
+
+    /// Give back every outstanding hold. One write flushes the whole
+    /// buffer, so it answers every mark that asked for the hold;
+    /// releasing one at a time would leave the process unkillable with
+    /// nothing left to write. Releasing an empty latch is a no-op
+    /// rather than an unbalanced enable.
+    public mutating func release() {
+        guard depth > 0 else { return }
+        depth = 0
+        enable()
+    }
+
+    /// Discharge on a save's outcome. A refused write leaves the buffer
+    /// dirty with nowhere to go, and dropping the hold there would let
+    /// logout kill the process over exactly the pages the hold exists
+    /// to protect, so a failure keeps it.
+    public mutating func settle(saved: Bool) {
+        guard saved else { return }
+        release()
+    }
+}
+
 /// The view model both form factors share: it wraps the core client and
 /// publishes non-secret summaries. It never holds a sealed byte — the
 /// page's live ink belongs to the editor's text storage; chips are ids
@@ -168,6 +223,18 @@ public final class PageModel: ObservableObject {
     // touch of these properties already runs on the main actor.
     private nonisolated(unsafe) var eventTimer: Timer?
     private nonisolated(unsafe) var redrawTimer: Timer?
+    private nonisolated(unsafe) var saveTimer: Timer?
+
+    /// Held from the first mutation after a write until the next write
+    /// settles the file (ADR-0012). Not `nonisolated(unsafe)`: unlike
+    /// the timers, nothing outside the main actor touches it.
+    private var terminationLatch = SuddenTerminationLatch()
+
+    /// The debounce ADR-0012 states as a tradeoff rather than a free
+    /// win: shorter shrinks the crash-loss window, longer leaves fewer
+    /// ciphertext generations behind on disk (each atomic replace
+    /// unlinks the prior one, it does not erase it).
+    private static let saveDebounce: TimeInterval = 2.0
 
     /// `defaults` is injectable so tests can point at a throwaway
     /// domain; both shipping form factors take their own standard one
@@ -204,12 +271,12 @@ public final class PageModel: ObservableObject {
     /// The licence `saveState` requires, granted separately from
     /// `stateLoaded`: a restore that failed over an *existing* file —
     /// Keychain key denied or missing, damaged snapshot — leaves the
-    /// session usable but unlicensed, so quitting cannot overwrite
+    /// session usable but unlicensed, so no write in it can overwrite
     /// yesterday's sealed file with this session's consolation page.
     private var saveLicence = false
 
     /// The persistence trail in the unified log: restore refusals and
-    /// quit-save failures, never content — the file is ciphertext and
+    /// save failures, never content — the file is ciphertext and
     /// these lines carry only what happened to it.
     private let logger: Logger
 
@@ -219,7 +286,7 @@ public final class PageModel: ObservableObject {
     /// spirit of prompting only on use) and drains the wall-clock time
     /// the app was closed, expiring what didn't survive it. A missing
     /// file is a fresh start; an existing file that refuses to open
-    /// still gets a working page but forfeits the quit-save licence,
+    /// still gets a working page but forfeits the save licence,
     /// keeping the refusal recoverable. Either way a page awaits — the
     /// surface never opens onto nothing.
     public func loadStateIfNeeded() {
@@ -255,18 +322,50 @@ public final class PageModel: ObservableObject {
     private static let extidKey = "connection.extid"
     private static let shareDomainKey = "connection.shareDomain"
 
-    /// JIT encryption at quit: seal the whole store — live pages,
-    /// chips, the ledger — into the state file in one core call.
-    /// Nothing touches disk while the app runs. A session that never
-    /// loaded must not overwrite yesterday's file with its empty store;
-    /// nor may one whose restore was refused (`saveLicence`).
+    /// A mutation landed: the store now differs from the sealed file.
+    /// Take the sudden-termination hold and restart the debounce, so a
+    /// burst of edits costs one write shortly after the last of them
+    /// rather than one write per keystroke. This, not the quit-time
+    /// flush, is the mechanism (ADR-0012): a crash, a force quit or a
+    /// logout loses at most the debounce window.
+    ///
+    /// A session with no licence to write takes no hold: there is no
+    /// write it could be waiting for, and blocking shutdown over a
+    /// buffer that may never reach disk buys nothing.
+    private func markDirty() {
+        guard stateLoaded, saveLicence else { return }
+        terminationLatch.acquire()
+        saveTimer?.invalidate()
+        let timer = Timer(timeInterval: Self.saveDebounce, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.saveState() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        saveTimer = timer
+    }
+
+    /// Seal the whole store — live pages, chips, the ledger — into the
+    /// state file in one core call. The debounce's far end, and the
+    /// same call the terminate path makes: quit cancels whatever the
+    /// debounce still holds and writes once, so it flushes rather than
+    /// duplicating a write. A session that never loaded must not
+    /// overwrite yesterday's file with its empty store; nor may one
+    /// whose restore was refused (`saveLicence`).
+    ///
+    /// Main-actor and synchronous by design. The terminate path answers
+    /// `applicationShouldTerminate` with this result, so the write must
+    /// have happened by the time it returns, and running it here is
+    /// also what makes two overlapping writes to the same path
+    /// impossible.
     ///
     /// Returns true when the file is settled — written, or deliberately
     /// left alone. False means the save was attempted and refused: this
-    /// session's pages will not survive the quit, and the caller should
-    /// say so before the process goes.
+    /// session's pages are not on disk, the sudden-termination hold
+    /// stays taken, and the caller should say so before the process
+    /// goes.
     @discardableResult
     public func saveState() -> Bool {
+        saveTimer?.invalidate()
+        saveTimer = nil
         guard stateLoaded, saveLicence else { return true }
         let url = formFactor.stateFileURL
         try? FileManager.default.createDirectory(
@@ -274,14 +373,19 @@ public final class PageModel: ObservableObject {
         )
         let saved = client.persistSave(to: url.path)
         if !saved {
-            logger.error("quit-save refused; the sealed state file was not rewritten")
+            logger.error("save refused; the sealed state file was not rewritten")
         }
+        terminationLatch.settle(saved: saved)
         return saved
     }
 
     deinit {
         eventTimer?.invalidate()
         redrawTimer?.invalidate()
+        // A pending write dies with the model. In practice the model
+        // outlives everything but the process, and the process's own
+        // exit routes through `saveState` first.
+        saveTimer?.invalidate()
     }
 
     // MARK: State
@@ -517,6 +621,8 @@ public final class PageModel: ObservableObject {
         if id != 0, let rung = formFactor.defaultRung {
             _ = client.setRung(sheet: id, rung: rung)
         }
+        // A refusal at the cap changed nothing; only a real page is dirt.
+        if id != 0 { markDirty() }
         return id
     }
 
@@ -602,6 +708,7 @@ public final class PageModel: ObservableObject {
             promotion = nil
         }
         _ = client.closeSheet(id: id)
+        markDirty()
         refresh()
     }
 
@@ -660,18 +767,21 @@ public final class PageModel: ObservableObject {
     /// ⌘-number map follows.
     public func move(_ id: UInt64, to index: Int) {
         _ = client.moveSheet(id: id, to: UInt64(max(0, index)))
+        markDirty()
         refresh()
     }
 
     /// Click the countdown label: next rung, clock reset (docs/spec/04).
     public func cycleRung(_ id: UInt64) {
         _ = client.cycleRung(sheet: id)
+        markDirty()
         refresh()
     }
 
     /// Double-click the tab: hold the clock 1h, then top-up to 24h.
     public func pause(_ id: UInt64) {
         _ = client.pausePress(sheet: id)
+        markDirty()
         refresh()
     }
 
@@ -693,6 +803,7 @@ public final class PageModel: ObservableObject {
             return nil
         }
         pasteboardOffer = false
+        markDirty()
         flash(
             cleared
                 ? "sealed; the clipboard is clear"
@@ -726,7 +837,7 @@ public final class PageModel: ObservableObject {
         notice = nil
         guard let sheet = selection else { return nil }
         let chip = client.sealFromDrag(sheet: sheet)
-        if chip == nil { flash("nothing to seal") }
+        if chip == nil { flash("nothing to seal") } else { markDirty() }
         return chip
     }
 
@@ -735,7 +846,9 @@ public final class PageModel: ObservableObject {
     public func sealText(_ text: String) -> ChipInfo? {
         notice = nil
         guard let sheet = selection else { return nil }
-        return client.sealText(sheet: sheet, text)
+        let chip = client.sealText(sheet: sheet, text)
+        if chip != nil { markDirty() }
+        return chip
     }
 
     /// Copy a chip back out — the core writes the pasteboard itself,
@@ -759,6 +872,7 @@ public final class PageModel: ObservableObject {
         else { return }
         let accepted = client.syncDocument(sheet: sheet, json: json)
         assert(accepted, "core rejected a document snapshot")
+        if accepted { markDirty() }
         refresh()
     }
 
@@ -808,6 +922,10 @@ public final class PageModel: ObservableObject {
     }
 
     private func finishPromotion(_ outcome: PromotionOutcome, for target: PromotionDraft.Target) {
+        // Before the staleness guard: the round trip moved core-side
+        // state (a receipt in the ledger either way), whether or not
+        // the draft that started it is still standing.
+        markDirty()
         // The confirmation may have been dismissed — or reopened on a
         // different target — while the call was out; a stale outcome
         // must not land on someone else's draft. (On success the link
@@ -871,6 +989,7 @@ public final class PageModel: ObservableObject {
         // No storage holds it (already deleted editor-side): delete
         // directly so the bytes still die.
         _ = client.deleteChip(id: chipId)
+        markDirty()
         refresh()
     }
 
@@ -969,8 +1088,13 @@ public final class PageModel: ObservableObject {
             repeats: false
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.client.expireDue()
-                self?.refresh() // re-arms for the next event
+                guard let self else { return }
+                // Expiry is a mutation nobody typed: pages and chips
+                // left the store on their own, and the sealed file is
+                // stale until this is written. Zero due means the timer
+                // fired on a hold lapse that settled nothing.
+                if self.client.expireDue() != 0 { self.markDirty() }
+                self.refresh() // re-arms for the next event
             }
         }
         RunLoop.main.add(timer, forMode: .common)
