@@ -2,6 +2,11 @@
 
 - **Status:** proposed
 - **Date:** 2026-07-15
+- **Superseded in part by:**
+  [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md),
+  which owns the persistence model and restates Decision 2 in the
+  narrower form recorded in Amendment 2 below. Everything else here
+  stands.
 
 ## Context
 
@@ -30,8 +35,18 @@ Choose terminology by what is defensible, not by what is aspirational:
    Security is a property of the product, not its headline.
 2. **Drop "verifiably forgets"** and any language implying runtime
    attestation of erasure. The defensible form is auditable discipline:
-   open source plus a reproducible build, so anyone can read the code
-   and confirm the behavior.
+   open source plus a reproducible *unsigned* build, so anyone can read
+   the code and rebuild what it produces. The shipped `.app` is not
+   bit-identical to anyone else's: codesigning writes a timestamp into
+   the signature and stapling adds a notarization ticket, and neither
+   comes from the source. So the claim stops one step earlier, at the
+   artifact that does come from the source. Each build script hashes
+   the assembled bundle before `codesign` touches it and writes
+   `dist/<name>.presig.sha256`; the recipe for reproducing that digest,
+   and the list of what it does and does not cover, is "Verifying a
+   build" in `SECURITY.md`. Do not claim bit-identical shipped binaries,
+   and do not claim the digest says anything about what happens in
+   memory at runtime.
 3. **Call it a safer clipboard, not a store.** Terminology sets the
    comparison class: a store gets judged against vaults and their
    guarantees, a safer clipboard against the system clipboard, a
@@ -196,3 +211,56 @@ safe retroactively, and the documentation should not imply otherwise.
 Record whether drag ingress is ever chosen while paste is available.
 If it is not, drag ergonomics do not warrant further build cost beyond
 what already exists, and that finding belongs here.
+
+## Amendment 2: the reproducibility claim is scoped to the unsigned artifact
+
+- **Status:** accepted, implemented 2026-08-05 (`scripts/build-app.sh`
+  and `scripts/build-backdrop.sh` emit `dist/<name>.presig.sha256`
+  before signing; CI fails if the file is empty)
+- **Date:** 2026-08-05
+
+Folded in here rather than filed separately, as with Amendment 1. The
+decision text above is edited in place; this section records what
+changed and why.
+
+### What changed
+
+Decision 2 read "open source plus a reproducible build." It now reads
+"open source plus a reproducible *unsigned* build," names the
+pre-signature digest as the artifact the claim points at, and forbids
+any statement that a shipped binary is bit-identical.
+
+ADR-0012 states the same narrowing as part of its framing section and
+is the authority on it. This ADR keeps the sentence people actually
+quote, so it must not be the version that is wrong.
+
+### Rationale
+
+"Reproducible build" was a claim about the file a user downloads, and
+that file cannot satisfy it. `codesign` embeds a signing timestamp,
+and a stapled notarization ticket arrives from Apple after the fact.
+Two builds of the same commit therefore differ, and the difference is
+in the part of the bundle nobody can derive from source. A claim that
+is refuted by running the shipping pipeline twice is exactly the kind
+of claim the Consequences section above says does not ship.
+
+The bundle as assembled, before any signature touches it, is a
+function of the source and the toolchain. Hashing it costs one line in
+each build script, and it is the strongest honest version of the
+sentence: read the code, rebuild at the same commit, compare a digest
+we published.
+
+### What this does not claim
+
+The digest covers the unsigned payload. It says nothing about erasure,
+zeroization, or anything else that happens while the app runs; those
+claims are covered by the code and by the scope note in `SECURITY.md`,
+and no hash can carry them.
+
+It is also not a way to check a downloaded `.app` byte for byte. The
+signature is embedded inside the Mach-O rather than sitting beside it,
+so there is no reversible path from a signed bundle back to the bytes
+that were hashed. Verifying a download means checking the signature and
+the notarization; verifying the source means rebuilding and comparing
+the digest. Those are two separate checks and the documentation should
+not blur them.

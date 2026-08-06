@@ -26,6 +26,64 @@ installed copy matters for two reasons:
 Re-run `install-app.sh` to update. `--no-launch` installs without
 opening the apps afterward.
 
+## One-time reset when you update to the ADR-0012 build
+
+Everything an existing install kept lands on the floor at once with
+this update. Nothing migrates, deliberately: the formats broke and old
+files are discarded rather than read. Send or copy out anything you
+still need **before** you install, because after the update the old
+files are unreadable, not merely inconvenient.
+
+What changes:
+
+- **The state directory moves.** It was
+  `~/Library/Application Support/CompanionApp` and
+  `.../CompanionBackdrop`. It is now named for the running build's
+  bundle id with a `.noindex` suffix, so
+  `~/Library/Application Support/com.onetimesecret.companion.noindex`
+  and `...companion.backdrop.noindex` (a debug build gets
+  `...companion.debug.noindex`). The suffix keeps Spotlight out; the
+  directory is also excluded from Time Machine. Nothing copies the old
+  directories over, and nothing deletes them either; remove them by
+  hand once you accept that what is in them is unreadable.
+- **The file format changed twice over.** Both the sealed envelope and
+  the snapshot inside it took a new version byte, so an old
+  `state.sealed` fails its magic check and is refused rather than
+  misparsed. Copying the old file into the new directory does not help
+  and actively hurts: a restore that fails over a file that exists
+  withholds this session's save licence, so that session cannot write
+  either.
+- **Staged content no longer survives a reboot, by design.** The
+  content key is derived from two halves: one in the Keychain, one in
+  the per-user temp directory that macOS clears at boot. Without the
+  temp half there is no key, and the sealed record also carries the
+  boot session UUID, so a file from an earlier boot is discarded and
+  both halves are rotated. Restarting the Mac is now a clean slate for
+  staged pages. Quit and reopen inside one boot session still restores.
+- **Signed builds carry a new entitlement.** `keychain-access-groups`
+  is what the data protection keychain requires, and only a real
+  signing identity can carry it. Ad-hoc builds skip it and log a single
+  fallback line to the login keychain. The item names did not change,
+  so on a stable `CODESIGN_IDENTITY` your Keychain items are still
+  reachable; on a changed identity expect confirmation prompts, and
+  answering them once is the whole fix.
+- **Debug builds live under a `.debug` bundle id**, moved from `.dev`.
+  macOS keys almost everything on the bundle id, so the old `.dev`
+  defaults domain, its TCC grants (screen recording, accessibility)
+  and any login item registered under it are orphaned, not migrated.
+  Re-grant what a dev build needs; delete the old `.dev` defaults
+  domain and login item entry if they bother you.
+- **The ledger is a separate file now**, `ledger.sealed`, beside the
+  state file and under its own long-lived key, and it holds metadata
+  plus a capped page title only. The old ledger stored page ink
+  verbatim; that content is gone with the old file and is not coming
+  back. Retention is a rolling 90 days.
+- **Re-enter the API token where the Keychain no longer answers.** A
+  debug build asks under a new service name, so its token is gone. An
+  installed release build whose signing identity did not change keeps
+  its token; if Settings shows "paste your API token" instead of
+  "•••• stored in the Keychain", that is the answer.
+
 ## Which build am I on
 
 Right-click the tray icon: the version line (disabled, informational)
@@ -43,20 +101,27 @@ whatever the system actually granted.
 
 ## Quitting
 
-Cmd+Q or the tray's Quit item. That is the only path that saves state,
-so it is also the only safe way to end a session you want back
-tomorrow. If the app is unresponsive, `scripts/quit-app.sh` escalates
-AppleScript quit to SIGTERM to SIGKILL, in that order, and says which
-level it needed. Only the first one saves anything.
+Cmd+Q or the tray's Quit item. That flushes whatever write is still
+pending, so it is the tidiest way to end a session. It is no longer the
+only path that saves anything. If the app is unresponsive,
+`scripts/quit-app.sh` escalates AppleScript quit to SIGTERM to SIGKILL,
+in that order, and says which level it needed. The first level flushes;
+the other two lose at most the last couple of seconds of edits.
 
 ## Trusting persistence across a quit and reopen
 
-Short version: trust it for a normal quit, do not trust it for
-anything else. Content is sealed to disk (ChaCha20-Poly1305, key in
-the Keychain) exactly once, at quit, and restored once, on first
-reveal after launch. A force quit, a crash, or a kill skips the save
-entirely and loses whatever was live at that moment, by design, not by
-bug.
+Trust it within a boot session, including for a crash. Content is
+sealed to disk (ChaCha20-Poly1305) on every mutation, debounced by
+about two seconds, and written atomically. The debounce is measured
+from the first edit of a burst rather than the last, so typing steadily
+does not defer the write indefinitely, and the app holds off sudden
+termination while the buffer is dirty. A crash, a force quit or a
+logout therefore costs you one debounce window, not the session.
+Restore runs once, on the first reveal after launch.
+
+Across a reboot, expect nothing back. That is the design, not a bug:
+half the content key lives in a temp directory the system clears at
+boot. See the one-time reset section above for the mechanism.
 
 If a save at quit fails (locked Keychain, full disk, a failed rename)
 you get an alert with the choice to quit anyway or stay and retry.
