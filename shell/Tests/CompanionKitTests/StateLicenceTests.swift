@@ -24,6 +24,137 @@ final class StateLicenceTests: XCTestCase {
         // overwrite it with this session's consolation page.
         XCTAssertFalse(PageModel.grantsSaveLicence(fileExists: true, restored: false))
     }
+
+    /// What `loadStateIfNeeded` computes at launch, in one call: the two
+    /// files are asked the same question independently, and the pair it
+    /// returns is what the two writes are then gated on.
+    private func licences(
+        contentExists: Bool, contentRestored: Bool,
+        ledgerExists: Bool, ledgerRestored: Bool
+    ) -> (content: Bool, ledger: Bool) {
+        (
+            PageModel.grantsSaveLicence(fileExists: contentExists, restored: contentRestored),
+            PageModel.grantsSaveLicence(fileExists: ledgerExists, restored: ledgerRestored)
+        )
+    }
+
+    func testARefusedLedgerDoesNotCostTheSessionItsPages() {
+        // Two files, two keys, two failure modes. A ledger that will not
+        // open says nothing about the state file: the session keeps
+        // writing its pages and simply stops extending a trail it can no
+        // longer read.
+        let granted = licences(
+            contentExists: true, contentRestored: true,
+            ledgerExists: true, ledgerRestored: false
+        )
+        XCTAssertTrue(granted.content)
+        XCTAssertFalse(granted.ledger)
+    }
+
+    func testARefusedStateFileDoesNotCostTheSessionItsTrail() {
+        // The other direction, which is the one a single shared licence
+        // would get wrong: the pages would not open, the audit trail
+        // did, and the trail must not be dropped because something else
+        // broke.
+        let granted = licences(
+            contentExists: true, contentRestored: false,
+            ledgerExists: true, ledgerRestored: true
+        )
+        XCTAssertFalse(granted.content)
+        XCTAssertTrue(granted.ledger)
+    }
+
+    func testAFirstRunLicensesBothFiles() {
+        // Neither file exists yet: nothing on disk to protect, so the
+        // session owns both futures. This is the ordinary first launch.
+        let granted = licences(
+            contentExists: false, contentRestored: false,
+            ledgerExists: false, ledgerRestored: false
+        )
+        XCTAssertTrue(granted.content)
+        XCTAssertTrue(granted.ledger)
+    }
+
+    func testAMissingLedgerBesideARestoredStateFileIsLicensed() {
+        // The first launch after this change, and every launch after the
+        // ledger has been cleared: state.sealed opens, ledger.sealed is
+        // not there at all. A missing file is a fresh start, not a
+        // refusal, so the trail starts recording again immediately.
+        let granted = licences(
+            contentExists: true, contentRestored: true,
+            ledgerExists: false, ledgerRestored: false
+        )
+        XCTAssertTrue(granted.content)
+        XCTAssertTrue(granted.ledger)
+    }
+}
+
+/// How the two licences meet at the write: `saveState` returns the
+/// conjunction of both writes and hands that same value to the latch, so
+/// a refused ledger write holds the process open exactly as a refused
+/// content write does. The latch is the observable half of that rule, so
+/// these drive it directly rather than through a model that would need a
+/// core, a Keychain and a real directory.
+final class LedgerSaveSettlementTests: XCTestCase {
+    private final class EffectLog {
+        var disables = 0
+        var enables = 0
+    }
+
+    private func makeLatch(_ log: EffectLog) -> SuddenTerminationLatch {
+        SuddenTerminationLatch(
+            disable: { log.disables += 1 },
+            enable: { log.enables += 1 }
+        )
+    }
+
+    func testARefusedLedgerWriteKeepsTheHold() {
+        // The pages reached disk and the trail did not. The store still
+        // differs from what is on disk, so logout must keep waiting: a
+        // ledger failure is not a lesser failure, it is the record of
+        // what this app did with the user's secrets.
+        let log = EffectLog()
+        var latch = makeLatch(log)
+        latch.acquire()
+        let contentSaved = true
+        let ledgerSaved = false
+        latch.settle(saved: contentSaved && ledgerSaved)
+        XCTAssertEqual(latch.depth, 1)
+        XCTAssertEqual(log.enables, 0)
+    }
+
+    func testAWithheldLedgerLicenceStillLetsTheContentWriteSettle() {
+        // No licence is not a failure. The ledger file is deliberately
+        // left alone, that leg of the write reports true, and the hold
+        // turns purely on whether the content write itself succeeded.
+        let log = EffectLog()
+        var latch = makeLatch(log)
+        latch.acquire()
+        let ledgerSaved = true // withheld licence: nothing attempted
+        latch.settle(saved: true && ledgerSaved)
+        XCTAssertEqual(latch.depth, 0)
+        XCTAssertEqual(log.enables, 1)
+
+        // And the same withheld licence cannot rescue a content write
+        // that was refused.
+        latch.acquire()
+        latch.settle(saved: false && ledgerSaved)
+        XCTAssertEqual(latch.depth, 1)
+        XCTAssertEqual(log.enables, 1)
+    }
+
+    func testBothWritesLandingIsTheOnlyWayTheHoldComesBack() {
+        let log = EffectLog()
+        var latch = makeLatch(log)
+        latch.acquire()
+        latch.settle(saved: false && false)
+        latch.settle(saved: false && true)
+        latch.settle(saved: true && false)
+        XCTAssertEqual(latch.depth, 1)
+        latch.settle(saved: true && true)
+        XCTAssertEqual(latch.depth, 0)
+        XCTAssertEqual(log.enables, 1)
+    }
 }
 
 /// The debounce's two rules (ADR-0012), without a run loop: the loss

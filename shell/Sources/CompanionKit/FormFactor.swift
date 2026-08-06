@@ -59,6 +59,21 @@ public struct FormFactor: Sendable {
             .appendingPathComponent("state.sealed")
     }
 
+    /// Where the ledger rests: its own file under its own long-lived
+    /// key (ADR-0012), so discarding staged content at a new boot
+    /// session leaves the audit record intact. Metadata plus the
+    /// capped, page-owned title; never content.
+    ///
+    /// Deliberately a sibling of `state.sealed` rather than a second
+    /// location, so whatever the state directory grows (bundle-id
+    /// naming, `.noindex`, backup exclusion) covers the ledger without
+    /// a second directory-preparation path.
+    public var ledgerFileURL: URL {
+        stateFileURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("ledger.sealed")
+    }
+
     /// The summoned panel (docs/spec/04): accessory posture, the core's
     /// default Keychain service, the core's default opening rung.
     public static let panel = FormFactor(

@@ -16,6 +16,11 @@ import CompanionCore
 /// the summary.
 public struct SheetSummary: Identifiable, Codable, Hashable, Sendable {
     public let id: UInt64
+    /// The page's own name: the first non-empty line of its ink with
+    /// markdown markup stripped, capped at 80 characters; "MMDD-HHmm"
+    /// from the page's creation stamp in LOCAL time while there is no
+    /// ink to derive from; or whatever `setTitle(sheet:_:)` last set,
+    /// which then sticks and is never overwritten by editing.
     public let title: String
     public let rungCode: Int32
     public let rungLabel: String
@@ -59,48 +64,44 @@ public struct ChipInfo: Codable, Hashable, Sendable {
     }
 }
 
-/// One run of a dead page in the ledger: dimmed ink, or the tombstone
-/// of a chip (its excerpt; the bytes were zeroized at death).
-public enum LedgerRun: Hashable, Sendable {
-    case ink(String)
-    case tombstone(String)
-}
-
-/// A dead page, resting in the ledger (⌘0): session-bound, read-only.
-public struct LedgerEntry: Codable, Hashable, Sendable {
-    public let cause: String
+/// One line of the audit trail (⌘0): what the app did with one item,
+/// and when. The ledger outlives the boot session, so this type carries
+/// a guarantee, not a convention: **no field on it can hold content**.
+/// `event`, `size` and `destination` are closed vocabularies, `item` is
+/// a random UUID, the two stamps are numbers, and `title` is the one
+/// piece of page-owned text on the record, already capped at 80
+/// characters core-side. There is no ink field, no excerpt field and no
+/// tombstone field, so there is nothing here a renderer could
+/// accidentally reveal.
+public struct LedgerEntry: Codable, Hashable, Sendable, Identifiable {
+    /// created | sealed | sent | expired | discarded
+    public let event: String
+    /// The item's random UUID, lowercase hyphenated 8-4-4-4-12, 36
+    /// characters. Plain, with no digest and no salt: an identifier an
+    /// auditor cannot line up across records is not an audit trail.
+    public let item: String
+    /// The host page's title at the moment of the event, capped at 80
+    /// characters core-side. A secret typed into the rename field does
+    /// land here; that is a documented exception, and the cap bounds it.
     public let title: String
-    public let ageMs: UInt64
-    private let segments: [[String: SegmentValue]]
+    /// When it happened, Unix epoch milliseconds.
+    public let atMs: UInt64
+    /// When the item's page was created, Unix epoch milliseconds.
+    public let createdAtMs: UInt64
+    /// tiny | small | medium | large | huge: a coarse bucket, never a
+    /// byte count.
+    public let size: String
+    /// none | clipboard | link
+    public let destination: String
+
+    /// One item can produce several records, so identity is the item,
+    /// the event, and the instant together.
+    public var id: String { "\(item)-\(event)-\(atMs)" }
 
     enum CodingKeys: String, CodingKey {
-        case cause, title, segments
-        case ageMs = "age_ms"
-    }
-
-    /// The wire carries `{"ink": "…"}` or `{"tombstone": "…"}` objects
-    /// — one key, string value either way (companion_ffi.h).
-    enum SegmentValue: Codable, Hashable {
-        case string(String)
-
-        init(from decoder: Decoder) throws {
-            let container = try decoder.singleValueContainer()
-            self = .string(try container.decode(String.self))
-        }
-
-        func encode(to encoder: Encoder) throws {
-            var container = encoder.singleValueContainer()
-            if case .string(let value) = self { try container.encode(value) }
-        }
-    }
-
-    /// The page's runs, in document order.
-    public var runs: [LedgerRun] {
-        segments.compactMap { object in
-            if case .string(let text)? = object["ink"] { return .ink(text) }
-            if case .string(let excerpt)? = object["tombstone"] { return .tombstone(excerpt) }
-            return nil
-        }
+        case event, item, title, size, destination
+        case atMs = "at_ms"
+        case createdAtMs = "created_at_ms"
     }
 }
 
@@ -211,6 +212,16 @@ public final class CompanionClient: @unchecked Sendable {
     @discardableResult
     public func closeSheet(id: UInt64) -> Bool {
         companion_sheet_close(handle, id)
+    }
+
+    /// Name a page explicitly (the rename gesture in the tab context
+    /// menu). Empty or all-whitespace clears the override and lets the
+    /// title derive from the page's own content again; anything else is
+    /// trimmed, capped at 80 characters, and sticks from then on.
+    /// Returns whether the page existed.
+    @discardableResult
+    public func setTitle(sheet: UInt64, _ title: String) -> Bool {
+        title.withCString { companion_sheet_set_title(handle, sheet, $0) }
     }
 
     /// Move a page in the visible order (drag-to-reorder).
@@ -413,9 +424,43 @@ public final class CompanionClient: @unchecked Sendable {
 
     // MARK: The ledger
 
-    /// Dead pages, newest first (⌘0) — dimmed ink and tombstones.
+    /// The audit trail, newest first (⌘0): metadata only, held to a
+    /// rolling 90-day window on the records' own wall-clock stamps.
+    /// Records accumulate on ordinary use, not only on death, so a
+    /// session in which pages were merely opened still has records.
     public func ledger() -> [LedgerEntry] {
         decodeJSON([LedgerEntry].self, from: companion_ledger_json(handle)) ?? []
+    }
+
+    /// Throw the whole ledger away: the user-facing "clear the ledger"
+    /// affordance. In memory only, so call `ledgerSave(to:)` afterwards
+    /// for the empty ledger to reach the file.
+    public func clearLedger() {
+        companion_ledger_clear(handle)
+    }
+
+    /// Save the ledger to `path`. It rests under its OWN long-lived
+    /// key, minted on first save and never derived from the boot
+    /// session, which is why the audit record survives the reboot that
+    /// discards staged content. Its envelope magic is its own AEAD
+    /// associated data, so this file and the state file are not
+    /// interchangeable in either direction. Call it beside
+    /// `persistSave(to:)`, behind the same debounce.
+    @discardableResult
+    public func ledgerSave(to path: String) -> Bool {
+        path.withCString { companion_ledger_save(handle, $0) }
+    }
+
+    /// Restore the ledger at startup, beside and independent of
+    /// `persistRestore(from:)`: either may succeed while the other
+    /// fails, so licence each save on its own restore. Records outside
+    /// the rolling 90-day window are dropped as the file loads. Nothing
+    /// here ages a countdown or expires a page. False covers a fresh
+    /// start with no file as much as a missing key, failed
+    /// authentication, or a damaged snapshot.
+    @discardableResult
+    public func ledgerRestore(from path: String) -> Bool {
+        path.withCString { companion_ledger_restore(handle, $0) }
     }
 
     // MARK: Persistence — the sealed state file
@@ -426,9 +471,11 @@ public final class CompanionClient: @unchecked Sendable {
         decodeJSON([RestoredRun].self, from: companion_sheet_document_json(handle, sheet)) ?? []
     }
 
-    /// Save the whole store to `path`, encrypted core-side (the key
-    /// rests in the Keychain; only ciphertext touches disk). Call at
-    /// quit — nothing saves on its own.
+    /// Save the staged content (pages, sealed chips, clocks) to `path`,
+    /// encrypted core-side (the key rests in the Keychain; only
+    /// ciphertext touches disk). The ledger is not in this file: it has
+    /// its own file under its own key, see `ledgerSave(to:)`. Call at
+    /// quit; nothing saves on its own.
     @discardableResult
     public func persistSave(to path: String) -> Bool {
         path.withCString { companion_persist_save(handle, $0) }

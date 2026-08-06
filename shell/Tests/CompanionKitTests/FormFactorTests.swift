@@ -21,6 +21,40 @@ final class FormFactorTests: XCTestCase {
         XCTAssertNotEqual(panel, backdrop)
     }
 
+    /// The ledger is a sibling of the state file, never the state file
+    /// and never shared. Two form factors keep two ledgers for the same
+    /// reason they keep two state files, and the two lifetimes (the
+    /// ledger's long-lived key, the content store's boot-bound one) must
+    /// not land in one place.
+    func testTheLedgerRestsBesideTheStateFileAndNeverSharesOne() {
+        let panelLedger = FormFactor.panel.ledgerFileURL
+        let backdropLedger = FormFactor.backdrop.ledgerFileURL
+        let panelState = FormFactor.panel.stateFileURL
+        let backdropState = FormFactor.backdrop.stateFileURL
+
+        XCTAssertEqual(panelLedger.lastPathComponent, "ledger.sealed")
+        XCTAssertEqual(backdropLedger.lastPathComponent, "ledger.sealed")
+
+        // Beside its own state file, in the same directory.
+        XCTAssertEqual(
+            panelLedger.deletingLastPathComponent(),
+            panelState.deletingLastPathComponent()
+        )
+        XCTAssertEqual(
+            backdropLedger.deletingLastPathComponent(),
+            backdropState.deletingLastPathComponent()
+        )
+
+        // Two form factors, two ledgers.
+        XCTAssertNotEqual(panelLedger, backdropLedger)
+
+        // No ledger is ever any state file.
+        for ledger in [panelLedger, backdropLedger] {
+            XCTAssertNotEqual(ledger, panelState)
+            XCTAssertNotEqual(ledger, backdropState)
+        }
+    }
+
     /// The same rule one layer down: sharing the panel's Keychain
     /// service would put both apps on one state key, which is the
     /// prompt-storm `companion_new_scoped` exists to prevent. The panel

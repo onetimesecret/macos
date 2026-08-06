@@ -195,7 +195,8 @@ public final class PageModel: ObservableObject {
     /// The ledger tab (⌘0) is showing instead of a page.
     @Published public var showingLedger = false
 
-    /// Dead pages, refreshed when the ledger is shown or pages die.
+    /// The audit trail, newest first: refreshed on every `refresh()` and
+    /// whenever the ledger is shown. Metadata only, never content.
     @Published public private(set) var ledgerEntries: [LedgerEntry] = []
 
     /// A refusal or status line the surface shows briefly ("the window
@@ -357,6 +358,14 @@ public final class PageModel: ObservableObject {
     /// yesterday's sealed file with this session's consolation page.
     private var saveLicence = false
 
+    /// The same licence, asked separately for the ledger file. The two
+    /// files are sealed under two different keys and fail for different
+    /// reasons, so one refusing to open says nothing about the other: a
+    /// damaged ledger must not cost the session its pages, and a ledger
+    /// that would not open must not be overwritten by an empty one. The
+    /// rule is identical, hence the same truth table.
+    private var ledgerLicence = false
+
     /// The persistence trail in the unified log: restore refusals and
     /// save failures, never content — the file is ciphertext and
     /// these lines carry only what happened to it.
@@ -381,6 +390,21 @@ public final class PageModel: ObservableObject {
         if !saveLicence {
             logger.error(
                 "restore failed over an existing state file; withholding the save licence"
+            )
+        }
+        // The ledger is a second sealed file under a second key, so it
+        // is restored separately and licensed separately. It carries no
+        // page the surface needs, so a refusal here is quieter than a
+        // content refusal: the session runs, the trail simply does not
+        // go back any further, and this session may not overwrite the
+        // file it could not read.
+        let ledgerPath = formFactor.ledgerFileURL.path
+        let ledgerExisted = FileManager.default.fileExists(atPath: ledgerPath)
+        let ledgerRestored = client.ledgerRestore(from: ledgerPath)
+        ledgerLicence = Self.grantsSaveLicence(fileExists: ledgerExisted, restored: ledgerRestored)
+        if !ledgerLicence {
+            logger.error(
+                "restore failed over an existing ledger file; withholding the ledger save licence"
             )
         }
         if client.sheets().isEmpty {
@@ -444,8 +468,11 @@ public final class PageModel: ObservableObject {
         saveTimer = timer
     }
 
-    /// Seal the whole store — live pages, chips, the ledger — into the
-    /// state file in one core call. The debounce's far end, and the
+    /// Seal the store into its two files: live pages and their chips
+    /// into the state file, the audit trail into the ledger file. Two
+    /// files because they are sealed under two different keys with two
+    /// different lifetimes, so each carries its own licence and each can
+    /// refuse on its own. The debounce's far end, and the
     /// same call the terminate path makes: quit stands down whatever the
     /// debounce still holds and writes once, so it flushes rather than
     /// duplicating a write. A session that never loaded must not
@@ -474,8 +501,24 @@ public final class PageModel: ObservableObject {
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true
         )
         let saved = client.persistSave(to: url.path)
+        // The ledger's own write, under its own licence and its own key.
+        // One debounce covers both files: the ledger only ever changes
+        // on a mutation that already marked the store dirty.
+        let ledgerSaved = ledgerLicence
+            ? client.ledgerSave(to: formFactor.ledgerFileURL.path)
+            : true
         if !saved {
             logger.error("save refused; the sealed state file was not rewritten")
+        }
+        if !ledgerSaved {
+            logger.error("save refused; the sealed ledger file was not rewritten")
+        }
+        // A refused ledger write is a refused write. The audit trail is
+        // the record of what this app did with the user's secrets, so
+        // losing it to a logout is not a lesser failure than losing a
+        // page: it keeps the hold and it arms the same retry.
+        let settled = saved && ledgerSaved
+        if !settled {
             // The buffer is still dirty and nothing else is going to ask
             // for it: the debounce only arms on a mutation, so a session
             // that fails one write and then goes quiet would keep its
@@ -483,8 +526,8 @@ public final class PageModel: ObservableObject {
             // stays taken either way: holding is not writing.
             scheduleSave(after: Self.saveRetryDebounce, mode: .default)
         }
-        terminationLatch.settle(saved: saved)
-        return saved
+        terminationLatch.settle(saved: settled)
+        return settled
     }
 
     deinit {
@@ -649,6 +692,18 @@ public final class PageModel: ObservableObject {
     public func showLedger() {
         ledgerEntries = client.ledger()
         showingLedger = true
+    }
+
+    /// Drop the whole audit trail (Settings, behind a confirmation).
+    /// The ledger now survives reboots under a long-lived key and its
+    /// titles are often the secret's own label, so the user must be able
+    /// to end that record on demand. The core clears in memory only, so
+    /// this marks the store dirty: the write that follows puts an empty
+    /// ledger over the old file.
+    public func clearLedger() {
+        client.clearLedger()
+        markDirty()
+        refresh()
     }
 
     /// The ◌ tab is a toggle: click to visit the ledger, click again
@@ -895,6 +950,19 @@ public final class PageModel: ObservableObject {
     /// Double-click the tab: hold the clock 1h, then top-up to 24h.
     public func pause(_ id: UInt64) {
         _ = client.pausePress(sheet: id)
+        markDirty()
+        refresh()
+    }
+
+    /// The rename gesture, from the tab context menu (double-click is
+    /// already the pause gesture, so the name is set through the menu).
+    /// An empty or all-whitespace submission clears the override and
+    /// lets the title derive from the page's own content again, which is
+    /// the core's contract. The title is persisted state and it is what
+    /// every future ledger record freezes, so a rename is a mutation
+    /// like any other.
+    public func renameSheet(_ id: UInt64, to title: String) {
+        guard client.setTitle(sheet: id, title) else { return }
         markDirty()
         refresh()
     }

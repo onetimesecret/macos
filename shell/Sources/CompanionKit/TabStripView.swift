@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The bottom-edge tab strip, Excel-anchored (docs/spec/04): one tab
@@ -104,8 +105,8 @@ public struct TabStripView: View {
         .accessibilityLabel(Text("Promote page to one-time link"))
     }
 
-    /// The dashed residue tab: expired and closed pages, dimmed (⌘0).
-    /// A toggle — click again to return to the page.
+    /// The dashed residue tab: the audit trail, one line per event
+    /// (⌘0). A toggle, so a second click returns to the page.
     private var ledgerTab: some View {
         Button(action: model.toggleLedger) {
             HStack(spacing: 4) {
@@ -126,8 +127,8 @@ public struct TabStripView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .help("The ledger — expired and closed pages (⌘0)")
-        .accessibilityLabel(Text("Ledger, \(model.ledgerEntries.count) dead pages"))
+        .help("The ledger: what the app did with each page and chip (⌘0)")
+        .accessibilityLabel(Text("Ledger, \(model.ledgerEntries.count) records"))
     }
 }
 
@@ -194,10 +195,41 @@ private struct SheetTab: View {
         .accessibilityValue(Text(sheet.spokenRemaining))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
+            Button("Rename page…") { promptForRename() }
             Button(sheet.paused ? "Top the hold up" : "Hold the clock") { model.pause(sheet.id) }
             Button("Cycle the countdown") { model.cycleRung(sheet.id) }
             Button("Close page", role: .destructive) { model.close(sheet.id) }
         }
+    }
+
+    /// The rename gesture lives here because double-click is already
+    /// the pause gesture: a tab that renamed on double-click could not
+    /// hold its own clock. An NSAlert with a text field rather than a
+    /// SwiftUI alert, since the SwiftUI form of this takes a text field
+    /// only from macOS 14 and both apps ship to 13.
+    ///
+    /// Submitting an empty field is meaningful, not a cancel: it drops
+    /// the override and lets the title derive from the page again.
+    private func promptForRename() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Rename this page"
+        alert.informativeText =
+            "The name shows on the tab and is frozen into each ledger record "
+            + "the page produces, so keep the secret itself out of it. Leave the "
+            + "field empty to let the title follow the page's own first line again."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = sheet.title
+        field.placeholderString = "empty derives the title from the page"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        // An accessory app's alert would otherwise open behind whatever
+        // is frontmost.
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        model.renameSheet(sheet.id, to: field.stringValue)
     }
 
     private var accessibilityDescription: String {

@@ -74,6 +74,7 @@ public struct ConnectionSettingsView: View {
     @State private var statusIsError = false
     @State private var testing = false
     @State private var confirmingClear = false
+    @State private var confirmingLedgerClear = false
     @State private var launchAtLogin = false
     @State private var loginStatus: String?
 
@@ -118,6 +119,23 @@ public struct ConnectionSettingsView: View {
                 }
             } header: {
                 Text(loginCaption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                Button("Clear the ledger", role: .destructive) { confirmingLedgerClear = true }
+                    .confirmationDialog(
+                        "Clear the ledger?",
+                        isPresented: $confirmingLedgerClear,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Clear the ledger", role: .destructive) { clearLedger() }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Every record goes, and there is no undo. Pages and sealed chips are untouched.")
+                    }
+            } header: {
+                Text("The ledger records what the app did with each item: never the content, but page names, and those are often the secret's label. It survives restarts and keeps 90 days.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -213,6 +231,13 @@ public struct ConnectionSettingsView: View {
         token = ""
         statusIsError = !cleared
         status = cleared ? "token cleared" : "could not clear the token"
+    }
+
+    /// The clear is in memory core-side, so the model marks the store
+    /// dirty and the debounced write is what puts an empty ledger over
+    /// the file. Nothing is reported back: an empty ⌘0 is the receipt.
+    private func clearLedger() {
+        model.clearLedger()
     }
 
     private func test() {

@@ -24,7 +24,10 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(sheets.count, 1)
         var sheet = try XCTUnwrap(sheets.first)
         XCTAssertEqual(sheet.id, sheetID)
-        XCTAssertEqual(sheet.title, "untitled")
+        // No ink to derive from yet, so the title is the creation
+        // stamp, "MMDD-HHmm" in local time. The exact string depends on
+        // the host clock and zone, so assert the shape.
+        assertPlaceholderTitle(sheet.title)
         XCTAssertEqual(Rung(rawValue: sheet.rungCode), .eightHours) // the default rung
         XCTAssertEqual(sheet.chipCount, 0)
         XCTAssertFalse(sheet.paused)
@@ -57,24 +60,112 @@ final class CoreContractTests: XCTestCase {
         XCTAssertGreaterThan(sheet.holdRemainingMs, 0)
         XCTAssertGreaterThanOrEqual(client.nextEventMs(), 0)
 
-        // Death: the closed page rests in the ledger — dimmed ink and a
-        // tombstone; the excerpt is all that survives of the chip.
+        // Death: the page leaves the store and the ledger keeps the
+        // account of what happened to it. Metadata only, newest first.
         XCTAssertTrue(client.closeSheet(id: sheetID))
         XCTAssertTrue(client.sheets().isEmpty)
         let ledger = client.ledger()
-        XCTAssertEqual(ledger.count, 1)
-        let record = try XCTUnwrap(ledger.first)
-        XCTAssertEqual(record.cause, "closed")
-        XCTAssertEqual(record.title, "deploy friday")
-        let runs = record.runs
-        XCTAssertEqual(runs.count, 2)
-        guard case .ink(let ink) = runs[0] else { return XCTFail("first run is ink") }
-        XCTAssertTrue(ink.contains("in order"))
-        guard case .tombstone(let excerpt) = runs[1] else {
-            return XCTFail("second run is a tombstone")
+
+        // One record per lifecycle step: the page's creation, the seal,
+        // the page's discard. Nothing else in this test emits.
+        XCTAssertEqual(ledger.map(\.event), ["discarded", "sealed", "created"])
+        let discarded = try XCTUnwrap(ledger.first)
+        let sealed = ledger[1]
+        let created = ledger[2]
+
+        // The page's own records share its item id; the chip has its own.
+        XCTAssertEqual(created.item, discarded.item)
+        XCTAssertNotEqual(sealed.item, created.item)
+        for record in ledger {
+            XCTAssertEqual(record.item.count, 36)
+            XCTAssertEqual(record.item, record.item.lowercased())
+            XCTAssertGreaterThan(record.atMs, 0)
+            XCTAssertGreaterThan(record.createdAtMs, 0)
+            XCTAssertTrue(
+                ["tiny", "small", "medium", "large", "huge"].contains(record.size))
+            XCTAssertTrue(["none", "clipboard", "link"].contains(record.destination))
         }
-        XCTAssertEqual(excerpt, chip.excerpt)
-        XCTAssertFalse(excerpt.contains(secret))
+
+        // The title travels: the page was named by the time it died,
+        // and it was still on its placeholder when the chip was sealed.
+        XCTAssertEqual(discarded.title, "deploy friday")
+        assertPlaceholderTitle(created.title)
+        assertPlaceholderTitle(sealed.title)
+
+        // Nothing left the boundary. Not the sealed text, not the
+        // excerpt the chip's own face carries, not the page's ink.
+        assertFreeOfContent(ledger, chip: chip)
+    }
+
+    /// The ledger's guarantee, checked end to end against the live
+    /// core: no field of any record carries content.
+    private func assertFreeOfContent(
+        _ ledger: [LedgerEntry], chip: ChipInfo, file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for record in ledger {
+            let fields = [
+                record.event, record.item, record.title, record.size, record.destination,
+                String(record.atMs), String(record.createdAtMs), record.id,
+            ]
+            for field in fields {
+                XCTAssertFalse(field.contains(secret), "a record leaked the secret",
+                               file: file, line: line)
+                XCTAssertFalse(field.contains("n0ts3cr3t"), "a record leaked a fragment",
+                               file: file, line: line)
+                XCTAssertFalse(field.contains(chip.excerpt), "a record leaked the excerpt",
+                               file: file, line: line)
+                XCTAssertFalse(field.contains("in order"), "a record leaked the ink",
+                               file: file, line: line)
+            }
+        }
+    }
+
+    /// "MMDD-HHmm": nine characters, digits either side of one hyphen.
+    private func assertPlaceholderTitle(
+        _ title: String, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertNotNil(
+            title.range(of: #"^\d{4}-\d{4}$"#, options: .regularExpression),
+            "\(title) is not an MMDD-HHmm placeholder", file: file, line: line)
+    }
+
+    func testAUserSetTitleSticksAcrossASync() throws {
+        let client = CompanionClient()
+        let sheetID = client.newSheet()
+
+        XCTAssertTrue(client.setTitle(sheet: sheetID, "  incident 4471  "))
+        XCTAssertEqual(client.sheets().first?.title, "incident 4471") // trimmed
+
+        // Editing the page no longer touches the name.
+        let document = """
+        [{"ink": "### deploy friday\\nin order\\n"}]
+        """
+        XCTAssertTrue(client.syncDocument(sheet: sheetID, json: document))
+        XCTAssertEqual(client.sheets().first?.title, "incident 4471")
+
+        // Clearing the override hands the name back to the ink.
+        XCTAssertTrue(client.setTitle(sheet: sheetID, "   "))
+        XCTAssertEqual(client.sheets().first?.title, "deploy friday")
+
+        // A title is capped core-side, which is what bounds the one
+        // piece of page-owned text that reaches the ledger.
+        XCTAssertTrue(client.setTitle(sheet: sheetID, String(repeating: "x", count: 200)))
+        XCTAssertEqual(client.sheets().first?.title.count, 80)
+
+        // A page that never existed refuses.
+        XCTAssertFalse(client.setTitle(sheet: 424_242, "nowhere"))
+    }
+
+    func testClearingTheLedgerEmptiesIt() {
+        let client = CompanionClient()
+        let sheetID = client.newSheet()
+        XCTAssertFalse(client.ledger().isEmpty) // the page's creation
+        client.clearLedger()
+        XCTAssertTrue(client.ledger().isEmpty)
+        // The page itself is untouched: this throws away the account,
+        // not the content.
+        XCTAssertEqual(client.sheets().first?.id, sheetID)
     }
 
     func testTheCapRefusesTheTenthPage() {

@@ -1,9 +1,12 @@
 import SwiftUI
 
-/// The ledger (⌘0): dead pages as dimmed, read-only ink — records, not
-/// pages. A chip appears only as its excerpt, struck through and
-/// labelled "zeroized"; the sealed bytes died with the page. Session-
-/// bound, capacity a dozen; Esc leaves (docs/spec/04).
+/// The ledger (⌘0): the audit trail, one line per event. Every record is
+/// metadata and nothing else: what happened, to which item, under which
+/// page title, how big it was, and where it went. There is no ink here,
+/// no excerpt and no tombstone, so this view has no path that could
+/// render content even if it wanted one (ADR-0012). It outlives the boot
+/// session and is trimmed to a rolling 90 day window core-side; Esc
+/// leaves (docs/spec/04).
 public struct LedgerView: View {
     let entries: [LedgerEntry]
 
@@ -15,13 +18,13 @@ public struct LedgerView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 if entries.isEmpty {
-                    Text("Nothing has died yet.")
+                    Text("The ledger has nothing to show yet.")
                         .font(.system(.callout, design: .monospaced))
                         .foregroundStyle(.tertiary)
                         .padding(.top, 24)
                         .frame(maxWidth: .infinity)
                 } else {
-                    ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                    ForEach(entries) { entry in
                         LedgerRecord(entry: entry)
                     }
                 }
@@ -32,56 +35,71 @@ public struct LedgerView: View {
     }
 }
 
+/// One record: a verb, the page's title as of that moment, the coarse
+/// size bucket, the destination class, an absolute timestamp, and the
+/// item's correlation handle.
 private struct LedgerRecord: View {
     let entry: LedgerEntry
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Text(entry.title)
-                    .font(.system(.caption, design: .monospaced).weight(.medium))
+                Text(entry.event)
+                    .font(.system(.caption, design: .monospaced).weight(.semibold))
                     .foregroundStyle(.secondary)
-                Text("\(entry.cause) · \(Self.age(entry.ageMs))")
+                Text(entry.title)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 8)
+                Text(Self.stamp(entry.atMs))
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.tertiary)
             }
-            // The runs as one flowing text: dimmed ink, struck
-            // tombstones. Copy of visible ink is allowed — it was never
-            // secret; the tombstone's excerpt always rendered.
-            body(of: entry)
-                .font(.system(.callout, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 6) {
+                // The correlation handle an auditor lines records up by.
+                // Eight characters is enough to read at a glance; the
+                // full UUID is the accessibility value.
+                Text(Self.shortItem(entry.item))
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                Text(entry.size)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                if entry.destination != "none" {
+                    Text("→ \(entry.destination)")
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                }
+            }
         }
         .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4]))
                 .foregroundStyle(.quaternary)
         )
         .accessibilityElement(children: .combine)
+        .accessibilityValue(Text(entry.item))
     }
 
-    private func body(of entry: LedgerEntry) -> Text {
-        entry.runs.reduce(Text("")) { text, run in
-            switch run {
-            case .ink(let ink):
-                text + Text(ink).foregroundColor(.secondary)
-            case .tombstone(let excerpt):
-                text
-                    + Text(excerpt).strikethrough().foregroundColor(.secondary)
-                    + Text(" zeroized").foregroundColor(Color.ember.opacity(0.8))
-            }
-        }
+    static func shortItem(_ item: String) -> String {
+        String(item.prefix(8))
     }
 
-    static func age(_ ms: UInt64) -> String {
-        let seconds = ms / 1000
-        switch seconds {
-        case ..<60: return "just now"
-        case ..<3600: return "\(seconds / 60)m ago"
-        case ..<86400: return "\(seconds / 3600)h ago"
-        default: return "\(seconds / 86400)d ago"
-        }
+    /// An absolute stamp, not a relative age. The ledger survives
+    /// reboots, and "3h ago" on a record written before the machine was
+    /// last switched off is simply false.
+    static func stamp(_ atMs: UInt64) -> String {
+        Self.formatter.string(from: Date(timeIntervalSince1970: Double(atMs) / 1000))
     }
+
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 }
