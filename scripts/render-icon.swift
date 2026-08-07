@@ -181,6 +181,11 @@ let styles: [Style] = [
         drawMaruhi(ghost, in: ctx.tile, offset: NSPoint(x: slip, y: -slip))
         drawMaruhi(ctx.base.withAlphaComponent(0.92), in: ctx.tile)
     },
+    Style(name: "night", summary: "near-black tile, maruhi inked in the shade itself") { ctx in
+        NSColor(calibratedWhite: 0.10, alpha: 1).setFill()
+        ctx.tilePath.fill()
+        drawMaruhi(ctx.base.blended(withFraction: 0.20, of: .white) ?? ctx.base, in: ctx.tile)
+    },
 ]
 
 // MARK: - Command line
