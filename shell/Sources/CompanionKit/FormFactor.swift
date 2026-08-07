@@ -109,11 +109,16 @@ public struct FormFactor: Sendable {
         return stateFile
     }
 
-    /// The base identifier the panel ships under, and the prefix every
-    /// identifier this app answers to must carry.
+    /// The base identifier the panel shipped under before it was
+    /// archived (ADR-0014), kept because it is the prefix every
+    /// identifier this app answers to must carry, and because retiring
+    /// it would strand any panel install's Keychain items and state.
     public static let panelBundleIdentifier = "com.onetimesecret.companion"
 
-    /// The base identifier the backdrop ships under.
+    /// The base identifier the app ships under. The product is named
+    /// OnetimePad now, but the id keeps the legacy backdrop string:
+    /// macOS keys the state directory, Keychain items, the keychain
+    /// access group, and TCC grants off the id (ADR-0014).
     public static let backdropBundleIdentifier = "com.onetimesecret.companion.backdrop"
 
     /// The identifier this build actually runs under, or `fallback` when

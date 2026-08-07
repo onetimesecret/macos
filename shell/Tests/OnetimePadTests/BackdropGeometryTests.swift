@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import CompanionBackdrop
+@testable import OnetimePad
 
 /// The card's placement, tested as the pure decision it is, in the
 /// shell's pattern for UI-adjacent logic: interrogate `clamped(to:)`
@@ -191,7 +191,7 @@ final class BackdropGeometryTests: XCTestCase {
 
     func testGeometrySurvivesADefaultsRoundTripInAThrowawaySuite() throws {
         // A throwaway domain, wiped on the way out: tests never touch
-        // the backdrop's real domain, let alone CompanionApp's.
+        // the app's real domain.
         let suiteName = "com.onetimesecret.companion.backdrop.tests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }

@@ -5,9 +5,13 @@
 # Theme.swift), so the Dock tile reads against the in-app palette
 # rather than blending into it.
 #
-# Idempotent and staleness-aware: an icon is rebuilt only when it is
-# missing or older than the scripts that define it. The build scripts
-# call this before copying the .icns into each bundle.
+# With no arguments, builds the standard set below. Idempotent and
+# staleness-aware in that mode: an icon is rebuilt only when it is
+# missing or older than the scripts that define it.
+#
+# For trying out looks, an ad-hoc mode always rebuilds:
+#   scripts/build-icons.sh <name> <style> <rrggbb>
+#   scripts/build-icons.sh --list        # available styles
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -19,19 +23,43 @@ fi
 OUT=dist/icons
 mkdir -p "$OUT"
 
-build_icon() { # <app name> <rrggbb shade>
-  local name="$1" shade="$2" icns="$OUT/$1.icns"
+build_icon() { # <app name> <style> <rrggbb shade>
+  local name="$1" style="$2" shade="$3" icns="$OUT/$1.icns"
+  echo "==> Rendering $icns ($style, #$shade)"
+  local iconset
+  iconset="$(mktemp -d)/$name.iconset"
+  swift scripts/render-icon.swift "$style" "$shade" "$iconset"
+  iconutil -c icns "$iconset" -o "$icns"
+  rm -rf "$(dirname "$iconset")"
+}
+
+build_icon_if_stale() { # <app name> <style> <rrggbb shade>
+  local icns="$OUT/$1.icns"
   if [[ -f "$icns" \
      && ! scripts/render-icon.swift -nt "$icns" \
      && ! scripts/build-icons.sh -nt "$icns" ]]; then
     return 0
   fi
-  echo "==> Rendering $icns (#$shade)"
-  local iconset
-  iconset="$(mktemp -d)/$name.iconset"
-  swift scripts/render-icon.swift "$shade" "$iconset"
-  iconutil -c icns "$iconset" -o "$icns"
-  rm -rf "$(dirname "$iconset")"
+  build_icon "$@"
 }
 
-build_icon CompanionBackdrop 0f766e
+case $# in
+  0)
+    build_icon_if_stale OnetimePad gradient 0f766e
+    ;;
+  1)
+    if [[ "$1" == "--list" ]]; then
+      swift scripts/render-icon.swift --list
+    else
+      echo "usage: build-icons.sh [--list | <name> <style> <rrggbb>]" >&2
+      exit 1
+    fi
+    ;;
+  3)
+    build_icon "$1" "$2" "$3"
+    ;;
+  *)
+    echo "usage: build-icons.sh [--list | <name> <style> <rrggbb>]" >&2
+    exit 1
+    ;;
+esac

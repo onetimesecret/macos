@@ -39,14 +39,14 @@ let package = Package(
         // ADR-0014). The panel sibling (CompanionApp) was archived once
         // this target reached parity; its sources live in git history.
         .executableTarget(
-            name: "CompanionBackdrop",
+            name: "OnetimePad",
             dependencies: ["CompanionKit"],
-            path: "Sources/CompanionBackdrop"
+            path: "Sources/OnetimePad"
         ),
         .testTarget(
-            name: "CompanionBackdropTests",
-            dependencies: ["CompanionBackdrop"],
-            path: "Tests/CompanionBackdropTests"
+            name: "OnetimePadTests",
+            dependencies: ["OnetimePad"],
+            path: "Tests/OnetimePadTests"
         ),
     ]
 )

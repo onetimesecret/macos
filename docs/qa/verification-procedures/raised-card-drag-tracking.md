@@ -1,6 +1,6 @@
 # Raised card: drag and resize tracking
 
-**Applies to:** `CompanionBackdrop` (OnetimePad), raised stance.
+**Applies to:** OnetimePad, raised stance.
 **Raised by:** review of `966ba3c` "Measure the drag and the resize
 grips against the screen", on
 `feature/reopen-and-backdrop-persistence`, 2026-08-06.
@@ -40,7 +40,7 @@ not document and a unit test cannot reach, hence "verify on hardware".
 
 Quit any running instance first (`swift build` re-signs in place and
 SIGKILLs a live one), then
-`scripts/build-backdrop.sh && open dist/CompanionBackdrop.app`.
+`scripts/package-app.sh && open dist/OnetimePad.app`.
 
 - Raise with ⌃⌥Space, press the header, drag slowly across the screen.
   **Pass:** the card stays glued to the pointer for the whole sweep.

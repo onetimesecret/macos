@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package the app as a real .app bundle: dist/CompanionBackdrop.app.
+# Package the app as a real .app bundle: dist/OnetimePad.app.
 # A bare `swift run` binary has no CFBundleIdentifier, so macOS cannot
 # address it: TCC grants don't stick, per-app pickers cannot list it,
 # and LaunchServices registers it as a nameless process. The bundle is
@@ -15,7 +15,7 @@
 # the surface's capture exclusion (COMPANION_ALLOW_CAPTURE, compiled out
 # of release). `open` does not forward the caller's environment; pass
 # the variable explicitly:
-#   open --env COMPANION_ALLOW_CAPTURE=1 dist/CompanionBackdrop.app
+#   open --env COMPANION_ALLOW_CAPTURE=1 dist/OnetimePad.app
 # Debug builds get a .debug bundle id so a dev instance and the
 # installed copy can coexist without contending for the menu bar,
 # defaults, keychain items, and state (ADR-0012).
@@ -30,7 +30,7 @@
 # it and runs the documented login keychain fallback.
 #
 # Before signing, the assembled bundle is hashed into
-# dist/CompanionBackdrop.presig.sha256, the reproducible pre-signature
+# dist/OnetimePad.presig.sha256, the reproducible pre-signature
 # artifact ADR-0012 publishes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -72,19 +72,19 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-echo "==> swift build -c $CONFIG --product CompanionBackdrop"
-swift build --package-path shell -c "$CONFIG" --product CompanionBackdrop
-BIN="$(swift build --package-path shell -c "$CONFIG" --show-bin-path)/CompanionBackdrop"
+echo "==> swift build -c $CONFIG --product OnetimePad"
+swift build --package-path shell -c "$CONFIG" --product OnetimePad
+BIN="$(swift build --package-path shell -c "$CONFIG" --show-bin-path)/OnetimePad"
 
-APP=dist/CompanionBackdrop.app
+APP=dist/OnetimePad.app
 echo "==> Assembling $APP ($VERSION, $CONFIG)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/CompanionBackdrop"
-cp shell/Backdrop-Info.plist "$APP/Contents/Info.plist"
+cp "$BIN" "$APP/Contents/MacOS/OnetimePad"
+cp shell/OnetimePad-Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 scripts/build-icons.sh
-cp dist/icons/CompanionBackdrop.icns "$APP/Contents/Resources/AppIcon.icns"
+cp dist/icons/OnetimePad.icns "$APP/Contents/Resources/AppIcon.icns"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
 
@@ -169,11 +169,11 @@ else
       echo "==> embedded provisioning profile: $PROVISIONING_PROFILE"
       # The group follows the bundle's own identifier, read back out of
       # the assembled Info.plist so it already carries any .debug
-      # suffix. Hardcoding one id would drop the panel, the backdrop,
-      # and both debug variants into a single group, and a shared group
-      # is a shared keychain: CompanionKit/FormFactor.swift scopes each
-      # form factor's credentialService to its own bundle id, and
-      # ADR-0010 says neither can read the other's pages.
+      # suffix. Hardcoding one id would drop the installed release copy
+      # and the .debug dev instance into a single group, and a shared
+      # group is a shared keychain: CompanionKit/FormFactor.swift scopes
+      # credentialService to the running build's bundle id, and
+      # ADR-0012 says the two lanes must not read one another's items.
       SIGNED_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
       ACCESS_GROUP="${TEAM_ID}.${SIGNED_BUNDLE_ID}"
       SIGN_ENTITLEMENTS="$(mktemp -t companion-entitlements)"

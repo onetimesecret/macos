@@ -68,7 +68,7 @@ shell/               the Swift/AppKit shell (ADR-0002), linking the core only
                      through the xcframework built from crates/ffi:
                        Sources/CompanionKit       the shared page model,
                                                   views and seam wrapper
-                       Sources/CompanionBackdrop  OnetimePad, the background
+                       Sources/OnetimePad         OnetimePad, the background
                                                   surface (ADR-0010, ADR-0014)
 docs/spec/design/    the governing spec   ·   docs/spec/feature/  feature specs
 docs/adr/            decisions
@@ -101,7 +101,7 @@ Keychain behavior or permission prompts matter:
   `dist/` or `/Applications` keeps the live instance decoupled from
   builds.
 
-`swift run CompanionBackdrop` remains fine for quick UI iteration where
+`swift run OnetimePad` remains fine for quick UI iteration where
 none of that matters (layout, tab drag, notices).
 
 ### Force close
@@ -111,7 +111,7 @@ then SIGKILL; only the graceful first step saves state.
 
 ## The app: OnetimePad
 
-OnetimePad (target `CompanionBackdrop`) is **the background surface**:
+OnetimePad is **the background surface**:
 an ambient pane resting at desktop level behind every window, raised to
 a floating editor with ⌃⌥Space and rested again with Esc. Spec and the
 underlying macOS research: docs/spec/feature/background-surface/.

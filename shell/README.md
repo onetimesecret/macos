@@ -1,6 +1,6 @@
 # shell/ — the Swift/AppKit shell
 
-One executable target over the one core: `Sources/CompanionBackdrop`
+One executable target over the one core: `Sources/OnetimePad`
 is OnetimePad, the background surface
 (docs/spec/feature/background-surface). `Sources/CompanionKit` holds
 everything above the window: the page model, the views, and the seam
@@ -19,7 +19,7 @@ through the C-ABI seam (`crates/ffi`, mechanism: ADR-0003).
 ./scripts/build-core.sh   # cargo → universal libcompanion_ffi.a → bindings/CompanionCore.xcframework
 cd shell
 swift build && swift test
-swift run CompanionBackdrop
+swift run OnetimePad
 ```
 
 `swift run` is the edit-compile loop, but the bare binary has no

@@ -36,11 +36,20 @@ The build lane consolidates around the one app:
   packaging engine both entry points call; `build-core.sh`,
   `build-icons.sh`, and `quit-app.sh` stay as helpers.
 
-The app's name is OnetimePad. Its bundle id stays
-`com.onetimesecret.companion.backdrop`: macOS keys the state
+The app's name is OnetimePad, and with the panel gone the name reaches
+everywhere renaming is free: the executable target
+(`Sources/OnetimePad`), its test target (`Tests/OnetimePadTests`), the
+identity sheet (`shell/OnetimePad-Info.plist`), CFBundleExecutable,
+and the assembled bundle (`dist/OnetimePad.app`, installed as
+`OnetimePad.app`). "CompanionBackdrop" survives only where it was
+never a name: the bundle id stays
+`com.onetimesecret.companion.backdrop`, because macOS keys the state
 directory, Keychain items, the keychain access group, and TCC grants
 off the id, so renaming the id would orphan all four for every
-existing install. Ids are infrastructure; names are paint.
+existing install. The unified log subsystem carries the same string
+for the same reason. Ids are infrastructure; names are paint.
+`scripts/install.sh` retires a legacy `CompanionBackdrop.app` left in
+the install destination, quitting it gracefully before removing it.
 
 ## Consequences
 

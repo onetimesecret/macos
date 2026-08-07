@@ -36,7 +36,7 @@ running_from() { # <absolute path>
   pgrep -f "$(printf '%s' "$1" | sed 's/[][\.|$(){}?+*^]/\\&/g')" >/dev/null
 }
 
-DIST_APP="$PWD/dist/CompanionBackdrop.app"
+DIST_APP="$PWD/dist/OnetimePad.app"
 if running_from "$DIST_APP/Contents/MacOS"; then
   echo "==> Asking the copy running from dist/ to quit"
   quit_err=""

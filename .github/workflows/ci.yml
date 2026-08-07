@@ -73,16 +73,16 @@ jobs:
           # ADR-0012: a debug build must land on its own bundle id, or
           # a dev instance shares defaults, keychain items, and state
           # with the installed copy.
-          id="$(plutil -extract CFBundleIdentifier raw dist/CompanionBackdrop.app/Contents/Info.plist)"
+          id="$(plutil -extract CFBundleIdentifier raw dist/OnetimePad.app/Contents/Info.plist)"
           case "$id" in
             *.debug) echo "bundle id: $id" ;;
             *) echo "expected a .debug bundle id, got: $id" >&2; exit 1 ;;
           esac
           # The pre-signature digest is the published artifact; an
           # empty file means the hash pipeline broke silently.
-          test -s dist/CompanionBackdrop.presig.sha256 \
-            || { echo "dist/CompanionBackdrop.presig.sha256 is missing or empty" >&2; exit 1; }
-          cat dist/CompanionBackdrop.presig.sha256
+          test -s dist/OnetimePad.presig.sha256 \
+            || { echo "dist/OnetimePad.presig.sha256 is missing or empty" >&2; exit 1; }
+          cat dist/OnetimePad.presig.sha256
 
   # A backstop for the "never commit a secret" rule (adopted from the
   # prototype skeleton, PR #5). Scans the full history, so checkout is

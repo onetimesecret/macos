@@ -19,15 +19,11 @@ disabled).
 
 ## Verifying a build
 
-Each build script hashes the app bundle it has just assembled, before
-`codesign` runs, and writes the result to `dist/<name>.presig.sha256`:
+The packaging script hashes the app bundle it has just assembled,
+before `codesign` runs, and writes the result to
+`dist/OnetimePad.presig.sha256`.
 
-```
-dist/CompanionApp.presig.sha256
-dist/CompanionBackdrop.presig.sha256
-```
-
-The file holds one line, `<sha256>  CompanionBackdrop.app`. The digest is
+The file holds one line, `<sha256>  OnetimePad.app`. The digest is
 taken over every regular file in the bundle, by relative path and
 content: `find` the bundle, sort the paths under `LC_ALL=C` so the
 order is byte order rather than the caller's locale, hash each file,
@@ -40,7 +36,7 @@ To reproduce it:
 git checkout <commit>          # clean tree, see the note below
 scripts/build-core.sh
 scripts/package-app.sh
-cat dist/CompanionBackdrop.presig.sha256
+cat dist/OnetimePad.presig.sha256
 ```
 
 Compare that line against the published one. The build script stamps

@@ -13,7 +13,7 @@
 # graceful half of that itself).
 set -euo pipefail
 
-APPS=(CompanionBackdrop)
+APPS=(OnetimePad)
 
 if (($# > 0)); then
   echo "quit-app.sh takes no arguments" >&2
@@ -22,12 +22,13 @@ fi
 
 # The enclosing .app of a running process, resolved from its pid. We
 # address AppleScript at that path rather than at the app's name,
-# because `tell application "CompanionBackdrop"` asks LaunchServices to
-# resolve a name that no longer exists: the backdrop's bundle name is
-# OnetimePad. A path names the bundle we actually found running, which
-# a name cannot do. It is not a promise about routing: when two copies
-# share a bundle id, which process the event reaches is LaunchServices'
-# call, and the escalation below is what covers the copy that survives.
+# because `tell application "OnetimePad"` asks LaunchServices to pick
+# one bundle for the name, and with a dist/ copy and an installed copy
+# both registered its pick is not necessarily the process we found. A
+# path names the bundle we actually found running, which a name cannot
+# do. It is still not a promise about routing: when two copies share a
+# bundle id, which process the event reaches is LaunchServices' call,
+# and the escalation below is what covers the copy that survives.
 #
 # Two ways to fail, and the caller has to tell them apart: 2 means the
 # pid is gone (it exited in the moment between pgrep listing it and ps

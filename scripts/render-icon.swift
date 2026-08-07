@@ -1,9 +1,11 @@
-// Renders one app icon as a complete .iconset directory: the ㊙ maruhi
-// in white over a rounded-rect tile in the shade given on the command
-// line (scripts/build-icons.sh picks the shade).
+// Renders one app icon as a complete .iconset directory. The look is
+// chosen by a style name on the command line; each style is one entry
+// in the `styles` registry below, so adding a new look means adding
+// one entry and nothing else.
 //
-// Run by scripts/build-icons.sh via `swift render-icon.swift <rrggbb>
-// <out.iconset>`; not part of the Swift package.
+// Run by scripts/build-icons.sh via `swift render-icon.swift <style>
+// <rrggbb> <out.iconset>`; not part of the Swift package.
+// `swift render-icon.swift --list` prints the available styles.
 
 import AppKit
 
@@ -12,12 +14,96 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
-guard CommandLine.arguments.count == 3 else {
-    fail("usage: swift render-icon.swift <rrggbb> <output.iconset>")
+// MARK: - Style registry
+
+/// Everything a style needs to draw one square rendering. The canvas
+/// outside `tile` is transparent margin; `tilePath` is the rounded
+/// rect on Apple's icon grid (824/1024 of the canvas, corners at
+/// 185/824 of the tile). `base` is the shade from the command line.
+struct StyleContext {
+    let canvas: CGFloat
+    let tile: NSRect
+    let tilePath: NSBezierPath
+    let base: NSColor
 }
 
-let hex = CommandLine.arguments[1]
-let outDir = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
+struct Style {
+    let name: String
+    let summary: String
+    let draw: (StyleContext) -> Void
+}
+
+/// The ㊙ maruhi centred in the tile. U+FE0E forces the text
+/// presentation so the glyph takes our colour instead of arriving as
+/// the orange emoji.
+func drawMaruhi(_ color: NSColor, in tile: NSRect, scale: CGFloat = 0.72) {
+    let glyph = "㊙\u{FE0E}" as NSString
+    let attributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: tile.height * scale),
+        .foregroundColor: color,
+    ]
+    let size = glyph.size(withAttributes: attributes)
+    glyph.draw(
+        at: NSPoint(x: tile.midX - size.width / 2, y: tile.midY - size.height / 2),
+        withAttributes: attributes
+    )
+}
+
+let styles: [Style] = [
+    Style(name: "gradient", summary: "slight top-lit gradient tile, white maruhi (the original)") { ctx in
+        let lit = ctx.base.blended(withFraction: 0.10, of: .white) ?? ctx.base
+        let shaded = ctx.base.blended(withFraction: 0.14, of: .black) ?? ctx.base
+        NSGradient(starting: lit, ending: shaded)?.draw(in: ctx.tilePath, angle: -90)
+        drawMaruhi(.white, in: ctx.tile)
+    },
+    Style(name: "flat", summary: "solid tile in the shade, white maruhi") { ctx in
+        ctx.base.setFill()
+        ctx.tilePath.fill()
+        drawMaruhi(.white, in: ctx.tile)
+    },
+    Style(name: "inverse", summary: "near-white tile, maruhi in the shade") { ctx in
+        NSColor(calibratedWhite: 0.97, alpha: 1).setFill()
+        ctx.tilePath.fill()
+        drawMaruhi(ctx.base, in: ctx.tile)
+    },
+    Style(name: "ring", summary: "solid tile, white ring around a smaller maruhi") { ctx in
+        ctx.base.setFill()
+        ctx.tilePath.fill()
+        let ring = NSBezierPath(ovalIn: ctx.tile.insetBy(
+            dx: ctx.tile.width * 0.10, dy: ctx.tile.height * 0.10))
+        ring.lineWidth = ctx.tile.width * 0.035
+        NSColor.white.setStroke()
+        ring.stroke()
+        drawMaruhi(.white, in: ctx.tile, scale: 0.56)
+    },
+]
+
+// MARK: - Command line
+
+let arguments = CommandLine.arguments
+
+if arguments.count == 2, arguments[1] == "--list" {
+    for style in styles {
+        print("\(style.name)\t\(style.summary)")
+    }
+    exit(0)
+}
+
+guard arguments.count == 4 else {
+    let names = styles.map(\.name).joined(separator: "|")
+    fail("""
+    usage: swift render-icon.swift <style> <rrggbb> <output.iconset>
+           swift render-icon.swift --list
+    styles: \(names)
+    """)
+}
+
+guard let style = styles.first(where: { $0.name == arguments[1] }) else {
+    fail("unknown style \"\(arguments[1])\"; run with --list to see the choices")
+}
+
+let hex = arguments[2]
+let outDir = URL(fileURLWithPath: arguments[3], isDirectory: true)
 
 guard hex.count == 6, let rgb = UInt32(hex, radix: 16) else {
     fail("shade must be six hex digits, got \"\(hex)\"")
@@ -29,11 +115,8 @@ let base = NSColor(
     alpha: 1
 )
 
-/// One square rendering at `px` pixels: transparent margins, the tile
-/// on Apple's icon grid (824/1024 of the canvas, corners at 185/824 of
-/// the tile), a slight top-lit gradient of the shade, and the maruhi
-/// centred in white. U+FE0E forces the text presentation so the glyph
-/// takes our colour instead of arriving as the orange emoji.
+// MARK: - Rendering
+
 func render(px: Int) -> NSBitmapImageRep {
     guard let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px,
@@ -51,20 +134,7 @@ func render(px: Int) -> NSBitmapImageRep {
     let inset = canvas * 100 / 1024
     let tile = NSRect(x: inset, y: inset, width: canvas - 2 * inset, height: canvas - 2 * inset)
     let path = NSBezierPath(roundedRect: tile, xRadius: tile.width * 185 / 824, yRadius: tile.width * 185 / 824)
-    let lit = base.blended(withFraction: 0.10, of: .white) ?? base
-    let shaded = base.blended(withFraction: 0.14, of: .black) ?? base
-    NSGradient(starting: lit, ending: shaded)?.draw(in: path, angle: -90)
-
-    let glyph = "㊙\u{FE0E}" as NSString
-    let attributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: tile.height * 0.72),
-        .foregroundColor: NSColor.white,
-    ]
-    let size = glyph.size(withAttributes: attributes)
-    glyph.draw(
-        at: NSPoint(x: tile.midX - size.width / 2, y: tile.midY - size.height / 2),
-        withAttributes: attributes
-    )
+    style.draw(StyleContext(canvas: canvas, tile: tile, tilePath: path, base: base))
     return rep
 }
 

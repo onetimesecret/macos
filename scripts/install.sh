@@ -83,7 +83,7 @@ quit_installed() { # <app name>
     running_from "$macos_dir" || return 0
     sleep 0.2
   done
-  echo "$name is still running from $macos_dir; refusing to replace a live app." >&2
+  echo "$name is still running from $macos_dir; refusing to touch a live app." >&2
   exit 1
 }
 
@@ -98,10 +98,26 @@ install_bundle() { # <app name>
   echo "Installed $name.app $version"
 }
 
-quit_installed CompanionBackdrop
-install_bundle CompanionBackdrop
+# One-time migration: this app used to install as CompanionBackdrop.app
+# (the bundle id, which never changes, still carries that legacy name).
+# Leaving the old bundle beside the new one would hand LaunchServices
+# two registered copies of one bundle id, so the old bundle goes, but
+# only after it has quit: quit_installed exits rather than return when
+# the app will not go, and we never remove a live app.
+migrate_legacy_bundle() { # <legacy app name>
+  local name="$1"
+  local legacy="$APP_DEST/$name.app"
+  [[ -d "$legacy" ]] || return 0
+  quit_installed "$name"
+  echo "==> Removing legacy $legacy (this app is now OnetimePad.app)"
+  rm -rf "$legacy"
+}
+
+quit_installed OnetimePad
+install_bundle OnetimePad
+migrate_legacy_bundle CompanionBackdrop
 
 if [[ "$NO_LAUNCH" == 0 ]]; then
   echo "==> Launching installed app"
-  open "$APP_DEST/CompanionBackdrop.app"
+  open "$APP_DEST/OnetimePad.app"
 fi

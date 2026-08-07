@@ -2,12 +2,14 @@ import AppKit
 import CompanionKit
 import SwiftUI
 
-/// The background-surface form factor (docs/spec/feature/background-surface):
-/// an ambient pane resting at desktop level, raised to a floating editor
-/// by ⌃⌥Space, ⌘Tab, the Dock icon, or the menu-bar item. A sibling of
-/// the panel app — same Rust core through the same seam, different
-/// posture (ADR-0010). This target never touches the panel's code,
-/// state file, or Keychain items.
+/// OnetimePad, the background-surface form factor
+/// (docs/spec/feature/background-surface): an ambient pane resting at
+/// desktop level, raised to a floating editor by ⌃⌥Space, ⌘Tab, the
+/// Dock icon, or the menu-bar item. It began as a sibling of the panel
+/// app (ADR-0010), same Rust core through the same seam, different
+/// posture; the panel was archived once this form factor reached
+/// parity (ADR-0014), and its state file and Keychain items remain
+/// untouched by this target.
 @main
 struct BackdropApp: App {
     @NSApplicationDelegateAdaptor(BackdropAppDelegate.self) private var appDelegate
@@ -63,9 +65,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // feature spec's open question №7.
         NSApp.setActivationPolicy(.regular)
 
-        // The ㊙️ maruhi ("secret"), shared with the panel app: the Dock
-        // icon and the ⌘Tab card both draw from `applicationIconImage`,
-        // so one colour rendering serves both. Only for a bare
+        // The ㊙️ maruhi ("secret"): the Dock icon and the ⌘Tab card
+        // both draw from `applicationIconImage`, so one colour
+        // rendering serves both. Only for a bare
         // `swift run`, which has no bundle: the bundled app carries
         // AppIcon.icns (scripts/build-icons.sh), and this override
         // would shadow it. The menu-bar item gets the monochrome
@@ -242,7 +244,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// About panel, the tray menu and the status item's accessibility
     /// label would otherwise fall back to the executable name. The
     /// bundled app takes the same name from CFBundleName /
-    /// CFBundleDisplayName in shell/Backdrop-Info.plist, and the two
+    /// CFBundleDisplayName in shell/OnetimePad-Info.plist, and the two
     /// must agree. Neither is the bundle id, which never changes.
     static let productName = "OnetimePad"
 

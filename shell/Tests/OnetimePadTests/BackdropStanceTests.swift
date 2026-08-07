@@ -1,7 +1,7 @@
 import AppKit
 import XCTest
 
-@testable import CompanionBackdrop
+@testable import OnetimePad
 
 /// The stance split, tested as the pure decision it is — the shell's
 /// pattern for UI-adjacent logic: test the decision itself, never mock
