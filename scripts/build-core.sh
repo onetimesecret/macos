@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build companion-ffi as a universal macOS .xcframework for a Swift shell
 # (or spike) to link. macOS-only: needs the Apple SDK, rustup Apple
-# targets, and xcodebuild. Output lands in bindings/ (git-ignored — a
+# targets, and xcodebuild. Output lands in bindings/ (git-ignored: a
 # build artifact, not source).
 set -euo pipefail
 cd "$(dirname "$0")/.."

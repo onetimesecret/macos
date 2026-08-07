@@ -9,7 +9,7 @@
 #
 # Prereq: scripts/build-core.sh has produced the xcframework.
 #
-# --debug builds the debug configuration — the only build that can lift
+# --debug builds the debug configuration, the only build that can lift
 # the window's capture exclusion (COMPANION_ALLOW_CAPTURE, compiled out
 # of release). `open` does not forward the caller's environment; pass
 # the variable explicitly:
@@ -60,7 +60,7 @@ elif [[ -n "${1:-}" ]]; then
 fi
 
 if [[ ! -d bindings/CompanionCore.xcframework ]]; then
-  echo "bindings/CompanionCore.xcframework is missing — run scripts/build-core.sh first." >&2
+  echo "bindings/CompanionCore.xcframework is missing; run scripts/build-core.sh first." >&2
   exit 1
 fi
 
@@ -210,4 +210,4 @@ echo "==> Verifying"
 plutil -lint "$APP/Contents/Info.plist"
 codesign --verify --strict "$APP"
 
-echo "Built $APP — launch with: open $APP"
+echo "Built $APP. Launch with: open $APP"
