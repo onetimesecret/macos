@@ -74,6 +74,19 @@ let styles: [Style] = [
         drawMaruhi(.white, in: ctx.tile, scale: 1.6)
         NSGraphicsContext.restoreGraphicsState()
     },
+    Style(name: "stamp", summary: "hanko: warm paper tile, maruhi inked askew in the shade") { ctx in
+        NSColor(calibratedRed: 0.97, green: 0.95, blue: 0.90, alpha: 1).setFill()
+        ctx.tilePath.fill()
+        NSGraphicsContext.saveGraphicsState()
+        ctx.tilePath.addClip()
+        let tilt = NSAffineTransform()
+        tilt.translateX(by: ctx.tile.midX, yBy: ctx.tile.midY)
+        tilt.rotate(byDegrees: -12)
+        tilt.translateX(by: -ctx.tile.midX, yBy: -ctx.tile.midY)
+        tilt.concat()
+        drawMaruhi(ctx.base.withAlphaComponent(0.88), in: ctx.tile, scale: 0.78)
+        NSGraphicsContext.restoreGraphicsState()
+    },
     Style(name: "ring", summary: "solid tile, white ring around a smaller maruhi") { ctx in
         ctx.base.setFill()
         ctx.tilePath.fill()
