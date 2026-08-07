@@ -14,10 +14,10 @@ The steps, in order:
 
 3. **Create the App Store Connect record.** New macOS app, select that bundle id, set name, SKU, primary language. Decide the real product name here (see the naming note below).
 
-4. **Add App Sandbox and entitlements.** This is the actual work. Create `shell/CompanionApp.entitlements`:
+4. **Add App Sandbox and entitlements.** This is the actual work. `scripts/Companion.entitlements` already exists and already carries the keychain group; extend that file rather than creating a second one:
    - `com.apple.security.app-sandbox` = true (mandatory for anything shipped through App Store Connect)
    - `com.apple.security.network.client` = true (promotion POST and the connection test)
-   - `com.apple.security.keychain-access-groups` = `["$(AppIdentifierPrefix)com.onetimesecret.companion"]`. This one does double duty: it's the restricted entitlement that forces macOS to issue a genuine provisioning profile, which is what makes Mac TestFlight work at all.
+   - `keychain-access-groups`, already present as `$(AppIdentifierPrefix)@BUNDLE_IDENTIFIER@`. Do not hardcode a bundle id here: the build scripts substitute the signing certificate's Team ID and the id of the bundle being assembled, so the panel, the backdrop, and their `.debug` variants each land in their own group. A single shared group would be a single shared keychain, which ADR-0010 forbids across form factors. This entitlement also does double duty: it is the restricted one that forces macOS to issue a genuine provisioning profile, which is what makes Mac TestFlight work at all. Restricted cuts both ways, though, so see step 5: claim it without embedding a profile and the app will not launch (amfid -413).
 
 5. **Certificates and profile.** An "Apple Distribution" certificate signs the `.app`; a "Mac Installer Distribution" (a.k.a. "3rd Party Mac Developer Installer") certificate signs the `.pkg`. Create a Mac App Store distribution provisioning profile for the App ID and copy it to `Contents/embedded.provisionprofile` before signing. App Store re-signs your build on ingest, so the embedded profile is for upload validation, not the final identity.
 
