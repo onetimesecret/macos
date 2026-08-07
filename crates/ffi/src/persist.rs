@@ -918,6 +918,11 @@ fn boot_session_uuid() -> [u8; BOOT_UUID_LEN] {
 /// The 16 bytes behind a `8-4-4-4-12` UUID string, NUL-terminated or
 /// not. `None` unless exactly 32 hex digits are present, so a truncated
 /// or reshaped answer is never padded into a plausible-looking session.
+///
+/// Gated to where it is called: only the macOS reader has a string to
+/// parse, but the tests below exercise it on every host, so the Linux
+/// test build keeps it while the Linux lib build sheds it.
+#[cfg(any(target_os = "macos", test))]
 fn parse_uuid(bytes: &[u8]) -> Option<[u8; BOOT_UUID_LEN]> {
     let mut nibbles = bytes
         .iter()
@@ -934,7 +939,9 @@ fn parse_uuid(bytes: &[u8]) -> Option<[u8; BOOT_UUID_LEN]> {
     nibbles.next().is_none().then_some(out)
 }
 
-/// One hexadecimal digit's value, either case.
+/// One hexadecimal digit's value, either case. The gate follows
+/// [`parse_uuid`], its only caller.
+#[cfg(any(target_os = "macos", test))]
 fn hex_value(byte: u8) -> Option<u8> {
     match byte {
         b'0'..=b'9' => Some(byte - b'0'),
