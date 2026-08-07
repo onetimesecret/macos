@@ -981,6 +981,21 @@ pub unsafe extern "C" fn companion_persist_save(
     persist::write_private(Path::new(path), &sealed)
 }
 
+/// The milliseconds of monotonic time between a sealed stamp and now,
+/// as pure arithmetic over two readings of the same clock.
+///
+/// Direction-safe, not just monotonic: a saved stamp that reads later
+/// than now cannot have come from this session's clock, so it is
+/// treated as suspect and charged the ceiling rather than credited
+/// zero. The error can only ever cost a page life. Granting life past
+/// a page's TTL is the one outcome that must be impossible.
+fn monotonic_away_ms(now_ns: u64, saved_mono_ns: u64) -> u64 {
+    match now_ns.checked_sub(saved_mono_ns) {
+        Some(elapsed_ns) => elapsed_ns / 1_000_000,
+        None => u64::MAX,
+    }
+}
+
 /// Restore the store from a state file [`companion_persist_save`]
 /// wrote: decrypt (both key halves are loaded, never minted here),
 /// replace the store's sheets, and drain every countdown by the time
@@ -1062,19 +1077,10 @@ pub unsafe extern "C" fn companion_persist_restore(
             // Time away, monotonic: the core drains by the difference
             // between the snapshot's own wall stamp and the "now" passed
             // here, so handing it the stamp plus the monotonic elapsed
-            // makes the drain immune to a stepped calendar clock.
-            //
-            // Direction-safe, not just monotonic: a saved stamp that
-            // reads later than now cannot have come from this session's
-            // clock, so it is suspect and is charged the ceiling rather
-            // than credited zero. The core clamps the span it acts on;
-            // what matters here is that the error can only ever cost a
-            // page life. Granting life past a page's TTL is the one
-            // outcome that must be impossible.
-            let away_ms = match sleep_inclusive_ns().checked_sub(saved_mono_ns) {
-                Some(elapsed_ns) => elapsed_ns / 1_000_000,
-                None => u64::MAX,
-            };
+            // makes the drain immune to a stepped calendar clock. The
+            // suspect-stamp handling lives in [`monotonic_away_ms`]; the
+            // core clamps the span it acts on.
+            let away_ms = monotonic_away_ms(sleep_inclusive_ns(), saved_mono_ns);
             if guard
                 .store
                 .restore(&plaintext, saved_wall_ms.saturating_add(away_ms))
@@ -2676,11 +2682,36 @@ mod tests {
         sheets.first()?["remaining_ms"].as_u64()
     }
 
+    /// The away computation is pure arithmetic, so the arithmetic is
+    /// pinned here without any dependence on how long the test host
+    /// has been up. The seam test below cannot carry these cases: it
+    /// would need to stamp a file hours before the current monotonic
+    /// reading, and a freshly booted CI runner has no such hours to
+    /// subtract.
+    #[test]
+    fn hours_of_monotonic_time_away_drain_hours_of_life() {
+        let two_hours_ns: u64 = 2 * 60 * 60 * 1_000_000_000;
+        let two_hours_ms = 2 * 60 * 60 * 1_000;
+        assert_eq!(monotonic_away_ms(two_hours_ns + 7, 7), two_hours_ms);
+    }
+
+    #[test]
+    fn no_time_away_drains_nothing() {
+        assert_eq!(monotonic_away_ms(42, 42), 0);
+    }
+
+    #[test]
+    fn a_stamp_from_the_future_is_charged_the_ceiling_not_zero() {
+        assert_eq!(monotonic_away_ms(41, 42), u64::MAX);
+    }
+
     /// Cross-restart aging is monotonic. The file's wall stamp is
     /// hours in the past while its monotonic stamp says the app was
     /// away for no time at all, which is what a system clock stepped
     /// forward looks like: the page must keep its remaining time.
-    /// Stepping the clock the other way is the attack this closes.
+    /// Stepping the clock the other way is the attack this closes,
+    /// and a monotonic stamp from the future is suspect enough to
+    /// drain the page outright.
     #[test]
     fn time_away_is_measured_by_the_monotonic_stamp_not_the_calendar() {
         let credentials: Arc<dyn CredentialStore> =
@@ -2717,15 +2748,20 @@ mod tests {
             );
             companion_free(second);
 
-            // The same file with a monotonic stamp two hours back does
-            // drain the page: the backstop still works, it just works
-            // off a clock nobody can step.
+            // The same file with a monotonic stamp in the future of the
+            // current reading takes the suspect arm: a reading later
+            // than now cannot have come from this session's clock, so
+            // restore charges the maximum time away and the page drains
+            // through the full path regardless of how long this host
+            // has been up. The ordinary hours-back arithmetic is pinned
+            // by the unit tests for [`monotonic_away_ms`], which a
+            // freshly booted CI runner cannot skew.
             let two_hours_ns = 2 * 60 * 60 * 1_000_000_000;
             let aged = persist::seal_state(
                 &key,
                 &snapshot,
                 stale_wall_ms,
-                mono_ns.saturating_sub(two_hours_ns),
+                mono_ns.saturating_add(two_hours_ns),
             )
             .unwrap();
             assert!(persist::write_private(&path, &aged));
@@ -2734,7 +2770,7 @@ mod tests {
             assert_eq!(
                 first_remaining_ms(third),
                 None,
-                "an hour-long page outlived two monotonic hours away"
+                "a page with a suspect future stamp survived restore"
             );
             let _ = sheet;
             companion_free(third);
