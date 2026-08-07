@@ -123,6 +123,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The dev-seed shim is gone from the core** (`companion-ffi` 0.3.0).
+  The off-by-default `dev-scaffolding` cargo feature, the
+  `companion_dev_seed_pasteboard` entry point behind it, and the
+  `COMPANION_DEV_SCAFFOLDING` block in the packaged header are all
+  removed. Real pasteboard ingest landed long ago and the rev C
+  surfaces seal what you type, so nothing has called the plaintext
+  shim in a while; what the feature still bought was a flag someone
+  could turn back on. `scripts/build-core.sh` now takes no arguments
+  and rejects any it is handed, and CI calls it bare.
+- **The keychain access group follows the bundle id**.
+  `scripts/Companion.entitlements` is a template rather than a
+  finished file: `@BUNDLE_IDENTIFIER@` is filled in at sign time from
+  the assembled bundle's own `CFBundleIdentifier`, read back after the
+  debug lane has applied its `.debug` suffix. The hardcoded
+  `com.onetimesecret.companion` had been putting the panel, the
+  backdrop and both debug variants into one group, and a shared group
+  is a shared keychain, which is the separation ADR-0010 rests on.
+  There are four ids to authorize now, so a development profile has to
+  be minted against a wildcard App ID; scripts/local.env.example says
+  why rather than treating the wildcard as a convenience.
+- **`scripts/quit-app.sh` knows both apps**: no argument quits every
+  running instance of CompanionApp and CompanionBackdrop, and one name
+  quits just that one. It asks AppleScript at the running copy's
+  bundle path rather than at the app's name, because the backdrop's
+  bundle name is OnetimePad and `tell application "CompanionBackdrop"`
+  asks LaunchServices to resolve a name that no longer exists. A bare
+  `swift run` binary has no bundle to address, so the script says the
+  polite path is unavailable instead of implying it tried, and an
+  osascript failure is reported as itself so a denied Automation
+  consent is not blamed on the app.
+- **`scripts/build-app.sh` builds only its own product**, passing
+  `--product CompanionApp`, so packaging the panel no longer compiles
+  the backdrop's sources first. `scripts/build-backdrop.sh` already
+  scoped its build this way.
+- **`FormFactor.displayName` is gone.** Nothing read it: what an app
+  calls itself to the user is a per-target `productName`, kept next to
+  the `CFBundleName` it has to agree with, and the shared model never
+  needed a second copy of it.
+
 - **The background surface is called OnetimePad**. The user-facing
   name only: `CFBundleName` and `CFBundleDisplayName`, the card's own
   header, the About panel, the tray menu and the status item's

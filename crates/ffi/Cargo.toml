@@ -1,6 +1,6 @@
 [package]
 name = "companion-ffi"
-version = "0.2.0"
+version = "0.3.0"
 description = "The C-ABI seam for the Onetime Secret macOS companion: the only crate a non-Rust shell may call. Hands out opaque handles and non-secret JSON — never plaintext."
 publish = false
 edition.workspace = true
@@ -12,13 +12,6 @@ rust-version.workspace = true
 # staticlib feeds the .xcframework (scripts/build-core.sh); cdylib lets
 # the seam be smoke-tested off macOS; rlib keeps `cargo test` natural.
 crate-type = ["staticlib", "cdylib", "rlib"]
-
-[features]
-# The plaintext-ingest dev shim (companion_dev_seed_pasteboard), needed
-# only until the NSPasteboard adapter lands (issue #3). Off by default:
-# a normal build exports no entry point that moves plaintext across the
-# seam. The spike opts in via `scripts/build-core.sh --dev-scaffolding`.
-dev-scaffolding = []
 
 [lints]
 workspace = true

@@ -14,9 +14,6 @@ import Foundation
 /// opens on), so the difference is data the shared model reads rather
 /// than a second copy of the model.
 public struct FormFactor: Sendable {
-    /// The name in the About panel, the alerts, and the tray item.
-    public let displayName: String
-
     /// Scopes this form factor's Keychain items, always the running
     /// build's own identifier (ADR-0012: services derive from the bundle
     /// id, and the debug lane's `.debug` suffix splits dev from release
@@ -46,13 +43,11 @@ public struct FormFactor: Sendable {
     public let defaultRung: Rung?
 
     public init(
-        displayName: String,
         credentialService: String,
         stateDirectory: String,
         loggerSubsystem: String,
         defaultRung: Rung?
     ) {
-        self.displayName = displayName
         self.credentialService = credentialService
         self.stateDirectory = stateDirectory
         self.loggerSubsystem = loggerSubsystem
@@ -160,7 +155,6 @@ public struct FormFactor: Sendable {
     public static var panel: FormFactor {
         let id = resolvedBundleIdentifier(fallback: panelBundleIdentifier)
         return FormFactor(
-            displayName: "CompanionApp",
             credentialService: id,
             stateDirectory: "\(id).noindex",
             loggerSubsystem: id,
@@ -174,7 +168,6 @@ public struct FormFactor: Sendable {
     public static var backdrop: FormFactor {
         let id = resolvedBundleIdentifier(fallback: backdropBundleIdentifier)
         return FormFactor(
-            displayName: "CompanionBackdrop",
             credentialService: id,
             stateDirectory: "\(id).noindex",
             loggerSubsystem: id,

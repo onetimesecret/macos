@@ -97,7 +97,8 @@ Related: Esc hands the keyboard back to whatever app had it, leaving the window 
 
 ### Force close
 
-Use scripts/quit-app.sh
+Use `scripts/quit-app.sh CompanionApp`. With no argument it quits both
+form factors.
 
 ## Form factors
 

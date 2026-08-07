@@ -4,7 +4,7 @@
 <dict>
   <key>keychain-access-groups</key>
   <array>
-    <string>$(AppIdentifierPrefix)com.onetimesecret.companion</string>
+    <string>$(AppIdentifierPrefix)@BUNDLE_IDENTIFIER@</string>
   </array>
 </dict>
 </plist>

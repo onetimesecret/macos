@@ -50,8 +50,7 @@ jobs:
 
   # The Swift/AppKit shell (ADR-0002): build the C-ABI seam as a
   # universal xcframework, then build and test the Swift package against
-  # it. --dev-scaffolding stays until drop-to-seal gets its
-  # boundary-lawful design (the shell still links the dev-seed symbol).
+  # it.
   shell:
     name: shell (macos)
     runs-on: macos-latest
@@ -61,7 +60,7 @@ jobs:
         run: rustup show
       - uses: Swatinem/rust-cache@v2
       - name: Build CompanionCore.xcframework
-        run: ./scripts/build-core.sh --dev-scaffolding
+        run: ./scripts/build-core.sh
       - name: swift build
         run: swift build --package-path shell
       - name: swift test

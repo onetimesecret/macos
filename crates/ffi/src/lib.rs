@@ -107,13 +107,12 @@ enum Board {
 }
 
 impl Board {
-    /// Seed content as another app would — dev scaffolding behind
-    /// [`companion_dev_seed_pasteboard`], so demo and test affordances
-    /// have something to seal. The real system clipboard has no
-    /// unmarked "external put", so on macOS the seed rides the normal
-    /// write (transient-marked); sealed paste reads text regardless of
-    /// marks, so the core cannot tell the difference.
-    #[cfg(any(test, feature = "dev-scaffolding"))]
+    /// Seed content as another app would, so the tests below have
+    /// something to seal. The real system clipboard has no unmarked
+    /// "external put", so on macOS the seed rides the normal write
+    /// (transient-marked); sealed paste reads text regardless of marks,
+    /// so the core cannot tell the difference.
+    #[cfg(test)]
     fn put_external(&mut self, content: PasteboardContent, concealed: bool) {
         match self {
             Board::Memory(pb) => pb.put_external(content, concealed),
@@ -1675,48 +1674,6 @@ fn finish_promotion(handle: &CompanionHandle, promoted: Promoted, sent: Promotab
 /// the inline failure state and never carry secret material.
 fn promotion_error(message: &str) -> *mut c_char {
     into_c_string(serde_json::json!({ "ok": false, "error": message }).to_string())
-}
-
-// ---------------------------------------------------------------------------
-// Dev scaffolding — a seed for demo/test affordances
-// ---------------------------------------------------------------------------
-
-/// Seed the pasteboard with `text` as an external app would, so demo
-/// affordances have something for
-/// [`companion_sheet_seal_from_pasteboard`] to seal. On macOS this
-/// writes the **real** system clipboard (so the button demonstrates a
-/// genuine clipboard → core round-trip on device, and — like any
-/// capture — it replaces what was on the clipboard); off macOS it
-/// seeds the in-process board.
-///
-/// Demo scaffolding, not a data path: the text it carries is a caller-
-/// supplied fixture, never a copy-out. The symbol exists only behind
-/// the off-by-default `dev-scaffolding` cargo feature
-/// (`scripts/build-core.sh --dev-scaffolding`). Returns `false` on a
-/// null/invalid argument.
-///
-/// # Safety
-/// `handle` must be a valid handle. `text` must be a valid,
-/// NUL-terminated UTF-8 C string.
-#[cfg(any(test, feature = "dev-scaffolding"))]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_dev_seed_pasteboard(
-    handle: *mut CompanionHandle,
-    text: *const c_char,
-) -> bool {
-    let Some(handle) = (unsafe { handle.as_ref() }) else {
-        return false;
-    };
-    let Some(text) = (unsafe { cstr(text) }) else {
-        return false;
-    };
-    let Ok(mut guard) = handle.inner.lock() else {
-        return false;
-    };
-    guard
-        .pasteboard
-        .put_external(PasteboardContent::Text(text.to_string()), false);
-    true
 }
 
 /// Free a string returned by this library. Passing null is a no-op.

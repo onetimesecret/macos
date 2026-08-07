@@ -497,23 +497,6 @@ char *companion_chip_promote(CompanionHandle *handle, uint64_t chip,
 char *companion_sheet_promote(CompanionHandle *handle, uint64_t sheet,
                               const char *opts_json);
 
-/* ------------------------------------------------------------------ */
-/* Dev scaffolding                                                     */
-/* ------------------------------------------------------------------ */
-
-/*
- * DEV SCAFFOLDING: put text on the pasteboard as an external app
- * would, so demo affordances have something for
- * companion_sheet_seal_from_pasteboard() to seal. On macOS this writes
- * the REAL system clipboard. Exists only when the core was built with
- * the off-by-default `dev-scaffolding` cargo feature; build-core.sh
- * defines COMPANION_DEV_SCAFFOLDING in the packaged header iff it
- * enabled that feature.
- */
-#ifdef COMPANION_DEV_SCAFFOLDING
-bool companion_dev_seed_pasteboard(CompanionHandle *handle, const char *text);
-#endif
-
 /* Free a string returned by this library. Null is a no-op. */
 void companion_string_free(char *s);
 

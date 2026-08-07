@@ -44,9 +44,10 @@ re-confirms access to stored items (the API token, the state key); set
 `CODESIGN_IDENTITY` to a real certificate for an identity that
 persists.
 
-The rev C surfaces make dev scaffolding unnecessary — type a line and
-⌘↩ seals it; `--dev-scaffolding` builds of the core still exist for the
-demo but nothing in this package calls them.
+The rev C surfaces make dev scaffolding unnecessary: type a line and
+⌘↩ seals it. The old dev-seed shim is gone from the packaged core, so
+no shipped library exports an entry point that carries plaintext into
+the seam.
 
 ## Honest status
 

@@ -73,8 +73,8 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-echo "==> swift build -c $CONFIG"
-swift build --package-path shell -c "$CONFIG"
+echo "==> swift build -c $CONFIG --product CompanionApp"
+swift build --package-path shell -c "$CONFIG" --product CompanionApp
 BIN="$(swift build --package-path shell -c "$CONFIG" --show-bin-path)/CompanionApp"
 
 APP=dist/CompanionApp.app
@@ -129,8 +129,10 @@ echo "$DIGEST  ${APP##*/} (pre-signature, $DIGEST_FILE)"
 
 # scripts/Companion.entitlements declares keychain-access-groups, which
 # is what lets the credentials layer reach the data protection keychain
-# (ADR-0012). It holds no XML comments on purpose: the AMFI parser that
-# reads entitlements at signing time rejects them outright.
+# (ADR-0012). It is a template, not a finished file: both
+# $(AppIdentifierPrefix) and @BUNDLE_IDENTIFIER@ are filled in at sign
+# time. It holds no XML comments on purpose: the AMFI parser that reads
+# entitlements at signing time rejects them outright.
 IDENTITY="${CODESIGN_IDENTITY:--}"
 echo "==> codesign (${CODESIGN_IDENTITY:-ad-hoc})"
 if [[ "$IDENTITY" == "-" ]]; then
@@ -175,10 +177,20 @@ else
       # digest differ per machine.
       cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
       echo "==> embedded provisioning profile: $PROVISIONING_PROFILE"
+      # The group follows the bundle's own identifier, read back out of
+      # the assembled Info.plist so it already carries any .debug
+      # suffix. Hardcoding one id would drop the panel, the backdrop,
+      # and both debug variants into a single group, and a shared group
+      # is a shared keychain: CompanionKit/FormFactor.swift scopes each
+      # form factor's credentialService to its own bundle id, and
+      # ADR-0010 says neither can read the other's pages.
+      SIGNED_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
+      ACCESS_GROUP="${TEAM_ID}.${SIGNED_BUNDLE_ID}"
       SIGN_ENTITLEMENTS="$(mktemp -t companion-entitlements)"
-      sed "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" scripts/Companion.entitlements \
-        > "$SIGN_ENTITLEMENTS"
-      echo "==> entitlements: keychain-access-group ${TEAM_ID}.com.onetimesecret.companion"
+      sed -e "s/\$(AppIdentifierPrefix)/${TEAM_ID}./g" \
+          -e "s/@BUNDLE_IDENTIFIER@/${SIGNED_BUNDLE_ID}/g" \
+          scripts/Companion.entitlements > "$SIGN_ENTITLEMENTS"
+      echo "==> entitlements: keychain-access-group $ACCESS_GROUP"
       codesign --force --entitlements "$SIGN_ENTITLEMENTS" --sign "$IDENTITY" "$APP"
       rm -f "$SIGN_ENTITLEMENTS"
     else

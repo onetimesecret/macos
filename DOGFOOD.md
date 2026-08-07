@@ -106,7 +106,9 @@ pending, so it is the tidiest way to end a session. It is no longer the
 only path that saves anything. If the app is unresponsive,
 `scripts/quit-app.sh` escalates AppleScript quit to SIGTERM to SIGKILL,
 in that order, and says which level it needed. The first level flushes;
-the other two lose at most the last couple of seconds of edits.
+the other two lose at most the last couple of seconds of edits. It
+quits both apps unless you name one, as in `scripts/quit-app.sh
+CompanionBackdrop`.
 
 ## Trusting persistence across a quit and reopen
 
