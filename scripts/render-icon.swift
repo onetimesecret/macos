@@ -66,6 +66,14 @@ let styles: [Style] = [
         ctx.tilePath.fill()
         drawMaruhi(ctx.base, in: ctx.tile)
     },
+    Style(name: "zoom", summary: "maruhi zoomed past the tile so its ring crops away") { ctx in
+        ctx.base.setFill()
+        ctx.tilePath.fill()
+        NSGraphicsContext.saveGraphicsState()
+        ctx.tilePath.addClip()
+        drawMaruhi(.white, in: ctx.tile, scale: 1.6)
+        NSGraphicsContext.restoreGraphicsState()
+    },
     Style(name: "ring", summary: "solid tile, white ring around a smaller maruhi") { ctx in
         ctx.base.setFill()
         ctx.tilePath.fill()
