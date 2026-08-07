@@ -173,6 +173,14 @@ let styles: [Style] = [
         disc.fill()
         drawMaruhi(ctx.base, in: ctx.tile, scale: 0.56)
     },
+    Style(name: "misprint", summary: "near-white tile, maruhi printed twice out of register") { ctx in
+        NSColor(calibratedWhite: 0.97, alpha: 1).setFill()
+        ctx.tilePath.fill()
+        let slip = ctx.tile.width * 0.02
+        let ghost = ctx.base.blended(withFraction: 0.55, of: .white) ?? ctx.base
+        drawMaruhi(ghost, in: ctx.tile, offset: NSPoint(x: slip, y: -slip))
+        drawMaruhi(ctx.base.withAlphaComponent(0.92), in: ctx.tile)
+    },
 ]
 
 // MARK: - Command line
