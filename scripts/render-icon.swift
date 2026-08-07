@@ -87,6 +87,20 @@ let styles: [Style] = [
         drawMaruhi(ctx.base.withAlphaComponent(0.88), in: ctx.tile, scale: 0.78)
         NSGraphicsContext.restoreGraphicsState()
     },
+    Style(name: "neon", summary: "night tile, maruhi glowing in the shade like a sign") { ctx in
+        NSColor(calibratedWhite: 0.08, alpha: 1).setFill()
+        ctx.tilePath.fill()
+        NSGraphicsContext.saveGraphicsState()
+        ctx.tilePath.addClip()
+        let tube = ctx.base.blended(withFraction: 0.45, of: .white) ?? ctx.base
+        let glow = NSShadow()
+        glow.shadowColor = tube
+        glow.shadowBlurRadius = ctx.tile.height * 0.05
+        glow.set()
+        for _ in 0..<3 { drawMaruhi(tube, in: ctx.tile, scale: 0.66) }
+        drawMaruhi(tube.blended(withFraction: 0.55, of: .white) ?? tube, in: ctx.tile, scale: 0.66)
+        NSGraphicsContext.restoreGraphicsState()
+    },
     Style(name: "ring", summary: "solid tile, white ring around a smaller maruhi") { ctx in
         ctx.base.setFill()
         ctx.tilePath.fill()
