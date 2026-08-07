@@ -64,83 +64,92 @@ crates/credentials/  credential-store contract; macOS Keychain impl (cfg-gated)
 crates/pasteboard/   pasteboard hygiene contract; NSPasteboard adapter lands here
 crates/ffi/          the C-ABI seam a non-Rust shell calls — plaintext never
                      crosses it, in either direction
-shell/               the Swift/AppKit shells (ADR-0002) — form factors are
-                     sibling targets (ADR-0010) linking the core only through
-                     the xcframework built from crates/ffi:
+shell/               the Swift/AppKit shell (ADR-0002), linking the core only
+                     through the xcframework built from crates/ffi:
                        Sources/CompanionKit       the shared page model,
                                                   views and seam wrapper
-                       Sources/CompanionApp       the panel (alpha)
-                       Sources/CompanionBackdrop  the background surface
+                       Sources/CompanionBackdrop  OnetimePad, the background
+                                                  surface (ADR-0010, ADR-0014)
 docs/spec/design/    the governing spec   ·   docs/spec/feature/  feature specs
 docs/adr/            decisions
 ```
 
 ## Running
 
-Use the .app (scripts/build-app.sh → dist/CompanionApp.app), especially when testing Keychain behavior and permission prompts.
+Two entry points, both in `scripts/`:
 
-Reasons:
+- `scripts/dev.sh` builds the debug bundle and launches it from
+  `dist/`. The debug build takes a `.debug` bundle id and a "Dev"
+  display name, so it runs beside the installed copy without sharing
+  its defaults, keychain items, or state.
+- `scripts/install.sh` builds the release bundle, signs it, and
+  installs it to `/Applications`. This is the daily dogfood channel;
+  see [DOGFOOD.md](DOGFOOD.md).
 
+Both rebuild the Rust core only when it is stale and package through
+`scripts/package-app.sh`. Prefer a bundle over `swift run` whenever
+Keychain behavior or permission prompts matter:
 
-- Keychain behavior is the thing under test. The state key and API token live in the Keychain, and ACLs key off the app's identity. The bundle carries com.onetimesecret.companion and a signature; a bare swift run binary has no CFBundleIdentifier, so prompts and grants behave differently (and less representatively) than what a real user would see. Since you specifically want to observe when the prompt fires (first reveal, not launch), test the bundle.
-- Permission-system citizenship. TCC grants and per-app pickers can't address a bundle-less binary — that's why build-app.sh exists.
-- The rebuild hazard. swift build SIGKILLs a live instance running from .build/ (in-place re-sign), and a SIGKILL skips applicationWillTerminate — meaning no state save, pages gone. Running from dist/ keeps the live instance decoupled from builds.
+- Keychain ACLs key off the app's identity. The bundle carries a bundle
+  id and a signature; a bare `swift run` binary has no
+  CFBundleIdentifier, so prompts and grants behave differently (and
+  less representatively) than what a real user would see.
+- TCC grants and per-app pickers can't address a bundle-less binary.
+- The rebuild hazard: `swift build` SIGKILLs a live instance running
+  from `.build/` (in-place re-sign), and a SIGKILL skips
+  `applicationWillTerminate`, meaning no state save. Running from
+  `dist/` or `/Applications` keeps the live instance decoupled from
+  builds.
 
-swift run remains fine for quick UI iteration where none of that matters (layout, tab drag, notices). But for the persistence round trip, prompt timing, and the fullscreen/Spaces check: quit the running instance normally (so it saves state), run scripts/build-app.sh, and launch the fresh dist/CompanionApp.app.
-
-
-### Summoning
-
-⌥Space (Option-Space). It toggles: one press summons the window and gives it the keyboard (the page is ready to type into), a second press dismisses it. This is documented in docs/spec/design/04-interaction-model.md and implemented in WindowController.summon().
-
-Related: Esc hands the keyboard back to whatever app had it, leaving the window visible. And with the new Spaces behavior in the working tree, if the window is visible on a different Space, ⌥Space brings it to your current Space instead of dismissing it.
+`swift run CompanionBackdrop` remains fine for quick UI iteration where
+none of that matters (layout, tab drag, notices).
 
 ### Force close
 
-Use `scripts/quit-app.sh CompanionApp`. With no argument it quits both
-form factors.
+Use `scripts/quit-app.sh`. It escalates AppleScript quit, then SIGTERM,
+then SIGKILL; only the graceful first step saves state.
 
-## Form factors
+## The app: OnetimePad
 
-The panel above is the primary form factor. The second is **the
-background surface** (`CompanionBackdrop`): an ambient pane resting at
-desktop level behind every window, raised to a floating editor with
-⌃⌥Space and rested again with Esc. Same Rust core through the same
-seam, and since the parity amendment the same pages, tabs, chips,
-ledger and exit ramp; what differs is the posture. Both form factors
-share `CompanionKit` and keep their own window, bundle id, Keychain
-service and state file, so neither can read the other's pages
-(ADR-0010). Spec and the underlying macOS research:
-docs/spec/feature/background-surface/. Build it with
-`scripts/build-backdrop.sh` → `dist/CompanionBackdrop.app`; both apps
-can run at once.
+OnetimePad (target `CompanionBackdrop`) is **the background surface**:
+an ambient pane resting at desktop level behind every window, raised to
+a floating editor with ⌃⌥Space and rested again with Esc. Spec and the
+underlying macOS research: docs/spec/feature/background-surface/.
 
-At rest the card lives *behind* every window — you see it exactly when
+At rest the card lives *behind* every window: you see it exactly when
 you see the desktop (a bare patch of screen, Show Desktop, Mission
 Control). Summon it with ⌃⌥Space, a left-click on the menu-bar icon,
-⌘Tab, or the Dock icon (unlike the panel, the backdrop is a regular
-app — an argued amendment in the feature spec): the card raises into a
-floating editor on your current Space, over full-screen apps included.
-A summon focuses before it dismisses — if the card is raised but
-you're working beside it, ⌃⌥Space brings the keyboard back; only when
-it already holds the keyboard does the gesture rest it. Esc or a click
-outside the card also rests it. The surface's mechanics log to the
-unified log:
+⌘Tab, or the Dock icon; the card raises into a floating editor on your
+current Space, over full-screen apps included. A summon focuses before
+it dismisses: if the card is raised but you're working beside it,
+⌃⌥Space brings the keyboard back, and only when it already holds the
+keyboard does the gesture rest it. Esc or a click outside the card also
+rests it. The surface's mechanics log to the unified log:
 
 ```sh
 log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
 ```
 
+It began as the second form factor (ADR-0010) beside a menu-bar panel,
+`CompanionApp`, which carried the project through v0.1. Once the
+surface reached feature parity the panel was archived (ADR-0014): its
+sources live in git history, and `CompanionKit` keeps everything a
+future form factor would share.
+
 
 ## Naming note
 
-**CompanionApp** is a deliberately generic working title. It replaced
-the earlier working title "Airlock" — a small chamber between two
-environments that things pass through but never live in, the product in
-one image — which collides with at least one existing security vendor
-(open question №8). The old name survives only in the design-history
-documents under `docs/Airlock Prototype/`. The final name still needs a
-shortlist and a trademark pass before any public artifact.
+**OnetimePad** is the current working name. The bundle id
+(`com.onetimesecret.companion.backdrop`) keeps the older "Companion"
+working-title lineage on purpose: macOS keys state, Keychain items, and
+TCC grants off the id, so the id outlives the names painted over it.
+"Companion" itself replaced the earlier working title "Airlock", a
+small chamber between two environments that things pass through but
+never live in, which collides with at least one existing security
+vendor (open question №8). The old name survives only in the
+design-history documents under `docs/Airlock Prototype/`. The final
+name still needs a shortlist and a trademark pass before any public
+artifact.
 
 ## License
 

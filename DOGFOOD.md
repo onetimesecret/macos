@@ -1,18 +1,18 @@
-# Dogfooding CompanionApp
+# Dogfooding OnetimePad
 
-This is the guide for running CompanionApp as a real daily tool, not a
+This is the guide for running OnetimePad as a real daily tool, not a
 dev build you launch from the repo. It replaces the ad hoc habit of
 keeping quick snippets in Vivaldi Notes.
 
 ## Install and update
 
 ```sh
-scripts/install-app.sh
+scripts/install.sh
 ```
 
-Builds the core only if it is stale, builds both apps, and installs
-them to `/Applications` (override with `APP_DEST`). Running the
-installed copy matters for two reasons:
+Builds the core only if it is stale, builds the app, and installs it
+to `/Applications` (override with `APP_DEST`). Running the installed
+copy matters for two reasons:
 
 - Rebuilds in the repo never touch it. `swift build` re-signs whatever
   binary is under `.build/`, and a running process whose own signature
@@ -23,8 +23,9 @@ installed copy matters for two reasons:
   `scripts/local.env.example`) to a stable certificate so those grants
   survive an update instead of resetting every time.
 
-Re-run `install-app.sh` to update. `--no-launch` installs without
-opening the apps afterward.
+Re-run `scripts/install.sh` to update. `--no-launch` installs without
+opening the app afterward. For a debug build that runs beside the
+installed copy, use `scripts/dev.sh`.
 
 ## One-time reset when you update to the ADR-0012 build
 
@@ -89,7 +90,7 @@ What changes:
 Right-click the tray icon: the version line (disabled, informational)
 shows the stamped bundle version next to the core the binary actually
 linked against, so a stale `xcframework` shows itself rather than
-hiding. Both build scripts append the short git SHA, with a `.dirty`
+hiding. The build script appends the short git SHA, with a `.dirty`
 marker for an uncommitted tree.
 
 ## Launch at login
@@ -106,9 +107,7 @@ pending, so it is the tidiest way to end a session. It is no longer the
 only path that saves anything. If the app is unresponsive,
 `scripts/quit-app.sh` escalates AppleScript quit to SIGTERM to SIGKILL,
 in that order, and says which level it needed. The first level flushes;
-the other two lose at most the last couple of seconds of edits. It
-quits both apps unless you name one, as in `scripts/quit-app.sh
-CompanionBackdrop`.
+the other two lose at most the last couple of seconds of edits.
 
 ## Trusting persistence across a quit and reopen
 

@@ -19,13 +19,15 @@ crates/ots-client   # OTS API client
 crates/transport    # ureq HTTP
 crates/pasteboard   # NSPasteboard adapter (macOS-only, builds only in `platform` CI job)
 shell/              # SwiftPM package: Sources/CompanionKit (the shared model,
-                    # seam wrapper and views), Sources/CompanionApp and
-                    # Sources/CompanionBackdrop (a window and a posture each),
-                    # Tests/CompanionKitTests, Tests/CompanionBackdropTests
-scripts/            # build-core.sh (bindings/CompanionCore.xcframework), build-app.sh
-                    # (dist/CompanionApp.app), build-backdrop.sh (dist/CompanionBackdrop.app),
-                    # build-icons.sh (dist/icons/*.icns, via render-icon.swift),
-                    # install-app.sh (copies dist bundles to /Applications), quit-app.sh
+                    # seam wrapper and views), Sources/CompanionBackdrop (OnetimePad,
+                    # the app: a window and a posture; the CompanionApp panel is
+                    # archived, ADR-0014), Tests/CompanionKitTests,
+                    # Tests/CompanionBackdropTests
+scripts/            # build-core.sh (bindings/CompanionCore.xcframework),
+                    # package-app.sh (the packaging engine, dist/*.app),
+                    # dev.sh (debug bundle, launched from dist/),
+                    # install.sh (release bundle, signed, to /Applications),
+                    # build-icons.sh (dist/icons/*.icns, via render-icon.swift), quit-app.sh
 ```
 
 Toolchain is pinned (`rust-toolchain.toml`, edition 2024). Static `.a` links into one Mach-O — no dylibs.

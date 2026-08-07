@@ -21,7 +21,7 @@ The steps, in order:
 
 5. **Certificates and profile.** An "Apple Distribution" certificate signs the `.app`; a "Mac Installer Distribution" (a.k.a. "3rd Party Mac Developer Installer") certificate signs the `.pkg`. Create a Mac App Store distribution provisioning profile for the App ID and copy it to `Contents/embedded.provisionprofile` before signing. App Store re-signs your build on ingest, so the embedded profile is for upload validation, not the final identity.
 
-6. **Extend `build-app.sh` for distribution.** Replace the ad-hoc sign with a real one, adding hardened runtime and the entitlements:
+6. **Extend `package-app.sh` for distribution.** Replace the ad-hoc sign with a real one, adding hardened runtime and the entitlements:
 
    ```
    codesign --force --options runtime \
