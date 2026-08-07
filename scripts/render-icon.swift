@@ -164,6 +164,15 @@ let styles: [Style] = [
         drawMaruhi(.white, in: ctx.tile)
         NSGraphicsContext.restoreGraphicsState()
     },
+    Style(name: "badge", summary: "shade tile, white disc badge holding the maruhi") { ctx in
+        ctx.base.setFill()
+        ctx.tilePath.fill()
+        let disc = NSBezierPath(ovalIn: ctx.tile.insetBy(
+            dx: ctx.tile.width * 0.14, dy: ctx.tile.height * 0.14))
+        NSColor.white.setFill()
+        disc.fill()
+        drawMaruhi(ctx.base, in: ctx.tile, scale: 0.56)
+    },
 ]
 
 // MARK: - Command line
