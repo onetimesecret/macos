@@ -12,6 +12,7 @@
 # For trying out looks, an ad-hoc mode always rebuilds:
 #   scripts/build-icons.sh <name> <style> <rrggbb>
 #   scripts/build-icons.sh --list        # available styles
+#   scripts/build-icons.sh --rrggbb      # shades used so far
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -48,18 +49,28 @@ case $# in
     build_icon_if_stale OnetimePad gradient 0f766e
     ;;
   1)
-    if [[ "$1" == "--list" ]]; then
-      swift scripts/render-icon.swift --list
-    else
-      echo "usage: build-icons.sh [--list | <name> <style> <rrggbb>]" >&2
-      exit 1
-    fi
+    case "$1" in
+      --list)
+        swift scripts/render-icon.swift --list
+        ;;
+      --rrggbb)
+        cat <<'EOF'
+0f766e  deep teal, the OnetimePad default (complement of the ember accent)
+d45a2a  ember, the accent from CompanionKit's Theme.swift
+8c3b1c  deep ember, the retired CompanionBackdrop shade
+EOF
+        ;;
+      *)
+        echo "usage: build-icons.sh [--list | --rrggbb | <name> <style> <rrggbb>]" >&2
+        exit 1
+        ;;
+    esac
     ;;
   3)
     build_icon "$1" "$2" "$3"
     ;;
   *)
-    echo "usage: build-icons.sh [--list | <name> <style> <rrggbb>]" >&2
+    echo "usage: build-icons.sh [--list | --rrggbb | <name> <style> <rrggbb>]" >&2
     exit 1
     ;;
 esac
