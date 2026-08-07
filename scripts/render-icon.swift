@@ -36,7 +36,7 @@ struct Style {
 /// The ㊙ maruhi centred in the tile. U+FE0E forces the text
 /// presentation so the glyph takes our colour instead of arriving as
 /// the orange emoji.
-func drawMaruhi(_ color: NSColor, in tile: NSRect, scale: CGFloat = 0.72) {
+func drawMaruhi(_ color: NSColor, in tile: NSRect, scale: CGFloat = 0.72, offset: NSPoint = .zero) {
     let glyph = "㊙\u{FE0E}" as NSString
     let attributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: tile.height * scale),
@@ -44,7 +44,9 @@ func drawMaruhi(_ color: NSColor, in tile: NSRect, scale: CGFloat = 0.72) {
     ]
     let size = glyph.size(withAttributes: attributes)
     glyph.draw(
-        at: NSPoint(x: tile.midX - size.width / 2, y: tile.midY - size.height / 2),
+        at: NSPoint(
+            x: tile.midX - size.width / 2 + offset.x,
+            y: tile.midY - size.height / 2 + offset.y),
         withAttributes: attributes
     )
 }
@@ -146,6 +148,20 @@ let styles: [Style] = [
         ctx.tilePath.addClip()
         lower.addClip()
         drawMaruhi(ctx.base, in: ctx.tile)
+        NSGraphicsContext.restoreGraphicsState()
+    },
+    Style(name: "longshadow", summary: "flat tile, maruhi casting a solid diagonal shadow") { ctx in
+        ctx.base.setFill()
+        ctx.tilePath.fill()
+        NSGraphicsContext.saveGraphicsState()
+        ctx.tilePath.addClip()
+        let ink = ctx.base.blended(withFraction: 0.25, of: .black) ?? ctx.base
+        let step = ctx.tile.height / 160
+        for i in 1...120 {
+            drawMaruhi(ink, in: ctx.tile,
+                       offset: NSPoint(x: step * CGFloat(i), y: -step * CGFloat(i)))
+        }
+        drawMaruhi(.white, in: ctx.tile)
         NSGraphicsContext.restoreGraphicsState()
     },
 ]
