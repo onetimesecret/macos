@@ -127,7 +127,7 @@ public struct FormFactor: Sendable {
     ///
     /// Accepted: `fallback` itself, or `fallback` plus one dot-free
     /// configuration suffix, which is exactly what the build lane
-    /// produces (`build-app.sh --debug` appends `.debug`). That second
+    /// produces (`package-app.sh --debug` appends `.debug`). That second
     /// clause is what keeps the panel from resolving to the backdrop's
     /// identifier inside the backdrop process, since the backdrop's id
     /// does carry the panel's id as a prefix.

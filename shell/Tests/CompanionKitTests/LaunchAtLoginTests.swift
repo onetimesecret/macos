@@ -23,7 +23,7 @@ final class LaunchAtLoginTests: XCTestCase {
     func testLookalikePrefixesMayNot() {
         // A sibling directory that merely starts with the string, and
         // the user-level ~/Applications, are both outside the channel
-        // install-app.sh maintains.
+        // install.sh maintains.
         XCTAssertFalse(LaunchAtLogin.pathMayRegister("/ApplicationsBackup/CompanionApp.app"))
         XCTAssertFalse(LaunchAtLogin.pathMayRegister("/Users/d/Applications/CompanionApp.app"))
     }

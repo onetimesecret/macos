@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Produce the two app icons as dist/icons/<name>.icns, rendered by
-# scripts/render-icon.swift and assembled by iconutil. One motif, two
-# shades of the ember accent (CompanionKit's Theme.swift): the panel
-# gets ember itself, the backdrop a deeper shade of it, so the Dock
-# shows two siblings rather than two identical apps or two
-# placeholders.
+# Produce the app icon as dist/icons/<name>.icns, rendered by
+# scripts/render-icon.swift and assembled by iconutil. The motif sits
+# on a deep teal, the complement of the ember accent (CompanionKit's
+# Theme.swift), so the Dock tile reads against the in-app palette
+# rather than blending into it.
 #
 # Idempotent and staleness-aware: an icon is rebuilt only when it is
 # missing or older than the scripts that define it. The build scripts
@@ -35,5 +34,4 @@ build_icon() { # <app name> <rrggbb shade>
   rm -rf "$(dirname "$iconset")"
 }
 
-build_icon CompanionApp d45a2a
-build_icon CompanionBackdrop 8c3b1c
+build_icon CompanionBackdrop 0f766e

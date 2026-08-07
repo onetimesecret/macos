@@ -1,8 +1,6 @@
 // Renders one app icon as a complete .iconset directory: the ㊙ maruhi
 // in white over a rounded-rect tile in the shade given on the command
-// line. The two form factors share the motif and differ only in shade
-// (scripts/build-icons.sh picks the shades), so the Dock and Finder
-// read them as siblings, not strangers.
+// line (scripts/build-icons.sh picks the shade).
 //
 // Run by scripts/build-icons.sh via `swift render-icon.swift <rrggbb>
 // <out.iconset>`; not part of the Swift package.

@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Package the background-surface form factor as a real .app bundle:
-# dist/CompanionBackdrop.app. The sibling of build-app.sh (ADR-0010):
-# same reasons a bundle exists at all (a bare `swift run` binary has no
-# CFBundleIdentifier, so TCC grants and per-app pickers cannot address
-# it), same stamping, same signing story.
+# Package the app as a real .app bundle: dist/CompanionBackdrop.app.
+# A bare `swift run` binary has no CFBundleIdentifier, so macOS cannot
+# address it: TCC grants don't stick, per-app pickers cannot list it,
+# and LaunchServices registers it as a nameless process. The bundle is
+# what makes the app a citizen of the permission system.
+#
+# This is the packaging engine; the entry points are scripts/dev.sh
+# (debug, launched from dist/) and scripts/install.sh (release,
+# installed to /Applications).
 #
 # Prereq: scripts/build-core.sh has produced the xcframework.
 #
@@ -17,10 +21,9 @@
 # defaults, keychain items, and state (ADR-0012).
 #
 # Signing: ad-hoc by default; set CODESIGN_IDENTITY to a real
-# certificate for an identity that survives rebuilds. (The backdrop
-# keeps its own Keychain service, and its Settings window saves an API
-# token to it, so ad-hoc identity churn costs it what it costs the
-# panel: TCC grants reset and the Keychain re-confirms access to the
+# certificate for an identity that survives rebuilds. (The Settings
+# window saves an API token to the Keychain, so ad-hoc identity churn
+# means TCC grants reset and the Keychain re-confirms access to the
 # stored items on every rebuild.) Carrying
 # scripts/Companion.entitlements takes a real identity AND an embedded
 # provisioning profile (PROVISIONING_PROFILE); every other build omits
@@ -40,7 +43,7 @@ if [[ -f scripts/local.env ]]; then
 fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "build-backdrop.sh must run on macOS (needs swift + codesign)." >&2
+  echo "package-app.sh must run on macOS (needs swift + codesign)." >&2
   exit 1
 fi
 

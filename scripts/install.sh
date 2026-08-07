@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# The daily dogfood channel: build both apps and install them to
-# APP_DEST (default /Applications). The installed copy runs from
-# /Applications rather than from .build/ or dist/, so rebuilds in the
-# repo never kill it. See scripts/local.env.example for pinning a
-# signing identity that lets TCC grants and Keychain access survive
-# updates.
+# The local production lane: build the release bundle, sign it, and
+# install it to APP_DEST (default /Applications). The installed copy
+# runs from /Applications rather than from .build/ or dist/, so
+# rebuilds in the repo never kill it. See scripts/local.env.example for
+# pinning a signing identity that lets TCC grants and Keychain access
+# survive updates.
 #
-# --no-launch installs without opening the apps afterwards.
+# The dev counterpart is scripts/dev.sh, which packages a debug bundle
+# under a .debug bundle id and launches it from dist/.
+#
+# --no-launch installs without opening the app afterwards.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -43,24 +46,10 @@ if [[ -z "${CODESIGN_IDENTITY:-}" ]]; then
   echo "update. See scripts/local.env.example for a stable identity." >&2
 fi
 
-# Rebuild the core only when it is stale: missing outright, or older
-# than any Rust source, manifest, or C header it is built from. The
-# workspace manifest and lockfile live at the repo root, so a cargo
-# update that touches only root files must still trigger a rebuild,
-# and the packaged FFI header is a direct input too.
-XCF=bindings/CompanionCore.xcframework
-if [[ ! -d "$XCF" ]]; then
-  echo "==> $XCF is missing; running scripts/build-core.sh"
-  scripts/build-core.sh
-elif [[ -n "$(find crates Cargo.toml Cargo.lock -type f \( -name '*.rs' -o -name 'Cargo.*' -o -name '*.h' \) -newer "$XCF" -print -quit)" ]]; then
-  echo "==> core inputs changed since $XCF was built; running scripts/build-core.sh"
-  scripts/build-core.sh
-fi
+scripts/build-core.sh --if-stale
 
-echo "==> scripts/build-app.sh"
-scripts/build-app.sh
-echo "==> scripts/build-backdrop.sh"
-scripts/build-backdrop.sh
+echo "==> scripts/package-app.sh"
+scripts/package-app.sh
 
 # Ask a running installed copy to quit before replacing it. Only the
 # graceful AppleScript path runs the quit-time persistence snapshot, so
@@ -109,13 +98,10 @@ install_bundle() { # <app name>
   echo "Installed $name.app $version"
 }
 
-for name in CompanionApp CompanionBackdrop; do
-  quit_installed "$name"
-  install_bundle "$name"
-done
+quit_installed CompanionBackdrop
+install_bundle CompanionBackdrop
 
 if [[ "$NO_LAUNCH" == 0 ]]; then
-  echo "==> Launching installed apps"
-  open "$APP_DEST/CompanionApp.app"
+  echo "==> Launching installed app"
   open "$APP_DEST/CompanionBackdrop.app"
 fi
