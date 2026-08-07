@@ -49,6 +49,19 @@ func drawMaruhi(_ color: NSColor, in tile: NSRect, scale: CGFloat = 0.72) {
     )
 }
 
+/// A solid tile with the white maruhi blown up past the tile edge and
+/// clipped, so larger scales crop deeper into the glyph.
+func zoomStyle(name: String, scale: CGFloat, summary: String) -> Style {
+    Style(name: name, summary: summary) { ctx in
+        ctx.base.setFill()
+        ctx.tilePath.fill()
+        NSGraphicsContext.saveGraphicsState()
+        ctx.tilePath.addClip()
+        drawMaruhi(.white, in: ctx.tile, scale: scale)
+        NSGraphicsContext.restoreGraphicsState()
+    }
+}
+
 let styles: [Style] = [
     Style(name: "gradient", summary: "slight top-lit gradient tile, white maruhi (the original)") { ctx in
         let lit = ctx.base.blended(withFraction: 0.10, of: .white) ?? ctx.base
@@ -66,14 +79,12 @@ let styles: [Style] = [
         ctx.tilePath.fill()
         drawMaruhi(ctx.base, in: ctx.tile)
     },
-    Style(name: "zoom", summary: "maruhi zoomed past the tile so its ring crops away") { ctx in
-        ctx.base.setFill()
-        ctx.tilePath.fill()
-        NSGraphicsContext.saveGraphicsState()
-        ctx.tilePath.addClip()
-        drawMaruhi(.white, in: ctx.tile, scale: 1.6)
-        NSGraphicsContext.restoreGraphicsState()
-    },
+    zoomStyle(name: "zoom", scale: 1.6,
+              summary: "maruhi zoomed past the tile so its ring crops away"),
+    zoomStyle(name: "zoom2", scale: 3.2,
+              summary: "zoom twice as far in, strokes filling the tile"),
+    zoomStyle(name: "zoom4", scale: 6.4,
+              summary: "zoom four times as far in, a single stroke fragment"),
     Style(name: "stamp", summary: "hanko: warm paper tile, maruhi inked askew in the shade") { ctx in
         NSColor(calibratedRed: 0.97, green: 0.95, blue: 0.90, alpha: 1).setFill()
         ctx.tilePath.fill()
