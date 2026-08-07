@@ -122,6 +122,32 @@ let styles: [Style] = [
         ring.stroke()
         drawMaruhi(.white, in: ctx.tile, scale: 0.56)
     },
+    Style(name: "split", summary: "tile halved on the diagonal, maruhi swapping colours at the seam") { ctx in
+        NSColor(calibratedWhite: 0.97, alpha: 1).setFill()
+        ctx.tilePath.fill()
+        let upper = NSBezierPath()
+        upper.move(to: NSPoint(x: ctx.tile.minX, y: ctx.tile.minY))
+        upper.line(to: NSPoint(x: ctx.tile.minX, y: ctx.tile.maxY))
+        upper.line(to: NSPoint(x: ctx.tile.maxX, y: ctx.tile.maxY))
+        upper.close()
+        let lower = NSBezierPath()
+        lower.move(to: NSPoint(x: ctx.tile.minX, y: ctx.tile.minY))
+        lower.line(to: NSPoint(x: ctx.tile.maxX, y: ctx.tile.maxY))
+        lower.line(to: NSPoint(x: ctx.tile.maxX, y: ctx.tile.minY))
+        lower.close()
+        NSGraphicsContext.saveGraphicsState()
+        ctx.tilePath.addClip()
+        upper.addClip()
+        ctx.base.setFill()
+        ctx.tile.fill()
+        drawMaruhi(.white, in: ctx.tile)
+        NSGraphicsContext.restoreGraphicsState()
+        NSGraphicsContext.saveGraphicsState()
+        ctx.tilePath.addClip()
+        lower.addClip()
+        drawMaruhi(ctx.base, in: ctx.tile)
+        NSGraphicsContext.restoreGraphicsState()
+    },
 ]
 
 // MARK: - Command line
