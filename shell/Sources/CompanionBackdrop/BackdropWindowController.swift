@@ -5,8 +5,10 @@ import os
 
 /// The background surface's window: a borderless pane covering the
 /// primary screen, resting at desktop level (above the wallpaper, below
-/// the icons and every normal window) and raised to floating for a
-/// moment of editing. The mechanics follow Plash's recovered recipe and
+/// the icons and every normal window; the pin lifts a rest to floating
+/// and shrinks the window to the card's own rect, so clicks beside the
+/// card stay someone else's) and raised to floating for a moment of
+/// editing. The mechanics follow Plash's recovered recipe and
 /// the panel's focus law: the stance split lives in `BackdropStance`;
 /// this controller only applies it.
 @MainActor
@@ -31,6 +33,63 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         model.$stance
             .sink { [weak self] stance in self?.apply(stance) }
             .store(in: &observers)
+        // The pin re-altitudes the current stance in place: level,
+        // Space membership, mouse transparency and window extent
+        // follow, but none of the stance choreography (key relay,
+        // activation hand-back, ordering) runs for a mere altitude
+        // change. The closure's value, not the model's: a @Published
+        // emits on willSet, before the property lands.
+        model.$pinned
+            .dropFirst()
+            .sink { [weak self] pinned in
+                guard let self else { return }
+                panel.ignoresMouseEvents = model.stance.ignoresMouse(pinned: pinned)
+                panel.level = model.stance.level(pinned: pinned)
+                panel.collectionBehavior = model.stance.collectionBehavior(pinned: pinned)
+                applyFrame(
+                    stance: model.stance, pinned: pinned,
+                    geometry: model.displayedGeometry
+                )
+            }
+            .store(in: &observers)
+        // Wherever the window hugs the card (a pinned rest, and every
+        // raise), the card's geometry IS the window's frame, so any
+        // change to it must move the window. Settled changes and
+        // in-flight ones both: a drag under the pointer publishes
+        // proposals, and the window following them is what makes the
+        // card appear to move at all. A @Published emits on willSet,
+        // so the effective geometry is composed from the closure's
+        // value and whichever of the pair has already landed.
+        model.$geometry
+            .dropFirst()
+            .sink { [weak self] geometry in
+                guard let self else { return }
+                follow(geometry: model.inFlight ?? geometry)
+            }
+            .store(in: &observers)
+        model.$inFlight
+            .dropFirst()
+            .sink { [weak self] inFlight in
+                guard let self else { return }
+                follow(geometry: inFlight ?? model.geometry)
+            }
+            .store(in: &observers)
+        // Debug-only escape hatch: the Settings toggle (seeded by
+        // COMPANION_ALLOW_CAPTURE=1 for scripted runs) lifts the
+        // capture exclusion so the surface can be screenshotted while
+        // diagnosing the UI. A release build compiles this out.
+        #if DEBUG
+        model.pages.$allowCapture
+            .sink { [weak self] allow in
+                self?.panel.sharingType = allow ? .readOnly : .none
+                if allow {
+                    FileHandle.standardError.write(Data(
+                        "[backdrop] DEBUG: capture exclusion OFF — surface is screenshot-able\n".utf8
+                    ))
+                }
+            }
+            .store(in: &observers)
+        #endif
         // Displays come and go; the surface re-fits the primary screen.
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -44,6 +103,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     deinit {
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
+        }
+        if let outsideClickMonitor {
+            NSEvent.removeMonitor(outsideClickMonitor)
         }
     }
 
@@ -59,10 +121,59 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// open question in the feature spec.
     private func fitToScreen() {
         guard let screen = NSScreen.screens.first else { return }
-        panel.setFrame(screen.frame, display: true)
         // The pane changed shape, so the card's geometry may now point
         // off the edge of it; the model pulls the card back on screen.
-        model.reclamp(paneSize: screen.frame.size)
+        // The pane spans the whole screen, but the card is confined
+        // to the visible frame — the menu bar and Dock outrank a
+        // floating card, and a header parked under the menu bar could
+        // never be clicked again. AppKit's bottom-left frames convert
+        // to the pane's top-leading coordinates here.
+        let usable = CGRect(
+            x: screen.visibleFrame.minX - screen.frame.minX,
+            y: screen.frame.maxY - screen.visibleFrame.maxY,
+            width: screen.visibleFrame.width,
+            height: screen.visibleFrame.height
+        )
+        model.reclamp(pane: usable)
+        // Reclamp first, frame second: a card-hugging window must be
+        // framed from the geometry the new pane has already judged.
+        applyFrame(
+            stance: model.stance, pinned: model.pinned, geometry: model.displayedGeometry
+        )
+    }
+
+    /// The window follows a geometry, but only in the postures where
+    /// the window is the card. The unpinned rest spans the pane, so a
+    /// card moved within it is a redraw, not a window move.
+    private func follow(geometry: BackdropGeometry) {
+        guard !model.stance.spansPane(pinned: model.pinned) else { return }
+        applyFrame(stance: model.stance, pinned: model.pinned, geometry: geometry)
+    }
+
+    /// The window's extent for a given posture: the whole screen when
+    /// the stance spans the pane, the card's own rect (translated from
+    /// the pane's top-leading coordinates to AppKit's bottom-left
+    /// screen coordinates) when it hugs the card. Parameters are
+    /// explicit because the pin and geometry sinks fire on willSet,
+    /// before the model's own property has landed.
+    private func applyFrame(
+        stance: BackdropStance, pinned: Bool, geometry: BackdropGeometry
+    ) {
+        guard let screen = NSScreen.screens.first else { return }
+        let target: NSRect
+        if stance.spansPane(pinned: pinned) {
+            target = screen.frame
+        } else {
+            target = NSRect(
+                x: screen.frame.minX + geometry.origin.x,
+                y: screen.frame.maxY - geometry.origin.y - geometry.height,
+                width: geometry.width,
+                height: geometry.height
+            )
+        }
+        if panel.frame != target {
+            panel.setFrame(target, display: true)
+        }
     }
 
     private func apply(_ stance: BackdropStance) {
@@ -70,11 +181,16 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // by the time it is ordered back, and already accept it by the
         // time it is made key.
         panel.isInteractive = stance.acceptsKey
-        panel.ignoresMouseEvents = stance.ignoresMouse
-        panel.level = stance.level
-        panel.collectionBehavior = stance.collectionBehavior
+        panel.ignoresMouseEvents = stance.ignoresMouse(pinned: model.pinned)
+        panel.level = stance.level(pinned: model.pinned)
+        panel.collectionBehavior = stance.collectionBehavior(pinned: model.pinned)
+        // Extent before ordering: a card-hugging window must already
+        // hug when it orders front, or the frame change would be
+        // visible as a snap after the fact.
+        applyFrame(stance: stance, pinned: model.pinned, geometry: model.displayedGeometry)
         switch stance {
         case .raised:
+            watchForOutsideClicks()
             // A summon means *here*: if the surface is up on some other
             // Space, order it out first so ordering front lands it on
             // this one — `.moveToActiveSpace` covers the well-behaved
@@ -91,6 +207,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // consequence, not its cause.)
             panel.makeKeyAndOrderFront(nil)
         case .resting:
+            stopWatchingForOutsideClicks()
             panel.makeFirstResponder(nil)
             if NSApp.isActive {
                 // A ⌘Tab or Dock summon made this app active; resting
@@ -128,6 +245,52 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             "stance=\(stance == .raised ? "raised" : "resting", privacy: .public) level=\(self.panel.level.rawValue, privacy: .public) visible=\(self.panel.isVisible, privacy: .public) frame=\(NSStringFromRect(self.panel.frame), privacy: .public)"
         )
     }
+
+    // MARK: Resting on an outside click
+
+    /// Watch for a click landing anywhere that is not this app, and
+    /// rest the surface when one does.
+    ///
+    /// A *global* monitor deliberately: it observes the press and
+    /// consumes nothing, so the click goes on to the window it was
+    /// aimed at and macOS activates that app in the ordinary way. The
+    /// pane-wide catcher view this replaces did consume it: the
+    /// surface rested, but the clicked app never activated, so the
+    /// keyboard fell back to whichever app happened to be frontmost
+    /// and the user's next keystrokes went somewhere they were not
+    /// looking. (Mouse monitors need no Accessibility grant; only
+    /// keyboard ones do.)
+    ///
+    /// Only while raised. A resting surface has nothing to dismiss,
+    /// and a monitor that outlived the raise would be a standing
+    /// observer of every click the user makes all day.
+    private func watchForOutsideClicks() {
+        guard outsideClickMonitor == nil else { return }
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            // Hopped to a later turn deliberately, not merely to reach
+            // the main actor: the clicked app's activation and our own
+            // resign-key are still in flight when this fires, and
+            // `apply(.resting)` reads `isKeyWindow` to decide whether
+            // to run the key relay. Resting synchronously could read
+            // stale key status and pull the keyboard back out of the
+            // app the user just chose, which is the very fault this
+            // whole change exists to remove.
+            Task { @MainActor in self?.model.rest() }
+        }
+    }
+
+    private func stopWatchingForOutsideClicks() {
+        guard let outsideClickMonitor else { return }
+        NSEvent.removeMonitor(outsideClickMonitor)
+        self.outsideClickMonitor = nil
+    }
+
+    // nonisolated(unsafe) for the same reason as `screenObserver`: deinit
+    // is nonisolated even on a @MainActor class, and the monitor token
+    // is not Sendable. Every other touch is on the main actor.
+    private nonisolated(unsafe) var outsideClickMonitor: Any?
 
     /// The surface's mechanics in the unified log — stance, level,
     /// visibility, frame; never content. Watch with:
@@ -212,18 +375,11 @@ final class BackdropPanel: NSPanel {
         // the panel is hidden between uses, but the backdrop is *always
         // on screen* — without this, every screen share and screenshot
         // would carry the surface's ink.
+        // The debug opt-out lives on the shared model, which seeds
+        // itself from COMPANION_ALLOW_CAPTURE and is never persisted;
+        // the controller observes it. Starting closed here means a
+        // failure to observe leaves the exclusion on.
         sharingType = .none
-        #if DEBUG
-        // Debug builds only: COMPANION_ALLOW_CAPTURE=1 lifts the
-        // exclusion so the surface can be screenshotted while
-        // diagnosing the UI. Not persisted, compiled out of release.
-        if ProcessInfo.processInfo.environment["COMPANION_ALLOW_CAPTURE"] != nil {
-            sharingType = .readOnly
-            FileHandle.standardError.write(Data(
-                "[backdrop] DEBUG: capture exclusion OFF — surface is screenshot-able\n".utf8
-            ))
-        }
-        #endif
     }
 
     /// Resting refuses the keyboard outright; raised may take it. A

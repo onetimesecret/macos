@@ -8,14 +8,15 @@
 //! Pages hold ink and sealed chips. Sealing is by gesture (`seal`,
 //! `paste-seal`), never by detection; chips render as their mechanical
 //! excerpt and nothing else — there is no reveal command, at any
-//! privilege. One pausable countdown per page; dead pages rest in the
-//! ledger, ink only. `promote` dry-runs the v3 conceal request without
-//! a byte leaving the machine; `send` is the real thing.
+//! privilege. One pausable countdown per page; the ledger keeps what
+//! happened, in metadata, never what was written. `promote` dry-runs
+//! the v3 conceal request without a byte leaving the machine; `send` is
+//! the real thing.
 
 use std::io::{BufRead, Write as _};
 use std::time::Duration;
 
-use companion_core::{Cause, LedgerSegment, ManualClock, Segment, Sheet, SheetId, SheetStore};
+use companion_core::{DestinationClass, ManualClock, Segment, Sheet, SheetId, SheetStore};
 use companion_credentials::default_credential_store;
 use companion_pasteboard::{ContentKind, MemoryPasteboard, Pasteboard, WriteOptions};
 use companion_transport::UreqTransport;
@@ -51,7 +52,7 @@ fn main() {
     loop {
         let title = current
             .and_then(|id| store.sheet(id))
-            .map_or_else(|| "no page".to_string(), Sheet::title);
+            .map_or("no page", Sheet::title);
         print!("companionapp:{title}> ");
         std::io::stdout().flush().ok();
         let Some(Ok(line)) = stdin.lock().lines().next() else {
@@ -121,12 +122,16 @@ fn main() {
                 if let Some(id) = current {
                     store.close_sheet(id);
                     current = store.sheets().next().map(Sheet::id);
-                    println!("closed. the page rests in the ledger.");
+                    println!("closed. the ledger keeps the fact, not the page.");
                 } else {
                     println!("no page");
                 }
             }
             "ledger" => ledger(&store),
+            "clear-ledger" => {
+                store.clear_ledger();
+                println!("the ledger is empty.");
+            }
             "tick" | "t" => tick(&mut store, &clock, rest, &mut current),
             "promote" => {
                 if let Some(id) = page(&mut current, &store) {
@@ -168,8 +173,9 @@ fn help() {
   clear              clear-after-copy: only if the clipboard is still ours
   rung               click the countdown label: next rung, clock reset
   pause              double-click the tab: hold 1h, then top-up to 24h
-  close              close the page; it rests in the ledger
-  ledger             ⌘0 — dead pages, dimmed ink, chips zeroized
+  close              close the page; the ledger keeps the fact
+  ledger             ⌘0, what happened, in metadata only
+  clear-ledger       throw the whole ledger away
   tick <2h|30m|5s>   advance the clock; due pages expire silently
   promote <n|page>   dry-run the v3 conceal request — nothing is sent
   send <n|page>      the real thing: a live POST to {DEMO_SERVER}
@@ -416,6 +422,9 @@ fn copy_out(
     // Chips are sealed by definition: outbound copies always carry the
     // concealed mark (and the transient mark, as every write does).
     pb.write(bytes, kind, WriteOptions { concealed: true });
+    // Egress to the pasteboard is auditable: the ledger keeps the fact,
+    // never the bytes (ADR-0012).
+    store.record_sent(id, DestinationClass::Clipboard);
     println!(
         "on the clipboard, marked transient + concealed (clipboard managers will skip it). \
          the chip stays — multi-paste away."
@@ -455,23 +464,14 @@ fn ledger(store: &SheetStore<ManualClock>) {
     let mut any = false;
     for record in store.ledger() {
         any = true;
-        let cause = match record.cause() {
-            Cause::Expired => "expired",
-            Cause::Closed => "closed",
-        };
-        println!("◌ {} ({cause})", record.title());
-        for segment in record.segments() {
-            match segment {
-                LedgerSegment::Ink(text) => {
-                    for line in text.lines() {
-                        println!("    {line}");
-                    }
-                }
-                LedgerSegment::Tombstone { excerpt } => {
-                    println!("    ~~[ {excerpt} ]~~ zeroized");
-                }
-            }
-        }
+        let event = record.event().to_string();
+        println!(
+            "◌ {event:<9} {} [{}] {} → {}",
+            record.item(),
+            record.size(),
+            record.title(),
+            record.destination()
+        );
     }
     if !any {
         println!("(the ledger is empty)");
@@ -491,11 +491,11 @@ fn tick(
     clock.advance(delta);
     let expired = store.expire_due();
     // In the app expiry is silent — the page is simply gone at next
-    // glance, its ink resting in the ledger. The demo narrates for the
+    // glance, one metadata record behind it. The demo narrates for the
     // observer's benefit.
     if !expired.is_empty() {
         println!(
-            "(+{arg}) {} page(s) reached zero: sealed bytes zeroized, ink to the ledger.",
+            "(+{arg}) {} page(s) reached zero: sealed bytes zeroized, one record each.",
             expired.len()
         );
         if current.and_then(|id| store.sheet(id)).is_none() {

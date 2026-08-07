@@ -1,4 +1,5 @@
 import AppKit
+import CompanionKit
 import SwiftUI
 
 /// The background-surface form factor (docs/spec/feature/background-surface):
@@ -64,16 +65,26 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
         // The ㊙️ maruhi ("secret"), shared with the panel app: the Dock
         // icon and the ⌘Tab card both draw from `applicationIconImage`,
-        // so one colour rendering serves both. The menu-bar item gets the
-        // monochrome template below.
-        NSApp.applicationIconImage = Self.maruhiColorImage(side: 256)
+        // so one colour rendering serves both. Only for a bare
+        // `swift run`, which has no bundle: the bundled app carries
+        // AppIcon.icns (scripts/build-icons.sh), and this override
+        // would shadow it. The menu-bar item gets the monochrome
+        // template below either way.
+        if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil {
+            NSApp.applicationIconImage = Self.maruhiColorImage(side: 256)
+        }
 
         let controller = BackdropWindowController(model: model)
         self.controller = controller
+        // Esc, and every other hand-back route, rests the surface: the
+        // backdrop's way of giving the keyboard back is to step behind
+        // everything again.
+        model.pages.onHandBackKeys = { [weak model] in model?.rest() }
+        model.pages.onOpenSettings = { [weak self] in self?.openSettings() }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = Self.maruhiTemplateImage()
-        item.button?.setAccessibilityLabel("CompanionBackdrop")
+        item.button?.setAccessibilityLabel(Self.productName)
         item.button?.target = self
         item.button?.action = #selector(statusItemClicked)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -86,9 +97,30 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // The backdrop exists by being there: it takes its place at the
-        // desktop on launch, resting. No Keychain, no state file — so
-        // launching (even at login) can never raise a prompt.
+        // desktop on launch, resting, opened onto whatever page the last
+        // quit sealed (`BackdropModel.start`).
         controller.show()
+    }
+
+    /// Quit flushes whatever the debounce still holds; the debounced
+    /// mutation write is what actually gets the page onto disk
+    /// (ADR-0012). Intercepted here rather than in
+    /// `applicationWillTerminate` so a refused save reaches the user
+    /// while there is still a choice to make: accept the loss, or stay
+    /// and try again. Never a retry loop; cancelling simply returns to
+    /// the surface.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !model.saveState() else { return .terminateNow }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "This page could not be saved"
+        alert.informativeText =
+            "The sealed state file was not written, so this session's page "
+            + "will not survive the quit. The previous file, if any, is untouched."
+        alert.addButton(withTitle: "Quit Anyway")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
     /// ⌘Tab (or the Dock icon) landing on this app is a summon: the
@@ -125,8 +157,22 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     @objc private func statusItemClicked() {
         if NSApp.currentEvent?.type == .rightMouseUp {
             let menu = NSMenu()
+            // "Which build am I on" answered at a glance: the stamped
+            // bundle version (which carries the git SHA on dogfood
+            // builds) alongside the core the binary actually linked.
+            // No action, so the menu leaves it disabled: it is a fact,
+            // not a feature.
             menu.addItem(
-                withTitle: "About CompanionBackdrop",
+                withTitle: BuildVersion.trayTitle(
+                    core: CompanionClient.version,
+                    bundleVersion: Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+                ),
+                action: nil,
+                keyEquivalent: ""
+            )
+            menu.addItem(.separator())
+            menu.addItem(
+                withTitle: "About \(Self.productName)",
                 action: #selector(showAbout),
                 keyEquivalent: ""
             ).target = self
@@ -171,11 +217,16 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// same source the bundle's plist is stamped from), because a bare
     /// `swift run` binary has no Info.plist to read it from.
     @objc private func showAbout() {
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "CompanionBackdrop",
-            .applicationIcon: Self.maruhiColorImage(side: 256),
-            .applicationVersion: BackdropCore.version,
-        ])
+        var aboutOptions: [NSApplication.AboutPanelOptionKey: Any] = [
+            .applicationName: Self.productName,
+            .applicationVersion: CompanionClient.version,
+        ]
+        // A bare `swift run` has no bundle icon to fall back on; the
+        // bundled app shows its AppIcon.icns without help.
+        if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil {
+            aboutOptions[.applicationIcon] = Self.maruhiColorImage(side: 256)
+        }
+        NSApp.orderFrontStandardAboutPanel(options: aboutOptions)
         // The app is usually inactive when About is chosen from the
         // status item; without activation the panel appears behind
         // whatever is frontmost. This activation is About's, not a
@@ -185,6 +236,15 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         aboutActivation = !NSApp.isActive
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    /// What this app calls itself to the user, for the places a bundle
+    /// cannot answer: a bare `swift run` has no Info.plist, so the
+    /// About panel, the tray menu and the status item's accessibility
+    /// label would otherwise fall back to the executable name. The
+    /// bundled app takes the same name from CFBundleName /
+    /// CFBundleDisplayName in shell/Backdrop-Info.plist, and the two
+    /// must agree. Neither is the bundle id, which never changes.
+    static let productName = "OnetimePad"
 
     /// The ㊙ glyph rendered monochrome (U+FE0E forces text presentation
     /// over emoji) onto a template image: the menu bar tints template

@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import CompanionApp
+@testable import CompanionKit
 
 /// The summon-time offer's truth table (ADR-0007 Amendment 1). The
 /// board's state comes from the core's probe at reveal time; the row
@@ -8,25 +8,25 @@ import XCTest
 final class PasteboardOfferTests: XCTestCase {
     func testContentAndAPageShowTheOffer() {
         XCTAssertTrue(
-            WindowModel.shouldShowPasteboardOffer(
+            PageModel.shouldShowPasteboardOffer(
                 boardHolds: true, hasPage: true, ledgerShowing: false))
     }
 
     func testAnEmptyBoardOffersNothing() {
         XCTAssertFalse(
-            WindowModel.shouldShowPasteboardOffer(
+            PageModel.shouldShowPasteboardOffer(
                 boardHolds: false, hasPage: true, ledgerShowing: false))
     }
 
     func testNoPageMeansNowhereToLand() {
         XCTAssertFalse(
-            WindowModel.shouldShowPasteboardOffer(
+            PageModel.shouldShowPasteboardOffer(
                 boardHolds: true, hasPage: false, ledgerShowing: false))
     }
 
     func testTheLedgerIsAReadingSurface() {
         XCTAssertFalse(
-            WindowModel.shouldShowPasteboardOffer(
+            PageModel.shouldShowPasteboardOffer(
                 boardHolds: true, hasPage: true, ledgerShowing: true))
     }
 }

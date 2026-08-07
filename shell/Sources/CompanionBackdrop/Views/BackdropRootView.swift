@@ -1,82 +1,118 @@
 import AppKit
+import CompanionKit
 import SwiftUI
 
-/// The surface's face: one card of ink at a comfortable reading measure
-/// over the desktop, with the page's countdown and draining gauge. The
-/// card dims to a glance while resting and becomes a plain editor while
-/// raised; the ember border shows exactly while the surface holds the
-/// keyboard, the same visual law as the panel. Where the card sits and
-/// how wide it reads come from the model's geometry: the view proposes
-/// changes through drag and resize gestures, the model clamps and
-/// persists, and both stances honor the settled result.
+/// The surface's face: a card of pages over the desktop, dimmed to a
+/// glance while resting and a plain editor while raised. The ember
+/// border shows exactly while the surface holds the keyboard, the same
+/// visual law as the panel.
+///
+/// What the card *contains* is the shared surface (`PageSurface.swift`
+/// in CompanionKit): the same content area, status lines, countdown and
+/// tab strip the panel window shows. What is here is the card itself:
+/// where it sits, how it is sized, and how the two stances look.
 struct BackdropRootView: View {
     @ObservedObject var model: BackdropModel
-    @FocusState private var inkFocused: Bool
 
-    /// Live translation of a header drag, in points. Zero except while
-    /// a drag is in flight; the settled position lives in the model.
-    @State private var dragTranslation: CGSize = .zero
+    /// The shared model, observed directly: the card's own chrome reads
+    /// the selected page and its clock, so this view must redraw when
+    /// they change and not only when the stance does.
+    @ObservedObject var pages: PageModel
 
-    /// Live delta of a corner resize: width across, editor floor down.
-    /// Zero except while the handle is held.
-    @State private var resizeDelta: CGSize = .zero
+    init(model: BackdropModel) {
+        self.model = model
+        pages = model.pages
+    }
+
+    /// Where the pointer was when the manipulation in flight began, in
+    /// AppKit's screen coordinates. Nil except while the mouse is down;
+    /// its presence is what tells `onEnded` there is a real gesture to
+    /// commit rather than one a mid-drag rest already voided.
+    @State private var gestureAnchor: CGPoint?
 
     private var raised: Bool { model.stance == .raised }
 
     var body: some View {
-        GeometryReader { pane in
-            let placed = displayedGeometry(in: pane.size)
-            ZStack(alignment: .topLeading) {
-                // The raised window spans the screen, so without this a
-                // click beside the card would be swallowed by our own
-                // transparent pane. Clicking outside the card rests the
-                // surface instead, the click's plain meaning. (While
-                // resting the window ignores the mouse entirely, so the
-                // gesture is unreachable there.)
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if raised { model.rest() }
-                    }
-                card(placed)
-                    .offset(x: placed.origin.x, y: placed.origin.y)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        let placed = model.displayedGeometry
+        // While the window hugs the card (a pinned rest, and every
+        // raise), the window's own frame carries the card's place on
+        // screen; drawing the card at its pane offset too would push it
+        // out of its own window.
+        let hugging = !model.stance.spansPane(pinned: model.pinned)
+        ZStack(alignment: .topLeading) {
+            card
+                .frame(width: placed.width, height: placed.height)
+                .offset(
+                    x: hugging ? 0 : placed.origin.x,
+                    y: hugging ? 0 : placed.origin.y
+                )
         }
-        .background(keyboardMap)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // The keyboard map is mounted only while raised: a resting
+        // surface refuses key status outright, so a map it carried
+        // could never fire, and not carrying one says so structurally.
+        .background(raised ? PageKeyboardMap(model: pages) : nil)
         .onChange(of: model.stance) { _ in
             // A rest mid-drag (Esc works while the mouse is down)
             // cancels the gesture without an `onEnded`; discard the
-            // in-flight delta so the card does not stick askew.
-            dragTranslation = .zero
-            resizeDelta = .zero
+            // in-flight proposal so the card does not stick askew.
+            gestureAnchor = nil
+            model.discardProposal()
         }
     }
 
-    /// The geometry to draw right now: the settled model value with any
-    /// in-flight drag or resize applied, run through the same pure
-    /// clamp that will judge the commit. Live feedback and the settled
-    /// result therefore agree; the card never previews a place it will
-    /// not be allowed to keep.
-    private func displayedGeometry(in paneSize: CGSize) -> BackdropGeometry {
-        var proposed = model.geometry
-        proposed.origin.x += dragTranslation.width
-        proposed.origin.y += dragTranslation.height
-        proposed.width += resizeDelta.width
-        proposed.minEditorHeight += resizeDelta.height
-        return proposed.clamped(to: paneSize)
+    /// How far the pointer has travelled since the manipulation began,
+    /// in the pane's own top-leading coordinates.
+    ///
+    /// Measured against the screen, not against a SwiftUI coordinate
+    /// space. Every space available here (the view's own, the
+    /// window's, `.global`) now travels with the card, because the
+    /// raised window *is* the card: a translation read in a moving
+    /// space re-subtracts each delta already applied, and the card
+    /// falls to half the pointer's speed or stalls outright. The
+    /// screen is the one frame of reference that holds still. AppKit's
+    /// y grows upward and the pane's grows downward, hence the flip.
+    private func paneTranslation(from anchor: CGPoint) -> CGSize {
+        let mouse = NSEvent.mouseLocation
+        return CGSize(width: mouse.x - anchor.x, height: anchor.y - mouse.y)
     }
 
-    private func card(_ placed: BackdropGeometry) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+    /// The manipulation's anchor in screen coordinates, seeded on the
+    /// first change of a gesture and held for the rest of it.
+    ///
+    /// The seed backs the gesture's own translation out of the current
+    /// pointer position, recovering the exact point the mouse went
+    /// down: on the first change the card has not moved yet, so
+    /// SwiftUI's local measure is still trustworthy, and using it
+    /// keeps the card from lagging the pointer by the two points the
+    /// gesture spent activating. Every change after that is measured
+    /// from the screen, because by then the window is travelling with
+    /// the pointer. SwiftUI's y grows downward, AppKit's upward.
+    private func anchor(seededBy translation: CGSize) -> CGPoint {
+        if let gestureAnchor { return gestureAnchor }
+        let mouse = NSEvent.mouseLocation
+        let seed = CGPoint(x: mouse.x - translation.width, y: mouse.y + translation.height)
+        gestureAnchor = seed
+        return seed
+    }
+
+    private var card: some View {
+        VStack(spacing: 0) {
             header
-            if let sheet = model.sheet {
-                gauge(sheet)
-            }
-            content(minEditorHeight: placed.minEditorHeight)
+                .padding(.horizontal, 12)
+                .frame(height: 32)
+            Divider()
+            PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The glance is the same ink at the same measure,
+                // dimmed. Promote and demote must not make the text
+                // jump, so only the opacity changes.
+                .opacity(raised ? 1 : 0.72)
+            PageStatusStack(model: pages)
+            Divider()
+            TabStripView(model: pages)
+                .opacity(raised ? 1 : 0.72)
         }
-        .padding(20)
-        .frame(width: placed.width, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)
@@ -88,43 +124,111 @@ struct BackdropRootView: View {
             // unlit). Visible state, never colour alone; the caret and
             // focus ring agree.
             RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.ember.opacity(model.holdsKeys ? 0.8 : 0), lineWidth: 1.5)
+                .strokeBorder(Color.ember.opacity(pages.holdsKeys ? 0.8 : 0), lineWidth: 1.5)
                 .allowsHitTesting(false)
         )
-        .overlay(alignment: .bottomTrailing) {
-            // The resize affordance exists only while raised. The
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            // The resize affordances exist only while raised. The
             // resting glance keeps its chrome-free face, and by the
             // stance invariant it could not take the drag anyway: the
-            // resting window ignores the mouse entirely.
+            // resting window either ignores the mouse (unpinned) or
+            // gives every click one meaning (pinned, below).
             if raised {
-                resizeHandle
+                resizeFrame
             }
         }
+        .overlay {
+            // A pinned rest takes the mouse (its window would otherwise
+            // let clicks fall into whatever it covers), and this shield
+            // gives the whole card a single meaning for them: a click
+            // raises, the same deliberate act as any other summon. It
+            // sits above every control, so a resting countdown button
+            // or pin cannot be worked without raising first. On the
+            // unpinned rest it is mounted but unreachable; the window
+            // itself ignores the mouse.
+            if !raised {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.raise() }
+                    .help("Click to raise the card")
+            }
+        }
+    }
+
+    /// The empty state names the gesture that actually conjures a page
+    /// on this surface. A resting card cannot be typed into, so it
+    /// points at the summon that would change that; the pinned rest is
+    /// clickable, so its hint says so.
+    private var emptyHint: String {
+        if raised { return "click, ⌃⌥Space, or ↩ for a page" }
+        return model.pinned
+            ? "click or ⌃⌥Space raises the surface"
+            : "⌃⌥Space raises the surface"
     }
 
     private var header: some View {
         HStack(spacing: 8) {
             Circle().fill(Color.ember).frame(width: 6, height: 6)
-            Text("backdrop")
+            Text(pages.showingLedger ? "the ledger" : BackdropAppDelegate.productName)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 16)
-            if let sheet = model.sheet {
-                countdownButton(sheet)
+            #if DEBUG
+            // Standing indicator while the debug capture opt-out is on.
+            // Doubly load-bearing here: the backdrop is on screen for
+            // every screenshot and screen share, so "the exclusion is
+            // off right now" is worth saying out loud.
+            if pages.allowCapture {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.ember)
+                    .help("Debug: capture exclusion is OFF — this surface shows up in screenshots and screen sharing")
+                    .accessibilityLabel(Text("Screenshots allowed (debug)"))
             }
+            #endif
+            if let sheet = pages.selectedSheet, !pages.showingLedger {
+                CountdownButton(sheet: sheet) { pages.cycleRung(sheet.id) }
+            }
+            pinToggle
         }
         // The header doubles as the card's handle while raised. The
         // gesture rides the header itself, above the pane's tap
         // catcher, so a drag can never fall through and read as a
         // click-outside rest; the countdown button, being a child,
         // still wins a plain click. While resting the mask yields the
-        // gesture to subviews, which leaves the handle inert (and the
-        // resting window ignores the mouse regardless).
+        // gesture to subviews, which leaves the handle inert (and any
+        // resting click stops at the raise shield anyway).
         .contentShape(Rectangle())
         .gesture(dragGesture, including: raised ? .all : .subviews)
+        // A window zooms on a title-bar double-click; the header is
+        // where this card's title bar would be.
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded { if raised { model.toggleZoom() } }
+        )
     }
 
-    /// The header drag: live translation while the mouse is down, one
+    /// The resting altitude, as a real `Toggle` so VoiceOver announces
+    /// a switch with on and off state (the panel's pin, ported).
+    /// Pinned, the card rests floating above other windows, readable
+    /// beside whatever the user is writing; a click on that resting
+    /// card raises it (the shield overlay above every control), so the
+    /// toggle itself is workable only while raised. The glyph shows in
+    /// both stances: a floating rest should say why it floats.
+    private var pinToggle: some View {
+        Toggle(isOn: $model.pinned) {
+            Image(systemName: model.pinned ? "pin.fill" : "pin")
+                .font(.system(size: 9))
+        }
+        .toggleStyle(.button)
+        .controlSize(.small)
+        .help(model.pinned
+            ? "Rests above other windows; click to send the card back to the desktop"
+            : "Rests at the desktop; click to keep the card above other windows")
+        .accessibilityLabel(Text("Keep resting card above other windows"))
+    }
+
+    /// The header drag: live proposals while the mouse is down, one
     /// committed origin when it settles. The model clamps and
     /// persists; the view only proposes. The minimum distance keeps a
     /// plain click on the header from registering as a zero-length
@@ -132,165 +236,125 @@ struct BackdropRootView: View {
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
-                dragTranslation = value.translation
+                guard raised else { return }
+                let anchor = anchor(seededBy: value.translation)
+                model.proposeGeometry(dragged(by: paneTranslation(from: anchor)))
             }
-            .onEnded { value in
-                dragTranslation = .zero
+            .onEnded { _ in
+                let started = gestureAnchor
+                gestureAnchor = nil
                 // A rest mid-drag (Esc) cancels the manipulation, but
                 // the window that captured the mouse-down still gets
                 // the mouse-up; the abandoned proposal must not land.
-                guard raised else { return }
-                var proposed = model.geometry
-                proposed.origin.x += value.translation.width
-                proposed.origin.y += value.translation.height
-                model.setGeometry(proposed)
+                guard raised, let started else {
+                    model.discardProposal()
+                    return
+                }
+                model.endZoom()
+                model.setGeometry(dragged(by: paneTranslation(from: started)))
             }
     }
 
-    /// The corner affordance, in the card's own quiet dialect: a small
-    /// tertiary glyph that only the raised card shows. Dragging it
-    /// widens the column and deepens the editor's floor together.
-    private var resizeHandle: some View {
-        Image(systemName: "arrow.up.left.and.arrow.down.right")
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(.tertiary)
-            .padding(8)
-            .contentShape(Rectangle())
-            .gesture(resizeGesture)
-            .accessibilityHidden(true)
+    /// The settled geometry moved by a pane translation.
+    private func dragged(by translation: CGSize) -> BackdropGeometry {
+        var proposed = model.geometry
+        proposed.origin.x += translation.width
+        proposed.origin.y += translation.height
+        return proposed
     }
 
-    /// The resize drag, the drag gesture's twin: width follows the
-    /// horizontal pull, the editor floor the vertical, and the commit
-    /// goes through the model's clamp like every other proposal.
-    private var resizeGesture: some Gesture {
-        DragGesture(minimumDistance: 2)
-            .onChanged { value in
-                resizeDelta = value.translation
-            }
-            .onEnded { value in
-                resizeDelta = .zero
-                // Same cancellation rule as the header drag: a rest
-                // mid-gesture voids the proposal.
-                guard raised else { return }
-                var proposed = model.geometry
-                proposed.width += value.translation.width
-                proposed.minEditorHeight += value.translation.height
-                model.setGeometry(proposed)
-            }
-    }
+    // MARK: Resizing
 
-    /// The countdown label: remaining time on the current rung; click
-    /// cycles the ladder and resets the clock (docs/spec/04). Only
-    /// reachable while raised — the resting window ignores the mouse.
-    private func countdownButton(_ sheet: BackdropSheetSummary) -> some View {
-        Button {
-            model.cycleRung()
-        } label: {
-            HStack(spacing: 5) {
-                if sheet.paused {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 8))
+    /// The card's eight grips, laid over its own edges and corners the
+    /// way a window's resize margins lie over its frame. A window can
+    /// be pulled from any side; a card being sized like a window should
+    /// answer the same reach, rather than hiding the whole verb behind
+    /// one corner glyph.
+    private var resizeFrame: some View {
+        ZStack {
+            VStack(spacing: 0) {
+                grip(.top).frame(maxWidth: .infinity, maxHeight: Self.gripThickness)
+                Spacer(minLength: 0)
+                grip(.bottom).frame(maxWidth: .infinity, maxHeight: Self.gripThickness)
+            }
+            HStack(spacing: 0) {
+                grip(.leading).frame(maxWidth: Self.gripThickness, maxHeight: .infinity)
+                Spacer(minLength: 0)
+                grip(.trailing).frame(maxWidth: Self.gripThickness, maxHeight: .infinity)
+            }
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    corner(.topLeading)
+                    Spacer(minLength: 0)
+                    corner(.topTrailing)
+                }
+                Spacer(minLength: 0)
+                HStack(spacing: 0) {
+                    corner(.bottomLeading)
+                    Spacer(minLength: 0)
+                    corner(.bottomTrailing)
+                }
+            }
+            // The bottom-trailing corner keeps a visible glyph: the
+            // other seven grips are invisible margins, as a window's
+            // are, and one drawn affordance is what tells a first-time
+            // user the card is resizable at all.
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .padding(6)
+                        .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
-                Text(sheet.remainingLabel)
-                    .font(.system(.caption, design: .monospaced))
-                Text(sheet.rungLabel)
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-            }
-            .foregroundStyle(sheet.lastHour ? Color.ember : .secondary)
-        }
-        .buttonStyle(.plain)
-        .help("Click to cycle the ladder and reset the clock")
-        .accessibilityLabel(Text("Countdown"))
-        .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityHint(Text("Activate to cycle the ladder and reset the clock"))
-    }
-
-    /// The page's draining gauge, the resting surface's one honest
-    /// motion (repainted at the stance's cadence, not animated).
-    private func gauge(_ sheet: BackdropSheetSummary) -> some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Capsule().fill(.quaternary)
-                Capsule()
-                    .fill(sheet.lastHour ? Color.ember : Color.secondary)
-                    .frame(width: max(0, geometry.size.width * sheet.fractionRemaining))
             }
         }
-        .frame(height: 3)
-        .accessibilityHidden(true)
     }
 
-    /// One editor floor for every branch: the raised editor, the
-    /// resting glance, and the empty line all stand on the same
-    /// `minEditorHeight`, so promote and demote never make the card
-    /// change height underfoot.
-    @ViewBuilder
-    private func content(minEditorHeight: CGFloat) -> some View {
-        if raised {
-            TextEditor(text: $model.ink)
-                .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.hidden)
-                .focused($inkFocused)
-                .frame(minHeight: minEditorHeight)
-                .onChange(of: model.ink) { text in
-                    model.inkEdited(text)
-                }
-                .onAppear {
-                    // The keyboard hand-off, from the editor's own side
-                    // of the mount. The editor exists only while raised,
-                    // so `onAppear` is by definition after the raise made
-                    // the window key (controller-side) *and* after the
-                    // conditional view is in the hierarchy — a stance
-                    // observer could fire before the mount and lose the
-                    // request, the same race the panel's
-                    // `focusEditorWhenMounted` bounds (issue #19). The
-                    // second request one main-actor turn later covers
-                    // AppKit wiring the field editor up an instant after
-                    // SwiftUI reports the appearance.
-                    inkFocused = true
-                    Task { @MainActor in inkFocused = true }
-                }
-                .onChange(of: model.holdsKeys) { holdsKeys in
-                    // The keyboard came back to a still-raised surface
-                    // (a ⌘Tab return, a re-summon): re-seat the editor,
-                    // in case first responder was lost while away.
-                    if holdsKeys { inkFocused = true }
-                }
-        } else if model.ink.isEmpty {
-            // The empty state: a single calm line (docs/spec/03, tone).
-            Text("empty — ⌃⌥Space raises the surface")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .frame(maxWidth: .infinity, minHeight: minEditorHeight, alignment: .topLeading)
-        } else {
-            // The glance: the same ink at the same measure, dimmed —
-            // promote and demote must not make the text jump.
-            Text(model.ink)
-                .font(.system(.body, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: minEditorHeight, alignment: .topLeading)
-        }
+    private static let gripThickness: CGFloat = 6
+    private static let cornerSide: CGFloat = 12
+
+    private func grip(_ edge: CardEdge) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .gesture(resizeGesture(edge))
     }
 
-    /// The window-level keyboard map, active exactly while the surface
-    /// holds the keys (raised): Esc rests it, handing the keyboard back.
-    private var keyboardMap: some View {
-        Group {
-            Button("") { model.rest() }
-                .keyboardShortcut(.cancelAction)
-        }
-        .frame(width: 0, height: 0)
-        .opacity(0)
-        .accessibilityHidden(true)
+    private func corner(_ edge: CardEdge) -> some View {
+        Color.clear
+            .frame(width: Self.cornerSide, height: Self.cornerSide)
+            .contentShape(Rectangle())
+            .gesture(resizeGesture(edge))
     }
-}
 
-extension Color {
-    /// The ember accent (#d45a2a) — the same single accent the panel
-    /// uses; duplicated here because form factors are separate targets
-    /// (ADR-0010).
-    static let ember = Color(red: 0.831, green: 0.353, blue: 0.165)
+    /// One resize drag, per edge: the pure `CardEdge` decision turns the
+    /// pull into a proposal, and the commit goes through the model's
+    /// clamp like every other proposal.
+    private func resizeGesture(_ edge: CardEdge) -> some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                guard raised else { return }
+                let anchor = anchor(seededBy: value.translation)
+                model.proposeGeometry(
+                    edge.resized(model.geometry, by: paneTranslation(from: anchor))
+                )
+            }
+            .onEnded { _ in
+                let started = gestureAnchor
+                gestureAnchor = nil
+                // Same cancellation rule as the header drag: a rest
+                // mid-gesture voids the proposal.
+                guard raised, let started else {
+                    model.discardProposal()
+                    return
+                }
+                model.endZoom()
+                model.setGeometry(
+                    edge.resized(model.geometry, by: paneTranslation(from: started))
+                )
+            }
+    }
 }

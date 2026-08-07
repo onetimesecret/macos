@@ -105,6 +105,30 @@ with a current leaning where one exists.
     are browser-tab shortcuts — irrelevant in a native window, but the
     prototype had to fall back to ⌃-equivalents, a reminder to re-audit
     on real hardware.
+18. **Copy-source attribution.** Investigated from a dogfood ask: can a
+    pasted-in secret show which app it came from? `NSPasteboard` has no
+    source-app API. The one lead is the opt-in `org.nspasteboard.source`
+    convention — same family as `CONCEALED_TYPE`/`TRANSIENT_TYPE`, which
+    the pasteboard crate already speaks — but it is only honoured by
+    clipboard-manager-aware apps, so coverage would be inconsistent.
+    General attribution (any copy, from any app) means correlating
+    `NSWorkspace` frontmost-app tracking against `NSPasteboard`'s
+    `changeCount`, and `changeCount` has no push notification —
+    ADR-0007 Amendment 1 already names that gap ("macOS provides no
+    notification for pasteboard changes, so clipboard managers poll
+    changeCount") as an exposure, not a technique to adopt. Doing so
+    would also break `WindowController`'s "each reveal looks at the
+    board once, never a poll." A poll-free approximation exists for the
+    narrower case the ask actually described (⌘Tab away, copy, ⌘Tab
+    back): read `NSWorkspace.shared.frontmostApplication` once, at the
+    moment `summon()` begins and before this app takes activation — a
+    single point-in-time read, no timer, and since it is cosmetic UI
+    metadata rather than secret content it never needs to cross the FFI
+    boundary into the core. It only answers "app active immediately
+    before this summon," not "app that performed the copy" (wrong if a
+    third app was visited in between). Leaning: skip general
+    attribution; the narrow poll-free version is cheap enough to build
+    if the dogfood keeps missing it.
 
 ## Ecosystem
 

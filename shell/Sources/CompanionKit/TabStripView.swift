@@ -1,11 +1,16 @@
+import AppKit
 import SwiftUI
 
 /// The bottom-edge tab strip, Excel-anchored (docs/spec/04): one tab
 /// per page carrying its own gauge, a + for a new page, and the
 /// permanent dashed ◌ ledger tab at the right end. Click selects;
 /// double-click holds the clock; drag reorders; ✕ on hover closes.
-struct TabStripView: View {
-    @ObservedObject var model: WindowModel
+public struct TabStripView: View {
+    @ObservedObject var model: PageModel
+
+    public init(model: PageModel) {
+        self.model = model
+    }
 
     /// Each tab's frame in the strip's space, kept fresh by preference
     /// so a drag knows which slot the pointer is over. A plain mouse
@@ -13,7 +18,7 @@ struct TabStripView: View {
     /// panel never grants the latter its session.
     @State private var tabFrames: [UInt64: CGRect] = [:]
 
-    var body: some View {
+    public var body: some View {
         HStack(spacing: 2) {
             ForEach(model.sheets) { sheet in
                 SheetTab(
@@ -100,8 +105,8 @@ struct TabStripView: View {
         .accessibilityLabel(Text("Promote page to one-time link"))
     }
 
-    /// The dashed residue tab: expired and closed pages, dimmed (⌘0).
-    /// A toggle — click again to return to the page.
+    /// The dashed residue tab: the audit trail, one line per event
+    /// (⌘0). A toggle, so a second click returns to the page.
     private var ledgerTab: some View {
         Button(action: model.toggleLedger) {
             HStack(spacing: 4) {
@@ -122,8 +127,8 @@ struct TabStripView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .help("The ledger — expired and closed pages (⌘0)")
-        .accessibilityLabel(Text("Ledger, \(model.ledgerEntries.count) dead pages"))
+        .help("The ledger: what the app did with each page and chip (⌘0)")
+        .accessibilityLabel(Text("Ledger, \(model.ledgerEntries.count) records"))
     }
 }
 
@@ -131,7 +136,7 @@ struct TabStripView: View {
 private struct SheetTab: View {
     let sheet: SheetSummary
     let selected: Bool
-    @ObservedObject var model: WindowModel
+    @ObservedObject var model: PageModel
 
     @State private var hovering = false
 
@@ -190,10 +195,41 @@ private struct SheetTab: View {
         .accessibilityValue(Text(sheet.spokenRemaining))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
+            Button("Rename page…") { promptForRename() }
             Button(sheet.paused ? "Top the hold up" : "Hold the clock") { model.pause(sheet.id) }
             Button("Cycle the countdown") { model.cycleRung(sheet.id) }
             Button("Close page", role: .destructive) { model.close(sheet.id) }
         }
+    }
+
+    /// The rename gesture lives here because double-click is already
+    /// the pause gesture: a tab that renamed on double-click could not
+    /// hold its own clock. An NSAlert with a text field rather than a
+    /// SwiftUI alert, since the SwiftUI form of this takes a text field
+    /// only from macOS 14 and both apps ship to 13.
+    ///
+    /// Submitting an empty field is meaningful, not a cancel: it drops
+    /// the override and lets the title derive from the page again.
+    private func promptForRename() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Rename this page"
+        alert.informativeText =
+            "The name shows on the tab and is frozen into each ledger record "
+            + "the page produces, so keep the secret itself out of it. Leave the "
+            + "field empty to let the title follow the page's own first line again."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = sheet.title
+        field.placeholderString = "empty derives the title from the page"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        // An accessory app's alert would otherwise open behind whatever
+        // is frontmost.
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        model.renameSheet(sheet.id, to: field.stringValue)
     }
 
     private var accessibilityDescription: String {
@@ -221,12 +257,18 @@ private struct TabFramesKey: PreferenceKey {
 /// A tab's gauge: the page's remaining life as geometry. Ember with a
 /// hatched texture under one hour — urgency is never colour-only; a
 /// held clock draws dashed — state as geometry (docs/spec/04).
-struct GaugeBar: View {
+public struct GaugeBar: View {
     let fraction: Double
     let paused: Bool
     let lastHour: Bool
 
-    var body: some View {
+    public init(fraction: Double, paused: Bool, lastHour: Bool) {
+        self.fraction = fraction
+        self.paused = paused
+        self.lastHour = lastHour
+    }
+
+    public var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width * max(0, min(1, fraction))
             ZStack(alignment: .leading) {

@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import CompanionApp
+@testable import CompanionKit
 
 /// The focus-law decisions of issue #19, extracted pure — the shell's
 /// pattern for UI-adjacent logic: test the decision itself, never mock
@@ -95,42 +95,42 @@ final class FocusLawTests: XCTestCase {
         // The old policy handed the keyboard back at this moment; the
         // new one keeps it, seats the empty state's catcher as first
         // responder, and lets Return conjure the next page.
-        XCTAssertTrue(WindowModel.shouldOfferEnterCreate(sheetsEmpty: true, holdsKeys: true))
+        XCTAssertTrue(PageModel.shouldOfferEnterCreate(sheetsEmpty: true, holdsKeys: true))
     }
 
     func testAnUnkeyedEmptyWindowOffersNoReturnGrant() {
         // Unkeyed emptiness never receives a keystroke; the click or
         // summon stays the price of entry, by design.
-        XCTAssertFalse(WindowModel.shouldOfferEnterCreate(sheetsEmpty: true, holdsKeys: false))
+        XCTAssertFalse(PageModel.shouldOfferEnterCreate(sheetsEmpty: true, holdsKeys: false))
     }
 
     func testLivePagesLeaveTheKeyboardToTheEditor() {
-        XCTAssertFalse(WindowModel.shouldOfferEnterCreate(sheetsEmpty: false, holdsKeys: true))
-        XCTAssertFalse(WindowModel.shouldOfferEnterCreate(sheetsEmpty: false, holdsKeys: false))
+        XCTAssertFalse(PageModel.shouldOfferEnterCreate(sheetsEmpty: false, holdsKeys: true))
+        XCTAssertFalse(PageModel.shouldOfferEnterCreate(sheetsEmpty: false, holdsKeys: false))
     }
 
     // MARK: Clearing the promotion draft on close (issue #19)
 
     func testClosingThePromotedPageClearsTheDraft() {
-        XCTAssertTrue(WindowModel.shouldClearPromotion(
+        XCTAssertTrue(PageModel.shouldClearPromotion(
             target: .page(7), closingSheet: 7, chipsOnSheet: []
         ))
     }
 
     func testClosingAnotherPageKeepsThePageDraft() {
-        XCTAssertFalse(WindowModel.shouldClearPromotion(
+        XCTAssertFalse(PageModel.shouldClearPromotion(
             target: .page(7), closingSheet: 8, chipsOnSheet: []
         ))
     }
 
     func testClosingThePageCarryingThePromotedChipClearsTheDraft() {
-        XCTAssertTrue(WindowModel.shouldClearPromotion(
+        XCTAssertTrue(PageModel.shouldClearPromotion(
             target: .chip(42), closingSheet: 3, chipsOnSheet: [41, 42]
         ))
     }
 
     func testClosingAPageWithoutThePromotedChipKeepsTheDraft() {
-        XCTAssertFalse(WindowModel.shouldClearPromotion(
+        XCTAssertFalse(PageModel.shouldClearPromotion(
             target: .chip(42), closingSheet: 3, chipsOnSheet: [7]
         ))
     }
@@ -138,19 +138,19 @@ final class FocusLawTests: XCTestCase {
     // MARK: Clearing the promotion draft on refresh/expiry (issue #19)
 
     func testExpiringThePromotedPageClearsTheDraft() {
-        XCTAssertTrue(WindowModel.isRefreshOrphan(
+        XCTAssertTrue(PageModel.isRefreshOrphan(
             target: .page(7), liveSheets: [3, 8], liveChips: []
         ))
     }
 
     func testASurvivingPromotedPageKeepsTheDraft() {
-        XCTAssertFalse(WindowModel.isRefreshOrphan(
+        XCTAssertFalse(PageModel.isRefreshOrphan(
             target: .page(7), liveSheets: [7, 8], liveChips: [42]
         ))
     }
 
     func testAChipOnALivePageKeepsTheDraft() {
-        XCTAssertFalse(WindowModel.isRefreshOrphan(
+        XCTAssertFalse(PageModel.isRefreshOrphan(
             target: .chip(42), liveSheets: [3, 8], liveChips: [41, 42]
         ))
     }
@@ -160,13 +160,13 @@ final class FocusLawTests: XCTestCase {
         // other pages stayed open. The old `sheets.isEmpty` test left
         // the draft standing so a stray ↩ could fire a network call over
         // a chip whose bytes are gone; the live-chip test clears it.
-        XCTAssertTrue(WindowModel.isRefreshOrphan(
+        XCTAssertTrue(PageModel.isRefreshOrphan(
             target: .chip(42), liveSheets: [3, 8], liveChips: [41]
         ))
     }
 
     func testAChipDraftClearsWhenEveryPageIsGone() {
-        XCTAssertTrue(WindowModel.isRefreshOrphan(
+        XCTAssertTrue(PageModel.isRefreshOrphan(
             target: .chip(42), liveSheets: [], liveChips: []
         ))
     }
@@ -177,7 +177,7 @@ final class FocusLawTests: XCTestCase {
         // The page the user was on is still live; a reload of the world
         // around it must not move the selection.
         XCTAssertEqual(
-            WindowModel.reconciledSelection(current: 7, live: [3, 7, 8]),
+            PageModel.reconciledSelection(current: 7, live: [3, 7, 8]),
             7
         )
     }
@@ -188,7 +188,7 @@ final class FocusLawTests: XCTestCase {
         // here, though not the smallest id, which also proves the
         // fallback follows tab order and not id order.
         XCTAssertEqual(
-            WindowModel.reconciledSelection(current: 7, live: [30, 10, 20]),
+            PageModel.reconciledSelection(current: 7, live: [30, 10, 20]),
             30
         )
     }
@@ -197,19 +197,19 @@ final class FocusLawTests: XCTestCase {
         // Nothing was selected (a fresh reveal, say); the first live
         // page in tab order takes it.
         XCTAssertEqual(
-            WindowModel.reconciledSelection(current: nil, live: [30, 10, 20]),
+            PageModel.reconciledSelection(current: nil, live: [30, 10, 20]),
             30
         )
     }
 
     func testAVanishedSelectionOverAnEmptyModelSelectsNothing() {
         // Every page is gone: the keyed-empty state, selecting nothing.
-        XCTAssertNil(WindowModel.reconciledSelection(current: 7, live: []))
+        XCTAssertNil(PageModel.reconciledSelection(current: 7, live: []))
     }
 
     func testANilSelectionOverAnEmptyModelStaysNil() {
         // Nothing was selected and nothing is live; still nothing.
-        XCTAssertNil(WindowModel.reconciledSelection(current: nil, live: []))
+        XCTAssertNil(PageModel.reconciledSelection(current: nil, live: []))
     }
 
     // MARK: Page-step clamp, ⌥⌘←/→ (issue #22 family)
@@ -217,18 +217,18 @@ final class FocusLawTests: XCTestCase {
     func testAStepOffTheLastPageStaysOnTheLast() {
         // ⌥⌘→ from the last of five pages holds at the last, never
         // wrapping or running past the end.
-        XCTAssertEqual(WindowModel.steppedIndex(from: 4, by: 1, within: 5), 4)
+        XCTAssertEqual(PageModel.steppedIndex(from: 4, by: 1, within: 5), 4)
     }
 
     func testAStepOffTheFirstPageStaysOnTheFirst() {
         // ⌥⌘← from the first page holds at the first.
-        XCTAssertEqual(WindowModel.steppedIndex(from: 0, by: -1, within: 5), 0)
+        XCTAssertEqual(PageModel.steppedIndex(from: 0, by: -1, within: 5), 0)
     }
 
     func testAPlainStepMovesByTheDelta() {
         // A step with room to move lands one tab over, either way.
-        XCTAssertEqual(WindowModel.steppedIndex(from: 2, by: 1, within: 5), 3)
-        XCTAssertEqual(WindowModel.steppedIndex(from: 2, by: -1, within: 5), 1)
+        XCTAssertEqual(PageModel.steppedIndex(from: 2, by: 1, within: 5), 3)
+        XCTAssertEqual(PageModel.steppedIndex(from: 2, by: -1, within: 5), 1)
     }
 
     // MARK: Pruning per-page view state (ADR-0006), the pure half.

@@ -16,19 +16,55 @@ enum BackdropStance: Equatable {
     /// borrows it exactly as long as the user is typing.
     case raised
 
-    /// Where the window sits in the stacking order.
-    var level: NSWindow.Level {
+    /// Where the window sits in the stacking order. The pin lifts the
+    /// resting pane above normal windows. A pinned rest still refuses
+    /// the keyboard (the hard split's central lesson holds); its one
+    /// concession to the mouse is that a click raises it, the same
+    /// deliberate act any other summon is.
+    func level(pinned: Bool) -> NSWindow.Level {
         switch self {
-        case .resting: .backdropDesktop
+        case .resting: pinned ? .floating : .backdropDesktop
         case .raised: .floating
         }
     }
 
-    /// Whether clicks pass through to the desktop beneath. The resting
-    /// surface must never intercept a click meant for a desktop icon.
-    var ignoresMouse: Bool {
+    /// Whether clicks pass through to whatever lies beneath. Mouse
+    /// transparency is all-or-nothing per window, decided at the
+    /// window server. The unpinned rest must never intercept a click
+    /// meant for a desktop icon, so it stays transparent. A pinned
+    /// rest floats above other windows; a card that stayed transparent
+    /// there would route clicks into windows the user cannot see (the
+    /// click-through trap this replaces), so it takes the mouse, and
+    /// `spansPane` shrinks the window to the card so only the card
+    /// takes it. The click's one meaning while resting is "raise".
+    /// The raised editor takes the mouse for its own controls, and
+    /// hugs the card for the same reason the pinned rest does.
+    func ignoresMouse(pinned: Bool) -> Bool {
         switch self {
-        case .resting: true
+        case .resting: !pinned
+        case .raised: false
+        }
+    }
+
+    /// Whether the window covers the whole pane or shrinks to the
+    /// card's own rect. Only the unpinned rest spans it: that stance is
+    /// desktop furniture and mouse-transparent, so its acreage costs
+    /// nothing. Every stance that takes the mouse hugs the card,
+    /// because window extent is what decides click routing above other
+    /// apps' windows and a transparent pane over the whole screen
+    /// swallows every click aimed past the card.
+    ///
+    /// The raised editor used to span the pane and use it as a
+    /// click-outside-to-rest catcher. That catcher ate the click: the
+    /// surface rested, but the app the user actually clicked never
+    /// activated, so the keyboard went back to whichever app happened
+    /// to be frontmost and their keystrokes landed somewhere they were
+    /// not looking. Resting on an outside click is now a passive
+    /// global event monitor's job (`BackdropWindowController`), which
+    /// observes the press without consuming it.
+    func spansPane(pinned: Bool) -> Bool {
+        switch self {
+        case .resting: !pinned
         case .raised: false
         }
     }
@@ -51,9 +87,18 @@ enum BackdropStance: Equatable {
     /// that holds the keyboard must be visible where the user is
     /// looking; keys landing on an off-Space window would silently
     /// swallow ink.
-    var collectionBehavior: NSWindow.CollectionBehavior {
+    ///
+    /// A pinned rest joins every Space instead, full-screen ones
+    /// included: the pin exists to keep the card readable beside
+    /// whatever the user is writing, and a pin that vanished on a
+    /// Space switch would fail its one purpose. `.ignoresCycle` stays;
+    /// the window cycle must never land on a mouse-transparent pane.
+    func collectionBehavior(pinned: Bool) -> NSWindow.CollectionBehavior {
         switch self {
-        case .resting: [.stationary, .ignoresCycle, .fullScreenNone]
+        case .resting:
+            pinned
+                ? [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+                : [.stationary, .ignoresCycle, .fullScreenNone]
         case .raised: [.moveToActiveSpace, .fullScreenAuxiliary]
         }
     }

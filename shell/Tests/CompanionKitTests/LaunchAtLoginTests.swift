@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import CompanionApp
+@testable import CompanionKit
 
 /// The login-item guard (SettingsWindow.swift): only the installed
 /// copy under /Applications may register with `SMAppService`. A dev

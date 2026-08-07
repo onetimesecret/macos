@@ -4,7 +4,9 @@
  * This is the *entire* surface a non-Rust shell may call, speaking
  * interaction-model rev C (docs/spec/04): sheets of ink and sealed
  * chips. By construction it hands out only opaque handles, non-secret
- * JSON metadata (titles, excerpts, counts), and action results — never
+ * JSON metadata (titles, counts, and a chip's mechanical excerpt in the
+ * sheet-facing JSON; the ledger carries no excerpt at all), and action
+ * results. It never hands out
  * a sealed byte. Sealed-byte movement stays in Rust: the sealed paste
  * reads the pasteboard in the core, copy-out writes it in the core.
  * The one deliberate plaintext-in entry is companion_sheet_seal_text()
@@ -60,6 +62,15 @@ const char *companion_version(void);
 
 /* Lifecycle. Freeing the handle wipes every sealed byte it holds. */
 CompanionHandle *companion_new(void);
+
+/* As companion_new(), with Keychain items scoped to `service` rather
+ * than the default "com.onetimesecret.companion". A second form factor
+ * passes its own bundle id so its state key is its own item, granted to
+ * its own code identity; sharing one item across two signed binaries
+ * would make each one's first read a confirmation prompt for the
+ * other's key. Null or empty falls back to the default scope. */
+CompanionHandle *companion_new_scoped(const char *service);
+
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */
@@ -88,9 +99,28 @@ bool companion_sheet_move(CompanionHandle *handle, uint64_t id,
                           uint64_t index);
 
 /*
+ * Name a page explicitly (the rename gesture in the tab context menu).
+ * An empty or all-whitespace title clears the user override and
+ * re-derives from the page's own content, the way back to the default.
+ * Anything else is trimmed, capped at 80 characters, and from then on
+ * sticky: editing the page never overwrites it again. Returns whether
+ * the page existed.
+ *
+ * The title is the one piece of page-owned text that reaches the
+ * ledger, so a secret typed into the rename field lands in the audit
+ * record. Documented exception, not an accident; the cap bounds it.
+ */
+bool companion_sheet_set_title(CompanionHandle *handle, uint64_t id,
+                               const char *title);
+
+/*
  * JSON array of non-secret page summaries, in visible (tab) order.
  * Free with companion_string_free(). Fields per page:
- *   id, title (first typed line, heading markup stripped; "untitled"),
+ *   id, title (the page's own name): the first non-empty line of its
+ *     ink with markdown markup stripped, capped at 80 characters;
+ *     "MMDD-HHmm" from the page's creation stamp in LOCAL time while
+ *     there is no ink to derive from; or whatever
+ *     companion_sheet_set_title() last set, which then sticks,
  *   rung_code (CompanionRung), rung_label ("8h"), remaining_ms,
  *   remaining_label ("3h 40m"), spoken_remaining ("about 3 hours
  *   remaining" — the VoiceOver value), fraction_remaining (0.0..1.0),
@@ -187,6 +217,10 @@ char *companion_sheet_document_json(CompanionHandle *handle, uint64_t sheet);
  * transient AND concealed (a chip is sealed by definition). Does not
  * consume the chip — multi-paste is a core moment. Returns whether the
  * chip existed.
+ *
+ * A successful copy-out is an auditable egress: it leaves one "sent"
+ * ledger record with destination "clipboard". The pasteboard is the
+ * boundary the app cannot follow the bytes past.
  */
 bool companion_chip_copy_out(CompanionHandle *handle, uint64_t chip);
 
@@ -242,40 +276,166 @@ bool companion_sheet_pause_press(CompanionHandle *handle, uint64_t id);
 /* ------------------------------------------------------------------ */
 
 /*
- * The ledger (cmd-0): dead pages, newest first — read-only, capped at
- * the newest dozen, carried across relaunch only inside the sealed
- * state file. Free with companion_string_free(). Fields per record:
- *   cause ("expired"|"closed"), title, age_ms (since death),
- *   segments: array of {"ink": "…"} | {"tombstone": "<excerpt>"} in
- *   document order. Sealed bytes were zeroized at death; a tombstone
- *   carries only the excerpt that always rendered (struck through
- *   shell-side, labelled "zeroized").
+ * The ledger (cmd-0): an audit trail of what the app did with items,
+ * newest first, read-only, held to a rolling 90-day window on the
+ * records' own wall-clock stamps. It is METADATA ONLY: no ink, no
+ * excerpts, no tombstones. Free with companion_string_free().
+ *
+ * Fields per record:
+ *   event         "created"|"sealed"|"sent"|"expired"|"discarded"
+ *   item          the item's random UUID, lowercase hyphenated 8-4-4-
+ *                 4-12, 36 characters. PLAIN: no digest and no salt,
+ *                 because an identifier an auditor cannot line up
+ *                 across records is not an audit trail
+ *   title         the host page's title at the moment of the event.
+ *                 The only page-owned text on a record, capped at 80
+ *                 characters core-side
+ *   at_ms         when it happened, Unix epoch milliseconds
+ *   created_at_ms when the item's page was created, epoch milliseconds
+ *   size          "tiny"|"small"|"medium"|"large"|"huge", a coarse
+ *                 bucket, never a byte count
+ *   destination   "none"|"clipboard"|"link"
+ *
+ * Records accumulate on ordinary use, not only on death: a page's
+ * creation, each seal, each egress, each discard. Do not assume an
+ * empty ledger for a session in which pages were merely opened.
  */
 char *companion_ledger_json(CompanionHandle *handle);
 
+/*
+ * Throw the whole ledger away: the user-facing "clear the ledger"
+ * affordance. The records outlive the boot session by design, so a way
+ * to end them on demand is part of that bargain. In-memory only: call
+ * companion_ledger_save() afterwards for the empty ledger to reach the
+ * file.
+ */
+void companion_ledger_clear(CompanionHandle *handle);
+
+/*
+ * Save the ledger to `path`, sealed with ChaCha20-Poly1305 under its
+ * OWN 32-byte key ("ledger-key" account, minted on first save) and its
+ * own envelope magic. That key is SEPARATE and LONG-LIVED: it is not
+ * derived from the boot session, unlike the content key. That is the whole
+ * point: the audit record survives the reboot that discards staged
+ * content, and a content-key rotation must never touch it. The two
+ * files are not interchangeable; each magic is its own AEAD associated
+ * data, so presenting one as the other fails authentication.
+ *
+ * The bytes are metadata plus capped titles, never content, so this
+ * file resting on disk indefinitely is the intended outcome. The write
+ * is atomic and owner-only. Call it beside companion_persist_save(),
+ * behind the same debounce.
+ *
+ * A save first sweeps the rolling 90-day window off the LIVE ledger,
+ * so this mutates the in-memory records and not only the file: a
+ * record that aged out is gone from companion_ledger_json() after a
+ * save, without waiting for a restart to load it away. The window is
+ * the same one companion_ledger_restore() applies, so the two paths
+ * cannot disagree about what is retained.
+ *
+ * Returns success. False now also covers an unreadable wall clock,
+ * because the sweep has no window to measure without one and writing
+ * an unswept file would put records back that the load path drops.
+ */
+bool companion_ledger_save(CompanionHandle *handle, const char *path);
+
+/*
+ * Restore the ledger from a file companion_ledger_save() wrote:
+ * decrypt under "ledger-key" (loaded, never minted), replace the
+ * in-memory records, and drop everything outside the rolling 90-day
+ * window as it loads. Nothing here ages a countdown and nothing
+ * expires a page. Call at startup, beside and independent of
+ * companion_persist_restore(): either may succeed while the other
+ * fails, and the shell should licence each save on its own restore.
+ * Returns whether a ledger was restored. False covers "no file yet"
+ * (a fresh start, not an error) as well as a missing key, failed
+ * authentication, or a damaged snapshot.
+ */
+bool companion_ledger_restore(CompanionHandle *handle, const char *path);
+
 /* ------------------------------------------------------------------ */
-/* Persistence: the sealed state file                                  */
+/* Persistence: the sealed state file, bound to this boot session      */
 /* ------------------------------------------------------------------ */
 
 /*
- * Save the whole store — sheets, sealed chips, clocks, the ledger — to
- * `path`, encrypted (ChaCha20-Poly1305) under a 32-byte key resting in
- * the OS credential store ("state-key" account, minted on first save).
+ * Save the staged content (sheets, sealed chips, clocks) to `path`,
+ * encrypted (ChaCha20-Poly1305) under a key that exists only while this
+ * boot session does: HKDF of a keychain half and a boot half, the boot
+ * half living in the per-user temp directory macOS clears at restart
+ * (ADR-0012). Neither half alone unwraps anything, and no key byte
+ * crosses this seam: the shell passes a path and receives a bool.
+ *
+ * The envelope stamps itself with kern.bootsessionuuid and with both
+ * clocks at the save, all of it authenticated, so a file cannot be
+ * re-dated and cannot be opened by a later boot session. The ledger is
+ * NOT in this file; it has its own file under its own long-lived key
+ * (companion_ledger_save), because content is boot-session-bound and
+ * the audit record is not.
+ *
  * Only ciphertext touches disk; the write is atomic and owner-only.
- * Call at quit — nothing saves on its own. Returns success.
+ * Call on every mutation, debounced, and once more at quit to flush
+ * what is still pending; the core saves nothing on its own. Returns
+ * success.
  */
 bool companion_persist_save(CompanionHandle *handle, const char *path);
 
 /*
- * Restore from a state file companion_persist_save() wrote: decrypt,
- * replace the store's sheets and ledger, and drain every countdown by
- * the wall time that passed while the app was closed; pages that came
- * due while away expire into the ledger immediately. Call at startup,
- * before creating the first page. Returns whether a state was restored
- * — false covers "no file yet" (a fresh start, not an error) as well
- * as a missing key, failed authentication, or a damaged snapshot.
+ * Restore from a state file companion_persist_save() wrote: decrypt
+ * (both key halves loaded, never minted), replace the store's sheets,
+ * and drain every countdown by the time that passed while the app was
+ * closed; pages that came due while away expire into the ledger
+ * immediately. Call at startup, before creating the first page.
+ *
+ * A file from another boot session is discarded before anything in it
+ * is decrypted: both content key halves are rotated FIRST, and the
+ * file is dropped from disk only if that rotation succeeded. The
+ * rotation is what actually forgets the content; the unlink is a tidy
+ * on top of it. A keychain that refuses the delete (locked at launch,
+ * an ACL dismissed) therefore leaves the file exactly where it is,
+ * because that file is the only thing that triggers this path and
+ * dropping it would consume the trigger while both halves stayed
+ * alive. The next launch tries again. The ledger key is untouched
+ * either way, so the audit record survives the restart that discards
+ * the content it describes.
+ *
+ * Time away is measured from the file's monotonic stamp, not from the
+ * calendar, so stepping the system clock backwards buys a page no extra
+ * life.
+ *
+ * Returns whether a state was restored. False covers "no file yet" (a
+ * fresh start, not an error) and a discarded foreign-session file, as
+ * well as a missing key, failed authentication, or a damaged snapshot.
  */
 bool companion_persist_restore(CompanionHandle *handle, const char *path);
+
+/*
+ * Drop the state file at `path`: overwrite, truncate, sync, unlink.
+ * The open refuses to follow a FINAL symlink and refuses to block, so a
+ * FIFO planted at the name cannot park the call; the writes then refuse
+ * anything that is not a regular file. That is the whole of the check,
+ * and it is narrower than it sounds: a HARD link at the path is a
+ * regular file and IS zeroed and truncated, a symlinked PARENT
+ * directory is never examined, and the link and blocking refusals are
+ * open flags the shipping platform happens to carry. What contains this
+ * is that `path` lives in the owner-only, app-owned state directory the
+ * shell chose; the checks only limit what a foothold there is worth.
+ *
+ * Returns whether nothing is at the path, answered WITHOUT following a
+ * link, including when there was nothing to begin with. A dangling
+ * symlink left at the path is something, so that reports false even
+ * though the name resolves to nothing.
+ *
+ * NOT erasure, and it must not be described as erasure. The filesystem
+ * is copy on write and every earlier generation the atomic rename
+ * unlinked is out of reach; what actually forgets staged content is
+ * crypto-erasure: the boot half dying with the boot session, and the
+ * halves rotating on a session mismatch. Call this when the store
+ * empties, so the last ciphertext generation does not sit on disk for
+ * the rest of the session describing nothing.
+ *
+ * The in-memory store is untouched: this deletes a file, not a page.
+ */
+bool companion_persist_erase(CompanionHandle *handle, const char *path);
 
 /* ------------------------------------------------------------------ */
 /* Promotion: the exit ramp, the app's only network action             */
@@ -330,26 +490,12 @@ char *companion_chip_promote(CompanionHandle *handle, uint64_t chip,
  * Promote the whole page (the footer's ↗ page): ink verbatim, sealed
  * bytes inlined in document order. Refuses a page holding an image
  * chip. Options, blocking, and result shape as companion_chip_promote.
+ * No per-chip mark is set, the link stands for the page, but the
+ * egress is recorded: one "sent" record against the page's own
+ * identity, destination "link", with a size class and no content.
  */
 char *companion_sheet_promote(CompanionHandle *handle, uint64_t sheet,
                               const char *opts_json);
-
-/* ------------------------------------------------------------------ */
-/* Dev scaffolding                                                     */
-/* ------------------------------------------------------------------ */
-
-/*
- * DEV SCAFFOLDING: put text on the pasteboard as an external app
- * would, so demo affordances have something for
- * companion_sheet_seal_from_pasteboard() to seal. On macOS this writes
- * the REAL system clipboard. Exists only when the core was built with
- * the off-by-default `dev-scaffolding` cargo feature; build-core.sh
- * defines COMPANION_DEV_SCAFFOLDING in the packaged header iff it
- * enabled that feature.
- */
-#ifdef COMPANION_DEV_SCAFFOLDING
-bool companion_dev_seed_pasteboard(CompanionHandle *handle, const char *text);
-#endif
 
 /* Free a string returned by this library. Null is a no-op. */
 void companion_string_free(char *s);

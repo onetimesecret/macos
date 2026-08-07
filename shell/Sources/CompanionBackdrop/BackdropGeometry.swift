@@ -9,27 +9,32 @@ import Foundation
 /// judgement lives in `clamped(to:)`, a window-free function the tests
 /// can interrogate directly, in the shell's pattern of testing the
 /// decision rather than mocking AppKit.
+///
+/// The card carries a real height, the way a window does. It began as a
+/// floor under the editor while the card grew downward with its ink,
+/// which reads well for one page of ink and badly for everything the
+/// parity work added: a tab strip, a ledger, and an inline promotion
+/// all need the card to be a fixed frame with a scrolling page inside
+/// it, not a shape that changes size as the page fills.
 struct BackdropGeometry: Codable, Equatable {
     /// The card's top-leading corner, offset from the pane's own
     /// top-leading corner. Both components are non-negative once
     /// clamped: the card never hangs off the pane.
     var origin: CGPoint
 
-    /// The card's width. The card grows downward with its ink, so
-    /// width is the one horizontal measure the user can set.
+    /// The card's width.
     var width: CGFloat
 
-    /// The floor under the editor's height. Not the card's full
-    /// height: the header and padding add their own chrome, and the
-    /// ink may push past this floor on its own.
-    var minEditorHeight: CGFloat
+    /// The card's height, chrome included.
+    var height: CGFloat
 
-    /// Today's layout, verbatim: the 48 pt pin that was `.padding(48)`,
-    /// the 640 pt column, the 220 pt editor floor.
+    /// Today's layout: the 48 pt pin that was `.padding(48)`, the
+    /// 640 pt column, and a height matching the editor floor and
+    /// chrome the card shipped with.
     static let `default` = BackdropGeometry(
         origin: CGPoint(x: 48, y: 48),
         width: 640,
-        minEditorHeight: 220
+        height: 316
     )
 
     // MARK: Bounds
@@ -38,92 +43,119 @@ struct BackdropGeometry: Codable, Equatable {
     /// glance surface must stay readable at a glance.
     static let minWidth: CGFloat = 360
 
-    /// Wider than this and the card stops being a card. The pane clamp
-    /// still applies on top, so a small display wins over this ceiling.
-    static let maxWidth: CGFloat = 900
+    /// Shorter than this and the header, the page, and the tab strip
+    /// stop fitting together: the card's equivalent of the panel
+    /// window's 300 pt floor.
+    static let minHeight: CGFloat = 260
 
-    /// The least editor worth having: a few visible lines, never a
-    /// sliver.
-    static let minReadableEditorHeight: CGFloat = 160
-
-    /// Taller than this and the "card on a desktop" reading gives way
-    /// to a full-screen slab, which the backdrop deliberately is not.
-    static let maxEditorHeight: CGFloat = 600
-
-    /// The card's non-editor height, approximately: the header row and
-    /// the padding around the whole. An estimate is enough here; the
-    /// clamp only needs a reasonable card extent to keep the whole of
-    /// it within reach of the pane, not a pixel-perfect one.
-    static let cardChromeHeight: CGFloat = 96
+    /// There is no fixed ceiling. A window may be dragged as large as
+    /// its screen, and the card is being sized like a window; the pane
+    /// is the only limit, applied by the clamp below. (The 900 × 600
+    /// ceilings the card shipped with were a reading-measure argument
+    /// from when it held exactly one page of ink.)
 
     // MARK: The clamp
 
     /// The one decision, pure: given a pane, return the nearest
     /// geometry that keeps the card readable, bounded, and fully on
-    /// the pane. Absolute bounds apply first, then the pane's own
+    /// the pane. Absolute minimums apply first, then the pane's own
     /// limits, so a tiny pane may force the card below its readable
     /// minimum rather than push any of it off screen. A degenerate
     /// pane (zero, or smaller than any sensible card) collapses the
     /// geometry gracefully to whatever fits, never below zero and
     /// never through a crash.
-    func clamped(to paneSize: CGSize) -> BackdropGeometry {
-        let paneWidth = max(0, paneSize.width)
-        let paneHeight = max(0, paneSize.height)
+    ///
+    /// The pane is a rect, not a size: the window spans the whole
+    /// screen, but the menu bar and Dock own strips of it that a
+    /// floating card cannot outrank. A card allowed under the menu bar
+    /// keeps its header where no click can reach it, so the usable
+    /// region the clamp confines to starts below that strip.
+    func clamped(to pane: CGRect) -> BackdropGeometry {
+        // Raw components, not the rect accessors: CGRect normalizes a
+        // negative size (`width` turns absolute, `minX` shifts), which
+        // would quietly promote a degenerate pane to a real one.
+        let paneWidth = max(0, pane.size.width)
+        let paneHeight = max(0, pane.size.height)
 
-        let boundedWidth = min(max(width, Self.minWidth), Self.maxWidth)
-        let fitWidth = min(boundedWidth, paneWidth)
+        let fitWidth = min(max(width, Self.minWidth), paneWidth)
+        let fitHeight = min(max(height, Self.minHeight), paneHeight)
 
-        let boundedEditor = min(
-            max(minEditorHeight, Self.minReadableEditorHeight),
-            Self.maxEditorHeight
-        )
-        let fitEditor = min(boundedEditor, max(0, paneHeight - Self.cardChromeHeight))
-
-        // The card's estimated extent, for keeping the whole of it on
-        // the pane. When even that exceeds the pane, the origin pins
-        // to the top-leading corner and the overflow is the pane's
-        // problem, not a crash.
-        let cardHeight = fitEditor + Self.cardChromeHeight
-        let x = min(max(origin.x, 0), max(0, paneWidth - fitWidth))
-        let y = min(max(origin.y, 0), max(0, paneHeight - cardHeight))
+        let x = min(max(origin.x, pane.origin.x), pane.origin.x + max(0, paneWidth - fitWidth))
+        let y = min(max(origin.y, pane.origin.y), pane.origin.y + max(0, paneHeight - fitHeight))
 
         return BackdropGeometry(
             origin: CGPoint(x: x, y: y),
             width: fitWidth,
-            minEditorHeight: fitEditor
+            height: fitHeight
         )
+    }
+
+    /// The whole-pane clamp, for a pane with nothing carved out of it.
+    func clamped(to paneSize: CGSize) -> BackdropGeometry {
+        clamped(to: CGRect(origin: .zero, size: paneSize))
     }
 }
 
 // MARK: Persistence
 
 extension BackdropGeometry {
-    /// The backdrop's own defaults suite, and only the backdrop's.
-    /// ADR-0010: the backdrop and the panel are separate programs that
-    /// merely rhyme; this is never CompanionApp's standard domain, and
-    /// nothing in it is shared across the target line.
-    static let defaultsSuiteName = "com.onetimesecret.companion.backdrop"
-
     /// One key, one JSON blob: the whole geometry travels together, so
     /// a partial write can never leave origin and width disagreeing.
-    static let defaultsKey = "geometry"
+    static let defaultsKey = "backdrop.geometry"
+
+    /// The card's non-editor height, approximately: the header row and
+    /// the padding around the whole. Only used to read a geometry
+    /// written before the card had a real height.
+    private static let legacyChromeHeight: CGFloat = 96
+
+    private enum CodingKeys: String, CodingKey {
+        case origin, width, height
+        case minEditorHeight
+    }
+
+    /// A geometry written by the editor-floor layout still decodes: its
+    /// `minEditorHeight` plus the chrome that sat around it is the
+    /// height it was actually drawing. Without this the first launch
+    /// after the change would silently reset a card the user had
+    /// placed, which is the sort of small betrayal that makes a person
+    /// stop trusting a tool with placement at all.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        origin = try container.decode(CGPoint.self, forKey: .origin)
+        width = try container.decode(CGFloat.self, forKey: .width)
+        if let stored = try container.decodeIfPresent(CGFloat.self, forKey: .height) {
+            height = stored
+        } else {
+            let floor = try container.decode(CGFloat.self, forKey: .minEditorHeight)
+            height = floor + Self.legacyChromeHeight
+        }
+    }
+
+    /// Written in the current shape only: the legacy key is something
+    /// this type reads, never something it writes back.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(origin, forKey: .origin)
+        try container.encode(width, forKey: .width)
+        try container.encode(height, forKey: .height)
+    }
 
     /// Read the stored geometry, or fall back to the default. A
-    /// missing suite, a missing key, or an unreadable blob all resolve
-    /// the same way: the card appears where it always has.
-    static func load(from defaults: UserDefaults?) -> BackdropGeometry {
+    /// missing key or an unreadable blob resolves the same way: the
+    /// card appears where it always has.
+    static func load(from defaults: UserDefaults) -> BackdropGeometry {
         guard
-            let data = defaults?.data(forKey: defaultsKey),
+            let data = defaults.data(forKey: defaultsKey),
             let stored = try? JSONDecoder().decode(BackdropGeometry.self, from: data)
         else { return .default }
         return stored
     }
 
-    /// Write this geometry to the suite. Encoding a value of fixed
+    /// Write this geometry to the defaults. Encoding a value of fixed
     /// shape does not fail in practice; if it somehow did, keeping the
     /// previous stored value is strictly better than storing garbage.
-    func save(to defaults: UserDefaults?) {
+    func save(to defaults: UserDefaults) {
         guard let data = try? JSONEncoder().encode(self) else { return }
-        defaults?.set(data, forKey: Self.defaultsKey)
+        defaults.set(data, forKey: Self.defaultsKey)
     }
 }

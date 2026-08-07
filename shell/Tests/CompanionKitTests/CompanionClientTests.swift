@@ -1,6 +1,6 @@
 import XCTest
 
-@testable import CompanionApp
+import CompanionKit
 
 /// These decode the core's non-secret JSON and check the rung mapping —
 /// no live core needed, so they run wherever the package builds.
@@ -80,29 +80,80 @@ final class CompanionClientTests: XCTestCase {
     }
 
     func testLedgerDecoding() throws {
+        // A record is metadata: a closed vocabulary, a random id, two
+        // stamps, and the page's own capped title. There is no field
+        // here that could carry ink or an excerpt.
         let json = """
         [{
-            "cause": "expired",
+            "event": "sealed",
+            "item": "6a5f9f6e-6b7a-4c1d-9b2e-0f3a7c8d1e42",
             "title": "deploy friday",
-            "age_ms": 5000,
-            "segments": [
-                {"ink": "### deploy friday\\nin order —\\n"},
-                {"tombstone": "ghp_4kQ9…5jK7a"}
-            ]
+            "at_ms": 1762123456789,
+            "created_at_ms": 1762123400000,
+            "size": "small",
+            "destination": "none"
+        }, {
+            "event": "sent",
+            "item": "6a5f9f6e-6b7a-4c1d-9b2e-0f3a7c8d1e42",
+            "title": "deploy friday",
+            "at_ms": 1762123499999,
+            "created_at_ms": 1762123400000,
+            "size": "small",
+            "destination": "clipboard"
         }]
         """
         let records = try JSONDecoder().decode([LedgerEntry].self, from: Data(json.utf8))
-        XCTAssertEqual(records.count, 1)
-        XCTAssertEqual(records[0].cause, "expired")
-        XCTAssertEqual(records[0].title, "deploy friday")
-        let runs = records[0].runs
-        XCTAssertEqual(runs.count, 2)
-        guard case .ink(let text) = runs[0] else { return XCTFail("first run is ink") }
-        XCTAssertTrue(text.contains("in order"))
-        guard case .tombstone(let excerpt) = runs[1] else {
-            return XCTFail("second run is a tombstone")
+        XCTAssertEqual(records.count, 2)
+
+        let sealed = records[0]
+        XCTAssertEqual(sealed.event, "sealed")
+        XCTAssertEqual(sealed.item, "6a5f9f6e-6b7a-4c1d-9b2e-0f3a7c8d1e42")
+        XCTAssertEqual(sealed.item.count, 36)
+        XCTAssertEqual(sealed.title, "deploy friday")
+        XCTAssertEqual(sealed.atMs, 1_762_123_456_789)
+        XCTAssertEqual(sealed.createdAtMs, 1_762_123_400_000)
+        XCTAssertEqual(sealed.size, "small")
+        XCTAssertEqual(sealed.destination, "none")
+
+        // Copying to the pasteboard is an egress and says so.
+        XCTAssertEqual(records[1].event, "sent")
+        XCTAssertEqual(records[1].destination, "clipboard")
+
+        // Two events on one item are two rows, not one.
+        XCTAssertEqual(sealed.item, records[1].item)
+        XCTAssertNotEqual(sealed.id, records[1].id)
+    }
+
+    func testLedgerEntryCarriesNoContentField() throws {
+        // The guarantee stated on the type, checked mechanically: a
+        // round-trip through the encoder shows every key the type can
+        // hold, and none of them is a run, an excerpt or a tombstone.
+        let json = """
+        {
+            "event": "discarded",
+            "item": "6a5f9f6e-6b7a-4c1d-9b2e-0f3a7c8d1e42",
+            "title": "deploy friday",
+            "at_ms": 1762123456789,
+            "created_at_ms": 1762123400000,
+            "size": "huge",
+            "destination": "none"
         }
-        XCTAssertEqual(excerpt, "ghp_4kQ9…5jK7a")
+        """
+        let record = try JSONDecoder().decode(LedgerEntry.self, from: Data(json.utf8))
+        let encoded = try JSONEncoder().encode(record)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual(
+            Set(object.keys),
+            ["event", "item", "title", "at_ms", "created_at_ms", "size", "destination"])
+
+        // Every value is a closed vocabulary, an id, a number, or the
+        // capped title. Nothing is free text the core did not bound.
+        XCTAssertTrue(
+            ["created", "sealed", "sent", "expired", "discarded"].contains(record.event))
+        XCTAssertTrue(["tiny", "small", "medium", "large", "huge"].contains(record.size))
+        XCTAssertTrue(["none", "clipboard", "link"].contains(record.destination))
+        XCTAssertLessThanOrEqual(record.title.count, 80)
     }
 
     func testRungMappingMatchesTheABI() {

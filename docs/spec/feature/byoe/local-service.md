@@ -12,6 +12,8 @@ local clients (the OTS web app in a browser, CLIs, scripts) can use the
 customer's master key — and records feedback on the protocol itself that
 the topology surfaces.
 
+Also consider: https://invisv.com/articles/decoupling-principle
+
 ## Relationship to the existing BYOE spec
 
 The create-path spec rejected the *proxy-client* topology (the app POSTing

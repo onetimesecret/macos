@@ -43,6 +43,7 @@ dependencies = [
  "companion-credentials",
  "companion-pasteboard",
  "companion-transport",
+ "getrandom",
  "libc",
  "ots-client",
  "serde",
@@ -54,18 +55,21 @@ dependencies = [
 name = "companion-credentials"
 version = "0.1.0"
 dependencies = [
+ "core-foundation",
  "security-framework",
+ "security-framework-sys",
  "zeroize",
 ]
 
 [[package]]
 name = "companion-ffi"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "companion-core",
  "companion-credentials",
  "companion-pasteboard",
  "companion-transport",
+ "libc",
  "ots-client",
  "ring",
  "serde_json",
