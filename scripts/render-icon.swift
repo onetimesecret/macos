@@ -282,6 +282,154 @@ func vignetteStyle(name: String, scale: CGFloat, focus: NSPoint = .zero, summary
     }
 }
 
+// MARK: - The long shadow family
+
+/// A direction for the shadow to fall, in degrees counter-clockwise
+/// from due east of the tile, so -45 is down and to the right: the
+/// direction the style was born with, and still the one it defaults to.
+struct ShadowAngle {
+    let name: String
+    let degrees: CGFloat
+    let summary: String
+}
+
+/// How a shadow is coloured and how far it runs. `ink`, `tile` and
+/// `motif` each derive their colour from the shade on the command line
+/// rather than naming one, so a treatment reads at any shade. `run` is
+/// the shadow's length in tile heights, and `fade` ramps it away to
+/// nothing over that run instead of ending on a hard edge.
+struct ShadowTreatment {
+    let name: String
+    let summary: String
+    let run: CGFloat
+    let fade: Bool
+    let ink: (NSColor) -> NSColor
+    let tile: (NSColor) -> NSColor
+    let motif: (NSColor) -> NSColor
+}
+
+/// Far enough that the shadow leaves the tile from any angle: the
+/// motif sits at the centre, so the worst case is a corner one tile
+/// height away, plus the motif's own reach past it.
+let shadowRun: CGFloat = 1.5
+
+/// A colour derivation for the fields above, spelled once.
+func blend(_ fraction: CGFloat, _ other: NSColor) -> (NSColor) -> NSColor {
+    { $0.blended(withFraction: fraction, of: other) ?? $0 }
+}
+
+/// Not black. An outdoor shadow is lit by the sky rather than by
+/// nothing, so it runs blue; `dusk` is what a shadow is made of when it
+/// is allowed to have a colour of its own.
+let skyShadow = NSColor(calibratedRed: 0.10, green: 0.09, blue: 0.30, alpha: 1)
+
+let shadowAngles: [ShadowAngle] = [
+    ShadowAngle(name: "se", degrees: -45, summary: "down and to the right, the classic"),
+    ShadowAngle(name: "sw", degrees: -135, summary: "down and to the left"),
+    ShadowAngle(name: "ne", degrees: 45, summary: "up and to the right"),
+    ShadowAngle(name: "nw", degrees: 135, summary: "up and to the left"),
+    ShadowAngle(name: "s", degrees: -90, summary: "straight down, the light directly overhead"),
+    ShadowAngle(name: "e", degrees: 0, summary: "flat to the right, the light at eye level"),
+    ShadowAngle(name: "low", degrees: -22.5, summary: "raking, the light low and late"),
+    ShadowAngle(name: "steep", degrees: -67.5, summary: "steep, the light high in the corner"),
+]
+
+let shadowTreatments: [ShadowTreatment] = [
+    ShadowTreatment(
+        name: "solid", summary: "one flat step darker, hard edged the whole way out",
+        run: shadowRun, fade: false,
+        ink: blend(0.25, .black), tile: { $0 }, motif: { _ in .white }),
+    ShadowTreatment(
+        name: "deep", summary: "the same shadow driven far darker, high contrast",
+        run: shadowRun, fade: false,
+        ink: blend(0.55, .black), tile: { $0 }, motif: { _ in .white }),
+    ShadowTreatment(
+        name: "fade", summary: "darker at the motif, gone by the tile edge",
+        run: shadowRun, fade: true,
+        ink: blend(0.35, .black), tile: { $0 }, motif: { _ in .white }),
+    ShadowTreatment(
+        name: "stub", summary: "cut short, so the motif reads as raised rather than flat",
+        run: 0.42, fade: false,
+        ink: blend(0.30, .black), tile: { $0 }, motif: { _ in .white }),
+    ShadowTreatment(
+        name: "dusk", summary: "a shadow lit by the sky, fading blue rather than black",
+        run: shadowRun, fade: true,
+        ink: blend(0.55, skyShadow), tile: { $0 }, motif: { _ in .white }),
+    ShadowTreatment(
+        name: "beam", summary: "lighter than its tile, so the motif leaks light instead of blocking it",
+        run: shadowRun, fade: true,
+        ink: blend(0.35, .white), tile: blend(0.55, .black), motif: { _ in .white }),
+]
+
+/// The motif on a flat tile, throwing `steps` copies of itself along
+/// one direction to make a single hard silhouette, with the motif drawn
+/// last on top of its own shadow.
+func drawLongShadow(_ ctx: StyleContext, degrees: CGFloat, treatment: ShadowTreatment) {
+    treatment.tile(ctx.base).setFill()
+    ctx.tilePath.fill()
+    NSGraphicsContext.saveGraphicsState()
+    defer { NSGraphicsContext.restoreGraphicsState() }
+    ctx.tilePath.addClip()
+
+    let radians = degrees * .pi / 180
+    let direction = NSPoint(x: cos(radians), y: sin(radians))
+    let length = ctx.tile.height * treatment.run
+    // Copies this close together overlap for any stroke thicker than a
+    // few pixels, which every mark's is, so the trail reads as one
+    // shape rather than as a row of stamps.
+    let step = ctx.tile.height / 160
+    let steps = max(1, Int((length / step).rounded()))
+    let ink = treatment.ink(ctx.base)
+
+    guard let cg = NSGraphicsContext.current?.cgContext else {
+        fail("the long shadow has no graphics context to draw into")
+    }
+    // A fade cannot be drawn by making each copy faint: hundreds of
+    // translucent copies pile up to opaque within the first fraction of
+    // the run. The trail is built opaque inside a layer of its own and
+    // the whole layer's alpha is then multiplied by a ramp.
+    if treatment.fade { cg.beginTransparencyLayer(auxiliaryInfo: nil) }
+    for i in 1...steps {
+        ctx.drawMark(ink, offset: NSPoint(x: direction.x * step * CGFloat(i),
+                                          y: direction.y * step * CGFloat(i)))
+    }
+    if treatment.fade {
+        guard let ramp = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: [CGColor(red: 1, green: 1, blue: 1, alpha: 1),
+                     CGColor(red: 1, green: 1, blue: 1, alpha: 0)] as CFArray,
+            locations: [0, 1]
+        ) else { fail("could not build the shadow's fade ramp") }
+        cg.setBlendMode(.destinationIn)
+        cg.drawLinearGradient(
+            ramp,
+            start: CGPoint(x: ctx.tile.midX, y: ctx.tile.midY),
+            end: CGPoint(x: ctx.tile.midX + direction.x * length,
+                         y: ctx.tile.midY + direction.y * length),
+            // Held opaque behind the motif and clear past the run's end,
+            // so the ramp governs only the stretch it was measured for.
+            options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+        cg.setBlendMode(.normal)
+        cg.endTransparencyLayer()
+    }
+    ctx.drawMark(treatment.motif(ctx.base))
+}
+
+func shadowStyle(_ angle: ShadowAngle, _ treatment: ShadowTreatment) -> Style {
+    Style(name: "longshadow-\(angle.name)-\(treatment.name)",
+          summary: "\(treatment.summary); falls \(angle.summary)") { ctx in
+        drawLongShadow(ctx, degrees: angle.degrees, treatment: treatment)
+    }
+}
+
+/// Every angle crossed with every treatment. Kept out of `styles` so
+/// the main contact sheet stays a survey of different looks instead of
+/// becoming a wall of one look; `--shadows` renders this family on its
+/// own sheet, one row per treatment and one column per angle.
+let shadowStyles: [Style] = shadowAngles.flatMap { angle in
+    shadowTreatments.map { shadowStyle(angle, $0) }
+}
+
 /// The named vignettes below were scouted on the maruhi, so their
 /// focuses land on that glyph's anatomy; under another mark they are
 /// still valid crops, just not the ones their names describe.
@@ -387,18 +535,11 @@ let styles: [Style] = [
         ctx.drawMark(ctx.base)
         NSGraphicsContext.restoreGraphicsState()
     },
+    // The family's origin point, and the shorter name the standard icon
+    // is built by. Identical to longshadow-se-solid, which is what it
+    // draws; the rest of the matrix lives in `shadowStyles`.
     Style(name: "longshadow", summary: "flat tile, motif casting a solid diagonal shadow") { ctx in
-        ctx.base.setFill()
-        ctx.tilePath.fill()
-        NSGraphicsContext.saveGraphicsState()
-        ctx.tilePath.addClip()
-        let ink = ctx.base.blended(withFraction: 0.25, of: .black) ?? ctx.base
-        let step = ctx.tile.height / 160
-        for i in 1...120 {
-            ctx.drawMark(ink, offset: NSPoint(x: step * CGFloat(i), y: -step * CGFloat(i)))
-        }
-        ctx.drawMark(.white)
-        NSGraphicsContext.restoreGraphicsState()
+        drawLongShadow(ctx, degrees: shadowAngles[0].degrees, treatment: shadowTreatments[0])
     },
     Style(name: "badge", summary: "shade tile, white disc badge holding the motif") { ctx in
         ctx.base.setFill()
@@ -531,6 +672,19 @@ func writeSheet(cells: [(label: String, style: Style)], columns: Int, base: NSCo
     } catch {
         fail("writing \(url.path): \(error.localizedDescription)")
     }
+}
+
+/// The long shadow family as a matrix: one row per treatment, one
+/// column per angle, so a column reads as one light source treated
+/// every way and a row as one treatment lit from every side.
+func writeShadowSheet(base: NSColor, mark: Mark, to url: URL) {
+    var cells: [(label: String, style: Style)] = []
+    for treatment in shadowTreatments {
+        for angle in shadowAngles {
+            cells.append(("\(angle.name) \(treatment.name)", shadowStyle(angle, treatment)))
+        }
+    }
+    writeSheet(cells: cells, columns: shadowAngles.count, base: base, mark: mark, to: url)
 }
 
 /// A focus sweep for one zoom: an n by n grid of vignette crops
@@ -711,6 +865,21 @@ if arguments.count == 2, arguments[1] == "--list" {
     for style in styles {
         print("\(style.name)\t\(style.summary)")
     }
+    // Printed as its two axes rather than as its 48 names, which is
+    // also how it is meant to be read.
+    print("\nlongshadow-<angle>-<treatment>, any of:")
+    for angle in shadowAngles {
+        print("  angle \(angle.name)\t\(angle.summary)")
+    }
+    for treatment in shadowTreatments {
+        print("  treatment \(treatment.name)\t\(treatment.summary)")
+    }
+    exit(0)
+}
+
+if arguments.count == 4, arguments[1] == "--shadows" {
+    writeShadowSheet(base: parseShade(arguments[2]), mark: mark,
+                     to: URL(fileURLWithPath: arguments[3]))
     exit(0)
 }
 
@@ -743,18 +912,24 @@ if arguments.count == 5 || arguments.count == 6, arguments[1] == "--sweep" {
 guard arguments.count == 4, !arguments[1].hasPrefix("--") else {
     let styleNames = styles.map(\.name).joined(separator: "|")
     let markNames = marks.map(\.name).joined(separator: "|")
+    let angleNames = shadowAngles.map(\.name).joined(separator: "|")
+    let treatmentNames = shadowTreatments.map(\.name).joined(separator: "|")
     fail("""
     usage: swift render-icon.swift [--mark <mark>] <style> <rrggbb> <output.iconset>
            swift render-icon.swift [--mark <mark>] --sheet <rrggbb> <output.png>
+           swift render-icon.swift [--mark <mark>] --shadows <rrggbb> <output.png>
            swift render-icon.swift [--mark <mark>] --sweep <zoom> <rrggbb> <output.png> [grid]
            swift render-icon.swift [--mark <mark>] --scout <rrggbb> <output.png> [perUnit]
            swift render-icon.swift --list
     marks:  \(markNames)
     styles: \(styleNames)
+            longshadow-<angle>-<treatment>
+            angle:     \(angleNames)
+            treatment: \(treatmentNames)
     """)
 }
 
-guard let style = styles.first(where: { $0.name == arguments[1] }) else {
+guard let style = (styles + shadowStyles).first(where: { $0.name == arguments[1] }) else {
     fail("unknown style \"\(arguments[1])\"; run with --list to see the choices")
 }
 

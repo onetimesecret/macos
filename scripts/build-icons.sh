@@ -16,6 +16,10 @@
 #   scripts/build-icons.sh --list             # available marks and styles
 #   scripts/build-icons.sh --rrggbb           # shades used so far
 #   scripts/build-icons.sh --sheet [rrggbb]   # contact sheet of every style
+#   scripts/build-icons.sh --shadows [rrggbb]
+#       contact sheet of the long shadow family as a matrix, one row per
+#       treatment and one column per angle, for judging which direction
+#       and which falloff the mark wants
 #   scripts/build-icons.sh --sweep <zoom> [rrggbb] [grid]
 #       contact sheet of vignette crops for one zoom (a scale factor,
 #       or zoom|zoom2|zoom4) on a grid of focuses, default 10x10
@@ -89,6 +93,12 @@ build_sheet() { # <rrggbb shade>
   swift scripts/render-icon.swift "${MARK_FLAG[@]}" --sheet "$shade" "$png"
 }
 
+build_shadows() { # [rrggbb shade]
+  local shade="${1:-0f766e}" png="$OUT/shadows-$MARK-${1:-0f766e}.png"
+  echo "==> Rendering $png"
+  swift scripts/render-icon.swift "${MARK_FLAG[@]}" --shadows "$shade" "$png"
+}
+
 build_sweep() { # <zoom> [rrggbb shade] [grid]
   local zoom="$1" shade="${2:-0f766e}" grid="${3:-10}"
   case "$zoom" in
@@ -155,11 +165,14 @@ EOF
       --sheet)
         build_sheet 0f766e
         ;;
+      --shadows)
+        build_shadows
+        ;;
       --scout)
         build_scout
         ;;
       *)
-        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -167,10 +180,11 @@ EOF
   2)
     case "$1" in
       --sheet) build_sheet "$2" ;;
+      --shadows) build_shadows "$2" ;;
       --sweep) build_sweep "$2" ;;
       --scout) build_scout "$2" ;;
       *)
-        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
