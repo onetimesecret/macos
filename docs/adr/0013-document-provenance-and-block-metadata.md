@@ -242,6 +242,22 @@ out-of-band annotation feature ships, and none is committed. Stable
 position types (cursors, sticky indices) remain load-bearing for
 block anchoring and view-state restoration regardless.
 
+### Creating a onetime link is a copy, not a form
+
+Decided 2026-08-07. Creating the OTS link is a single action, not a
+form that appears. It should feel like clicking a Copy icon, except
+that what arrives on paste is the one-time-use link. One click, no
+fields, no confirmation; any options live outside the gesture.
+
+The document-model reading is that sealing stays out of the edit
+stream. Like Copy, a seal is a read of the page, not a mutation of
+it: it produces no ops, alters no block, and counts as an
+interaction in the importance bookkeeping exactly as copying does.
+The seal gestures were already deliberately not undoable, and a
+gesture that edits nothing has nothing to undo, so for this path
+the non-undoable rule is satisfied by construction rather than
+enforced.
+
 ### The compaction ceremony
 
 This is the open design work that architecture 3 requires and that no
