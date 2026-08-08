@@ -11,11 +11,14 @@
 #
 # Prereq: scripts/build-core.sh has produced the xcframework.
 #
-# --debug builds the debug configuration, the only build that can lift
-# the surface's capture exclusion (COMPANION_ALLOW_CAPTURE, compiled out
-# of release). `open` does not forward the caller's environment; pass
-# the variable explicitly:
+# --debug builds the debug configuration, which always offers the
+# Settings switch that lifts the surface's capture exclusion. A release
+# build offers the same switch only when launched with
+# COMPANION_ALLOW_CAPTURE set, which also seeds it on. `open` does not
+# forward the caller's environment; pass the variable explicitly, and to
+# either configuration:
 #   open --env COMPANION_ALLOW_CAPTURE=1 dist/OnetimePad.app
+#   open --env COMPANION_ALLOW_CAPTURE=1 /Applications/OnetimePad.app
 # Debug builds get a .debug bundle id so a dev instance and the
 # installed copy can coexist without contending for the menu bar,
 # defaults, keychain items, and state (ADR-0012).
@@ -88,8 +91,18 @@ cp "$BIN" "$APP/Contents/MacOS/OnetimePad"
 cp shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg "$APP/Contents/Resources/"
 cp shell/OnetimePad-Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
-scripts/build-icons.sh
-cp dist/icons/OnetimePad.icns "$APP/Contents/Resources/AppIcon.icns"
+# Use whatever OnetimePad icon is already sitting in dist/icons/ (the
+# most recently rendered one), so a custom scripts/build-icons.sh run
+# right before packaging survives instead of being overwritten by a
+# forced rebuild back to the standard shade. Only build the standard
+# icon when none exists yet.
+ICON="$(ls -t dist/icons/OnetimePad*.icns 2>/dev/null | head -n1 || true)"
+if [[ -z "$ICON" ]]; then
+  scripts/build-icons.sh
+  ICON="dist/icons/OnetimePad.icns"
+fi
+echo "==> App icon: $ICON"
+cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
 
