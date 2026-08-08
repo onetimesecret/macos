@@ -1,10 +1,10 @@
 // Renders one app icon as a complete .iconset directory. The look is
 // two independent choices on the command line: a motif (the `marks`
 // registry: the maruhi glyph, or the onetimesecret.com logo mark read
-// from scripts/assets) and a style (the `styles` registry, which says
-// how the tile is treated and where the motif sits on it). Every style
-// works with every mark, so adding one entry to either registry adds a
-// row or a column to the whole matrix.
+// from the app's own resources) and a style (the `styles` registry,
+// which says how the tile is treated and where the motif sits on it).
+// Every style works with every mark, so adding one entry to either
+// registry adds a row or a column to the whole matrix.
 //
 // Run by scripts/build-icons.sh via `swift render-icon.swift [--mark
 // <mark>] <style> <rrggbb> <out.iconset>`; not part of the Swift
@@ -26,11 +26,17 @@ func fail(_ message: String) -> Never {
 
 // MARK: - The logo mark, read from SVG
 
-/// The brand art, resolved beside this script so the renderer works
-/// from any working directory.
+/// The brand art, resolved from this script's own location so the
+/// renderer works from any working directory. It lives with the app
+/// rather than with the scripts because the app draws it too: the menu
+/// bar item is the same mark (CompanionKit's LogoMark), and one asset
+/// is what keeps the tray and the Dock tile from drifting apart. The
+/// parser below is duplicated there of necessity; the icon is built
+/// before there is an app to share code with.
 let logoSVG = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()
-    .appendingPathComponent("assets/onetime-logo-v3-xl.svg")
+    .deletingLastPathComponent()
+    .appendingPathComponent("shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg")
 
 /// The value of one attribute of one tag, or nil when the tag has no
 /// such attribute. Enough XML for a hand written two path logo, and

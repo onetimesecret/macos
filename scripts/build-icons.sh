@@ -24,7 +24,8 @@
 #
 # A leading --mark <maruhi|logo> picks the motif for any of the above
 # and defaults to the maruhi. The logo mark is the onetimesecret.com
-# logo, read from scripts/assets, so the brand lockup is
+# logo, read from the app's own resources at
+# shell/Sources/CompanionKit/Resources, so the brand lockup is
 #   scripts/build-icons.sh --mark logo <name> flat dc4a22
 # Sheets and scouts name the mark in their output file, so a maruhi
 # sheet and a logo sheet at one shade do not overwrite each other.
@@ -84,12 +85,16 @@ build_scout() { # [rrggbb shade] [perUnit]
   swift scripts/render-icon.swift "${MARK_FLAG[@]}" --scout "$shade" "$png" "$per"
 }
 
+# The brand art, which the app ships as a resource and this script
+# reads through render-icon.swift; edits to it restale the icon.
+LOGO_SVG=shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg
+
 build_icon_if_stale() { # <app name> <style> <rrggbb shade>
   local icns="$OUT/$1.icns"
   if [[ -f "$icns" \
      && ! scripts/render-icon.swift -nt "$icns" \
      && ! scripts/build-icons.sh -nt "$icns" \
-     && ! scripts/assets/onetime-logo-v3-xl.svg -nt "$icns" ]]; then
+     && ! "$LOGO_SVG" -nt "$icns" ]]; then
     return 0
   fi
   build_icon "$@"
