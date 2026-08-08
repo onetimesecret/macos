@@ -102,6 +102,10 @@ Y.Text's attribute model has known concurrent-formatting anomalies
 (bold expanding over concurrently inserted text, mark boundary drift).
 If per-paragraph metadata and annotations are the feature, mark
 behavior under concurrency is a selection criterion, not a footnote.
+(Demoted 2026-08-07: the hybrid markdown decision below moves
+formatting in-band, so marks carry no formatting and this criterion
+applies only to out-of-band annotations, none of which are
+committed.)
 
 Cost: the shell and core seam inverts. Edits flow core-ward as
 operations instead of documents flowing shell-ward as snapshots, and
@@ -187,6 +191,32 @@ surface that does not is a block editor. Importance-sorting therefore
 ships as a read-only projection, a lens like search results;
 activating a block in the lens lands the cursor at the block's real
 position in the flat sheet, and editing happens there.
+
+### Formatting is hybrid markdown
+
+Decided 2026-08-07. Rich text is expressed in-band, as markdown
+syntax characters in the flat stream, and styled in place the way
+Obsidian's live preview and Typora do: the editor conceals syntax
+markers until the cursor enters the span, then reveals the raw
+markup for editing. The document never stops being markdown source.
+
+This is the editable-surface rule's syntax-highlighting concession
+adopted as the formatting model. Styling is a projection over one
+contiguous editable stream; no formatting gesture creates a block or
+an out-of-band attribute, so the little-text-file contract survives
+formatting entirely.
+
+The consequence for architecture 3 is large: formatting merges as
+text, because the markers are characters. The Peritext mark
+anomalies (bold expanding over concurrently inserted text, mark
+boundary drift) cannot occur for formatting, because formatting
+carries no marks. The failure mode moves somewhere strictly better:
+concurrent edits inside a syntax span can break the markup, and the
+damage is visible in the source and repairable by typing, rather
+than a silent style change. Marks would matter again only if an
+out-of-band annotation feature ships, and none is committed. Stable
+position types (cursors, sticky indices) remain load-bearing for
+block anchoring and view-state restoration regardless.
 
 ### The compaction ceremony
 
@@ -332,7 +362,9 @@ If architecture 3 is chosen:
   handful-of-peers scale rather than Docs scale): Loro, then
   Automerge, then yrs — with the explicit caveat that Loro's youth is
   the bet, and that yrs moves to the front only if a web client
-  becomes load-bearing.
+  becomes load-bearing. The hybrid markdown decision (2026-08-07)
+  weakens the Peritext-marks criterion without changing this order:
+  the ranking's spine is change metadata, which yrs still lacks.
 
 Under any architecture, page-level created and modified are cheap: the
 mutation sites that already route through `markDirty` are exactly the
@@ -369,12 +401,17 @@ ledger, whose content-free claim survives timestamps but not URLs.
   any wanted feature requires an editable reordered surface; if none
   does, the answer is yes and architecture 1 is out.
 - Verified mark behavior under concurrency for the shortlisted
-  libraries. The selection criterion is stated above but rests on
-  reputation rather than measurement. Two concurrent edits against one
-  annotated paragraph, checked for boundary drift and for annotations
-  expanding over text inserted concurrently, would either confirm the
-  Peritext-derived candidates or move the ranking. Assume nothing here;
-  it is the criterion most likely to be wrong by the time it matters.
+  libraries. Rescoped 2026-08-07 by the hybrid markdown decision:
+  formatting now merges as plain text, so the Peritext mark anomalies
+  are no longer the selection criterion and the original experiment
+  (concurrent edits against an annotated paragraph, checked for
+  boundary drift) is moot unless an out-of-band annotation feature
+  ships. What still wants measuring is narrower: concurrent
+  plain-text merges inside a syntax span (two edits against one
+  bolded phrase, checked for broken markers, which are visible and
+  typable away rather than silent), and the stable position types
+  (cursors, sticky indices) that block anchoring and view-state
+  restoration rely on.
 - A measured cost for owning undo, if Automerge is in contention.
   Building inverse-patch undo for one page, against the real gestures
   (including the seal gestures, which are already deliberately not
