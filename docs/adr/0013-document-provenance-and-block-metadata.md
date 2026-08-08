@@ -418,9 +418,12 @@ ledger, whose content-free claim survives timestamps but not URLs.
   undoable), would price that option's main liability. Under yrs or
   Loro the equivalent question is whether their undo managers respect
   the seal gestures' non-undoable rule without a fight.
-- Whether per-block TTL is wanted. Blocks with rungs of their own are
-  natural under 3, awkward under 2, and would tip the decision on their
-  own.
+- Whether per-block TTL is wanted. Answered 2026-08-07: no. A rung
+  per paragraph is too much detail to comprehend. TTL is legible only
+  at the granularity the user already reasons about, the page and the
+  onetime link, so blocks never carry rungs of their own and this
+  factor drops out of the architecture decision instead of tipping
+  it.
 
 ## Eject triggers
 
