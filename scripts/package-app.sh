@@ -81,6 +81,11 @@ echo "==> Assembling $APP ($VERSION, $CONFIG)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/OnetimePad"
+# The brand art the menu bar item is drawn from (CompanionKit's
+# LogoMark, which looks here first). SwiftPM's own resource bundle is
+# not what ships: its accessor searches beside the .app, so the app
+# carries the asset in Contents/Resources where Bundle.main finds it.
+cp shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg "$APP/Contents/Resources/"
 cp shell/OnetimePad-Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 scripts/build-icons.sh
