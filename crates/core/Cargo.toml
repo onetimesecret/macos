@@ -1,6 +1,6 @@
 [package]
 name = "companion-core"
-version = "0.1.0"
+version = "0.2.0"
 description = "Sheet store for the Onetime Secret macOS companion: ink + sealed chips, pausable per-page countdowns, the session ledger, zeroizing buffers. No UI, no macOS dependencies."
 publish = false
 edition.workspace = true
@@ -17,6 +17,19 @@ zeroize = { workspace = true }
 # Already in the workspace lock by way of ring, so this adds no new
 # supply chain.
 getrandom = "0.2"
+# The CRDT document engine behind SheetDocument (ADR-0013, architecture 3):
+# per-edit identity, commit timestamps and messages, Peritext-informed
+# marks, and shallow snapshots that approximate the compaction ceremony.
+# Pinned exactly because loro declares no MSRV and our toolchain is pinned
+# in rust-toolchain.toml; bumps are deliberate, reviewed events. Default
+# features stay off: `counter` is a container type we do not use, and
+# logging stays out of a crate that handles plaintext. Supply-chain delta:
+# loro pulls its own workspace (loro-internal, loro-common, loro-delta,
+# loro-rle, loro-kv-store, fractional_index) plus general-purpose deps
+# (serde/postcard encoding, smallvec/fxhash-style collections, tracing as
+# a facade with no subscriber installed here); reviewed by cargo-deny with
+# allowances annotated in deny.toml.
+loro = { version = "=1.13.9", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 # SecretBuffer page locking (mlock/munlock) and core-dump disabling.

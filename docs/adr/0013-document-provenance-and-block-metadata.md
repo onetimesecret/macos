@@ -1,6 +1,6 @@
 # ADR-0013: Document provenance and per-block metadata
 
-- **Status:** undecided
+- **Status:** accepted
 - **Date:** 2026-08-05
 
 ## Context
@@ -114,10 +114,9 @@ demoted to a projection.
 
 ## Decision
 
-Undecided.
-
-The leaning is architecture 3, for three reasons worth recording even
-before the decision lands.
+Architecture 3, implemented with Loro per the ranking in Consequences.
+Decided 2026-08-07. The three reasons recorded below while this was
+still a leaning stand unchanged as the reasons for the decision.
 
 First, it removes work rather than adding it. The full-document resync
 per keystroke is the step that destroys identity; sending operations

@@ -7,6 +7,14 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+  # Unmaintained, not vulnerable: atomic-polyfill is archived upstream,
+  # reached through loro's postcard/heapless encoding stack (ADR-0013).
+  # On our aarch64 target the polyfill compiles down to the native
+  # atomics it exists to imitate elsewhere, so nothing of it is load
+  # bearing here. Revisit when loro bumps postcard past heapless 0.7.
+  { id = "RUSTSEC-2023-0089", reason = "archived transitive polyfill; native atomics on our targets" },
+]
 
 [licenses]
 version = 2
@@ -23,6 +31,15 @@ allow = [
   # Required by webpki-roots (transitive via ureq/rustls, companion-transport):
   # Mozilla's CA bundle, redistributed under a permissive data license.
   "CDLA-Permissive-2.0",
+  # Required by im and friends (bitmaps, sized-chunks; transitive via
+  # loro-internal, ADR-0013): file-level copyleft that obliges sharing
+  # modifications to the covered files only. We link the crates
+  # unmodified, so distribution stays as simple as under the permissive
+  # set.
+  "MPL-2.0",
+  # Required by xxhash-rust (transitive via loro): the Boost license,
+  # permissive, attribution required in source distributions only.
+  "BSL-1.0",
 ]
 
 [bans]

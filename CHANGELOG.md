@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The sheet body becomes an operation-logged document (ADR-0013,
+  accepted)**: the core adopts Loro behind a crate-private
+  `SheetDocument` wrapper in `crates/core/src/document.rs`, the one
+  module allowed to speak the library's API. One text container holds
+  the body; a chip is a sentinel character carrying its identity as a
+  non-expanding mark; every offset at the wrapper's edge is a UTF-16
+  code unit, so Loro's unicode-scalar-indexed methods never see wire
+  offsets. Commits record timestamps and persisted messages, snapshots
+  export into zeroizing buffers, and a spike test guards the
+  shallow-export truth the compaction ceremony will depend on: a
+  StateOnly export sheds deleted text but keeps the authoring peer id,
+  so compaction must mint a fresh document rather than trust the blob.
+  The dependency is pinned exactly (`=1.13.9`) because loro declares
+  no MSRV while our toolchain is pinned in `rust-toolchain.toml`;
+  bumps stay deliberate, reviewed events. Default features stay off,
+  keeping the unused counter container and logging out of the build.
+
 - **A second form factor: the background surface (exploration)**.
   `CompanionBackdrop`, a sibling executable target over the same Rust
   core (ADR-0010: form factors are sibling shell targets; the panel

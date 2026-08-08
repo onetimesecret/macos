@@ -27,6 +27,11 @@
 //!   survives a shell swap (ADR-0001).
 
 pub mod clock;
+// Crate-private until the store adopts it: ADR-0013 lands in stages, and
+// this first stage brings the document in behind its wrapper before any
+// caller exists. The allowance comes off when the store wires it in.
+#[allow(dead_code)]
+mod document;
 pub mod harden;
 pub mod ledger;
 pub mod persist;
