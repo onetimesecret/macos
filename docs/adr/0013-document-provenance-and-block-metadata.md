@@ -192,6 +192,30 @@ ships as a read-only projection, a lens like search results;
 activating a block in the lens lands the cursor at the block's real
 position in the flat sheet, and editing happens there.
 
+### Reordering is a margin gesture
+
+Decided 2026-08-07. Click in the page and drag selects text,
+highlighting like every other text editor. Click in the margin and
+drag reorders paragraphs. The two gestures split cleanly by target:
+the text surface stays one contiguous editable stream in document
+order, and the margin becomes the surface where a block is handled
+as a thing.
+
+This is compatible with the editable-surface rule, which drew the
+line at editability of a reordered view, explicitly not at
+click-and-drag. A margin drag is a document edit, a move performed
+on the in-order sheet; every editable surface shows the document in
+document order before and after. Blocks gain a gesture surface
+without gaining an edit context of their own.
+
+One architectural ripple: reorder-by-drag wants a move operation
+with identity, so the block keeps its id, its metadata and its
+interaction count across the move. Loro ships a movable list as a
+library primitive; Automerge and yrs express a move as delete plus
+reinsert, which mints a fresh identity and orphans the provenance
+this ADR exists to keep. That sharpens the library ranking's spine
+without reordering it.
+
 ### Formatting is hybrid markdown
 
 Decided 2026-08-07. Rich text is expressed in-band, as markdown
@@ -397,9 +421,12 @@ ledger, whose content-free claim survives timestamps but not URLs.
   The editable-surface rule above narrows this to a checkable
   criterion: importance-sorting, the feature that raised the
   question, is compatible with staying one, provided sorted views
-  remain read-only projections. What is left to answer is whether
-  any wanted feature requires an editable reordered surface; if none
-  does, the answer is yes and architecture 1 is out.
+  remain read-only projections. Answered 2026-08-07: yes, it stays
+  one. Reordering, the strongest candidate, ships as a margin drag
+  performed on the in-order sheet (see the margin-gesture decision
+  above) rather than as an editable sorted view, so no wanted
+  feature requires an editable reordered surface and architecture 1
+  is out.
 - Verified mark behavior under concurrency for the shortlisted
   libraries. Rescoped 2026-08-07 by the hybrid markdown decision:
   formatting now merges as plain text, so the Peritext mark anomalies
