@@ -48,6 +48,22 @@ pub(crate) enum DocRun {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct InvalidRange;
 
+/// What the operation log can still prove about a span: the earliest
+/// and latest change stamps, and the persisted message of the earliest
+/// (the created-defining) change, which is where a paste's origin
+/// rides. Handed to the block index at the compaction boundary so the
+/// summary can be frozen before its evidence is destroyed (ADR-0013).
+pub(crate) struct SpanProvenance {
+    /// Earliest change that touched the span, Unix seconds.
+    pub(crate) created_s: i64,
+    /// Latest change that touched the span, Unix seconds.
+    pub(crate) modified_s: i64,
+    /// The created-defining change's persisted message, when it carried
+    /// one. This is content (an origin URL can hold a token) and must
+    /// never cross a read surface.
+    pub(crate) origin: Option<String>,
+}
+
 /// A sheet's body as a Loro document. Construction turns on commit
 /// timestamps and registers the chip mark with `expand: none`, so that
 /// typing against either side of a sentinel stays ink rather than
@@ -240,9 +256,9 @@ impl SheetDocument {
     }
 
     /// Resolve encoded anchor bytes back to a UTF-16 offset, proving an
-    /// anchor still points where its block went. Test-only until the
-    /// compaction ceremony becomes the first production reader.
-    #[cfg(test)]
+    /// anchor still points where its block went. The restore path is
+    /// the production reader: a persisted materialized record is only
+    /// believed when its anchor still lands on a block boundary.
     pub(crate) fn resolve_anchor(&self, anchor: &[u8]) -> Option<usize> {
         let cursor = Cursor::decode(anchor).ok()?;
         let found = self.doc.get_cursor_pos(&cursor).ok()?;
@@ -258,6 +274,26 @@ impl SheetDocument {
     /// answers instead. `None` for an empty span, an unrecognizable
     /// offset, or a span with no committed characters.
     pub(crate) fn span_timestamps(&self, start_u16: usize, len_u16: usize) -> Option<(i64, i64)> {
+        self.span_provenance(start_u16, len_u16)
+            .map(|derived| (derived.created_s, derived.modified_s))
+    }
+
+    /// [`SheetDocument::span_timestamps`] with the created-defining
+    /// change's persisted message alongside: the last full derivation
+    /// the compaction ceremony performs before the ops are destroyed.
+    /// Ties on the earliest stamp keep the first character's change,
+    /// the one that stands at the span's start.
+    ///
+    /// A change stamped at the epoch does not vote: the ceremony's
+    /// rebuild commit is deliberately stamped zero
+    /// ([`SheetDocument::compact`]), so re-typed characters carry no
+    /// provenance of their own and the materialized summary is the only
+    /// thing that answers for them.
+    pub(crate) fn span_provenance(
+        &self,
+        start_u16: usize,
+        len_u16: usize,
+    ) -> Option<SpanProvenance> {
         if len_u16 == 0 {
             return None;
         }
@@ -267,7 +303,7 @@ impl SheetDocument {
         let end = self
             .body
             .convert_pos(start_u16 + len_u16, PosType::Utf16, PosType::Unicode)?;
-        let mut bounds: Option<(i64, i64)> = None;
+        let mut derived: Option<SpanProvenance> = None;
         for pos in start..end {
             let Some(id) = self.body.get_cursor(pos, Side::Middle).and_then(|c| c.id) else {
                 continue;
@@ -276,23 +312,108 @@ impl SheetDocument {
                 continue;
             };
             let stamp = change.timestamp;
-            bounds = Some(bounds.map_or((stamp, stamp), |(earliest, latest)| {
-                (earliest.min(stamp), latest.max(stamp))
-            }));
+            if stamp <= 0 {
+                continue;
+            }
+            let message = || {
+                let message = change.message();
+                (!message.is_empty()).then(|| message.to_string())
+            };
+            derived = Some(match derived {
+                None => SpanProvenance {
+                    created_s: stamp,
+                    modified_s: stamp,
+                    origin: message(),
+                },
+                Some(so_far) => {
+                    // A strictly earlier stamp hands the created-defining
+                    // role (and its message) to this change; a tie keeps
+                    // the change already holding it.
+                    let origin = if stamp < so_far.created_s {
+                        message()
+                    } else {
+                        so_far.origin
+                    };
+                    SpanProvenance {
+                        created_s: so_far.created_s.min(stamp),
+                        modified_s: so_far.modified_s.max(stamp),
+                        origin,
+                    }
+                }
+            });
         }
-        bounds
+        derived
     }
 
     /// The newest committed change's timestamp, Unix seconds: the
     /// page's modified stamp, read off the log's frontier rather than
-    /// stored and maintained. `None` for a document with no changes.
+    /// stored and maintained. `None` for a document with no changes, or
+    /// one whose only change is the ceremony's epoch-stamped rebuild;
+    /// the materialized summary answers for a compacted page.
     pub(crate) fn latest_timestamp(&self) -> Option<i64> {
         self.doc
             .oplog_frontiers()
             .iter()
             .filter_map(|id| self.doc.get_change(id))
             .map(|change| change.timestamp)
+            .filter(|stamp| *stamp > 0)
             .max()
+    }
+
+    /// The discard half of the compaction ceremony (ADR-0013): the body
+    /// is re-typed, run by run, into a fresh document under a freshly
+    /// minted peer identity, and this document becomes that one. The
+    /// trail dies with the old document: deleted text, edit history,
+    /// commit messages, and the old actor id, which must never be
+    /// linkable across the boundary. The stage 1 spike proved a shallow
+    /// `StateOnly` export keeps the authoring peer id, so the rebuild
+    /// is from runs, never from a blob.
+    ///
+    /// The rebuild commits with an explicit epoch timestamp so the
+    /// re-typed characters cannot pose as fresh edits: derivation skips
+    /// epoch-stamped changes, and the graduated summary is what answers
+    /// for everything behind the boundary. Should the rebuild somehow
+    /// refuse (appends at the running end of an empty document have no
+    /// refusable input), the old document stays, because keeping the
+    /// trail one more rung is recoverable and losing the page's text
+    /// is not.
+    pub(crate) fn compact(&mut self) {
+        let runs = self.runs();
+        let fresh = Self::new();
+        // The library mints the fresh document's peer id at random;
+        // colliding with the outgoing identity is astronomically
+        // unlikely, and ruled out anyway because "differs from the old"
+        // is part of the ceremony's claim.
+        while fresh.doc.peer_id() == self.doc.peer_id() {
+            let mut bytes = [0u8; 8];
+            getrandom::getrandom(&mut bytes).expect("the OS CSPRNG must be available");
+            fresh
+                .doc
+                .set_peer_id(u64::from_le_bytes(bytes))
+                .expect("a document with no ops accepts a peer id");
+        }
+        let mut pos = 0usize;
+        for run in &runs {
+            let landed = match run {
+                DocRun::Ink(text) => {
+                    let landed = fresh.body.insert_utf16(pos, text).is_ok();
+                    pos += text.encode_utf16().count();
+                    landed
+                }
+                DocRun::Chip(id) => {
+                    let landed = fresh.insert_chip(pos, *id).is_ok();
+                    pos += 1;
+                    landed
+                }
+            };
+            if !landed {
+                return;
+            }
+        }
+        fresh
+            .doc
+            .commit_with(CommitOptions::new().immediate_renew(true).timestamp(0));
+        *self = fresh;
     }
 
     /// Close the open transaction with an injected timestamp, so tests
@@ -551,6 +672,55 @@ mod tests {
         let cursor = restored.body.get_cursor(2, Side::Middle).unwrap();
         let change = restored.doc.get_change(cursor.id.unwrap());
         assert!(change.is_none());
+    }
+
+    // The ceremony the spike above was run for: rebuild-from-runs, the
+    // branch the spike's measured outcome (deleted text sheds, the peer
+    // id does not) forces.
+    #[test]
+    fn compaction_rebuilds_under_a_fresh_peer_and_sheds_the_trail() {
+        let mut doc = SheetDocument::new();
+        let id = ItemId::random();
+        let old_peer = doc.peer_id();
+
+        doc.insert(0, "alpha DOOMEDONE\u{1F680} keep\nsecond")
+            .unwrap();
+        doc.delete(6, 11).unwrap();
+        doc.commit(Some("https://origin.example.test/reset?tk=Vq9Zx"));
+        doc.insert_chip(0, id).unwrap();
+        doc.insert(11, " DOOMEDTWO\u{1F511}").unwrap();
+        doc.delete(11, 12).unwrap();
+        doc.commit(None);
+        let expected = doc.runs();
+        let expected_len = doc.utf16_len();
+
+        doc.compact();
+
+        // The body is intact: same runs, same chip, same wire length.
+        assert_eq!(doc.runs(), expected);
+        assert_eq!(doc.live_chips(), vec![id]);
+        assert_eq!(doc.utf16_len(), expected_len);
+
+        // The trail is not: the export carries the live text and none
+        // of what the page thought better of. No deleted fragment, no
+        // origin message, no old actor id.
+        let blob = doc.export_snapshot();
+        assert!(contains(&blob, b"alpha  keep"), "the control: live ink");
+        assert!(!contains(&blob, b"DOOMEDONE"));
+        assert!(!contains(&blob, b"DOOMEDTWO"));
+        assert!(!contains(&blob, b"origin.example.test"));
+        assert!(!contains(&blob, &old_peer.to_le_bytes()));
+        assert_ne!(doc.peer_id(), old_peer);
+
+        // The rebuild does not vote: the page reads as having no newest
+        // change until a real edit lands, and the next edit stamps
+        // normally on top of the epoch-stamped rebuild.
+        assert_eq!(doc.latest_timestamp(), None);
+        assert_eq!(doc.span_timestamps(0, doc.utf16_len()), None);
+        doc.insert(0, "x").unwrap();
+        doc.commit_at(5_000);
+        assert_eq!(doc.latest_timestamp(), Some(5_000));
+        assert_eq!(doc.span_timestamps(0, 1), Some((5_000, 5_000)));
     }
 
     /// A peer id guaranteed to differ from `not`, minted from the same

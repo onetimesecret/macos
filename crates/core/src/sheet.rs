@@ -377,6 +377,23 @@ impl Sheet {
         }
     }
 
+    /// The compaction ceremony (ADR-0013): graduate first, then
+    /// discard. Every block's derived provenance is frozen into its
+    /// materialized slot while the ops still exist to prove it, origin
+    /// included; then the document is reborn from its runs under a
+    /// fresh peer identity and the trail dies. Chips and their sealed
+    /// bytes pass through untouched, since they live beside the
+    /// document, not inside its history. The settle at the end keeps
+    /// the standing discipline: anchors are re-taken, and an index that
+    /// somehow stopped describing the body is rebuilt fresh rather
+    /// than trusted.
+    pub(crate) fn compact(&mut self) {
+        self.blocks.graduate(&self.document);
+        self.document.compact();
+        self.rebuild_segments();
+        self.settle_blocks();
+    }
+
     /// Per-block provenance, in document order: each paragraph's
     /// identity with its created and modified stamps (Unix seconds),
     /// derived from the operation log (ADR-0013). Identities and
@@ -387,13 +404,16 @@ impl Sheet {
     }
 
     /// The page's modified stamp, Unix seconds: the newest change in
-    /// the page's operation log, derived rather than maintained. `None`
+    /// the page's operation log, merged with the newest materialized
+    /// stamp once compaction has destroyed the ops behind it. `None`
     /// for a page whose body has never been touched. The created stamp
     /// stays [`Sheet::created_wall_ms`], which predates the document's
     /// first change.
     #[must_use]
     pub fn modified_s(&self) -> Option<i64> {
-        self.document.latest_timestamp()
+        self.document
+            .latest_timestamp()
+            .max(self.blocks.max_materialized_modified())
     }
 
     /// The chips this sheet owns, in seal order.

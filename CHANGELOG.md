@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The document history is compacted at rung transitions (ADR-0013,
+  stage 6)**: cycling or setting a page's rung, and topping up a
+  pause, now run the compaction ceremony. Each block's derived
+  provenance (created, modified, and the origin of the change that
+  introduced its text) graduates into a materialized summary while the
+  ops still exist to prove it; then the document is reborn from its
+  live runs under a freshly minted peer identity and the trail behind
+  the boundary is discarded. Deleted text, edit history, commit
+  messages, and the old actor id do not survive the boundary, and
+  tests byte-scan the new export to hold that claim. This is the right
+  to erasure applied to the page's own memory: what was written here
+  and thought better of is forgotten on the same clockwork that bounds
+  every page, on schedule and without a new timer, and the actor
+  identities on either side of a boundary cannot be linked across it.
+  The materialized summaries persist in the sealed content file's
+  reserved slot, keyed by block identity and validated on restore
+  (anchors must still resolve, stamps are clamped to sane values)
+  rather than trusted; origin URLs remain content, living in the
+  sealed file only and never in the ledger. Chips and their sealed
+  bytes pass through the ceremony untouched, and due pages refuse the
+  gestures that trigger it, so compaction can never race a reap.
+
 - **Blocks acquire identity and pastes acquire provenance (ADR-0013,
   stage 5)**: the core now maintains a per-sheet block index over the
   flat body, one record per paragraph, following Notion's convention

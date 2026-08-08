@@ -16,16 +16,17 @@
 //! that needs the library — anchors, timestamps — is asked of
 //! [`SheetDocument`], the module that owns that seam. Created and
 //! modified are derived from the ops for as long as the ops exist;
-//! `materialized` is the slot the compaction ceremony (stage 6) will
-//! freeze them into when the evidence is destroyed.
+//! `materialized` is the slot the compaction ceremony freezes them
+//! into when the evidence is destroyed.
 
 use crate::document::{DocRun, SheetDocument};
 use crate::sheet::ItemId;
 
 /// Per-block metadata frozen at a compaction boundary, once the ops
-/// that proved it are gone. Nothing writes this yet: the compaction
-/// ceremony (ADR-0013 stage 6) is what graduates derived values into
-/// this slot.
+/// that proved it are gone. Written by [`BlockIndex::graduate`] just
+/// before the ceremony destroys the evidence, persisted inside the
+/// sealed content snapshot, and validated rather than trusted on the
+/// way back in ([`BlockIndex::adopt`]).
 pub(crate) struct MaterializedMeta {
     /// Earliest change that touched the block, Unix seconds.
     pub(crate) created_s: i64,
@@ -34,10 +35,6 @@ pub(crate) struct MaterializedMeta {
     /// Where the block's content came from, when a paste said so. This
     /// is content — a URL can carry a token — and lives only inside the
     /// sealed snapshot, never on a JSON surface or in the ledger.
-    #[allow(
-        dead_code,
-        reason = "the compaction ceremony (stage 6) writes and reads it"
-    )]
     pub(crate) origin: Option<String>,
 }
 
@@ -51,15 +48,26 @@ pub(crate) struct BlockRecord {
     /// bytes, taken from [`SheetDocument`] and handed back to it, never
     /// parsed here. Re-taken after every batch so it always names the
     /// block's first character (block 0 is anchored at the container
-    /// start instead, so it survives insertions before it).
-    #[allow(
-        dead_code,
-        reason = "re-taken every settle and proven to resolve by tests; the first production reader is the stage 6 ceremony"
-    )]
+    /// start instead, so it survives insertions before it). Persisted
+    /// beside a materialized summary so restore can prove the record
+    /// still names a real block before believing it.
     pub(crate) anchor: Vec<u8>,
     /// The frozen summary, once compaction has destroyed the ops that
     /// derived it. `None` while provenance is still derivable.
     pub(crate) materialized: Option<MaterializedMeta>,
+}
+
+/// One materialized record read back from a snapshot: the persisted
+/// identity, the anchor that must still resolve, and the summary it
+/// claims. Built by the persistence seam, judged by
+/// [`BlockIndex::adopt`].
+pub(crate) struct PersistedBlock {
+    /// The block identity the snapshot stored.
+    pub(crate) id: ItemId,
+    /// The encoded document cursor stored beside it.
+    pub(crate) anchor: Vec<u8>,
+    /// The frozen summary, timestamps already clamped by the reader.
+    pub(crate) meta: MaterializedMeta,
 }
 
 impl BlockRecord {
@@ -186,33 +194,124 @@ impl BlockIndex {
         }
     }
 
-    /// Every block's provenance, in document order: materialized where
-    /// compaction froze it, derived from the ops everywhere else.
+    /// Every block's provenance, in document order: derived from the
+    /// ops while they exist, and once compaction has frozen a summary,
+    /// the summary merged with whatever newer ops say. Created is
+    /// frozen for good, the evidence behind it being gone; modified is
+    /// the frozen stamp or the newest post-compaction change, whichever
+    /// is later.
     pub(crate) fn metas(&self, doc: &SheetDocument) -> Vec<BlockMeta> {
         let mut start = 0usize;
         self.records
             .iter()
             .zip(&self.lens)
             .map(|(record, len)| {
+                let span = doc.span_timestamps(start, *len);
                 let meta = match &record.materialized {
                     Some(frozen) => BlockMeta {
                         id: record.id,
                         created_s: Some(frozen.created_s),
-                        modified_s: Some(frozen.modified_s),
+                        modified_s: Some(span.map_or(frozen.modified_s, |(_, modified)| {
+                            modified.max(frozen.modified_s)
+                        })),
                     },
-                    None => {
-                        let span = doc.span_timestamps(start, *len);
-                        BlockMeta {
-                            id: record.id,
-                            created_s: span.map(|(created, _)| created),
-                            modified_s: span.map(|(_, modified)| modified),
-                        }
-                    }
+                    None => BlockMeta {
+                        id: record.id,
+                        created_s: span.map(|(created, _)| created),
+                        modified_s: span.map(|(_, modified)| modified),
+                    },
                 };
                 start += len;
                 meta
             })
             .collect()
+    }
+
+    /// Graduate every block's provenance into its materialized slot:
+    /// the last full derivation before the compaction ceremony destroys
+    /// the evidence. A block already carrying a summary keeps its
+    /// created stamp and its origin (its created-defining change
+    /// predates the previous boundary) and takes the newer modified; a
+    /// block with no summary and no evidence, an empty paragraph,
+    /// stays unmaterialized, because freezing nothing proves nothing.
+    pub(crate) fn graduate(&mut self, doc: &SheetDocument) {
+        let mut start = 0usize;
+        for (record, len) in self.records.iter_mut().zip(&self.lens) {
+            let derived = doc.span_provenance(start, *len);
+            record.materialized = match (record.materialized.take(), derived) {
+                (None, None) => None,
+                (None, Some(derived)) => Some(MaterializedMeta {
+                    created_s: derived.created_s,
+                    modified_s: derived.modified_s,
+                    origin: derived.origin,
+                }),
+                (Some(frozen), None) => Some(frozen),
+                (Some(frozen), Some(derived)) => Some(MaterializedMeta {
+                    created_s: frozen.created_s,
+                    modified_s: frozen.modified_s.max(derived.modified_s),
+                    origin: frozen.origin,
+                }),
+            };
+            start += len;
+        }
+    }
+
+    /// Adopt materialized records read back from a snapshot. Nothing is
+    /// trusted on shape alone: a record is believed only when its
+    /// anchor still resolves to the exact start of a block, and each
+    /// block accepts at most one record. A believed record restores the
+    /// block's persisted identity along with its summary; everything
+    /// else is dropped, leaving that block with the fresh identity a
+    /// restore mints anyway.
+    pub(crate) fn adopt(&mut self, doc: &SheetDocument, persisted: Vec<PersistedBlock>) {
+        let mut starts = Vec::with_capacity(self.lens.len());
+        let mut start = 0usize;
+        for len in &self.lens {
+            starts.push(start);
+            start += len;
+        }
+        for record in persisted {
+            let Some(offset) = doc.resolve_anchor(&record.anchor) else {
+                continue;
+            };
+            let Some(block) = starts.iter().position(|s| *s == offset) else {
+                continue;
+            };
+            if self.records[block].materialized.is_some() {
+                continue;
+            }
+            self.records[block].id = record.id;
+            self.records[block].materialized = Some(record.meta);
+        }
+        // Anchors are re-taken from the document as it stands, the same
+        // discipline as every settle: the persisted bytes proved the
+        // match and have no further authority.
+        self.retake_anchors(doc);
+    }
+
+    /// The newest frozen modified stamp across the blocks, if any: the
+    /// page-level floor a compacted page's modified time rests on once
+    /// the ops behind it are gone.
+    pub(crate) fn max_materialized_modified(&self) -> Option<i64> {
+        self.records
+            .iter()
+            .filter_map(|record| record.materialized.as_ref().map(|frozen| frozen.modified_s))
+            .max()
+    }
+
+    /// The records, in document order, for the persistence seam to
+    /// write the materialized summaries out of.
+    pub(crate) fn records(&self) -> &[BlockRecord] {
+        &self.records
+    }
+
+    /// Mutable access to the records, so persistence tests can plant
+    /// hostile stamps and dead anchors without binary surgery on the
+    /// snapshot. Test-only: production code narrates edits through the
+    /// note methods and never reaches into a record.
+    #[cfg(test)]
+    pub(crate) fn records_mut(&mut self) -> &mut [BlockRecord] {
+        &mut self.records
     }
 
     /// The block ids in document order, for asserting identity across
@@ -226,6 +325,13 @@ impl BlockIndex {
     #[cfg(test)]
     pub(crate) fn anchor(&self, block: usize) -> &[u8] {
         &self.records[block].anchor
+    }
+
+    /// A block's frozen summary, for asserting graduation. Test-only:
+    /// origin is content, and no production read surface may see it.
+    #[cfg(test)]
+    pub(crate) fn materialized(&self, block: usize) -> Option<&MaterializedMeta> {
+        self.records[block].materialized.as_ref()
     }
 
     /// The block that holds a UTF-16 offset, with its start offset. A
@@ -384,6 +490,80 @@ mod tests {
         assert_eq!(metas[0].created_s, Some(1_000));
         assert_eq!(metas[1].created_s, None, "no ops, no provenance");
         assert_eq!(metas[1].modified_s, None);
+    }
+
+    #[test]
+    fn graduation_freezes_provenance_and_newer_ops_merge_on_top() {
+        let (mut doc, mut index) = empty();
+        insert(&doc, &mut index, 0, "alpha\n\u{1F680}beta");
+        doc.commit_at(1_000);
+        insert(&doc, &mut index, 12, " grew");
+        doc.commit_at(2_000);
+
+        // Graduate, then discard: the summary is frozen from the ops,
+        // the ceremony destroys them, and derivation answers from the
+        // summary as if nothing happened.
+        index.graduate(&doc);
+        doc.compact();
+        index.retake_anchors(&doc);
+        assert!(index.matches(&doc), "the rebuild preserves the shape");
+
+        let metas = index.metas(&doc);
+        assert_eq!(metas[0].created_s, Some(1_000));
+        assert_eq!(metas[0].modified_s, Some(1_000));
+        assert_eq!(metas[1].created_s, Some(1_000));
+        assert_eq!(metas[1].modified_s, Some(2_000));
+
+        // A post-compaction edit bumps modified past the frozen stamp;
+        // created stays frozen for good, its evidence being gone.
+        insert(&doc, &mut index, 12, "\u{1F511}");
+        doc.commit_at(5_000);
+        let metas = index.metas(&doc);
+        assert_eq!(metas[1].created_s, Some(1_000));
+        assert_eq!(metas[1].modified_s, Some(5_000));
+        assert_eq!(metas[0].modified_s, Some(1_000), "the untouched block");
+
+        // A second boundary re-freezes: created and the first summary's
+        // seniority hold, modified graduates to the newest evidence.
+        index.graduate(&doc);
+        doc.compact();
+        index.retake_anchors(&doc);
+        let frozen = index.materialized(1).unwrap();
+        assert_eq!(frozen.created_s, 1_000);
+        assert_eq!(frozen.modified_s, 5_000);
+    }
+
+    #[test]
+    fn graduation_carries_the_origin_of_the_created_defining_change() {
+        let (doc, mut index) = empty();
+        let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
+        // The paste's commit carries the origin message; a later edit
+        // commits without one and must not unseat it. The follow-up
+        // lands after the paste's characters so a same-second tie still
+        // resolves to the paste, the change standing at the span's
+        // start.
+        insert(&doc, &mut index, 0, "pasted \u{1F600} text\n");
+        doc.commit(Some(origin));
+        insert(&doc, &mut index, 14, " later");
+        doc.commit(None);
+
+        index.graduate(&doc);
+        let frozen = index.materialized(0).unwrap();
+        assert_eq!(frozen.origin.as_deref(), Some(origin));
+        assert!(
+            index.materialized(1).is_none(),
+            "an empty paragraph has nothing to freeze"
+        );
+
+        // The origin outlives the trail that proved it: after the
+        // discard the summary still names the source, sealed file only.
+        let mut doc = doc;
+        doc.compact();
+        index.retake_anchors(&doc);
+        assert_eq!(
+            index.materialized(0).unwrap().origin.as_deref(),
+            Some(origin)
+        );
     }
 
     #[test]

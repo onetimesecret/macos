@@ -55,7 +55,7 @@ use std::time::{Duration, Instant};
 
 use zeroize::Zeroizing;
 
-use crate::blocks::BlockIndex;
+use crate::blocks::{BlockIndex, MaterializedMeta, PersistedBlock};
 use crate::clock::Clock;
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
@@ -80,6 +80,12 @@ const LEDGER_MAGIC: &[u8; 8] = b"OTSLEDR1";
 /// the 7-day rung and the 24-hour hold). Keeps `Instant` arithmetic
 /// safely away from overflow no matter what the buffer claims.
 const MAX_SPAN_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+
+/// Slack above the wall clock allowed for a materialized stamp before
+/// the clamp takes it: the document's recorder rounds to the nearest
+/// second while the wall reading truncates, so an honest stamp can sit
+/// one second ahead of the clock that judges it.
+const STAMP_SLACK_S: i64 = 2;
 
 /// Why a snapshot could not be restored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,10 +130,17 @@ impl<C: Clock> SheetStore<C> {
             .iter()
             .map(|sheet| sheet.document.export_snapshot())
             .collect();
+        // The materialized sections are encoded once too, and zeroizing
+        // for the same reason as the blobs: a frozen origin is content.
+        let metas: Vec<Zeroizing<Vec<u8>>> = self
+            .sheets
+            .iter()
+            .map(|sheet| encode_materialized(&sheet.blocks))
+            .collect();
         let mut sizer = Sizer(0);
-        emit(self, &blobs, now, wall_ms, &mut sizer);
+        emit(self, &blobs, &metas, now, wall_ms, &mut sizer);
         let mut buffer = Zeroizing::new(Vec::with_capacity(sizer.0));
-        emit(self, &blobs, now, wall_ms, &mut Writer(&mut buffer));
+        emit(self, &blobs, &metas, now, wall_ms, &mut Writer(&mut buffer));
         debug_assert_eq!(buffer.len(), sizer.0, "sizing pass drifted from the write");
         buffer
     }
@@ -174,6 +187,7 @@ impl<C: Clock> SheetStore<C> {
                 &mut reader,
                 now,
                 away,
+                wall_ms,
                 &mut next_sheet_id,
                 &mut next_chip_id,
             )?);
@@ -297,6 +311,7 @@ impl Sink for Writer<'_> {
 fn emit<C: Clock>(
     store: &SheetStore<C>,
     blobs: &[Zeroizing<Vec<u8>>],
+    metas: &[Zeroizing<Vec<u8>>],
     now: Instant,
     wall_ms: u64,
     out: &mut impl Sink,
@@ -304,7 +319,7 @@ fn emit<C: Clock>(
     out.raw(MAGIC);
     out.u64(wall_ms);
     out.u64(store.sheets.len() as u64);
-    for (sheet, blob) in store.sheets.iter().zip(blobs) {
+    for ((sheet, blob), meta) in store.sheets.iter().zip(blobs).zip(metas) {
         // Identity, not the in-process counter (ADR-0012).
         out.raw(sheet.uuid.as_bytes());
         out.u64(sheet.created_wall_ms);
@@ -352,11 +367,64 @@ fn emit<C: Clock>(
         // snapshot that carried both could smuggle a divergent
         // projection back in.
         out.bytes(blob.as_slice());
-        // The materialized-metadata section, empty until the compaction
-        // ceremony (ADR-0013 stage 6) has summaries to freeze into it.
-        // Reserving the length-prefixed slot now is what lets stage 6
-        // fill it without minting a v4.
-        out.bytes(&[]);
+        // The materialized-metadata section, filled by the compaction
+        // ceremony (ADR-0013): each block that carries a frozen summary
+        // writes its identity, its anchor, its stamps, and its origin.
+        // The slot was reserved in stage 4, so a compacted file differs
+        // from an uncompacted one only by this section's contents.
+        out.bytes(meta.as_slice());
+    }
+}
+
+/// Encode a sheet's materialized block summaries into their own buffer,
+/// sized exactly the same way as the outer snapshot: growing a buffer
+/// reallocates, and a frozen origin is content that must not strand in
+/// unwiped heap. An index with nothing frozen encodes to the empty
+/// slice, byte for byte the slot stage 4 wrote.
+fn encode_materialized(blocks: &BlockIndex) -> Zeroizing<Vec<u8>> {
+    if blocks
+        .records()
+        .iter()
+        .all(|record| record.materialized.is_none())
+    {
+        return Zeroizing::new(Vec::new());
+    }
+    let mut sizer = Sizer(0);
+    emit_materialized(blocks, &mut sizer);
+    let mut buffer = Zeroizing::new(Vec::with_capacity(sizer.0));
+    emit_materialized(blocks, &mut Writer(&mut buffer));
+    debug_assert_eq!(
+        buffer.len(),
+        sizer.0,
+        "materialized sizing pass drifted from the write"
+    );
+    buffer
+}
+
+fn emit_materialized(blocks: &BlockIndex, out: &mut impl Sink) {
+    let frozen: Vec<_> = blocks
+        .records()
+        .iter()
+        .filter_map(|record| record.materialized.as_ref().map(|meta| (record, meta)))
+        .collect();
+    out.u64(frozen.len() as u64);
+    for (record, meta) in frozen {
+        // The block's identity, then the anchor that must still resolve
+        // for the record to be believed on the way back in.
+        out.raw(record.id.as_bytes());
+        out.bytes(&record.anchor);
+        // Stamps are positive by construction (derivation skips the
+        // epoch-stamped rebuild), so the sign bit never survives the
+        // round trip through u64.
+        out.u64(meta.created_s.max(0) as u64);
+        out.u64(meta.modified_s.max(0) as u64);
+        match &meta.origin {
+            None => out.u8(0),
+            Some(origin) => {
+                out.u8(1);
+                out.bytes(origin.as_bytes());
+            }
+        }
     }
 }
 
@@ -465,6 +533,7 @@ fn read_sheet(
     reader: &mut Reader<'_>,
     now: Instant,
     away: Duration,
+    wall_ms: u64,
     next_sheet_id: &mut u64,
     next_chip_id: &mut u64,
 ) -> Result<Sheet, RestoreError> {
@@ -550,11 +619,11 @@ fn read_sheet(
     }
 
     // The document blob, history included, then the materialized
-    // metadata slot. The metadata is read to keep the walk aligned and
-    // otherwise set aside: nothing materializes until the compaction
-    // ceremony (ADR-0013 stage 6) writes summaries here.
+    // metadata slot the compaction ceremony fills (ADR-0013). The slot
+    // is parsed after the document imports, because its records are
+    // believed only against the document they claim to describe.
     let blob = reader.bytes().ok_or(Malformed)?;
-    let _metadata = reader.bytes().ok_or(Malformed)?;
+    let metadata = reader.bytes().ok_or(Malformed)?;
 
     // The document is reborn whole, under a fresh peer identity that
     // never reaches any surface: the counters the store hands out are
@@ -588,11 +657,15 @@ fn read_sheet(
         return Err(Malformed);
     }
 
-    // The block index is rebuilt from the imported document, anchors
-    // recomputed rather than trusted from any persisted form: fresh
-    // identities are the honest reading of a file that stores none
-    // (ADR-0013; the materialized slot is what will carry them).
-    let blocks = BlockIndex::for_document(&document);
+    // The block index is rebuilt from the imported document with fresh
+    // identities, then the materialized records are adopted over it:
+    // validated rather than trusted, a record believed only when its
+    // anchor still resolves to the start of a block, its stamps clamped
+    // to sane values on the way in. Everything else is dropped, which
+    // leaves the affected block on the fresh identity the rebuild
+    // minted (ADR-0013).
+    let mut blocks = BlockIndex::for_document(&document);
+    blocks.adopt(&document, read_materialized(metadata, wall_ms)?);
 
     let id = SheetId::from_raw(*next_sheet_id);
     *next_sheet_id += 1;
@@ -611,6 +684,53 @@ fn read_sheet(
         clock,
         total_held,
     })
+}
+
+/// Decode a sheet's materialized-metadata slot into candidate records
+/// for [`BlockIndex::adopt`] to judge. Structural damage rejects the
+/// whole snapshot like damage anywhere else; semantic doubt is handled
+/// by validation instead. Timestamps are clamped into the sane range
+/// (positive, no later than the wall clock now, modified never before
+/// created), because a stamp is trusted arithmetic downstream and a
+/// hand-edited file must not choose its values freely. The empty slot
+/// a pre-ceremony file carries decodes to no records.
+fn read_materialized(bytes: &[u8], wall_ms: u64) -> Result<Vec<PersistedBlock>, RestoreError> {
+    use RestoreError::Malformed;
+    if bytes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ceiling = i64::try_from(wall_ms / 1000)
+        .unwrap_or(i64::MAX)
+        .saturating_add(STAMP_SLACK_S)
+        .max(1);
+    let clamp = |claimed: u64| i64::try_from(claimed).unwrap_or(i64::MAX).clamp(1, ceiling);
+    let mut reader = Reader { buf: bytes, pos: 0 };
+    let record_count = count(&mut reader)?;
+    let mut records = Vec::new();
+    for _ in 0..record_count {
+        let id = reader.uuid().ok_or(Malformed)?;
+        let anchor = reader.bytes().ok_or(Malformed)?.to_vec();
+        let created_s = clamp(reader.u64().ok_or(Malformed)?);
+        let modified_s = clamp(reader.u64().ok_or(Malformed)?).max(created_s);
+        let origin = match reader.u8().ok_or(Malformed)? {
+            0 => None,
+            1 => Some(reader.str().ok_or(Malformed)?.to_string()),
+            _ => return Err(Malformed),
+        };
+        records.push(PersistedBlock {
+            id,
+            anchor,
+            meta: MaterializedMeta {
+                created_s,
+                modified_s,
+                origin,
+            },
+        });
+    }
+    if !reader.done() {
+        return Err(Malformed);
+    }
+    Ok(records)
 }
 
 fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
@@ -796,6 +916,141 @@ mod tests {
             !ledger.windows(needle.len()).any(|w| w == needle),
             "the origin leaked into the ledger snapshot"
         );
+    }
+
+    /// Whether `needle` occurs anywhere in `haystack`: the byte scan
+    /// the compaction ceremony's discard claims are audited with.
+    fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack.windows(needle.len()).any(|w| w == needle)
+    }
+
+    /// Unix epoch milliseconds now, for tests over materialized stamps:
+    /// the document's commits are stamped by the real wall clock, so the
+    /// restore ceiling they are clamped against must be real too.
+    fn real_wall_ms() -> u64 {
+        u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("the clock sits after the epoch")
+                .as_millis(),
+        )
+        .expect("millisecond count fits u64")
+    }
+
+    #[test]
+    fn a_compacted_store_round_trips_materialized_metadata_and_origin() {
+        use crate::store::EditOp;
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
+        store
+            .seal_text_at_with_origin(id, "the pasted secret", 0, 0, Some(origin))
+            .unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 1,
+                text: "alpha DOOMED\u{1F680} keep\nsecond".into()
+            }]
+        ));
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 7,
+                len_u16: 8
+            }]
+        ));
+        let old_peer = store.sheets[0].document.peer_id();
+
+        // The rung gesture runs the ceremony; everything after asserts
+        // against the compacted page.
+        store.cycle_rung(id).unwrap();
+        let sheet = store.sheet(id).unwrap();
+        let segments = sheet.segments().to_vec();
+        let metas = sheet.blocks_meta();
+        let modified = sheet.modified_s();
+        assert!(modified.is_some(), "the frozen floor answers for the page");
+
+        let wall = real_wall_ms();
+        let snapshot = store.snapshot(wall);
+        // The persisted content sheds the trail and keeps the summary:
+        // no deleted fragment, no old actor id, and the origin standing
+        // in the materialized slot, sealed file only.
+        assert!(!contains(&snapshot, b"DOOMED"));
+        assert!(!contains(&snapshot, &old_peer.to_le_bytes()));
+        assert!(
+            contains(&snapshot, b"origin.example.test"),
+            "the graduated origin must survive into the sealed file"
+        );
+
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
+        let sheet = revived.sheets().next().unwrap();
+        assert_eq!(sheet.segments(), segments.as_slice());
+        assert_eq!(
+            sheet.blocks_meta(),
+            metas,
+            "block identities and stamps are adopted from the slot, not re-minted"
+        );
+        assert_eq!(sheet.modified_s(), modified);
+        assert_eq!(
+            sheet.blocks.records()[0]
+                .materialized
+                .as_ref()
+                .unwrap()
+                .origin
+                .as_deref(),
+            Some(origin),
+            "the origin rides the materialized record through the round trip"
+        );
+    }
+
+    #[test]
+    fn hostile_materialized_stamps_are_clamped_and_dead_anchors_dropped() {
+        use crate::store::EditOp;
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "first\u{1F600}\nsecond".into()
+            }]
+        ));
+        store.cycle_rung(id).unwrap();
+        let honest = store.sheet(id).unwrap().blocks_meta();
+
+        // Tamper the way a hand-edited file would: stamps from the far
+        // future and the deep past on block 0, and an anchor on block 1
+        // that resolves nowhere.
+        {
+            let records = store.sheets[0].blocks.records_mut();
+            let frozen = records[0].materialized.as_mut().unwrap();
+            frozen.created_s = i64::MAX;
+            frozen.modified_s = -40;
+            records[1].anchor = vec![0xde, 0xad, 0xbe, 0xef];
+        }
+        let wall = real_wall_ms();
+        let snapshot = store.snapshot(wall);
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
+        let metas = revived.sheets().next().unwrap().blocks_meta();
+
+        // Block 0's record still adopts (identity and anchor are
+        // honest) but its stamps are clamped into the sane range: never
+        // later than the wall clock now (plus the rounding slack),
+        // modified never before created.
+        let ceiling = i64::try_from(wall / 1000).unwrap() + STAMP_SLACK_S;
+        assert_eq!(metas[0].id, honest[0].id);
+        assert_eq!(metas[0].created_s, Some(ceiling));
+        assert_eq!(metas[0].modified_s, Some(ceiling));
+
+        // Block 1's record cannot prove it names a block, so it drops
+        // whole: a fresh identity and no inherited provenance, the same
+        // answer a file with no records would get.
+        assert_ne!(metas[1].id, honest[1].id);
+        assert_eq!(metas[1].created_s, None);
+        assert_eq!(metas[1].modified_s, None);
     }
 
     #[test]

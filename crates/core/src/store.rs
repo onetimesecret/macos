@@ -907,6 +907,11 @@ impl<C: Clock> SheetStore<C> {
         }
         let rung = sheet.rung.next();
         set_clock(sheet, rung, now);
+        // A rung transition is the compaction boundary (ADR-0013): the
+        // ceremony runs on the same clockwork as everything else, after
+        // the transition is accepted, so a due page's refusal above
+        // means compaction can never race the reap.
+        sheet.compact();
         Some(rung)
     }
 
@@ -920,6 +925,9 @@ impl<C: Clock> SheetStore<C> {
             return None; // due; the timer will reap it
         }
         set_clock(sheet, rung, now);
+        // The same boundary as [`SheetStore::cycle_rung`]: any accepted
+        // rung transition sheds the history.
+        sheet.compact();
         Some(rung)
     }
 
@@ -958,6 +966,12 @@ impl<C: Clock> SheetStore<C> {
                     frozen_remaining,
                     started,
                 };
+                // The top-up is a compaction boundary too (ADR-0013):
+                // repeated pauses are how a page outlives its rung
+                // without ever transitioning, and a page kept alive
+                // that way must still shed its history on the same
+                // clockwork.
+                sheet.compact();
             }
         }
         true
@@ -1460,6 +1474,12 @@ mod tests {
     /// a token in its query string. Origin URLs are content (ADR-0013),
     /// so the ledger's claim covers every fragment of this too.
     const ORIGIN_URL: &str = "https://origin.example.test/reset?tk=Vq9Zx-Chutney-Rt83mN";
+
+    /// Whether `needle` occurs anywhere in `haystack`: the byte scan
+    /// the compaction ceremony's discard claims are audited with.
+    fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack.windows(needle.len()).any(|w| w == needle)
+    }
 
     /// Every contiguous run of `token`, four characters or longer.
     /// Testing whole-token absence would be trivially satisfiable by a
@@ -1976,12 +1996,148 @@ mod tests {
         let (mut store, clock) = store();
         let id = store.new_sheet().unwrap();
         store.set_rung(id, Ttl::MIN).unwrap(); // 1h
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "keep DOOMED\u{1F511}".into()
+            }]
+        ));
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 5,
+                len_u16: 8
+            }]
+        ));
         clock.advance(HOUR);
         // The timer has not fired yet, but the page is due: a click in
         // that sliver must not resurrect it. Zero means zeroized.
         assert_eq!(store.cycle_rung(id), None);
         assert_eq!(store.set_rung(id, Ttl::MAX), None);
+        // A refused transition compacts nothing either: the ceremony
+        // runs only after an accepted transition, so it cannot race the
+        // reap that is about to take the whole document.
+        assert!(contains(&store.snapshot(0), b"DOOMED"));
         assert_eq!(store.expire_due(), vec![id]);
+    }
+
+    #[test]
+    fn a_rung_transition_compacts_the_history_and_the_body_survives() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 1,
+                text: "alpha DOOMED\u{1F680} keep\nsecond".into()
+            }]
+        ));
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 7,
+                len_u16: 8
+            }]
+        ));
+        let sheet = store.sheet(id).unwrap();
+        let old_peer = sheet.document.peer_id();
+        let title = sheet.title().to_string();
+        let segments = sheet.segments().to_vec();
+        let metas = sheet.blocks_meta();
+        let modified = sheet.modified_s().unwrap();
+
+        store.cycle_rung(id).unwrap();
+
+        // The page is intact: same projection, same title, same chip,
+        // and provenance reads exactly as it did, now answered by the
+        // materialized summaries instead of the destroyed ops.
+        let sheet = store.sheet(id).unwrap();
+        assert_eq!(sheet.segments(), segments.as_slice());
+        assert_eq!(sheet.title(), title);
+        assert_eq!(sheet.blocks_meta(), metas);
+        assert_eq!(sheet.modified_s(), Some(modified));
+        assert_ne!(sheet.document.peer_id(), old_peer);
+        let (bytes, _) = store.copy_out_chip(chip).unwrap();
+        assert_eq!(&**bytes, TOKEN.as_bytes());
+
+        // The history is not: the persisted content carries neither a
+        // deleted fragment nor the old actor id.
+        let snapshot = store.snapshot(0);
+        assert!(contains(&snapshot, b"alpha  keep"), "the control: live ink");
+        assert!(!contains(&snapshot, b"DOOMED"));
+        assert!(!contains(&snapshot, &old_peer.to_le_bytes()));
+
+        // A post-compaction edit bumps modified from the frozen floor,
+        // and setting a rung directly sheds the new trail the same way.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 1,
+                text: "x".into()
+            }]
+        ));
+        let sheet = store.sheet(id).unwrap();
+        assert!(sheet.modified_s().unwrap() >= modified);
+        let second_peer = sheet.document.peer_id();
+        store.set_rung(id, Ttl::MAX).unwrap();
+        assert!(!contains(&store.snapshot(0), &second_peer.to_le_bytes()));
+        assert_ne!(store.sheet(id).unwrap().document.peer_id(), second_peer);
+    }
+
+    #[test]
+    fn a_pause_topup_compacts_but_a_first_press_does_not() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "keep DOOMED\u{1F511}".into()
+            }]
+        ));
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 5,
+                len_u16: 8
+            }]
+        ));
+
+        // The first press holds the clock for an hour and keeps the
+        // trail: it is not the gesture that keeps a page alive.
+        assert!(store.pause_press(id));
+        assert!(contains(&store.snapshot(0), b"DOOMED"));
+
+        // The top-up is: a page kept alive by repeated pauses sheds
+        // its history at the same gesture that extends its life, and
+        // the hold semantics themselves are untouched.
+        assert!(store.pause_press(id));
+        assert!(!contains(&store.snapshot(0), b"DOOMED"));
+        assert_eq!(
+            store.sheet(id).unwrap().hold_remaining(store.now()),
+            24 * HOUR
+        );
+    }
+
+    #[test]
+    fn compaction_moves_no_clock_and_arms_no_timer() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "body\u{1F680}\nDOOMED".into()
+            }]
+        ));
+        let before = store.next_event();
+        // The ceremony alone, with no gesture around it: the one armed
+        // timer must not move, because compaction is bookkeeping on the
+        // document, never an event on the clock.
+        store.sheet_mut(id).unwrap().compact();
+        assert_eq!(store.next_event(), before);
     }
 
     #[test]
@@ -2508,6 +2664,20 @@ mod tests {
             .seal_text_at_with_origin(id, TOKEN, 0, 0, Some(&origin))
             .unwrap();
         assert_content_free(&store);
+
+        // Through the compaction ceremony too: graduation moves the
+        // origin from the commit trail into the materialized summary,
+        // and neither the live ledger nor its persisted snapshot may
+        // learn it in transit.
+        store.cycle_rung(id).unwrap();
+        assert_content_free(&store);
+        let ledger = store.ledger_snapshot();
+        for fragment in fragments_of(ORIGIN_URL) {
+            assert!(
+                !contains(&ledger, fragment.as_bytes()),
+                "the ledger snapshot leaked {fragment:?}"
+            );
+        }
 
         // Through death too: the origin rides the document's commit,
         // and the record of the page's end carries none of it.
