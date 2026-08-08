@@ -35,8 +35,11 @@ struct Style {
 
 /// The ㊙ maruhi centred in the tile. U+FE0E forces the text
 /// presentation so the glyph takes our colour instead of arriving as
-/// the orange emoji.
-func drawMaruhi(_ color: NSColor, in tile: NSRect, scale: CGFloat = 0.72, offset: NSPoint = .zero) {
+/// the orange emoji. `offset` shifts in points; `focus` shifts in
+/// fractions of the glyph box, picking which point of the glyph sits
+/// at the tile centre (positive x looks right, positive y looks up).
+func drawMaruhi(_ color: NSColor, in tile: NSRect, scale: CGFloat = 0.72,
+                offset: NSPoint = .zero, focus: NSPoint = .zero) {
     let glyph = "㊙\u{FE0E}" as NSString
     let attributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: tile.height * scale),
@@ -45,21 +48,22 @@ func drawMaruhi(_ color: NSColor, in tile: NSRect, scale: CGFloat = 0.72, offset
     let size = glyph.size(withAttributes: attributes)
     glyph.draw(
         at: NSPoint(
-            x: tile.midX - size.width / 2 + offset.x,
-            y: tile.midY - size.height / 2 + offset.y),
+            x: tile.midX - size.width / 2 + offset.x - focus.x * size.width,
+            y: tile.midY - size.height / 2 + offset.y - focus.y * size.height),
         withAttributes: attributes
     )
 }
 
 /// A solid tile with the white maruhi blown up past the tile edge and
-/// clipped, so larger scales crop deeper into the glyph.
-func zoomStyle(name: String, scale: CGFloat, summary: String) -> Style {
+/// clipped, so larger scales crop deeper into the glyph and `focus`
+/// chooses which vignette of it fills the tile.
+func vignetteStyle(name: String, scale: CGFloat, focus: NSPoint = .zero, summary: String) -> Style {
     Style(name: name, summary: summary) { ctx in
         ctx.base.setFill()
         ctx.tilePath.fill()
         NSGraphicsContext.saveGraphicsState()
         ctx.tilePath.addClip()
-        drawMaruhi(.white, in: ctx.tile, scale: scale)
+        drawMaruhi(.white, in: ctx.tile, scale: scale, focus: focus)
         NSGraphicsContext.restoreGraphicsState()
     }
 }
@@ -81,12 +85,22 @@ let styles: [Style] = [
         ctx.tilePath.fill()
         drawMaruhi(ctx.base, in: ctx.tile)
     },
-    zoomStyle(name: "zoom", scale: 1.6,
-              summary: "maruhi zoomed past the tile so its ring crops away"),
-    zoomStyle(name: "zoom2", scale: 3.2,
-              summary: "zoom twice as far in, strokes filling the tile"),
-    zoomStyle(name: "zoom4", scale: 6.4,
-              summary: "zoom four times as far in, a single stroke fragment"),
+    vignetteStyle(name: "zoom", scale: 1.6,
+                  summary: "maruhi zoomed past the tile so its ring crops away"),
+    vignetteStyle(name: "zoom2", scale: 3.2,
+                  summary: "zoom twice as far in, strokes filling the tile"),
+    vignetteStyle(name: "zoom4", scale: 6.4,
+                  summary: "zoom four times as far in, a single stroke fragment"),
+    vignetteStyle(name: "grain", scale: 3.2, focus: NSPoint(x: -0.15, y: 0),
+                  summary: "vignette of the grain radical, bold strokes filling the tile"),
+    vignetteStyle(name: "heart", scale: 3.2, focus: NSPoint(x: 0.15, y: -0.12),
+                  summary: "vignette of the hooked heart of the right radical"),
+    vignetteStyle(name: "glimpse", scale: 2.2, focus: NSPoint(x: 0.30, y: -0.10),
+                  summary: "the hooked heart caught against the seal's rim"),
+    vignetteStyle(name: "strokes", scale: 3.2, focus: NSPoint(x: 0.30, y: 0),
+                  summary: "two sweeping strokes beside the rim, nearly abstract"),
+    vignetteStyle(name: "hook", scale: 4.8, focus: NSPoint(x: 0.15, y: -0.15),
+                  summary: "deep vignette of the heart's hook, one heavy curl"),
     Style(name: "stamp", summary: "hanko: warm paper tile, maruhi inked askew in the shade") { ctx in
         NSColor(calibratedRed: 0.97, green: 0.95, blue: 0.90, alpha: 1).setFill()
         ctx.tilePath.fill()
