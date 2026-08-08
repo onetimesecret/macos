@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CompanionKit
 import SwiftUI
 import os
 
@@ -74,22 +75,25 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                 follow(geometry: inFlight ?? model.geometry)
             }
             .store(in: &observers)
-        // Debug-only escape hatch: the Settings toggle (seeded by
-        // COMPANION_ALLOW_CAPTURE=1 for scripted runs) lifts the
-        // capture exclusion so the surface can be screenshotted while
-        // diagnosing the UI. A release build compiles this out.
-        #if DEBUG
-        model.pages.$allowCapture
-            .sink { [weak self] allow in
-                self?.panel.sharingType = allow ? .readOnly : .none
-                if allow {
-                    FileHandle.standardError.write(Data(
-                        "[backdrop] DEBUG: capture exclusion OFF — surface is screenshot-able\n".utf8
-                    ))
+        // Escape hatch: the Settings toggle (seeded by
+        // COMPANION_ALLOW_CAPTURE for scripted runs) lifts the capture
+        // exclusion so the surface can be screenshotted while
+        // diagnosing the UI. The subscription is only installed when
+        // this launch offers the switch, so a plain release run keeps
+        // the `sharingType = .none` set at window creation and has
+        // nothing that can write to it.
+        if PageModel.captureOptOutOffered {
+            model.pages.$allowCapture
+                .sink { [weak self] allow in
+                    self?.panel.sharingType = allow ? .readOnly : .none
+                    if allow {
+                        FileHandle.standardError.write(Data(
+                            "[backdrop] capture exclusion OFF: surface is screenshot-able\n".utf8
+                        ))
+                    }
                 }
-            }
-            .store(in: &observers)
-        #endif
+                .store(in: &observers)
+        }
         // Displays come and go; the surface re-fits the primary screen.
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -375,10 +379,12 @@ final class BackdropPanel: NSPanel {
         // the panel is hidden between uses, but the backdrop is *always
         // on screen* — without this, every screen share and screenshot
         // would carry the surface's ink.
-        // The debug opt-out lives on the shared model, which seeds
-        // itself from COMPANION_ALLOW_CAPTURE and is never persisted;
-        // the controller observes it. Starting closed here means a
-        // failure to observe leaves the exclusion on.
+        // The opt-out lives on the shared model, which seeds itself
+        // from COMPANION_ALLOW_CAPTURE and is never persisted; the
+        // controller observes it only when this launch offers it.
+        // Starting closed here means a launch that never observes,
+        // which is every ordinary release launch, leaves the exclusion
+        // on for the life of the window.
         sharingType = .none
     }
 

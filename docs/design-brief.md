@@ -40,9 +40,14 @@ quiet loop — place, glance, copy back out or promote to a link, forget.
   unexpected focus change is destructive for assistive-technology users.
 - **Excluded from screen capture.** The live panel is invisible to
   screenshots and screen recordings (secret hygiene). Practical
-  consequence: you **cannot screenshot the shipping panel** — portfolio,
-  marketing, and QA visuals must be mockups. (A DEBUG-only build flag lifts
-  this for development; it is compiled out of every release.)
+  consequence: you **cannot screenshot the shipping panel** in ordinary
+  use, so portfolio, marketing, and QA visuals must be mockups. (A debug
+  build always offers a Settings switch that lifts the exclusion until
+  quit. A release build offers the same switch only when launched with
+  `COMPANION_ALLOW_CAPTURE` set, which is how the installed app is
+  diagnosed; an ordinary launch has no way to reach it, and the opt-out
+  is never persisted. While it is on, the surface flies a camera
+  indicator in its header.)
 - **Accessibility is the acceptance bar, not a polish pass.** Every visual
   signal needs a text equivalent — the draining countdown ring **must**
   speak its remaining life in words ("about 7 hours remaining"); colour

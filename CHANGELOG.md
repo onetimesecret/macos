@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The screen-capture opt-out is reachable in a release build, by
+  launch variable only**: the Settings switch that lifts the surface's
+  `sharingType = .none` exclusion used to be compiled out of release
+  entirely, which left the installed app impossible to screenshot for
+  diagnosis. It now ships in every build, but a release build shows it
+  only when the app was launched with `COMPANION_ALLOW_CAPTURE` set
+  (`open --env COMPANION_ALLOW_CAPTURE=1 /Applications/OnetimePad.app`),
+  which also seeds it on. An ordinary double-click of the installed app
+  shows no such switch, and the controller installs no observer that
+  could write `sharingType`, so the exclusion set at window creation
+  holds for the life of the window. The opt-out is still never
+  persisted and still fails closed at every launch, and the header's
+  camera indicator now stands in release too, where the surface being
+  screenshot-able matters most. The rule is a pure function on the two
+  facts a launch knows, so the release branch is covered by tests from
+  a debug binary.
+
 - **Created and modified render above each block (ADR-0013,
   editable-surface rule)**: the editor now shows a small `DDD HH:mm`
   label above every paragraph that has been committed, or

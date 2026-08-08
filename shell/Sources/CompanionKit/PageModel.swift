@@ -266,15 +266,49 @@ public final class PageModel: ObservableObject {
     }
     private static let floatsKey = "floatsOnTop"
 
-    #if DEBUG
-    /// Debug builds only: lift the capture exclusion so the surface can
-    /// be screenshotted while diagnosing the UI. Deliberately NOT
-    /// persisted — a security opt-out fails closed at every launch.
-    /// COMPANION_ALLOW_CAPTURE=1 seeds it for scripted runs; a release
-    /// build compiles the property out entirely.
-    @Published public var allowCapture =
+    /// The rule, as a pure decision on the two facts a launch knows, so
+    /// the release branch is testable from a debug test binary: a debug
+    /// build always offers the capture opt-out, and a release build
+    /// offers it only when the launch variable is set.
+    public nonisolated static func offersCaptureOptOut(
+        isDebugBuild: Bool,
+        launchVariableSet: Bool
+    ) -> Bool {
+        isDebugBuild || launchVariableSet
+    }
+
+    /// Whether the running app was compiled with assertions, i.e. is a
+    /// debug build. The one place the configuration is read.
+    public nonisolated static var isDebugBuild: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    static var captureVariableSet: Bool {
         ProcessInfo.processInfo.environment["COMPANION_ALLOW_CAPTURE"] != nil
-    #endif
+    }
+
+    /// Whether the capture opt-out is reachable at all in this process:
+    /// the switch is available for diagnosing the installed app and is
+    /// absent from Settings for anyone who did not deliberately ask for
+    /// it. Decided once at launch, so nothing in the running app can
+    /// turn the offer on.
+    public static let captureOptOutOffered = offersCaptureOptOut(
+        isDebugBuild: isDebugBuild,
+        launchVariableSet: captureVariableSet
+    )
+
+    /// Lifts the capture exclusion so the surface can be screenshotted
+    /// while diagnosing the UI. Deliberately NOT persisted: a security
+    /// opt-out fails closed at every launch. The launch variable both
+    /// reveals the switch and seeds it on, so a scripted run needs no
+    /// click; without the variable a release build leaves this false
+    /// and offers no way to change it.
+    @Published public var allowCapture =
+        PageModel.captureOptOutOffered && PageModel.captureVariableSet
 
     /// The live editor view, so a summon can hand it the keyboard.
     /// Weak and non-published: view plumbing, not state.

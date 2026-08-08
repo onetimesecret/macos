@@ -253,8 +253,10 @@ Absent, each on purpose:
 - **Capture exclusion is doubly load-bearing.** `sharingType = .none`,
   as everywhere (docs/spec/05) — but the panel is hidden between uses,
   while the backdrop is on screen for every screenshot and screen share.
-  The debug-only `COMPANION_ALLOW_CAPTURE` opt-out mirrors the panel's:
-  never persisted, compiled out of release.
+  The `COMPANION_ALLOW_CAPTURE` opt-out mirrors the panel's: never
+  persisted, always off at launch unless the variable is set, and
+  absent from Settings in a release build that was launched without it.
+  While it is on, the header flies a camera indicator.
 - **Shoulder surfing is the form factor's own tradeoff.** Ink on the
   backdrop is exactly as visible as ink on a paper note taped to the
   monitor — that visibility is the *feature*, chosen by the user when
