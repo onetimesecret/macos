@@ -7,11 +7,11 @@
 #
 # With no arguments, builds the standard set below. Idempotent and
 # staleness-aware in that mode: an icon is rebuilt only when it is
-# missing or older than the scripts that define it.
+# missing or older than the scripts and art that define it.
 #
 # For trying out looks, an ad-hoc mode always rebuilds:
 #   scripts/build-icons.sh <name> <style> <rrggbb>
-#   scripts/build-icons.sh --list             # available styles
+#   scripts/build-icons.sh --list             # available marks and styles
 #   scripts/build-icons.sh --rrggbb           # shades used so far
 #   scripts/build-icons.sh --sheet [rrggbb]   # contact sheet of every style
 #   scripts/build-icons.sh --sweep <zoom> [rrggbb] [grid]
@@ -21,6 +21,13 @@
 #       contact sheet of the most interesting vignette crops (corners,
 #       intersections, overlaps) per zoom level, keeping perUnit picks
 #       for every unit of zoom (default 4, so deeper zooms show more)
+#
+# A leading --mark <maruhi|logo> picks the motif for any of the above
+# and defaults to the maruhi. The logo mark is the onetimesecret.com
+# logo, read from scripts/assets, so the brand lockup is
+#   scripts/build-icons.sh --mark logo <name> flat dc4a22
+# Sheets and scouts name the mark in their output file, so a maruhi
+# sheet and a logo sheet at one shade do not overwrite each other.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -32,20 +39,31 @@ fi
 OUT=dist/icons
 mkdir -p "$OUT"
 
+# The motif, and the render-icon.swift flag that selects it. Empty for
+# the default, so an unadorned run is the command line it always was.
+MARK=maruhi
+MARK_FLAG=()
+if [[ "${1:-}" == "--mark" ]]; then
+  [[ $# -ge 2 ]] || { echo "--mark needs a mark name" >&2; exit 1; }
+  MARK="$2"
+  MARK_FLAG=(--mark "$2")
+  shift 2
+fi
+
 build_icon() { # <app name> <style> <rrggbb shade>
   local name="$1" style="$2" shade="$3" icns="$OUT/$1.icns"
-  echo "==> Rendering $icns ($style, #$shade)"
+  echo "==> Rendering $icns ($MARK, $style, #$shade)"
   local iconset
   iconset="$(mktemp -d)/$name.iconset"
-  swift scripts/render-icon.swift "$style" "$shade" "$iconset"
+  swift scripts/render-icon.swift "${MARK_FLAG[@]}" "$style" "$shade" "$iconset"
   iconutil -c icns "$iconset" -o "$icns"
   rm -rf "$(dirname "$iconset")"
 }
 
 build_sheet() { # <rrggbb shade>
-  local shade="$1" png="$OUT/contact-sheet-$1.png"
+  local shade="$1" png="$OUT/contact-sheet-$MARK-$1.png"
   echo "==> Rendering $png"
-  swift scripts/render-icon.swift --sheet "$shade" "$png"
+  swift scripts/render-icon.swift "${MARK_FLAG[@]}" --sheet "$shade" "$png"
 }
 
 build_sweep() { # <zoom> [rrggbb shade] [grid]
@@ -55,22 +73,23 @@ build_sweep() { # <zoom> [rrggbb shade] [grid]
     zoom2) zoom=3.2 ;;
     zoom4) zoom=6.4 ;;
   esac
-  local png="$OUT/sweep-z$zoom-$shade.png"
+  local png="$OUT/sweep-$MARK-z$zoom-$shade.png"
   echo "==> Rendering $png (${grid}x${grid})"
-  swift scripts/render-icon.swift --sweep "$zoom" "$shade" "$png" "$grid"
+  swift scripts/render-icon.swift "${MARK_FLAG[@]}" --sweep "$zoom" "$shade" "$png" "$grid"
 }
 
 build_scout() { # [rrggbb shade] [perUnit]
-  local shade="${1:-0f766e}" per="${2:-4}" png="$OUT/scout-${1:-0f766e}.png"
+  local shade="${1:-0f766e}" per="${2:-4}" png="$OUT/scout-$MARK-${1:-0f766e}.png"
   echo "==> Rendering $png ($per picks per unit of zoom)"
-  swift scripts/render-icon.swift --scout "$shade" "$png" "$per"
+  swift scripts/render-icon.swift "${MARK_FLAG[@]}" --scout "$shade" "$png" "$per"
 }
 
 build_icon_if_stale() { # <app name> <style> <rrggbb shade>
   local icns="$OUT/$1.icns"
   if [[ -f "$icns" \
      && ! scripts/render-icon.swift -nt "$icns" \
-     && ! scripts/build-icons.sh -nt "$icns" ]]; then
+     && ! scripts/build-icons.sh -nt "$icns" \
+     && ! scripts/assets/onetime-logo-v3-xl.svg -nt "$icns" ]]; then
     return 0
   fi
   build_icon "$@"
@@ -90,6 +109,8 @@ case $# in
 0f766e  deep teal, the OnetimePad default (complement of the ember accent)
 d45a2a  ember, the accent from CompanionKit's Theme.swift
 8c3b1c  deep ember, the retired CompanionBackdrop shade
+dc4a22  onetimesecret.com brand orange, the plate the logo mark sits on
+fefefe  the near white the logo mark itself is drawn in
 EOF
         ;;
       --sheet)
@@ -99,7 +120,7 @@ EOF
         build_scout
         ;;
       *)
-        echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -110,7 +131,7 @@ EOF
       --sweep) build_sweep "$2" ;;
       --scout) build_scout "$2" ;;
       *)
-        echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -128,12 +149,12 @@ EOF
     if [[ "$1" == "--sweep" ]]; then
       build_sweep "$2" "$3" "$4"
     else
-      echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+      echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
       exit 1
     fi
     ;;
   *)
-    echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+    echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
     exit 1
     ;;
 esac
