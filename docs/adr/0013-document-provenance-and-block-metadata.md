@@ -488,4 +488,8 @@ Once decided, this ADR gets revisited when:
   right, rather than as metadata about assets, which would move the
   compaction horizon from a convenience to a requirement.
 - Document size or op-log growth crosses a budget on real pages,
-  measured rather than assumed.
+  measured rather than assumed. The remedy then is a size-triggered
+  compaction ceremony, not re-enabling change merging: a merged change
+  keeps the earlier timestamp, which quietly falsifies modified
+  stamps, while one more ceremony costs nothing this design has not
+  already priced.
