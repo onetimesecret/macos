@@ -11,8 +11,9 @@
 #
 # For trying out looks, an ad-hoc mode always rebuilds:
 #   scripts/build-icons.sh <name> <style> <rrggbb>
-#   scripts/build-icons.sh --list        # available styles
-#   scripts/build-icons.sh --rrggbb      # shades used so far
+#   scripts/build-icons.sh --list             # available styles
+#   scripts/build-icons.sh --rrggbb           # shades used so far
+#   scripts/build-icons.sh --sheet [rrggbb]   # contact sheet of every style
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -32,6 +33,12 @@ build_icon() { # <app name> <style> <rrggbb shade>
   swift scripts/render-icon.swift "$style" "$shade" "$iconset"
   iconutil -c icns "$iconset" -o "$icns"
   rm -rf "$(dirname "$iconset")"
+}
+
+build_sheet() { # <rrggbb shade>
+  local shade="$1" png="$OUT/contact-sheet-$1.png"
+  echo "==> Rendering $png"
+  swift scripts/render-icon.swift --sheet "$shade" "$png"
 }
 
 build_icon_if_stale() { # <app name> <style> <rrggbb shade>
@@ -60,17 +67,28 @@ d45a2a  ember, the accent from CompanionKit's Theme.swift
 8c3b1c  deep ember, the retired CompanionBackdrop shade
 EOF
         ;;
+      --sheet)
+        build_sheet 0f766e
+        ;;
       *)
-        echo "usage: build-icons.sh [--list | --rrggbb | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
+    ;;
+  2)
+    if [[ "$1" == "--sheet" ]]; then
+      build_sheet "$2"
+    else
+      echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | <name> <style> <rrggbb>]" >&2
+      exit 1
+    fi
     ;;
   3)
     build_icon "$1" "$2" "$3"
     ;;
   *)
-    echo "usage: build-icons.sh [--list | --rrggbb | <name> <style> <rrggbb>]" >&2
+    echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | <name> <style> <rrggbb>]" >&2
     exit 1
     ;;
 esac

@@ -5,7 +5,9 @@
 //
 // Run by scripts/build-icons.sh via `swift render-icon.swift <style>
 // <rrggbb> <out.iconset>`; not part of the Swift package.
-// `swift render-icon.swift --list` prints the available styles.
+// `swift render-icon.swift --list` prints the available styles, and
+// `--sheet <rrggbb> <out.png>` renders every style into one contact
+// sheet for side-by-side judging.
 
 import AppKit
 
@@ -202,53 +204,21 @@ let styles: [Style] = [
     },
 ]
 
-// MARK: - Command line
-
-let arguments = CommandLine.arguments
-
-if arguments.count == 2, arguments[1] == "--list" {
-    for style in styles {
-        print("\(style.name)\t\(style.summary)")
-    }
-    exit(0)
-}
-
-guard arguments.count == 4 else {
-    let names = styles.map(\.name).joined(separator: "|")
-    fail("""
-    usage: swift render-icon.swift <style> <rrggbb> <output.iconset>
-           swift render-icon.swift --list
-    styles: \(names)
-    """)
-}
-
-guard let style = styles.first(where: { $0.name == arguments[1] }) else {
-    fail("unknown style \"\(arguments[1])\"; run with --list to see the choices")
-}
-
-let hex = arguments[2]
-let outDir = URL(fileURLWithPath: arguments[3], isDirectory: true)
-
-guard hex.count == 6, let rgb = UInt32(hex, radix: 16) else {
-    fail("shade must be six hex digits, got \"\(hex)\"")
-}
-let base = NSColor(
-    calibratedRed: CGFloat((rgb >> 16) & 0xFF) / 255,
-    green: CGFloat((rgb >> 8) & 0xFF) / 255,
-    blue: CGFloat(rgb & 0xFF) / 255,
-    alpha: 1
-)
-
 // MARK: - Rendering
 
-func render(px: Int) -> NSBitmapImageRep {
+func makeBitmap(width: Int, height: Int) -> NSBitmapImageRep {
     guard let rep = NSBitmapImageRep(
-        bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px,
+        bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
         isPlanar: false, colorSpaceName: .calibratedRGB,
         bytesPerRow: 0, bitsPerPixel: 0
-    ) else { fail("could not allocate a \(px)px bitmap") }
-    rep.size = NSSize(width: px, height: px)
+    ) else { fail("could not allocate a \(width)x\(height) bitmap") }
+    rep.size = NSSize(width: width, height: height)
+    return rep
+}
+
+func render(px: Int, style: Style, base: NSColor) -> NSBitmapImageRep {
+    let rep = makeBitmap(width: px, height: px)
 
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
@@ -262,28 +232,128 @@ func render(px: Int) -> NSBitmapImageRep {
     return rep
 }
 
-// iconutil's expected members: each point size at 1x and 2x, sharing
-// pixel renderings where they coincide.
-let members: [(file: String, px: Int)] = [
-    ("icon_16x16.png", 16), ("icon_16x16@2x.png", 32),
-    ("icon_32x32.png", 32), ("icon_32x32@2x.png", 64),
-    ("icon_128x128.png", 128), ("icon_128x128@2x.png", 256),
-    ("icon_256x256.png", 256), ("icon_256x256@2x.png", 512),
-    ("icon_512x512.png", 512), ("icon_512x512@2x.png", 1024),
-]
-
-do {
-    try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
-    var cache: [Int: Data] = [:]
-    for (file, px) in members {
-        if cache[px] == nil {
-            guard let png = render(px: px).representation(using: .png, properties: [:]) else {
-                fail("could not encode the \(px)px rendering as PNG")
+func writeIconset(style: Style, base: NSColor, to outDir: URL) {
+    // iconutil's expected members: each point size at 1x and 2x,
+    // sharing pixel renderings where they coincide.
+    let members: [(file: String, px: Int)] = [
+        ("icon_16x16.png", 16), ("icon_16x16@2x.png", 32),
+        ("icon_32x32.png", 32), ("icon_32x32@2x.png", 64),
+        ("icon_128x128.png", 128), ("icon_128x128@2x.png", 256),
+        ("icon_256x256.png", 256), ("icon_256x256@2x.png", 512),
+        ("icon_512x512.png", 512), ("icon_512x512@2x.png", 1024),
+    ]
+    do {
+        try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+        var cache: [Int: Data] = [:]
+        for (file, px) in members {
+            if cache[px] == nil {
+                guard let png = render(px: px, style: style, base: base)
+                    .representation(using: .png, properties: [:]) else {
+                    fail("could not encode the \(px)px rendering as PNG")
+                }
+                cache[px] = png
             }
-            cache[px] = png
+            try cache[px]!.write(to: outDir.appendingPathComponent(file))
         }
-        try cache[px]!.write(to: outDir.appendingPathComponent(file))
+    } catch {
+        fail("writing \(outDir.path): \(error.localizedDescription)")
     }
-} catch {
-    fail("writing \(outDir.path): \(error.localizedDescription)")
 }
+
+/// One labelled cell per style: the 128px rendering above the 16px
+/// rendering blown up 4x with no smoothing. The blow-up is the
+/// legibility test the styles are judged by, so the sheet shows every
+/// look at both scales side by side.
+func writeSheet(base: NSColor, to url: URL) {
+    let big = 128, tinyShown = 64, pad = 12, labelH = 16
+    let columns = 4
+    let rows = (styles.count + columns - 1) / columns
+    let cellW = big + pad
+    let cellH = big + 4 + tinyShown + labelH + pad
+    let width = columns * cellW + pad
+    let height = rows * cellH + pad
+
+    let rep = makeBitmap(width: width, height: height)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    defer { NSGraphicsContext.restoreGraphicsState() }
+
+    NSColor(calibratedWhite: 0.22, alpha: 1).setFill()
+    NSRect(x: 0, y: 0, width: width, height: height).fill()
+    let labelAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
+        .foregroundColor: NSColor.white,
+    ]
+
+    let pixelated: [NSImageRep.HintKey: Any] = [.interpolation: NSImageInterpolation.none.rawValue]
+    for (index, style) in styles.enumerated() {
+        let x = CGFloat(pad + (index % columns) * cellW)
+        let yTop = CGFloat(height - pad - (index / columns) * cellH)
+        render(px: big, style: style, base: base).draw(
+            in: NSRect(x: x, y: yTop - CGFloat(big), width: CGFloat(big), height: CGFloat(big)),
+            from: .zero, operation: .sourceOver, fraction: 1,
+            respectFlipped: false, hints: pixelated)
+        render(px: 16, style: style, base: base).draw(
+            in: NSRect(x: x, y: yTop - CGFloat(big + 4 + tinyShown),
+                       width: CGFloat(tinyShown), height: CGFloat(tinyShown)),
+            from: .zero, operation: .sourceOver, fraction: 1,
+            respectFlipped: false, hints: pixelated)
+        (style.name as NSString).draw(
+            at: NSPoint(x: x, y: yTop - CGFloat(big + 4 + tinyShown + labelH)),
+            withAttributes: labelAttributes)
+    }
+
+    guard let png = rep.representation(using: .png, properties: [:]) else {
+        fail("could not encode the contact sheet as PNG")
+    }
+    do {
+        try png.write(to: url)
+    } catch {
+        fail("writing \(url.path): \(error.localizedDescription)")
+    }
+}
+
+// MARK: - Command line
+
+func parseShade(_ hex: String) -> NSColor {
+    guard hex.count == 6, let rgb = UInt32(hex, radix: 16) else {
+        fail("shade must be six hex digits, got \"\(hex)\"")
+    }
+    return NSColor(
+        calibratedRed: CGFloat((rgb >> 16) & 0xFF) / 255,
+        green: CGFloat((rgb >> 8) & 0xFF) / 255,
+        blue: CGFloat(rgb & 0xFF) / 255,
+        alpha: 1
+    )
+}
+
+let arguments = CommandLine.arguments
+
+if arguments.count == 2, arguments[1] == "--list" {
+    for style in styles {
+        print("\(style.name)\t\(style.summary)")
+    }
+    exit(0)
+}
+
+if arguments.count == 4, arguments[1] == "--sheet" {
+    writeSheet(base: parseShade(arguments[2]), to: URL(fileURLWithPath: arguments[3]))
+    exit(0)
+}
+
+guard arguments.count == 4, !arguments[1].hasPrefix("--") else {
+    let names = styles.map(\.name).joined(separator: "|")
+    fail("""
+    usage: swift render-icon.swift <style> <rrggbb> <output.iconset>
+           swift render-icon.swift --sheet <rrggbb> <output.png>
+           swift render-icon.swift --list
+    styles: \(names)
+    """)
+}
+
+guard let style = styles.first(where: { $0.name == arguments[1] }) else {
+    fail("unknown style \"\(arguments[1])\"; run with --list to see the choices")
+}
+
+writeIconset(style: style, base: parseShade(arguments[2]),
+             to: URL(fileURLWithPath: arguments[3], isDirectory: true))
