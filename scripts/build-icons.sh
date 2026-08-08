@@ -7,7 +7,9 @@
 #
 # With no arguments, builds the standard set below. Idempotent and
 # staleness-aware in that mode: an icon is rebuilt only when it is
-# missing or older than the scripts and art that define it.
+# missing, older than the scripts and art that define it, or was last
+# rendered from a different mark, style or shade (each icon carries a
+# .stamp saying which).
 #
 # For trying out looks, an ad-hoc mode always rebuilds:
 #   scripts/build-icons.sh <name> <style> <rrggbb>
@@ -73,6 +75,10 @@ build_icon() { # <app name> <style> <rrggbb shade>
   swift scripts/render-icon.swift "${MARK_FLAG[@]}" "$style" "$shade" "$iconset"
   iconutil -c icns "$iconset" -o "$icns"
   rm -rf "$(dirname "$iconset")"
+  # What produced this icon, which the icns itself cannot say. Without
+  # it an ad-hoc render would sit there passing for the standard icon
+  # until something else went stale.
+  echo "$MARK $style $shade" > "$icns.stamp"
 }
 
 build_sheet() { # <rrggbb shade>
@@ -106,6 +112,7 @@ LOGO_SVG=shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg
 build_icon_if_stale() { # <app name> <style> <rrggbb shade>
   local icns="$OUT/$1.icns"
   if [[ -f "$icns" \
+     && "$(cat "$icns.stamp" 2>/dev/null)" == "$MARK $2 $3" \
      && ! scripts/render-icon.swift -nt "$icns" \
      && ! scripts/build-icons.sh -nt "$icns" \
      && ! "$LOGO_SVG" -nt "$icns" ]]; then
