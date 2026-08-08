@@ -22,11 +22,12 @@
 #       intersections, overlaps) per zoom level, keeping perUnit picks
 #       for every unit of zoom (default 4, so deeper zooms show more)
 #
-# A leading --mark <maruhi|logo> picks the motif for any of the above
-# and defaults to the maruhi. The logo mark is the onetimesecret.com
-# logo, read from the app's own resources at
-# shell/Sources/CompanionKit/Resources, so the brand lockup is
+# A --mark <maruhi|logo> anywhere in the arguments picks the motif for
+# any of the above and defaults to the maruhi. The logo mark is the
+# onetimesecret.com logo, read from the app's own resources at
+# shell/Sources/CompanionKit/Resources, so the brand lockup is either of
 #   scripts/build-icons.sh --mark logo <name> flat dc4a22
+#   scripts/build-icons.sh <name> --mark logo flat dc4a22
 # Sheets and scouts name the mark in their output file, so a maruhi
 # sheet and a logo sheet at one shade do not overwrite each other.
 set -euo pipefail
@@ -42,14 +43,27 @@ mkdir -p "$OUT"
 
 # The motif, and the render-icon.swift flag that selects it. Empty for
 # the default, so an unadorned run is the command line it always was.
+# The flag is pulled out wherever it appears, since it reads as naturally
+# after the app name as before it, and what remains is dispatched below
+# by count as if the flag had never been there.
 MARK=maruhi
 MARK_FLAG=()
-if [[ "${1:-}" == "--mark" ]]; then
-  [[ $# -ge 2 ]] || { echo "--mark needs a mark name" >&2; exit 1; }
-  MARK="$2"
-  MARK_FLAG=(--mark "$2")
-  shift 2
-fi
+REST=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --mark)
+      [[ $# -ge 2 ]] || { echo "--mark needs a mark name" >&2; exit 1; }
+      MARK="$2"
+      MARK_FLAG=(--mark "$2")
+      shift 2
+      ;;
+    *)
+      REST+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- ${REST[@]+"${REST[@]}"}
 
 build_icon() { # <app name> <style> <rrggbb shade>
   local name="$1" style="$2" shade="$3" icns="$OUT/$1.icns"
