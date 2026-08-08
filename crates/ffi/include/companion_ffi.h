@@ -153,6 +153,9 @@ char *companion_sheets_json(CompanionHandle *handle);
  * cleared_out (nullable) reports the clear: false after a successful
  * seal means another writer moved the change count mid-take, the
  * guarded clear stood down, and the shell must say so.
+ * When the board declares a public.url origin, the core captures it in
+ * the same read and persists it inside the sealed snapshot (ADR-0013).
+ * The origin is content: it appears in no JSON this seam returns.
  */
 char *companion_sheet_seal_from_pasteboard(CompanionHandle *handle,
                                            uint64_t sheet,
@@ -246,6 +249,31 @@ bool companion_sheet_sync_document(CompanionHandle *handle, uint64_t sheet,
  * with companion_string_free(). Null for an unknown page.
  */
 char *companion_sheet_document_json(CompanionHandle *handle, uint64_t sheet);
+
+/*
+ * A page's provenance, derived from its operation log (ADR-0013):
+ *   {"created_ms": u64, "modified_s": i64|null}
+ * created_ms is the page's creation stamp (epoch ms, the figure the
+ * summaries already carry); modified_s is the newest change's commit
+ * timestamp in Unix SECONDS, null for an untouched body. Deliberately
+ * nothing else — origin URLs are content and appear on no JSON
+ * surface. Free with companion_string_free(). Null for an unknown
+ * page.
+ */
+char *companion_sheet_meta_json(CompanionHandle *handle, uint64_t sheet);
+
+/*
+ * A page's blocks — its paragraphs — in document order:
+ *   [{"id": uuid, "created_s": i64|null, "modified_s": i64|null}, …]
+ * The id is the block's random identity, stable across edits inside
+ * the paragraph and following the split-keeps-the-first, merge-keeps-
+ * the-absorber convention across the ones that are not. Stamps are
+ * Unix seconds derived from the operation log, null for a block with
+ * no committed content. Identities and timestamps ONLY: no text, no
+ * counts, no origin. Free with companion_string_free(). Null for an
+ * unknown page.
+ */
+char *companion_sheet_blocks_json(CompanionHandle *handle, uint64_t sheet);
 
 /* ------------------------------------------------------------------ */
 /* Chips                                                               */

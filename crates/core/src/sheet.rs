@@ -14,6 +14,7 @@
 
 use std::time::{Duration, Instant};
 
+use crate::blocks::{BlockIndex, BlockMeta};
 use crate::document::{DocRun, SheetDocument};
 use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
@@ -307,6 +308,10 @@ pub struct Sheet {
     /// every mutation ([`Sheet::rebuild_segments`]). Readers keep this
     /// shape; nothing edits it directly.
     pub(crate) segments: Vec<Segment>,
+    /// The page's paragraphs as identities (ADR-0013): maintained op by
+    /// op through every mutation path so a paragraph keeps its name
+    /// across edits, and settled by [`Sheet::settle_blocks`].
+    pub(crate) blocks: BlockIndex,
     pub(crate) chips: Vec<SealedChip>,
     pub(crate) rung: Ttl,
     pub(crate) clock: SheetClock,
@@ -357,6 +362,38 @@ impl Sheet {
                     .map(|chip| Segment::Chip(chip.id)),
             })
             .collect();
+    }
+
+    /// Settle the block index against the document as it now stands:
+    /// re-take every anchor, and if the index no longer describes the
+    /// body — a wholesale restate, or a mutation path that failed to
+    /// narrate itself — rebuild it with fresh identities rather than
+    /// serve stale ones. Every mutation path ends here.
+    pub(crate) fn settle_blocks(&mut self) {
+        if self.blocks.matches(&self.document) {
+            self.blocks.retake_anchors(&self.document);
+        } else {
+            self.blocks = BlockIndex::for_document(&self.document);
+        }
+    }
+
+    /// Per-block provenance, in document order: each paragraph's
+    /// identity with its created and modified stamps (Unix seconds),
+    /// derived from the operation log (ADR-0013). Identities and
+    /// timestamps only; block content never crosses here.
+    #[must_use]
+    pub fn blocks_meta(&self) -> Vec<BlockMeta> {
+        self.blocks.metas(&self.document)
+    }
+
+    /// The page's modified stamp, Unix seconds: the newest change in
+    /// the page's operation log, derived rather than maintained. `None`
+    /// for a page whose body has never been touched. The created stamp
+    /// stays [`Sheet::created_wall_ms`], which predates the document's
+    /// first change.
+    #[must_use]
+    pub fn modified_s(&self) -> Option<i64> {
+        self.document.latest_timestamp()
     }
 
     /// The chips this sheet owns, in seal order.

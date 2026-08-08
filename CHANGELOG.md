@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Blocks acquire identity and pastes acquire provenance (ADR-0013,
+  stage 5)**: the core now maintains a per-sheet block index over the
+  flat body, one record per paragraph, following Notion's convention
+  under edits: a typed newline splits and the fragment holding the
+  pre-split start keeps the paragraph's identity, deleting a separating
+  newline merges and the absorbing paragraph keeps its name while the
+  absorbed one dies. Anchors are stable document cursors re-taken after
+  every settled mutation, with the first block anchored at the
+  container start. Created and modified stamps are derived from the
+  operation log rather than stored: earliest and latest change over a
+  block's span, the newest change for the page, with commit merging
+  disabled so every commit stays its own provenance unit. Two new read
+  surfaces, `companion_sheet_meta_json` and
+  `companion_sheet_blocks_json`, return identities and stamps only.
+  Pastes now carry their origin: the pasteboard read captures the
+  `public.url` flavor in the same core-side pass (the shell still never
+  touches the board, ADR-0007 Amendment 1), and a URL-bearing seal
+  persists `{"origin": url}` as its commit's message inside the
+  encrypted snapshot. Origin URLs are content and appear in no JSON
+  surface, no summary, and no ledger record; restore rebuilds the block
+  index from the imported document and recomputes anchors rather than
+  trusting anything persisted.
+
 - **Edits cross the seam as range operations, not snapshots (ADR-0013,
   stage 3)**: `companion_sheet_apply_ops` carries an ordered JSON batch
   of `ins`/`del`/`chip` operations, every position and length a UTF-16

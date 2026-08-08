@@ -13,9 +13,10 @@
 //! `_utf16` variants are called here, and no Rust `String` is ever
 //! indexed by a wire offset.
 
+use loro::cursor::{Cursor, PosType, Side};
 use loro::{
-    CommitOptions, ExpandType, ExportMode, LoroDoc, LoroText, LoroValue, StyleConfig,
-    StyleConfigMap, TextDelta,
+    CommitOptions, ContainerTrait as _, ExpandType, ExportMode, LoroDoc, LoroText, LoroValue,
+    StyleConfig, StyleConfigMap, TextDelta,
 };
 use zeroize::Zeroizing;
 
@@ -61,6 +62,15 @@ impl SheetDocument {
     pub(crate) fn new() -> Self {
         let doc = LoroDoc::new();
         doc.set_record_timestamp(true);
+        // Adjacent commits from one peer would otherwise merge into a
+        // single change when their timestamps sit within the library's
+        // interval (1000 seconds), and a merged change keeps the
+        // earlier stamp: a block's modified time would read up to
+        // seventeen minutes stale. Provenance is the point of the
+        // timestamps (ADR-0013), so every commit stays its own change.
+        // The op log grows faster for it; the compaction ceremony is
+        // what bounds that growth.
+        doc.set_change_merge_interval(0);
         let mut styles = StyleConfigMap::new();
         styles.insert(
             CHIP_MARK.into(),
@@ -209,6 +219,94 @@ impl SheetDocument {
         self.body.len_utf16()
     }
 
+    /// A block's stable position as encoded cursor bytes: opaque to
+    /// every caller, decoded only by [`SheetDocument::resolve_anchor`].
+    /// The first block is anchored at the container itself rather than
+    /// at its first character, so it still names the start of the page
+    /// after ink lands ahead of it; every other block anchors at its
+    /// first character, whose identity the cursor follows through edits
+    /// elsewhere. `None` when the offset does not land on a boundary
+    /// the body recognizes.
+    pub(crate) fn block_anchor(&self, start_u16: usize, container_start: bool) -> Option<Vec<u8>> {
+        if container_start {
+            return Some(Cursor::new(None, self.body.id(), Side::Left, 0).encode());
+        }
+        let scalar = self
+            .body
+            .convert_pos(start_u16, PosType::Utf16, PosType::Unicode)?;
+        self.body
+            .get_cursor(scalar, Side::Left)
+            .map(|cursor| cursor.encode())
+    }
+
+    /// Resolve encoded anchor bytes back to a UTF-16 offset, proving an
+    /// anchor still points where its block went. Test-only until the
+    /// compaction ceremony becomes the first production reader.
+    #[cfg(test)]
+    pub(crate) fn resolve_anchor(&self, anchor: &[u8]) -> Option<usize> {
+        let cursor = Cursor::decode(anchor).ok()?;
+        let found = self.doc.get_cursor_pos(&cursor).ok()?;
+        self.body
+            .convert_pos(found.current.pos, PosType::Unicode, PosType::Utf16)
+    }
+
+    /// The earliest and latest commit timestamps among the characters
+    /// of a UTF-16 span, Unix seconds: created and modified for the
+    /// block that owns the span, derived from the ops rather than
+    /// stored (ADR-0013). A character whose change has left the history
+    /// simply does not vote — after compaction the materialized summary
+    /// answers instead. `None` for an empty span, an unrecognizable
+    /// offset, or a span with no committed characters.
+    pub(crate) fn span_timestamps(&self, start_u16: usize, len_u16: usize) -> Option<(i64, i64)> {
+        if len_u16 == 0 {
+            return None;
+        }
+        let start = self
+            .body
+            .convert_pos(start_u16, PosType::Utf16, PosType::Unicode)?;
+        let end = self
+            .body
+            .convert_pos(start_u16 + len_u16, PosType::Utf16, PosType::Unicode)?;
+        let mut bounds: Option<(i64, i64)> = None;
+        for pos in start..end {
+            let Some(id) = self.body.get_cursor(pos, Side::Middle).and_then(|c| c.id) else {
+                continue;
+            };
+            let Some(change) = self.doc.get_change(id) else {
+                continue;
+            };
+            let stamp = change.timestamp;
+            bounds = Some(bounds.map_or((stamp, stamp), |(earliest, latest)| {
+                (earliest.min(stamp), latest.max(stamp))
+            }));
+        }
+        bounds
+    }
+
+    /// The newest committed change's timestamp, Unix seconds: the
+    /// page's modified stamp, read off the log's frontier rather than
+    /// stored and maintained. `None` for a document with no changes.
+    pub(crate) fn latest_timestamp(&self) -> Option<i64> {
+        self.doc
+            .oplog_frontiers()
+            .iter()
+            .filter_map(|id| self.doc.get_change(id))
+            .map(|change| change.timestamp)
+            .max()
+    }
+
+    /// Close the open transaction with an injected timestamp, so tests
+    /// can assert earliest-and-latest arithmetic against known values
+    /// instead of racing the wall clock.
+    #[cfg(test)]
+    pub(crate) fn commit_at(&self, timestamp: i64) {
+        self.doc.commit_with(
+            CommitOptions::new()
+                .immediate_renew(true)
+                .timestamp(timestamp),
+        );
+    }
+
     /// This document's own peer identity, exposed so persistence tests
     /// can prove it never reaches the ledger. Test-only: the identity
     /// has no business anywhere else in the crate.
@@ -225,9 +323,23 @@ impl SheetDocument {
     /// `None` for an empty body. Test-only.
     #[cfg(test)]
     pub(crate) fn first_change_timestamp(&self) -> Option<i64> {
-        let cursor = self.body.get_cursor(0, loro::cursor::Side::Middle)?;
+        let cursor = self.body.get_cursor(0, Side::Middle)?;
         let change = self.doc.get_change(cursor.id?)?;
         Some(change.timestamp)
+    }
+
+    /// The persisted commit message of the change that produced the
+    /// body's first character, pinned to offset zero for the same
+    /// reason as [`SheetDocument::first_change_timestamp`]. `None` for
+    /// an empty body or a change that carried no message. Test-only:
+    /// this is how persistence tests prove an origin message survives
+    /// the round trip without any read surface existing for it.
+    #[cfg(test)]
+    pub(crate) fn first_change_message(&self) -> Option<String> {
+        let cursor = self.body.get_cursor(0, Side::Middle)?;
+        let change = self.doc.get_change(cursor.id?)?;
+        let message = change.message();
+        (!message.is_empty()).then(|| message.to_string())
     }
 }
 

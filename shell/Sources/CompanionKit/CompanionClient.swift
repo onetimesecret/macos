@@ -126,6 +126,43 @@ public enum RestoredRun: Decodable, Sendable {
     }
 }
 
+/// A page's provenance, derived core-side from its operation log
+/// (ADR-0013). Deliberately nothing beyond the two stamps: origin URLs
+/// are content and never cross this seam.
+public struct SheetMeta: Codable, Hashable, Sendable {
+    /// The page's creation stamp, Unix epoch milliseconds.
+    public let createdMs: UInt64
+    /// The newest change's commit timestamp, Unix SECONDS; nil for a
+    /// page whose body was never touched.
+    public let modifiedS: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case createdMs = "created_ms"
+        case modifiedS = "modified_s"
+    }
+}
+
+/// One block — a paragraph — of a page, as identity and stamps only
+/// (ADR-0013): a random UUID that survives every edit inside the
+/// paragraph, and created/modified in Unix seconds derived from the
+/// operation log. No text, no counts, no origin.
+public struct BlockInfo: Codable, Hashable, Sendable, Identifiable {
+    /// The block's random identity, lowercase hyphenated UUID.
+    public let id: String
+    /// Earliest change that touched the block, Unix seconds; nil for a
+    /// block with no committed content.
+    public let createdS: Int64?
+    /// Latest change that touched the block, Unix seconds; nil for a
+    /// block with no committed content.
+    public let modifiedS: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case createdS = "created_s"
+        case modifiedS = "modified_s"
+    }
+}
+
 /// The TTL ladder (docs/spec/04). Raw values are the C ABI rung codes.
 public enum Rung: Int32, CaseIterable, Sendable {
     case oneHour = 0, threeHours, eightHours, twentyFourHours, threeDays, sevenDays
@@ -233,6 +270,18 @@ public final class CompanionClient: @unchecked Sendable {
     /// Current pages, in visible (tab) order.
     public func sheets() -> [SheetSummary] {
         decodeJSON([SheetSummary].self, from: companion_sheets_json(handle)) ?? []
+    }
+
+    /// A page's provenance (ADR-0013): creation stamp and derived
+    /// modified stamp. Nil for an unknown page.
+    public func sheetMeta(sheet: UInt64) -> SheetMeta? {
+        decodeJSON(SheetMeta.self, from: companion_sheet_meta_json(handle, sheet))
+    }
+
+    /// A page's blocks in document order: paragraph identities with
+    /// their derived created/modified stamps, and nothing else.
+    public func blocks(sheet: UInt64) -> [BlockInfo] {
+        decodeJSON([BlockInfo].self, from: companion_sheet_blocks_json(handle, sheet)) ?? []
     }
 
     // MARK: Sealing — the gesture routes

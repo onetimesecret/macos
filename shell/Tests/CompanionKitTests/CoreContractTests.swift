@@ -130,6 +130,44 @@ final class CoreContractTests: XCTestCase {
             "\(title) is not an MMDD-HHmm placeholder", file: file, line: line)
     }
 
+    func testMetaAndBlocksCarryIdentitiesAndStampsOnly() throws {
+        let client = CompanionClient()
+        let sheetID = client.newSheet()
+
+        // An untouched page: the creation stamp exists, the modified
+        // stamp does not, and the empty body is one empty paragraph.
+        var meta = try XCTUnwrap(client.sheetMeta(sheet: sheetID))
+        XCTAssertGreaterThan(meta.createdMs, 0)
+        XCTAssertNil(meta.modifiedS)
+        XCTAssertEqual(client.blocks(sheet: sheetID).count, 1)
+
+        // Two typed paragraphs: two blocks, each with a 36-character
+        // identity and stamps, and the page's modified stamp appears.
+        XCTAssertTrue(
+            client.applyOps(
+                sheet: sheetID,
+                json: #"[{"ins": {"at": 0, "text": "alpha\nbeta"}}]"#))
+        meta = try XCTUnwrap(client.sheetMeta(sheet: sheetID))
+        let modified = try XCTUnwrap(meta.modifiedS)
+        XCTAssertGreaterThan(modified, 0)
+        let blocks = client.blocks(sheet: sheetID)
+        XCTAssertEqual(blocks.count, 2)
+        for block in blocks {
+            XCTAssertEqual(block.id.count, 36)
+            XCTAssertGreaterThan(try XCTUnwrap(block.createdS), 0)
+            XCTAssertGreaterThan(try XCTUnwrap(block.modifiedS), 0)
+        }
+
+        // Identity holds across an intra-paragraph edit, and an
+        // unknown page answers nil and empty.
+        XCTAssertTrue(
+            client.applyOps(
+                sheet: sheetID, json: #"[{"ins": {"at": 10, "text": " grew"}}]"#))
+        XCTAssertEqual(client.blocks(sheet: sheetID).map(\.id), blocks.map(\.id))
+        XCTAssertNil(client.sheetMeta(sheet: 424_242))
+        XCTAssertTrue(client.blocks(sheet: 424_242).isEmpty)
+    }
+
     func testAUserSetTitleSticksAcrossASync() throws {
         let client = CompanionClient()
         let sheetID = client.newSheet()

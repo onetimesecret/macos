@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use zeroize::Zeroizing;
 
+use crate::blocks::BlockIndex;
 use crate::clock::Clock;
 use crate::document::SheetDocument;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
@@ -198,14 +199,17 @@ impl<C: Clock> SheetStore<C> {
         self.next_sheet_id += 1;
         let uuid = ItemId::random();
         let title = derive_title(&[], created_wall_ms, offset);
+        let document = SheetDocument::new();
+        let blocks = BlockIndex::for_document(&document);
         self.sheets.push(Sheet {
             id,
             uuid,
             title: title.clone(),
             title_is_user_set: false,
             created_wall_ms,
-            document: SheetDocument::new(),
+            document,
             segments: Vec::new(),
+            blocks,
             chips: Vec::new(),
             rung: self.default_rung,
             clock: SheetClock::Running {
@@ -363,9 +367,28 @@ impl<C: Clock> SheetStore<C> {
         at_u16: u32,
         len_u16: u32,
     ) -> Result<ChipId, Refusal> {
+        self.seal_text_at_with_origin(sheet, text, at_u16, len_u16, None)
+    }
+
+    /// [`SheetStore::seal_text_at`] carrying provenance: `origin`, when
+    /// present, is stamped on the seal's own commit as its persisted
+    /// message (ADR-0013), so it lives inside the encrypted snapshot
+    /// and nowhere else — the seam's read surfaces never render commit
+    /// messages, and the ledger records none of this. Riding the seal's
+    /// commit rather than a staged next-commit message means a refused
+    /// seal drops the origin by construction instead of leaving it to
+    /// stamp whatever commits next.
+    pub fn seal_text_at_with_origin(
+        &mut self,
+        sheet: SheetId,
+        text: &str,
+        at_u16: u32,
+        len_u16: u32,
+        origin: Option<&str>,
+    ) -> Result<ChipId, Refusal> {
         self.check_seal_range(sheet, at_u16, len_u16)?;
         let chip = self.seal_text(sheet, text)?;
-        self.place_chip(sheet, chip, at_u16, len_u16)
+        self.place_chip(sheet, chip, at_u16, len_u16, origin)
     }
 
     /// [`SheetStore::seal_text_at`] for image bytes: same atomic
@@ -377,9 +400,22 @@ impl<C: Clock> SheetStore<C> {
         at_u16: u32,
         len_u16: u32,
     ) -> Result<ChipId, Refusal> {
+        self.seal_image_at_with_origin(sheet, bytes, at_u16, len_u16, None)
+    }
+
+    /// [`SheetStore::seal_image_at`] carrying provenance, under the
+    /// same rules as [`SheetStore::seal_text_at_with_origin`].
+    pub fn seal_image_at_with_origin(
+        &mut self,
+        sheet: SheetId,
+        bytes: Vec<u8>,
+        at_u16: u32,
+        len_u16: u32,
+        origin: Option<&str>,
+    ) -> Result<ChipId, Refusal> {
         self.check_seal_range(sheet, at_u16, len_u16)?;
         let chip = self.seal_image(sheet, bytes)?;
-        self.place_chip(sheet, chip, at_u16, len_u16)
+        self.place_chip(sheet, chip, at_u16, len_u16, origin)
     }
 
     /// Whether a seal gesture's range describes the page's body as it
@@ -416,6 +452,7 @@ impl<C: Clock> SheetStore<C> {
         chip: ChipId,
         at_u16: u32,
         len_u16: u32,
+        origin: Option<&str>,
     ) -> Result<ChipId, Refusal> {
         let Some(sheet) = self.sheet_mut(id) else {
             return Err(Refusal::UnknownSheet);
@@ -429,7 +466,18 @@ impl<C: Clock> SheetStore<C> {
         if clean {
             clean = sheet.document.insert_chip(at, uuid).is_ok();
         }
-        sheet.document.commit(None);
+        // Narrate the replace to the block index: a selection that
+        // swallowed a newline merges paragraphs exactly as typing over
+        // it would, and the sentinel is one unit of ordinary width. On
+        // a refusal the notes may misdescribe the body, and the settle
+        // detects that and rebuilds rather than trusting them.
+        sheet.blocks.note_delete(at, len_u16 as usize);
+        sheet.blocks.note_sentinel(at);
+        // The origin, when a paste carried one, persists as this
+        // commit's message: provenance attaches to the event, where
+        // editing cannot erode it, and travels only inside the sealed
+        // snapshot.
+        sheet.document.commit(origin);
         self.settle_document(id);
         if clean {
             Ok(chip)
@@ -501,6 +549,23 @@ impl<C: Clock> SheetStore<C> {
             if outcome.is_err() {
                 clean = false;
                 break;
+            }
+            // Narrate the op to the block index while its offsets are
+            // still current: a newline in an insert splits a paragraph
+            // and a delete across one merges, and identity survives
+            // exactly the edits that stay inside a block (ADR-0013).
+            match op {
+                EditOp::Insert { pos_u16, text } => {
+                    sheet.blocks.note_insert(*pos_u16 as usize, text);
+                }
+                EditOp::Delete { pos_u16, len_u16 } => {
+                    sheet
+                        .blocks
+                        .note_delete(*pos_u16 as usize, *len_u16 as usize);
+                }
+                EditOp::InsertChip { pos_u16, .. } => {
+                    sheet.blocks.note_sentinel(*pos_u16 as usize);
+                }
             }
         }
         sheet.document.commit(None);
@@ -584,6 +649,12 @@ impl<C: Clock> SheetStore<C> {
             return;
         };
         sheet.rebuild_segments();
+        // The block index settles against the document: anchors are
+        // re-taken, and an index the mutation path failed to narrate —
+        // a wholesale restate through `sync_document`, or a mid-batch
+        // refusal — is rebuilt with fresh identities rather than served
+        // stale (ADR-0013).
+        sheet.settle_blocks();
         // The title is re-derived here, on edit, and never later: by
         // the time a record reaches the ledger the page already knows
         // its name (ADR-0012).
@@ -677,13 +748,17 @@ impl<C: Clock> SheetStore<C> {
             ));
             // The sentinel leaves the document first, so the source of
             // truth forgets the position before the bytes die. A chip
-            // sealed but never placed has no sentinel to remove.
+            // sealed but never placed has no sentinel to remove. One
+            // sentinel is one unit of block width and never a newline,
+            // so the block index narrates it as an intra-block edit.
             if let Some(pos) = sheet.document.chip_position(uuid) {
                 let _ = sheet.document.delete(pos, 1);
                 sheet.document.commit(None);
+                sheet.blocks.note_delete(pos, 1);
             }
             sheet.chips.remove(index); // zeroizes as it drops
             sheet.rebuild_segments();
+            sheet.settle_blocks();
             break;
         }
         let Some((uuid, len, title, created)) = removed else {
@@ -1381,11 +1456,16 @@ mod tests {
     /// digits in a row (an `ItemId` prints its bytes as decimals).
     const TOKEN: &str = "Zq7Xv-Marmalade-Bt94kL-Wp2Rn";
 
-    /// Every contiguous run of `TOKEN`, four characters or longer.
+    /// An origin URL shaped like the worst case: a reset link carrying
+    /// a token in its query string. Origin URLs are content (ADR-0013),
+    /// so the ledger's claim covers every fragment of this too.
+    const ORIGIN_URL: &str = "https://origin.example.test/reset?tk=Vq9Zx-Chutney-Rt83mN";
+
+    /// Every contiguous run of `token`, four characters or longer.
     /// Testing whole-token absence would be trivially satisfiable by a
     /// truncating excerpt; this is the assertion that is hard to weaken.
-    fn token_fragments() -> Vec<String> {
-        let chars: Vec<char> = TOKEN.chars().collect();
+    fn fragments_of(token: &str) -> Vec<String> {
+        let chars: Vec<char> = token.chars().collect();
         let mut out = Vec::new();
         for start in 0..chars.len() {
             for end in (start + 4)..=chars.len() {
@@ -1397,16 +1477,18 @@ mod tests {
     }
 
     /// The ledger's whole claim, mechanised: no record, in any field,
-    /// may carry a fragment of what was sealed.
+    /// may carry a fragment of what was sealed, and none of where it
+    /// came from either.
     fn assert_content_free(store: &SheetStore<ManualClock>) {
-        let fragments = token_fragments();
+        let mut fragments = fragments_of(TOKEN);
+        fragments.extend(fragments_of(ORIGIN_URL));
         let mut checked = 0usize;
         for record in store.ledger() {
             let rendered = format!("{record:?}");
             for fragment in &fragments {
                 assert!(
                     !rendered.contains(fragment.as_str()),
-                    "ledger record leaked {fragment:?} of the sealed token: {rendered}"
+                    "ledger record leaked {fragment:?} of sealed content: {rendered}"
                 );
             }
             checked += 1;
@@ -2314,5 +2396,122 @@ mod tests {
             }]
         ));
         assert_eq!(store.sheet(id).unwrap().title(), PLACEHOLDER);
+    }
+
+    #[test]
+    fn block_identity_rides_the_op_path_and_a_restate_reissues_it() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "alpha beta".into()
+            }]
+        ));
+        let whole = store.sheet(id).unwrap().blocks_meta();
+        assert_eq!(whole.len(), 1);
+        assert!(whole[0].created_s.is_some(), "committed ink has a birthday");
+
+        // Enter mid-paragraph, typed as an op: the first fragment keeps
+        // the paragraph's identity, the remainder is minted fresh.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 5,
+                text: "\n".into()
+            }]
+        ));
+        let split = store.sheet(id).unwrap().blocks_meta();
+        assert_eq!(split.len(), 2);
+        assert_eq!(split[0].id, whole[0].id);
+        assert_ne!(split[1].id, whole[0].id);
+
+        // Backspace across the newline merges back: the absorbing
+        // paragraph keeps its name and the absorbed one is gone.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 5,
+                len_u16: 1
+            }]
+        ));
+        let merged = store.sheet(id).unwrap().blocks_meta();
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].id, whole[0].id);
+
+        // A wholesale restate through the recovery path collapses
+        // provenance, identity included: the reborn paragraphs answer
+        // to fresh names.
+        assert!(store.sync_document(id, vec![Segment::Ink("wholly\nrestated".into())]));
+        let restated = store.sheet(id).unwrap().blocks_meta();
+        assert_eq!(restated.len(), 2);
+        assert!(restated.iter().all(|block| block.id != whole[0].id));
+    }
+
+    #[test]
+    fn a_range_seal_across_a_newline_merges_blocks_like_typing_over_it() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "top\nbottom".into()
+            }]
+        ));
+        let before = store.sheet(id).unwrap().blocks_meta();
+        assert_eq!(before.len(), 2);
+
+        // The selection swallows the separating newline; the sentinel
+        // stands in its place, and the two paragraphs are one, under
+        // the absorbing block's name.
+        store.seal_text_at(id, "p\nbo", 2, 4).unwrap();
+        let after = store.sheet(id).unwrap().blocks_meta();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].id, before[0].id);
+    }
+
+    #[test]
+    fn page_modified_derives_from_the_ops_and_created_stays_the_birth_stamp() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let sheet = store.sheet(id).unwrap();
+        assert_eq!(sheet.created_wall_ms(), 1_700_000_000_000);
+        assert!(
+            sheet.modified_s().is_none(),
+            "an untouched body has no newest change"
+        );
+
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "now it has one".into()
+            }]
+        ));
+        let sheet = store.sheet(id).unwrap();
+        assert!(sheet.modified_s().is_some_and(|stamp| stamp > 0));
+        assert_eq!(
+            sheet.created_wall_ms(),
+            1_700_000_000_000,
+            "created never re-derives"
+        );
+    }
+
+    #[test]
+    fn a_seal_carrying_an_origin_leaves_no_trace_in_the_ledger() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let origin = format!("{{\"origin\":\"{ORIGIN_URL}\"}}");
+        store
+            .seal_text_at_with_origin(id, TOKEN, 0, 0, Some(&origin))
+            .unwrap();
+        assert_content_free(&store);
+
+        // Through death too: the origin rides the document's commit,
+        // and the record of the page's end carries none of it.
+        assert!(store.close_sheet(id));
+        assert_content_free(&store);
     }
 }

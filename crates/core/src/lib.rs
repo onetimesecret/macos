@@ -26,6 +26,9 @@
 //! - **No UI dependencies.** This crate is testable headless and
 //!   survives a shell swap (ADR-0001).
 
+// Crate-private on purpose: block identity is bookkeeping the store
+// drives; only the read-shaped [`BlockMeta`] leaves the crate.
+mod blocks;
 pub mod clock;
 // Crate-private on purpose: every Loro API call stays behind this one
 // module's seam (ADR-0013), and the store speaks to it in UTF-16 code
@@ -39,6 +42,7 @@ pub mod sheet;
 pub mod store;
 pub mod ttl;
 
+pub use blocks::BlockMeta;
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use harden::harden_process;
 pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecord, SizeClass};

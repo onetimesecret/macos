@@ -55,6 +55,7 @@ use std::time::{Duration, Instant};
 
 use zeroize::Zeroizing;
 
+use crate::blocks::BlockIndex;
 use crate::clock::Clock;
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
@@ -587,6 +588,12 @@ fn read_sheet(
         return Err(Malformed);
     }
 
+    // The block index is rebuilt from the imported document, anchors
+    // recomputed rather than trusted from any persisted form: fresh
+    // identities are the honest reading of a file that stores none
+    // (ADR-0013; the materialized slot is what will carry them).
+    let blocks = BlockIndex::for_document(&document);
+
     let id = SheetId::from_raw(*next_sheet_id);
     *next_sheet_id += 1;
 
@@ -598,6 +605,7 @@ fn read_sheet(
         created_wall_ms,
         document,
         segments,
+        blocks,
         chips,
         rung,
         clock,
@@ -746,6 +754,48 @@ mod tests {
 
         // The content snapshot carries no ledger.
         assert_eq!(revived.ledger().count(), 0);
+    }
+
+    #[test]
+    fn the_origin_message_survives_the_round_trip() {
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        // A URL-bearing paste, sealed at the caret: the origin persists
+        // as the seal commit's message and nowhere else.
+        let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
+        store
+            .seal_text_at_with_origin(id, "the pasted secret", 0, 0, Some(origin))
+            .unwrap();
+        assert_eq!(
+            store
+                .sheet(id)
+                .unwrap()
+                .document
+                .first_change_message()
+                .as_deref(),
+            Some(origin),
+            "the control: the seal commit carries the origin before the trip"
+        );
+
+        let snapshot = store.snapshot(0);
+
+        let mut revived = SheetStore::new(clock.clone());
+        revived.restore(&snapshot, 0).unwrap();
+        let sheet = revived.sheets().next().unwrap();
+        assert_eq!(
+            sheet.document.first_change_message().as_deref(),
+            Some(origin),
+            "the origin message rides the blob through the round trip"
+        );
+
+        // The ledger snapshot, by contrast, must not know the URL: the
+        // origin is content and lives only in the sealed content file.
+        let ledger = store.ledger_snapshot();
+        let needle = b"origin.example.test";
+        assert!(
+            !ledger.windows(needle.len()).any(|w| w == needle),
+            "the origin leaked into the ledger snapshot"
+        );
     }
 
     #[test]

@@ -111,11 +111,19 @@ impl Board {
     /// something to seal. The real system clipboard has no unmarked
     /// "external put", so on macOS the seed rides the normal write
     /// (transient-marked); sealed paste reads text regardless of marks,
-    /// so the core cannot tell the difference.
+    /// so the core cannot tell the difference. An `origin` seeds the
+    /// `public.url` flavor a browser copy carries; only the in-memory
+    /// board can carry one here, and the tests that pass it build
+    /// their handles over that board.
     #[cfg(test)]
-    fn put_external(&mut self, content: PasteboardContent, concealed: bool) {
+    fn put_external(
+        &mut self,
+        content: PasteboardContent,
+        concealed: bool,
+        origin: Option<String>,
+    ) {
         match self {
-            Board::Memory(pb) => pb.put_external(content, concealed),
+            Board::Memory(pb) => pb.put_external_with_origin(content, concealed, origin),
             #[cfg(target_os = "macos")]
             Board::System(pb) => {
                 let (bytes, kind) = match content {
@@ -464,18 +472,34 @@ pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
         return ptr::null_mut();
     };
     let sheet = SheetId::from_raw(sheet);
+    // Provenance rode the same read as the content (ADR-0013): when
+    // the board declared a `public.url`, it persists as the seal
+    // commit's message, inside the encrypted snapshot and nowhere
+    // else. It is content — a URL can carry a token — so it crosses
+    // no JSON surface and reaches no ledger record.
+    let origin = item.origin_url.as_deref().map(origin_message);
     let sealed = match item.content {
         PasteboardContent::Text(mut text) => {
             // The board handed us an owned copy of what may now be a
             // secret; the core takes its own custody copy, so wipe this
             // transit copy instead of letting it drop unwiped.
-            let sealed = guard.store.seal_text_at(sheet, &text, at_utf16, len_utf16);
+            let sealed = guard.store.seal_text_at_with_origin(
+                sheet,
+                &text,
+                at_utf16,
+                len_utf16,
+                origin.as_deref(),
+            );
             text.zeroize();
             sealed
         }
-        PasteboardContent::Image(bytes) => {
-            guard.store.seal_image_at(sheet, bytes, at_utf16, len_utf16)
-        }
+        PasteboardContent::Image(bytes) => guard.store.seal_image_at_with_origin(
+            sheet,
+            bytes,
+            at_utf16,
+            len_utf16,
+            origin.as_deref(),
+        ),
     };
     match sealed {
         Ok(chip) => {
@@ -596,17 +620,31 @@ pub unsafe extern "C" fn companion_sheet_seal_from_drag(
             return ptr::null_mut();
         };
         let sheet = SheetId::from_raw(sheet);
+        // A dragged link declares `public.url` the same way a copied
+        // one does; the origin persists as the seal commit's message,
+        // under the same rules as the sealed paste above.
+        let origin = item.origin_url.as_deref().map(origin_message);
         let sealed = match item.content {
             PasteboardContent::Text(mut text) => {
                 // Same custody rule as the sealed paste: wipe the owned
                 // transit copy once the core has taken its own.
-                let sealed = guard.store.seal_text_at(sheet, &text, at_utf16, len_utf16);
+                let sealed = guard.store.seal_text_at_with_origin(
+                    sheet,
+                    &text,
+                    at_utf16,
+                    len_utf16,
+                    origin.as_deref(),
+                );
                 text.zeroize();
                 sealed
             }
-            PasteboardContent::Image(bytes) => {
-                guard.store.seal_image_at(sheet, bytes, at_utf16, len_utf16)
-            }
+            PasteboardContent::Image(bytes) => guard.store.seal_image_at_with_origin(
+                sheet,
+                bytes,
+                at_utf16,
+                len_utf16,
+                origin.as_deref(),
+            ),
         };
         match sealed {
             Ok(chip) => chip_json(&guard.store, sheet, chip),
@@ -942,6 +980,87 @@ pub unsafe extern "C" fn companion_sheet_document_json(
         })
         .collect();
     match serde_json::to_string(&runs) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// A page's provenance, derived from its operation log (ADR-0013):
+/// `{"created_ms": u64, "modified_s": i64|null}`. `created_ms` is the
+/// page's creation stamp, Unix epoch milliseconds, the same figure the
+/// summaries and ledger already carry. `modified_s` is the newest
+/// change's commit timestamp in Unix seconds, derived rather than
+/// maintained, and null for a page whose body was never touched.
+/// Deliberately nothing else: origin URLs are content and appear on no
+/// JSON surface. The caller owns the returned string and must release
+/// it with [`companion_string_free`]. Returns null for an unknown page.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_meta_json(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let Some(sheet) = guard.store.sheet(SheetId::from_raw(sheet)) else {
+        return ptr::null_mut();
+    };
+    let value = serde_json::json!({
+        "created_ms": sheet.created_wall_ms(),
+        "modified_s": sheet.modified_s(),
+    });
+    match serde_json::to_string(&value) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// A page's blocks — its paragraphs — in document order, each an
+/// object `{"id": uuid, "created_s": i64|null, "modified_s": i64|null}`
+/// (ADR-0013). The id is the block's random identity, stable across
+/// every edit that stays inside the paragraph and following Notion's
+/// split-and-merge convention across the ones that do not. The stamps
+/// are Unix seconds derived from the operation log, null for a block
+/// with no committed content. Identities and timestamps ONLY: no text,
+/// no counts, and no origin, which is content and stays inside the
+/// sealed snapshot. The caller owns the returned string and must
+/// release it with [`companion_string_free`]. Returns null for an
+/// unknown page.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_blocks_json(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let Some(sheet) = guard.store.sheet(SheetId::from_raw(sheet)) else {
+        return ptr::null_mut();
+    };
+    let blocks: Vec<serde_json::Value> = sheet
+        .blocks_meta()
+        .into_iter()
+        .map(|block| {
+            serde_json::json!({
+                "id": block.id.to_string(),
+                "created_s": block.created_s,
+                "modified_s": block.modified_s,
+            })
+        })
+        .collect();
+    match serde_json::to_string(&blocks) {
         Ok(json) => into_c_string(json),
         Err(_) => ptr::null_mut(),
     }
@@ -1809,6 +1928,13 @@ fn chip_json(store: &SheetStore<SystemClock>, sheet: SheetId, chip: ChipId) -> *
     }
 }
 
+/// The provenance message a URL-bearing seal persists on its commit:
+/// `{"origin": url}`, JSON so the compaction ceremony (ADR-0013 stage
+/// 6) can read it back mechanically when it materializes summaries.
+fn origin_message(url: &str) -> String {
+    serde_json::json!({ "origin": url }).to_string()
+}
+
 /// Parse the synced-document JSON: `[{"ink": "…"}, {"chip": 7}, …]`.
 fn parse_segments(json: &str) -> Option<Vec<Segment>> {
     let value: serde_json::Value = serde_json::from_str(json).ok()?;
@@ -1978,7 +2104,19 @@ mod tests {
         let mut guard = guard.inner.lock().unwrap();
         guard
             .pasteboard
-            .put_external(PasteboardContent::Text(text.to_string()), false);
+            .put_external(PasteboardContent::Text(text.to_string()), false, None);
+    }
+
+    /// Seed the board as a browser copy would: text with a
+    /// `public.url` origin flavor beside it.
+    fn seed_with_origin(handle: *mut CompanionHandle, text: &str, origin: &str) {
+        let guard = unsafe { &*handle };
+        let mut guard = guard.inner.lock().unwrap();
+        guard.pasteboard.put_external(
+            PasteboardContent::Text(text.to_string()),
+            false,
+            Some(origin.to_string()),
+        );
     }
 
     unsafe fn take_json(p: *mut c_char) -> String {
@@ -2159,6 +2297,125 @@ mod tests {
         }
     }
 
+    /// Whether `needle` occurs anywhere in `haystack`.
+    fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack.windows(needle.len()).any(|w| w == needle)
+    }
+
+    /// Every contiguous run of `token`, four characters or longer: the
+    /// same hard-to-weaken absence assertion the core's ledger tests
+    /// use, applied here to whole JSON surfaces.
+    fn fragments_of(token: &str) -> Vec<String> {
+        let chars: Vec<char> = token.chars().collect();
+        let mut out = Vec::new();
+        for start in 0..chars.len() {
+            for end in (start + 4)..=chars.len() {
+                out.push(chars[start..end].iter().collect());
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_url_bearing_paste_persists_its_origin_and_shows_it_nowhere() {
+        // Worst-case origin: a reset link with a token in the query.
+        let origin = "https://origin.example.test/reset?tk=Vq9Zx-Chutney";
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            seed_with_origin(handle, "pasted out of a browser", origin);
+            let chip = take_json(companion_sheet_seal_from_pasteboard(
+                handle,
+                sheet,
+                0,
+                0,
+                ptr::null_mut(),
+            ));
+            assert!(
+                !chip.contains("origin") && !chip.contains("example.test"),
+                "chip JSON must not carry provenance: {chip}"
+            );
+
+            // The origin persisted: the plaintext content snapshot (the
+            // buffer the sealed state file encrypts) carries the seal
+            // commit's message, URL included.
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                let snapshot = guard.store.snapshot(0);
+                assert!(
+                    contains(&snapshot, origin.as_bytes()),
+                    "the origin message must ride the content snapshot"
+                );
+                // And the same walk over the ledger snapshot finds
+                // nothing: the audit record must not know the URL.
+                assert!(!contains(&guard.store.ledger_snapshot(), b"example.test"));
+            }
+
+            // No fragment of the URL on any JSON read surface, before
+            // or after the page's death.
+            let fragments = fragments_of(origin);
+            let clean = |surface: &str, name: &str| {
+                for fragment in &fragments {
+                    assert!(
+                        !surface.contains(fragment.as_str()),
+                        "{name} leaked {fragment:?} of the origin: {surface}"
+                    );
+                }
+            };
+            clean(&take_json(companion_sheets_json(handle)), "summaries");
+            clean(&take_json(companion_sheet_meta_json(handle, sheet)), "meta");
+            clean(
+                &take_json(companion_sheet_blocks_json(handle, sheet)),
+                "blocks",
+            );
+            assert!(companion_sheet_close(handle, sheet));
+            clean(&take_json(companion_ledger_json(handle)), "ledger");
+
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn meta_and_blocks_json_carry_identities_and_stamps_only() {
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            let ops = cstring(r#"[{"ins": {"at": 0, "text": "alpha\nbeta"}}]"#);
+            assert!(companion_sheet_apply_ops(handle, sheet, ops.as_ptr()));
+
+            let meta: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sheet_meta_json(handle, sheet))).unwrap();
+            assert!(meta["created_ms"].as_u64().is_some_and(|ms| ms > 0));
+            assert!(meta["modified_s"].as_i64().is_some_and(|s| s > 0));
+            assert_eq!(
+                meta.as_object().unwrap().len(),
+                2,
+                "identities and stamps only: {meta}"
+            );
+
+            let blocks: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sheet_blocks_json(handle, sheet)))
+                    .unwrap();
+            let blocks = blocks.as_array().unwrap();
+            assert_eq!(blocks.len(), 2, "one entry per paragraph");
+            for block in blocks {
+                assert_eq!(block["id"].as_str().unwrap().len(), 36);
+                assert!(block["created_s"].as_i64().is_some_and(|s| s > 0));
+                assert!(block["modified_s"].as_i64().is_some_and(|s| s > 0));
+                assert_eq!(
+                    block.as_object().unwrap().len(),
+                    3,
+                    "no text, no counts, no origin: {block}"
+                );
+            }
+
+            // Unknown pages answer null on both.
+            assert!(companion_sheet_meta_json(handle, 424242).is_null());
+            assert!(companion_sheet_blocks_json(handle, 424242).is_null());
+            companion_free(handle);
+        }
+    }
+
     #[test]
     fn there_is_no_detection_and_no_reveal_surface() {
         // Rev C deleted detection: nothing in the seam's output ever
@@ -2295,7 +2552,7 @@ mod tests {
             png.resize(2048, 7);
             guard
                 .pasteboard
-                .put_external(PasteboardContent::Image(png), false);
+                .put_external(PasteboardContent::Image(png), false, None);
         }
         unsafe {
             let sheet = companion_sheet_new(handle);
