@@ -338,9 +338,10 @@ func writeSweep(scale: CGFloat, base: NSColor, n: Int, to url: URL) {
 
 // MARK: - Scouting interesting crops
 
-/// The zooms the scout walks, spanning the named vignette styles
-/// (zoom at 1.6 through zoom4 at 6.4) with steps between.
-let scoutZooms: [CGFloat] = [1.6, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6.4]
+/// The zooms the scout walks: the named vignette range (zoom at 1.6
+/// through zoom4 at 6.4) with steps between, then on into abstract
+/// territory where a tile holds one stroke fragment or less.
+let scoutZooms: [CGFloat] = [1.6, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6.4, 7, 8, 9, 10, 11, 12]
 
 /// Renders one vignette crop small and reads its ink mask. Returns
 /// the ink fraction of the tile and an interest score: the count of
@@ -430,7 +431,9 @@ func writeScout(base: NSColor, perUnit: CGFloat, to url: URL) {
         let picks = scoutFocuses(scale: zoom, base: base, keep: keep)
         print("==> zoom \(zoom): kept \(picks.count) of \(keep) requested")
         for pick in picks {
-            let label = String(format: "z%g %+.2f,%+.2f",
+            // Three decimals: at deep zooms a two-decimal rounding of
+            // the focus moves the crop by a visible fraction of the tile.
+            let label = String(format: "z%g %+.3f,%+.3f",
                                Double(zoom), pick.focus.x, pick.focus.y)
             cells.append((label, vignetteStyle(
                 name: label, scale: zoom, focus: pick.focus, summary: "")))
