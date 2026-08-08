@@ -159,7 +159,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **The Loro document is the source of truth inside the core**
+- **The sealed content file carries the Loro document, and the format
+  break is clean** (`companion-core` 0.4.0, ADR-0013 stage 4). The
+  plaintext content snapshot bumps its magic to `OTSSNAP3`: each sheet
+  keeps its identity, title, rung, clock and chip records exactly as
+  v2 wrote them, and replaces the segments section with the sheet's
+  full Loro snapshot blob, history and tombstones included, plus an
+  empty length-prefixed materialized-metadata slot the compaction
+  ceremony (stage 6) will fill without a v4. The blob is exported once
+  per sheet into a zeroizing buffer both write passes copy from, and
+  on restore it is imported into a fresh document whose chip marks
+  must match the chip records one to one; a dangling mark, an orphan
+  record or a duplicate rejects the whole snapshot with the store
+  untouched. There is deliberately no v2 reader and no downgrade
+  writer: v1, v2 and unknown magics all refuse as unknown format, so
+  existing dogfood state files will not load after this change. The
+  ledger format `OTSLEDR1` is untouched, and the blob, tombstones and
+  peer identity included, never reaches it.
   (`companion-core` 0.3.0, ADR-0013). Every sheet now owns a
   `SheetDocument`, and the `segments` list demotes to a cached
   projection rebuilt from the document's runs after every mutation, so

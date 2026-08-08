@@ -185,9 +185,6 @@ impl SheetDocument {
     /// The full document, history included, as one plaintext buffer for
     /// the seam above to encrypt. Zeroizing because the buffer holds
     /// every character ever typed, deleted ones included.
-    // Not yet called outside tests: the sealed-persistence stage of
-    // ADR-0013 adopts the snapshot pair; the allowance dies with it.
-    #[allow(dead_code)]
     pub(crate) fn export_snapshot(&self) -> Zeroizing<Vec<u8>> {
         Zeroizing::new(
             self.doc
@@ -199,9 +196,6 @@ impl SheetDocument {
     /// Merge a snapshot into this document. Anything the decoder
     /// refuses maps to [`RestoreError::Malformed`]: a buffer that does
     /// not read back is treated as damage, never partially applied.
-    // Not yet called outside tests: the sealed-persistence stage of
-    // ADR-0013 adopts the snapshot pair; the allowance dies with it.
-    #[allow(dead_code)]
     pub(crate) fn import_snapshot(&self, bytes: &[u8]) -> Result<(), RestoreError> {
         self.doc
             .import(bytes)
@@ -213,6 +207,27 @@ impl SheetDocument {
     /// is allowed to reason about.
     pub(crate) fn utf16_len(&self) -> usize {
         self.body.len_utf16()
+    }
+
+    /// This document's own peer identity, exposed so persistence tests
+    /// can prove it never reaches the ledger. Test-only: the identity
+    /// has no business anywhere else in the crate.
+    #[cfg(test)]
+    pub(crate) fn peer_id(&self) -> u64 {
+        self.doc.peer_id()
+    }
+
+    /// The commit timestamp of the change that produced the body's
+    /// first character, so persistence tests can prove provenance
+    /// survives the round trip. Pinned to offset zero because the
+    /// library indexes cursors in unicode scalars, and zero is the one
+    /// offset where that scheme and the wire's UTF-16 cannot disagree.
+    /// `None` for an empty body. Test-only.
+    #[cfg(test)]
+    pub(crate) fn first_change_timestamp(&self) -> Option<i64> {
+        let cursor = self.body.get_cursor(0, loro::cursor::Side::Middle)?;
+        let change = self.doc.get_change(cursor.id?)?;
+        Some(change.timestamp)
     }
 }
 
