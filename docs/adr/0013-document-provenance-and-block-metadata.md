@@ -9,7 +9,10 @@ Pages want metadata: created, modified, and an origin URL for content
 that arrived from somewhere. Blocks want the same, so that a paragraph
 can say when it appeared and where it came from. Prior art is
 everywhere (Vivaldi Notes shows exactly these three fields on a note),
-and the request is ordinary.
+and the request is ordinary. Blocks also want an interaction count as
+a proxy for importance: sorting blocks by importance is a committed
+feature (2026-08-07), not a hypothetical, and it is what forces the
+editable-surface rule below to be stated.
 
 The document model cannot answer it. `syncDocument` mirrors the page to
 the core as an ordered list of runs, contiguous ink between chips, on
@@ -151,6 +154,39 @@ Block identity remains policy under any option. The CRDT gives
 characters intrinsic identity, but split keeping the original id and
 merge killing the absorbed one is a convention adopted from Notion, not
 a property of the data structure.
+
+### The editable-surface rule
+
+Per-block metadata is free at every tier short of reordering.
+Counting interactions is core-side bookkeeping keyed by block id, and
+surfacing the counts in place (dimming stale paragraphs, a badge in
+the margin, ordering pages in a switcher) styles the text without
+changing how it edits. A text file with syntax highlighting is still
+a text file. One honesty note: unlike created and modified, a count
+is not derivable from the op log, because reading and copying are not
+document edits. It is a stored field from birth, maintained at its
+interaction sites and carried across compaction by persistence, so
+the correct-by-construction argument in the Decision does not extend
+to it.
+
+The line where blocks become a UI concept is not click-and-drag; it
+is editability of a reordered view. The little-text-file contract is
+that the page is one contiguous editable stream: selection crosses
+paragraph boundaries, backspace joins paragraphs, the cursor lands
+anywhere and types. Those operations have coherent meaning only while
+adjacent on screen means adjacent in the document. An
+importance-sorted view that accepts edits makes every boundary
+between displayed paragraphs a seam between distant document
+positions, and each block an editable island with its own edit
+context. An editable island is a block as a UI object, drag handle or
+not; Notion's handles are the ornament, not the essence.
+
+So the rule: blocks stay an internal concept as long as every
+editable surface shows the document in document order. Any editable
+surface that does not is a block editor. Importance-sorting therefore
+ships as a read-only projection, a lens like search results;
+activating a block in the lens lands the cursor at the block's real
+position in the flat sheet, and editing happens there.
 
 ### The compaction ceremony
 
@@ -320,6 +356,12 @@ ledger, whose content-free claim survives timestamps but not URLs.
   the broadcast-rules paragraph above).
 - A product answer on whether the page stays "a little text file."
   Architecture 1 is a block editor and changes what the product is.
+  The editable-surface rule above narrows this to a checkable
+  criterion: importance-sorting, the feature that raised the
+  question, is compatible with staying one, provided sorted views
+  remain read-only projections. What is left to answer is whether
+  any wanted feature requires an editable reordered surface; if none
+  does, the answer is yes and architecture 1 is out.
 - Verified mark behavior under concurrency for the shortlisted
   libraries. The selection criterion is stated above but rests on
   reputation rather than measurement. Two concurrent edits against one
