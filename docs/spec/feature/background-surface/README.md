@@ -48,6 +48,8 @@ exactly one of two stances:
 | Countdown repaint | every 30 s | 1 Hz |
 | Reading | the same page, dimmed, editing refused | the same page, editable |
 
+The mouse row is all-or-nothing per window, not a choice. ADR-0015.
+
 The summon gestures are ⌃⌥Space (two modifiers, deliberately: ⌥Space
 belongs to the panel app, and option-only global shortcuts broke
 outright on macOS 15.0–15.1), the menu-bar item, and — per the ⌘Tab

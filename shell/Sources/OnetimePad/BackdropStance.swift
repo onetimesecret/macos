@@ -39,6 +39,8 @@ enum BackdropStance: Equatable {
     /// takes it. The click's one meaning while resting is "raise".
     /// The raised editor takes the mouse for its own controls, and
     /// hugs the card for the same reason the pinned rest does.
+    ///
+    /// ADR-0015 records why this is all-or-nothing and what it costs.
     func ignoresMouse(pinned: Bool) -> Bool {
         switch self {
         case .resting: !pinned
