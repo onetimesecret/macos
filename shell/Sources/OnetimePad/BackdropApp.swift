@@ -85,7 +85,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         model.pages.onOpenSettings = { [weak self] in self?.openSettings() }
 
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = Self.maruhiTemplateImage()
+        item.button?.image = Self.trayImage()
         item.button?.setAccessibilityLabel(Self.productName)
         item.button?.target = self
         item.button?.action = #selector(statusItemClicked)
@@ -247,6 +247,18 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// CFBundleDisplayName in shell/OnetimePad-Info.plist, and the two
     /// must agree. Neither is the bundle id, which never changes.
     static let productName = "OnetimePad"
+
+    /// What sits in the menu bar: the onetimesecret.com logo mark, the
+    /// same art the app icon is built from, so the tray and the Dock
+    /// tile read as one app. Template images are tinted by the menu bar
+    /// for its appearance and for selection, which is why the mark goes
+    /// up as a flat silhouette rather than as brand colour.
+    ///
+    /// The maruhi stands in if the mark cannot be read, since a menu bar
+    /// with nothing in it leaves no way back to the surface.
+    private static func trayImage() -> NSImage {
+        LogoMark.templateImage(side: 18) ?? maruhiTemplateImage()
+    }
 
     /// The ㊙ glyph rendered monochrome (U+FE0E forces text presentation
     /// over emoji) onto a template image: the menu bar tints template
