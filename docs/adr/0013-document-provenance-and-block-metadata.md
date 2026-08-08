@@ -197,8 +197,8 @@ Library-level tombstone GC (yrs collects deleted content by default,
 keeping only the delete set; Automerge retains it; Loro discards it at
 a shallow-snapshot frontier) is therefore a difference in local
 hygiene, not in the security claim. Under any CRDT, the honest
-statement once peers exist is "this device verifiably forgot, and peers
-were asked to," never "the document forgot."
+statement once peers exist is "this device forgot, and peers were
+asked to," never "the document forgot."
 
 The consequence is that forgetting and compaction are the same
 ceremony, and under collaboration it is a coordinated protocol event,
@@ -275,8 +275,8 @@ ledger, whose content-free claim survives timestamps but not URLs.
 
 ## What would settle this
 
-- A product answer on what "verifiably forgets" means once a second
-  device or peer exists. If the claim must survive collaboration, the
+- A product answer on what forgetting means once a second device or
+  peer exists. If the claim must survive collaboration, the
   coordinated forgetting ceremony above is a requirement and shapes
   what a relay is allowed to be; if the claim is scoped per-device,
   the library choice relaxes considerably.
