@@ -181,30 +181,110 @@ func logoMark() -> (path: NSBezierPath, bounds: CGRect) {
 /// tile centre (positive x looks right, positive y looks up). Styles
 /// name no mark of their own: the mark comes from the command line, so
 /// every style renders with every mark.
+/// The share of the tile's height a motif's box spans by default. Every
+/// style that does not deliberately crop or magnify draws at this, so a
+/// treatment that scales the mark has one number to scale against.
+let markScale: CGFloat = 0.72
+
 struct Mark {
     let name: String
     let summary: String
     let draw: (_ color: NSColor, _ tile: NSRect, _ scale: CGFloat,
                _ offset: NSPoint, _ focus: NSPoint) -> Void
+    /// The solid body a stencil treatment cuts this mark out of, drawn
+    /// on the same placement as `draw`. Only a mark that encloses an
+    /// area has one; an open mark leaves this nil and the stencil
+    /// treatment falls back to casting the mark itself.
+    var plate: ((_ color: NSColor, _ tile: NSRect, _ scale: CGFloat,
+                 _ offset: NSPoint, _ focus: NSPoint) -> Void)?
 }
 
-/// The ㊙ maruhi centred in the tile. U+FE0E forces the text
-/// presentation so the glyph takes our colour instead of arriving as
-/// the orange emoji.
+/// U+FE0E forces the text presentation so the glyph takes our colour
+/// instead of arriving as the orange emoji.
+let maruhiGlyph = "㊙\u{FE0E}" as NSString
+
+/// Where the maruhi lands for one placement. Spelled once so the glyph
+/// and the plate a stencil cuts it out of are laid out from the same
+/// measurement and cannot drift apart.
+func maruhiFrame(_ tile: NSRect, _ scale: CGFloat, _ offset: NSPoint,
+                 _ focus: NSPoint) -> (origin: NSPoint, size: NSSize, font: NSFont) {
+    let font = NSFont.systemFont(ofSize: tile.height * scale)
+    let size = maruhiGlyph.size(withAttributes: [.font: font])
+    return (NSPoint(x: tile.midX - size.width / 2 + offset.x - focus.x * size.width,
+                    y: tile.midY - size.height / 2 + offset.y - focus.y * size.height),
+            size, font)
+}
+
+/// The ㊙ maruhi centred in the tile.
 func drawMaruhi(_ color: NSColor, in tile: NSRect, scale: CGFloat,
                 offset: NSPoint, focus: NSPoint) {
-    let glyph = "㊙\u{FE0E}" as NSString
-    let attributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: tile.height * scale),
-        .foregroundColor: color,
-    ]
-    let size = glyph.size(withAttributes: attributes)
-    glyph.draw(
-        at: NSPoint(
-            x: tile.midX - size.width / 2 + offset.x - focus.x * size.width,
-            y: tile.midY - size.height / 2 + offset.y - focus.y * size.height),
-        withAttributes: attributes
-    )
+    let frame = maruhiFrame(tile, scale, offset, focus)
+    maruhiGlyph.draw(at: frame.origin,
+                     withAttributes: [.font: frame.font, .foregroundColor: color])
+}
+
+/// Where the ring's ink actually sits inside the glyph's layout box, in
+/// fractions of that box. The box carries line height the ring never
+/// fills, so a disc fitted to the box is much too large. Measured from
+/// a rendering rather than guessed at, because the enclosed maruhi
+/// comes from whatever CJK face the system font falls back to.
+var maruhiInkCache: CGRect?
+
+func maruhiInk() -> CGRect {
+    if let cached = maruhiInkCache { return cached }
+    let px = 256
+    let tile = NSRect(x: 0, y: 0, width: CGFloat(px), height: CGFloat(px))
+    let scale: CGFloat = 0.72
+    let rep = makeBitmap(width: px, height: px)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    drawMaruhi(.white, in: tile, scale: scale, offset: .zero, focus: .zero)
+    NSGraphicsContext.restoreGraphicsState()
+
+    guard let data = rep.bitmapData else { fail("the maruhi measurement produced no pixels") }
+    let stride = rep.bytesPerRow, samples = rep.samplesPerPixel
+    var minX = px, minY = px, maxX = -1, maxY = -1
+    for y in 0..<px {
+        for x in 0..<px {
+            // Well below half, so the ring's antialiased outer fringe
+            // counts as ink and the plate covers the whole glyph.
+            guard (data + y * stride + x * samples)[3] >= 32 else { continue }
+            minX = min(minX, x); maxX = max(maxX, x)
+            minY = min(minY, y); maxY = max(maxY, y)
+        }
+    }
+    guard maxX >= minX, maxY >= minY else { fail("the maruhi rendered no ink to measure") }
+
+    // Bitmap rows run down from the top; the drawing this measures runs
+    // up from the bottom, so the vertical span is flipped back here.
+    let frame = maruhiFrame(tile, scale, .zero, .zero)
+    let ink = CGRect(x: CGFloat(minX), y: CGFloat(px - 1 - maxY),
+                     width: CGFloat(maxX - minX + 1), height: CGFloat(maxY - minY + 1))
+    let measured = CGRect(x: (ink.minX - frame.origin.x) / frame.size.width,
+                          y: (ink.minY - frame.origin.y) / frame.size.height,
+                          width: ink.width / frame.size.width,
+                          height: ink.height / frame.size.height)
+    maruhiInkCache = measured
+    return measured
+}
+
+/// The disc the maruhi is cut out of: the ring's outer circle. The ring
+/// is round, so its ink box is square to within hinting, and the plate
+/// takes the larger side so no part of the glyph hangs off the material.
+/// Flush with the ring rather than wider than it, so the ring reads as
+/// the outermost cut instead of as a shape sitting on a saucer.
+func drawMaruhiPlate(_ color: NSColor, in tile: NSRect, scale: CGFloat,
+                     offset: NSPoint, focus: NSPoint) {
+    let frame = maruhiFrame(tile, scale, offset, focus)
+    let ink = maruhiInk()
+    let box = NSRect(x: frame.origin.x + ink.minX * frame.size.width,
+                     y: frame.origin.y + ink.minY * frame.size.height,
+                     width: ink.width * frame.size.width,
+                     height: ink.height * frame.size.height)
+    let diameter = max(box.width, box.height)
+    color.setFill()
+    NSBezierPath(ovalIn: NSRect(x: box.midX - diameter / 2, y: box.midY - diameter / 2,
+                                width: diameter, height: diameter)).fill()
 }
 
 /// The onetimesecret.com logo mark, fitted into a square box of
@@ -238,7 +318,8 @@ func drawLogo(_ color: NSColor, in tile: NSRect, scale: CGFloat,
 }
 
 let marks: [Mark] = [
-    Mark(name: "maruhi", summary: "the ㊙ maruhi glyph, the original motif", draw: drawMaruhi),
+    Mark(name: "maruhi", summary: "the ㊙ maruhi glyph, the original motif",
+         draw: drawMaruhi, plate: drawMaruhiPlate),
     Mark(name: "logo", summary: "the onetimesecret.com logo mark", draw: drawLogo),
 ]
 
@@ -256,9 +337,19 @@ struct StyleContext {
     let base: NSColor
     let mark: Mark
 
-    func drawMark(_ color: NSColor, scale: CGFloat = 0.72,
+    func drawMark(_ color: NSColor, scale: CGFloat = markScale,
                   offset: NSPoint = .zero, focus: NSPoint = .zero) {
         mark.draw(color, tile, scale, offset, focus)
+    }
+
+    /// The mark's plate on the same placement. Draws nothing for a mark
+    /// that has none, so a caller must ask `hasPlate` first rather than
+    /// silently rendering an empty tile.
+    var hasPlate: Bool { mark.plate != nil }
+
+    func drawPlate(_ color: NSColor, scale: CGFloat = markScale,
+                   offset: NSPoint = .zero, focus: NSPoint = .zero) {
+        mark.plate?(color, tile, scale, offset, focus)
     }
 }
 
@@ -303,6 +394,13 @@ struct ShadowTreatment {
     let summary: String
     let run: CGFloat
     let fade: Bool
+    /// Casts one translated copy of the mark cut out of its plate,
+    /// rather than sweeping the mark into an extrusion. `spread`
+    /// magnifies that copy, which is what a light near the plate does.
+    /// Both are `var`s with defaults only so the treatments that do not
+    /// use them need not spell them out.
+    var stencil = false
+    var spread: CGFloat = 1
     let ink: (NSColor) -> NSColor
     let tile: (NSColor) -> NSColor
     let motif: (NSColor) -> NSColor
@@ -359,11 +457,27 @@ let shadowTreatments: [ShadowTreatment] = [
         name: "beam", summary: "lighter than its tile, so the motif leaks light instead of blocking it",
         run: shadowRun, fade: true,
         ink: blend(0.35, .white), tile: blend(0.55, .black), motif: { _ in .white }),
+    ShadowTreatment(
+        name: "stencil", summary: "the mark cut through a plate held above the tile, casting one lit copy",
+        run: 0.30, fade: false, stencil: true, spread: 1.0,
+        ink: blend(0.45, .black), tile: { $0 }, motif: { _ in .white }),
 ]
 
 /// The motif on a flat tile, throwing `steps` copies of itself along
 /// one direction to make a single hard silhouette, with the motif drawn
 /// last on top of its own shadow.
+///
+/// A stencil treatment casts a different object by a different rule.
+/// The mark becomes a thin plate with itself cut through it, held above
+/// the tile, and a thin plate casts one translated copy of its outline
+/// rather than an extrusion. That distinction is the whole point: the
+/// extrusion is a union of copies a step apart, which closes any gap
+/// narrower than the run, and every gap the 秘 has is narrower than the
+/// run. Sweeping a cut plate therefore erases the cut. It is also why
+/// the maruhi's ordinary long shadow is a blank capsule at every angle:
+/// the ring is not what discards the strokes, the extrusion is. One
+/// cast copy keeps every hole, so the ring and the strokes both land in
+/// the shadow and no two angles agree.
 func drawLongShadow(_ ctx: StyleContext, degrees: CGFloat, treatment: ShadowTreatment) {
     treatment.tile(ctx.base).setFill()
     ctx.tilePath.fill()
@@ -384,6 +498,35 @@ func drawLongShadow(_ ctx: StyleContext, degrees: CGFloat, treatment: ShadowTrea
     guard let cg = NSGraphicsContext.current?.cgContext else {
         fail("the long shadow has no graphics context to draw into")
     }
+    // The plate is what the cut is made in. An open mark has none, so
+    // it casts its own outline instead and the treatment still reads;
+    // it is simply a cut-out held above the tile rather than a pierced
+    // disc.
+    let plated = ctx.hasPlate
+
+    /// One copy of the object at `scale`, offset, with the mark cut out
+    /// of it. Its own transparency layer so the knockout takes the copy
+    /// and leaves whatever is already on the tile behind it.
+    func castCopy(_ color: NSColor, scale: CGFloat, offset: NSPoint) {
+        cg.beginTransparencyLayer(auxiliaryInfo: nil)
+        if plated {
+            ctx.drawPlate(color, scale: scale, offset: offset)
+            cg.setBlendMode(.destinationOut)
+            ctx.drawMark(.black, scale: scale, offset: offset)
+            cg.setBlendMode(.normal)
+        } else {
+            ctx.drawMark(color, scale: scale, offset: offset)
+        }
+        cg.endTransparencyLayer()
+    }
+
+    if treatment.stencil {
+        castCopy(ink, scale: markScale * treatment.spread,
+                 offset: NSPoint(x: direction.x * length, y: direction.y * length))
+        castCopy(treatment.motif(ctx.base), scale: markScale, offset: .zero)
+        return
+    }
+
     // A fade cannot be drawn by making each copy faint: hundreds of
     // translucent copies pile up to opaque within the first fraction of
     // the run. The trail is built opaque inside a layer of its own and
