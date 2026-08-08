@@ -155,8 +155,15 @@ a property of the data structure.
 ### The compaction ceremony
 
 This is the open design work that architecture 3 requires and that no
-prior art supplies, because nothing in the prior art is trying to
-forget.
+document prior art supplies, because nothing in the document prior art
+is trying to forget. The model that does supply it comes from video
+compression. A snapshot is an I-frame, a full state that needs no
+history to interpret. Incremental updates are P-frames, meaningful
+only relative to what came before. The ceremony is the GOP boundary:
+emit a fresh key frame and everything behind it can be cut. The
+provenance horizon is the seek limit, reconstruction back to the last
+key frame and no further. What is novel is only the application, using
+the boundary for forgetting rather than for bitrate.
 
 A CRDT keeps tombstones. Deleted text stays in the op log, which is
 exactly what makes the timeline honest and exactly what this product
@@ -218,6 +225,19 @@ actor identity, no inherited history), and the relay purges its stored
 updates. The TTL clock can propose the ceremony; it cannot execute it
 silently. This is a product-truth question that belongs in the
 security model before the library choice does.
+
+Sync therefore follows broadcast rules, not archive rules. A solo
+device streams to nobody: key frames and deltas with no subscriber go
+nowhere and are dropped, so single-device operation accumulates
+nothing beyond the sealed document itself. A second device opening the
+page joins the stream at the current key frame and follows the
+P-frames from there. It structurally never receives the ops behind
+that frame, so it cannot learn deleted content rather than being asked
+to forget it, which is the property that makes this a safer
+alternative to Universal Clipboard. A relay, if one exists, holds at
+most the encrypted deltas since the last key frame, and the ceremony
+purges them; what a compromised relay can accumulate is bounded by one
+GOP, not by the life of the page.
 
 ## Consequences
 
@@ -291,11 +311,13 @@ ledger, whose content-free claim survives timestamps but not URLs.
   coordinated forgetting ceremony above is a requirement and shapes
   what a relay is allowed to be; if the claim is scoped per-device,
   the library choice relaxes considerably.
-- A product answer on multi-device. If sync is on the horizon,
-  architecture 3 is the only option that does not get rewritten, and
-  the compaction horizon becomes a negotiated constraint rather than a
-  free choice. If sync is explicitly off the table forever, the case
-  for 3 rests on provenance exactness alone and 2 becomes defensible.
+- A product answer on multi-device. Answered 2026-08-07: sync is on
+  the horizon, positioned as a safer alternative to Universal
+  Clipboard. That makes architecture 3 the only option that does not
+  get rewritten, and the compaction horizon a negotiated constraint
+  rather than a free choice. The join semantics are decided with it:
+  a device joins at the current key frame, never from history (see
+  the broadcast-rules paragraph above).
 - A product answer on whether the page stays "a little text file."
   Architecture 1 is a block editor and changes what the product is.
 - Verified mark behavior under concurrency for the shortlisted
@@ -324,9 +346,11 @@ Once decided, this ADR gets revisited when:
 - Any of the three ships true history truncation with sync-compatible
   semantics, which would make the compaction ceremony redundant and
   change the retention argument. Loro's shallow snapshot is already
-  most of this primitive; what remains open is whether its sync
-  protocol lets peers adopt a truncated frontier without a full
-  resync, which should be verified rather than assumed.
+  most of this primitive. Under the join-at-key-frame semantics
+  decided on 2026-08-07, peers rejoining from a fresh key frame at the
+  boundary is the design rather than a cost to engineer around, so the
+  open question narrows to mechanics: whether the library lets a peer
+  adopt a shallow frontier cleanly, verified rather than assumed.
 - yswift graduates to a maintained, release-tracking binding, or
   automerge-swift ships undo, either of which reshuffles the library
   ranking above.
