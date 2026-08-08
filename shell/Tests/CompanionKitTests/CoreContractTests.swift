@@ -52,8 +52,8 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(sheet.title, "deploy friday")
         XCTAssertEqual(sheet.chipCount, 1)
 
-        // The clock: cycling steps the ladder; the pause holds.
-        XCTAssertEqual(client.cycleRung(sheet: sheetID), .twentyFourHours)
+        // The clock: cycling tapers down the ladder; the pause holds.
+        XCTAssertEqual(client.cycleRung(sheet: sheetID), .threeHours)
         XCTAssertTrue(client.pausePress(sheet: sheetID))
         sheet = try XCTUnwrap(client.sheets().first)
         XCTAssertTrue(sheet.paused)

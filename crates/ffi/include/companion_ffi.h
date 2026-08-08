@@ -322,8 +322,11 @@ int64_t companion_next_event_ms(CompanionHandle *handle);
  */
 uint64_t companion_expire_due(CompanionHandle *handle);
 
-/* Cycle the countdown to the next rung (clock reset to the full rung —
- * each click resets the clock); new code, or -1 if the page is gone. */
+/* Cycle the countdown one rung SHORTER (clock reset to the full rung —
+ * each click resets the clock). The ladder tapers, 7d -> 3d -> 24h ->
+ * 8h -> 3h -> 1h, and wraps back to 7d at the bottom, so the most
+ * precarious rung is five clicks away rather than one. Returns the new
+ * code, or -1 if the page is gone. */
 int companion_sheet_cycle_rung(CompanionHandle *handle, uint64_t id);
 
 /* Set an explicit rung (clock reset). Returns success. */

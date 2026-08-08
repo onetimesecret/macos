@@ -1176,7 +1176,8 @@ public final class PageModel: ObservableObject {
         refresh()
     }
 
-    /// Click the countdown label: next rung, clock reset (docs/spec/04).
+    /// Click the countdown label: one rung shorter, clock reset
+    /// (docs/spec/04).
     public func cycleRung(_ id: UInt64) {
         _ = client.cycleRung(sheet: id)
         markDirty()

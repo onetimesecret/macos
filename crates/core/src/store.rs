@@ -890,9 +890,12 @@ impl<C: Clock> SheetStore<C> {
     // Time: the ladder, the pause, the one armed timer
     // -----------------------------------------------------------------
 
-    /// Cycle a page's countdown label: next rung on the ladder, clock
+    /// Cycle a page's countdown label: one rung *shorter*, clock
     /// *reset* to the full rung value (doc 04 — each click resets the
-    /// clock to the shown rung). A held page keeps its hold; the frozen
+    /// clock to the shown rung). The ladder tapers rather than falling
+    /// off its top: a page opens at the longest rung its form factor
+    /// asks for, and shortening it to the precarious end takes five
+    /// clicks. A held page keeps its hold; the frozen
     /// remaining life resets to the new rung — the pause is the tab's
     /// lever, the countdown the header's. A **due** page refuses, like
     /// [`SheetStore::pause_press`]: zero means zeroized, and a click in
@@ -905,7 +908,7 @@ impl<C: Clock> SheetStore<C> {
         if sheet.remaining(now).is_zero() {
             return None; // due; the timer will reap it
         }
-        let rung = sheet.rung.next();
+        let rung = sheet.rung.shorter();
         set_clock(sheet, rung, now);
         // A rung transition is the compaction boundary (ADR-0013): the
         // ceremony runs on the same clockwork as everything else, after
@@ -1857,21 +1860,22 @@ mod tests {
         let id = store.new_sheet().unwrap();
         clock.advance(2 * HOUR);
 
-        // Running: 8h → 24h, clock reset to the full rung.
+        // Running: 8h → 3h, one rung shorter, clock reset to the full
+        // rung.
         let rung = store.cycle_rung(id).unwrap();
-        assert_eq!(rung.to_string(), "24h");
-        assert_eq!(store.sheet(id).unwrap().remaining(store.now()), 24 * HOUR);
+        assert_eq!(rung.to_string(), "3h");
+        assert_eq!(store.sheet(id).unwrap().remaining(store.now()), 3 * HOUR);
 
         // Held: the rung steps and the frozen life resets, but the hold
         // stays — the pause is the tab's lever, the countdown the
         // header's.
         assert!(store.pause_press(id));
         let rung = store.cycle_rung(id).unwrap();
-        assert_eq!(rung.to_string(), "3d");
+        assert_eq!(rung.to_string(), "1h");
         let now = store.now();
         let sheet = store.sheet(id).unwrap();
         assert!(sheet.is_held(now));
-        assert_eq!(sheet.remaining(now), Duration::from_secs(3 * 24 * 60 * 60));
+        assert_eq!(sheet.remaining(now), HOUR);
     }
 
     #[test]

@@ -1437,10 +1437,11 @@ fn wall_now_ms() -> Option<u64> {
 // Time: the ladder and the pause
 // ---------------------------------------------------------------------------
 
-/// Cycle a page's countdown label: next rung on the ladder, clock
-/// *reset* to the full rung value (each click resets the clock to the
-/// shown rung — doc 04). A held page keeps its hold. Returns the new
-/// rung code, or `-1` if the page is gone.
+/// Cycle a page's countdown label: one rung *shorter* on the ladder,
+/// clock *reset* to the full rung value (each click resets the clock to
+/// the shown rung — doc 04). The ladder tapers, `7d → 3d → 24h → 8h →
+/// 3h → 1h`, and wraps back to `7d` at the bottom. A held page keeps
+/// its hold. Returns the new rung code, or `-1` if the page is gone.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2928,8 +2929,10 @@ mod tests {
         unsafe {
             let a = companion_sheet_new(handle);
             let b = companion_sheet_new(handle);
+            assert!(companion_sheet_set_rung(handle, a, 5)); // 7d
+            assert_eq!(companion_sheet_cycle_rung(handle, a), 4); // -> 3d
             assert!(companion_sheet_set_rung(handle, a, 0)); // 1h
-            assert_eq!(companion_sheet_cycle_rung(handle, a), 1); // -> 3h
+            assert_eq!(companion_sheet_cycle_rung(handle, a), 5); // wraps -> 7d
             assert!(!companion_sheet_set_rung(handle, a, 99), "bad rung code");
             assert!(companion_sheet_move(handle, b, 0));
             assert!(companion_sheet_close(handle, a));

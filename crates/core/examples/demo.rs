@@ -171,7 +171,7 @@ fn help() {
   rm-chip <n>        ⌫ on chip n: removes it whole, bytes zeroized
   copy <n>           copy chip n back out (marked concealed + transient)
   clear              clear-after-copy: only if the clipboard is still ours
-  rung               click the countdown label: next rung, clock reset
+  rung               click the countdown label: one rung shorter, clock reset
   pause              double-click the tab: hold 1h, then top-up to 24h
   close              close the page; the ledger keeps the fact
   ledger             ⌘0, what happened, in metadata only

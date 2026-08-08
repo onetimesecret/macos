@@ -1,10 +1,18 @@
-//! The TTL ladder: `1h → 3h → 8h → 24h → 3d → 7d`, wrapping back to 1h.
+//! The TTL ladder, longest to shortest: `7d → 3d → 24h → 8h → 3h → 1h`,
+//! wrapping back to 7d.
 //!
 //! One affordance replaces a preferences pane and a date picker: clicking
-//! a cell's TTL label cycles to the next rung *and resets the clock* to
+//! a cell's TTL label steps to the next rung *and resets the clock* to
 //! that value. There is deliberately no "forever" on the wheel — seven
-//! days is the ceiling (docs/spec/02 §2). Whether the wrap survives
-//! contact with real use is open question №2.
+//! days is the ceiling (docs/spec/02 §2).
+//!
+//! The click shortens. A page opens at the top of the ladder, and every
+//! click tapers it one rung, so reaching the most precarious rung takes
+//! five deliberate clicks rather than one. The wrap survives (the wheel
+//! is still one affordance), but it now sits at the safe end: the
+//! single-click cliff is `1h → 7d`, which loses nothing, where the old
+//! upward wrap put a `7d → 1h` cliff under a stray click on staged
+//! content.
 
 use std::fmt;
 use std::time::Duration;
@@ -12,7 +20,9 @@ use std::time::Duration;
 const HOUR: u64 = 60 * 60;
 const DAY: u64 = 24 * HOUR;
 
-/// The rungs of the ladder, in order.
+/// The rungs of the ladder, shortest first. The click walks this the
+/// other way (see [`Ttl::shorter`]); the array stays ordered by
+/// duration so `MIN`, `MAX` and the wire codes read plainly.
 pub const TTL_LADDER: [Duration; 6] = [
     Duration::from_secs(HOUR),
     Duration::from_secs(3 * HOUR),
@@ -47,16 +57,18 @@ impl Ttl {
         TTL_LADDER[self.0]
     }
 
-    /// The next rung up, wrapping `7d → 1h` (doc 04; open question №2).
+    /// One rung shorter, wrapping `1h → 7d`. This is what a click on
+    /// the countdown does (doc 04): the ladder tapers, so the most
+    /// precarious rung is five clicks away, not one.
     #[must_use]
-    pub fn next(self) -> Ttl {
-        Ttl((self.0 + 1) % TTL_LADDER.len())
+    pub fn shorter(self) -> Ttl {
+        Ttl((self.0 + TTL_LADDER.len() - 1) % TTL_LADDER.len())
     }
 
-    /// The previous rung down, wrapping `1h → 7d`.
+    /// One rung longer, wrapping `7d → 1h`.
     #[must_use]
-    pub fn prev(self) -> Ttl {
-        Ttl((self.0 + TTL_LADDER.len() - 1) % TTL_LADDER.len())
+    pub fn longer(self) -> Ttl {
+        Ttl((self.0 + 1) % TTL_LADDER.len())
     }
 }
 
@@ -111,23 +123,33 @@ mod tests {
     }
 
     #[test]
-    fn ladder_cycles_in_spec_order_and_wraps() {
-        let mut rung = Ttl::MIN;
+    fn clicking_tapers_down_the_ladder_and_wraps_at_the_bottom() {
+        let mut rung = Ttl::MAX;
         let seen: Vec<String> = (0..7)
             .map(|_| {
                 let label = rung.to_string();
-                rung = rung.next();
+                rung = rung.shorter();
                 label
             })
             .collect();
-        assert_eq!(seen, ["1h", "3h", "8h", "24h", "3d", "7d", "1h"]);
+        assert_eq!(seen, ["7d", "3d", "24h", "8h", "3h", "1h", "7d"]);
     }
 
     #[test]
-    fn prev_reverses_next() {
-        assert_eq!(Ttl::MIN.prev(), Ttl::MAX);
-        assert_eq!(Ttl::MAX.next(), Ttl::MIN);
-        assert_eq!(Ttl::default().next().prev(), Ttl::default());
+    fn the_shortest_rung_is_five_clicks_from_the_top() {
+        let mut rung = Ttl::MAX;
+        for _ in 0..5 {
+            assert_ne!(rung, Ttl::MIN, "the cliff must not be one click");
+            rung = rung.shorter();
+        }
+        assert_eq!(rung, Ttl::MIN);
+    }
+
+    #[test]
+    fn longer_reverses_shorter() {
+        assert_eq!(Ttl::MIN.shorter(), Ttl::MAX);
+        assert_eq!(Ttl::MAX.longer(), Ttl::MIN);
+        assert_eq!(Ttl::default().shorter().longer(), Ttl::default());
     }
 
     #[test]

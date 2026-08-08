@@ -204,6 +204,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Clicking the countdown shortens it, one rung at a time**
+  (`companion-core` 0.7.0, docs/spec/06 Q1 answered). The TTL wheel
+  used to step up the ladder and wrap `7d → 1h`, which put a
+  168-hour-to-1-hour drop under a single stray click on deliberately
+  staged content, and made the backdrop's 7d default the worst place
+  to click. The click now steps one rung shorter, `7d → 3d → 24h → 8h
+  → 3h → 1h`, wrapping back to `7d` at the bottom. The wheel is still
+  one affordance and the wrap survives; it now sits at the end where a
+  single click costs nothing, and reaching the most precarious rung is
+  five deliberate clicks. `Ttl::next`/`Ttl::prev` are renamed
+  `Ttl::longer`/`Ttl::shorter`, so the direction is named by what it
+  does to the page's life rather than by array order.
+  `companion_sheet_cycle_rung()` keeps its signature and its rung
+  codes; only the rung it returns changes.
+
 - **The sealed content file carries the Loro document, and the format
   break is clean** (`companion-core` 0.4.0, ADR-0013 stage 4). The
   plaintext content snapshot bumps its magic to `OTSSNAP3`: each sheet

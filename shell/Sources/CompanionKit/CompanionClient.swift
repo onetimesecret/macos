@@ -402,7 +402,7 @@ public final class CompanionClient: @unchecked Sendable {
         companion_expire_due(handle)
     }
 
-    /// Click the countdown label: next rung, clock reset.
+    /// Click the countdown label: one rung shorter, clock reset.
     @discardableResult
     public func cycleRung(sheet: UInt64) -> Rung? {
         Rung(rawValue: companion_sheet_cycle_rung(handle, sheet))
