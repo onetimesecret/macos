@@ -259,8 +259,9 @@ ceremony, and under collaboration it is a coordinated protocol event,
 not a local one: all peers drop and resync from a fresh document (new
 actor identity, no inherited history), and the relay purges its stored
 updates. The TTL clock can propose the ceremony; it cannot execute it
-silently. This is a product-truth question that belongs in the
-security model before the library choice does.
+silently. This product-truth question is settled by the broadcast
+rules below, and the answer belongs in the security model before the
+library choice does.
 
 Sync therefore follows broadcast rules, not archive rules. A solo
 device streams to nobody: key frames and deltas with no subscriber go
@@ -343,10 +344,15 @@ ledger, whose content-free claim survives timestamps but not URLs.
 ## What would settle this
 
 - A product answer on what forgetting means once a second device or
-  peer exists. If the claim must survive collaboration, the
-  coordinated forgetting ceremony above is a requirement and shapes
-  what a relay is allowed to be; if the claim is scoped per-device,
-  the library choice relaxes considerably.
+  peer exists. Answered 2026-08-07 by the broadcast-rules model: the
+  claim survives collaboration. For history behind the key frame it
+  survives structurally, because a joining peer never receives those
+  ops and so cannot learn deleted content. For content inside the
+  current GOP it survives as a discharged right-to-erasure
+  obligation, propagated to peers and never attested. The coordinated
+  ceremony is therefore a requirement, and a relay is allowed to be
+  at most a store-and-forward buffer of encrypted deltas since the
+  last key frame, purged by the ceremony.
 - A product answer on multi-device. Answered 2026-08-07: sync is on
   the horizon, positioned as a safer alternative to Universal
   Clipboard. That makes architecture 3 the only option that does not
