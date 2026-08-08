@@ -14,6 +14,9 @@
 #   scripts/build-icons.sh --list             # available styles
 #   scripts/build-icons.sh --rrggbb           # shades used so far
 #   scripts/build-icons.sh --sheet [rrggbb]   # contact sheet of every style
+#   scripts/build-icons.sh --sweep <zoom> [rrggbb] [grid]
+#       contact sheet of vignette crops for one zoom (a scale factor,
+#       or zoom|zoom2|zoom4) on a grid of focuses, default 10x10
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -39,6 +42,18 @@ build_sheet() { # <rrggbb shade>
   local shade="$1" png="$OUT/contact-sheet-$1.png"
   echo "==> Rendering $png"
   swift scripts/render-icon.swift --sheet "$shade" "$png"
+}
+
+build_sweep() { # <zoom> [rrggbb shade] [grid]
+  local zoom="$1" shade="${2:-0f766e}" grid="${3:-10}"
+  case "$zoom" in
+    zoom) zoom=1.6 ;;
+    zoom2) zoom=3.2 ;;
+    zoom4) zoom=6.4 ;;
+  esac
+  local png="$OUT/sweep-z$zoom-$shade.png"
+  echo "==> Rendering $png (${grid}x${grid})"
+  swift scripts/render-icon.swift --sweep "$zoom" "$shade" "$png" "$grid"
 }
 
 build_icon_if_stale() { # <app name> <style> <rrggbb shade>
@@ -71,24 +86,38 @@ EOF
         build_sheet 0f766e
         ;;
       *)
-        echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
     ;;
   2)
-    if [[ "$1" == "--sheet" ]]; then
-      build_sheet "$2"
+    case "$1" in
+      --sheet) build_sheet "$2" ;;
+      --sweep) build_sweep "$2" ;;
+      *)
+        echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | <name> <style> <rrggbb>]" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  3)
+    if [[ "$1" == "--sweep" ]]; then
+      build_sweep "$2" "$3"
     else
-      echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | <name> <style> <rrggbb>]" >&2
+      build_icon "$1" "$2" "$3"
+    fi
+    ;;
+  4)
+    if [[ "$1" == "--sweep" ]]; then
+      build_sweep "$2" "$3" "$4"
+    else
+      echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | <name> <style> <rrggbb>]" >&2
       exit 1
     fi
     ;;
-  3)
-    build_icon "$1" "$2" "$3"
-    ;;
   *)
-    echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | <name> <style> <rrggbb>]" >&2
+    echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | <name> <style> <rrggbb>]" >&2
     exit 1
     ;;
 esac

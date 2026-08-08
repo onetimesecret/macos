@@ -5,9 +5,10 @@
 //
 // Run by scripts/build-icons.sh via `swift render-icon.swift <style>
 // <rrggbb> <out.iconset>`; not part of the Swift package.
-// `swift render-icon.swift --list` prints the available styles, and
+// `swift render-icon.swift --list` prints the available styles;
 // `--sheet <rrggbb> <out.png>` renders every style into one contact
-// sheet for side-by-side judging.
+// sheet for side-by-side judging; `--sweep <zoom> <rrggbb> <out.png>
+// [grid]` scouts vignette crops of the glyph on a grid of focuses.
 
 import AppKit
 
@@ -260,14 +261,13 @@ func writeIconset(style: Style, base: NSColor, to outDir: URL) {
     }
 }
 
-/// One labelled cell per style: the 128px rendering above the 16px
+/// One labelled cell per entry: the 128px rendering above the 16px
 /// rendering blown up 4x with no smoothing. The blow-up is the
 /// legibility test the styles are judged by, so the sheet shows every
 /// look at both scales side by side.
-func writeSheet(base: NSColor, to url: URL) {
+func writeSheet(cells: [(label: String, style: Style)], columns: Int, base: NSColor, to url: URL) {
     let big = 128, tinyShown = 64, pad = 12, labelH = 16
-    let columns = 4
-    let rows = (styles.count + columns - 1) / columns
+    let rows = (cells.count + columns - 1) / columns
     let cellW = big + pad
     let cellH = big + 4 + tinyShown + labelH + pad
     let width = columns * cellW + pad
@@ -286,19 +286,19 @@ func writeSheet(base: NSColor, to url: URL) {
     ]
 
     let pixelated: [NSImageRep.HintKey: Any] = [.interpolation: NSImageInterpolation.none.rawValue]
-    for (index, style) in styles.enumerated() {
+    for (index, cell) in cells.enumerated() {
         let x = CGFloat(pad + (index % columns) * cellW)
         let yTop = CGFloat(height - pad - (index / columns) * cellH)
-        render(px: big, style: style, base: base).draw(
+        render(px: big, style: cell.style, base: base).draw(
             in: NSRect(x: x, y: yTop - CGFloat(big), width: CGFloat(big), height: CGFloat(big)),
             from: .zero, operation: .sourceOver, fraction: 1,
             respectFlipped: false, hints: pixelated)
-        render(px: 16, style: style, base: base).draw(
+        render(px: 16, style: cell.style, base: base).draw(
             in: NSRect(x: x, y: yTop - CGFloat(big + 4 + tinyShown),
                        width: CGFloat(tinyShown), height: CGFloat(tinyShown)),
             from: .zero, operation: .sourceOver, fraction: 1,
             respectFlipped: false, hints: pixelated)
-        (style.name as NSString).draw(
+        (cell.label as NSString).draw(
             at: NSPoint(x: x, y: yTop - CGFloat(big + 4 + tinyShown + labelH)),
             withAttributes: labelAttributes)
     }
@@ -311,6 +311,25 @@ func writeSheet(base: NSColor, to url: URL) {
     } catch {
         fail("writing \(url.path): \(error.localizedDescription)")
     }
+}
+
+/// A focus sweep for one zoom: an n by n grid of vignette crops
+/// walking the glyph box from its upper left to its lower right, each
+/// cell labelled with the focus that reproduces it. This is how new
+/// vignette styles are scouted before earning a name in the registry.
+func writeSweep(scale: CGFloat, base: NSColor, n: Int, to url: URL) {
+    let span: CGFloat = 0.30
+    var cells: [(label: String, style: Style)] = []
+    for row in 0..<n {
+        let fy = span - 2 * span * CGFloat(row) / CGFloat(n - 1)
+        for column in 0..<n {
+            let fx = -span + 2 * span * CGFloat(column) / CGFloat(n - 1)
+            let label = String(format: "%+.2f,%+.2f", fx, fy)
+            cells.append((label, vignetteStyle(
+                name: label, scale: scale, focus: NSPoint(x: fx, y: fy), summary: "")))
+        }
+    }
+    writeSheet(cells: cells, columns: n, base: base, to: url)
 }
 
 // MARK: - Command line
@@ -337,7 +356,19 @@ if arguments.count == 2, arguments[1] == "--list" {
 }
 
 if arguments.count == 4, arguments[1] == "--sheet" {
-    writeSheet(base: parseShade(arguments[2]), to: URL(fileURLWithPath: arguments[3]))
+    writeSheet(cells: styles.map { ($0.name, $0) }, columns: 4,
+               base: parseShade(arguments[2]), to: URL(fileURLWithPath: arguments[3]))
+    exit(0)
+}
+
+if arguments.count == 5 || arguments.count == 6, arguments[1] == "--sweep" {
+    guard let scale = Double(arguments[2]), scale > 0 else {
+        fail("zoom must be a positive number, got \"\(arguments[2])\"")
+    }
+    let n = arguments.count == 6 ? Int(arguments[5]) ?? 0 : 10
+    guard n >= 2 else { fail("grid must be at least 2, got \"\(arguments[5])\"") }
+    writeSweep(scale: CGFloat(scale), base: parseShade(arguments[3]), n: n,
+               to: URL(fileURLWithPath: arguments[4]))
     exit(0)
 }
 
@@ -346,6 +377,7 @@ guard arguments.count == 4, !arguments[1].hasPrefix("--") else {
     fail("""
     usage: swift render-icon.swift <style> <rrggbb> <output.iconset>
            swift render-icon.swift --sheet <rrggbb> <output.png>
+           swift render-icon.swift --sweep <zoom> <rrggbb> <output.png> [grid]
            swift render-icon.swift --list
     styles: \(names)
     """)
