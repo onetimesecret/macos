@@ -62,8 +62,6 @@ public struct InkEditorView: NSViewRepresentable {
         storage.delegate = context.coordinator
 
         let textView = InkTextView(frame: .zero, textContainer: container)
-        textView.autoresizingMask = [.width]
-        textView.isVerticallyResizable = true
         // Rich text stays on so chip attachments survive editing; the
         // user-facing surface is still plain — ⌘V pastes plain text and
         // no ruler/font UI exists. Styling is ours alone (restyle()).
@@ -93,6 +91,34 @@ public struct InkEditorView: NSViewRepresentable {
             coordinator?.sealedPaste()
         }
 
+        return Self.scrollStack(for: textView)
+    }
+
+    /// The page inside its scroller: a text view free to grow as tall as
+    /// its text, clipped by a card-sized window onto it.
+    ///
+    /// The freedom has to be granted explicitly. `NSScrollView` stamps a
+    /// zero-framed document view's `maxSize` with the clip's size the
+    /// first time it lays it out, and a vertically resizable text view
+    /// refuses to grow past `maxSize.height`. Left at that stamp the
+    /// page's frame stops at exactly one cardful: the storage keeps
+    /// taking text and the layout manager keeps laying it out, but a
+    /// document no taller than its clip has nothing to scroll, so
+    /// everything past the first screenful is written and unreachable.
+    /// The card is resizable too, and the stamp is not reapplied when it
+    /// grows, so the ceiling would be whatever height the card happened
+    /// to have the moment the editor mounted.
+    static func scrollStack(for textView: InkTextView) -> NSScrollView {
+        textView.autoresizingMask = [.width]
+        textView.isVerticallyResizable = true
+        // Width is the container's business (`widthTracksTextView`), so
+        // the page wraps rather than scrolling sideways.
+        textView.isHorizontallyResizable = false
+        textView.minSize = .zero
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
