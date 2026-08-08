@@ -21,10 +21,14 @@ let package = Package(
         // future form factor starts from here rather than from a fork.
         // What lives in an executable target is its window and its
         // posture.
+        // Carries the brand art (Resources/onetime-logo-v3-xl.svg) that
+        // LogoMark draws the status item from, so the menu bar shows the
+        // same mark scripts/render-icon.swift bakes into the app icon.
         .target(
             name: "CompanionKit",
             dependencies: ["CompanionCore"],
-            path: "Sources/CompanionKit"
+            path: "Sources/CompanionKit",
+            resources: [.process("Resources")]
         ),
         // The shared code's tests, which is now every unit-testable
         // decision the app makes. The executable target keeps only
