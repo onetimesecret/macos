@@ -73,7 +73,9 @@ public struct InkEditorView: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.drawsBackground = false
-        textView.textContainerInset = NSSize(width: 12, height: 12)
+        textView.textContainerInset = NSSize(
+            width: 12, height: Coordinator.topInset
+        )
         textView.typingAttributes = [
             .font: InkStyle.baseFont,
             .foregroundColor: NSColor.labelColor,
@@ -727,24 +729,76 @@ public struct InkEditorView: NSViewRepresentable {
         /// Display-only, markup-preserving (docs/spec/04): a heading
         /// line renders at heading weight with its `#`s dimmed in
         /// place. Attributes only; the bytes of the page never change.
+        /// Also the ADR-0013 editable-surface rule's display instance:
+        /// created/modified are pulled fresh from the core and laid out
+        /// as labels above each block, styling the text without
+        /// touching how it edits.
         func restyle() {
-            guard let storage = textView?.textStorage else { return }
+            guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
             let text = storage.string as NSString
+            let metas = model.coreClient.blocks(sheet: sheet)
+            var displays: [BlockDisplay] = []
             storage.beginEditing()
             var location = 0
+            var block = 0
             while location < text.length {
                 let paragraph = text.paragraphRange(for: NSRange(location: location, length: 0))
-                styleParagraph(paragraph, of: storage, text: text)
+                let meta = block < metas.count ? metas[block] : nil
+                // A blank line is spacing, not writing: it carries a
+                // stamp in the core but shows none, so a page of empty
+                // paragraphs no longer stacks a column of identical
+                // times down the margin.
+                let blank = Self.isBlank(paragraph, of: text)
+                let createdS = blank ? nil : meta?.createdS
+                styleParagraph(paragraph, of: storage, text: text, labeled: createdS != nil)
+                if let createdS {
+                    displays.append(BlockDisplay(
+                        range: paragraph,
+                        text: Self.blockLabel(createdS: createdS, modifiedS: meta?.modifiedS)
+                    ))
+                }
+                block += 1
                 if paragraph.length == 0 { break }
                 location = NSMaxRange(paragraph)
             }
             storage.endEditing()
+            blockDisplays = displays
+            // `paragraphSpacingBefore` is ignored on the first paragraph
+            // of the storage, so the top block's gap has to come from the
+            // container inset instead — otherwise its label would be laid
+            // out above the text view's own top edge and clipped away.
+            let leading = displays.first?.range.location == 0
+            let inset = Self.topInset + (leading ? Self.blockLabelReserve : 0)
+            if let textView, textView.textContainerInset.height != inset {
+                textView.textContainerInset.height = inset
+            }
+            updateBlockLabelViews()
         }
 
-        private func styleParagraph(_ range: NSRange, of storage: NSTextStorage, text: NSString) {
+        /// Whitespace only, newline included: nothing a reader would call
+        /// content, and so nothing to stamp.
+        private static func isBlank(_ range: NSRange, of text: NSString) -> Bool {
+            guard range.length > 0 else { return true }
+            return text.substring(with: range)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+        }
+
+        private func styleParagraph(
+            _ range: NSRange, of storage: NSTextStorage, text: NSString, labeled: Bool
+        ) {
             guard range.length > 0 else { return }
+            let paragraphStyle = NSMutableParagraphStyle()
+            // Room for the label above the block, reserved only where
+            // one will actually render: an untouched block carries no
+            // stamp and gets no gap.
+            paragraphStyle.paragraphSpacingBefore = labeled ? Self.blockLabelReserve : 0
             storage.addAttributes(
-                [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor],
+                [
+                    .font: InkStyle.baseFont,
+                    .foregroundColor: NSColor.labelColor,
+                    .paragraphStyle: paragraphStyle,
+                ],
                 range: range
             )
             let line = text.substring(with: range)
@@ -761,6 +815,110 @@ public struct InkEditorView: NSViewRepresentable {
                 range: NSRange(location: range.location, length: marker.length)
             )
         }
+
+        // MARK: Block labels (ADR-0013: created/modified above each block)
+
+        /// One block's label and the paragraph range it renders above,
+        /// recomputed by `restyle` whenever content changes and read by
+        /// `repositionBlockLabels` on every layout pass. Never holds an
+        /// origin: the editable-surface rule keeps origin off every read
+        /// surface, this one included.
+        private struct BlockDisplay {
+            let range: NSRange
+            let text: String
+        }
+
+        private var blockDisplays: [BlockDisplay] = []
+        private var blockLabelViews: [NSTextField] = []
+
+        private static let blockLabelFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        /// Vertical gap a labeled block reserves above its first line:
+        /// the label's own height plus a little air on both sides.
+        static let blockLabelReserve: CGFloat = 20
+        /// The page's own top margin, before any label reserve.
+        static let topInset: CGFloat = 12
+
+        private static let blockLabelFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            // `DDD HH:mm` (ADR-0013): day name and clock time only,
+            // since these are short-lived pages, and a full calendar date
+            // would overstate how long anything here is expected to
+            // live. The literal `HH` holds the clock at 24-hour
+            // regardless of locale; the weekday name still localizes.
+            formatter.dateFormat = "EEE HH:mm"
+            return formatter
+        }()
+
+        /// `Thu 14:32`, or `Thu 14:32 → Thu 14:40` once the block has
+        /// been edited past its first commit.
+        static func blockLabel(createdS: Int64, modifiedS: Int64?) -> String {
+            let created = blockLabelFormatter.string(
+                from: Date(timeIntervalSince1970: TimeInterval(createdS))
+            )
+            guard let modifiedS, modifiedS != createdS else { return created }
+            let modified = blockLabelFormatter.string(
+                from: Date(timeIntervalSince1970: TimeInterval(modifiedS))
+            )
+            return "\(created) → \(modified)"
+        }
+
+        /// Resize the label pool to match `blockDisplays` and refresh
+        /// their text, then place them. Called after every `restyle`,
+        /// content having just changed underneath.
+        private func updateBlockLabelViews() {
+            guard let textView else { return }
+            while blockLabelViews.count < blockDisplays.count {
+                let field = Self.makeBlockLabel()
+                textView.addSubview(field)
+                blockLabelViews.append(field)
+            }
+            while blockLabelViews.count > blockDisplays.count {
+                blockLabelViews.removeLast().removeFromSuperview()
+            }
+            for (field, display) in zip(blockLabelViews, blockDisplays) {
+                field.stringValue = display.text
+                field.sizeToFit()
+            }
+            repositionBlockLabels()
+        }
+
+        private static func makeBlockLabel() -> NSTextField {
+            let field = NSTextField(labelWithString: "")
+            field.font = blockLabelFont
+            field.textColor = .tertiaryLabelColor
+            field.isSelectable = false
+            field.isEditable = false
+            return field
+        }
+
+        /// Place every label in the gap above its block's first line.
+        /// Geometry only, no core round trip, so this is safe to call on
+        /// every layout pass: a resize rewraps paragraphs without
+        /// changing what any block says.
+        func repositionBlockLabels() {
+            guard let textView, let layoutManager = textView.layoutManager,
+                  textView.textContainer != nil else { return }
+            let origin = textView.textContainerOrigin
+            for (field, display) in zip(blockLabelViews, blockDisplays) {
+                let glyphRange = layoutManager.glyphRange(
+                    forCharacterRange: display.range, actualCharacterRange: nil
+                )
+                guard glyphRange.length > 0 else { continue }
+                // The line fragment rect swallows `paragraphSpacingBefore`:
+                // it starts where the previous paragraph ended, so
+                // measuring from its top drops the label onto that
+                // paragraph's last line. The used rect is where this
+                // block's glyphs actually begin, and the reserved gap is
+                // the space immediately above it.
+                let usedRect = layoutManager.lineFragmentUsedRect(
+                    forGlyphAt: glyphRange.location, effectiveRange: nil
+                )
+                field.frame.origin = NSPoint(
+                    x: origin.x + usedRect.minX,
+                    y: origin.y + usedRect.minY - field.frame.height - 2
+                )
+            }
+        }
     }
 }
 
@@ -773,6 +931,14 @@ public struct InkEditorView: NSViewRepresentable {
 /// whole, selection cannot reach inside it.
 final class InkTextView: NSTextView {
     weak var coordinator: InkEditorView.Coordinator?
+
+    /// A resize rewraps paragraphs without touching their content, so
+    /// the block labels (ADR-0013) need only be moved, not recomputed
+    /// from the core, cheap enough to run on every layout pass.
+    override func layout() {
+        super.layout()
+        coordinator?.repositionBlockLabels()
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)

@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Created and modified render above each block (ADR-0013,
+  editable-surface rule)**: the editor now shows a small `DDD HH:mm`
+  label above every paragraph that has been committed, or
+  `DDD HH:mm → DDD HH:mm` once a block has been edited past its first
+  commit. A blank line is spacing rather than writing, so it shows no
+  label and reserves no gap, and a page with room to breathe no longer
+  stacks a column of repeated identical times down its margin. The
+  label is a non-interactive subview drawn in the gap immediately
+  above the block's own first line, measured from where its glyphs
+  begin: a line fragment rect absorbs the space reserved above it, so
+  measuring from there set the label down on the preceding
+  paragraph's last line. Labels are repositioned by geometry on
+  every layout pass with no core round trip, so a resize never
+  re-queries the core; content changes still pull fresh stamps from
+  `client.blocks(sheet:)`. The top block's gap comes from the text
+  container inset instead, TextKit having no space before the first
+  paragraph to reserve. This is a display
+  instance of the editable-surface rule, not a new read surface: the
+  label styles the text without touching how it edits, and origin
+  never appears in it.
+
 - **The document history is compacted at rung transitions (ADR-0013,
   stage 6)**: cycling or setting a page's rung, and topping up a
   pause, now run the compaction ceremony. Each block's derived

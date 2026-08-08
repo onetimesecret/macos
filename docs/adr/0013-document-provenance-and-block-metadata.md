@@ -191,6 +191,48 @@ ships as a read-only projection, a lens like search results;
 activating a block in the lens lands the cursor at the block's real
 position in the flat sheet, and editing happens there.
 
+### Created and modified render above each block
+
+Decided 2026-08-06. Created and modified render inline, above each
+paragraph block, Notion-style, not a hover tooltip or a sidebar
+panel. Format is `DDD HH:mm` (e.g. `Thu 14:32`), deliberately not a
+full date: these are short-lived documents, so the day name plus
+clock time carries all the resolution a reader needs, and a full
+calendar date would overstate how long anything here is expected to
+live.
+
+This is a display instance of the editable-surface rule above: a
+label rendered above a block styles the text without changing how it
+edits, same tier as a margin badge or dimming. Origin does not join
+it: the rule above is explicit that origin is content and crosses
+no read surface, so an origin URL cannot appear in this label or any
+other UI surface; if a "where did this come from" affordance ships,
+it needs its own decision about which surface may hold content, not
+an extension of this one.
+
+Implemented. `InkEditorView.Coordinator.restyle()` pulls
+`client.blocks(sheet:)` on every pass, reserves a `paragraphSpacingBefore`
+gap above each block that has a `created_s`, and positions one
+non-interactive `NSTextField` per labeled block in that gap, using
+`Coordinator.blockLabel(createdS:modifiedS:)` to format it as
+`DDD HH:mm`, or `DDD HH:mm → DDD HH:mm` once a block has been edited
+past its first commit. Labels are pure subviews, repositioned by
+geometry on every layout pass (`InkTextView.layout()`) with no core
+round trip; content changes still go through a full `restyle()`.
+
+A blank line is spacing, not writing. It holds a block core-side and
+carries its own stamps, but it shows no label and reserves no gap:
+stamping it turned a page with room to breathe into a column of
+repeated identical times down the margin. Two TextKit facts shape
+where a label lands. A line fragment rect absorbs the
+`paragraphSpacingBefore` that precedes it, so a label measured from
+the fragment's top is drawn onto the *previous* paragraph's last
+line; the used rect is where the block's own glyphs begin, and the
+label goes immediately above that. And `paragraphSpacingBefore` is
+ignored on the storage's first paragraph, so the top block's gap
+comes from the text container's top inset, which `restyle()` grows by
+the reserve exactly when the first block is labeled.
+
 ### Reordering is a margin gesture
 
 Decided 2026-08-07. Click in the page and drag selects text,

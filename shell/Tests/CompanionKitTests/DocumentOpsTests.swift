@@ -108,6 +108,24 @@ final class OpEmitterTests: XCTestCase {
         )
         XCTAssertEqual(ops, [.del(at: 0, len: 2), .ins(at: 0, text: "\u{1F601}")])
     }
+
+    func testBlockLabelShowsOneStampWhenUntouchedSinceCreation() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 1_000),
+            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: nil),
+            "modified equal to (or absent alongside) created reads as one stamp"
+        )
+        XCTAssertFalse(
+            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 1_000).contains("→")
+        )
+    }
+
+    func testBlockLabelShowsBothStampsOnceEdited() {
+        XCTAssertTrue(
+            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 2_000).contains("→"),
+            "a block touched after its first commit shows created and modified"
+        )
+    }
 }
 
 /// The live wiring: a real storage with the coordinator as its
@@ -162,6 +180,13 @@ final class DocumentOpsWiringTests: XCTestCase {
     /// The core's document, read back through the seam.
     private func coreRuns() -> [RestoredRun] {
         model.coreClient.documentRuns(sheet: sheet)
+    }
+
+    /// The block labels currently mounted over the page (ADR-0013):
+    /// plain subviews of the text view, one per block that has a
+    /// created stamp.
+    private func labelFields() -> [NSTextField] {
+        textView.subviews.compactMap { $0 as? NSTextField }
     }
 
     private func assertParity(file: StaticString = #filePath, line: UInt = #line) {
@@ -307,6 +332,75 @@ final class DocumentOpsWiringTests: XCTestCase {
         }, "the dead chip's glyph survived recovery")
         XCTAssertTrue(coreRuns().isEmpty)
         assertParity()
+    }
+
+    // MARK: Block labels (ADR-0013: created/modified above each block)
+
+    func testAFreshEmptyPageCarriesNoBlockLabel() {
+        makeEditor()
+        XCTAssertTrue(labelFields().isEmpty, "no committed content, nothing to stamp")
+    }
+
+    func testTypingCommitsAndLabelsItsBlock() {
+        makeEditor()
+        textView.insertText("alpha", replacementRange: NSRange(location: NSNotFound, length: 0))
+        let labels = labelFields()
+        XCTAssertEqual(labels.count, 1)
+        XCTAssertFalse(labels[0].stringValue.isEmpty)
+    }
+
+    func testASplitParagraphGetsItsOwnLabel() {
+        makeEditor()
+        textView.insertText(
+            "alpha\nbeta", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(labelFields().count, 2, "each committed paragraph stamps separately")
+    }
+
+    func testBlankLinesBetweenParagraphsAreNotStamped() {
+        makeEditor()
+        textView.insertText(
+            "alpha\n\n\n   \nbeta", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(
+            labelFields().count, 2,
+            "spacing between paragraphs is not writing, so it carries no visible stamp"
+        )
+    }
+
+    /// The gap a labeled block reserves is above its own first line, so
+    /// the label has to land inside that gap. Placing it against the
+    /// line fragment rect instead drops it onto the previous
+    /// paragraph's last line, which is what the screen showed.
+    func testALabelSitsInItsOwnGapAndNotOnThePrecedingLine() {
+        makeEditor()
+        textView.insertText(
+            "alpha\nbeta", replacementRange: NSRange(location: NSNotFound, length: 0))
+        guard let layoutManager = textView.layoutManager,
+              let container = textView.textContainer else {
+            return XCTFail("the editor's TextKit stack is missing")
+        }
+        layoutManager.ensureLayout(for: container)
+        coordinator.repositionBlockLabels()
+        let labels = labelFields().sorted { $0.frame.minY < $1.frame.minY }
+        XCTAssertEqual(labels.count, 2)
+
+        let origin = textView.textContainerOrigin
+        // Where "alpha" and "beta" actually draw.
+        let first = layoutManager.lineFragmentUsedRect(forGlyphAt: 0, effectiveRange: nil)
+        let second = layoutManager.lineFragmentUsedRect(forGlyphAt: 6, effectiveRange: nil)
+
+        XCTAssertGreaterThanOrEqual(labels[0].frame.minY, 0, "the top label stays on screen")
+        XCTAssertLessThanOrEqual(
+            labels[0].frame.maxY, origin.y + first.minY,
+            "the top label clears the first line it belongs to"
+        )
+        XCTAssertGreaterThanOrEqual(
+            labels[1].frame.minY, origin.y + first.maxY,
+            "the second label clears the paragraph above it"
+        )
+        XCTAssertLessThanOrEqual(
+            labels[1].frame.maxY, origin.y + second.minY,
+            "the second label clears the line it belongs to"
+        )
     }
 }
 
