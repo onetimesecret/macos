@@ -200,6 +200,17 @@ hygiene, not in the security claim. Under any CRDT, the honest
 statement once peers exist is "this device forgot, and peers were
 asked to," never "the document forgot."
 
+The language worth borrowing is GDPR's right to erasure: the things
+pasted here have a right to be forgotten, and the product's job is to
+honor it. That framing is honest by construction in exactly the way
+"verifiably forgets" was not (ADR-0007), because a right describes an
+obligation, not a state of the world. Article 17 has the same shape:
+a controller must erase what it holds and take reasonable steps to
+inform others processing the data, and it never promises that every
+copy in the world died. Locally the right is honored on schedule by
+the TTL clockwork; across peers it is discharged and propagated,
+never attested.
+
 The consequence is that forgetting and compaction are the same
 ceremony, and under collaboration it is a coordinated protocol event,
 not a local one: all peers drop and resync from a fresh document (new

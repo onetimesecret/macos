@@ -48,8 +48,8 @@ design, not an overlooked one.
   vendors aren't overlooking retention; they're declining it.
 
 So the unsolved quadrant is not *remember more* — that has been tried,
-integrated, and deliberately hobbled. It is *hold briefly, then forget
-by policy*, and nobody has shipped it at the system level.
+integrated, and deliberately hobbled. It is *hold briefly, then honor a
+right to be forgotten*, and nobody has shipped it at the system level.
 
 Because the clipboard is so inadequate, people improvise **staging areas**
 — places to put content that is *between* an origin and a destination:
