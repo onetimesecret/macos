@@ -17,6 +17,10 @@
 #   scripts/build-icons.sh --sweep <zoom> [rrggbb] [grid]
 #       contact sheet of vignette crops for one zoom (a scale factor,
 #       or zoom|zoom2|zoom4) on a grid of focuses, default 10x10
+#   scripts/build-icons.sh --scout [rrggbb] [perUnit]
+#       contact sheet of the most interesting vignette crops (corners,
+#       intersections, overlaps) per zoom level, keeping perUnit picks
+#       for every unit of zoom (default 4, so deeper zooms show more)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -56,6 +60,12 @@ build_sweep() { # <zoom> [rrggbb shade] [grid]
   swift scripts/render-icon.swift --sweep "$zoom" "$shade" "$png" "$grid"
 }
 
+build_scout() { # [rrggbb shade] [perUnit]
+  local shade="${1:-0f766e}" per="${2:-4}" png="$OUT/scout-${1:-0f766e}.png"
+  echo "==> Rendering $png ($per picks per unit of zoom)"
+  swift scripts/render-icon.swift --scout "$shade" "$png" "$per"
+}
+
 build_icon_if_stale() { # <app name> <style> <rrggbb shade>
   local icns="$OUT/$1.icns"
   if [[ -f "$icns" \
@@ -85,8 +95,11 @@ EOF
       --sheet)
         build_sheet 0f766e
         ;;
+      --scout)
+        build_scout
+        ;;
       *)
-        echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -95,8 +108,9 @@ EOF
     case "$1" in
       --sheet) build_sheet "$2" ;;
       --sweep) build_sweep "$2" ;;
+      --scout) build_scout "$2" ;;
       *)
-        echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -104,6 +118,8 @@ EOF
   3)
     if [[ "$1" == "--sweep" ]]; then
       build_sweep "$2" "$3"
+    elif [[ "$1" == "--scout" ]]; then
+      build_scout "$2" "$3"
     else
       build_icon "$1" "$2" "$3"
     fi
@@ -112,12 +128,12 @@ EOF
     if [[ "$1" == "--sweep" ]]; then
       build_sweep "$2" "$3" "$4"
     else
-      echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | <name> <style> <rrggbb>]" >&2
+      echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
       exit 1
     fi
     ;;
   *)
-    echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | <name> <style> <rrggbb>]" >&2
+    echo "usage: build-icons.sh [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
     exit 1
     ;;
 esac

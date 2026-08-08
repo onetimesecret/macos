@@ -8,7 +8,11 @@
 // `swift render-icon.swift --list` prints the available styles;
 // `--sheet <rrggbb> <out.png>` renders every style into one contact
 // sheet for side-by-side judging; `--sweep <zoom> <rrggbb> <out.png>
-// [grid]` scouts vignette crops of the glyph on a grid of focuses.
+// [grid]` scouts vignette crops of the glyph on a grid of focuses;
+// `--scout <rrggbb> <out.png> [perUnit]` picks the visually
+// interesting crops at each zoom level by scoring corner and
+// intersection density instead of walking a blind grid, keeping
+// perUnit picks for every unit of zoom.
 
 import AppKit
 
@@ -332,6 +336,112 @@ func writeSweep(scale: CGFloat, base: NSColor, n: Int, to url: URL) {
     writeSheet(cells: cells, columns: n, base: base, to: url)
 }
 
+// MARK: - Scouting interesting crops
+
+/// The zooms the scout walks, spanning the named vignette styles
+/// (zoom at 1.6 through zoom4 at 6.4) with steps between.
+let scoutZooms: [CGFloat] = [1.6, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6.4]
+
+/// Renders one vignette crop small and reads its ink mask. Returns
+/// the ink fraction of the tile and an interest score: the count of
+/// 2x2 mask blocks that form corners (1 or 3 ink pixels) or crossings
+/// (2 ink pixels on the diagonal). Straight stroke edges score zero,
+/// so high scores land on corners, junctions, and stroke overlaps.
+func analyzeCrop(scale: CGFloat, focus: NSPoint, base: NSColor) -> (coverage: CGFloat, interest: Int)? {
+    let px = 32
+    let rep = render(px: px, style: vignetteStyle(name: "probe", scale: scale, focus: focus, summary: ""), base: base)
+    guard let data = rep.bitmapData else { return nil }
+    let stride = rep.bytesPerRow, samples = rep.samplesPerPixel
+
+    // 0 outside the tile, 1 base shade, 2 ink. The white glyph and the
+    // dark bases are far apart in red, so the midpoint splits them.
+    var mask = [UInt8](repeating: 0, count: px * px)
+    var opaque = 0, ink = 0
+    for y in 0..<px {
+        for x in 0..<px {
+            let pixel = data + y * stride + x * samples
+            guard pixel[3] >= 200 else { continue }
+            opaque += 1
+            let isInk = pixel[0] >= 135
+            if isInk { ink += 1 }
+            mask[y * px + x] = isInk ? 2 : 1
+        }
+    }
+    guard opaque > 0 else { return nil }
+
+    var interest = 0
+    for y in 0..<(px - 1) {
+        for x in 0..<(px - 1) {
+            let a = mask[y * px + x], b = mask[y * px + x + 1]
+            let c = mask[(y + 1) * px + x], d = mask[(y + 1) * px + x + 1]
+            guard a != 0, b != 0, c != 0, d != 0 else { continue }
+            let count = (a == 2 ? 1 : 0) + (b == 2 ? 1 : 0) + (c == 2 ? 1 : 0) + (d == 2 ? 1 : 0)
+            if count == 1 || count == 3 {
+                interest += 1
+            } else if count == 2, a == d, b == c, a != b {
+                interest += 2
+            }
+        }
+    }
+    return (CGFloat(ink) / CGFloat(opaque), interest)
+}
+
+/// Walks a dense focus field at one zoom and greedily keeps the
+/// highest-scoring crops that are not near an already-kept focus.
+/// Crops that are 90 percent or more one colour never qualify. The
+/// dedup gap shrinks as the zoom deepens: the viewport covers less of
+/// the glyph, so nearer focuses show genuinely different crops.
+func scoutFocuses(scale: CGFloat, base: NSColor, keep: Int) -> [(focus: NSPoint, interest: Int)] {
+    let span: CGFloat = 0.30, n = 41, minGap: CGFloat = 0.15 / scale
+    var candidates: [(focus: NSPoint, interest: Int)] = []
+    for row in 0..<n {
+        let fy = span - 2 * span * CGFloat(row) / CGFloat(n - 1)
+        for column in 0..<n {
+            let fx = -span + 2 * span * CGFloat(column) / CGFloat(n - 1)
+            guard let crop = analyzeCrop(scale: scale, focus: NSPoint(x: fx, y: fy), base: base),
+                  crop.coverage >= 0.10, crop.coverage <= 0.90 else { continue }
+            candidates.append((NSPoint(x: fx, y: fy), crop.interest))
+        }
+    }
+    candidates.sort { $0.interest > $1.interest }
+
+    var kept: [(focus: NSPoint, interest: Int)] = []
+    for candidate in candidates where kept.count < keep {
+        let crowded = kept.contains {
+            max(abs($0.focus.x - candidate.focus.x), abs($0.focus.y - candidate.focus.y)) < minGap
+        }
+        if !crowded { kept.append(candidate) }
+    }
+    return kept
+}
+
+/// One row per zoom, the row holding that zoom's most interesting
+/// crops from left to right. Deeper zooms earn proportionally more
+/// picks (perUnit picks for each unit of zoom) because their smaller
+/// viewport carves the glyph into more distinct crops. Labels carry
+/// the zoom and the focus so a pick can be reproduced as a named
+/// vignette style.
+func writeScout(base: NSColor, perUnit: CGFloat, to url: URL) {
+    let quota = { (zoom: CGFloat) in max(1, Int((perUnit * zoom).rounded())) }
+    let columns = scoutZooms.map(quota).max()!
+    var cells: [(label: String, style: Style)] = []
+    for zoom in scoutZooms {
+        let keep = quota(zoom)
+        let picks = scoutFocuses(scale: zoom, base: base, keep: keep)
+        print("==> zoom \(zoom): kept \(picks.count) of \(keep) requested")
+        for pick in picks {
+            let label = String(format: "z%g %+.2f,%+.2f",
+                               Double(zoom), pick.focus.x, pick.focus.y)
+            cells.append((label, vignetteStyle(
+                name: label, scale: zoom, focus: pick.focus, summary: "")))
+        }
+        for _ in picks.count..<columns {
+            cells.append(("", Style(name: "blank", summary: "") { _ in }))
+        }
+    }
+    writeSheet(cells: cells, columns: columns, base: base, to: url)
+}
+
 // MARK: - Command line
 
 func parseShade(_ hex: String) -> NSColor {
@@ -361,6 +471,14 @@ if arguments.count == 4, arguments[1] == "--sheet" {
     exit(0)
 }
 
+if arguments.count == 4 || arguments.count == 5, arguments[1] == "--scout" {
+    let perUnit = arguments.count == 5 ? Double(arguments[4]) ?? 0 : 4
+    guard perUnit > 0 else { fail("perUnit must be a positive number, got \"\(arguments[4])\"") }
+    writeScout(base: parseShade(arguments[2]), perUnit: CGFloat(perUnit),
+               to: URL(fileURLWithPath: arguments[3]))
+    exit(0)
+}
+
 if arguments.count == 5 || arguments.count == 6, arguments[1] == "--sweep" {
     guard let scale = Double(arguments[2]), scale > 0 else {
         fail("zoom must be a positive number, got \"\(arguments[2])\"")
@@ -378,6 +496,7 @@ guard arguments.count == 4, !arguments[1].hasPrefix("--") else {
     usage: swift render-icon.swift <style> <rrggbb> <output.iconset>
            swift render-icon.swift --sheet <rrggbb> <output.png>
            swift render-icon.swift --sweep <zoom> <rrggbb> <output.png> [grid]
+           swift render-icon.swift --scout <rrggbb> <output.png> [perUnit]
            swift render-icon.swift --list
     styles: \(names)
     """)
