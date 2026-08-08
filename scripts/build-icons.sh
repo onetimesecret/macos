@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Produce the app icon as dist/icons/<name>.icns, rendered by
-# scripts/render-icon.swift and assembled by iconutil. The motif sits
-# on a deep teal, the complement of the ember accent (CompanionKit's
-# Theme.swift), so the Dock tile reads against the in-app palette
-# rather than blending into it.
+# scripts/render-icon.swift and assembled by iconutil. The standard
+# icon is the onetimesecret.com logo mark on deep ember, which is the
+# same mark the menu bar item draws (CompanionKit's LogoMark) from the
+# same asset, so tray and Dock tile read as one app.
 #
 # With no arguments, builds the standard set below. Idempotent and
 # staleness-aware in that mode: an icon is rebuilt only when it is
@@ -50,6 +50,7 @@ mkdir -p "$OUT"
 # by count as if the flag had never been there.
 MARK=maruhi
 MARK_FLAG=()
+MARK_CHOSEN=
 REST=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -57,6 +58,7 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || { echo "--mark needs a mark name" >&2; exit 1; }
       MARK="$2"
       MARK_FLAG=(--mark "$2")
+      MARK_CHOSEN=yes
       shift 2
       ;;
     *)
@@ -123,7 +125,18 @@ build_icon_if_stale() { # <app name> <style> <rrggbb shade>
 
 case $# in
   0)
-    build_icon_if_stale OnetimePad gradient 0f766e
+    # The standard icon: the logo mark on deep ember, casting the long
+    # shadow. The mark is the tray's too (CompanionKit's LogoMark reads
+    # the same asset), so the Dock tile and the menu bar stay in step.
+    if [[ -n "$MARK_CHOSEN" ]]; then
+      # Asking for the standard icon in another motif is a change the
+      # staleness check cannot see, so it is built outright.
+      build_icon OnetimePad longshadow 8c3b1c
+    else
+      MARK=logo
+      MARK_FLAG=(--mark logo)
+      build_icon_if_stale OnetimePad longshadow 8c3b1c
+    fi
     ;;
   1)
     case "$1" in
