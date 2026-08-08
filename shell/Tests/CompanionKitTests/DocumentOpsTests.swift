@@ -1,0 +1,325 @@
+import AppKit
+import XCTest
+
+@testable import CompanionKit
+
+/// The op emitter's mapping (ADR-0013): one storage edit becomes one
+/// replace-shaped batch, positions in UTF-16 code units. These feed
+/// synthetic edits straight into the pure emitter, no delegate and no
+/// view, so each mapping is asserted in isolation.
+@MainActor
+final class OpEmitterTests: XCTestCase {
+    private func chipInfo(id: UInt64) -> ChipInfo {
+        ChipInfo(chipId: id, kind: "text", excerpt: "ch…ip", sizeLabel: "4 ch", promoted: false)
+    }
+
+    func testTypingEmitsOneInsert() {
+        let storage = NSTextStorage(string: "hello")
+        storage.replaceCharacters(in: NSRange(location: 5, length: 0), with: "!")
+        let ops = InkEditorView.Coordinator.editOps(
+            storage: storage, editedRange: NSRange(location: 5, length: 1), changeInLength: 1
+        )
+        XCTAssertEqual(ops, [.ins(at: 5, text: "!")])
+    }
+
+    func testDeletionSpanningAnEmojiEmitsItsFullUTF16Width() {
+        let storage = NSTextStorage(string: "a\u{1F600}b")
+        // The emoji is one character but two code units; the wire
+        // speaks code units, so the delete is two wide.
+        storage.deleteCharacters(in: NSRange(location: 1, length: 2))
+        let ops = InkEditorView.Coordinator.editOps(
+            storage: storage, editedRange: NSRange(location: 1, length: 0), changeInLength: -2
+        )
+        XCTAssertEqual(ops, [.del(at: 1, len: 2)])
+    }
+
+    func testDeletingAChipAttachmentEmitsOneDelete() {
+        let storage = NSTextStorage(string: "ab")
+        storage.insert(
+            InkEditorView.Coordinator.chipString(chipInfo(id: 7)),
+            at: 1
+        )
+        storage.deleteCharacters(in: NSRange(location: 1, length: 1))
+        let ops = InkEditorView.Coordinator.editOps(
+            storage: storage, editedRange: NSRange(location: 1, length: 0), changeInLength: -1
+        )
+        XCTAssertEqual(ops, [.del(at: 1, len: 1)])
+    }
+
+    func testAMultiRunPasteSplitsIntoInkAndChipOps() {
+        let storage = NSTextStorage(string: "")
+        let pasted = NSMutableAttributedString(string: "a\u{1F600}")
+        pasted.append(InkEditorView.Coordinator.chipString(chipInfo(id: 9)))
+        pasted.append(NSAttributedString(string: "b"))
+        storage.insert(pasted, at: 0)
+        let ops = InkEditorView.Coordinator.editOps(
+            storage: storage, editedRange: NSRange(location: 0, length: 5), changeInLength: 5
+        )
+        XCTAssertEqual(ops, [
+            .ins(at: 0, text: "a\u{1F600}"),
+            .chip(at: 3, id: 9),
+            .ins(at: 4, text: "b"),
+        ])
+    }
+
+    func testAReplaceEmitsDeleteThenInsert() {
+        let storage = NSTextStorage(string: "hello world")
+        storage.replaceCharacters(in: NSRange(location: 0, length: 5), with: "goodbye")
+        let ops = InkEditorView.Coordinator.editOps(
+            storage: storage, editedRange: NSRange(location: 0, length: 7), changeInLength: 2
+        )
+        XCTAssertEqual(ops, [.del(at: 0, len: 5), .ins(at: 0, text: "goodbye")])
+    }
+
+    func testTheWireJSONKeepsOrderAndShape() throws {
+        let json = try XCTUnwrap(DocumentEditOp.wireJSON([
+            .del(at: 1, len: 2),
+            .ins(at: 1, text: "x\u{1F680}"),
+            .chip(at: 3, id: 7),
+        ]))
+        let parsed = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: [String: Any]]]
+        )
+        XCTAssertEqual(parsed.count, 3)
+        XCTAssertEqual(parsed[0]["del"]?["at"] as? Int, 1)
+        XCTAssertEqual(parsed[0]["del"]?["len"] as? Int, 2)
+        XCTAssertEqual(parsed[1]["ins"]?["at"] as? Int, 1)
+        XCTAssertEqual(parsed[1]["ins"]?["text"] as? String, "x\u{1F680}")
+        XCTAssertEqual(parsed[2]["chip"]?["at"] as? Int, 3)
+        XCTAssertEqual(parsed[2]["chip"]?["id"] as? UInt64, 7)
+    }
+
+    func testTheMinimalReplaceDiffTrimsAndRespectsSurrogatePairs() {
+        // A shared prefix and suffix leave only the middle.
+        XCTAssertEqual(
+            InkEditorView.Coordinator.minimalReplace(at: 10, old: "kana", new: "kaXYa"),
+            [.del(at: 12, len: 1), .ins(at: 12, text: "XY")]
+        )
+        // Identical strings replace nothing (the abandoned-composition
+        // shape; the caller already skips this, the diff agrees).
+        XCTAssertEqual(
+            InkEditorView.Coordinator.minimalReplace(at: 0, old: "same", new: "same"), []
+        )
+        // Two emoji sharing a high surrogate: the trim must not end
+        // between the halves of the pair, or the core would refuse the
+        // offset.
+        let ops = InkEditorView.Coordinator.minimalReplace(
+            at: 0, old: "\u{1F600}", new: "\u{1F601}"
+        )
+        XCTAssertEqual(ops, [.del(at: 0, len: 2), .ins(at: 0, text: "\u{1F601}")])
+    }
+}
+
+/// The live wiring: a real storage with the coordinator as its
+/// delegate over a real core, exactly as the mounted editor stands.
+/// Each case asserts what crossed the seam and that the projection
+/// still mirrors the document afterwards.
+@MainActor
+final class DocumentOpsWiringTests: XCTestCase {
+    private var model: PageModel!
+    private var coordinator: InkEditorView.Coordinator!
+    private var textView: InkTextView!
+    private var sheet: UInt64 = 0
+    private var batches: [[DocumentEditOp]] = []
+
+    // Not a setUp override: those are nonisolated, and this fixture is
+    // main-actor state. Every test calls it first.
+    private func makeEditor() {
+        // A throwaway defaults domain; no state file is ever loaded or
+        // written (loadStateIfNeeded is never called, and markDirty
+        // stands down for an unloaded session).
+        let defaults = UserDefaults(suiteName: "companion-kit-ops-tests")!
+        defaults.removePersistentDomain(forName: "companion-kit-ops-tests")
+        model = PageModel(formFactor: .backdrop, defaults: defaults)
+        model.newPage()
+        sheet = model.selection!
+
+        // The editor's TextKit 1 stack, assembled as makeNSView wires
+        // it: one layout manager over the page's cached storage, the
+        // coordinator as storage delegate.
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(
+            size: NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        let storage = model.storage(for: sheet)
+        storage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(container)
+        textView = InkTextView(frame: .zero, textContainer: container)
+        textView.isRichText = true
+        textView.allowsUndo = true
+        coordinator = InkEditorView.Coordinator(model: model)
+        textView.coordinator = coordinator
+        textView.delegate = coordinator
+        coordinator.textView = textView
+        coordinator.currentSheet = sheet
+        storage.delegate = coordinator
+        batches = []
+        coordinator.onEmit = { [weak self] ops in self?.batches.append(ops) }
+    }
+
+    private var storage: NSTextStorage { model.storage(for: sheet) }
+
+    /// The core's document, read back through the seam.
+    private func coreRuns() -> [RestoredRun] {
+        model.coreClient.documentRuns(sheet: sheet)
+    }
+
+    private func assertParity(file: StaticString = #filePath, line: UInt = #line) {
+        let shell = InkEditorView.Coordinator.runs(of: storage)
+        let core = coreRuns()
+        XCTAssertEqual(shell.count, core.count, "run counts diverged", file: file, line: line)
+        for (ours, theirs) in zip(shell, core) {
+            switch (ours, theirs) {
+            case (.ink(let a), .ink(let b)):
+                XCTAssertEqual(a, b, file: file, line: line)
+            case (.chip(let a), .chip(let b)):
+                XCTAssertEqual(a, b.chipId, file: file, line: line)
+            default:
+                XCTFail("run kinds diverged", file: file, line: line)
+            }
+        }
+    }
+
+    func testProjectionParityOverARandomEditScript() {
+        makeEditor()
+        // A seeded generator, so a failure replays.
+        var generator = SplitMix64(seed: 0x0EED)
+        let alphabet: [String] = ["a", "b", " ", "\n", "\u{1F600}", "\u{00E9}", "\u{1F680}", "#"]
+        for _ in 0..<200 {
+            let text = storage.string as NSString
+            let length = text.length
+            if length > 0, generator.next() % 3 == 0 {
+                // A deletion over a range snapped to character
+                // boundaries, the way every real edit arrives.
+                let start = Int(generator.next() % UInt64(length))
+                let span = Int(generator.next() % 4)
+                var range = NSRange(location: start, length: min(span, length - start))
+                range = text.rangeOfComposedCharacterSequences(for: range)
+                storage.replaceCharacters(in: range, with: "")
+            } else {
+                let at = length == 0 ? 0 : Int(generator.next() % UInt64(length + 1))
+                let boundary = text.rangeOfComposedCharacterSequences(
+                    for: NSRange(location: min(at, length), length: 0))
+                let piece = alphabet[Int(generator.next() % UInt64(alphabet.count))]
+                storage.replaceCharacters(
+                    in: NSRange(location: boundary.location, length: 0), with: piece)
+            }
+            assertParity()
+        }
+        XCTAssertFalse(batches.isEmpty)
+    }
+
+    func testAnImeCompositionCommitProducesOneBatch() {
+        makeEditor()
+        textView.insertText("ab", replacementRange: NSRange(location: NSNotFound, length: 0))
+        batches = []
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+        // Compose, revise, commit: the marked stages must stay off the
+        // seam; only the resolved text crosses, as one batch.
+        textView.setMarkedText(
+            "ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setMarkedText(
+            "kan", selectedRange: NSRange(location: 3, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(batches.count, 0, "marked text leaked ops")
+        textView.insertText(
+            "\u{304B}\u{3093}", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(batches.count, 1, "a commit is one batch")
+        XCTAssertEqual(batches.first, [.ins(at: 2, text: "\u{304B}\u{3093}")])
+        assertParity()
+    }
+
+    func testAnAbandonedImeCompositionProducesZeroOps() {
+        makeEditor()
+        textView.insertText("ab", replacementRange: NSRange(location: NSNotFound, length: 0))
+        batches = []
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+        textView.setMarkedText(
+            "ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        // Esc: the composition dies; the ADR forbids phantom ops, so
+        // NOTHING may have crossed the seam.
+        textView.setMarkedText(
+            "", selectedRange: NSRange(location: 0, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.unmarkText()
+        XCTAssertEqual(batches, [], "an abandoned composition left phantom ops")
+        XCTAssertEqual(storage.string, "ab")
+        assertParity()
+    }
+
+    func testSealSelectionReplacesTheSelectionCoreSide() {
+        makeEditor()
+        textView.insertText(
+            "a\u{1F600} SECRET tail", replacementRange: NSRange(location: NSNotFound, length: 0))
+        // Select "SECRET" past the astral prefix: a(0) emoji(1,2)
+        // space(3) S(4)..T(9).
+        textView.setSelectedRange(NSRange(location: 4, length: 6))
+        batches = []
+        coordinator.sealSelectionOrLine()
+
+        // The selection left the body core-side and the sentinel stands
+        // in its place; the projection write is guarded, so no op
+        // crossed for it.
+        XCTAssertEqual(batches, [], "the seal's projection write leaked ops")
+        let runs = coreRuns()
+        XCTAssertEqual(runs.count, 3)
+        guard case .ink(let head) = runs[0], case .chip = runs[1],
+              case .ink(let tail) = runs[2]
+        else {
+            return XCTFail("unexpected shape after a range seal: \(runs)")
+        }
+        XCTAssertEqual(head, "a\u{1F600} ")
+        XCTAssertEqual(tail, " tail")
+        XCTAssertFalse(storage.string.contains("SECRET"))
+        // The caret sits just past the chip, and sealing is not
+        // undoable.
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 5, length: 0))
+        XCTAssertEqual(textView.undoManager?.canUndo, false)
+        assertParity()
+    }
+
+    func testAnUndoResurrectingADeadChipIsStrippedSilently() {
+        makeEditor()
+        textView.insertText(
+            "seal me", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 0, length: 7))
+        coordinator.sealSelectionOrLine()
+        guard case .chip(let face)? = coreRuns().first else {
+            return XCTFail("the seal left no chip")
+        }
+        // The chip dies (deleted whole, as backspace would).
+        storage.deleteCharacters(in: NSRange(location: 0, length: 1))
+        XCTAssertTrue(coreRuns().isEmpty)
+        // A stale undo replays the attachment: the core rejects the
+        // chip op, recovery strips the glyph, and no chip returns,
+        // because undo never un-seals.
+        storage.insert(
+            InkEditorView.Coordinator.chipString(
+                ChipInfo(
+                    chipId: face.chipId, kind: face.kind, excerpt: face.excerpt,
+                    sizeLabel: face.sizeLabel, promoted: face.promoted)),
+            at: 0
+        )
+        XCTAssertFalse(InkEditorView.Coordinator.runs(of: storage).contains {
+            if case .chip = $0 { true } else { false }
+        }, "the dead chip's glyph survived recovery")
+        XCTAssertTrue(coreRuns().isEmpty)
+        assertParity()
+    }
+}
+
+/// A tiny deterministic generator, so the random edit script replays
+/// identically on failure.
+private struct SplitMix64 {
+    private var state: UInt64
+    init(seed: UInt64) { state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+}

@@ -47,6 +47,10 @@ pub enum Refusal {
     EmptyContent,
     /// No such page.
     UnknownSheet,
+    /// The seal gesture named a range the page's body does not have:
+    /// out of bounds, or a boundary inside a surrogate pair. Nothing
+    /// was sealed and nothing moved.
+    InvalidRange,
 }
 
 impl std::fmt::Display for Refusal {
@@ -58,6 +62,7 @@ impl std::fmt::Display for Refusal {
             ),
             Refusal::EmptyContent => write!(f, "nothing to seal"),
             Refusal::UnknownSheet => write!(f, "no such page"),
+            Refusal::InvalidRange => write!(f, "the selection no longer matches the page"),
         }
     }
 }
@@ -341,6 +346,96 @@ impl<C: Clock> SheetStore<C> {
             DestinationClass::None,
         );
         Ok(id)
+    }
+
+    /// Seal text onto a page and stand its chip in the body in one
+    /// atomic call (ADR-0013): the given UTF-16 range is deleted from
+    /// the document, the sentinel takes its place, and the change
+    /// commits. A non-empty range is the selection the gesture replaced,
+    /// deleted here rather than by a shell edit, so the seal and the
+    /// deletion cannot come apart. The range validates before anything
+    /// seals: a range the body does not have refuses whole with
+    /// [`Refusal::InvalidRange`] and mints no chip.
+    pub fn seal_text_at(
+        &mut self,
+        sheet: SheetId,
+        text: &str,
+        at_u16: u32,
+        len_u16: u32,
+    ) -> Result<ChipId, Refusal> {
+        self.check_seal_range(sheet, at_u16, len_u16)?;
+        let chip = self.seal_text(sheet, text)?;
+        self.place_chip(sheet, chip, at_u16, len_u16)
+    }
+
+    /// [`SheetStore::seal_text_at`] for image bytes: same atomic
+    /// replace, same refuse-whole range validation.
+    pub fn seal_image_at(
+        &mut self,
+        sheet: SheetId,
+        bytes: Vec<u8>,
+        at_u16: u32,
+        len_u16: u32,
+    ) -> Result<ChipId, Refusal> {
+        self.check_seal_range(sheet, at_u16, len_u16)?;
+        let chip = self.seal_image(sheet, bytes)?;
+        self.place_chip(sheet, chip, at_u16, len_u16)
+    }
+
+    /// Whether a seal gesture's range describes the page's body as it
+    /// stands: in bounds, and neither boundary inside a surrogate pair.
+    /// Judged against the cached projection in exact code units, the
+    /// same discipline [`SheetStore::apply_ops`] validates with.
+    fn check_seal_range(&self, id: SheetId, at_u16: u32, len_u16: u32) -> Result<(), Refusal> {
+        let Some(sheet) = self.sheet(id) else {
+            return Err(Refusal::UnknownSheet);
+        };
+        let units = sim_units(&sheet.segments);
+        let at = at_u16 as usize;
+        let Some(end) = at.checked_add(len_u16 as usize) else {
+            return Err(Refusal::InvalidRange);
+        };
+        if end > units.len()
+            || splits_surrogate_pair(&units, at)
+            || splits_surrogate_pair(&units, end)
+        {
+            return Err(Refusal::InvalidRange);
+        }
+        Ok(())
+    }
+
+    /// The placement half of a range seal: delete the replaced range,
+    /// stand the sentinel, commit, settle. The range was validated
+    /// before the chip was minted, so the document cannot refuse here;
+    /// should it refuse anyway, the settle reaps the placeless chip
+    /// (zeroized, with its `Discarded` record) and the call fails
+    /// closed instead of reporting a chip that is not on the page.
+    fn place_chip(
+        &mut self,
+        id: SheetId,
+        chip: ChipId,
+        at_u16: u32,
+        len_u16: u32,
+    ) -> Result<ChipId, Refusal> {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return Err(Refusal::UnknownSheet);
+        };
+        let uuid = sheet
+            .chip(chip)
+            .expect("the chip was sealed onto this sheet a moment ago")
+            .uuid();
+        let at = at_u16 as usize;
+        let mut clean = sheet.document.delete(at, len_u16 as usize).is_ok();
+        if clean {
+            clean = sheet.document.insert_chip(at, uuid).is_ok();
+        }
+        sheet.document.commit(None);
+        self.settle_document(id);
+        if clean {
+            Ok(chip)
+        } else {
+            Err(Refusal::InvalidRange)
+        }
     }
 
     // -----------------------------------------------------------------
@@ -1865,6 +1960,107 @@ mod tests {
         assert_eq!(ops_sheet.segments(), sync_sheet.segments());
         assert_eq!(ops_sheet.title(), sync_sheet.title());
         assert_eq!(ops_sheet.title(), "plan \u{1F680}");
+    }
+
+    #[test]
+    fn a_range_seal_replaces_the_selection_atomically() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        // Body: a(0) 😀(1,2) S(3) E(4) C(5) 😀(6,7) b(8).
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "a\u{1F600}SEC\u{1F600}b".into()
+            }]
+        ));
+        // Seal the middle, astral flanks included: the selection leaves
+        // the body and the sentinel stands exactly where it began.
+        let chip = store.seal_text_at(id, "SEC\u{1F600}", 3, 5).unwrap();
+        assert_eq!(
+            store.sheet(id).unwrap().segments(),
+            &[
+                Segment::Ink("a\u{1F600}".into()),
+                Segment::Chip(chip),
+                Segment::Ink("b".into()),
+            ]
+        );
+        assert_eq!(store.sheet(id).unwrap().chip_count(), 1);
+        // An empty range at the caret deletes nothing and still stands
+        // a sentinel.
+        let caret = store.seal_text_at(id, "more", 0, 0).unwrap();
+        assert_eq!(
+            store.sheet(id).unwrap().segments(),
+            &[
+                Segment::Chip(caret),
+                Segment::Ink("a\u{1F600}".into()),
+                Segment::Chip(chip),
+                Segment::Ink("b".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_range_seal_with_a_bad_range_seals_nothing() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "a\u{1F600}b".into()
+            }]
+        ));
+        let before = store.sheet(id).unwrap().segments().to_vec();
+        let records_before = store.ledger().count();
+        // Out of bounds, and a boundary inside the surrogate pair: the
+        // refusal is whole, so no chip is minted, the body stands, and
+        // the ledger gains no Sealed record.
+        assert_eq!(
+            store.seal_text_at(id, "secret", 3, 5),
+            Err(Refusal::InvalidRange)
+        );
+        assert_eq!(
+            store.seal_text_at(id, "secret", 2, 1),
+            Err(Refusal::InvalidRange)
+        );
+        assert_eq!(
+            store.seal_text_at(id, "secret", 1, 1),
+            Err(Refusal::InvalidRange)
+        );
+        assert_eq!(
+            store.seal_text_at(SheetId(999), "secret", 0, 0),
+            Err(Refusal::UnknownSheet)
+        );
+        assert_eq!(store.sheet(id).unwrap().segments(), before.as_slice());
+        assert_eq!(store.sheet(id).unwrap().chip_count(), 0);
+        assert_eq!(store.ledger().count(), records_before);
+    }
+
+    #[test]
+    fn a_range_seal_over_a_selected_chip_reaps_it() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let old = seal(&mut store, id, "the earlier secret");
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "ab".into()
+                },
+                EditOp::InsertChip {
+                    pos_u16: 1,
+                    chip: old
+                },
+            ]
+        ));
+        // The selection swallows the old chip's sentinel, so the seal
+        // that replaces it kills the old chip the same way typing over
+        // it would.
+        let fresh = store.seal_image_at(id, vec![1, 2, 3], 0, 3).unwrap();
+        assert_eq!(store.sheet(id).unwrap().segments(), &[Segment::Chip(fresh)]);
+        assert!(store.copy_out_chip(old).is_none());
     }
 
     #[test]

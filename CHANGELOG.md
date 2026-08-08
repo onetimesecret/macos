@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Edits cross the seam as range operations, not snapshots (ADR-0013,
+  stage 3)**: `companion_sheet_apply_ops` carries an ordered JSON batch
+  of `ins`/`del`/`chip` operations, every position and length a UTF-16
+  code unit, parsed reject-whole and applied atomically or not at all;
+  `companion_sheet_sync_document` survives as the recovery path that
+  restates a page whole. All three seal gestures (sealed paste, drop
+  to seal, and the seal-selection ⌘↩) now hand the core the selection
+  range they replace, and the core deletes that range, stands the
+  chip's sentinel, and commits inside the one locked seal call, so the
+  seal and the deletion cannot come apart. Shell-side the editor stops
+  mirroring the whole document per keystroke: the coordinator listens
+  to `NSTextStorage` edits and emits one replace per edit, marked text
+  is gated so an abandoned IME composition produces zero operations,
+  programmatic projection writes are suppressed behind a guard, and a
+  rejected batch recovers by one legacy mirror plus a cleared undo
+  stack, never a crash. Undo stays `NSTextView` native; an undo that
+  would resurrect a dead chip is refused by the core and the glyph is
+  stripped silently, because undo never un-seals (ADR-0009).
+
 - **The sheet body becomes an operation-logged document (ADR-0013,
   accepted)**: the core adopts Loro behind a crate-private
   `SheetDocument` wrapper in `crates/core/src/document.rs`, the one

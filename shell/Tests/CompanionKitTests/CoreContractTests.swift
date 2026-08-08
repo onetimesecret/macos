@@ -35,7 +35,7 @@ final class CoreContractTests: XCTestCase {
         XCTAssertGreaterThan(sheet.fractionRemaining, 0.9)
 
         // Seal ink: the chip's face carries no sealed bytes.
-        let chip = try XCTUnwrap(client.sealText(sheet: sheetID, secret))
+        let chip = try XCTUnwrap(client.sealText(sheet: sheetID, secret, at: 0, length: 0))
         XCTAssertEqual(chip.kind, "text")
         XCTAssertFalse(chip.excerpt.isEmpty)
         XCTAssertFalse(chip.excerpt.contains(secret))
@@ -214,7 +214,7 @@ final class CoreContractTests: XCTestCase {
         let sheetID = client.newSheet()
         // A C string truncates at an interior NUL; the wrapper refuses
         // rather than seal a silently truncated secret.
-        XCTAssertNil(client.sealText(sheet: sheetID, "front\0back"))
+        XCTAssertNil(client.sealText(sheet: sheetID, "front\0back", at: 0, length: 0))
         XCTAssertEqual(client.sheets().first?.chipCount, 0)
     }
 }

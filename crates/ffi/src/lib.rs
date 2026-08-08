@@ -77,7 +77,7 @@ use promotion::{Connection, PromoteOpts, Promoted, ladder_snapped_ttl, promote};
 
 use companion_core::clock::sleep_inclusive_ns;
 use companion_core::{
-    ChipId, ChipMeta, DestinationClass, LedgerEvent, Segment, Sheet, SheetId, SheetStore,
+    ChipId, ChipMeta, DestinationClass, EditOp, LedgerEvent, Segment, Sheet, SheetId, SheetStore,
     SizeClass, SystemClock, TTL_LADDER, Ttl,
 };
 #[cfg(target_os = "macos")]
@@ -428,6 +428,14 @@ pub unsafe extern "C" fn companion_sheet_set_title(
 /// down, and the shell must say so, because a paste that leaves
 /// content on the board is the failure this route exists to prevent.
 ///
+/// `at_utf16` and `len_utf16` name the selection the gesture replaces,
+/// as UTF-16 code units against the page's body (ADR-0013): the core
+/// deletes that range, stands the chip's sentinel in its place, and
+/// commits, all inside this one locked call, so the seal and the
+/// deletion cannot come apart. A caret is a zero-length range. A range
+/// the body does not have refuses the whole seal and takes nothing
+/// from the board.
+///
 /// # Safety
 /// `handle` must be a valid handle. `cleared_out`, when non-null, must
 /// point to writable memory.
@@ -435,6 +443,8 @@ pub unsafe extern "C" fn companion_sheet_set_title(
 pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
     handle: *mut CompanionHandle,
     sheet: u64,
+    at_utf16: u32,
+    len_utf16: u32,
     cleared_out: *mut bool,
 ) -> *mut c_char {
     if !cleared_out.is_null() {
@@ -459,11 +469,13 @@ pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
             // The board handed us an owned copy of what may now be a
             // secret; the core takes its own custody copy, so wipe this
             // transit copy instead of letting it drop unwiped.
-            let sealed = guard.store.seal_text(sheet, &text);
+            let sealed = guard.store.seal_text_at(sheet, &text, at_utf16, len_utf16);
             text.zeroize();
             sealed
         }
-        PasteboardContent::Image(bytes) => guard.store.seal_image(sheet, bytes),
+        PasteboardContent::Image(bytes) => {
+            guard.store.seal_image_at(sheet, bytes, at_utf16, len_utf16)
+        }
     };
     match sealed {
         Ok(chip) => {
@@ -504,7 +516,14 @@ pub unsafe extern "C" fn companion_pasteboard_has_content(handle: *mut Companion
 /// it into core custody. From the moment this returns, the shell must
 /// delete its copy from the view and forget it — undo never un-seals
 /// (doc 06 №5). Returns the new chip's non-secret JSON (caller frees),
-/// or null for an unknown page or empty text.
+/// or null for an unknown page, empty text, or a range the body does
+/// not have.
+///
+/// `at_utf16` and `len_utf16` name the sealed selection (or line) in
+/// UTF-16 code units against the page's body (ADR-0013): the core
+/// deletes that range, stands the sentinel in its place, and commits,
+/// one atomic locked call, so the shell no longer deletes its copy by
+/// an edit of its own.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `text` must be a valid,
@@ -514,6 +533,8 @@ pub unsafe extern "C" fn companion_sheet_seal_text(
     handle: *mut CompanionHandle,
     sheet: u64,
     text: *const c_char,
+    at_utf16: u32,
+    len_utf16: u32,
 ) -> *mut c_char {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
@@ -525,7 +546,7 @@ pub unsafe extern "C" fn companion_sheet_seal_text(
         return ptr::null_mut();
     };
     let sheet = SheetId::from_raw(sheet);
-    match guard.store.seal_text(sheet, text) {
+    match guard.store.seal_text_at(sheet, text, at_utf16, len_utf16) {
         Ok(chip) => chip_json(&guard.store, sheet, chip),
         Err(_) => ptr::null_mut(),
     }
@@ -539,8 +560,13 @@ pub unsafe extern "C" fn companion_sheet_seal_text(
 /// the shell only names the page. Call it from the drop handler while
 /// the drag session's data is still on the board. Returns chip JSON as
 /// the other seal routes do (caller frees), or null — unknown page,
-/// empty or unreadable drag content, or an off-macOS build (no drag
-/// board exists there).
+/// empty or unreadable drag content, a range the body does not have,
+/// or an off-macOS build (no drag board exists there).
+///
+/// `at_utf16` and `len_utf16` name the drop point as a UTF-16 range
+/// against the page's body (ADR-0013), replaced by the sentinel in the
+/// same locked call; a plain drop is a zero-length range at the
+/// insertion index.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -548,13 +574,15 @@ pub unsafe extern "C" fn companion_sheet_seal_text(
 pub unsafe extern "C" fn companion_sheet_seal_from_drag(
     handle: *mut CompanionHandle,
     sheet: u64,
+    at_utf16: u32,
+    len_utf16: u32,
 ) -> *mut c_char {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (handle, sheet);
+        let _ = (handle, sheet, at_utf16, len_utf16);
         ptr::null_mut()
     }
     #[cfg(target_os = "macos")]
@@ -572,11 +600,13 @@ pub unsafe extern "C" fn companion_sheet_seal_from_drag(
             PasteboardContent::Text(mut text) => {
                 // Same custody rule as the sealed paste: wipe the owned
                 // transit copy once the core has taken its own.
-                let sealed = guard.store.seal_text(sheet, &text);
+                let sealed = guard.store.seal_text_at(sheet, &text, at_utf16, len_utf16);
                 text.zeroize();
                 sealed
             }
-            PasteboardContent::Image(bytes) => guard.store.seal_image(sheet, bytes),
+            PasteboardContent::Image(bytes) => {
+                guard.store.seal_image_at(sheet, bytes, at_utf16, len_utf16)
+            }
         };
         match sealed {
             Ok(chip) => chip_json(&guard.store, sheet, chip),
@@ -625,6 +655,43 @@ pub unsafe extern "C" fn companion_sheet_sync_document(
     guard
         .store
         .sync_document(SheetId::from_raw(sheet), segments)
+}
+
+/// Apply an ordered batch of edits to a page's body (ADR-0013): the
+/// operation path that replaces per-keystroke snapshots. `json` is an
+/// ordered array, each element exactly one of
+/// `{"ins": {"at": u32, "text": s}}`, `{"del": {"at": u32, "len": u32}}`
+/// or `{"chip": {"at": u32, "id": u64}}`, positions and lengths in
+/// UTF-16 code units against the body as the batch's earlier ops leave
+/// it. Parsing is reject-whole, like the snapshot path's; a batch that
+/// parses is then validated whole against the page and applied
+/// atomically or not at all (see the store). Chip liveness follows the
+/// document: a delete that swallows a sentinel zeroizes its chip.
+/// Returns whether the batch applied; on false the shell restates the
+/// page through [`companion_sheet_sync_document`], the recovery path.
+///
+/// # Safety
+/// `handle` must be a valid handle. `json` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_apply_ops(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    json: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(json) = (unsafe { cstr(json) }) else {
+        return false;
+    };
+    let Some(ops) = parse_ops(json) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.apply_ops(SheetId::from_raw(sheet), &ops)
 }
 
 // ---------------------------------------------------------------------------
@@ -1763,6 +1830,62 @@ fn parse_segments(json: &str) -> Option<Vec<Segment>> {
     Some(segments)
 }
 
+/// Parse the edit-batch JSON for [`companion_sheet_apply_ops`]:
+/// `[{"ins": {"at", "text"}}, {"del": {"at", "len"}},
+/// {"chip": {"at", "id"}}, …]`. The same reject-whole discipline as
+/// [`parse_segments`]: one unknown key, one extra field, one offset
+/// that does not fit `u32`, and the whole batch is refused as `None`,
+/// because a batch the parser had to guess at is a batch the document
+/// must never see.
+fn parse_ops(json: &str) -> Option<Vec<EditOp>> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let entries = value.as_array()?;
+    let mut ops = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let object = entry.as_object()?;
+        if object.len() != 1 {
+            return None;
+        }
+        if let Some(ins) = object.get("ins") {
+            let ins = ins.as_object()?;
+            if ins.len() != 2 {
+                return None;
+            }
+            ops.push(EditOp::Insert {
+                pos_u16: parse_u32(ins.get("at")?)?,
+                text: ins.get("text")?.as_str()?.to_string(),
+            });
+        } else if let Some(del) = object.get("del") {
+            let del = del.as_object()?;
+            if del.len() != 2 {
+                return None;
+            }
+            ops.push(EditOp::Delete {
+                pos_u16: parse_u32(del.get("at")?)?,
+                len_u16: parse_u32(del.get("len")?)?,
+            });
+        } else if let Some(chip) = object.get("chip") {
+            let chip = chip.as_object()?;
+            if chip.len() != 2 {
+                return None;
+            }
+            ops.push(EditOp::InsertChip {
+                pos_u16: parse_u32(chip.get("at")?)?,
+                chip: ChipId::from_raw(chip.get("id")?.as_u64()?),
+            });
+        } else {
+            return None;
+        }
+    }
+    Some(ops)
+}
+
+/// A JSON number as `u32`, refused rather than truncated when it does
+/// not fit: an offset past `u32::MAX` is not an offset on any page.
+fn parse_u32(value: &serde_json::Value) -> Option<u32> {
+    u32::try_from(value.as_u64()?).ok()
+}
+
 /// The `VoiceOver` text-equivalent of the draining gauge: coarse,
 /// natural, honest words — never colour or motion alone (doc 05 a11y).
 fn spoken_remaining(remaining: Duration) -> String {
@@ -1890,7 +2013,7 @@ mod tests {
                 WriteOptions { concealed: false },
             );
             drag.clear_if_unchanged(receipt);
-            assert!(companion_sheet_seal_from_drag(handle, sheet).is_null());
+            assert!(companion_sheet_seal_from_drag(handle, sheet, 0, 0).is_null());
 
             // A drag session's text on the board → sealed core-side.
             let dragged = format!("xoxb-{}", "n0ts3cr3t".repeat(3));
@@ -1899,7 +2022,7 @@ mod tests {
                 ContentKind::Text,
                 WriteOptions { concealed: false },
             );
-            let chip = take_json(companion_sheet_seal_from_drag(handle, sheet));
+            let chip = take_json(companion_sheet_seal_from_drag(handle, sheet, 0, 0));
             assert!(!chip.contains(&dragged), "drag bytes leaked into chip JSON");
             assert!(chip.contains("\"kind\":\"text\""));
 
@@ -1941,7 +2064,7 @@ mod tests {
             let sheet = companion_sheet_new(first);
             assert_ne!(sheet, 0);
             let chip_json: serde_json::Value = serde_json::from_str(&take_json(
-                companion_sheet_seal_text(first, sheet, cstring(secret).as_ptr()),
+                companion_sheet_seal_text(first, sheet, cstring(secret).as_ptr(), 0, 0),
             ))
             .unwrap();
             let chip = chip_json["chip_id"].as_u64().unwrap();
@@ -1997,6 +2120,8 @@ mod tests {
                 handle,
                 sheet,
                 cstring(&secret).as_ptr(),
+                0,
+                0,
             ));
             assert!(
                 !chip.contains("n0ts3cr3t"),
@@ -2009,6 +2134,8 @@ mod tests {
             let chip2 = take_json(companion_sheet_seal_from_pasteboard(
                 handle,
                 sheet,
+                0,
+                0,
                 ptr::null_mut(),
             ));
             assert!(!chip2.contains("n0ts3cr3t"), "{chip2}");
@@ -2044,6 +2171,8 @@ mod tests {
                 handle,
                 sheet,
                 cstring("postgres://ops:hunter2@db-3.internal:5432/prod").as_ptr(),
+                0,
+                0,
             ));
             let sheets = take_json(companion_sheets_json(handle));
             assert!(!sheets.contains("detected_as"), "{sheets}");
@@ -2061,6 +2190,8 @@ mod tests {
             let chip = take_json(companion_sheet_seal_from_pasteboard(
                 handle,
                 sheet,
+                0,
+                0,
                 ptr::null_mut(),
             ));
             assert!(chip.contains("\"kind\":\"text\""), "{chip}");
@@ -2084,6 +2215,8 @@ mod tests {
             let chip = take_json(companion_sheet_seal_from_pasteboard(
                 handle,
                 sheet,
+                0,
+                0,
                 &raw mut cleared,
             ));
             assert!(chip.contains("\"kind\":\"text\""), "{chip}");
@@ -2093,7 +2226,7 @@ mod tests {
             // seal a second time.
             assert!(!companion_pasteboard_has_content(handle));
             cleared = true;
-            let again = companion_sheet_seal_from_pasteboard(handle, sheet, &raw mut cleared);
+            let again = companion_sheet_seal_from_pasteboard(handle, sheet, 0, 0, &raw mut cleared);
             assert!(again.is_null(), "an empty board seals nothing");
             assert!(!cleared, "an empty board reports no clear");
 
@@ -2109,7 +2242,8 @@ mod tests {
         seed(handle, "still theirs");
         unsafe {
             let mut cleared = true;
-            let refused = companion_sheet_seal_from_pasteboard(handle, 424242, &raw mut cleared);
+            let refused =
+                companion_sheet_seal_from_pasteboard(handle, 424242, 0, 0, &raw mut cleared);
             assert!(refused.is_null());
             assert!(!cleared);
             assert!(companion_pasteboard_has_content(handle));
@@ -2128,6 +2262,8 @@ mod tests {
                 handle,
                 sheet,
                 cstring("hunter2").as_ptr(),
+                0,
+                0,
             ));
             let chip: serde_json::Value = serde_json::from_str(&chip).unwrap();
             let chip_id = chip["chip_id"].as_u64().unwrap();
@@ -2166,6 +2302,8 @@ mod tests {
             let chip_json = take_json(companion_sheet_seal_from_pasteboard(
                 handle,
                 sheet,
+                0,
+                0,
                 ptr::null_mut(),
             ));
             assert!(chip_json.contains("\"kind\":\"image\""), "{chip_json}");
@@ -2200,6 +2338,8 @@ mod tests {
                 handle,
                 sheet,
                 cstring("multi-paste me").as_ptr(),
+                0,
+                0,
             ));
             let chip: serde_json::Value = serde_json::from_str(&chip_json).unwrap();
             let chip_id = chip["chip_id"].as_u64().unwrap();
@@ -2245,6 +2385,8 @@ mod tests {
                 handle,
                 sheet,
                 cstring("dsn-goes-here").as_ptr(),
+                0,
+                0,
             ));
             let chip: serde_json::Value = serde_json::from_str(&chip_json).unwrap();
             let chip_id = chip["chip_id"].as_u64().unwrap();
@@ -2285,6 +2427,116 @@ mod tests {
         }
     }
 
+    #[test]
+    fn apply_ops_moves_edits_over_the_seam() {
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            // Astral ink, then a replace described the way the shell
+            // coalesces one: positions are UTF-16 code units, so the
+            // rocket spans two.
+            let batch = "[{\"ins\": {\"at\": 0, \"text\": \"plan \u{1F680} launch\"}}]";
+            assert!(companion_sheet_apply_ops(
+                handle,
+                sheet,
+                cstring(batch).as_ptr()
+            ));
+            let batch = r#"[{"del": {"at": 5, "len": 2}}, {"ins": {"at": 5, "text": "the"}}]"#;
+            assert!(companion_sheet_apply_ops(
+                handle,
+                sheet,
+                cstring(batch).as_ptr()
+            ));
+            let doc = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(doc.contains("plan the launch"), "unexpected body: {doc}");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn apply_ops_rejects_malformed_and_non_atomic_batches_whole() {
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            assert!(companion_sheet_apply_ops(
+                handle,
+                sheet,
+                cstring(r#"[{"ins": {"at": 0, "text": "kept"}}]"#).as_ptr()
+            ));
+            let before = take_json(companion_sheet_document_json(handle, sheet));
+
+            // Parsing is reject-whole: an unknown op key, a misspelled
+            // field, an extra field, a wrong shape, and an offset that
+            // does not fit u32 each refuse the batch outright.
+            for bad in [
+                r#"[{"insert": {"at": 0, "text": "x"}}]"#,
+                r#"[{"ins": {"pos": 0, "text": "x"}}]"#,
+                r#"[{"ins": {"at": 0, "text": "x", "extra": 1}}]"#,
+                r#"[{"ins": {"at": 0, "text": "x"}, "del": {"at": 0, "len": 1}}]"#,
+                r#"[{"del": {"at": 4294967296, "len": 1}}]"#,
+                r#"[{"chip": {"at": 0, "id": -1}}]"#,
+                r#"[{"chip": {"at": 0}}]"#,
+                r#"{"ins": {"at": 0, "text": "x"}}"#,
+                r#"[[]]"#,
+                "not json",
+            ] {
+                assert!(
+                    !companion_sheet_apply_ops(handle, sheet, cstring(bad).as_ptr()),
+                    "accepted a malformed batch: {bad}"
+                );
+            }
+
+            // A batch that parses but misses the page mid-way is
+            // rejected whole by the store: the valid first op must not
+            // land either.
+            let batch = r#"[{"ins": {"at": 0, "text": "x"}}, {"del": {"at": 99, "len": 1}}]"#;
+            assert!(!companion_sheet_apply_ops(
+                handle,
+                sheet,
+                cstring(batch).as_ptr()
+            ));
+            let after = take_json(companion_sheet_document_json(handle, sheet));
+            assert_eq!(before, after, "a rejected batch moved the document");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_range_seal_replaces_the_selection_in_one_call() {
+        let handle = handle();
+        unsafe {
+            let sheet = companion_sheet_new(handle);
+            let ink = "[{\"ins\": {\"at\": 0, \"text\": \"a\u{1F600}SECRET b\"}}]";
+            assert!(companion_sheet_apply_ops(
+                handle,
+                sheet,
+                cstring(ink).as_ptr()
+            ));
+            // Seal the selection: the range leaves the body and the
+            // sentinel stands at its UTF-16 position, atomically.
+            let chip = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring("SECRET").as_ptr(),
+                3,
+                6,
+            ));
+            assert!(chip.contains("\"kind\":\"text\""));
+            let doc = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(
+                !doc.contains("SECRET"),
+                "the sealed selection survived in the body: {doc}"
+            );
+            assert!(doc.contains("a\u{1F600}"), "the prefix moved: {doc}");
+            // A range the body does not have refuses whole: a boundary
+            // inside the astral pair seals nothing.
+            assert!(
+                companion_sheet_seal_text(handle, sheet, cstring("x").as_ptr(), 2, 1).is_null()
+            );
+            companion_free(handle);
+        }
+    }
+
     /// Every promotion path that can refuse **without** a socket, plus
     /// the connection-config contract: TLS-only, and the token goes to
     /// the credential store and never comes back out in any JSON.
@@ -2298,6 +2550,8 @@ mod tests {
                 handle,
                 sheet,
                 cstring("hunter2 hunter2").as_ptr(),
+                0,
+                0,
             ));
             let chip_id = serde_json::from_str::<serde_json::Value>(&chip).unwrap()["chip_id"]
                 .as_u64()
@@ -2564,6 +2818,8 @@ mod tests {
                 handle,
                 sheet,
                 cstring(&secret).as_ptr(),
+                0,
+                0,
             ));
             let chip: serde_json::Value = serde_json::from_str(&chip_json).unwrap();
             let chip_id = chip["chip_id"].as_u64().unwrap();
@@ -2623,6 +2879,8 @@ mod tests {
                 handle,
                 sheet,
                 cstring(&secret).as_ptr(),
+                0,
+                0,
             ));
             let chip: serde_json::Value = serde_json::from_str(&chip_json).unwrap();
             let chip_id = chip["chip_id"].as_u64().unwrap();
@@ -2797,6 +3055,8 @@ mod tests {
                 first,
                 sheet,
                 cstring("hunter2-the-sealed-bytes").as_ptr(),
+                0,
+                0,
             ));
             assert!(companion_persist_save(first, c_state.as_ptr()));
             assert!(companion_ledger_save(first, c_ledger.as_ptr()));
@@ -2851,6 +3111,8 @@ mod tests {
                 first,
                 sheet,
                 cstring("hunter2-the-sealed-bytes").as_ptr(),
+                0,
+                0,
             ));
             assert!(companion_persist_save(first, c_state.as_ptr()));
             companion_free(first);
@@ -2893,6 +3155,8 @@ mod tests {
                 handle,
                 sheet,
                 cstring("hunter2-the-sealed-bytes").as_ptr(),
+                0,
+                0,
             ));
             assert!(companion_persist_save(handle, c_path.as_ptr()));
 
@@ -3068,6 +3332,8 @@ mod tests {
                 first,
                 sheet,
                 cstring(secret).as_ptr(),
+                0,
+                0,
             ));
             assert!(companion_sheet_sync_document(
                 first,
@@ -3131,11 +3397,20 @@ mod tests {
             assert!(!companion_chip_delete(ptr::null_mut(), 1));
             assert!(!companion_sheet_pause_press(ptr::null_mut(), 1));
             assert_eq!(companion_next_event_ms(ptr::null_mut()), -1);
-            assert!(companion_sheet_seal_text(ptr::null_mut(), 1, cstring("x").as_ptr()).is_null());
             assert!(
-                companion_sheet_seal_from_pasteboard(ptr::null_mut(), 1, ptr::null_mut()).is_null()
+                companion_sheet_seal_text(ptr::null_mut(), 1, cstring("x").as_ptr(), 0, 0)
+                    .is_null()
+            );
+            assert!(
+                companion_sheet_seal_from_pasteboard(ptr::null_mut(), 1, 0, 0, ptr::null_mut())
+                    .is_null()
             );
             assert!(!companion_pasteboard_has_content(ptr::null_mut()));
+            assert!(!companion_sheet_apply_ops(
+                ptr::null_mut(),
+                1,
+                cstring("[]").as_ptr()
+            ));
             companion_free(ptr::null_mut()); // no-op
             companion_string_free(ptr::null_mut()); // no-op
         }

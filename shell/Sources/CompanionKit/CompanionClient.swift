@@ -239,15 +239,22 @@ public final class CompanionClient: @unchecked Sendable {
 
     /// The sealed paste (⇧⌘V): the core reads the pasteboard itself
     /// and clears it in the same locked operation (ADR-0007 Amendment
-    /// 1). Returns the new chip's face (or nil), plus whether the
-    /// board was actually cleared: false alongside a chip means
-    /// another writer moved the change count mid-take, the guarded
-    /// clear stood down, and the caller must say so.
+    /// 1). `at`/`length` name the selection the gesture replaces, in
+    /// UTF-16 code units against the page's body (ADR-0013): the core
+    /// deletes that range and stands the chip's sentinel in its place
+    /// inside the same locked call. Returns the new chip's face (or
+    /// nil), plus whether the board was actually cleared: false
+    /// alongside a chip means another writer moved the change count
+    /// mid-take, the guarded clear stood down, and the caller must say
+    /// so.
     @discardableResult
-    public func sealFromPasteboard(sheet: UInt64) -> (chip: ChipInfo?, cleared: Bool) {
+    public func sealFromPasteboard(
+        sheet: UInt64, at: UInt32, length: UInt32
+    ) -> (chip: ChipInfo?, cleared: Bool) {
         var cleared = false
         let chip = decodeJSON(
-            ChipInfo.self, from: companion_sheet_seal_from_pasteboard(handle, sheet, &cleared))
+            ChipInfo.self,
+            from: companion_sheet_seal_from_pasteboard(handle, sheet, at, length, &cleared))
         return (chip, cleared)
     }
 
@@ -261,30 +268,50 @@ public final class CompanionClient: @unchecked Sendable {
     /// Drop-to-seal: the core reads the drag pasteboard itself while
     /// the drag session's data is still on it — dropped bytes never
     /// transit this process (the drag boundary decision,
-    /// docs/hardware-verification.md). Returns the new chip's face, or
-    /// nil when nothing readable was dragged.
+    /// docs/hardware-verification.md). `at`/`length` name the drop
+    /// point as a UTF-16 range the sentinel replaces, core-side; a
+    /// plain drop is a zero-length range at the insertion index.
+    /// Returns the new chip's face, or nil when nothing readable was
+    /// dragged.
     @discardableResult
-    public func sealFromDrag(sheet: UInt64) -> ChipInfo? {
-        decodeJSON(ChipInfo.self, from: companion_sheet_seal_from_drag(handle, sheet))
+    public func sealFromDrag(sheet: UInt64, at: UInt32, length: UInt32) -> ChipInfo? {
+        decodeJSON(
+            ChipInfo.self, from: companion_sheet_seal_from_drag(handle, sheet, at, length))
     }
 
     /// The ⌘↩ retrofit: seal editor text the user selected. The one
-    /// deliberate plaintext-in call — the text was visible ink already;
-    /// after this returns, the caller deletes its copy from the view.
+    /// deliberate plaintext-in call: the text was visible ink already.
+    /// `at`/`length` name the sealed span in UTF-16 code units: the
+    /// core deletes it from the body and stands the sentinel in its
+    /// place in the same locked call (ADR-0013), so the caller updates
+    /// its projection rather than performing an edit of its own.
     @discardableResult
-    public func sealText(sheet: UInt64, _ text: String) -> ChipInfo? {
+    public func sealText(sheet: UInt64, _ text: String, at: UInt32, length: UInt32) -> ChipInfo? {
         // A C string truncates at an interior NUL; sealing a silently
-        // truncated secret and telling the editor to delete the whole
-        // thing would lose the remainder. Refuse instead — the editor
-        // keeps its copy and nothing was sealed.
+        // truncated secret while the core deletes the whole range
+        // would lose the remainder. Refuse instead; the editor keeps
+        // its copy and nothing was sealed.
         guard !text.contains("\0") else { return nil }
         return text.withCString { cText in
-            decodeJSON(ChipInfo.self, from: companion_sheet_seal_text(handle, sheet, cText))
+            decodeJSON(
+                ChipInfo.self,
+                from: companion_sheet_seal_text(handle, sheet, cText, at, length))
         }
     }
 
-    /// Push the page's document snapshot (JSON runs) to the core —
-    /// authoritative for chip liveness.
+    /// Apply an ordered edit batch (JSON operations, UTF-16 offsets)
+    /// to the page's body core-side, the ADR-0013 operation path.
+    /// False means the batch was rejected whole and nothing moved;
+    /// the caller re-converges through `syncDocument`.
+    @discardableResult
+    public func applyOps(sheet: UInt64, json: String) -> Bool {
+        json.withCString { companion_sheet_apply_ops(handle, sheet, $0) }
+    }
+
+    /// Push a whole document snapshot (JSON runs) to the core. The
+    /// recovery path now that edits travel as operations: it restates
+    /// the page wholesale, at the price of that page's provenance.
+    /// Still authoritative for chip liveness.
     @discardableResult
     public func syncDocument(sheet: UInt64, json: String) -> Bool {
         json.withCString { companion_sheet_sync_document(handle, sheet, $0) }
