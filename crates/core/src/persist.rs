@@ -56,6 +56,7 @@ use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
 use crate::clock::Clock;
+use crate::document::SheetDocument;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
     ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId, TITLE_CAP,
@@ -561,6 +562,33 @@ fn read_sheet(
         });
     }
 
+    // The document is reborn from the decoded projection: the same text
+    // and the same chip identities, under a fresh history. Provenance
+    // is not reborn with it; the sealed-history stages of ADR-0013 take
+    // over from here.
+    let document = SheetDocument::new();
+    let mut pos = 0usize;
+    for segment in &segments {
+        match segment {
+            Segment::Ink(text) => {
+                document.insert(pos, text).map_err(|_| Malformed)?;
+                pos += text.encode_utf16().count();
+            }
+            Segment::Chip(chip_id) => {
+                let chip_uuid = chips
+                    .iter()
+                    .find(|c| c.id() == *chip_id)
+                    .ok_or(Malformed)?
+                    .uuid();
+                document
+                    .insert_chip(pos, chip_uuid)
+                    .map_err(|_| Malformed)?;
+                pos += 1;
+            }
+        }
+    }
+    document.commit(None);
+
     let id = SheetId::from_raw(*next_sheet_id);
     *next_sheet_id += 1;
 
@@ -570,6 +598,7 @@ fn read_sheet(
         title,
         title_is_user_set,
         created_wall_ms,
+        document,
         segments,
         chips,
         rung,

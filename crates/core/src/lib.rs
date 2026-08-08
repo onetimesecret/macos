@@ -27,10 +27,9 @@
 //!   survives a shell swap (ADR-0001).
 
 pub mod clock;
-// Crate-private until the store adopts it: ADR-0013 lands in stages, and
-// this first stage brings the document in behind its wrapper before any
-// caller exists. The allowance comes off when the store wires it in.
-#[allow(dead_code)]
+// Crate-private on purpose: every Loro API call stays behind this one
+// module's seam (ADR-0013), and the store speaks to it in UTF-16 code
+// units only.
 mod document;
 pub mod harden;
 pub mod ledger;
@@ -46,5 +45,5 @@ pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecor
 pub use persist::RestoreError;
 pub use secret::SecretBuffer;
 pub use sheet::{ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetId};
-pub use store::{DEFAULT_SHEET_CAP, PayloadError, Refusal, SheetStore};
+pub use store::{DEFAULT_SHEET_CAP, EditOp, PayloadError, Refusal, SheetStore};
 pub use ttl::{TTL_LADDER, Ttl};

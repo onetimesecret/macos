@@ -1,8 +1,9 @@
 //! The sheet: ink and sealed chips (interaction-model rev C, doc 04).
 //!
 //! A sheet reads like a little text file. **Ink** is anything typed —
-//! visible, editable, ordinary text, owned by the shell's text view and
-//! mirrored here as a synced snapshot. A **sealed chip** is an opaque
+//! visible, editable, ordinary text, held authoritatively in the
+//! sheet's operation-logged document (ADR-0013) and cached here as a
+//! segments projection. A **sealed chip** is an opaque
 //! token standing in for content that was deliberately masked; its bytes
 //! live only here, in a [`SecretBuffer`], and never render.
 //!
@@ -13,6 +14,7 @@
 
 use std::time::{Duration, Instant};
 
+use crate::document::{DocRun, SheetDocument};
 use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
 
@@ -109,11 +111,11 @@ impl ChipId {
     }
 }
 
-/// One run of the synced document: visible ink, or a sealed chip's
-/// position. The shell owns the live document; this is the core's
-/// snapshot of its structure, kept for the ledger, for tab titles, and
-/// for sheet promotion — ink is not secret (it renders), so holding a
-/// copy here breaks no law.
+/// One run of the body's cached projection: visible ink, or a sealed
+/// chip's position. The sheet's operation-logged document is the source
+/// of truth; this shape is rebuilt from its runs for the ledger, for
+/// tab titles, and for sheet promotion — ink is not secret (it
+/// renders), so holding a copy here breaks no law.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Segment {
     /// Visible text, exactly as typed (markup preserved — doc 04).
@@ -278,7 +280,7 @@ pub(crate) enum SheetClock {
     },
 }
 
-/// A sheet: the synced document snapshot, the chips it owns, and one
+/// A sheet: the operation-logged body, the chips it owns, and one
 /// countdown. Not `Debug` — it holds [`SealedChip`]s.
 ///
 /// The `uuid` is minted once, at creation, and never re-minted: a
@@ -298,6 +300,12 @@ pub struct Sheet {
     /// placeholder title stays the same string for the page's whole
     /// life. Expiry math never reads it.
     pub(crate) created_wall_ms: u64,
+    /// The body as an operation-logged document (ADR-0013): the source
+    /// of truth for ink and chip positions inside the core.
+    pub(crate) document: SheetDocument,
+    /// A cached projection of the document, rebuilt from its runs after
+    /// every mutation ([`Sheet::rebuild_segments`]). Readers keep this
+    /// shape; nothing edits it directly.
     pub(crate) segments: Vec<Segment>,
     pub(crate) chips: Vec<SealedChip>,
     pub(crate) rung: Ttl,
@@ -323,10 +331,32 @@ impl Sheet {
         self.uuid
     }
 
-    /// The synced document snapshot, in document order.
+    /// The cached projection of the body, in document order.
     #[must_use]
     pub fn segments(&self) -> &[Segment] {
         &self.segments
+    }
+
+    /// Rebuild the cached segments projection from the document's runs.
+    /// Every mutation path calls this, so readers never see the
+    /// projection drift from the document. A sentinel whose identity
+    /// matches no owned chip drops out of the projection: it cannot
+    /// arise by construction, and a chip the sheet cannot resolve must
+    /// not render.
+    pub(crate) fn rebuild_segments(&mut self) {
+        self.segments = self
+            .document
+            .runs()
+            .into_iter()
+            .filter_map(|run| match run {
+                DocRun::Ink(text) => Some(Segment::Ink(text)),
+                DocRun::Chip(uuid) => self
+                    .chips
+                    .iter()
+                    .find(|chip| chip.uuid == uuid)
+                    .map(|chip| Segment::Chip(chip.id)),
+            })
+            .collect();
     }
 
     /// The chips this sheet owns, in seal order.

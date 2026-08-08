@@ -140,6 +140,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Loro document is the source of truth inside the core**
+  (`companion-core` 0.3.0, ADR-0013). Every sheet now owns a
+  `SheetDocument`, and the `segments` list demotes to a cached
+  projection rebuilt from the document's runs after every mutation, so
+  the existing readers (title derivation, page payloads, the persist
+  format, the document JSON at the seam) keep their shape unchanged.
+  Edits gain an operation path: `SheetStore::apply_ops` takes a batch
+  of `EditOp`s (insert, delete, chip placement, every offset a UTF-16
+  code unit count), validates the whole batch against a simulated
+  intra-batch state so the shell's coalesced edits (a delete and
+  insert at one position, a delete spanning a chip followed by its
+  re-insert) validate, rejects atomically when any op misses, commits
+  once per batch, and reaps chips whose sentinels are gone with the
+  same `Discarded` record the snapshot path writes. `sync_document`
+  survives as a transitional wipe-and-retype adapter through which
+  provenance means nothing, kept as the recovery route; restore
+  rebuilds each page's document from the decoded segments.
 - **The dev-seed shim is gone from the core** (`companion-ffi` 0.3.0).
   The off-by-default `dev-scaffolding` cargo feature, the
   `companion_dev_seed_pasteboard` entry point behind it, and the

@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
 use crate::clock::Clock;
+use crate::document::SheetDocument;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
     ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId,
@@ -87,6 +88,39 @@ impl std::fmt::Display for PayloadError {
 }
 
 impl std::error::Error for PayloadError {}
+
+/// One edit against a sheet's body (ADR-0013): the operation shape the
+/// shell sends instead of a whole-document snapshot. Every position and
+/// length is a count of UTF-16 code units, the only offset unit the
+/// wire speaks, measured against the body as it stands when this op's
+/// turn in the batch comes, so a later op legally describes the state
+/// its predecessors made.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditOp {
+    /// Insert ink at a position.
+    Insert {
+        /// UTF-16 code unit offset of the insertion point.
+        pos_u16: u32,
+        /// The ink to insert.
+        text: String,
+    },
+    /// Delete a range of the body, ink and chip sentinels alike.
+    Delete {
+        /// UTF-16 code unit offset where the deletion starts.
+        pos_u16: u32,
+        /// Length of the deletion in UTF-16 code units.
+        len_u16: u32,
+    },
+    /// Place a sealed chip's sentinel at a position. The chip must be
+    /// owned by the sheet, and its sentinel must not already stand in
+    /// the simulated body when this op's turn comes.
+    InsertChip {
+        /// UTF-16 code unit offset of the sentinel.
+        pos_u16: u32,
+        /// The chip whose sentinel goes here.
+        chip: ChipId,
+    },
+}
 
 /// The in-memory sheet store. Everything in it — sheets, chips, and
 /// the ledger — dies with the process, with one deliberate exception:
@@ -165,6 +199,7 @@ impl<C: Clock> SheetStore<C> {
             title: title.clone(),
             title_is_user_set: false,
             created_wall_ms,
+            document: SheetDocument::new(),
             segments: Vec::new(),
             chips: Vec::new(),
             rung: self.default_rung,
@@ -309,12 +344,82 @@ impl<C: Clock> SheetStore<C> {
     }
 
     // -----------------------------------------------------------------
-    // The synced document
+    // The document: operations, and the transitional snapshot adapter
     // -----------------------------------------------------------------
 
-    /// Replace a page's document snapshot. The shell owns the live
-    /// document; this mirror exists for the ledger, the tab title, and
-    /// page promotion.
+    /// Apply a batch of edits to a page's body. This is the operation
+    /// path ADR-0013 replaces snapshot syncing with: the document
+    /// mutates in place, and provenance rides on the ops instead of
+    /// dying in a wholesale resync.
+    ///
+    /// The batch validates as a whole before the document is touched.
+    /// Each op is checked against the simulated state its predecessors
+    /// produce (a running body of code units and a live-chip set,
+    /// updated op by op), because the shell coalesces edits: a delete
+    /// and insert at one position, or a delete spanning a chip followed
+    /// by that chip's re-insert, are routine batches and must validate.
+    /// Any op that misses the simulated state, whether an out-of-range
+    /// offset, a boundary inside a surrogate pair, a chip the sheet
+    /// does not own, or a sentinel that would stand twice, rejects the
+    /// whole batch and mutates nothing.
+    ///
+    /// A batch that applies commits as one change. The segments
+    /// projection then rebuilds, the title re-derives unless the user
+    /// named the page, and any chip whose sentinel is gone from the
+    /// body is zeroized with the same `Discarded` record the snapshot
+    /// path writes. Returns whether the batch applied.
+    pub fn apply_ops(&mut self, id: SheetId, ops: &[EditOp]) -> bool {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return false;
+        };
+        // Phase one: the whole batch against a simulation, so that
+        // rejection is atomic. The simulation carries exact code units,
+        // which is what lets it police surrogate-pair boundaries as
+        // strictly as the document would.
+        let mut sim = sim_units(&sheet.segments);
+        for op in ops {
+            if !sim_admit(&mut sim, &sheet.chips, op) {
+                return false;
+            }
+        }
+        // Phase two: the document. The simulation validated every
+        // offset against exact post-op state, so these calls cannot
+        // refuse; should one somehow refuse anyway, applying stops and
+        // the settle below keeps the projection honest about whatever
+        // did land, with the false return telling the shell to restate
+        // the page through the recovery path.
+        let mut clean = true;
+        for op in ops {
+            let outcome = match op {
+                EditOp::Insert { pos_u16, text } => sheet.document.insert(*pos_u16 as usize, text),
+                EditOp::Delete { pos_u16, len_u16 } => {
+                    sheet.document.delete(*pos_u16 as usize, *len_u16 as usize)
+                }
+                EditOp::InsertChip { pos_u16, chip } => {
+                    let uuid = sheet
+                        .chip(*chip)
+                        .expect("phase one admits only owned chips")
+                        .uuid();
+                    sheet.document.insert_chip(*pos_u16 as usize, uuid)
+                }
+            };
+            if outcome.is_err() {
+                clean = false;
+                break;
+            }
+        }
+        sheet.document.commit(None);
+        self.settle_document(id);
+        clean
+    }
+
+    /// Replace a page's body wholesale from a shell snapshot. A
+    /// transitional adapter (ADR-0013): the document is wiped and
+    /// retyped from the incoming segments, so every character's
+    /// provenance collapses to this moment and means nothing. Edits
+    /// travel as operations ([`SheetStore::apply_ops`]); once the shell
+    /// speaks them (stage 3), this path remains only as the recovery
+    /// route for restating a whole page.
     ///
     /// The snapshot is **authoritative for chip liveness**: a chip of
     /// this sheet that the snapshot no longer references was deleted in
@@ -323,9 +428,11 @@ impl<C: Clock> SheetStore<C> {
     /// a chip this sheet does not own, or the same chip twice, is
     /// malformed and rejected whole. Returns whether the snapshot was
     /// accepted.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "the segments used to move into the sheet; the signature outlives that so callers of the recovery path stay untouched while stage 3 rebuilds the seam"
+    )]
     pub fn sync_document(&mut self, id: SheetId, segments: Vec<Segment>) -> bool {
-        // Read the clock before the mutable borrow of the sheet.
-        let offset = self.clock.local_offset_seconds();
         let Some(sheet) = self.sheet_mut(id) else {
             return false;
         };
@@ -338,7 +445,50 @@ impl<C: Clock> SheetStore<C> {
                 referenced.push(*chip_id);
             }
         }
-        sheet.segments = segments;
+        // Wipe and retype: the body becomes exactly the snapshot, chips
+        // re-marked under their existing identities. A full-range
+        // delete and appends at the running end cannot miss, so refusal
+        // here is unreachable; fail closed anyway and let the settle
+        // keep the projection honest.
+        let len = sheet.document.utf16_len();
+        let mut clean = sheet.document.delete(0, len).is_ok();
+        if clean {
+            let mut pos = 0usize;
+            for segment in &segments {
+                let outcome = match segment {
+                    Segment::Ink(text) => {
+                        let inserted = sheet.document.insert(pos, text);
+                        pos += text.encode_utf16().count();
+                        inserted
+                    }
+                    Segment::Chip(chip_id) => {
+                        let uuid = sheet.chip(*chip_id).expect("validated above").uuid();
+                        let inserted = sheet.document.insert_chip(pos, uuid);
+                        pos += 1;
+                        inserted
+                    }
+                };
+                if outcome.is_err() {
+                    clean = false;
+                    break;
+                }
+            }
+        }
+        sheet.document.commit(None);
+        self.settle_document(id);
+        clean
+    }
+
+    /// The invariant every document mutation restores: the segments
+    /// projection mirrors the document, the title is current, and no
+    /// sealed chip outlives its sentinel.
+    fn settle_document(&mut self, id: SheetId) {
+        // Read the clock before the mutable borrow of the sheet.
+        let offset = self.clock.local_offset_seconds();
+        let Some(sheet) = self.sheet_mut(id) else {
+            return;
+        };
+        sheet.rebuild_segments();
         // The title is re-derived here, on edit, and never later: by
         // the time a record reaches the ledger the page already knows
         // its name (ADR-0012).
@@ -348,13 +498,14 @@ impl<C: Clock> SheetStore<C> {
         // Chips the document no longer holds die now (zeroize on drop).
         // A chip removed with ⌫ is as gone as one removed by
         // `delete_chip`, so it leaves the same record.
+        let live = sheet.document.live_chips();
         let mut dropped: Vec<(ItemId, usize)> = Vec::new();
         sheet.chips.retain(|chip| {
-            let referenced = referenced.contains(&chip.id);
-            if !referenced {
+            let alive = live.contains(&chip.uuid);
+            if !alive {
                 dropped.push((chip.uuid, chip.bytes.len()));
             }
-            referenced
+            alive
         });
         let title = sheet.title.clone();
         let created = sheet.created_wall_ms;
@@ -368,7 +519,6 @@ impl<C: Clock> SheetStore<C> {
                 DestinationClass::None,
             );
         }
-        true
     }
 
     /// Set a page's title explicitly. An empty or all-whitespace title
@@ -423,14 +573,22 @@ impl<C: Clock> SheetStore<C> {
                 continue;
             };
             let chip = &sheet.chips[index];
+            let uuid = chip.uuid;
             removed = Some((
-                chip.uuid,
+                uuid,
                 chip.bytes.len(),
                 sheet.title.clone(),
                 sheet.created_wall_ms,
             ));
+            // The sentinel leaves the document first, so the source of
+            // truth forgets the position before the bytes die. A chip
+            // sealed but never placed has no sentinel to remove.
+            if let Some(pos) = sheet.document.chip_position(uuid) {
+                let _ = sheet.document.delete(pos, 1);
+                sheet.document.commit(None);
+            }
             sheet.chips.remove(index); // zeroizes as it drops
-            sheet.segments.retain(|s| *s != Segment::Chip(id));
+            sheet.rebuild_segments();
             break;
         }
         let Some((uuid, len, title, created)) = removed else {
@@ -795,6 +953,89 @@ fn normalize(sheet: &mut Sheet, now: Instant) {
         sheet.clock = SheetClock::Running {
             deadline: until + frozen_remaining,
         };
+    }
+}
+
+/// One position of the simulated body [`SheetStore::apply_ops`]
+/// validates against: a UTF-16 code unit of ink, or a chip's sentinel.
+/// Carrying the actual code units is what lets the simulation refuse a
+/// boundary inside a surrogate pair exactly where the document would.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SimUnit {
+    /// One UTF-16 code unit of ink.
+    Code(u16),
+    /// A sealed chip's sentinel, one code unit wide.
+    Chip(ChipId),
+}
+
+/// The simulated body a batch starts from: the cached projection,
+/// flattened to code units.
+fn sim_units(segments: &[Segment]) -> Vec<SimUnit> {
+    let mut units = Vec::new();
+    for segment in segments {
+        match segment {
+            Segment::Ink(text) => units.extend(text.encode_utf16().map(SimUnit::Code)),
+            Segment::Chip(id) => units.push(SimUnit::Chip(*id)),
+        }
+    }
+    units
+}
+
+/// Whether `pos` falls between the two halves of a surrogate pair,
+/// which is the one interior offset no valid edit may name.
+fn splits_surrogate_pair(units: &[SimUnit], pos: usize) -> bool {
+    if pos == 0 || pos >= units.len() {
+        return false;
+    }
+    matches!(
+        (units[pos - 1], units[pos]),
+        (SimUnit::Code(high), SimUnit::Code(low))
+            if (0xD800..=0xDBFF).contains(&high) && (0xDC00..=0xDFFF).contains(&low)
+    )
+}
+
+/// Validate one op against the simulated body and, when it holds,
+/// advance the simulation past it, so the next op is judged against the
+/// state this one made. `chips` is the sheet's ownership roster: a chip
+/// from elsewhere never validates.
+fn sim_admit(units: &mut Vec<SimUnit>, chips: &[SealedChip], op: &EditOp) -> bool {
+    match op {
+        EditOp::Insert { pos_u16, text } => {
+            let pos = *pos_u16 as usize;
+            if pos > units.len() || splits_surrogate_pair(units, pos) {
+                return false;
+            }
+            units.splice(pos..pos, text.encode_utf16().map(SimUnit::Code));
+            true
+        }
+        EditOp::Delete { pos_u16, len_u16 } => {
+            let pos = *pos_u16 as usize;
+            let Some(end) = pos.checked_add(*len_u16 as usize) else {
+                return false;
+            };
+            if end > units.len()
+                || splits_surrogate_pair(units, pos)
+                || splits_surrogate_pair(units, end)
+            {
+                return false;
+            }
+            units.drain(pos..end);
+            true
+        }
+        EditOp::InsertChip { pos_u16, chip } => {
+            let pos = *pos_u16 as usize;
+            if pos > units.len() || splits_surrogate_pair(units, pos) {
+                return false;
+            }
+            if chips.iter().all(|owned| owned.id() != *chip) {
+                return false; // foreign: this sheet holds no such chip
+            }
+            if units.contains(&SimUnit::Chip(*chip)) {
+                return false; // duplicate: the sentinel already stands
+            }
+            units.insert(pos, SimUnit::Chip(*chip));
+            true
+        }
     }
 }
 
@@ -1578,5 +1819,304 @@ mod tests {
         assert_eq!(store.sheet(id).unwrap().chip_count(), 0);
         assert!(store.copy_out_chip(a).is_none());
         assert!(store.copy_out_chip(b).is_none());
+    }
+
+    #[test]
+    fn ops_and_a_legacy_snapshot_build_the_same_projection() {
+        let (mut by_ops, _) = store();
+        let (mut by_sync, _) = store();
+        let ops_page = by_ops.new_sheet().unwrap();
+        let sync_page = by_sync.new_sheet().unwrap();
+        let ops_chip = seal(&mut by_ops, ops_page, "same secret");
+        let sync_chip = seal(&mut by_sync, sync_page, "same secret");
+
+        // Typed as three ops, astral ink included, the chip placed
+        // mid-body. Positions are UTF-16 code units: the rocket is two,
+        // so "plan \u{1F680}" ends at 7.
+        assert!(by_ops.apply_ops(
+            ops_page,
+            &[
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "plan \u{1F680} launch".into()
+                },
+                EditOp::InsertChip {
+                    pos_u16: 7,
+                    chip: ops_chip
+                },
+                EditOp::Insert {
+                    pos_u16: 15,
+                    text: " done".into()
+                },
+            ]
+        ));
+        // The same page, restated the legacy way.
+        assert!(by_sync.sync_document(
+            sync_page,
+            vec![
+                Segment::Ink("plan \u{1F680}".into()),
+                Segment::Chip(sync_chip),
+                Segment::Ink(" launch done".into()),
+            ]
+        ));
+
+        let ops_sheet = by_ops.sheet(ops_page).unwrap();
+        let sync_sheet = by_sync.sheet(sync_page).unwrap();
+        assert_eq!(ops_sheet.segments(), sync_sheet.segments());
+        assert_eq!(ops_sheet.title(), sync_sheet.title());
+        assert_eq!(ops_sheet.title(), "plan \u{1F680}");
+    }
+
+    #[test]
+    fn a_batch_with_one_bad_op_mutates_nothing() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let chip = seal(&mut store, id, "held through every refusal");
+        // Body: a(0) 😀(1,2) b(3) chip(4).
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "a\u{1F600}b".into()
+                },
+                EditOp::InsertChip { pos_u16: 4, chip },
+            ]
+        ));
+        let before = store.sheet(id).unwrap().segments().to_vec();
+        let records_before = store.ledger().count();
+
+        // An offset past the simulated end, behind an op that was valid
+        // on its own: the whole batch must fall.
+        assert!(!store.apply_ops(
+            id,
+            &[
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "x".into()
+                },
+                EditOp::Delete {
+                    pos_u16: 99,
+                    len_u16: 1
+                },
+            ]
+        ));
+        // A boundary inside the astral pair, on either kind of op.
+        assert!(!store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 2,
+                text: "x".into()
+            }]
+        ));
+        assert!(!store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 1,
+                len_u16: 1
+            }]
+        ));
+        // A chip this sheet does not own.
+        assert!(!store.apply_ops(
+            id,
+            &[EditOp::InsertChip {
+                pos_u16: 0,
+                chip: ChipId(999)
+            }]
+        ));
+        // A sentinel that would stand twice.
+        assert!(!store.apply_ops(id, &[EditOp::InsertChip { pos_u16: 0, chip }]));
+        // No such page at all.
+        assert!(!store.apply_ops(
+            SheetId(999),
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "x".into()
+            }]
+        ));
+
+        assert_eq!(store.sheet(id).unwrap().segments(), before.as_slice());
+        assert_eq!(store.sheet(id).unwrap().chip_count(), 1);
+        assert_eq!(store.ledger().count(), records_before);
+    }
+
+    #[test]
+    fn coalesced_batches_validate_against_the_simulated_state() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let chip = seal(&mut store, id, "survives the shuffle");
+        // Body: 🔑(0,1) space(2) k(3) e(4) y(5) chip(6).
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "\u{1F511} key".into()
+                },
+                EditOp::InsertChip { pos_u16: 6, chip },
+            ]
+        ));
+        // A delete and insert at one position: the replacement a shell
+        // coalesces a selection retype into.
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Delete {
+                    pos_u16: 2,
+                    len_u16: 4
+                },
+                EditOp::Insert {
+                    pos_u16: 2,
+                    text: " lock".into()
+                },
+            ]
+        ));
+        assert_eq!(
+            store.sheet(id).unwrap().segments(),
+            &[Segment::Ink("\u{1F511} lock".into()), Segment::Chip(chip)]
+        );
+
+        // A delete spanning the chip, followed by that chip's re-insert:
+        // the shell restating a move of the sentinel. Eight units cover
+        // the whole body.
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Delete {
+                    pos_u16: 0,
+                    len_u16: 8
+                },
+                EditOp::InsertChip { pos_u16: 0, chip },
+                EditOp::Insert {
+                    pos_u16: 1,
+                    text: " moved".into()
+                },
+            ]
+        ));
+        assert_eq!(
+            store.sheet(id).unwrap().segments(),
+            &[Segment::Chip(chip), Segment::Ink(" moved".into())]
+        );
+        // The chip lived through its own delete: same bytes, and no
+        // Discarded record for a sentinel that stood again by commit.
+        let (bytes, _) = store.copy_out_chip(chip).unwrap();
+        assert_eq!(&**bytes, b"survives the shuffle");
+        assert!(
+            events(&store)
+                .iter()
+                .all(|event| *event != LedgerEvent::Discarded)
+        );
+    }
+
+    #[test]
+    fn deleting_a_sentinel_by_op_zeroizes_the_chip() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let chip = seal(&mut store, id, "deleted in the editor");
+        assert!(store.apply_ops(id, &[EditOp::InsertChip { pos_u16: 0, chip }]));
+        // ⌫ on the sentinel travels as a one-unit delete.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 0,
+                len_u16: 1
+            }]
+        ));
+        assert_eq!(store.sheet(id).unwrap().chip_count(), 0);
+        assert!(store.copy_out_chip(chip).is_none(), "no resurrection path");
+        assert_eq!(
+            events(&store),
+            vec![
+                LedgerEvent::Discarded,
+                LedgerEvent::Sealed,
+                LedgerEvent::Created
+            ]
+        );
+    }
+
+    #[test]
+    fn a_select_all_delete_batch_zeroizes_every_chip() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        let a = seal(&mut store, id, "first secret");
+        let b = seal(&mut store, id, "second secret");
+        // Body: chip a(0) space(1) 🗿(2,3) space(4) chip b(5).
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::InsertChip {
+                    pos_u16: 0,
+                    chip: a
+                },
+                EditOp::Insert {
+                    pos_u16: 1,
+                    text: " \u{1F5FF} ".into()
+                },
+                EditOp::InsertChip {
+                    pos_u16: 5,
+                    chip: b
+                },
+            ]
+        ));
+        // ⌘A ⌫ travels as one delete across the whole body.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 0,
+                len_u16: 6
+            }]
+        ));
+        assert!(store.sheet(id).unwrap().segments().is_empty());
+        assert_eq!(store.sheet(id).unwrap().chip_count(), 0);
+        assert!(store.copy_out_chip(a).is_none());
+        assert!(store.copy_out_chip(b).is_none());
+    }
+
+    #[test]
+    fn ops_re_derive_the_title_unless_the_user_named_the_page() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "## prod DB credentials\nrotate after".into()
+            }]
+        ));
+        assert_eq!(store.sheet(id).unwrap().title(), "prod DB credentials");
+
+        // A user-chosen name survives every later batch.
+        assert!(store.set_title(id, "the vault"));
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "something else\n".into()
+            }]
+        ));
+        assert_eq!(store.sheet(id).unwrap().title(), "the vault");
+
+        // Handing the name back to derivation, then emptying the page
+        // by ops, lands on the creation-stamp placeholder as the legacy
+        // path does.
+        assert!(store.set_title(id, ""));
+        let len: u32 = store
+            .sheet(id)
+            .unwrap()
+            .segments()
+            .iter()
+            .map(|segment| match segment {
+                Segment::Ink(text) => text.encode_utf16().count() as u32,
+                Segment::Chip(_) => 1,
+            })
+            .sum();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 0,
+                len_u16: len
+            }]
+        ));
+        assert_eq!(store.sheet(id).unwrap().title(), PLACEHOLDER);
     }
 }

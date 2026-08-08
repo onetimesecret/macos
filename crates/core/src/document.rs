@@ -73,13 +73,29 @@ impl SheetDocument {
         Self { doc, body }
     }
 
-    /// Insert ink at a UTF-16 offset.
+    /// Insert ink at a UTF-16 offset. An empty insertion at a valid
+    /// offset is a no-op rather than a question for the library.
     pub(crate) fn insert(&self, pos: usize, text: &str) -> Result<(), InvalidRange> {
+        if text.is_empty() {
+            return if pos <= self.utf16_len() {
+                Ok(())
+            } else {
+                Err(InvalidRange)
+            };
+        }
         self.body.insert_utf16(pos, text).map_err(|_| InvalidRange)
     }
 
-    /// Delete a UTF-16 range.
+    /// Delete a UTF-16 range. A zero-length range at a valid offset is
+    /// a no-op rather than a question for the library.
     pub(crate) fn delete(&self, pos: usize, len: usize) -> Result<(), InvalidRange> {
+        if len == 0 {
+            return if pos <= self.utf16_len() {
+                Ok(())
+            } else {
+                Err(InvalidRange)
+            };
+        }
         self.body.delete_utf16(pos, len).map_err(|_| InvalidRange)
     }
 
@@ -152,9 +168,26 @@ impl SheetDocument {
             .collect()
     }
 
+    /// The UTF-16 offset of a chip's sentinel, if it still stands in
+    /// the body.
+    pub(crate) fn chip_position(&self, id: ItemId) -> Option<usize> {
+        let mut pos = 0usize;
+        for run in self.runs() {
+            match run {
+                DocRun::Chip(found) if found == id => return Some(pos),
+                DocRun::Chip(_) => pos += 1,
+                DocRun::Ink(text) => pos += text.encode_utf16().count(),
+            }
+        }
+        None
+    }
+
     /// The full document, history included, as one plaintext buffer for
     /// the seam above to encrypt. Zeroizing because the buffer holds
     /// every character ever typed, deleted ones included.
+    // Not yet called outside tests: the sealed-persistence stage of
+    // ADR-0013 adopts the snapshot pair; the allowance dies with it.
+    #[allow(dead_code)]
     pub(crate) fn export_snapshot(&self) -> Zeroizing<Vec<u8>> {
         Zeroizing::new(
             self.doc
@@ -166,6 +199,9 @@ impl SheetDocument {
     /// Merge a snapshot into this document. Anything the decoder
     /// refuses maps to [`RestoreError::Malformed`]: a buffer that does
     /// not read back is treated as damage, never partially applied.
+    // Not yet called outside tests: the sealed-persistence stage of
+    // ADR-0013 adopts the snapshot pair; the allowance dies with it.
+    #[allow(dead_code)]
     pub(crate) fn import_snapshot(&self, bytes: &[u8]) -> Result<(), RestoreError> {
         self.doc
             .import(bytes)
