@@ -270,7 +270,7 @@ impl SheetDocument {
     /// of a UTF-16 span, Unix seconds: created and modified for the
     /// block that owns the span, derived from the ops rather than
     /// stored (ADR-0013). A character whose change has left the history
-    /// simply does not vote — after compaction the materialized summary
+    /// simply does not vote; after compaction the materialized summary
     /// answers instead. `None` for an empty span, an unrecognizable
     /// offset, or a span with no committed characters.
     pub(crate) fn span_timestamps(&self, start_u16: usize, len_u16: usize) -> Option<(i64, i64)> {

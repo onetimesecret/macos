@@ -53,8 +53,8 @@ pub struct PasteboardItem {
     pub concealed: bool,
     /// Where the content came from, when the writer said so: the
     /// `public.url` flavor, read in the same pass as the content
-    /// (ADR-0013). Treated as content by everything downstream — a URL
-    /// can carry a token — so it may reach only the sealed document,
+    /// (ADR-0013). Treated as content by everything downstream (a URL
+    /// can carry a token), so it may reach only the sealed document,
     /// never a ledger, a summary, or any JSON surface.
     pub origin_url: Option<String>,
 }

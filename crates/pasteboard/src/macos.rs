@@ -98,8 +98,8 @@ impl Pasteboard for SystemPasteboard {
         // never has a reason to touch the board itself (ADR-0007
         // Amendment 1, ADR-0013). Only the declared `public.url` flavor
         // is consulted: the HTML flavor sometimes knows its source too,
-        // but there is no standard place it keeps it — Chromium uses a
-        // private type of its own, WebKit writes none — so digging
+        // but there is no standard place it keeps it (Chromium uses a
+        // private type of its own, WebKit writes none), so digging
         // through markup would be a parser, not a read, and the flavor
         // is deliberately left alone.
         let origin_url = self
@@ -224,7 +224,7 @@ mod tests {
         let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
         let url_type: &NSPasteboardType = unsafe { NSPasteboardTypeURL };
         let types = NSArray::from_slice(&[string_type, url_type]);
-        // SAFETY: no owner — concrete bytes are written up front, as in
+        // SAFETY: no owner; concrete bytes are written up front, as in
         // `write` above.
         unsafe { pb.pasteboard.declareTypes_owner(&types, None) };
         pb.pasteboard

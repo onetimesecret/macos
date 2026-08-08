@@ -373,7 +373,7 @@ impl<C: Clock> SheetStore<C> {
     /// [`SheetStore::seal_text_at`] carrying provenance: `origin`, when
     /// present, is stamped on the seal's own commit as its persisted
     /// message (ADR-0013), so it lives inside the encrypted snapshot
-    /// and nowhere else — the seam's read surfaces never render commit
+    /// and nowhere else: the seam's read surfaces never render commit
     /// messages, and the ledger records none of this. Riding the seal's
     /// commit rather than a staged next-commit message means a refused
     /// seal drops the origin by construction instead of leaving it to
@@ -650,9 +650,9 @@ impl<C: Clock> SheetStore<C> {
         };
         sheet.rebuild_segments();
         // The block index settles against the document: anchors are
-        // re-taken, and an index the mutation path failed to narrate —
-        // a wholesale restate through `sync_document`, or a mid-batch
-        // refusal — is rebuilt with fresh identities rather than served
+        // re-taken, and an index the mutation path failed to narrate
+        // (a wholesale restate through `sync_document`, or a mid-batch
+        // refusal) is rebuilt with fresh identities rather than served
         // stale (ADR-0013).
         sheet.settle_blocks();
         // The title is re-derived here, on edit, and never later: by

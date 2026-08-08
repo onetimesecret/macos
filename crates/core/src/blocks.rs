@@ -13,7 +13,7 @@
 //!
 //! Nothing here touches the operation log directly. Offsets are UTF-16
 //! code units throughout, the crate's one wire unit; every question
-//! that needs the library — anchors, timestamps — is asked of
+//! that needs the library (anchors, timestamps) is asked of
 //! [`SheetDocument`], the module that owns that seam. Created and
 //! modified are derived from the ops for as long as the ops exist;
 //! `materialized` is the slot the compaction ceremony freezes them
@@ -33,7 +33,7 @@ pub(crate) struct MaterializedMeta {
     /// Latest change that touched the block, Unix seconds.
     pub(crate) modified_s: i64,
     /// Where the block's content came from, when a paste said so. This
-    /// is content — a URL can carry a token — and lives only inside the
+    /// is content (a URL can carry a token) and lives only inside the
     /// sealed snapshot, never on a JSON surface or in the ledger.
     pub(crate) origin: Option<String>,
 }
@@ -107,8 +107,8 @@ pub(crate) struct BlockIndex {
 
 impl BlockIndex {
     /// The index for a document as it stands: one block per paragraph,
-    /// every identity minted fresh. This is the restate path — a new
-    /// page, a restore, a recovery resync — where per-block identity
+    /// every identity minted fresh. This is the restate path (a new
+    /// page, a restore, a recovery resync) where per-block identity
     /// has no history to carry.
     pub(crate) fn for_document(doc: &SheetDocument) -> Self {
         let lens = document_lens(doc);

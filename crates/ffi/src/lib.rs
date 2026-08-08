@@ -475,7 +475,7 @@ pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
     // Provenance rode the same read as the content (ADR-0013): when
     // the board declared a `public.url`, it persists as the seal
     // commit's message, inside the encrypted snapshot and nowhere
-    // else. It is content — a URL can carry a token — so it crosses
+    // else. It is content (a URL can carry a token), so it crosses
     // no JSON surface and reaches no ledger record.
     let origin = item.origin_url.as_deref().map(origin_message);
     let sealed = match item.content {
@@ -1021,7 +1021,7 @@ pub unsafe extern "C" fn companion_sheet_meta_json(
     }
 }
 
-/// A page's blocks — its paragraphs — in document order, each an
+/// A page's blocks (its paragraphs) in document order, each an
 /// object `{"id": uuid, "created_s": i64|null, "modified_s": i64|null}`
 /// (ADR-0013). The id is the block's random identity, stable across
 /// every edit that stays inside the paragraph and following Notion's

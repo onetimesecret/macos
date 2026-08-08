@@ -256,14 +256,14 @@ char *companion_sheet_document_json(CompanionHandle *handle, uint64_t sheet);
  * created_ms is the page's creation stamp (epoch ms, the figure the
  * summaries already carry); modified_s is the newest change's commit
  * timestamp in Unix SECONDS, null for an untouched body. Deliberately
- * nothing else — origin URLs are content and appear on no JSON
+ * nothing else: origin URLs are content and appear on no JSON
  * surface. Free with companion_string_free(). Null for an unknown
  * page.
  */
 char *companion_sheet_meta_json(CompanionHandle *handle, uint64_t sheet);
 
 /*
- * A page's blocks — its paragraphs — in document order:
+ * A page's blocks (its paragraphs) in document order:
  *   [{"id": uuid, "created_s": i64|null, "modified_s": i64|null}, …]
  * The id is the block's random identity, stable across edits inside
  * the paragraph and following the split-keeps-the-first, merge-keeps-

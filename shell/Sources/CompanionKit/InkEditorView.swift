@@ -692,7 +692,7 @@ public struct InkEditorView: NSViewRepresentable {
             let range = NSRange(location: index, length: 1)
             if textView.shouldChangeText(in: range, replacementString: "") {
                 storage.replaceCharacters(in: range, with: "")
-                textView.didChangeText() // sync omits the chip → zeroized
+                textView.didChangeText() // travels as a del op; the core reaps the chip
             }
         }
 

@@ -142,7 +142,7 @@ public struct SheetMeta: Codable, Hashable, Sendable {
     }
 }
 
-/// One block — a paragraph — of a page, as identity and stamps only
+/// One block (a paragraph) of a page, as identity and stamps only
 /// (ADR-0013): a random UUID that survives every edit inside the
 /// paragraph, and created/modified in Unix seconds derived from the
 /// operation log. No text, no counts, no origin.

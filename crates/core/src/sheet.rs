@@ -115,7 +115,7 @@ impl ChipId {
 /// One run of the body's cached projection: visible ink, or a sealed
 /// chip's position. The sheet's operation-logged document is the source
 /// of truth; this shape is rebuilt from its runs for the ledger, for
-/// tab titles, and for sheet promotion — ink is not secret (it
+/// tab titles, and for sheet promotion; ink is not secret (it
 /// renders), so holding a copy here breaks no law.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Segment {
@@ -366,8 +366,8 @@ impl Sheet {
 
     /// Settle the block index against the document as it now stands:
     /// re-take every anchor, and if the index no longer describes the
-    /// body — a wholesale restate, or a mutation path that failed to
-    /// narrate itself — rebuild it with fresh identities rather than
+    /// body (a wholesale restate, or a mutation path that failed to
+    /// narrate itself), rebuild it with fresh identities rather than
     /// serve stale ones. Every mutation path ends here.
     pub(crate) fn settle_blocks(&mut self) {
         if self.blocks.matches(&self.document) {
