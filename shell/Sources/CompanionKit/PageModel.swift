@@ -384,6 +384,9 @@ public final class PageModel: ObservableObject {
     /// domain; both shipping form factors take their own standard one
     /// (`FormFactor.settingsDefaults`).
     public init(formFactor: FormFactor, defaults: UserDefaults = FormFactor.settingsDefaults) {
+        // Before the first call into the core, so nothing it refuses on
+        // the way up is written to a stderr this process may not have.
+        CoreDiagnostics.route(subsystem: formFactor.loggerSubsystem)
         self.formFactor = formFactor
         self.defaults = defaults
         client = CompanionClient(credentialService: formFactor.credentialService)
