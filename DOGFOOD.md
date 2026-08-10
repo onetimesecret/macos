@@ -132,6 +132,27 @@ existing file and logs to the unified log under the `persistence`
 category. See `ABERRATIONS.txt` (local, gitignored) for the running
 list of behavior like this that has not yet earned a permanent home.
 
+When a page does not come back, the shell's side of the story is in
+the unified log:
+
+```bash
+log show --predicate 'subsystem BEGINSWITH "com.onetimesecret"' --last 1h --style compact
+```
+
+That says a restore failed. Why it failed comes from the core, which
+writes to stderr, and stderr goes nowhere when macOS launches the app
+for you. Run the installed binary directly to see it:
+
+```bash
+osascript -e 'tell application "/Applications/OnetimePad.app" to quit'
+/Applications/OnetimePad.app/Contents/MacOS/OnetimePad
+```
+
+The lines name the step that refused: a key half that would not load,
+a file that would not authenticate under the key this session holds, a
+snapshot the core would not take back, or a key rotation the keychain
+refused. Metadata only; no page content and no key material.
+
 ## Recording what you find
 
 Day-to-day surprises go in the local `ABERRATIONS.txt` first. When one

@@ -247,7 +247,22 @@ fn ensure_key_for(credentials: &dyn CredentialStore, account: &str) -> Option<Ze
 fn load_key_for(credentials: &dyn CredentialStore, account: &str) -> Option<Zeroizing<Vec<u8>>> {
     match credentials.load(account) {
         Ok(key) if key.len() == KEY_LEN => Some(key),
-        _ => None,
+        Ok(key) => {
+            eprintln!(
+                "companion-ffi: the {account} item holds {} bytes, not {KEY_LEN}; refusing it.",
+                key.len()
+            );
+            None
+        }
+        // Absence is ordinary on this path (a first run, a rotation that
+        // already happened); a backend that refuses is not, and it is
+        // the difference between a fresh start and a session that cannot
+        // read what it wrote an hour ago.
+        Err(CredentialError::NotFound) => None,
+        Err(error) => {
+            eprintln!("companion-ffi: the {account} item would not load ({error}).");
+            None
+        }
     }
 }
 
@@ -314,7 +329,41 @@ pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore) -> bool {
     // A backend that errors on delete, or one that reports the item
     // still present afterwards, has not rotated anything. An `exists`
     // that will not answer is treated the same way: unknown is not gone.
-    keys.delete(STATE_KEY_ACCOUNT).is_ok() && !keys.exists(STATE_KEY_ACCOUNT).unwrap_or(true)
+    //
+    // Both refusals are announced, because both are otherwise invisible
+    // and both are permanent: a rotation that reports failure leaves the
+    // state file in place, and a state file that will not open is what
+    // withholds the save licence for the session. Silent, that reads in
+    // the interface as an app that has simply stopped remembering
+    // anything, on every launch, with nothing anywhere naming a cause.
+    // The message carries a backend string, never key material.
+    if let Err(error) = keys.delete(STATE_KEY_ACCOUNT) {
+        eprintln!(
+            "companion-ffi: the boot-session rotation could not delete the {STATE_KEY_ACCOUNT} \
+             item ({error}). The stale state file stays on disk and this session will not write \
+             one, so nothing typed this session survives a quit. Every later launch repeats it \
+             until the keychain answers."
+        );
+        return false;
+    }
+    match keys.exists(STATE_KEY_ACCOUNT) {
+        Ok(false) => true,
+        Ok(true) => {
+            eprintln!(
+                "companion-ffi: the {STATE_KEY_ACCOUNT} item is still present after a delete the \
+                 keychain accepted; treating the rotation as refused."
+            );
+            false
+        }
+        Err(error) => {
+            eprintln!(
+                "companion-ffi: the {STATE_KEY_ACCOUNT} item was deleted but the keychain will \
+                 not say whether it is gone ({error}); unknown is not gone, so the rotation \
+                 counts as refused."
+            );
+            false
+        }
+    }
 }
 
 /// `HKDF-SHA256`: salt from the boot half, extract the keychain half,
@@ -660,17 +709,34 @@ pub(crate) fn seal_state(
 /// would perform anyway. Anyone able to rewrite the header could have
 /// deleted the file instead, so this trades nothing away.
 pub(crate) fn open_state(file: &[u8], key: impl FnOnce() -> Option<Zeroizing<Vec<u8>>>) -> Opened {
+    // Each refusal names itself. They are three different failures with
+    // one visible symptom (a session that will not write), and telling
+    // them apart from the outside means reading ciphertext.
     let Some(header) = StateHeader::parse(file) else {
+        eprintln!(
+            "companion-ffi: the state file does not carry this build's envelope header; \
+             refusing it."
+        );
         return Opened::Refused;
     };
     if header.boot != current_boot_uuid() {
         return Opened::BootMismatch;
     }
     let Some(key) = key() else {
+        eprintln!(
+            "companion-ffi: the state file names this boot session, but its content key could \
+             not be assembled. Either the keychain half would not load or this session's boot \
+             half is missing from the temp directory; the file stays and this session will not \
+             write one."
+        );
         return Opened::Refused;
     };
     let Some(plaintext) = open_body(&key, &file[..STATE_HEADER_LEN], &file[STATE_HEADER_LEN..])
     else {
+        eprintln!(
+            "companion-ffi: the state file would not authenticate under the assembled content \
+             key. The halves this session holds are not the halves that sealed it."
+        );
         return Opened::Refused;
     };
     Opened::Plaintext {

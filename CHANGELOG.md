@@ -365,6 +365,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pages survive a quit again: key material is read from both
+  keychains, not just the one this build cannot write to**: an
+  installed build with no `keychain-access-groups` entitlement wrote
+  its key halves to the login keychain (the documented ADR-0012
+  fallback) while reading them back from the data protection keychain,
+  where nothing was ever written. The split came from the entitlement
+  probe, which reads an account that is never written: a read of a
+  missing item answers `errSecItemNotFound` whether or not the
+  keychain is reachable, so only writes ever demoted, and the probe
+  reported a tier the build did not have. Every restore then failed on
+  a key half that read as absent, and a restore that fails over an
+  existing state file withholds the save licence for the session, so
+  the app quietly stopped writing state at all. The visible symptom
+  was an app that opened on an empty page with a date-based title
+  after every launch, reinstall, or rebuild, having lost everything
+  typed into the session before. Reads and existence checks now fall
+  through to the login keychain before concluding absence, and deletes
+  reach both keychains so a rotation cannot report a forgetting that
+  left a live half behind in the other one.
+
+- **The persistence path says why it refused**: a state file that will
+  not open, a key half that will not load, and a key rotation the
+  keychain refused were all silent, and all three produce the same
+  symptom of an app that has stopped remembering. Each now names
+  itself on stderr, in metadata only: which step refused, and what the
+  consequence is for the session. Core diagnostics reach stderr rather
+  than the unified log, so seeing them means running the binary
+  directly (see DOGFOOD.md); the shell's own persistence trail is in
+  the unified log as before.
+
 - **A click beside the raised card reaches the app you clicked**: the
   raised surface used to span the whole screen and catch outside
   clicks with a transparent pane, which rested the card but ate the
