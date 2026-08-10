@@ -15,8 +15,12 @@
 //!   raw `SecItem` calls, and home to the key material ADR-0012 puts
 //!   behind a lock gated, this device only item. A build with no
 //!   `keychain-access-groups` entitlement (any ad hoc signed dev build)
-//!   cannot open that keychain at all, so the store degrades to
-//!   [`KeychainStore`] once, loudly, and then stays there.
+//!   cannot write to that keychain at all, so the store degrades to
+//!   [`KeychainStore`] once, loudly, and then stays there. Only writes
+//!   are refused outright, though: a read of a missing item answers
+//!   "not found" either way, so the degradation cannot be decided from
+//!   a read, and every read falls through to [`KeychainStore`] before
+//!   it reports absence. An item is wherever it was written.
 //! - [`InMemoryCredentialStore`] — a **dev/test-only**, non-persistent
 //!   fallback so everything above this crate builds and tests off macOS.
 //!
@@ -406,54 +410,55 @@ impl KeychainStore {
     pub fn service(&self) -> &str {
         &self.service
     }
+
+    /// Raw status to a crate error, with the framework's own message.
+    fn backend(status: i32) -> CredentialError {
+        CredentialError::Backend(security_framework::base::Error::from_code(status).to_string())
+    }
 }
 
-/// `errSecItemNotFound` — the Keychain's "no such credential" code.
-#[cfg(target_os = "macos")]
-const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
-
+/// Every call names the default keychain (see [`secitem`]). The
+/// `security-framework` password helpers this used to call, and its
+/// `ItemSearchOptions`, cannot name one: they leave the lookup to the
+/// user's keychain search list, where a single entry on a backup volume
+/// the app may not read is enough to fail an unrelated delete. That
+/// failure is what wedged persistence, because a state key that will not
+/// delete is a key rotation that reports refusal, and a refused rotation
+/// withholds the save licence for the whole session, every session.
 #[cfg(target_os = "macos")]
 impl CredentialStore for KeychainStore {
     fn store(&self, account: &str, secret: &[u8]) -> Result<(), CredentialError> {
-        security_framework::passwords::set_generic_password(&self.service, account, secret)
-            .map_err(|e| CredentialError::Backend(e.to_string()))
+        secitem::add_or_update(
+            secitem::Keychain::DefaultFile,
+            &self.service,
+            account,
+            secret,
+        )
+        .map_err(Self::backend)
     }
 
     fn load(&self, account: &str) -> Result<Zeroizing<Vec<u8>>, CredentialError> {
-        match security_framework::passwords::get_generic_password(&self.service, account) {
-            Ok(bytes) => Ok(Zeroizing::new(bytes)),
-            Err(e) if e.code() == ERR_SEC_ITEM_NOT_FOUND => Err(CredentialError::NotFound),
-            Err(e) => Err(CredentialError::Backend(e.to_string())),
+        match secitem::copy_secret(secitem::Keychain::DefaultFile, &self.service, account) {
+            Ok(Some(secret)) => Ok(secret),
+            Ok(None) => Err(CredentialError::NotFound),
+            Err(status) => Err(Self::backend(status)),
         }
     }
 
     fn delete(&self, account: &str) -> Result<(), CredentialError> {
-        match security_framework::passwords::delete_generic_password(&self.service, account) {
-            Ok(()) => Ok(()),
-            // Deleting a missing item is fine.
-            Err(e) if e.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(()),
-            Err(e) => Err(CredentialError::Backend(e.to_string())),
-        }
+        // Deleting a missing item is fine, and the call below already
+        // folds that in.
+        secitem::delete(secitem::Keychain::DefaultFile, &self.service, account)
+            .map_err(Self::backend)
     }
 
     fn exists(&self, account: &str) -> Result<bool, CredentialError> {
-        use security_framework::item::{ItemClass, ItemSearchOptions};
-
-        // Attributes only — no load_data(): the query matches the item
-        // but never asks the Keychain to decrypt it, so it stays below
-        // the ACL prompt. A hit means the token is stored; the read that
-        // actually needs it (promotion) is where the prompt belongs.
-        match ItemSearchOptions::new()
-            .class(ItemClass::generic_password())
-            .service(&self.service)
-            .account(account)
-            .load_attributes(true)
-            .search()
-        {
-            Ok(_) => Ok(true),
-            Err(e) if e.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(false),
-            Err(e) => Err(CredentialError::Backend(e.to_string())),
-        }
+        // Attributes only: the query matches the item but never asks the
+        // Keychain to decrypt it, so it stays below the ACL prompt. A hit
+        // means the token is stored; the read that actually needs it
+        // (promotion) is where the prompt belongs.
+        secitem::exists(secitem::Keychain::DefaultFile, &self.service, account)
+            .map_err(Self::backend)
     }
 
     /// The data protection store for **this store's** service. This is
@@ -466,7 +471,7 @@ impl CredentialStore for KeychainStore {
     }
 }
 
-/// Raw `SecItem` access to the data protection keychain.
+/// Raw `SecItem` access, to a named keychain in every call.
 ///
 /// This is the one module in the crate that writes `unsafe`, so the FFI
 /// surface stays auditable by module rather than by crate. Every
@@ -481,22 +486,36 @@ impl CredentialStore for KeychainStore {
 /// keychain, and it silently ignores `kSecAttrAccessible`. Its search
 /// options cannot name a keychain at all, so even a hand-added item
 /// would be unreadable and undeletable through them.
+///
+/// Naming a keychain is not a nicety on either path. An unnamed legacy
+/// query is resolved against the user's keychain **search list**, which
+/// is user-editable, unbounded, and routinely holds keychains on backup
+/// volumes and disks that are gone. A search-list entry the process
+/// cannot open throws inside `SecItemDelete_osx`, and the error comes
+/// back as the delete's own status: one unreachable keychain anywhere in
+/// the list makes every delete fail, for an item sitting in the default
+/// keychain the whole time. Sandboxing and TCC make that per process, so
+/// the same call succeeds from a terminal with full disk access and
+/// fails inside the app, which is how it stayed hidden.
 #[cfg(target_os = "macos")]
-mod data_protection {
+mod secitem {
     #![allow(unsafe_code)]
     // The Security framework's own constant names, used as written so a
     // reader can grep them against Apple's headers.
     #![allow(non_upper_case_globals)]
 
+    use core_foundation::array::CFArray;
     use core_foundation::base::{CFType, CFTypeRef, TCFType};
     use core_foundation::boolean::CFBoolean;
     use core_foundation::data::CFData;
     use core_foundation::dictionary::CFDictionary;
     use core_foundation::string::{CFString, CFStringRef};
+    use security_framework::os::macos::keychain::SecKeychain;
     use security_framework_sys::base::{errSecDuplicateItem, errSecItemNotFound, errSecSuccess};
     use security_framework_sys::item::{
         kSecAttrAccount, kSecAttrService, kSecClass, kSecClassGenericPassword, kSecMatchLimit,
-        kSecReturnAttributes, kSecReturnData, kSecUseDataProtectionKeychain, kSecValueData,
+        kSecMatchSearchList, kSecReturnAttributes, kSecReturnData, kSecUseDataProtectionKeychain,
+        kSecUseKeychain, kSecValueData,
     };
     use security_framework_sys::keychain_item::{
         SecItemAdd, SecItemCopyMatching, SecItemDelete, SecItemUpdate,
@@ -527,11 +546,78 @@ mod data_protection {
         };
     }
 
-    /// Class, scope and keychain selection: the part every call shares.
-    /// `kSecUseDataProtectionKeychain` is the whole point, and it is what
-    /// an unentitled build trips over.
-    fn base_query(service: &str, account: &str) -> Vec<(CFString, CFType)> {
-        vec![
+    /// Which keychain a call is aimed at. Every call names one, and no
+    /// call is left to the search list.
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum Keychain {
+        /// The data protection keychain ADR-0012 asks for: this device
+        /// only, lock gated, and no search list anywhere in its design.
+        /// Unreachable without a `keychain-access-groups` entitlement.
+        DataProtection,
+        /// The user's **default** file based keychain, named outright.
+        /// The fallback tier, and the only tier an ad hoc signed build
+        /// has. Named rather than searched for the reason in this
+        /// module's header: one unreachable keychain in the search list
+        /// is enough to fail a delete that had nothing to do with it.
+        DefaultFile,
+    }
+
+    impl Keychain {
+        /// The pair that scopes a **query** to this keychain: a lookup,
+        /// an update, or a delete. Fallible only on the file path, where
+        /// the default keychain has to be resolved before it can be
+        /// named.
+        fn query_scope(self) -> Result<(CFString, CFType), i32> {
+            match self {
+                Self::DataProtection => Ok((
+                    sec_string!(kSecUseDataProtectionKeychain),
+                    CFBoolean::true_value().as_CFType(),
+                )),
+                Self::DefaultFile => Ok((
+                    sec_string!(kSecMatchSearchList),
+                    CFArray::from_CFTypes(&[default_keychain()?]).as_CFType(),
+                )),
+            }
+        }
+
+        /// The pairs that put a **new** item in this keychain. A match
+        /// key means nothing to `SecItemAdd`, so the file path names its
+        /// keychain with `kSecUseKeychain` instead, and the data
+        /// protection path carries its protection class here because an
+        /// item's class is set once, at add time.
+        fn add_scope(self) -> Result<Vec<(CFString, CFType)>, i32> {
+            match self {
+                Self::DataProtection => Ok(vec![
+                    (
+                        sec_string!(kSecUseDataProtectionKeychain),
+                        CFBoolean::true_value().as_CFType(),
+                    ),
+                    (
+                        sec_string!(kSecAttrAccessible),
+                        sec_string!(kSecAttrAccessibleWhenUnlockedThisDeviceOnly).as_CFType(),
+                    ),
+                ]),
+                Self::DefaultFile => Ok(vec![(
+                    sec_string!(kSecUseKeychain),
+                    default_keychain()?.as_CFType(),
+                )]),
+            }
+        }
+    }
+
+    /// The user's default keychain, or the status that says why not.
+    fn default_keychain() -> Result<SecKeychain, i32> {
+        SecKeychain::default().map_err(security_framework::base::Error::code)
+    }
+
+    /// Class, service and account: the part every call shares, plus the
+    /// pair that names the keychain it is aimed at.
+    fn base_query(
+        keychain: Keychain,
+        service: &str,
+        account: &str,
+    ) -> Result<Vec<(CFString, CFType)>, i32> {
+        Ok(vec![
             (
                 sec_string!(kSecClass),
                 sec_string!(kSecClassGenericPassword).as_CFType(),
@@ -544,11 +630,8 @@ mod data_protection {
                 sec_string!(kSecAttrAccount),
                 CFString::new(account).as_CFType(),
             ),
-            (
-                sec_string!(kSecUseDataProtectionKeychain),
-                CFBoolean::true_value().as_CFType(),
-            ),
-        ]
+            keychain.query_scope()?,
+        ])
     }
 
     fn dictionary(pairs: &[(CFString, CFType)]) -> CFDictionary<CFString, CFType> {
@@ -561,12 +644,27 @@ mod data_protection {
     /// The secret is copied into a `CFData` on the way in. That copy is
     /// the framework's price of entry and cannot be zeroized; the caller
     /// keeps its own copy in a [`Zeroizing`] buffer.
-    pub fn add_or_update(service: &str, account: &str, secret: &[u8]) -> Result<(), i32> {
-        let mut attributes = base_query(service, account);
-        attributes.push((
-            sec_string!(kSecAttrAccessible),
-            sec_string!(kSecAttrAccessibleWhenUnlockedThisDeviceOnly).as_CFType(),
-        ));
+    pub fn add_or_update(
+        keychain: Keychain,
+        service: &str,
+        account: &str,
+        secret: &[u8],
+    ) -> Result<(), i32> {
+        let mut attributes = vec![
+            (
+                sec_string!(kSecClass),
+                sec_string!(kSecClassGenericPassword).as_CFType(),
+            ),
+            (
+                sec_string!(kSecAttrService),
+                CFString::new(service).as_CFType(),
+            ),
+            (
+                sec_string!(kSecAttrAccount),
+                CFString::new(account).as_CFType(),
+            ),
+        ];
+        attributes.extend(keychain.add_scope()?);
         attributes.push((
             sec_string!(kSecValueData),
             CFData::from_buffer(secret).as_CFType(),
@@ -582,7 +680,7 @@ mod data_protection {
         };
         match status {
             errSecSuccess => Ok(()),
-            errSecDuplicateItem => update(service, account, secret),
+            errSecDuplicateItem => update(keychain, service, account, secret),
             other => Err(other),
         }
     }
@@ -590,8 +688,8 @@ mod data_protection {
     /// Replace the data of an existing item. Only `kSecValueData` moves:
     /// the protection class was set at add time and re-asserting it here
     /// would let a future edit disagree with itself.
-    fn update(service: &str, account: &str, secret: &[u8]) -> Result<(), i32> {
-        let query = dictionary(&base_query(service, account));
+    fn update(keychain: Keychain, service: &str, account: &str, secret: &[u8]) -> Result<(), i32> {
+        let query = dictionary(&base_query(keychain, service, account)?);
         let changes = dictionary(&[(
             sec_string!(kSecValueData),
             CFData::from_buffer(secret).as_CFType(),
@@ -608,8 +706,12 @@ mod data_protection {
     }
 
     /// The secret, or `Ok(None)` when no such item exists.
-    pub fn copy_secret(service: &str, account: &str) -> Result<Option<Zeroizing<Vec<u8>>>, i32> {
-        let mut query = base_query(service, account);
+    pub fn copy_secret(
+        keychain: Keychain,
+        service: &str,
+        account: &str,
+    ) -> Result<Option<Zeroizing<Vec<u8>>>, i32> {
+        let mut query = base_query(keychain, service, account)?;
         query.push((
             sec_string!(kSecReturnData),
             CFBoolean::true_value().as_CFType(),
@@ -645,8 +747,8 @@ mod data_protection {
 
     /// Whether the item exists, decided from attributes only so the
     /// query never asks the keychain to decrypt anything.
-    pub fn exists(service: &str, account: &str) -> Result<bool, i32> {
-        match attributes_status(service, account) {
+    pub fn exists(keychain: Keychain, service: &str, account: &str) -> Result<bool, i32> {
+        match attributes_status(keychain, service, account) {
             errSecSuccess => Ok(true),
             errSecItemNotFound => Ok(false),
             other => Err(other),
@@ -654,8 +756,8 @@ mod data_protection {
     }
 
     /// Delete the item. A missing item is not an error.
-    pub fn delete(service: &str, account: &str) -> Result<(), i32> {
-        let query = dictionary(&base_query(service, account));
+    pub fn delete(keychain: Keychain, service: &str, account: &str) -> Result<(), i32> {
+        let query = dictionary(&base_query(keychain, service, account)?);
         // SAFETY: a well-formed query dictionary, alive across the call.
         let status = unsafe { SecItemDelete(query.as_concrete_TypeRef()) };
         match status {
@@ -669,14 +771,18 @@ mod data_protection {
     /// keychain is reachable, `errSecMissingEntitlement` when it is not.
     /// Reads no secret and writes nothing.
     pub fn probe(service: &str) -> i32 {
-        attributes_status(service, PROBE_ACCOUNT)
+        attributes_status(Keychain::DataProtection, service, PROBE_ACCOUNT)
     }
 
     /// An attributes-only `SecItemCopyMatching`, returning its raw
     /// status. Shared by [`exists`] and [`probe`] so both stay below the
-    /// ACL prompt.
-    fn attributes_status(service: &str, account: &str) -> i32 {
-        let mut query = base_query(service, account);
+    /// ACL prompt. A keychain that cannot even be named answers with the
+    /// status that says so, which reads as any other refusal.
+    fn attributes_status(keychain: Keychain, service: &str, account: &str) -> i32 {
+        let mut query = match base_query(keychain, service, account) {
+            Ok(query) => query,
+            Err(status) => return status,
+        };
         query.push((
             sec_string!(kSecReturnAttributes),
             CFBoolean::true_value().as_CFType(),
@@ -700,6 +806,58 @@ mod data_protection {
             drop(unsafe { CFType::wrap_under_create_rule(result) });
         }
         status
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// The two tiers must aim at two keychains. A copy-paste that
+        /// left the file path carrying the data protection flag would
+        /// send the fallback back to the keychain the fallback exists
+        /// because it cannot reach, and a file path carrying no scope at
+        /// all would be back on the search list. Compares the keys the
+        /// dictionaries are built from; no item is read or written.
+        #[test]
+        fn each_tier_names_a_different_keychain() {
+            let protection = Keychain::DataProtection
+                .query_scope()
+                .expect("the data protection scope needs no lookup")
+                .0
+                .to_string();
+            // Naming the default keychain is a lookup, and a host without
+            // one (a headless runner) has nothing to assert against.
+            let Ok((file_key, _)) = Keychain::DefaultFile.query_scope() else {
+                return;
+            };
+            assert_ne!(protection, file_key.to_string());
+        }
+
+        /// Adding is not querying: a match key means nothing to
+        /// `SecItemAdd`, so the file path has to name its keychain the
+        /// other way, and the protection class rides along on the tier
+        /// that has one.
+        #[test]
+        fn adding_names_the_keychain_a_second_way() {
+            let protection = Keychain::DataProtection
+                .add_scope()
+                .expect("the data protection scope needs no lookup");
+            assert_eq!(protection.len(), 2, "the flag and the protection class");
+
+            let Ok(file) = Keychain::DefaultFile.add_scope() else {
+                return;
+            };
+            assert_eq!(file.len(), 1, "the keychain, and no protection class");
+            assert_ne!(
+                file[0].0.to_string(),
+                Keychain::DefaultFile
+                    .query_scope()
+                    .expect("already resolved once")
+                    .0
+                    .to_string(),
+                "adding names a keychain; querying searches one"
+            );
+        }
     }
 }
 
@@ -746,7 +904,7 @@ impl DataProtectionKeychainStore {
     /// The keychain this store reaches, probing once and caching the
     /// answer for the life of the store.
     pub fn tier(&self) -> KeychainTier {
-        self.gate.tier(|| data_protection::probe(&self.service))
+        self.gate.tier(|| secitem::probe(&self.service))
     }
 
     /// Raw status to a crate error, with the framework's own message.
@@ -761,7 +919,12 @@ impl CredentialStore for DataProtectionKeychainStore {
         if self.tier() == KeychainTier::FileFallback {
             return self.fallback.store(account, secret);
         }
-        match data_protection::add_or_update(&self.service, account, secret) {
+        match secitem::add_or_update(
+            secitem::Keychain::DataProtection,
+            &self.service,
+            account,
+            secret,
+        ) {
             Ok(()) => Ok(()),
             Err(ERR_SEC_MISSING_ENTITLEMENT) => {
                 self.gate.demote();
@@ -771,13 +934,33 @@ impl CredentialStore for DataProtectionKeychainStore {
         }
     }
 
+    /// Reads fall through to the login keychain, and that is not
+    /// belt-and-braces: it is what keeps an unentitled build able to read
+    /// what it wrote.
+    ///
+    /// The probe cannot be trusted to answer the entitlement question.
+    /// It reads an account that is never written, and a **read** of a
+    /// missing item answers `errSecItemNotFound` whether or not this
+    /// process may use the data protection keychain at all; only a write
+    /// or a delete comes back [`ERR_SEC_MISSING_ENTITLEMENT`]. So a build
+    /// with no entitlement resolves to [`KeychainTier::DataProtection`],
+    /// writes demote and land in the login keychain, and reads keep
+    /// asking the data protection keychain, where nothing was ever
+    /// written. Absence there is not absence: every key half this app
+    /// owns then reads as missing, the sealed file will not open, and the
+    /// session that cannot read its own key withholds the save licence
+    /// and stops persisting anything at all.
+    ///
+    /// Reading both tiers costs one extra miss on a healthy install and
+    /// removes a failure whose only symptom is an app that has quietly
+    /// stopped remembering.
     fn load(&self, account: &str) -> Result<Zeroizing<Vec<u8>>, CredentialError> {
         if self.tier() == KeychainTier::FileFallback {
             return self.fallback.load(account);
         }
-        match data_protection::copy_secret(&self.service, account) {
+        match secitem::copy_secret(secitem::Keychain::DataProtection, &self.service, account) {
             Ok(Some(secret)) => Ok(secret),
-            Ok(None) => Err(CredentialError::NotFound),
+            Ok(None) => self.fallback.load(account),
             Err(ERR_SEC_MISSING_ENTITLEMENT) => {
                 self.gate.demote();
                 self.fallback.load(account)
@@ -786,12 +969,16 @@ impl CredentialStore for DataProtectionKeychainStore {
         }
     }
 
+    /// Deletes reach both tiers, for the same reason reads do: an item
+    /// this store must destroy can be in either keychain, and a rotation
+    /// that removed one copy while another survived would report a
+    /// forgetting it did not perform.
     fn delete(&self, account: &str) -> Result<(), CredentialError> {
         if self.tier() == KeychainTier::FileFallback {
             return self.fallback.delete(account);
         }
-        match data_protection::delete(&self.service, account) {
-            Ok(()) => Ok(()),
+        match secitem::delete(secitem::Keychain::DataProtection, &self.service, account) {
+            Ok(()) => self.fallback.delete(account),
             Err(ERR_SEC_MISSING_ENTITLEMENT) => {
                 self.gate.demote();
                 self.fallback.delete(account)
@@ -804,8 +991,12 @@ impl CredentialStore for DataProtectionKeychainStore {
         if self.tier() == KeychainTier::FileFallback {
             return self.fallback.exists(account);
         }
-        match data_protection::exists(&self.service, account) {
-            Ok(found) => Ok(found),
+        match secitem::exists(secitem::Keychain::DataProtection, &self.service, account) {
+            Ok(true) => Ok(true),
+            // Same fall-through as `load`: absence in one keychain is
+            // not absence, and this answer decides whether a rotation
+            // counts as done.
+            Ok(false) => self.fallback.exists(account),
             Err(ERR_SEC_MISSING_ENTITLEMENT) => {
                 self.gate.demote();
                 self.fallback.exists(account)
@@ -1106,5 +1297,25 @@ mod tests {
         assert!(!store.exists(account).unwrap());
         // Deleting an absent item is not an error.
         store.delete(account).unwrap();
+
+        // A half written to the login keychain must still be found when
+        // the store believes it is on the data protection tier. This is
+        // the shape of every unentitled build: the probe reads clean, so
+        // the tier says data protection, while every write demoted and
+        // landed here. A read that stopped at the first keychain would
+        // call this absent, and a key half that reads as absent is a
+        // sealed file that never opens again.
+        legacy.store(account, b"written-by-the-fallback").unwrap();
+        assert_eq!(&*store.load(account).unwrap(), b"written-by-the-fallback");
+        assert!(store.exists(account).unwrap());
+
+        // And a delete has to reach it there, or a rotation would report
+        // a forgetting that left the key sitting in the other keychain.
+        store.delete(account).unwrap();
+        assert!(matches!(
+            legacy.load(account),
+            Err(CredentialError::NotFound)
+        ));
+        assert!(!store.exists(account).unwrap());
     }
 }
