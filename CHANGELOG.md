@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The core's refusals reach the unified log, so a launch you cannot
+  reproduce still leaves a trail** (`companion_set_diagnostic_sink`,
+  companion-ffi 0.8.0): the core wrote its persistence diagnostics to
+  stderr, and an app macOS launches for you has no stderr, so every
+  line written for whoever is debugging a failed launch was discarded
+  before that launch happened. Reading them meant running the binary
+  from a terminal, which is the one launch that reproduces least: a
+  different keychain posture, a different environment, a different
+  signature check from the launch that failed. The seam now takes a
+  sink, the shell registers one before its first call into the core,
+  and each line lands in the unified log under the `core` category
+  beside the shell's own `persistence` trail. One registration covers
+  the credentials crate's keychain tier notice too. With no sink
+  registered the lines still go to stderr, so `cargo test` and a
+  terminal launch read as they always did, and the shell's sink also
+  echoes to stderr when there is a terminal attached. What crosses is
+  metadata: which step refused and the backend's own error text, never
+  ink, a chip, or key material. Logged `.public` for that reason, since
+  a line redacted to `<private>` in the field is a line nobody can act
+  on.
+
 - **The screen-capture opt-out is reachable in a release build, by
   launch variable only**: the Settings switch that lifts the surface's
   `sharingType = .none` exclusion used to be compiled out of release
@@ -389,11 +410,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not open, a key half that will not load, and a key rotation the
   keychain refused were all silent, and all three produce the same
   symptom of an app that has stopped remembering. Each now names
-  itself on stderr, in metadata only: which step refused, and what the
-  consequence is for the session. Core diagnostics reach stderr rather
-  than the unified log, so seeing them means running the binary
-  directly (see DOGFOOD.md); the shell's own persistence trail is in
-  the unified log as before.
+  itself, in metadata only: which step refused, and what the
+  consequence is for the session. They reach the unified log under the
+  `core` category through the sink above, beside the shell's own
+  `persistence` trail (see DOGFOOD.md).
 
 - **A click beside the raised card reaches the app you clicked**: the
   raised surface used to span the whole screen and catch outside

@@ -132,26 +132,34 @@ existing file and logs to the unified log under the `persistence`
 category. See `ABERRATIONS.txt` (local, gitignored) for the running
 list of behavior like this that has not yet earned a permanent home.
 
-When a page does not come back, the shell's side of the story is in
-the unified log:
+When a page does not come back, the whole story is in the unified log,
+however the app was launched:
 
 ```bash
 log show --predicate 'subsystem BEGINSWITH "com.onetimesecret"' --last 1h --style compact
 ```
 
-That says a restore failed. Why it failed comes from the core, which
-writes to stderr, and stderr goes nowhere when macOS launches the app
-for you. Run the installed binary directly to see it:
+Two categories answer two different questions. `persistence` is the
+shell's: a restore failed, a save was refused, the licence was
+withheld. `core` is why: the step that refused, named. A key half that
+would not load, a file that would not authenticate under the key this
+session holds, a snapshot the core would not take back, or a key
+rotation the keychain refused. Metadata only, and deliberately not
+redacted: no page content and no key material passes here, so there is
+nothing in these lines to hide from the person reading them.
+
+The core's half used to reach stderr only, which meant it reached
+nobody: an app macOS launches for you has no stderr. Running the
+binary from a terminal still shows those lines as they happen, and is
+still the fastest loop while you are working on the core:
 
 ```bash
 osascript -e 'tell application "/Applications/OnetimePad.app" to quit'
 /Applications/OnetimePad.app/Contents/MacOS/OnetimePad
 ```
 
-The lines name the step that refused: a key half that would not load,
-a file that would not authenticate under the key this session holds, a
-snapshot the core would not take back, or a key rotation the keychain
-refused. Metadata only; no page content and no key material.
+Reach for `log show` for the launch you cannot reproduce, and the
+terminal for the one you can.
 
 ## Recording what you find
 
