@@ -14,7 +14,7 @@
 use objc2::rc::Retained;
 use objc2_app_kit::{
     NSPasteboard, NSPasteboardNameDrag, NSPasteboardType, NSPasteboardTypePNG,
-    NSPasteboardTypeString,
+    NSPasteboardTypeString, NSPasteboardTypeURL,
 };
 use objc2_foundation::{NSArray, NSData, NSString};
 use zeroize::Zeroizing;
@@ -82,6 +82,7 @@ impl Pasteboard for SystemPasteboard {
     fn read(&self) -> Option<PasteboardItem> {
         let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
         let png_type: &NSPasteboardType = unsafe { NSPasteboardTypePNG };
+        let url_type: &NSPasteboardType = unsafe { NSPasteboardTypeURL };
 
         let content = if let Some(s) = self.pasteboard.stringForType(string_type) {
             PasteboardContent::Text(s.to_string())
@@ -93,7 +94,25 @@ impl Pasteboard for SystemPasteboard {
 
         let concealed = self.types_present().iter().any(|t| t == CONCEALED_TYPE);
 
-        Some(PasteboardItem { content, concealed })
+        // Provenance, read in the same pass as the content so the shell
+        // never has a reason to touch the board itself (ADR-0007
+        // Amendment 1, ADR-0013). Only the declared `public.url` flavor
+        // is consulted: the HTML flavor sometimes knows its source too,
+        // but there is no standard place it keeps it (Chromium uses a
+        // private type of its own, WebKit writes none), so digging
+        // through markup would be a parser, not a read, and the flavor
+        // is deliberately left alone.
+        let origin_url = self
+            .pasteboard
+            .stringForType(url_type)
+            .map(|url| url.to_string())
+            .filter(|url| !url.is_empty());
+
+        Some(PasteboardItem {
+            content,
+            concealed,
+            origin_url,
+        })
     }
 
     fn write(
@@ -194,6 +213,36 @@ mod tests {
         assert!(item.concealed);
         assert_eq!(item.content, PasteboardContent::Text("hunter2".into()));
         assert!(pb.types_present().iter().any(|t| t == TRANSIENT_TYPE));
+    }
+
+    #[test]
+    fn read_captures_the_origin_url_when_present_and_none_otherwise() {
+        use objc2_foundation::NSArray;
+        let pb = SystemPasteboard::for_testing();
+        // Text with a `public.url` flavor beside it, declared together,
+        // as a browser leaves a copied link.
+        let string_type: &NSPasteboardType = unsafe { NSPasteboardTypeString };
+        let url_type: &NSPasteboardType = unsafe { NSPasteboardTypeURL };
+        let types = NSArray::from_slice(&[string_type, url_type]);
+        // SAFETY: no owner; concrete bytes are written up front, as in
+        // `write` above.
+        unsafe { pb.pasteboard.declareTypes_owner(&types, None) };
+        pb.pasteboard
+            .setString_forType(&NSString::from_str("quoted paragraph"), string_type);
+        pb.pasteboard.setString_forType(
+            &NSString::from_str("https://example.test/article?token=q"),
+            url_type,
+        );
+        let item = pb.read().unwrap();
+        assert_eq!(
+            item.origin_url.as_deref(),
+            Some("https://example.test/article?token=q")
+        );
+
+        // A plain write declares no URL flavor, so the read reports none.
+        let mut pb = SystemPasteboard::for_testing();
+        write_text(&mut pb, "no origin here", false);
+        assert!(pb.read().unwrap().origin_url.is_none());
     }
 
     #[test]

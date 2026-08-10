@@ -3,8 +3,9 @@ import SwiftUI
 
 /// The page: a little text file of **ink** (visible, editable text) and
 /// **sealed chips** (opaque tokens whose bytes live core-side and never
-/// render). The editor owns the live document; the core mirrors it via
-/// `sync_document` for tab titles, the ledger, and chip liveness.
+/// render). The core owns the document (ADR-0013): every storage edit
+/// crosses the seam as a batch of range operations, and the editor's
+/// text storage is the projection the user types into.
 ///
 /// The gesture routes (docs/spec/04): ⌘V pastes plain ink like every
 /// text editor on the machine; ⇧⌘V seals from the pasteboard; ⌘↩ seals
@@ -55,10 +56,12 @@ public struct InkEditorView: NSViewRepresentable {
         Coordinator.shedLayoutManagers(from: storage, keeping: nil)
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
+        // Only the mounted page's storage carries the coordinator as
+        // its delegate, so ops are emitted for the page on screen and
+        // never for a background storage a programmatic write touches.
+        storage.delegate = context.coordinator
 
         let textView = InkTextView(frame: .zero, textContainer: container)
-        textView.autoresizingMask = [.width]
-        textView.isVerticallyResizable = true
         // Rich text stays on so chip attachments survive editing; the
         // user-facing surface is still plain — ⌘V pastes plain text and
         // no ruler/font UI exists. Styling is ours alone (restyle()).
@@ -70,7 +73,9 @@ public struct InkEditorView: NSViewRepresentable {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.drawsBackground = false
-        textView.textContainerInset = NSSize(width: 12, height: 12)
+        textView.textContainerInset = NSSize(
+            width: 12, height: Coordinator.topInset
+        )
         textView.typingAttributes = [
             .font: InkStyle.baseFont,
             .foregroundColor: NSColor.labelColor,
@@ -88,6 +93,34 @@ public struct InkEditorView: NSViewRepresentable {
             coordinator?.sealedPaste()
         }
 
+        return Self.scrollStack(for: textView)
+    }
+
+    /// The page inside its scroller: a text view free to grow as tall as
+    /// its text, clipped by a card-sized window onto it.
+    ///
+    /// The freedom has to be granted explicitly. `NSScrollView` stamps a
+    /// zero-framed document view's `maxSize` with the clip's size the
+    /// first time it lays it out, and a vertically resizable text view
+    /// refuses to grow past `maxSize.height`. Left at that stamp the
+    /// page's frame stops at exactly one cardful: the storage keeps
+    /// taking text and the layout manager keeps laying it out, but a
+    /// document no taller than its clip has nothing to scroll, so
+    /// everything past the first screenful is written and unreachable.
+    /// The card is resizable too, and the stamp is not reapplied when it
+    /// grows, so the ceiling would be whatever height the card happened
+    /// to have the moment the editor mounted.
+    static func scrollStack(for textView: InkTextView) -> NSScrollView {
+        textView.autoresizingMask = [.width]
+        textView.isVerticallyResizable = true
+        // Width is the container's business (`widthTracksTextView`), so
+        // the page wraps rather than scrolling sideways.
+        textView.isHorizontallyResizable = false
+        textView.minSize = .zero
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
@@ -134,8 +167,14 @@ public struct InkEditorView: NSViewRepresentable {
         // moves this editor's layout manager off the outgoing storage,
         // leaving both sides with exactly the managers they should
         // have: one here, none on the page going to the background.
+        // The delegate follows the mount: the outgoing storage stops
+        // emitting (background writes are projection updates, not
+        // edits), the incoming one starts.
+        let outgoing = textView.textStorage
         Coordinator.shedLayoutManagers(from: incoming, keeping: textView.layoutManager)
         textView.layoutManager?.replaceTextStorage(incoming)
+        outgoing?.delegate = nil
+        incoming.delegate = coordinator
         coordinator.currentSheet = sheetID
         coordinator.restyle()
         coordinator.restoreViewState(textView: textView, scrollView: scroll, for: sheetID)
@@ -143,8 +182,14 @@ public struct InkEditorView: NSViewRepresentable {
 
     // MARK: - Coordinator
 
+    // @preconcurrency: NSTextStorageDelegate is not main-actor
+    // annotated in the SDK, but AppKit only ever calls it on the main
+    // thread for a storage driven by a main-thread text view; the
+    // conformance asserts that at runtime instead of forbidding it at
+    // compile time.
     @MainActor
-    public final class Coordinator: NSObject, NSTextViewDelegate {
+    public final class Coordinator: NSObject, NSTextViewDelegate,
+        @preconcurrency NSTextStorageDelegate {
         let model: PageModel
         weak var textView: InkTextView?
         var currentSheet: UInt64?
@@ -315,19 +360,193 @@ public struct InkEditorView: NSViewRepresentable {
             return model.undoManager(for: sheet)
         }
 
-        // MARK: Editing
+        // MARK: Editing (ops across the seam, ADR-0013)
 
         public func textDidChange(_ notification: Notification) {
             restyle()
-            pushSync()
         }
 
-        /// Mirror the document to the core. Runs on every edit — the
-        /// document is small by design (a staging area, not a corpus),
-        /// and the mirror is what keeps chip liveness authoritative.
-        func pushSync() {
-            guard let sheet = currentSheet, let storage = textView?.textStorage else { return }
-            model.syncDocument(sheet: sheet, runs: Self.runs(of: storage))
+        /// The composition the IME gate is tracking: where it started,
+        /// what stood there before it began, and how long the span has
+        /// grown to. Nil while no composition is in flight.
+        struct CompositionSpan {
+            let location: Int
+            let baseline: String
+            var spanLength: Int
+        }
+
+        var imeComposition: CompositionSpan?
+
+        /// True while `setMarkedText` is replacing the storage. The
+        /// view's own marked-range bookkeeping may update before or
+        /// after that edit, so `hasMarkedText()` alone cannot tell a
+        /// mid-composition replacement from a resolving one; this flag
+        /// can.
+        var markedTextInFlight = false
+
+        /// A test hook: every emitted batch, after it was applied.
+        /// Nil outside tests.
+        var onEmit: (([DocumentEditOp]) -> Void)?
+
+        /// The emission point: every character edit the storage
+        /// processed becomes one replace-shaped batch. Attribute-only
+        /// passes (restyle) carry no `.editedCharacters` and emit
+        /// nothing; projection writes are suppressed by the model's
+        /// guard; marked text is gated below so an abandoned
+        /// composition leaves zero ops behind (the ADR forbids phantom
+        /// ops).
+        public func textStorage(
+            _ storage: NSTextStorage,
+            didProcessEditing editedMask: NSTextStorageEditActions,
+            range editedRange: NSRange,
+            changeInLength delta: Int
+        ) {
+            guard editedMask.contains(.editedCharacters) else { return }
+            guard !model.isApplyingProjection else { return }
+            guard let sheet = currentSheet else { return }
+            if markedTextInFlight || (textView?.hasMarkedText() ?? false) {
+                // Composition in flight: the span grows and shrinks
+                // with each marked replacement, and nothing crosses the
+                // seam until it resolves.
+                imeComposition?.spanLength += delta
+                return
+            }
+            if imeComposition != nil {
+                // This edit resolved the composition (a commit's final
+                // replacement, or the removal a cancel performs).
+                imeComposition?.spanLength += delta
+                finishComposition(in: storage, sheet: sheet)
+                return
+            }
+            emit(Self.editOps(storage: storage, editedRange: editedRange, changeInLength: delta),
+                 sheet: sheet)
+        }
+
+        /// A composition is starting: remember what the span it will
+        /// replace held, so its end can be diffed against a truth
+        /// rather than replayed edit by edit.
+        func beginComposition(over range: NSRange, in storage: NSTextStorage) {
+            guard imeComposition == nil else { return }
+            let clamped = Self.clamped(range, to: storage.length)
+            imeComposition = CompositionSpan(
+                location: clamped.location,
+                baseline: (storage.string as NSString).substring(with: clamped),
+                spanLength: clamped.length
+            )
+        }
+
+        /// The composition resolved: diff the accumulated span against
+        /// its pre-composition baseline. Equal means an abandoned
+        /// composition (Esc), and an abandoned composition must
+        /// produce zero ops; different commits the minimal replace.
+        func finishComposition(in storage: NSTextStorage, sheet: UInt64) {
+            guard let ime = imeComposition else { return }
+            imeComposition = nil
+            let text = storage.string as NSString
+            let span = NSRange(location: ime.location, length: max(0, ime.spanLength))
+            guard NSMaxRange(span) <= text.length else {
+                // The span outran the storage, so there is nothing trustworthy to
+                // diff, so fall back to the recovery mirror.
+                model.syncDocument(sheet: sheet, runs: Self.runs(of: storage))
+                return
+            }
+            let final = text.substring(with: span)
+            guard final != ime.baseline else { return }
+            emit(Self.minimalReplace(at: ime.location, old: ime.baseline, new: final),
+                 sheet: sheet)
+        }
+
+        /// If a composition is still tracked once the view unmarks
+        /// (a cancel that never produced a resolving character edit),
+        /// settle it now against the storage as it stands.
+        func finishCompositionIfPending() {
+            guard imeComposition != nil,
+                  let textView, !textView.hasMarkedText(),
+                  let storage = textView.textStorage,
+                  let sheet = currentSheet
+            else { return }
+            finishComposition(in: storage, sheet: sheet)
+        }
+
+        /// Encode and send one batch. Empty batches never cross: a
+        /// no-op is not an operation.
+        private func emit(_ ops: [DocumentEditOp], sheet: UInt64) {
+            guard !ops.isEmpty, let json = DocumentEditOp.wireJSON(ops) else { return }
+            model.applyOps(sheet: sheet, opsJSON: json)
+            onEmit?(ops)
+        }
+
+        /// One storage edit as a replace-shaped batch: the deleted
+        /// length is what the edited range grew from
+        /// (`range.length - changeInLength`), deleted at the range's
+        /// location; the inserted text is read back out of the storage
+        /// and split into ink and chip ops by walking its attachments.
+        /// All positions are UTF-16 code units, which is what `NSRange`
+        /// measures in.
+        static func editOps(
+            storage: NSTextStorage, editedRange: NSRange, changeInLength delta: Int
+        ) -> [DocumentEditOp] {
+            var ops: [DocumentEditOp] = []
+            let deletedLen = editedRange.length - delta
+            if deletedLen > 0 {
+                ops.append(.del(at: editedRange.location, len: deletedLen))
+            }
+            guard editedRange.length > 0 else { return ops }
+            let text = storage.string as NSString
+            var pos = editedRange.location
+            storage.enumerateAttribute(.attachment, in: editedRange) { value, range, _ in
+                if let chip = value as? ChipAttachment {
+                    ops.append(.chip(at: pos, id: chip.info.chipId))
+                } else if range.length > 0 {
+                    ops.append(.ins(at: pos, text: text.substring(with: range)))
+                }
+                pos += range.length
+            }
+            return ops
+        }
+
+        /// The smallest single replace that turns `old` into `new` at
+        /// `location`: common UTF-16 prefix and suffix trimmed, with
+        /// the boundaries nudged off surrogate-pair interiors so the
+        /// core is never asked to cut an astral character in half.
+        nonisolated static func minimalReplace(
+            at location: Int, old: String, new: String
+        ) -> [DocumentEditOp] {
+            let oldUnits = Array(old.utf16)
+            let newUnits = Array(new.utf16)
+            var prefix = 0
+            while prefix < oldUnits.count, prefix < newUnits.count,
+                  oldUnits[prefix] == newUnits[prefix] {
+                prefix += 1
+            }
+            // A prefix ending after a high surrogate would split the
+            // pair it opens; step back onto the boundary.
+            if prefix > 0, UTF16.isLeadSurrogate(oldUnits[prefix - 1]) {
+                prefix -= 1
+            }
+            var suffix = 0
+            while suffix < oldUnits.count - prefix, suffix < newUnits.count - prefix,
+                  oldUnits[oldUnits.count - 1 - suffix] == newUnits[newUnits.count - 1 - suffix] {
+                suffix += 1
+            }
+            // A suffix beginning on a low surrogate would split the
+            // pair it closes; give the unit back.
+            if suffix > 0, UTF16.isTrailSurrogate(oldUnits[oldUnits.count - suffix]) {
+                suffix -= 1
+            }
+            var ops: [DocumentEditOp] = []
+            let deleted = oldUnits.count - prefix - suffix
+            if deleted > 0 {
+                ops.append(.del(at: location + prefix, len: deleted))
+            }
+            let inserted = newUnits[prefix..<(newUnits.count - suffix)]
+            if !inserted.isEmpty {
+                ops.append(.ins(
+                    at: location + prefix,
+                    text: String(decoding: inserted, as: UTF16.self)
+                ))
+            }
+            return ops
         }
 
         /// The document as runs, in order: contiguous ink between chips.
@@ -347,20 +566,34 @@ public struct InkEditorView: NSViewRepresentable {
 
         // MARK: The seal gestures
 
-        /// ⇧⌘V: the core reads the pasteboard itself; the chip lands at
-        /// the caret. This process never sees the pasted bytes.
+        /// ⇧⌘V: the core reads the pasteboard itself, deletes the
+        /// selection captured here, and stands the chip in its place,
+        /// one atomic locked call. This process never sees the pasted
+        /// bytes.
         func sealedPaste() {
-            guard let chip = model.sealPasteboard() else { return }
-            insertChip(chip)
+            guard let textView else { return }
+            // Captured at gesture time and passed whole. The seal call
+            // is synchronous on the main actor from here through the C
+            // seam, so no event can move the caret between this capture
+            // and the core's replace: the range is still true when the
+            // core deletes it.
+            let range = textView.selectedRange()
+            guard let chip = model.sealPasteboard(replacing: range) else { return }
+            placeChipFace(chip, replacing: range)
         }
 
         /// A drop from outside: the core reads the drag pasteboard
-        /// itself while the session's data is still on it.
+        /// itself while the session's data is still on it, and replaces
+        /// the drop point (a zero-length range) with the sentinel in
+        /// the same locked call.
         func sealDrop(at characterIndex: Int) -> Bool {
             guard let textView else { return false }
             textView.setSelectedRange(NSRange(location: characterIndex, length: 0))
-            guard let chip = model.sealDrag() else { return false }
-            insertChip(chip)
+            // Same synchronicity as the sealed paste: nothing runs
+            // between this capture and the core's replace.
+            let range = NSRange(location: characterIndex, length: 0)
+            guard let chip = model.sealDrag(replacing: range) else { return false }
+            placeChipFace(chip, replacing: range)
             return true
         }
 
@@ -387,13 +620,28 @@ public struct InkEditorView: NSViewRepresentable {
             }
             let ink = text.substring(with: range)
             guard !ink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            guard let chip = model.sealText(ink) else { return }
-            // The ink is in core custody now: replace the shell's copy
-            // with the chip and make sure undo cannot resurrect it —
-            // undo never un-seals (doc 06 №5).
-            if textView.shouldChangeText(in: range, replacementString: nil) {
-                storage.replaceCharacters(in: range, with: Self.chipString(chip))
-                textView.didChangeText()
+            // The core deletes the range and stands the sentinel in
+            // one atomic call; a non-empty selection is deleted
+            // core-side, not by a shell edit. Synchronous on the main
+            // actor end to end, so the caret cannot move mid-call and
+            // the captured range stays true.
+            guard let chip = model.sealText(ink, replacing: range) else { return }
+            placeChipFace(chip, replacing: range)
+        }
+
+        /// Update the projection after a seal: the core already
+        /// replaced the range with the sentinel, so the storage
+        /// mirrors that under the emission guard; echoing this write
+        /// back as ops would stand the chip twice. Undo dies with it:
+        /// sealing is not undoable, and undo never un-seals (doc 06
+        /// №5).
+        private func placeChipFace(_ chip: ChipInfo, replacing range: NSRange) {
+            guard let textView, let storage = textView.textStorage else { return }
+            model.applyingProjection {
+                if textView.shouldChangeText(in: range, replacementString: nil) {
+                    storage.replaceCharacters(in: range, with: Self.chipString(chip))
+                    textView.didChangeText()
+                }
             }
             textView.setSelectedRange(NSRange(location: range.location + 1, length: 0))
             textView.undoManager?.removeAllActions()
@@ -408,21 +656,6 @@ public struct InkEditorView: NSViewRepresentable {
                 }
             }
             return found
-        }
-
-        /// Place a freshly sealed chip at the caret.
-        private func insertChip(_ chip: ChipInfo) {
-            guard let textView, let storage = textView.textStorage else { return }
-            let range = textView.selectedRange()
-            if textView.shouldChangeText(in: range, replacementString: nil) {
-                storage.replaceCharacters(in: range, with: Self.chipString(chip))
-                textView.didChangeText()
-            }
-            textView.setSelectedRange(NSRange(location: range.location + 1, length: 0))
-            // ⇧⌘V undo would delete the chip (fine) — but a ⌘↩ in the
-            // same group must never come back as plaintext; clearing
-            // here keeps the rule uniform: sealing is not undoable.
-            textView.undoManager?.removeAllActions()
         }
 
         static func chipString(_ chip: ChipInfo) -> NSAttributedString {
@@ -487,7 +720,7 @@ public struct InkEditorView: NSViewRepresentable {
             let range = NSRange(location: index, length: 1)
             if textView.shouldChangeText(in: range, replacementString: "") {
                 storage.replaceCharacters(in: range, with: "")
-                textView.didChangeText() // sync omits the chip → zeroized
+                textView.didChangeText() // travels as a del op; the core reaps the chip
             }
         }
 
@@ -496,24 +729,76 @@ public struct InkEditorView: NSViewRepresentable {
         /// Display-only, markup-preserving (docs/spec/04): a heading
         /// line renders at heading weight with its `#`s dimmed in
         /// place. Attributes only; the bytes of the page never change.
+        /// Also the ADR-0013 editable-surface rule's display instance:
+        /// created/modified are pulled fresh from the core and laid out
+        /// as labels above each block, styling the text without
+        /// touching how it edits.
         func restyle() {
-            guard let storage = textView?.textStorage else { return }
+            guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
             let text = storage.string as NSString
+            let metas = model.coreClient.blocks(sheet: sheet)
+            var displays: [BlockDisplay] = []
             storage.beginEditing()
             var location = 0
+            var block = 0
             while location < text.length {
                 let paragraph = text.paragraphRange(for: NSRange(location: location, length: 0))
-                styleParagraph(paragraph, of: storage, text: text)
+                let meta = block < metas.count ? metas[block] : nil
+                // A blank line is spacing, not writing: it carries a
+                // stamp in the core but shows none, so a page of empty
+                // paragraphs no longer stacks a column of identical
+                // times down the margin.
+                let blank = Self.isBlank(paragraph, of: text)
+                let createdS = blank ? nil : meta?.createdS
+                styleParagraph(paragraph, of: storage, text: text, labeled: createdS != nil)
+                if let createdS {
+                    displays.append(BlockDisplay(
+                        range: paragraph,
+                        text: Self.blockLabel(createdS: createdS, modifiedS: meta?.modifiedS)
+                    ))
+                }
+                block += 1
                 if paragraph.length == 0 { break }
                 location = NSMaxRange(paragraph)
             }
             storage.endEditing()
+            blockDisplays = displays
+            // `paragraphSpacingBefore` is ignored on the first paragraph
+            // of the storage, so the top block's gap has to come from the
+            // container inset instead — otherwise its label would be laid
+            // out above the text view's own top edge and clipped away.
+            let leading = displays.first?.range.location == 0
+            let inset = Self.topInset + (leading ? Self.blockLabelReserve : 0)
+            if let textView, textView.textContainerInset.height != inset {
+                textView.textContainerInset.height = inset
+            }
+            updateBlockLabelViews()
         }
 
-        private func styleParagraph(_ range: NSRange, of storage: NSTextStorage, text: NSString) {
+        /// Whitespace only, newline included: nothing a reader would call
+        /// content, and so nothing to stamp.
+        private static func isBlank(_ range: NSRange, of text: NSString) -> Bool {
+            guard range.length > 0 else { return true }
+            return text.substring(with: range)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+        }
+
+        private func styleParagraph(
+            _ range: NSRange, of storage: NSTextStorage, text: NSString, labeled: Bool
+        ) {
             guard range.length > 0 else { return }
+            let paragraphStyle = NSMutableParagraphStyle()
+            // Room for the label above the block, reserved only where
+            // one will actually render: an untouched block carries no
+            // stamp and gets no gap.
+            paragraphStyle.paragraphSpacingBefore = labeled ? Self.blockLabelReserve : 0
             storage.addAttributes(
-                [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor],
+                [
+                    .font: InkStyle.baseFont,
+                    .foregroundColor: NSColor.labelColor,
+                    .paragraphStyle: paragraphStyle,
+                ],
                 range: range
             )
             let line = text.substring(with: range)
@@ -530,6 +815,110 @@ public struct InkEditorView: NSViewRepresentable {
                 range: NSRange(location: range.location, length: marker.length)
             )
         }
+
+        // MARK: Block labels (ADR-0013: created/modified above each block)
+
+        /// One block's label and the paragraph range it renders above,
+        /// recomputed by `restyle` whenever content changes and read by
+        /// `repositionBlockLabels` on every layout pass. Never holds an
+        /// origin: the editable-surface rule keeps origin off every read
+        /// surface, this one included.
+        private struct BlockDisplay {
+            let range: NSRange
+            let text: String
+        }
+
+        private var blockDisplays: [BlockDisplay] = []
+        private var blockLabelViews: [NSTextField] = []
+
+        private static let blockLabelFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        /// Vertical gap a labeled block reserves above its first line:
+        /// the label's own height plus a little air on both sides.
+        static let blockLabelReserve: CGFloat = 20
+        /// The page's own top margin, before any label reserve.
+        static let topInset: CGFloat = 12
+
+        private static let blockLabelFormatter: DateFormatter = {
+            let formatter = DateFormatter()
+            // `DDD HH:mm` (ADR-0013): day name and clock time only,
+            // since these are short-lived pages, and a full calendar date
+            // would overstate how long anything here is expected to
+            // live. The literal `HH` holds the clock at 24-hour
+            // regardless of locale; the weekday name still localizes.
+            formatter.dateFormat = "EEE HH:mm"
+            return formatter
+        }()
+
+        /// `Thu 14:32`, or `Thu 14:32 → Thu 14:40` once the block has
+        /// been edited past its first commit.
+        static func blockLabel(createdS: Int64, modifiedS: Int64?) -> String {
+            let created = blockLabelFormatter.string(
+                from: Date(timeIntervalSince1970: TimeInterval(createdS))
+            )
+            guard let modifiedS, modifiedS != createdS else { return created }
+            let modified = blockLabelFormatter.string(
+                from: Date(timeIntervalSince1970: TimeInterval(modifiedS))
+            )
+            return "\(created) → \(modified)"
+        }
+
+        /// Resize the label pool to match `blockDisplays` and refresh
+        /// their text, then place them. Called after every `restyle`,
+        /// content having just changed underneath.
+        private func updateBlockLabelViews() {
+            guard let textView else { return }
+            while blockLabelViews.count < blockDisplays.count {
+                let field = Self.makeBlockLabel()
+                textView.addSubview(field)
+                blockLabelViews.append(field)
+            }
+            while blockLabelViews.count > blockDisplays.count {
+                blockLabelViews.removeLast().removeFromSuperview()
+            }
+            for (field, display) in zip(blockLabelViews, blockDisplays) {
+                field.stringValue = display.text
+                field.sizeToFit()
+            }
+            repositionBlockLabels()
+        }
+
+        private static func makeBlockLabel() -> NSTextField {
+            let field = NSTextField(labelWithString: "")
+            field.font = blockLabelFont
+            field.textColor = .tertiaryLabelColor
+            field.isSelectable = false
+            field.isEditable = false
+            return field
+        }
+
+        /// Place every label in the gap above its block's first line.
+        /// Geometry only, no core round trip, so this is safe to call on
+        /// every layout pass: a resize rewraps paragraphs without
+        /// changing what any block says.
+        func repositionBlockLabels() {
+            guard let textView, let layoutManager = textView.layoutManager,
+                  textView.textContainer != nil else { return }
+            let origin = textView.textContainerOrigin
+            for (field, display) in zip(blockLabelViews, blockDisplays) {
+                let glyphRange = layoutManager.glyphRange(
+                    forCharacterRange: display.range, actualCharacterRange: nil
+                )
+                guard glyphRange.length > 0 else { continue }
+                // The line fragment rect swallows `paragraphSpacingBefore`:
+                // it starts where the previous paragraph ended, so
+                // measuring from its top drops the label onto that
+                // paragraph's last line. The used rect is where this
+                // block's glyphs actually begin, and the reserved gap is
+                // the space immediately above it.
+                let usedRect = layoutManager.lineFragmentUsedRect(
+                    forGlyphAt: glyphRange.location, effectiveRange: nil
+                )
+                field.frame.origin = NSPoint(
+                    x: origin.x + usedRect.minX,
+                    y: origin.y + usedRect.minY - field.frame.height - 2
+                )
+            }
+        }
     }
 }
 
@@ -542,6 +931,14 @@ public struct InkEditorView: NSViewRepresentable {
 /// whole, selection cannot reach inside it.
 final class InkTextView: NSTextView {
     weak var coordinator: InkEditorView.Coordinator?
+
+    /// A resize rewraps paragraphs without touching their content, so
+    /// the block labels (ADR-0013) need only be moved, not recomputed
+    /// from the core, cheap enough to run on every layout pass.
+    override func layout() {
+        super.layout()
+        coordinator?.repositionBlockLabels()
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -563,6 +960,52 @@ final class InkTextView: NSTextView {
     /// no surprises (docs/spec/04).
     override func paste(_ sender: Any?) {
         pasteAsPlainText(sender)
+    }
+
+    // MARK: The IME gate (ADR-0013)
+
+    /// The one moment the pre-composition text is still readable: the
+    /// first marked replacement has not landed yet, so the span it is
+    /// about to replace is captured here as the baseline the
+    /// composition's end will be diffed against.
+    override func setMarkedText(
+        _ string: Any, selectedRange: NSRange, replacementRange: NSRange
+    ) {
+        if !hasMarkedText() {
+            let affected = replacementRange.location == NSNotFound
+                ? self.selectedRange()
+                : replacementRange
+            if let storage = textStorage {
+                coordinator?.beginComposition(over: affected, in: storage)
+            }
+        }
+        // The flag brackets the storage edit because the view's own
+        // marked-range bookkeeping may land on either side of it;
+        // without the bracket, the first marked replacement can read
+        // as a resolution and leak a mid-composition op.
+        coordinator?.markedTextInFlight = true
+        super.setMarkedText(
+            string, selectedRange: selectedRange, replacementRange: replacementRange)
+        coordinator?.markedTextInFlight = false
+        // Marking with an empty string IS the cancel: the view is
+        // unmarked again, and the composition must settle to zero ops.
+        coordinator?.finishCompositionIfPending()
+    }
+
+    /// The commit path: the input context replaces the marked text
+    /// with the final string. The composition settles after the edit,
+    /// as one diffed batch against the pre-composition baseline.
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        super.insertText(string, replacementRange: replacementRange)
+        coordinator?.finishCompositionIfPending()
+    }
+
+    /// A composition can end without a resolving character edit (a
+    /// cancel that removed nothing because nothing was composed); the
+    /// unmark is the one signal that always fires, so settle here.
+    override func unmarkText() {
+        super.unmarkText()
+        coordinator?.finishCompositionIfPending()
     }
 
     /// Esc hands the keyboard back (docs/spec/04, the focus law).

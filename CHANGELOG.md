@@ -9,6 +9,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The screen-capture opt-out is reachable in a release build, by
+  launch variable only**: the Settings switch that lifts the surface's
+  `sharingType = .none` exclusion used to be compiled out of release
+  entirely, which left the installed app impossible to screenshot for
+  diagnosis. It now ships in every build, but a release build shows it
+  only when the app was launched with `COMPANION_ALLOW_CAPTURE` set
+  (`open --env COMPANION_ALLOW_CAPTURE=1 /Applications/OnetimePad.app`),
+  which also seeds it on. An ordinary double-click of the installed app
+  shows no such switch, and the controller installs no observer that
+  could write `sharingType`, so the exclusion set at window creation
+  holds for the life of the window. The opt-out is still never
+  persisted and still fails closed at every launch, and the header's
+  camera indicator now stands in release too, where the surface being
+  screenshot-able matters most. The rule is a pure function on the two
+  facts a launch knows, so the release branch is covered by tests from
+  a debug binary.
+
+- **Created and modified render above each block (ADR-0013,
+  editable-surface rule)**: the editor now shows a small `DDD HH:mm`
+  label above every paragraph that has been committed, or
+  `DDD HH:mm → DDD HH:mm` once a block has been edited past its first
+  commit. A blank line is spacing rather than writing, so it shows no
+  label and reserves no gap, and a page with room to breathe no longer
+  stacks a column of repeated identical times down its margin. The
+  label is a non-interactive subview drawn in the gap immediately
+  above the block's own first line, measured from where its glyphs
+  begin: a line fragment rect absorbs the space reserved above it, so
+  measuring from there set the label down on the preceding
+  paragraph's last line. Labels are repositioned by geometry on
+  every layout pass with no core round trip, so a resize never
+  re-queries the core; content changes still pull fresh stamps from
+  `client.blocks(sheet:)`. The top block's gap comes from the text
+  container inset instead, TextKit having no space before the first
+  paragraph to reserve. This is a display
+  instance of the editable-surface rule, not a new read surface: the
+  label styles the text without touching how it edits, and origin
+  never appears in it.
+
+- **The document history is compacted at rung transitions (ADR-0013,
+  stage 6)**: cycling or setting a page's rung, and topping up a
+  pause, now run the compaction ceremony. Each block's derived
+  provenance (created, modified, and the origin of the change that
+  introduced its text) graduates into a materialized summary while the
+  ops still exist to prove it; then the document is reborn from its
+  live runs under a freshly minted peer identity and the trail behind
+  the boundary is discarded. Deleted text, edit history, commit
+  messages, and the old actor id do not survive the boundary, and
+  tests byte-scan the new export to hold that claim. This is the right
+  to erasure applied to the page's own memory: what was written here
+  and thought better of is forgotten on the same clockwork that bounds
+  every page, on schedule and without a new timer, and the actor
+  identities on either side of a boundary cannot be linked across it.
+  The materialized summaries persist in the sealed content file's
+  reserved slot, keyed by block identity and validated on restore
+  (anchors must still resolve, stamps are clamped to sane values)
+  rather than trusted; origin URLs remain content, living in the
+  sealed file only and never in the ledger. Chips and their sealed
+  bytes pass through the ceremony untouched, and due pages refuse the
+  gestures that trigger it, so compaction can never race a reap.
+
+- **Blocks acquire identity and pastes acquire provenance (ADR-0013,
+  stage 5)**: the core now maintains a per-sheet block index over the
+  flat body, one record per paragraph, following Notion's convention
+  under edits: a typed newline splits and the fragment holding the
+  pre-split start keeps the paragraph's identity, deleting a separating
+  newline merges and the absorbing paragraph keeps its name while the
+  absorbed one dies. Anchors are stable document cursors re-taken after
+  every settled mutation, with the first block anchored at the
+  container start. Created and modified stamps are derived from the
+  operation log rather than stored: earliest and latest change over a
+  block's span, the newest change for the page, with commit merging
+  disabled so every commit stays its own provenance unit. Two new read
+  surfaces, `companion_sheet_meta_json` and
+  `companion_sheet_blocks_json`, return identities and stamps only.
+  Pastes now carry their origin: the pasteboard read captures the
+  `public.url` flavor in the same core-side pass (the shell still never
+  touches the board, ADR-0007 Amendment 1), and a URL-bearing seal
+  persists `{"origin": url}` as its commit's message inside the
+  encrypted snapshot. Origin URLs are content and appear in no JSON
+  surface, no summary, and no ledger record; restore rebuilds the block
+  index from the imported document and recomputes anchors rather than
+  trusting anything persisted.
+
+- **Edits cross the seam as range operations, not snapshots (ADR-0013,
+  stage 3)**: `companion_sheet_apply_ops` carries an ordered JSON batch
+  of `ins`/`del`/`chip` operations, every position and length a UTF-16
+  code unit, parsed reject-whole and applied atomically or not at all;
+  `companion_sheet_sync_document` survives as the recovery path that
+  restates a page whole. All three seal gestures (sealed paste, drop
+  to seal, and the seal-selection ⌘↩) now hand the core the selection
+  range they replace, and the core deletes that range, stands the
+  chip's sentinel, and commits inside the one locked seal call, so the
+  seal and the deletion cannot come apart. Shell-side the editor stops
+  mirroring the whole document per keystroke: the coordinator listens
+  to `NSTextStorage` edits and emits one replace per edit, marked text
+  is gated so an abandoned IME composition produces zero operations,
+  programmatic projection writes are suppressed behind a guard, and a
+  rejected batch recovers by one legacy mirror plus a cleared undo
+  stack, never a crash. Undo stays `NSTextView` native; an undo that
+  would resurrect a dead chip is refused by the core and the glyph is
+  stripped silently, because undo never un-seals (ADR-0009).
+
+- **The sheet body becomes an operation-logged document (ADR-0013,
+  accepted)**: the core adopts Loro behind a crate-private
+  `SheetDocument` wrapper in `crates/core/src/document.rs`, the one
+  module allowed to speak the library's API. One text container holds
+  the body; a chip is a sentinel character carrying its identity as a
+  non-expanding mark; every offset at the wrapper's edge is a UTF-16
+  code unit, so Loro's unicode-scalar-indexed methods never see wire
+  offsets. Commits record timestamps and persisted messages, snapshots
+  export into zeroizing buffers, and a spike test guards the
+  shallow-export truth the compaction ceremony will depend on: a
+  StateOnly export sheds deleted text but keeps the authoring peer id,
+  so compaction must mint a fresh document rather than trust the blob.
+  The dependency is pinned exactly (`=1.13.9`) because loro declares
+  no MSRV while our toolchain is pinned in `rust-toolchain.toml`;
+  bumps stay deliberate, reviewed events. Default features stay off,
+  keeping the unused counter container and logging out of the build.
+
 - **A second form factor: the background surface (exploration)**.
   `CompanionBackdrop`, a sibling executable target over the same Rust
   core (ADR-0010: form factors are sibling shell targets; the panel
@@ -123,6 +242,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Clicking the countdown shortens it, one rung at a time**
+  (`companion-core` 0.7.0, docs/spec/06 Q1 answered). The TTL wheel
+  used to step up the ladder and wrap `7d → 1h`, which put a
+  168-hour-to-1-hour drop under a single stray click on deliberately
+  staged content, and made the backdrop's 7d default the worst place
+  to click. The click now steps one rung shorter, `7d → 3d → 24h → 8h
+  → 3h → 1h`, wrapping back to `7d` at the bottom. The wheel is still
+  one affordance and the wrap survives; it now sits at the end where a
+  single click costs nothing, and reaching the most precarious rung is
+  five deliberate clicks. `Ttl::next`/`Ttl::prev` are renamed
+  `Ttl::longer`/`Ttl::shorter`, so the direction is named by what it
+  does to the page's life rather than by array order.
+  `companion_sheet_cycle_rung()` keeps its signature and its rung
+  codes; only the rung it returns changes.
+
+- **The sealed content file carries the Loro document, and the format
+  break is clean** (`companion-core` 0.4.0, ADR-0013 stage 4). The
+  plaintext content snapshot bumps its magic to `OTSSNAP3`: each sheet
+  keeps its identity, title, rung, clock and chip records exactly as
+  v2 wrote them, and replaces the segments section with the sheet's
+  full Loro snapshot blob, history and tombstones included, plus an
+  empty length-prefixed materialized-metadata slot the compaction
+  ceremony (stage 6) will fill without a v4. The blob is exported once
+  per sheet into a zeroizing buffer both write passes copy from, and
+  on restore it is imported into a fresh document whose chip marks
+  must match the chip records one to one; a dangling mark, an orphan
+  record or a duplicate rejects the whole snapshot with the store
+  untouched. There is deliberately no v2 reader and no downgrade
+  writer: v1, v2 and unknown magics all refuse as unknown format, so
+  existing dogfood state files will not load after this change. The
+  ledger format `OTSLEDR1` is untouched, and the blob, tombstones and
+  peer identity included, never reaches it.
+  (`companion-core` 0.3.0, ADR-0013). Every sheet now owns a
+  `SheetDocument`, and the `segments` list demotes to a cached
+  projection rebuilt from the document's runs after every mutation, so
+  the existing readers (title derivation, page payloads, the persist
+  format, the document JSON at the seam) keep their shape unchanged.
+  Edits gain an operation path: `SheetStore::apply_ops` takes a batch
+  of `EditOp`s (insert, delete, chip placement, every offset a UTF-16
+  code unit count), validates the whole batch against a simulated
+  intra-batch state so the shell's coalesced edits (a delete and
+  insert at one position, a delete spanning a chip followed by its
+  re-insert) validate, rejects atomically when any op misses, commits
+  once per batch, and reaps chips whose sentinels are gone with the
+  same `Discarded` record the snapshot path writes. `sync_document`
+  survives as a transitional wipe-and-retype adapter through which
+  provenance means nothing, kept as the recovery route; restore
+  rebuilds each page's document from the decoded segments.
 - **The dev-seed shim is gone from the core** (`companion-ffi` 0.3.0).
   The off-by-default `dev-scaffolding` cargo feature, the
   `companion_dev_seed_pasteboard` entry point behind it, and the

@@ -10,6 +10,31 @@ public enum DocumentRun {
     case chip(UInt64)
 }
 
+/// One edit against a page's body, as the shell sends it to the core
+/// (`companion_sheet_apply_ops`, ADR-0013). Every position and length
+/// is a UTF-16 code unit, which is what `NSRange` already speaks, so
+/// nothing is ever re-measured on the way to the wire.
+public enum DocumentEditOp: Equatable, Sendable {
+    case ins(at: Int, text: String)
+    case del(at: Int, len: Int)
+    case chip(at: Int, id: UInt64)
+
+    /// The batch as the seam's wire JSON: an ordered array of
+    /// single-key objects. Nil only when serialization itself refuses,
+    /// which no op built from an `NSTextStorage` edit can trigger.
+    public static func wireJSON(_ ops: [DocumentEditOp]) -> String? {
+        let objects: [[String: Any]] = ops.map {
+            switch $0 {
+            case .ins(let at, let text): ["ins": ["at": at, "text": text]]
+            case .del(let at, let len): ["del": ["at": at, "len": len]]
+            case .chip(let at, let id): ["chip": ["at": at, "id": id]]
+            }
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: objects) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+}
+
 /// An in-flight promotion: the inline, in-place confirmation's state
 /// (docs/spec/04 — not a modal). Holds options and outcome, never
 /// content: the payload stays core-side throughout.
@@ -241,15 +266,49 @@ public final class PageModel: ObservableObject {
     }
     private static let floatsKey = "floatsOnTop"
 
-    #if DEBUG
-    /// Debug builds only: lift the capture exclusion so the surface can
-    /// be screenshotted while diagnosing the UI. Deliberately NOT
-    /// persisted — a security opt-out fails closed at every launch.
-    /// COMPANION_ALLOW_CAPTURE=1 seeds it for scripted runs; a release
-    /// build compiles the property out entirely.
-    @Published public var allowCapture =
+    /// The rule, as a pure decision on the two facts a launch knows, so
+    /// the release branch is testable from a debug test binary: a debug
+    /// build always offers the capture opt-out, and a release build
+    /// offers it only when the launch variable is set.
+    public nonisolated static func offersCaptureOptOut(
+        isDebugBuild: Bool,
+        launchVariableSet: Bool
+    ) -> Bool {
+        isDebugBuild || launchVariableSet
+    }
+
+    /// Whether the running app was compiled with assertions, i.e. is a
+    /// debug build. The one place the configuration is read.
+    public nonisolated static var isDebugBuild: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    static var captureVariableSet: Bool {
         ProcessInfo.processInfo.environment["COMPANION_ALLOW_CAPTURE"] != nil
-    #endif
+    }
+
+    /// Whether the capture opt-out is reachable at all in this process:
+    /// the switch is available for diagnosing the installed app and is
+    /// absent from Settings for anyone who did not deliberately ask for
+    /// it. Decided once at launch, so nothing in the running app can
+    /// turn the offer on.
+    public static let captureOptOutOffered = offersCaptureOptOut(
+        isDebugBuild: isDebugBuild,
+        launchVariableSet: captureVariableSet
+    )
+
+    /// Lifts the capture exclusion so the surface can be screenshotted
+    /// while diagnosing the UI. Deliberately NOT persisted: a security
+    /// opt-out fails closed at every launch. The launch variable both
+    /// reveals the switch and seeds it on, so a scripted run needs no
+    /// click; without the variable a release build leaves this false
+    /// and offers no way to change it.
+    @Published public var allowCapture =
+        PageModel.captureOptOutOffered && PageModel.captureVariableSet
 
     /// The live editor view, so a summon can hand it the keyboard.
     /// Weak and non-published: view plumbing, not state.
@@ -265,6 +324,11 @@ public final class PageModel: ObservableObject {
 
     private let client: CompanionClient
     private let defaults: UserDefaults
+
+    /// Test-only visibility onto the seam client, so parity between
+    /// the projection and the core's document can be asserted from
+    /// outside without a second handle.
+    var coreClient: CompanionClient { client }
 
     /// Each live page's document, shell-side: the ink is ordinary text
     /// in an `NSTextStorage`; chips appear as attachment characters
@@ -1146,7 +1210,8 @@ public final class PageModel: ObservableObject {
         refresh()
     }
 
-    /// Click the countdown label: next rung, clock reset (docs/spec/04).
+    /// Click the countdown label: one rung shorter, clock reset
+    /// (docs/spec/04).
     public func cycleRung(_ id: UInt64) {
         _ = client.cycleRung(sheet: id)
         markDirty()
@@ -1179,13 +1244,15 @@ public final class PageModel: ObservableObject {
     /// the content lands as an opaque chip, and the board is cleared
     /// in the same operation (ADR-0007 Amendment 1) — the app drains
     /// the pasteboard rather than avoiding it. Consent is the gesture.
-    /// A take that could not clear is said out loud: a paste that
-    /// leaves the secret on the board is the failure this route
-    /// exists to prevent.
-    public func sealPasteboard() -> ChipInfo? {
+    /// `range` is the selection captured at gesture time, in UTF-16
+    /// code units: the core deletes it and stands the sentinel in its
+    /// place inside the same locked call (ADR-0013). A take that could
+    /// not clear is said out loud: a paste that leaves the secret on
+    /// the board is the failure this route exists to prevent.
+    public func sealPasteboard(replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selection else { return nil }
-        let (chip, cleared) = client.sealFromPasteboard(sheet: sheet)
+        guard let sheet = selection, let (at, length) = Self.wireRange(range) else { return nil }
+        let (chip, cleared) = client.sealFromPasteboard(sheet: sheet, at: at, length: length)
         guard let chip else {
             flash("nothing to seal")
             return nil
@@ -1197,6 +1264,16 @@ public final class PageModel: ObservableObject {
                 ? "sealed; the clipboard is clear"
                 : "sealed, but the clipboard changed mid-take and was left untouched")
         return chip
+    }
+
+    /// An `NSRange` as the seam's `u32` pair, refused rather than
+    /// truncated when it does not fit: `NSNotFound` must never travel
+    /// as a position.
+    nonisolated static func wireRange(_ range: NSRange) -> (at: UInt32, length: UInt32)? {
+        guard let at = UInt32(exactly: range.location),
+              let length = UInt32(exactly: range.length)
+        else { return nil }
+        return (at, length)
     }
 
     /// Reveal-time check for the offer: consult the core's probe once
@@ -1220,21 +1297,24 @@ public final class PageModel: ObservableObject {
     }
 
     /// Drop-to-seal: the core reads the drag pasteboard itself; the
-    /// dropped bytes never transit this process.
-    public func sealDrag() -> ChipInfo? {
+    /// dropped bytes never transit this process. `range` is the drop
+    /// point (zero length) or the selection the drop replaces.
+    public func sealDrag(replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selection else { return nil }
-        let chip = client.sealFromDrag(sheet: sheet)
+        guard let sheet = selection, let (at, length) = Self.wireRange(range) else { return nil }
+        let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
         if chip == nil { flash("nothing to seal") } else { markDirty() }
         return chip
     }
 
-    /// ⌘↩: seal visible ink the editor already holds. The editor
-    /// deletes its copy the moment this returns.
-    public func sealText(_ text: String) -> ChipInfo? {
+    /// ⌘↩: seal visible ink the editor already holds. The core deletes
+    /// `range` from its body and stands the sentinel there in the same
+    /// locked call (ADR-0013); the editor then updates its projection
+    /// to match rather than performing an edit of its own.
+    public func sealText(_ text: String, replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selection else { return nil }
-        let chip = client.sealText(sheet: sheet, text)
+        guard let sheet = selection, let (at, length) = Self.wireRange(range) else { return nil }
+        let chip = client.sealText(sheet: sheet, text, at: at, length: length)
         if chip != nil { markDirty() }
         return chip
     }
@@ -1245,9 +1325,51 @@ public final class PageModel: ObservableObject {
         _ = client.copyOutChip(id: id)
     }
 
-    /// Mirror the page's document to the core (tab titles, the ledger,
-    /// promotion) — and authoritative for chip liveness: a chip the
-    /// snapshot omits was deleted in the editor and is zeroized there.
+    /// True while the shell is writing the projection itself: a
+    /// page-switch rebuild, a seal's chip-face insertion, a recovery
+    /// resync. The editor's storage delegate consults this and emits
+    /// no operations for those writes: they describe state the core
+    /// already holds, and echoing them back would apply every change
+    /// twice.
+    public private(set) var isApplyingProjection = false
+
+    /// Run `body` with emission suppressed. Re-entrant: an inner write
+    /// restores whatever the outer one saw.
+    public func applyingProjection(_ body: () -> Void) {
+        let previous = isApplyingProjection
+        isApplyingProjection = true
+        defer { isApplyingProjection = previous }
+        body()
+    }
+
+    /// Apply an edit batch to the core's document (ADR-0013): the
+    /// per-edit path that replaced the per-keystroke mirror. On
+    /// acceptance this marks and refreshes exactly as the snapshot
+    /// mirror did. On rejection it does not assert-crash: the batch
+    /// mutated nothing core-side, so the shell logs, re-converges by
+    /// one legacy `syncDocument` mirror, and clears that page's undo
+    /// history, because stale-range undo replays after a wholesale rewrite
+    /// would corrupt the document they no longer describe.
+    public func applyOps(sheet: UInt64, opsJSON: String) {
+        let accepted = client.applyOps(sheet: sheet, json: opsJSON)
+        if accepted {
+            markDirty()
+            refresh()
+        } else {
+            logger.error("the core rejected an edit batch; restating the page whole")
+            recoverProjection(sheet: sheet)
+        }
+        #if DEBUG
+        assertProjectionParity(sheet: sheet)
+        #endif
+    }
+
+    /// Mirror the page's document to the core wholesale: the recovery
+    /// path (still authoritative for chip liveness: a chip the
+    /// snapshot omits was deleted in the editor and is zeroized
+    /// there). The rejected-batch route arrives via
+    /// `recoverProjection`; programmatic rewrites (a burn) come here
+    /// directly.
     public func syncDocument(sheet: UInt64, runs: [DocumentRun]) {
         let objects: [[String: Any]] = runs.map {
             switch $0 {
@@ -1259,10 +1381,67 @@ public final class PageModel: ObservableObject {
               let json = String(data: data, encoding: .utf8)
         else { return }
         let accepted = client.syncDocument(sheet: sheet, json: json)
-        assert(accepted, "core rejected a document snapshot")
+        if !accepted {
+            logger.error("the recovery mirror itself was refused; core and editor disagree")
+        }
         if accepted { markDirty() }
         refresh()
     }
+
+    /// Re-converge a page after the core refused an edit batch. The
+    /// storage is the truth for ink; the core is the truth for chip
+    /// liveness. So first strip any chip glyph the core no longer
+    /// owns; the one way a well-formed batch is refused is an undo
+    /// re-inserting a dead chip's attachment, and undo never un-seals
+    /// (ADR-0009), so the glyph goes silently, no notice. Then mirror
+    /// the storage whole and drop the page's undo history, which after
+    /// a rewrite holds ranges that describe nothing.
+    private func recoverProjection(sheet: UInt64) {
+        guard let storage = storages[sheet] else {
+            refresh()
+            return
+        }
+        let live = chipIds(onSheet: sheet)
+        applyingProjection {
+            var dead: [NSRange] = []
+            storage.enumerateAttribute(
+                .attachment, in: NSRange(location: 0, length: storage.length)
+            ) { value, range, _ in
+                if let chip = value as? ChipAttachment, !live.contains(chip.info.chipId) {
+                    dead.append(range)
+                }
+            }
+            for range in dead.reversed() {
+                storage.replaceCharacters(in: range, with: "")
+            }
+        }
+        undoManagers[sheet]?.removeAllActions()
+        syncDocument(sheet: sheet, runs: InkEditorView.Coordinator.runs(of: storage))
+    }
+
+    #if DEBUG
+    /// The projection invariant, checked after every batch in debug
+    /// builds: the editor's storage and the core's document must spell
+    /// the same page. A divergence here is a bug in the emitter or the
+    /// guard, and it should fail loudly where tests can see it.
+    private func assertProjectionParity(sheet: UInt64) {
+        guard let storage = storages[sheet] else { return }
+        let shell = InkEditorView.Coordinator.runs(of: storage)
+        let core = client.documentRuns(sheet: sheet)
+        var matches = shell.count == core.count
+        if matches {
+            for (ours, theirs) in zip(shell, core) {
+                switch (ours, theirs) {
+                case (.ink(let a), .ink(let b)) where a == b: continue
+                case (.chip(let a), .chip(let b)) where a == b.chipId: continue
+                default:
+                    matches = false
+                }
+            }
+        }
+        assert(matches, "the editor and the core disagree about the page")
+    }
+    #endif
 
     // MARK: Promotion — the exit ramp
 
@@ -1333,8 +1512,9 @@ public final class PageModel: ObservableObject {
     }
 
     /// Success's one offer: the content travelled, so the local copy
-    /// may go. A chip burns by leaving the document (the sync zeroizes
-    /// it core-side); a page burns by closing (it rests in the ledger).
+    /// may go. A chip burns by a core delete that zeroizes its bytes
+    /// and drops its sentinel, its glyph stripped from the projection;
+    /// a page burns by closing (it rests in the ledger).
     public func burnPromotedCopy() {
         guard let draft = promotion, draft.receiptId != nil else { return }
         switch draft.target {
@@ -1350,10 +1530,14 @@ public final class PageModel: ObservableObject {
         promotion = nil
     }
 
-    /// Remove a chip's attachment character from whichever page's
-    /// document holds it, then mirror — the snapshot that omits the
-    /// chip is what zeroizes it core-side.
+    /// Remove a chip from the core (its bytes die there, and its
+    /// sentinel leaves the document) and strip its attachment glyph
+    /// from whichever page's storage still shows it. The storage edit
+    /// is a projection write (the core already forgot the position),
+    /// so it runs under the emission guard rather than travelling back
+    /// as an op.
     private func removeChipFromDocument(_ chipId: UInt64) {
+        _ = client.deleteChip(id: chipId)
         for (sheet, storage) in storages {
             var found: NSRange?
             storage.enumerateAttribute(
@@ -1365,18 +1549,16 @@ public final class PageModel: ObservableObject {
                 }
             }
             guard let range = found else { continue }
-            storage.replaceCharacters(in: range, with: "")
+            applyingProjection {
+                storage.replaceCharacters(in: range, with: "")
+            }
             // The storage changed behind the editor's back: the page's
             // undo history now points at offsets that may no longer
             // exist, and — as everywhere — undo must never resurrect
             // what was sealed and has now travelled. History dies.
             undoManagers[sheet]?.removeAllActions()
-            syncDocument(sheet: sheet, runs: InkEditorView.Coordinator.runs(of: storage))
-            return
+            break
         }
-        // No storage holds it (already deleted editor-side): delete
-        // directly so the bytes still die.
-        _ = client.deleteChip(id: chipId)
         markDirty()
         refresh()
     }

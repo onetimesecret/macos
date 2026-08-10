@@ -174,19 +174,19 @@ struct BackdropRootView: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 16)
-            #if DEBUG
-            // Standing indicator while the debug capture opt-out is on.
+            // Standing indicator while the capture opt-out is on.
             // Doubly load-bearing here: the backdrop is on screen for
             // every screenshot and screen share, so "the exclusion is
-            // off right now" is worth saying out loud.
+            // off right now" is worth saying out loud. It matters more
+            // in a release build launched with the variable than in a
+            // debug one, so it is not compiled out.
             if pages.allowCapture {
                 Image(systemName: "camera.fill")
                     .font(.system(size: 9))
                     .foregroundStyle(Color.ember)
-                    .help("Debug: capture exclusion is OFF — this surface shows up in screenshots and screen sharing")
-                    .accessibilityLabel(Text("Screenshots allowed (debug)"))
+                    .help("Capture exclusion is OFF: this surface shows up in screenshots and screen sharing")
+                    .accessibilityLabel(Text("Screenshots allowed"))
             }
-            #endif
             if let sheet = pages.selectedSheet, !pages.showingLedger {
                 CountdownButton(sheet: sheet) { pages.cycleRung(sheet.id) }
             }

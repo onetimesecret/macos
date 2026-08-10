@@ -51,6 +51,12 @@ pub struct PasteboardItem {
     /// True when the writer marked it `org.nspasteboard.ConcealedType` —
     /// the cell must arrive masked.
     pub concealed: bool,
+    /// Where the content came from, when the writer said so: the
+    /// `public.url` flavor, read in the same pass as the content
+    /// (ADR-0013). Treated as content by everything downstream (a URL
+    /// can carry a token), so it may reach only the sealed document,
+    /// never a ledger, a summary, or any JSON surface.
+    pub origin_url: Option<String>,
 }
 
 /// How a write should be marked.
@@ -122,6 +128,7 @@ struct StoredItem {
     kind: ContentKind,
     concealed: bool,
     transient: bool,
+    origin_url: Option<String>,
 }
 
 impl MemoryPasteboard {
@@ -134,6 +141,17 @@ impl MemoryPasteboard {
     /// Place external (non-companion) content, as another app would —
     /// for exercising reads in tests and the demo.
     pub fn put_external(&mut self, content: PasteboardContent, concealed: bool) {
+        self.put_external_with_origin(content, concealed, None);
+    }
+
+    /// [`MemoryPasteboard::put_external`] with a `public.url` origin
+    /// riding beside the content, as a browser copy would carry one.
+    pub fn put_external_with_origin(
+        &mut self,
+        content: PasteboardContent,
+        concealed: bool,
+        origin_url: Option<String>,
+    ) {
         self.change_count += 1;
         let (bytes, kind) = match content {
             PasteboardContent::Text(s) => (s.into_bytes(), ContentKind::Text),
@@ -144,6 +162,7 @@ impl MemoryPasteboard {
             kind,
             concealed,
             transient: false,
+            origin_url,
         });
     }
 
@@ -165,6 +184,7 @@ impl Pasteboard for MemoryPasteboard {
                 ContentKind::Image => PasteboardContent::Image(item.bytes.to_vec()),
             },
             concealed: item.concealed,
+            origin_url: item.origin_url.clone(),
         })
     }
 
@@ -180,6 +200,9 @@ impl Pasteboard for MemoryPasteboard {
             kind,
             concealed: options.concealed,
             transient: true,
+            // The companion's own writes carry no origin: provenance
+            // belongs to content arriving, not content leaving.
+            origin_url: None,
         });
         ChangeCount(self.change_count)
     }
@@ -223,6 +246,27 @@ mod tests {
         let item = pb.read().unwrap();
         assert!(item.concealed);
         assert_eq!(item.content, PasteboardContent::Text("hunter2".into()));
+    }
+
+    #[test]
+    fn read_captures_the_origin_url_when_present_and_none_otherwise() {
+        let mut pb = MemoryPasteboard::new();
+        pb.put_external_with_origin(
+            PasteboardContent::Text("quoted paragraph".into()),
+            false,
+            Some("https://example.test/article?token=q".into()),
+        );
+        assert_eq!(
+            pb.read().unwrap().origin_url.as_deref(),
+            Some("https://example.test/article?token=q")
+        );
+
+        // Content without a declared origin reads back with none, and
+        // the companion's own write never invents one.
+        pb.put_external(PasteboardContent::Text("plain".into()), false);
+        assert!(pb.read().unwrap().origin_url.is_none());
+        write_text(&mut pb, "our copy-out", true);
+        assert!(pb.read().unwrap().origin_url.is_none());
     }
 
     #[test]

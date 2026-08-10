@@ -1,49 +1,34 @@
 #!/usr/bin/env bash
-# Quit the running companion apps, escalating only as far as needed:
-# AppleScript quit, then SIGTERM, then SIGKILL. Only the graceful path
-# runs the quit-time persistence snapshot; the kill paths lose anything
-# not yet persisted, so graceful gets the longest window.
+# Quit the running app, escalating only as far as needed: AppleScript
+# quit, then SIGTERM, then SIGKILL. Only the graceful path runs the
+# quit-time persistence snapshot; the kill paths lose anything not yet
+# persisted, so graceful gets the longest window. Every running
+# instance is addressed: installed, dist/, and bare binaries.
 #
-# With no argument this quits every running instance of both apps. Pass
-# CompanionApp or CompanionBackdrop to quit just that one.
-#
-# Run this before `swift build` while an app is running from .build/:
+# Run this before `swift build` while the app is running from .build/:
 # the in-place re-sign SIGKILLs the live process mid-flight. A process
-# running from dist/ survives `swift build`, but scripts/build-app.sh
-# and scripts/build-backdrop.sh both `rm -rf` their dist/ bundle before
-# reassembling it, so a live dist/ copy has to be quit before packaging
-# too.
+# running from dist/ survives `swift build`, but scripts/package-app.sh
+# `rm -rf`s the dist/ bundle before reassembling it, so a live dist/
+# copy has to be quit before packaging too (scripts/dev.sh does the
+# graceful half of that itself).
 set -euo pipefail
 
-APPS=(CompanionApp CompanionBackdrop)
+APPS=(OnetimePad)
 
-# One optional argument, and it is checked by count rather than by
-# emptiness: an empty string is still an argument, and treating it as
-# "no argument given" would quietly quit both apps when the caller
-# named one and the name expanded to nothing.
-if (($# > 1)); then
-  echo "too many arguments; pass at most one app name" >&2
-  echo "valid names: ${APPS[*]}" >&2
+if (($# > 0)); then
+  echo "quit-app.sh takes no arguments" >&2
   exit 1
-elif (($# == 1)); then
-  case "$1" in
-    CompanionApp | CompanionBackdrop) APPS=("$1") ;;
-    *)
-      echo "unknown app: $1" >&2
-      echo "valid names: ${APPS[*]}" >&2
-      exit 1
-      ;;
-  esac
 fi
 
 # The enclosing .app of a running process, resolved from its pid. We
 # address AppleScript at that path rather than at the app's name,
-# because `tell application "CompanionBackdrop"` asks LaunchServices to
-# resolve a name that no longer exists: the backdrop's bundle name is
-# OnetimePad. A path names the bundle we actually found running, which
-# a name cannot do. It is not a promise about routing: when two copies
-# share a bundle id, which process the event reaches is LaunchServices'
-# call, and the escalation below is what covers the copy that survives.
+# because `tell application "OnetimePad"` asks LaunchServices to pick
+# one bundle for the name, and with a dist/ copy and an installed copy
+# both registered its pick is not necessarily the process we found. A
+# path names the bundle we actually found running, which a name cannot
+# do. It is still not a promise about routing: when two copies share a
+# bundle id, which process the event reaches is LaunchServices' call,
+# and the escalation below is what covers the copy that survives.
 #
 # Two ways to fail, and the caller has to tell them apart: 2 means the
 # pid is gone (it exited in the moment between pgrep listing it and ps

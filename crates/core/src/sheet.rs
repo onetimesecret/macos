@@ -1,8 +1,9 @@
 //! The sheet: ink and sealed chips (interaction-model rev C, doc 04).
 //!
 //! A sheet reads like a little text file. **Ink** is anything typed —
-//! visible, editable, ordinary text, owned by the shell's text view and
-//! mirrored here as a synced snapshot. A **sealed chip** is an opaque
+//! visible, editable, ordinary text, held authoritatively in the
+//! sheet's operation-logged document (ADR-0013) and cached here as a
+//! segments projection. A **sealed chip** is an opaque
 //! token standing in for content that was deliberately masked; its bytes
 //! live only here, in a [`SecretBuffer`], and never render.
 //!
@@ -13,6 +14,8 @@
 
 use std::time::{Duration, Instant};
 
+use crate::blocks::{BlockIndex, BlockMeta};
+use crate::document::{DocRun, SheetDocument};
 use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
 
@@ -109,11 +112,11 @@ impl ChipId {
     }
 }
 
-/// One run of the synced document: visible ink, or a sealed chip's
-/// position. The shell owns the live document; this is the core's
-/// snapshot of its structure, kept for the ledger, for tab titles, and
-/// for sheet promotion — ink is not secret (it renders), so holding a
-/// copy here breaks no law.
+/// One run of the body's cached projection: visible ink, or a sealed
+/// chip's position. The sheet's operation-logged document is the source
+/// of truth; this shape is rebuilt from its runs for the ledger, for
+/// tab titles, and for sheet promotion; ink is not secret (it
+/// renders), so holding a copy here breaks no law.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Segment {
     /// Visible text, exactly as typed (markup preserved — doc 04).
@@ -278,7 +281,7 @@ pub(crate) enum SheetClock {
     },
 }
 
-/// A sheet: the synced document snapshot, the chips it owns, and one
+/// A sheet: the operation-logged body, the chips it owns, and one
 /// countdown. Not `Debug` — it holds [`SealedChip`]s.
 ///
 /// The `uuid` is minted once, at creation, and never re-minted: a
@@ -298,7 +301,17 @@ pub struct Sheet {
     /// placeholder title stays the same string for the page's whole
     /// life. Expiry math never reads it.
     pub(crate) created_wall_ms: u64,
+    /// The body as an operation-logged document (ADR-0013): the source
+    /// of truth for ink and chip positions inside the core.
+    pub(crate) document: SheetDocument,
+    /// A cached projection of the document, rebuilt from its runs after
+    /// every mutation ([`Sheet::rebuild_segments`]). Readers keep this
+    /// shape; nothing edits it directly.
     pub(crate) segments: Vec<Segment>,
+    /// The page's paragraphs as identities (ADR-0013): maintained op by
+    /// op through every mutation path so a paragraph keeps its name
+    /// across edits, and settled by [`Sheet::settle_blocks`].
+    pub(crate) blocks: BlockIndex,
     pub(crate) chips: Vec<SealedChip>,
     pub(crate) rung: Ttl,
     pub(crate) clock: SheetClock,
@@ -323,10 +336,84 @@ impl Sheet {
         self.uuid
     }
 
-    /// The synced document snapshot, in document order.
+    /// The cached projection of the body, in document order.
     #[must_use]
     pub fn segments(&self) -> &[Segment] {
         &self.segments
+    }
+
+    /// Rebuild the cached segments projection from the document's runs.
+    /// Every mutation path calls this, so readers never see the
+    /// projection drift from the document. A sentinel whose identity
+    /// matches no owned chip drops out of the projection: it cannot
+    /// arise by construction, and a chip the sheet cannot resolve must
+    /// not render.
+    pub(crate) fn rebuild_segments(&mut self) {
+        self.segments = self
+            .document
+            .runs()
+            .into_iter()
+            .filter_map(|run| match run {
+                DocRun::Ink(text) => Some(Segment::Ink(text)),
+                DocRun::Chip(uuid) => self
+                    .chips
+                    .iter()
+                    .find(|chip| chip.uuid == uuid)
+                    .map(|chip| Segment::Chip(chip.id)),
+            })
+            .collect();
+    }
+
+    /// Settle the block index against the document as it now stands:
+    /// re-take every anchor, and if the index no longer describes the
+    /// body (a wholesale restate, or a mutation path that failed to
+    /// narrate itself), rebuild it with fresh identities rather than
+    /// serve stale ones. Every mutation path ends here.
+    pub(crate) fn settle_blocks(&mut self) {
+        if self.blocks.matches(&self.document) {
+            self.blocks.retake_anchors(&self.document);
+        } else {
+            self.blocks = BlockIndex::for_document(&self.document);
+        }
+    }
+
+    /// The compaction ceremony (ADR-0013): graduate first, then
+    /// discard. Every block's derived provenance is frozen into its
+    /// materialized slot while the ops still exist to prove it, origin
+    /// included; then the document is reborn from its runs under a
+    /// fresh peer identity and the trail dies. Chips and their sealed
+    /// bytes pass through untouched, since they live beside the
+    /// document, not inside its history. The settle at the end keeps
+    /// the standing discipline: anchors are re-taken, and an index that
+    /// somehow stopped describing the body is rebuilt fresh rather
+    /// than trusted.
+    pub(crate) fn compact(&mut self) {
+        self.blocks.graduate(&self.document);
+        self.document.compact();
+        self.rebuild_segments();
+        self.settle_blocks();
+    }
+
+    /// Per-block provenance, in document order: each paragraph's
+    /// identity with its created and modified stamps (Unix seconds),
+    /// derived from the operation log (ADR-0013). Identities and
+    /// timestamps only; block content never crosses here.
+    #[must_use]
+    pub fn blocks_meta(&self) -> Vec<BlockMeta> {
+        self.blocks.metas(&self.document)
+    }
+
+    /// The page's modified stamp, Unix seconds: the newest change in
+    /// the page's operation log, merged with the newest materialized
+    /// stamp once compaction has destroyed the ops behind it. `None`
+    /// for a page whose body has never been touched. The created stamp
+    /// stays [`Sheet::created_wall_ms`], which predates the document's
+    /// first change.
+    #[must_use]
+    pub fn modified_s(&self) -> Option<i64> {
+        self.document
+            .latest_timestamp()
+            .max(self.blocks.max_materialized_modified())
     }
 
     /// The chips this sheet owns, in seal order.

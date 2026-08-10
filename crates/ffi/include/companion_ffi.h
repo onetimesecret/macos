@@ -142,13 +142,25 @@ char *companion_sheets_json(CompanionHandle *handle);
  *   chip_id, kind ("text"|"image"), excerpt (the mechanical face —
  *   the only rendering the content ever gets), size_label ("40 ch",
  *   "5 ln", "212 KB"), promoted (bool).
- * Null when the board is empty, the page unknown, or content empty.
+ * Null when the board is empty, the page unknown, content empty, or
+ * the range not on the page.
+ * at_utf16/len_utf16 name the selection the gesture replaces, in
+ * UTF-16 code units against the page's body (ADR-0013): the core
+ * deletes that range, stands the chip's sentinel in its place, and
+ * commits, all in this one locked call. A caret is a zero-length
+ * range; a range the body does not have refuses the whole seal and
+ * takes nothing from the board.
  * cleared_out (nullable) reports the clear: false after a successful
  * seal means another writer moved the change count mid-take, the
  * guarded clear stood down, and the shell must say so.
+ * When the board declares a public.url origin, the core captures it in
+ * the same read and persists it inside the sealed snapshot (ADR-0013).
+ * The origin is content: it appears in no JSON this seam returns.
  */
 char *companion_sheet_seal_from_pasteboard(CompanionHandle *handle,
                                            uint64_t sheet,
+                                           uint32_t at_utf16,
+                                           uint32_t len_utf16,
                                            bool *cleared_out);
 
 /*
@@ -164,35 +176,65 @@ bool companion_pasteboard_has_content(CompanionHandle *handle);
  * The cmd-return retrofit: seal `text` (the selection, or the current
  * line) onto the page. The seam's one deliberate plaintext-in entry:
  * the argument is visible ink the shell already holds, readable on
- * screen by definition; the gesture moves it into core custody. After
- * this returns, delete the shell-side copy — undo never un-seals.
- * Returns chip JSON as above, or null.
+ * screen by definition; the gesture moves it into core custody.
+ * at_utf16/len_utf16 name the sealed span in UTF-16 code units: the
+ * core deletes it from the body and stands the sentinel in its place
+ * in the same locked call, so the shell no longer deletes its copy by
+ * an edit of its own; undo never un-seals. Returns chip JSON as
+ * above, or null (unknown page, empty text, or a range not on the
+ * page).
  */
 char *companion_sheet_seal_text(CompanionHandle *handle, uint64_t sheet,
-                                const char *text);
+                                const char *text, uint32_t at_utf16,
+                                uint32_t len_utf16);
 
 /*
  * Drop-to-seal: the core reads the DRAG pasteboard itself
  * (NSPasteboardNameDrag — the board the in-flight drag session's
  * content rides on) and seals it onto the page; dropped bytes never
  * transit the shell. Call from the drop handler while the session's
- * data is still on the board. Returns chip JSON as above, or null
- * (unknown page, empty/unreadable drag content, off-macOS build).
+ * data is still on the board. at_utf16/len_utf16 name the drop point
+ * as a UTF-16 range against the page's body, replaced by the sentinel
+ * in the same locked call; a plain drop is a zero-length range at the
+ * insertion index. Returns chip JSON as above, or null (unknown page,
+ * empty/unreadable drag content, a range not on the page, off-macOS
+ * build).
  */
-char *companion_sheet_seal_from_drag(CompanionHandle *handle, uint64_t sheet);
+char *companion_sheet_seal_from_drag(CompanionHandle *handle, uint64_t sheet,
+                                     uint32_t at_utf16, uint32_t len_utf16);
 
 /* ------------------------------------------------------------------ */
-/* The synced document                                                 */
+/* The document: operations, and the snapshot recovery path            */
 /* ------------------------------------------------------------------ */
 
 /*
- * Replace a page's document snapshot: a JSON array of runs in document
+ * Apply an ordered batch of edits to a page's body (ADR-0013): the
+ * operation path that replaces per-keystroke snapshots. json is an
+ * ordered array, each element exactly one of
+ *   {"ins":  {"at": u32, "text": s}}
+ *   {"del":  {"at": u32, "len": u32}}
+ *   {"chip": {"at": u32, "id": u64}}
+ * with positions and lengths in UTF-16 code units against the body as
+ * the batch's earlier ops leave it. Parsing is reject-whole; a batch
+ * that parses is validated whole against the page and applied
+ * atomically or not at all. Chip liveness follows the document: a
+ * delete that swallows a chip's sentinel zeroizes the chip. Returns
+ * whether the batch applied; on false, restate the page through
+ * companion_sheet_sync_document (the recovery path).
+ */
+bool companion_sheet_apply_ops(CompanionHandle *handle, uint64_t sheet,
+                               const char *json);
+
+/*
+ * Replace a page's document wholesale: a JSON array of runs in document
  * order — {"ink": "text"} for visible ink, {"chip": id} where a chip
- * sits. The shell owns the live document; the core mirrors it for tab
- * titles, the ledger, and page promotion. AUTHORITATIVE FOR CHIP
- * LIVENESS: a chip the snapshot omits was deleted in the editor and is
- * zeroized here. Malformed snapshots (bad JSON, foreign chip,
- * duplicate reference) are rejected whole. Returns acceptance.
+ * sits. Since edits travel as operations (companion_sheet_apply_ops),
+ * this survives as the RECOVERY path: a page restated whole after a
+ * rejected batch, at the price of that page's provenance. STILL
+ * AUTHORITATIVE FOR CHIP LIVENESS: a chip the snapshot omits was
+ * deleted in the editor and is zeroized here. Malformed snapshots (bad
+ * JSON, foreign chip, duplicate reference) are rejected whole. Returns
+ * acceptance.
  */
 bool companion_sheet_sync_document(CompanionHandle *handle, uint64_t sheet,
                                    const char *json);
@@ -207,6 +249,31 @@ bool companion_sheet_sync_document(CompanionHandle *handle, uint64_t sheet,
  * with companion_string_free(). Null for an unknown page.
  */
 char *companion_sheet_document_json(CompanionHandle *handle, uint64_t sheet);
+
+/*
+ * A page's provenance, derived from its operation log (ADR-0013):
+ *   {"created_ms": u64, "modified_s": i64|null}
+ * created_ms is the page's creation stamp (epoch ms, the figure the
+ * summaries already carry); modified_s is the newest change's commit
+ * timestamp in Unix SECONDS, null for an untouched body. Deliberately
+ * nothing else: origin URLs are content and appear on no JSON
+ * surface. Free with companion_string_free(). Null for an unknown
+ * page.
+ */
+char *companion_sheet_meta_json(CompanionHandle *handle, uint64_t sheet);
+
+/*
+ * A page's blocks (its paragraphs) in document order:
+ *   [{"id": uuid, "created_s": i64|null, "modified_s": i64|null}, …]
+ * The id is the block's random identity, stable across edits inside
+ * the paragraph and following the split-keeps-the-first, merge-keeps-
+ * the-absorber convention across the ones that are not. Stamps are
+ * Unix seconds derived from the operation log, null for a block with
+ * no committed content. Identities and timestamps ONLY: no text, no
+ * counts, no origin. Free with companion_string_free(). Null for an
+ * unknown page.
+ */
+char *companion_sheet_blocks_json(CompanionHandle *handle, uint64_t sheet);
 
 /* ------------------------------------------------------------------ */
 /* Chips                                                               */
@@ -255,8 +322,11 @@ int64_t companion_next_event_ms(CompanionHandle *handle);
  */
 uint64_t companion_expire_due(CompanionHandle *handle);
 
-/* Cycle the countdown to the next rung (clock reset to the full rung —
- * each click resets the clock); new code, or -1 if the page is gone. */
+/* Cycle the countdown one rung SHORTER (clock reset to the full rung —
+ * each click resets the clock). The ladder tapers, 7d -> 3d -> 24h ->
+ * 8h -> 3h -> 1h, and wraps back to 7d at the bottom, so the most
+ * precarious rung is five clicks away rather than one. Returns the new
+ * code, or -1 if the page is gone. */
 int companion_sheet_cycle_rung(CompanionHandle *handle, uint64_t id);
 
 /* Set an explicit rung (clock reset). Returns success. */

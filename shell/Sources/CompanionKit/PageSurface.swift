@@ -143,7 +143,9 @@ public struct PageStatusStack: View {
 // MARK: - The countdown
 
 /// The countdown label: remaining time on the current rung; click
-/// cycles the ladder and resets the clock (docs/spec/04).
+/// steps one rung shorter and resets the clock (docs/spec/04). The
+/// ladder tapers rather than falling off its top, so shortening a
+/// page to the precarious end is a deliberate five clicks.
 public struct CountdownButton: View {
     let sheet: SheetSummary
     let cycle: () -> Void
@@ -170,10 +172,10 @@ public struct CountdownButton: View {
             .foregroundStyle(sheet.lastHour ? Color.ember : .secondary)
         }
         .buttonStyle(.plain)
-        .help("Click to cycle the ladder and reset the clock")
+        .help("Click to shorten the countdown one rung and reset the clock")
         .accessibilityLabel(Text("Countdown"))
         .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityHint(Text("Activate to cycle the ladder and reset the clock"))
+        .accessibilityHint(Text("Activate to shorten the countdown one rung and reset the clock"))
     }
 }
 

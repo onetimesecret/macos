@@ -48,6 +48,8 @@ exactly one of two stances:
 | Countdown repaint | every 30 s | 1 Hz |
 | Reading | the same page, dimmed, editing refused | the same page, editable |
 
+The mouse row is all-or-nothing per window, not a choice. ADR-0015.
+
 The summon gestures are ⌃⌥Space (two modifiers, deliberately: ⌥Space
 belongs to the panel app, and option-only global shortcuts broke
 outright on macOS 15.0–15.1), the menu-bar item, and — per the ⌘Tab
@@ -251,8 +253,10 @@ Absent, each on purpose:
 - **Capture exclusion is doubly load-bearing.** `sharingType = .none`,
   as everywhere (docs/spec/05) — but the panel is hidden between uses,
   while the backdrop is on screen for every screenshot and screen share.
-  The debug-only `COMPANION_ALLOW_CAPTURE` opt-out mirrors the panel's:
-  never persisted, compiled out of release.
+  The `COMPANION_ALLOW_CAPTURE` opt-out mirrors the panel's: never
+  persisted, always off at launch unless the variable is set, and
+  absent from Settings in a release build that was launched without it.
+  While it is on, the header flies a camera indicator.
 - **Shoulder surfing is the form factor's own tradeoff.** Ink on the
   backdrop is exactly as visible as ink on a paper note taped to the
   monitor — that visibility is the *feature*, chosen by the user when

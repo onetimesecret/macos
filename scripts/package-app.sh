@@ -1,33 +1,39 @@
 #!/usr/bin/env bash
-# Package the background-surface form factor as a real .app bundle:
-# dist/CompanionBackdrop.app. The sibling of build-app.sh (ADR-0010):
-# same reasons a bundle exists at all (a bare `swift run` binary has no
-# CFBundleIdentifier, so TCC grants and per-app pickers cannot address
-# it), same stamping, same signing story.
+# Package the app as a real .app bundle: dist/OnetimePad.app.
+# A bare `swift run` binary has no CFBundleIdentifier, so macOS cannot
+# address it: TCC grants don't stick, per-app pickers cannot list it,
+# and LaunchServices registers it as a nameless process. The bundle is
+# what makes the app a citizen of the permission system.
+#
+# This is the packaging engine; the entry points are scripts/dev.sh
+# (debug, launched from dist/) and scripts/install.sh (release,
+# installed to /Applications).
 #
 # Prereq: scripts/build-core.sh has produced the xcframework.
 #
-# --debug builds the debug configuration, the only build that can lift
-# the surface's capture exclusion (COMPANION_ALLOW_CAPTURE, compiled out
-# of release). `open` does not forward the caller's environment; pass
-# the variable explicitly:
-#   open --env COMPANION_ALLOW_CAPTURE=1 dist/CompanionBackdrop.app
+# --debug builds the debug configuration, which always offers the
+# Settings switch that lifts the surface's capture exclusion. A release
+# build offers the same switch only when launched with
+# COMPANION_ALLOW_CAPTURE set, which also seeds it on. `open` does not
+# forward the caller's environment; pass the variable explicitly, and to
+# either configuration:
+#   open --env COMPANION_ALLOW_CAPTURE=1 dist/OnetimePad.app
+#   open --env COMPANION_ALLOW_CAPTURE=1 /Applications/OnetimePad.app
 # Debug builds get a .debug bundle id so a dev instance and the
 # installed copy can coexist without contending for the menu bar,
 # defaults, keychain items, and state (ADR-0012).
 #
 # Signing: ad-hoc by default; set CODESIGN_IDENTITY to a real
-# certificate for an identity that survives rebuilds. (The backdrop
-# keeps its own Keychain service, and its Settings window saves an API
-# token to it, so ad-hoc identity churn costs it what it costs the
-# panel: TCC grants reset and the Keychain re-confirms access to the
+# certificate for an identity that survives rebuilds. (The Settings
+# window saves an API token to the Keychain, so ad-hoc identity churn
+# means TCC grants reset and the Keychain re-confirms access to the
 # stored items on every rebuild.) Carrying
 # scripts/Companion.entitlements takes a real identity AND an embedded
 # provisioning profile (PROVISIONING_PROFILE); every other build omits
 # it and runs the documented login keychain fallback.
 #
 # Before signing, the assembled bundle is hashed into
-# dist/CompanionBackdrop.presig.sha256, the reproducible pre-signature
+# dist/OnetimePad.presig.sha256, the reproducible pre-signature
 # artifact ADR-0012 publishes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -40,7 +46,7 @@ if [[ -f scripts/local.env ]]; then
 fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "build-backdrop.sh must run on macOS (needs swift + codesign)." >&2
+  echo "package-app.sh must run on macOS (needs swift + codesign)." >&2
   exit 1
 fi
 
@@ -69,19 +75,34 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-echo "==> swift build -c $CONFIG --product CompanionBackdrop"
-swift build --package-path shell -c "$CONFIG" --product CompanionBackdrop
-BIN="$(swift build --package-path shell -c "$CONFIG" --show-bin-path)/CompanionBackdrop"
+echo "==> swift build -c $CONFIG --product OnetimePad"
+swift build --package-path shell -c "$CONFIG" --product OnetimePad
+BIN="$(swift build --package-path shell -c "$CONFIG" --show-bin-path)/OnetimePad"
 
-APP=dist/CompanionBackdrop.app
+APP=dist/OnetimePad.app
 echo "==> Assembling $APP ($VERSION, $CONFIG)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/CompanionBackdrop"
-cp shell/Backdrop-Info.plist "$APP/Contents/Info.plist"
+cp "$BIN" "$APP/Contents/MacOS/OnetimePad"
+# The brand art the menu bar item is drawn from (CompanionKit's
+# LogoMark, which looks here first). SwiftPM's own resource bundle is
+# not what ships: its accessor searches beside the .app, so the app
+# carries the asset in Contents/Resources where Bundle.main finds it.
+cp shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg "$APP/Contents/Resources/"
+cp shell/OnetimePad-Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
-scripts/build-icons.sh
-cp dist/icons/CompanionBackdrop.icns "$APP/Contents/Resources/AppIcon.icns"
+# Use whatever OnetimePad icon is already sitting in dist/icons/ (the
+# most recently rendered one), so a custom scripts/build-icons.sh run
+# right before packaging survives instead of being overwritten by a
+# forced rebuild back to the standard shade. Only build the standard
+# icon when none exists yet.
+ICON="$(ls -t dist/icons/OnetimePad*.icns 2>/dev/null | head -n1 || true)"
+if [[ -z "$ICON" ]]; then
+  scripts/build-icons.sh
+  ICON="dist/icons/OnetimePad.icns"
+fi
+echo "==> App icon: $ICON"
+cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
 
@@ -166,11 +187,11 @@ else
       echo "==> embedded provisioning profile: $PROVISIONING_PROFILE"
       # The group follows the bundle's own identifier, read back out of
       # the assembled Info.plist so it already carries any .debug
-      # suffix. Hardcoding one id would drop the panel, the backdrop,
-      # and both debug variants into a single group, and a shared group
-      # is a shared keychain: CompanionKit/FormFactor.swift scopes each
-      # form factor's credentialService to its own bundle id, and
-      # ADR-0010 says neither can read the other's pages.
+      # suffix. Hardcoding one id would drop the installed release copy
+      # and the .debug dev instance into a single group, and a shared
+      # group is a shared keychain: CompanionKit/FormFactor.swift scopes
+      # credentialService to the running build's bundle id, and
+      # ADR-0012 says the two lanes must not read one another's items.
       SIGNED_BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
       ACCESS_GROUP="${TEAM_ID}.${SIGNED_BUNDLE_ID}"
       SIGN_ENTITLEMENTS="$(mktemp -t companion-entitlements)"

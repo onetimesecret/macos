@@ -197,7 +197,7 @@ private struct SheetTab: View {
         .contextMenu {
             Button("Rename page…") { promptForRename() }
             Button(sheet.paused ? "Top the hold up" : "Hold the clock") { model.pause(sheet.id) }
-            Button("Cycle the countdown") { model.cycleRung(sheet.id) }
+            Button("Shorten the countdown") { model.cycleRung(sheet.id) }
             Button("Close page", role: .destructive) { model.close(sheet.id) }
         }
     }

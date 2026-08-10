@@ -56,8 +56,10 @@ public struct ConnectionSettingsView: View {
     /// surface itself.
     private let loginPresence: String
 
-    /// Whether the capture opt-out is offered here. Debug builds only,
-    /// and only where the surrounding target actually honours it.
+    /// Whether this settings screen is one that may carry the capture
+    /// opt-out at all, i.e. whether the surrounding target honours it.
+    /// Separate from `PageModel.captureOptOutOffered`, which decides
+    /// whether this process offers the switch to anyone.
     private let offersCaptureToggle: Bool
 
     public init(model: PageModel, loginPresence: String, offersCaptureToggle: Bool = true) {
@@ -139,17 +141,15 @@ public struct ConnectionSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            #if DEBUG
-            if offersCaptureToggle {
+            if offersCaptureToggle, PageModel.captureOptOutOffered {
                 Section {
                     Toggle("Allow screenshots of the surface", isOn: $model.allowCapture)
                 } header: {
-                    Text("Debug build only: lifts the screen-capture exclusion until the app quits. A release build has no such switch.")
+                    Text(captureCaption)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            #endif
             HStack {
                 Button("Test") { test() }
                     .disabled(testing)
@@ -170,6 +170,17 @@ public struct ConnectionSettingsView: View {
         .frame(width: 420)
         .frame(maxHeight: .infinity)
         .onAppear(perform: load)
+    }
+
+    /// The section only exists when the switch is offered, so the
+    /// caption's job is to say why this build has one and how long it
+    /// lasts, not to explain its absence.
+    private var captureCaption: String {
+        #if DEBUG
+        return "Debug build: lifts the screen-capture exclusion until the app quits."
+        #else
+        return "Shown because this app was launched with COMPANION_ALLOW_CAPTURE. It lifts the screen-capture exclusion until the app quits, and an ordinary launch offers no such switch."
+        #endif
     }
 
     private var tokenPrompt: String {

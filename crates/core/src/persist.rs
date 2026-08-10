@@ -55,7 +55,9 @@ use std::time::{Duration, Instant};
 
 use zeroize::Zeroizing;
 
+use crate::blocks::{BlockIndex, MaterializedMeta, PersistedBlock};
 use crate::clock::Clock;
+use crate::document::{DocRun, SheetDocument};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
     ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId, TITLE_CAP,
@@ -65,7 +67,10 @@ use crate::ttl::Ttl;
 
 /// Magic + version prefix of a plaintext content snapshot. A format
 /// change gets a new final byte; old builds refuse rather than misread.
-const MAGIC: &[u8; 8] = b"OTSSNAP2";
+/// `3` replaces the segments section with the sheet's full Loro
+/// document blob (ADR-0013). There is no v2 reader and no downgrade
+/// writer: v1 and v2 files refuse as unknown, deliberately.
+const MAGIC: &[u8; 8] = b"OTSSNAP3";
 
 /// Magic + version prefix of a plaintext ledger snapshot. Separate from
 /// [`MAGIC`] so the two files can never be mistaken for each other.
@@ -76,14 +81,21 @@ const LEDGER_MAGIC: &[u8; 8] = b"OTSLEDR1";
 /// safely away from overflow no matter what the buffer claims.
 const MAX_SPAN_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 
+/// Slack above the wall clock allowed for a materialized stamp before
+/// the clamp takes it: the document's recorder rounds to the nearest
+/// second while the wall reading truncates, so an honest stamp can sit
+/// one second ahead of the clock that judges it.
+const STAMP_SLACK_S: i64 = 2;
+
 /// Why a snapshot could not be restored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestoreError {
     /// Not a snapshot, or a version this build does not read.
     UnknownFormat,
     /// The layout is damaged: truncated, trailing bytes, invalid UTF-8,
-    /// an off-ladder rung, or a document referencing a chip it does not
-    /// own. The store is left exactly as it was.
+    /// an off-ladder rung, a document blob that does not import, or a
+    /// chip roster the document's marks do not match one to one. The
+    /// store is left exactly as it was.
     Malformed,
 }
 
@@ -108,10 +120,27 @@ impl<C: Clock> SheetStore<C> {
     #[must_use]
     pub fn snapshot(&self, wall_ms: u64) -> Zeroizing<Vec<u8>> {
         let now = self.clock.now();
+        // Each document is exported exactly once, into a zeroizing
+        // buffer both passes copy from. The sizing pass must never
+        // trigger a second export: two exports could disagree in length
+        // and the write would grow the buffer, stranding sealed bytes
+        // in freed, unwiped heap.
+        let blobs: Vec<Zeroizing<Vec<u8>>> = self
+            .sheets
+            .iter()
+            .map(|sheet| sheet.document.export_snapshot())
+            .collect();
+        // The materialized sections are encoded once too, and zeroizing
+        // for the same reason as the blobs: a frozen origin is content.
+        let metas: Vec<Zeroizing<Vec<u8>>> = self
+            .sheets
+            .iter()
+            .map(|sheet| encode_materialized(&sheet.blocks))
+            .collect();
         let mut sizer = Sizer(0);
-        emit(self, now, wall_ms, &mut sizer);
+        emit(self, &blobs, &metas, now, wall_ms, &mut sizer);
         let mut buffer = Zeroizing::new(Vec::with_capacity(sizer.0));
-        emit(self, now, wall_ms, &mut Writer(&mut buffer));
+        emit(self, &blobs, &metas, now, wall_ms, &mut Writer(&mut buffer));
         debug_assert_eq!(buffer.len(), sizer.0, "sizing pass drifted from the write");
         buffer
     }
@@ -158,6 +187,7 @@ impl<C: Clock> SheetStore<C> {
                 &mut reader,
                 now,
                 away,
+                wall_ms,
                 &mut next_sheet_id,
                 &mut next_chip_id,
             )?);
@@ -278,16 +308,18 @@ impl Sink for Writer<'_> {
     }
 }
 
-/// A uuid that no chip can ever hold, written for a segment whose chip
-/// has gone missing: it fails the resolve on read, which is the same
-/// rejection a dangling reference has always earned.
-const NO_SUCH_ITEM: [u8; 16] = [0u8; 16];
-
-fn emit<C: Clock>(store: &SheetStore<C>, now: Instant, wall_ms: u64, out: &mut impl Sink) {
+fn emit<C: Clock>(
+    store: &SheetStore<C>,
+    blobs: &[Zeroizing<Vec<u8>>],
+    metas: &[Zeroizing<Vec<u8>>],
+    now: Instant,
+    wall_ms: u64,
+    out: &mut impl Sink,
+) {
     out.raw(MAGIC);
     out.u64(wall_ms);
     out.u64(store.sheets.len() as u64);
-    for sheet in &store.sheets {
+    for ((sheet, blob), meta) in store.sheets.iter().zip(blobs).zip(metas) {
         // Identity, not the in-process counter (ADR-0012).
         out.raw(sheet.uuid.as_bytes());
         out.u64(sheet.created_wall_ms);
@@ -312,8 +344,8 @@ fn emit<C: Clock>(store: &SheetStore<C>, now: Instant, wall_ms: u64, out: &mut i
         // total_held(now) folds a live hold's span in; restore restarts
         // the live hold's accounting from its own `now`.
         out.u64(ms(sheet.total_held(now)));
-        // Chips before segments, so the reader has every chip identity in
-        // hand before a segment asks it to resolve one.
+        // Chips before the document blob, so the reader has every chip
+        // identity in hand before a mark asks it to resolve one.
         out.u64(sheet.chips.len() as u64);
         for chip in &sheet.chips {
             out.raw(chip.uuid.as_bytes());
@@ -330,21 +362,67 @@ fn emit<C: Clock>(store: &SheetStore<C>, now: Instant, wall_ms: u64, out: &mut i
             }
             out.bytes(chip.bytes.expose());
         }
-        out.u64(sheet.segments.len() as u64);
-        for segment in &sheet.segments {
-            match segment {
-                Segment::Ink(text) => {
-                    out.u8(0);
-                    out.bytes(text.as_bytes());
-                }
-                Segment::Chip(chip_id) => {
-                    out.u8(1);
-                    out.raw(
-                        sheet
-                            .chip(*chip_id)
-                            .map_or(&NO_SUCH_ITEM, |chip| chip.uuid.as_bytes()),
-                    );
-                }
+        // The whole document, history included: the projection is not
+        // written because the document is its source of truth, and a
+        // snapshot that carried both could smuggle a divergent
+        // projection back in.
+        out.bytes(blob.as_slice());
+        // The materialized-metadata section, filled by the compaction
+        // ceremony (ADR-0013): each block that carries a frozen summary
+        // writes its identity, its anchor, its stamps, and its origin.
+        // The slot was reserved in stage 4, so a compacted file differs
+        // from an uncompacted one only by this section's contents.
+        out.bytes(meta.as_slice());
+    }
+}
+
+/// Encode a sheet's materialized block summaries into their own buffer,
+/// sized exactly the same way as the outer snapshot: growing a buffer
+/// reallocates, and a frozen origin is content that must not strand in
+/// unwiped heap. An index with nothing frozen encodes to the empty
+/// slice, byte for byte the slot stage 4 wrote.
+fn encode_materialized(blocks: &BlockIndex) -> Zeroizing<Vec<u8>> {
+    if blocks
+        .records()
+        .iter()
+        .all(|record| record.materialized.is_none())
+    {
+        return Zeroizing::new(Vec::new());
+    }
+    let mut sizer = Sizer(0);
+    emit_materialized(blocks, &mut sizer);
+    let mut buffer = Zeroizing::new(Vec::with_capacity(sizer.0));
+    emit_materialized(blocks, &mut Writer(&mut buffer));
+    debug_assert_eq!(
+        buffer.len(),
+        sizer.0,
+        "materialized sizing pass drifted from the write"
+    );
+    buffer
+}
+
+fn emit_materialized(blocks: &BlockIndex, out: &mut impl Sink) {
+    let frozen: Vec<_> = blocks
+        .records()
+        .iter()
+        .filter_map(|record| record.materialized.as_ref().map(|meta| (record, meta)))
+        .collect();
+    out.u64(frozen.len() as u64);
+    for (record, meta) in frozen {
+        // The block's identity, then the anchor that must still resolve
+        // for the record to be believed on the way back in.
+        out.raw(record.id.as_bytes());
+        out.bytes(&record.anchor);
+        // Stamps are positive by construction (derivation skips the
+        // epoch-stamped rebuild), so the sign bit never survives the
+        // round trip through u64.
+        out.u64(meta.created_s.max(0) as u64);
+        out.u64(meta.modified_s.max(0) as u64);
+        match &meta.origin {
+            None => out.u8(0),
+            Some(origin) => {
+                out.u8(1);
+                out.bytes(origin.as_bytes());
             }
         }
     }
@@ -455,6 +533,7 @@ fn read_sheet(
     reader: &mut Reader<'_>,
     now: Instant,
     away: Duration,
+    wall_ms: u64,
     next_sheet_id: &mut u64,
     next_chip_id: &mut u64,
 ) -> Result<Sheet, RestoreError> {
@@ -539,27 +618,54 @@ fn read_sheet(
         chips.push(chip);
     }
 
+    // The document blob, history included, then the materialized
+    // metadata slot the compaction ceremony fills (ADR-0013). The slot
+    // is parsed after the document imports, because its records are
+    // believed only against the document they claim to describe.
+    let blob = reader.bytes().ok_or(Malformed)?;
+    let metadata = reader.bytes().ok_or(Malformed)?;
+
+    // The document is reborn whole, under a fresh peer identity that
+    // never reaches any surface: the counters the store hands out are
+    // re-minted below, exactly as before.
+    let document = SheetDocument::new();
+    document.import_snapshot(blob)?;
+
     // The sync_document invariant, re-checked at this trust boundary:
-    // every referenced chip exists on the sheet, none referenced twice.
-    // A reference is a uuid, resolved here to the freshly minted handle.
-    let segment_count = count(reader)?;
+    // every chip mark in the document resolves to a chip record, no
+    // record is claimed twice, and no record goes unclaimed. A dangling
+    // mark, a duplicate, or an orphan record is damage, and damage
+    // rejects the whole snapshot before the store is touched. The
+    // projection is rebuilt from the same walk, so it cannot disagree
+    // with the document it mirrors.
     let mut segments = Vec::new();
     let mut referenced: Vec<ChipId> = Vec::new();
-    for _ in 0..segment_count {
-        segments.push(match reader.u8().ok_or(Malformed)? {
-            0 => Segment::Ink(reader.str().ok_or(Malformed)?.to_string()),
-            1 => {
-                let wanted = reader.uuid().ok_or(Malformed)?;
+    for run in document.runs() {
+        match run {
+            DocRun::Ink(text) => segments.push(Segment::Ink(text)),
+            DocRun::Chip(wanted) => {
                 let chip = chips.iter().find(|c| c.uuid() == wanted).ok_or(Malformed)?;
                 if referenced.contains(&chip.id) {
                     return Err(Malformed);
                 }
                 referenced.push(chip.id);
-                Segment::Chip(chip.id)
+                segments.push(Segment::Chip(chip.id));
             }
-            _ => return Err(Malformed),
-        });
+        }
     }
+    if referenced.len() != chips.len() {
+        return Err(Malformed);
+    }
+
+    // The block index is rebuilt from the imported document with fresh
+    // identities, then the materialized records are adopted over it:
+    // validated rather than trusted, a record believed only when its
+    // anchor still resolves to the start of a block, its stamps clamped
+    // to sane values on the way in. Everything else is dropped, which
+    // leaves the affected block on the fresh identity the rebuild
+    // minted (ADR-0013).
+    let mut blocks = BlockIndex::for_document(&document);
+    blocks.adopt(&document, read_materialized(metadata, wall_ms)?);
 
     let id = SheetId::from_raw(*next_sheet_id);
     *next_sheet_id += 1;
@@ -570,12 +676,61 @@ fn read_sheet(
         title,
         title_is_user_set,
         created_wall_ms,
+        document,
         segments,
+        blocks,
         chips,
         rung,
         clock,
         total_held,
     })
+}
+
+/// Decode a sheet's materialized-metadata slot into candidate records
+/// for [`BlockIndex::adopt`] to judge. Structural damage rejects the
+/// whole snapshot like damage anywhere else; semantic doubt is handled
+/// by validation instead. Timestamps are clamped into the sane range
+/// (positive, no later than the wall clock now, modified never before
+/// created), because a stamp is trusted arithmetic downstream and a
+/// hand-edited file must not choose its values freely. The empty slot
+/// a pre-ceremony file carries decodes to no records.
+fn read_materialized(bytes: &[u8], wall_ms: u64) -> Result<Vec<PersistedBlock>, RestoreError> {
+    use RestoreError::Malformed;
+    if bytes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ceiling = i64::try_from(wall_ms / 1000)
+        .unwrap_or(i64::MAX)
+        .saturating_add(STAMP_SLACK_S)
+        .max(1);
+    let clamp = |claimed: u64| i64::try_from(claimed).unwrap_or(i64::MAX).clamp(1, ceiling);
+    let mut reader = Reader { buf: bytes, pos: 0 };
+    let record_count = count(&mut reader)?;
+    let mut records = Vec::new();
+    for _ in 0..record_count {
+        let id = reader.uuid().ok_or(Malformed)?;
+        let anchor = reader.bytes().ok_or(Malformed)?.to_vec();
+        let created_s = clamp(reader.u64().ok_or(Malformed)?);
+        let modified_s = clamp(reader.u64().ok_or(Malformed)?).max(created_s);
+        let origin = match reader.u8().ok_or(Malformed)? {
+            0 => None,
+            1 => Some(reader.str().ok_or(Malformed)?.to_string()),
+            _ => return Err(Malformed),
+        };
+        records.push(PersistedBlock {
+            id,
+            anchor,
+            meta: MaterializedMeta {
+                created_s,
+                modified_s,
+                origin,
+            },
+        });
+    }
+    if !reader.done() {
+        return Err(Malformed);
+    }
+    Ok(records)
 }
 
 fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
@@ -636,7 +791,8 @@ mod tests {
 
     /// A populated store: two pages — ink + text chip (promoted) + image
     /// chip on the first, plain ink on the second — and a closed page in
-    /// the ledger.
+    /// the ledger. The trailing ink carries an astral character so every
+    /// test over this fixture crosses a surrogate pair.
     fn populated() -> (SheetStore<ManualClock>, ManualClock, SheetId, SheetId) {
         let (mut store, clock) = store();
         let first = store.new_sheet().unwrap();
@@ -650,7 +806,7 @@ mod tests {
             vec![
                 Segment::Ink("# deploy notes\n".into()),
                 Segment::Chip(token),
-                Segment::Ink("\ntrailing ink".into()),
+                Segment::Ink("\ntrailing \u{1F511} ink".into()),
                 Segment::Chip(image),
             ],
         ));
@@ -702,8 +858,199 @@ mod tests {
         let (bytes, _) = revived.copy_out_chip(chips[0].id()).unwrap();
         assert_eq!(&*bytes, b"ghp_expected-to-survive");
 
+        // Provenance made the trip too: the change that produced the
+        // body's first character keeps its commit timestamp, because
+        // the blob carries the document's history rather than a replay.
+        let stamped = original
+            .sheet(first)
+            .unwrap()
+            .document
+            .first_change_timestamp();
+        assert!(
+            stamped.is_some_and(|t| t > 0),
+            "the control: the original body's first change is stamped"
+        );
+        assert_eq!(sheet.document.first_change_timestamp(), stamped);
+
         // The content snapshot carries no ledger.
         assert_eq!(revived.ledger().count(), 0);
+    }
+
+    #[test]
+    fn the_origin_message_survives_the_round_trip() {
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        // A URL-bearing paste, sealed at the caret: the origin persists
+        // as the seal commit's message and nowhere else.
+        let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
+        store
+            .seal_text_at_with_origin(id, "the pasted secret", 0, 0, Some(origin))
+            .unwrap();
+        assert_eq!(
+            store
+                .sheet(id)
+                .unwrap()
+                .document
+                .first_change_message()
+                .as_deref(),
+            Some(origin),
+            "the control: the seal commit carries the origin before the trip"
+        );
+
+        let snapshot = store.snapshot(0);
+
+        let mut revived = SheetStore::new(clock.clone());
+        revived.restore(&snapshot, 0).unwrap();
+        let sheet = revived.sheets().next().unwrap();
+        assert_eq!(
+            sheet.document.first_change_message().as_deref(),
+            Some(origin),
+            "the origin message rides the blob through the round trip"
+        );
+
+        // The ledger snapshot, by contrast, must not know the URL: the
+        // origin is content and lives only in the sealed content file.
+        let ledger = store.ledger_snapshot();
+        let needle = b"origin.example.test";
+        assert!(
+            !ledger.windows(needle.len()).any(|w| w == needle),
+            "the origin leaked into the ledger snapshot"
+        );
+    }
+
+    /// Whether `needle` occurs anywhere in `haystack`: the byte scan
+    /// the compaction ceremony's discard claims are audited with.
+    fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack.windows(needle.len()).any(|w| w == needle)
+    }
+
+    /// Unix epoch milliseconds now, for tests over materialized stamps:
+    /// the document's commits are stamped by the real wall clock, so the
+    /// restore ceiling they are clamped against must be real too.
+    fn real_wall_ms() -> u64 {
+        u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("the clock sits after the epoch")
+                .as_millis(),
+        )
+        .expect("millisecond count fits u64")
+    }
+
+    #[test]
+    fn a_compacted_store_round_trips_materialized_metadata_and_origin() {
+        use crate::store::EditOp;
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
+        store
+            .seal_text_at_with_origin(id, "the pasted secret", 0, 0, Some(origin))
+            .unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 1,
+                text: "alpha DOOMED\u{1F680} keep\nsecond".into()
+            }]
+        ));
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 7,
+                len_u16: 8
+            }]
+        ));
+        let old_peer = store.sheets[0].document.peer_id();
+
+        // The rung gesture runs the ceremony; everything after asserts
+        // against the compacted page.
+        store.cycle_rung(id).unwrap();
+        let sheet = store.sheet(id).unwrap();
+        let segments = sheet.segments().to_vec();
+        let metas = sheet.blocks_meta();
+        let modified = sheet.modified_s();
+        assert!(modified.is_some(), "the frozen floor answers for the page");
+
+        let wall = real_wall_ms();
+        let snapshot = store.snapshot(wall);
+        // The persisted content sheds the trail and keeps the summary:
+        // no deleted fragment, no old actor id, and the origin standing
+        // in the materialized slot, sealed file only.
+        assert!(!contains(&snapshot, b"DOOMED"));
+        assert!(!contains(&snapshot, &old_peer.to_le_bytes()));
+        assert!(
+            contains(&snapshot, b"origin.example.test"),
+            "the graduated origin must survive into the sealed file"
+        );
+
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
+        let sheet = revived.sheets().next().unwrap();
+        assert_eq!(sheet.segments(), segments.as_slice());
+        assert_eq!(
+            sheet.blocks_meta(),
+            metas,
+            "block identities and stamps are adopted from the slot, not re-minted"
+        );
+        assert_eq!(sheet.modified_s(), modified);
+        assert_eq!(
+            sheet.blocks.records()[0]
+                .materialized
+                .as_ref()
+                .unwrap()
+                .origin
+                .as_deref(),
+            Some(origin),
+            "the origin rides the materialized record through the round trip"
+        );
+    }
+
+    #[test]
+    fn hostile_materialized_stamps_are_clamped_and_dead_anchors_dropped() {
+        use crate::store::EditOp;
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "first\u{1F600}\nsecond".into()
+            }]
+        ));
+        store.cycle_rung(id).unwrap();
+        let honest = store.sheet(id).unwrap().blocks_meta();
+
+        // Tamper the way a hand-edited file would: stamps from the far
+        // future and the deep past on block 0, and an anchor on block 1
+        // that resolves nowhere.
+        {
+            let records = store.sheets[0].blocks.records_mut();
+            let frozen = records[0].materialized.as_mut().unwrap();
+            frozen.created_s = i64::MAX;
+            frozen.modified_s = -40;
+            records[1].anchor = vec![0xde, 0xad, 0xbe, 0xef];
+        }
+        let wall = real_wall_ms();
+        let snapshot = store.snapshot(wall);
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
+        let metas = revived.sheets().next().unwrap().blocks_meta();
+
+        // Block 0's record still adopts (identity and anchor are
+        // honest) but its stamps are clamped into the sane range: never
+        // later than the wall clock now (plus the rounding slack),
+        // modified never before created.
+        let ceiling = i64::try_from(wall / 1000).unwrap() + STAMP_SLACK_S;
+        assert_eq!(metas[0].id, honest[0].id);
+        assert_eq!(metas[0].created_s, Some(ceiling));
+        assert_eq!(metas[0].modified_s, Some(ceiling));
+
+        // Block 1's record cannot prove it names a block, so it drops
+        // whole: a fresh identity and no inherited provenance, the same
+        // answer a file with no records would get.
+        assert_ne!(metas[1].id, honest[1].id);
+        assert_eq!(metas[1].created_s, None);
+        assert_eq!(metas[1].modified_s, None);
     }
 
     #[test]
@@ -836,10 +1183,10 @@ mod tests {
         store.next_sheet_id = 4_242;
         store.next_chip_id = 9_100;
         let first = store.new_sheet().unwrap();
-        store.seal_text(first, "one").unwrap();
-        store.seal_text(first, "two").unwrap();
+        store.seal_text_at(first, "one", 0, 0).unwrap();
+        store.seal_text_at(first, "two", 1, 0).unwrap();
         let second = store.new_sheet().unwrap();
-        store.seal_text(second, "three").unwrap();
+        store.seal_text_at(second, "three", 0, 0).unwrap();
         assert!(first.raw() > 1000);
 
         let sheet_uuids: Vec<ItemId> = store.sheets().map(Sheet::uuid).collect();
@@ -880,25 +1227,108 @@ mod tests {
         assert_eq!(fresh_chip.raw(), 4);
     }
 
-    #[test]
-    fn a_document_reference_to_a_chip_that_is_not_there_is_malformed() {
-        let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
-        let chip = store.seal_text(id, "referenced").unwrap();
-        assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
-        let snapshot = store.snapshot(0);
+    /// A hand-assembled v3 snapshot holding one sheet: the given chip
+    /// records, the given document blob, and an empty metadata slot.
+    /// The writer cannot produce a roster that disagrees with its own
+    /// document, so the trust-boundary tests build their bytes by hand.
+    fn sheet_snapshot(chips: &[(ItemId, &str)], blob: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(MAGIC);
+        out.extend_from_slice(&0u64.to_le_bytes()); // saved wall stamp
+        out.extend_from_slice(&1u64.to_le_bytes()); // one sheet
+        out.extend_from_slice(ItemId::random().as_bytes());
+        out.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
+        out.extend_from_slice(&0u64.to_le_bytes()); // empty title
+        out.push(0); // title not user set
+        out.extend_from_slice(&(8 * 60 * 60u64).to_le_bytes()); // 8h rung
+        out.push(0); // running
+        out.extend_from_slice(&60_000u64.to_le_bytes()); // remaining ms
+        out.extend_from_slice(&0u64.to_le_bytes()); // total_held
+        out.extend_from_slice(&(chips.len() as u64).to_le_bytes());
+        for (uuid, text) in chips {
+            out.extend_from_slice(uuid.as_bytes());
+            out.push(0); // a text chip
+            out.push(0); // never promoted
+            out.extend_from_slice(&(text.len() as u64).to_le_bytes());
+            out.extend_from_slice(text.as_bytes());
+        }
+        out.extend_from_slice(&(blob.len() as u64).to_le_bytes());
+        out.extend_from_slice(blob);
+        out.extend_from_slice(&0u64.to_le_bytes()); // empty metadata slot
+        out
+    }
 
-        // Corrupt the segment's uuid: the last 16 bytes of the buffer are
-        // the reference, and no chip carries an all-ones identity.
-        let mut tampered = snapshot.to_vec();
-        let len = tampered.len();
-        tampered[len - 16..].fill(0xFF);
-        let mut revived = SheetStore::new(clock.clone());
+    /// A store holding one live page, and that page's id: the fixture
+    /// every rejection test asserts survived the failed restore.
+    fn occupied() -> (SheetStore<ManualClock>, SheetId) {
+        let (mut store, _clock) = store();
+        let survivor = store.new_sheet().unwrap();
+        (store, survivor)
+    }
+
+    #[test]
+    fn a_dangling_chip_mark_is_malformed_and_the_store_is_untouched() {
+        let (mut store, survivor) = occupied();
+        let doc = SheetDocument::new();
+        doc.insert(0, "ink \u{1F600} ink").unwrap();
+        doc.insert_chip(2, ItemId::random()).unwrap();
+        doc.commit(None);
+        let snapshot = sheet_snapshot(&[], &doc.export_snapshot());
         assert_eq!(
-            revived.restore(&tampered, 0),
+            store.restore(&snapshot, 0),
             Err(RestoreError::Malformed),
-            "a dangling chip reference must reject the whole snapshot"
+            "a chip mark with no record must reject the whole snapshot"
         );
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
+    }
+
+    #[test]
+    fn an_orphan_chip_record_is_malformed_and_the_store_is_untouched() {
+        let (mut store, survivor) = occupied();
+        let doc = SheetDocument::new();
+        doc.insert(0, "just ink \u{1F980}").unwrap();
+        doc.commit(None);
+        let snapshot = sheet_snapshot(&[(ItemId::random(), "unclaimed")], &doc.export_snapshot());
+        assert_eq!(
+            store.restore(&snapshot, 0),
+            Err(RestoreError::Malformed),
+            "a chip record with no mark must reject the whole snapshot"
+        );
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
+    }
+
+    #[test]
+    fn a_duplicate_chip_mark_is_malformed_and_the_store_is_untouched() {
+        let (mut store, survivor) = occupied();
+        let id = ItemId::random();
+        let doc = SheetDocument::new();
+        doc.insert_chip(0, id).unwrap();
+        doc.insert(1, "\u{1F600}").unwrap();
+        doc.insert_chip(3, id).unwrap();
+        doc.commit(None);
+        let snapshot = sheet_snapshot(&[(id, "claimed twice")], &doc.export_snapshot());
+        assert_eq!(
+            store.restore(&snapshot, 0),
+            Err(RestoreError::Malformed),
+            "one record claimed by two marks must reject the whole snapshot"
+        );
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
+    }
+
+    #[test]
+    fn a_blob_that_does_not_import_is_malformed_and_the_store_is_untouched() {
+        let (mut store, survivor) = occupied();
+        let snapshot = sheet_snapshot(&[], b"not a loro blob");
+        assert_eq!(
+            store.restore(&snapshot, 0),
+            Err(RestoreError::Malformed),
+            "a blob the decoder refuses must reject the whole snapshot"
+        );
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
     }
 
     #[test]
@@ -930,6 +1360,26 @@ mod tests {
                 "a sequential id reached the ledger snapshot"
             );
         }
+
+        // The document's peer identity is confined the same way
+        // (ADR-0013): the content blob names its authoring peer by
+        // construction, which is the control that makes the ledger
+        // scan meaningful, and the ledger must never carry it.
+        let peer = store
+            .sheets()
+            .next()
+            .unwrap()
+            .document
+            .peer_id()
+            .to_le_bytes();
+        assert!(
+            content.windows(8).any(|w| w == peer),
+            "the control: the sealed content blob names its peer"
+        );
+        assert!(
+            !ledger.windows(8).any(|w| w == peer),
+            "the document's peer id reached the ledger snapshot"
+        );
     }
 
     #[test]
@@ -939,9 +1389,19 @@ mod tests {
         // ADR's single documented content exception. Everything else the
         // page holds must stay out.
         const TOKEN: &str = "ghp_never-in-the-ledger";
+        const DELETED: &str = "ghp_typed-then-deleted";
         let (mut store, _clock) = store();
         let id = store.new_sheet().unwrap();
         let chip = store.seal_text(id, TOKEN).unwrap();
+        assert!(store.sync_document(
+            id,
+            vec![
+                Segment::Ink(format!("# deploy notes\npasted {TOKEN} then {DELETED}\n")),
+                Segment::Chip(chip),
+            ],
+        ));
+        // The second token is typed and then removed, so from here on it
+        // exists only as tombstones in the document's history.
         assert!(store.sync_document(
             id,
             vec![
@@ -951,11 +1411,19 @@ mod tests {
         ));
         assert!(store.record_sent(chip, DestinationClass::OneTimeLink));
 
-        // The control: the token is in the content snapshot, twice over,
-        // which is exactly why the two files get different keys.
+        // The control: the live token is in the content snapshot, twice
+        // over, which is exactly why the two files get different keys.
+        // The deleted token is in there too, carried by the blob's
+        // tombstones, which is why the blob must never approach the
+        // ledger.
         let needle = TOKEN.as_bytes();
+        let ghost = DELETED.as_bytes();
         let content = store.snapshot(0);
         assert!(content.windows(needle.len()).any(|w| w == needle));
+        assert!(
+            content.windows(ghost.len()).any(|w| w == ghost),
+            "the control: deleted ink survives in the blob's history"
+        );
 
         assert!(store.close_sheet(id));
         let ledger = store.ledger_snapshot();
@@ -963,6 +1431,10 @@ mod tests {
         assert!(
             !ledger.windows(needle.len()).any(|w| w == needle),
             "the ledger snapshot carried content out of the page"
+        );
+        assert!(
+            !ledger.windows(ghost.len()).any(|w| w == ghost),
+            "the ledger snapshot carried tombstoned content out of the page"
         );
         assert_eq!(store.ledger().next().unwrap().title(), "deploy notes");
     }
@@ -1041,13 +1513,24 @@ mod tests {
     }
 
     #[test]
-    fn a_v1_snapshot_is_unknown_format() {
-        let (original, clock, ..) = populated();
-        let mut v1 = original.snapshot(0).to_vec();
-        v1[..8].copy_from_slice(b"OTSSNAP1");
-        let mut revived = SheetStore::new(clock.clone());
-        assert_eq!(revived.restore(&v1, 0), Err(RestoreError::UnknownFormat));
-        assert!(revived.is_empty());
+    fn v1_v2_and_unknown_magics_all_refuse_as_unknown_format() {
+        // The format break is clean and deliberate (decided 2026-08-07):
+        // there is no v2 reader and no downgrade writer, so every
+        // earlier magic and every unknown one refuses the same way,
+        // with the store untouched.
+        let (original, _clock, ..) = populated();
+        let (mut revived, survivor) = occupied();
+        for magic in [b"OTSSNAP1", b"OTSSNAP2", b"OTSSNAP9", b"NOTSNAPS"] {
+            let mut relabeled = original.snapshot(0).to_vec();
+            relabeled[..8].copy_from_slice(magic.as_slice());
+            assert_eq!(
+                revived.restore(&relabeled, 0),
+                Err(RestoreError::UnknownFormat),
+                "magic {magic:?} did not refuse as unknown"
+            );
+            let ids: Vec<SheetId> = revived.sheets().map(Sheet::id).collect();
+            assert_eq!(ids, vec![survivor], "the refused restore touched the store");
+        }
 
         let mut v0_ledger = original.ledger_snapshot().to_vec();
         v0_ledger[..8].copy_from_slice(b"OTSLEDR0");
@@ -1142,6 +1625,26 @@ mod tests {
         hostile_title.extend_from_slice(&u64::MAX.to_le_bytes());
         assert_eq!(
             revived.restore(&hostile_title, 0),
+            Err(RestoreError::Malformed)
+        );
+
+        // A blob length of u64::MAX behind an otherwise plausible page.
+        // The hand-built sheet ends with the two length prefixes, so
+        // the lie is written straight over the blob's.
+        let mut hostile_blob = sheet_snapshot(&[], b"");
+        let len = hostile_blob.len();
+        hostile_blob[len - 16..len - 8].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert_eq!(
+            revived.restore(&hostile_blob, 0),
+            Err(RestoreError::Malformed)
+        );
+
+        // And the same lie in the materialized-metadata slot.
+        let mut hostile_metadata = sheet_snapshot(&[], b"");
+        let len = hostile_metadata.len();
+        hostile_metadata[len - 8..].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert_eq!(
+            revived.restore(&hostile_metadata, 0),
             Err(RestoreError::Malformed)
         );
         assert!(revived.is_empty());

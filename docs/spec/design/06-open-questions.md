@@ -36,10 +36,15 @@ with a current leaning where one exists.
 
 ## Product
 
-1. **Does the TTL ladder wrap?** Carried from rev A, still unaddressed
-   in rev C: `…→ 7d → 1h` wrap is one-affordance-clean but makes "one
-   click past max" a 168→1 hour cliff on deliberately staged content.
-   The prototype is now in hand — decide by living with it.
+1. **Does the TTL ladder wrap?** ~~Carried from rev A, still
+   unaddressed in rev C: `…→ 7d → 1h` wrap is one-affordance-clean but
+   makes "one click past max" a 168→1 hour cliff on deliberately staged
+   content.~~ Answered 2026-08-08 by living with it: the wrap stays,
+   and the click direction inverts. Clicking now steps one rung
+   *shorter* (`7d → 3d → 24h → 8h → 3h → 1h`, wrapping back to `7d`),
+   so the cliff sits where it costs nothing. Reaching the most
+   precarious rung from a fresh page is five deliberate clicks, and the
+   one-click jump is the recovery, not the hazard.
 2. **Drop semantics.** Drop = sealed is the proposal (dragging content
    to a secrecy tool is already the "stage this" gesture); the
    alternative mirrors paste (visible by default, modifier to seal).

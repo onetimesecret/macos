@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import CompanionBackdrop
+@testable import OnetimePad
 
 /// Resizing the card from any of its eight grips, tested as the pure
 /// decision it is. The clamp has the last word elsewhere; what is

@@ -1,25 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  The background-surface form factor's identity sheet, consumed by
-  scripts/build-backdrop.sh — the sibling of shell/Info.plist (which
-  belongs to the panel app and is untouched by this target, ADR-0010).
+  OnetimePad's identity sheet, consumed by scripts/package-app.sh. The
+  panel sibling and its shell/Info.plist were archived (ADR-0014), so
+  this is the one identity the shell ships.
 
-  Its own bundle id, deliberately: TCC grants, screen-capture pickers,
-  and LaunchServices key on the identifier, and the two form factors
-  must be separately addressable citizens of the permission system —
-  especially since both may run at once during the exploration.
-
-  CFBundleName / CFBundleDisplayName are the user-facing name and are
-  free to change; the bundle id is not. The id keys the Keychain
-  service, the state directory, and every TCC grant the app has been
-  given, so renaming the product means editing these two keys and
-  nothing else. CFBundleExecutable, the target, and the .app filename
-  stay CompanionBackdrop for the same reason a variable keeps its name
-  when a label changes: they are build plumbing, not the product.
+  CFBundleName / CFBundleDisplayName, CFBundleExecutable, the target,
+  and the .app filename all say OnetimePad, the product's name, and are
+  free to change with it. The bundle id is not: it keys the Keychain
+  service, the state directory, the keychain access group, and every
+  TCC grant the app has been given, so it keeps the legacy
+  com.onetimesecret.companion.backdrop string from the days when the
+  target was named for its posture. Ids are infrastructure; names are
+  paint.
 
   CFBundleVersion / CFBundleShortVersionString hold a placeholder; the
-  build script stamps both from crates/ffi's CARGO_PKG_VERSION — the
+  build script stamps both from crates/ffi's CARGO_PKG_VERSION, the
   same source companion_version() is baked from.
 -->
 <plist version="1.0">
@@ -29,7 +25,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>OnetimePad</string>
 	<key>CFBundleExecutable</key>
-	<string>CompanionBackdrop</string>
+	<string>OnetimePad</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>

@@ -35,7 +35,7 @@ final class CoreContractTests: XCTestCase {
         XCTAssertGreaterThan(sheet.fractionRemaining, 0.9)
 
         // Seal ink: the chip's face carries no sealed bytes.
-        let chip = try XCTUnwrap(client.sealText(sheet: sheetID, secret))
+        let chip = try XCTUnwrap(client.sealText(sheet: sheetID, secret, at: 0, length: 0))
         XCTAssertEqual(chip.kind, "text")
         XCTAssertFalse(chip.excerpt.isEmpty)
         XCTAssertFalse(chip.excerpt.contains(secret))
@@ -52,8 +52,8 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(sheet.title, "deploy friday")
         XCTAssertEqual(sheet.chipCount, 1)
 
-        // The clock: cycling steps the ladder; the pause holds.
-        XCTAssertEqual(client.cycleRung(sheet: sheetID), .twentyFourHours)
+        // The clock: cycling tapers down the ladder; the pause holds.
+        XCTAssertEqual(client.cycleRung(sheet: sheetID), .threeHours)
         XCTAssertTrue(client.pausePress(sheet: sheetID))
         sheet = try XCTUnwrap(client.sheets().first)
         XCTAssertTrue(sheet.paused)
@@ -128,6 +128,44 @@ final class CoreContractTests: XCTestCase {
         XCTAssertNotNil(
             title.range(of: #"^\d{4}-\d{4}$"#, options: .regularExpression),
             "\(title) is not an MMDD-HHmm placeholder", file: file, line: line)
+    }
+
+    func testMetaAndBlocksCarryIdentitiesAndStampsOnly() throws {
+        let client = CompanionClient()
+        let sheetID = client.newSheet()
+
+        // An untouched page: the creation stamp exists, the modified
+        // stamp does not, and the empty body is one empty paragraph.
+        var meta = try XCTUnwrap(client.sheetMeta(sheet: sheetID))
+        XCTAssertGreaterThan(meta.createdMs, 0)
+        XCTAssertNil(meta.modifiedS)
+        XCTAssertEqual(client.blocks(sheet: sheetID).count, 1)
+
+        // Two typed paragraphs: two blocks, each with a 36-character
+        // identity and stamps, and the page's modified stamp appears.
+        XCTAssertTrue(
+            client.applyOps(
+                sheet: sheetID,
+                json: #"[{"ins": {"at": 0, "text": "alpha\nbeta"}}]"#))
+        meta = try XCTUnwrap(client.sheetMeta(sheet: sheetID))
+        let modified = try XCTUnwrap(meta.modifiedS)
+        XCTAssertGreaterThan(modified, 0)
+        let blocks = client.blocks(sheet: sheetID)
+        XCTAssertEqual(blocks.count, 2)
+        for block in blocks {
+            XCTAssertEqual(block.id.count, 36)
+            XCTAssertGreaterThan(try XCTUnwrap(block.createdS), 0)
+            XCTAssertGreaterThan(try XCTUnwrap(block.modifiedS), 0)
+        }
+
+        // Identity holds across an intra-paragraph edit, and an
+        // unknown page answers nil and empty.
+        XCTAssertTrue(
+            client.applyOps(
+                sheet: sheetID, json: #"[{"ins": {"at": 10, "text": " grew"}}]"#))
+        XCTAssertEqual(client.blocks(sheet: sheetID).map(\.id), blocks.map(\.id))
+        XCTAssertNil(client.sheetMeta(sheet: 424_242))
+        XCTAssertTrue(client.blocks(sheet: 424_242).isEmpty)
     }
 
     func testAUserSetTitleSticksAcrossASync() throws {
@@ -214,7 +252,7 @@ final class CoreContractTests: XCTestCase {
         let sheetID = client.newSheet()
         // A C string truncates at an interior NUL; the wrapper refuses
         // rather than seal a silently truncated secret.
-        XCTAssertNil(client.sealText(sheet: sheetID, "front\0back"))
+        XCTAssertNil(client.sealText(sheet: sheetID, "front\0back", at: 0, length: 0))
         XCTAssertEqual(client.sheets().first?.chipCount, 0)
     }
 }

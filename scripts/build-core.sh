@@ -11,8 +11,19 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
-if [[ -n "${1:-}" ]]; then
-  echo "unknown argument: $1 (build-core.sh takes no arguments)" >&2
+XCF=bindings/CompanionCore.xcframework
+if [[ "${1:-}" == "--if-stale" ]]; then
+  # Rebuild only when the xcframework is missing outright or older than
+  # any Rust source, manifest, or C header it is built from. The
+  # workspace manifest and lockfile live at the repo root, so a cargo
+  # update that touches only root files still triggers a rebuild, and
+  # the packaged FFI header is a direct input too.
+  if [[ -d "$XCF" && -z "$(find crates Cargo.toml Cargo.lock -type f \( -name '*.rs' -o -name 'Cargo.*' -o -name '*.h' \) -newer "$XCF" -print -quit)" ]]; then
+    echo "==> $XCF is current; skipping core build"
+    exit 0
+  fi
+elif [[ -n "${1:-}" ]]; then
+  echo "unknown argument: $1 (the only flag is --if-stale)" >&2
   exit 1
 fi
 

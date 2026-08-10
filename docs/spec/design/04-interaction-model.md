@@ -154,10 +154,16 @@ teaches ⌘↩.
 
 ## Time: the ladder, the gauge, and the pause
 
-- **One countdown per sheet.** The ladder: `1h → 3h → 8h → 24h → 3d →
-  7d`, default **8h**. Click the header label to cycle; each click resets
-  the clock to the shown rung. (Wrap semantics at the top of the ladder
-  remain an open question — doc 06.)
+- **One countdown per sheet.** The ladder runs `1h · 3h · 8h · 24h · 3d
+  · 7d`; the core default is **8h** and the backdrop opens pages at
+  **7d**. Click the header label to step one rung **shorter**; each
+  click resets the clock to the shown rung. The ladder tapers, `7d → 3d
+  → 24h → 8h → 3h → 1h`, and wraps back to `7d` at the bottom. Decided
+  2026-08-08 (doc 06 Q1): the wheel stays one affordance, but the
+  single-click cliff now sits at the safe end. Cycling upward put a
+  168h→1h drop under a stray click on deliberately staged content;
+  shortening is the direction that costs something, so it costs five
+  clicks.
 - **The gauge.** The page's bottom edge drains continuously; each tab
   carries its own gauge, so cross-sheet urgency reads as geometry. Under
   one hour it turns ember with a hatched texture — urgency is never
@@ -241,8 +247,8 @@ titles strip the markup because a title is a name, not a document.
 | esc | hand the keyboard back (also leaves the ledger) |
 | ⌫ on a chip | removes it whole; arrows step over it |
 
-Pointer-only gestures, for completeness: click the countdown to cycle the
-ladder · drag tabs to reorder · double-click a tab to pause its clock
+Pointer-only gestures, for completeness: click the countdown to shorten
+it one rung · drag tabs to reorder · double-click a tab to pause its clock
 (1h → 24h → top-up) · ✕ on tab hover to close · drag the title bar to
 move · drag any edge to resize · double-click the title bar to stretch
 vertically · drop content onto the page to seal it.

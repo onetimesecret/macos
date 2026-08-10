@@ -126,6 +126,43 @@ public enum RestoredRun: Decodable, Sendable {
     }
 }
 
+/// A page's provenance, derived core-side from its operation log
+/// (ADR-0013). Deliberately nothing beyond the two stamps: origin URLs
+/// are content and never cross this seam.
+public struct SheetMeta: Codable, Hashable, Sendable {
+    /// The page's creation stamp, Unix epoch milliseconds.
+    public let createdMs: UInt64
+    /// The newest change's commit timestamp, Unix SECONDS; nil for a
+    /// page whose body was never touched.
+    public let modifiedS: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case createdMs = "created_ms"
+        case modifiedS = "modified_s"
+    }
+}
+
+/// One block (a paragraph) of a page, as identity and stamps only
+/// (ADR-0013): a random UUID that survives every edit inside the
+/// paragraph, and created/modified in Unix seconds derived from the
+/// operation log. No text, no counts, no origin.
+public struct BlockInfo: Codable, Hashable, Sendable, Identifiable {
+    /// The block's random identity, lowercase hyphenated UUID.
+    public let id: String
+    /// Earliest change that touched the block, Unix seconds; nil for a
+    /// block with no committed content.
+    public let createdS: Int64?
+    /// Latest change that touched the block, Unix seconds; nil for a
+    /// block with no committed content.
+    public let modifiedS: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case createdS = "created_s"
+        case modifiedS = "modified_s"
+    }
+}
+
 /// The TTL ladder (docs/spec/04). Raw values are the C ABI rung codes.
 public enum Rung: Int32, CaseIterable, Sendable {
     case oneHour = 0, threeHours, eightHours, twentyFourHours, threeDays, sevenDays
@@ -235,19 +272,38 @@ public final class CompanionClient: @unchecked Sendable {
         decodeJSON([SheetSummary].self, from: companion_sheets_json(handle)) ?? []
     }
 
+    /// A page's provenance (ADR-0013): creation stamp and derived
+    /// modified stamp. Nil for an unknown page.
+    public func sheetMeta(sheet: UInt64) -> SheetMeta? {
+        decodeJSON(SheetMeta.self, from: companion_sheet_meta_json(handle, sheet))
+    }
+
+    /// A page's blocks in document order: paragraph identities with
+    /// their derived created/modified stamps, and nothing else.
+    public func blocks(sheet: UInt64) -> [BlockInfo] {
+        decodeJSON([BlockInfo].self, from: companion_sheet_blocks_json(handle, sheet)) ?? []
+    }
+
     // MARK: Sealing — the gesture routes
 
     /// The sealed paste (⇧⌘V): the core reads the pasteboard itself
     /// and clears it in the same locked operation (ADR-0007 Amendment
-    /// 1). Returns the new chip's face (or nil), plus whether the
-    /// board was actually cleared: false alongside a chip means
-    /// another writer moved the change count mid-take, the guarded
-    /// clear stood down, and the caller must say so.
+    /// 1). `at`/`length` name the selection the gesture replaces, in
+    /// UTF-16 code units against the page's body (ADR-0013): the core
+    /// deletes that range and stands the chip's sentinel in its place
+    /// inside the same locked call. Returns the new chip's face (or
+    /// nil), plus whether the board was actually cleared: false
+    /// alongside a chip means another writer moved the change count
+    /// mid-take, the guarded clear stood down, and the caller must say
+    /// so.
     @discardableResult
-    public func sealFromPasteboard(sheet: UInt64) -> (chip: ChipInfo?, cleared: Bool) {
+    public func sealFromPasteboard(
+        sheet: UInt64, at: UInt32, length: UInt32
+    ) -> (chip: ChipInfo?, cleared: Bool) {
         var cleared = false
         let chip = decodeJSON(
-            ChipInfo.self, from: companion_sheet_seal_from_pasteboard(handle, sheet, &cleared))
+            ChipInfo.self,
+            from: companion_sheet_seal_from_pasteboard(handle, sheet, at, length, &cleared))
         return (chip, cleared)
     }
 
@@ -261,30 +317,50 @@ public final class CompanionClient: @unchecked Sendable {
     /// Drop-to-seal: the core reads the drag pasteboard itself while
     /// the drag session's data is still on it — dropped bytes never
     /// transit this process (the drag boundary decision,
-    /// docs/hardware-verification.md). Returns the new chip's face, or
-    /// nil when nothing readable was dragged.
+    /// docs/hardware-verification.md). `at`/`length` name the drop
+    /// point as a UTF-16 range the sentinel replaces, core-side; a
+    /// plain drop is a zero-length range at the insertion index.
+    /// Returns the new chip's face, or nil when nothing readable was
+    /// dragged.
     @discardableResult
-    public func sealFromDrag(sheet: UInt64) -> ChipInfo? {
-        decodeJSON(ChipInfo.self, from: companion_sheet_seal_from_drag(handle, sheet))
+    public func sealFromDrag(sheet: UInt64, at: UInt32, length: UInt32) -> ChipInfo? {
+        decodeJSON(
+            ChipInfo.self, from: companion_sheet_seal_from_drag(handle, sheet, at, length))
     }
 
     /// The ⌘↩ retrofit: seal editor text the user selected. The one
-    /// deliberate plaintext-in call — the text was visible ink already;
-    /// after this returns, the caller deletes its copy from the view.
+    /// deliberate plaintext-in call: the text was visible ink already.
+    /// `at`/`length` name the sealed span in UTF-16 code units: the
+    /// core deletes it from the body and stands the sentinel in its
+    /// place in the same locked call (ADR-0013), so the caller updates
+    /// its projection rather than performing an edit of its own.
     @discardableResult
-    public func sealText(sheet: UInt64, _ text: String) -> ChipInfo? {
+    public func sealText(sheet: UInt64, _ text: String, at: UInt32, length: UInt32) -> ChipInfo? {
         // A C string truncates at an interior NUL; sealing a silently
-        // truncated secret and telling the editor to delete the whole
-        // thing would lose the remainder. Refuse instead — the editor
-        // keeps its copy and nothing was sealed.
+        // truncated secret while the core deletes the whole range
+        // would lose the remainder. Refuse instead; the editor keeps
+        // its copy and nothing was sealed.
         guard !text.contains("\0") else { return nil }
         return text.withCString { cText in
-            decodeJSON(ChipInfo.self, from: companion_sheet_seal_text(handle, sheet, cText))
+            decodeJSON(
+                ChipInfo.self,
+                from: companion_sheet_seal_text(handle, sheet, cText, at, length))
         }
     }
 
-    /// Push the page's document snapshot (JSON runs) to the core —
-    /// authoritative for chip liveness.
+    /// Apply an ordered edit batch (JSON operations, UTF-16 offsets)
+    /// to the page's body core-side, the ADR-0013 operation path.
+    /// False means the batch was rejected whole and nothing moved;
+    /// the caller re-converges through `syncDocument`.
+    @discardableResult
+    public func applyOps(sheet: UInt64, json: String) -> Bool {
+        json.withCString { companion_sheet_apply_ops(handle, sheet, $0) }
+    }
+
+    /// Push a whole document snapshot (JSON runs) to the core. The
+    /// recovery path now that edits travel as operations: it restates
+    /// the page wholesale, at the price of that page's provenance.
+    /// Still authoritative for chip liveness.
     @discardableResult
     public func syncDocument(sheet: UInt64, json: String) -> Bool {
         json.withCString { companion_sheet_sync_document(handle, sheet, $0) }
@@ -326,7 +402,7 @@ public final class CompanionClient: @unchecked Sendable {
         companion_expire_due(handle)
     }
 
-    /// Click the countdown label: next rung, clock reset.
+    /// Click the countdown label: one rung shorter, clock reset.
     @discardableResult
     public func cycleRung(sheet: UInt64) -> Rung? {
         Rung(rawValue: companion_sheet_cycle_rung(handle, sheet))
