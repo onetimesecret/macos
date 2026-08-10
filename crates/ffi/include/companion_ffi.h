@@ -60,6 +60,37 @@ void companion_init(void);
 /* Static version string; do not free. */
 const char *companion_version(void);
 
+/* ------------------------------------------------------------------ */
+/* Diagnostics                                                         */
+/* ------------------------------------------------------------------ */
+
+/*
+ * How much attention one diagnostic line wants. The shell's two
+ * reasonable responses: file it, or surface it as a failure.
+ */
+#define COMPANION_DIAG_NOTICE 0
+#define COMPANION_DIAG_FAULT  1
+
+/*
+ * Where the core's diagnostics go. Metadata only: which step refused
+ * and the backend's own error text, never ink, a chip, or key material.
+ *
+ * With no sink registered the lines go to stderr, which a terminal
+ * launch reads and a double-clicked app does not: launchd hands the
+ * process /dev/null, so the lines written for whoever is debugging a
+ * failed launch are discarded before that launch happens. Register one
+ * of these early (before the first restore) and forward each line to
+ * the unified log, where `log show` reaches it after the fact.
+ *
+ * `message` is NUL-terminated UTF-8, borrowed for the duration of the
+ * call only: copy whatever you keep. It may arrive on any thread. The
+ * sink must not call back into the core.
+ *
+ * Pass NULL to put the lines back on stderr.
+ */
+typedef void (*CompanionDiagnosticSink)(int32_t level, const char *message);
+void companion_set_diagnostic_sink(CompanionDiagnosticSink sink);
+
 /* Lifecycle. Freeing the handle wipes every sealed byte it holds. */
 CompanionHandle *companion_new(void);
 
