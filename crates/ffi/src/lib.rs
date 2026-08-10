@@ -60,8 +60,11 @@
 //! `.xcframework` wraps (`scripts/build-core.sh`). ADR-0003.
 #![allow(unsafe_code)] // A C ABI requires raw pointers; every unsafe fn documents its contract.
 
+mod diagnostics;
 mod persist;
 mod promotion;
+
+use diagnostics::diag_fault;
 
 use std::ffi::CStr;
 use std::ffi::{CString, c_char, c_int};
@@ -1257,7 +1260,7 @@ pub unsafe extern "C" fn companion_persist_restore(
                 // either way; but a file left behind is a file the next
                 // launch reads as "existed and would not open", which is
                 // the one combination that withholds the save licence.
-                eprintln!(
+                diag_fault!(
                     "companion-ffi: the halves rotated but the stale state file could not be \
                      dropped. It will keep this app from writing state until it is removed."
                 );
@@ -1285,7 +1288,7 @@ pub unsafe extern "C" fn companion_persist_restore(
                 // snapshot itself the core would not take back, which is
                 // a different fault from every other refusal here and
                 // the only one that survives a fresh keychain.
-                eprintln!(
+                diag_fault!(
                     "companion-ffi: the state file authenticated but the core rejected the \
                      snapshot inside it."
                 );

@@ -146,6 +146,8 @@ use ring::hkdf::{HKDF_SHA256, KeyType, Salt};
 use ring::rand::{SecureRandom, SystemRandom};
 use zeroize::Zeroizing;
 
+use crate::diagnostics::diag_fault;
+
 /// Magic + version prefix of the sealed state file. A format change
 /// gets a new final byte; the prefix opens the AEAD's associated data,
 /// so a relabeled file fails authentication rather than misparsing.
@@ -248,7 +250,7 @@ fn load_key_for(credentials: &dyn CredentialStore, account: &str) -> Option<Zero
     match credentials.load(account) {
         Ok(key) if key.len() == KEY_LEN => Some(key),
         Ok(key) => {
-            eprintln!(
+            diag_fault!(
                 "companion-ffi: the {account} item holds {} bytes, not {KEY_LEN}; refusing it.",
                 key.len()
             );
@@ -260,7 +262,7 @@ fn load_key_for(credentials: &dyn CredentialStore, account: &str) -> Option<Zero
         // read what it wrote an hour ago.
         Err(CredentialError::NotFound) => None,
         Err(error) => {
-            eprintln!("companion-ffi: the {account} item would not load ({error}).");
+            diag_fault!("companion-ffi: the {account} item would not load ({error}).");
             None
         }
     }
@@ -338,7 +340,7 @@ pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore) -> bool {
     // anything, on every launch, with nothing anywhere naming a cause.
     // The message carries a backend string, never key material.
     if let Err(error) = keys.delete(STATE_KEY_ACCOUNT) {
-        eprintln!(
+        diag_fault!(
             "companion-ffi: the boot-session rotation could not delete the {STATE_KEY_ACCOUNT} \
              item ({error}). The stale state file stays on disk and this session will not write \
              one, so nothing typed this session survives a quit. Every later launch repeats it \
@@ -349,14 +351,14 @@ pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore) -> bool {
     match keys.exists(STATE_KEY_ACCOUNT) {
         Ok(false) => true,
         Ok(true) => {
-            eprintln!(
+            diag_fault!(
                 "companion-ffi: the {STATE_KEY_ACCOUNT} item is still present after a delete the \
                  keychain accepted; treating the rotation as refused."
             );
             false
         }
         Err(error) => {
-            eprintln!(
+            diag_fault!(
                 "companion-ffi: the {STATE_KEY_ACCOUNT} item was deleted but the keychain will \
                  not say whether it is gone ({error}); unknown is not gone, so the rotation \
                  counts as refused."
@@ -713,7 +715,7 @@ pub(crate) fn open_state(file: &[u8], key: impl FnOnce() -> Option<Zeroizing<Vec
     // one visible symptom (a session that will not write), and telling
     // them apart from the outside means reading ciphertext.
     let Some(header) = StateHeader::parse(file) else {
-        eprintln!(
+        diag_fault!(
             "companion-ffi: the state file does not carry this build's envelope header; \
              refusing it."
         );
@@ -723,7 +725,7 @@ pub(crate) fn open_state(file: &[u8], key: impl FnOnce() -> Option<Zeroizing<Vec
         return Opened::BootMismatch;
     }
     let Some(key) = key() else {
-        eprintln!(
+        diag_fault!(
             "companion-ffi: the state file names this boot session, but its content key could \
              not be assembled. Either the keychain half would not load or this session's boot \
              half is missing from the temp directory; the file stays and this session will not \
@@ -733,7 +735,7 @@ pub(crate) fn open_state(file: &[u8], key: impl FnOnce() -> Option<Zeroizing<Vec
     };
     let Some(plaintext) = open_body(&key, &file[..STATE_HEADER_LEN], &file[STATE_HEADER_LEN..])
     else {
-        eprintln!(
+        diag_fault!(
             "companion-ffi: the state file would not authenticate under the assembled content \
              key. The halves this session holds are not the halves that sealed it."
         );
