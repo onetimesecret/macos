@@ -225,6 +225,47 @@ pub fn tier_for_status(status: i32) -> KeychainTier {
 /// line without a keychain in sight.
 type LogSink = Box<dyn Fn(&str) + Send + Sync>;
 
+/// The same destination, shared: one host-installed sink serving every
+/// gate in the process rather than one per store.
+type SharedLogSink = dyn Fn(&str) + Send + Sync;
+
+/// Where this crate's diagnostics go when a host has said. `None` means
+/// stderr, which is right for `cargo test` and for a binary run from a
+/// terminal, and wrong for the case these lines exist for: an installed
+/// app launched by `launchd`, whose stderr is `/dev/null` before the
+/// process starts.
+static PROCESS_SINK: Mutex<Option<Arc<SharedLogSink>>> = Mutex::new(None);
+
+/// Send this crate's diagnostics somewhere the host can read them.
+///
+/// The shell registers one destination through the FFI seam and it
+/// covers both crates; nothing here knows or cares where the lines
+/// land. Registering replaces whatever was registered before.
+///
+/// The sink is called with no lock held, so it may log from any thread,
+/// and it is called at most once per event in any case: the degradation
+/// notice is announced once per gate, for the life of the process.
+pub fn set_diagnostic_sink<F>(sink: F)
+where
+    F: Fn(&str) + Send + Sync + 'static,
+{
+    *PROCESS_SINK.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(sink));
+}
+
+/// One line out: to the registered sink, or to stderr.
+pub fn emit_diagnostic(line: &str) {
+    // Cloned out, then the guard drops, so a sink that emits again (or
+    // simply logs from another thread) cannot deadlock against itself.
+    let sink = PROCESS_SINK
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    match sink {
+        Some(sink) => sink(line),
+        None => eprintln!("{line}"),
+    }
+}
+
 /// Decides **once** whether this process can use the data protection
 /// keychain, and announces a degradation **once**.
 ///
@@ -242,14 +283,20 @@ pub struct EntitlementGate {
 }
 
 impl EntitlementGate {
-    /// A gate for `service`, announcing on stderr.
+    /// A gate for `service`, announcing wherever [`set_diagnostic_sink`]
+    /// points, and on stderr until something does.
+    ///
+    /// Resolved per call rather than captured at construction, because a
+    /// store is built before the shell has finished starting: capturing
+    /// the destination here would pin the default and the notice would
+    /// keep going to the stderr nobody is reading.
     #[must_use]
     pub fn new(service: &str) -> Self {
         Self {
             service: service.to_string(),
             tier: Mutex::new(None),
             announced: Once::new(),
-            sink: Box::new(|line: &str| eprintln!("{line}")),
+            sink: Box::new(emit_diagnostic),
         }
     }
 
