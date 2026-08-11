@@ -112,6 +112,13 @@ public struct ConnectionSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                Toggle("Wrap long lines", isOn: $model.wrapsLines)
+            } header: {
+                Text("What the page does with a line wider than the card. Off lets lines run on and the page scrolls sideways. ⌥Z flips it while you write, and whichever way you left it is how the page opens.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle("Start at login", isOn: loginBinding)
                     .disabled(!LaunchAtLogin.mayRegister)
                 if let loginStatus {

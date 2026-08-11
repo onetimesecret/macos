@@ -244,6 +244,10 @@ titles strip the markup because a title is a name, not a document.
 | ⌘0 | the ledger — expired & closed pages, dimmed |
 | ⌥⌘← / ⌥⌘→ | previous / next page |
 | ⌥⌘N | new page, default rung |
+| ⌘F / ⌘G / ⇧⌘G | find in the page, next match, previous — the docked find bar, not the floating panel |
+| ⌥⌘F | find and replace in the page |
+| ⌘E | use the selection for find; refuses a selection holding a chip, which has no text to search for |
+| ⌥Z | wrap long lines, or let them run and scroll sideways; sticks, and Settings holds the same switch |
 | esc | hand the keyboard back (also leaves the ledger) |
 | ⌫ on a chip | removes it whole; arrows step over it |
 
