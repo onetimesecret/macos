@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Find in the page (⌘F), and line wrapping you can turn off (⌥Z)**:
+  the editor is an `NSTextView`, so the machine's own find machinery was
+  already under it and switched off at one line. It is on now, as the
+  docked find bar rather than the floating panel, with the standard Edit
+  menu route the app had never asked for (`TextEditingCommands`) —
+  without those items nothing sends `performFindPanelAction:` and ⌘F
+  lands nowhere. Replacing cannot reach a sealed chip: the finder only
+  replaces ranges it matched, and no search string can hold the
+  attachment character a chip occupies. ⌘E is the one route that could,
+  since it loads the selection rather than a match, and it refuses a
+  selection holding a chip (ADR-0009: a chip leaves only by an act aimed
+  at the chip). Wrapping is now a setting rather than a weld: ⌥Z flips
+  it while you write, Settings holds the same switch, and the choice
+  sticks across launches. Unwrapped, the page sizes itself to its
+  longest line and scrolls sideways, with a width floor that keeps a
+  page of short lines as wide as the card so a click beside the text
+  still places a caret. ⌥Z is scoped to the page rather than claimed as
+  a menu equivalent, because ⌥Z is a character the find bar and the
+  Settings fields have every right to receive.
+
 - **The core's refusals reach the unified log, so a launch you cannot
   reproduce still leaves a trail** (`companion_set_diagnostic_sink`,
   companion-ffi 0.8.0): the core wrote its persistence diagnostics to

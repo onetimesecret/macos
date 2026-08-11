@@ -93,7 +93,10 @@ public struct InkEditorView: NSViewRepresentable {
             coordinator?.sealedPaste()
         }
 
-        return Self.scrollStack(for: textView)
+        let scroll = Self.scrollStack(for: textView)
+        context.coordinator.observeClip(of: scroll)
+        context.coordinator.applyWrap(model.wrapsLines)
+        return scroll
     }
 
     /// The page inside its scroller: a text view free to grow as tall as
@@ -148,6 +151,50 @@ public struct InkEditorView: NSViewRepresentable {
         textView.isIncrementalSearchingEnabled = true
     }
 
+    /// Wrap, or let the lines run (⌥Z, and the setting behind it).
+    ///
+    /// Wrapped, the container takes its width from the text view and the
+    /// text view takes its width from the clip, so the page only ever
+    /// scrolls down. Unwrapped, the container is unbounded and the text
+    /// view sizes itself to its longest line instead, which is what
+    /// gives the scroll view something to scroll sideways — and which is
+    /// why `isHorizontallyResizable` has to be granted and the
+    /// autoresizing width taken away, or the two would fight over the
+    /// frame and the long line would be cut off at the card's edge until
+    /// the next keystroke re-fitted it.
+    ///
+    /// `minSize` is the floor under that self-sizing: without it a page
+    /// of short lines shrinks its text view to the width of its longest
+    /// one, and every click to the right of the text lands on the scroll
+    /// view, where it places no caret. The floor is the clip, so it
+    /// moves with the card (`clipFrameChanged`).
+    ///
+    /// Returning to wrapped has one loose end the flags do not tie: a
+    /// text view that ran wide keeps that frame, and nothing else takes
+    /// it back, so the width is handed to the clip explicitly.
+    static func setWrap(_ wraps: Bool, textView: InkTextView, scroll: NSScrollView) {
+        guard let container = textView.textContainer else { return }
+        let clip = scroll.contentSize
+        if wraps {
+            container.widthTracksTextView = true
+            container.size = NSSize(width: clip.width, height: .greatestFiniteMagnitude)
+            textView.isHorizontallyResizable = false
+            textView.autoresizingMask = [.width]
+            textView.setFrameSize(NSSize(width: clip.width, height: textView.frame.height))
+            scroll.hasHorizontalScroller = false
+        } else {
+            container.widthTracksTextView = false
+            container.size = NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+            textView.isHorizontallyResizable = true
+            textView.autoresizingMask = []
+            scroll.hasHorizontalScroller = true
+        }
+        textView.minSize = NSSize(width: clip.width, height: 0)
+    }
+
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
         let coordinator = context.coordinator
         guard let textView = scroll.documentView as? InkTextView else { return }
@@ -155,6 +202,11 @@ public struct InkEditorView: NSViewRepresentable {
         // The stance can change without the page changing, so editing
         // is re-gated on every pass rather than at mount alone.
         textView.isEditable = !readOnly
+        // Same for wrapping, which ⌥Z and Settings can flip while the
+        // page stays put. The coordinator skips the pass when the state
+        // has not moved, so the common update rebuilds no geometry.
+        coordinator.observeClip(of: scroll)
+        coordinator.applyWrap(model.wrapsLines)
         // Dead pages take their saved view state with them — the same
         // pruning `refresh()` applies to the storage cache.
         coordinator.pruneViewState(keeping: Set(model.sheets.map(\.id)))
@@ -336,6 +388,59 @@ public struct InkEditorView: NSViewRepresentable {
             _ table: [UInt64: Value], keeping live: Set<UInt64>
         ) -> [UInt64: Value] {
             table.filter { live.contains($0.key) }
+        }
+
+        // MARK: Wrapping (⌥Z, Settings)
+
+        /// The scroll view this editor's page sits in. Weak and held
+        /// only so a wrap change, which arrives through the model rather
+        /// than through a view, can reach the geometry it has to rebuild.
+        private weak var scrollView: NSScrollView?
+
+        /// The wrap state the geometry currently stands in, so a SwiftUI
+        /// pass that changed something else does not tear the text
+        /// container down and rebuild it for nothing. Nil until the
+        /// first apply.
+        private var appliedWrap: Bool?
+
+        /// Rebuild the page's geometry for `wraps`, if it has moved.
+        func applyWrap(_ wraps: Bool) {
+            guard let textView, let scroll = scrollView, appliedWrap != wraps else { return }
+            appliedWrap = wraps
+            InkEditorView.setWrap(wraps, textView: textView, scroll: scroll)
+        }
+
+        /// Watch the clip so the unwrapped page's width floor stays level
+        /// with the card. Registered by selector rather than by block:
+        /// that registration is zeroing, so it retires with this
+        /// coordinator and needs no `deinit` to unpick it. Idempotent —
+        /// every `updateNSView` calls it, and the same clip re-registers
+        /// to nothing.
+        func observeClip(of scroll: NSScrollView) {
+            guard scrollView !== scroll else { return }
+            scrollView = scroll
+            NotificationCenter.default.removeObserver(
+                self, name: NSView.frameDidChangeNotification, object: nil
+            )
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(clipFrameChanged),
+                name: NSView.frameDidChangeNotification,
+                object: scroll.contentView
+            )
+        }
+
+        /// The card resized. Wrapped, the autoresizing mask has already
+        /// done everything needed. Unwrapped, the text view sizes itself
+        /// to its text and nothing else would ever widen it, so the floor
+        /// is re-levelled here and a page narrower than the card is
+        /// stretched to meet it.
+        @objc private func clipFrameChanged(_ notification: Notification) {
+            guard appliedWrap == false, let textView, let scroll = scrollView else { return }
+            let width = scroll.contentSize.width
+            textView.minSize = NSSize(width: width, height: 0)
+            guard textView.frame.width < width else { return }
+            textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
         }
 
         /// Enforce the one-layout-manager-per-storage invariant
@@ -1022,6 +1127,23 @@ final class InkTextView: NSTextView {
             return true
         }
         return super.performKeyEquivalent(with: event)
+    }
+
+    /// ⌥Z — wrap long lines, or let them run.
+    ///
+    /// Handled as a key press on the page rather than as a menu item's
+    /// key equivalent, and deliberately: a main-menu equivalent is an
+    /// app-wide claim, and ⌥Z is a character (Ω) that the find bar's
+    /// search field and every Settings field have as much right to
+    /// receive as this view has to steal it. Scoped here, it only fires
+    /// while the page itself holds the keyboard.
+    override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == .option, event.charactersIgnoringModifiers?.lowercased() == "z" {
+            coordinator?.model.toggleWrap()
+            return
+        }
+        super.keyDown(with: event)
     }
 
     /// ⌘V behaves like every text editor on the machine — plain text,

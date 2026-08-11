@@ -266,6 +266,23 @@ public final class PageModel: ObservableObject {
     }
     private static let floatsKey = "floatsOnTop"
 
+    /// Whether a line wider than the card wraps to the next row, or runs
+    /// on with the page scrolling sideways to follow it. Persisted, and
+    /// there is one wrap state rather than a stored default and a live
+    /// override: Settings and ⌥Z set the same value, so the page opens
+    /// however it was last left.
+    @Published public var wrapsLines: Bool {
+        didSet { defaults.set(wrapsLines, forKey: Self.wrapKey) }
+    }
+    private static let wrapKey = "wrapsLines"
+
+    /// ⌥Z. A page whose lines all fit shows no difference, so the toggle
+    /// says what it did rather than leaving the keystroke looking dead.
+    public func toggleWrap() {
+        wrapsLines.toggle()
+        flash(wrapsLines ? "long lines wrap" : "long lines run on")
+    }
+
     /// The rule, as a pure decision on the two facts a launch knows, so
     /// the release branch is testable from a debug test binary: a debug
     /// build always offers the capture opt-out, and a release build
@@ -393,6 +410,9 @@ public final class PageModel: ObservableObject {
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         // Unset → float on top, matching the original behavior.
         floatsOnTop = defaults.object(forKey: Self.floatsKey) as? Bool ?? true
+        // Unset → wrap, which is how every plain-text editor opens and
+        // the only sane default for a card this narrow.
+        wrapsLines = defaults.object(forKey: Self.wrapKey) as? Bool ?? true
         // No pages yet: the restore is the caller's to time
         // (`loadStateIfNeeded`). The panel defers it to the first
         // reveal, so launching at login never raises a Keychain prompt
