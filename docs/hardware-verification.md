@@ -100,8 +100,10 @@ trigger**. VoiceOver on (⌘F5); keyboard only.
 ## §D — Rev C time, felt
 
 - [ ] **The pause:** double-click a tab's gauge — holds 1h; again —
-      tops up to 24h; confirm the hold lapses back into countdown.
-      Does the bounded top-up feel right (docs/spec/06 q8)?
+      tops up to 24h; a third — releases, and the countdown resumes
+      where it froze. Confirm an unreleased hold also lapses back into
+      countdown. Is the longer dash on a topped-up hold legible at tab
+      size, and does the bounded top-up feel right (docs/spec/06 q8)?
 - [ ] **Countdown through a closed lid:** note a page's remaining
       time, sleep the Mac past a meaningful chunk of it, wake.
       Remaining time must reflect wall-clock sleep (the core clocks

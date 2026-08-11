@@ -52,13 +52,33 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(sheet.title, "deploy friday")
         XCTAssertEqual(sheet.chipCount, 1)
 
-        // The clock: cycling tapers down the ladder; the pause holds.
+        // The clock: cycling tapers down the ladder; the pause cycles
+        // hold → top up → release, and the summary says which press
+        // comes next so the tab can label the gesture honestly.
         XCTAssertEqual(client.cycleRung(sheet: sheetID), .threeHours)
         XCTAssertTrue(client.pausePress(sheet: sheetID))
         sheet = try XCTUnwrap(client.sheets().first)
         XCTAssertTrue(sheet.paused)
-        XCTAssertGreaterThan(sheet.holdRemainingMs, 0)
+        XCTAssertFalse(sheet.holdToppedUp)
+        let firstHoldMs = sheet.holdRemainingMs
+        XCTAssertGreaterThan(firstHoldMs, 0)
         XCTAssertGreaterThanOrEqual(client.nextEventMs(), 0)
+
+        XCTAssertTrue(client.pausePress(sheet: sheetID)) // top up to 24h
+        sheet = try XCTUnwrap(client.sheets().first)
+        XCTAssertTrue(sheet.paused)
+        XCTAssertTrue(sheet.holdToppedUp)
+        XCTAssertGreaterThan(sheet.holdRemainingMs, firstHoldMs)
+
+        XCTAssertTrue(client.pausePress(sheet: sheetID)) // release
+        sheet = try XCTUnwrap(client.sheets().first)
+        XCTAssertFalse(sheet.paused)
+        XCTAssertFalse(sheet.holdToppedUp)
+        XCTAssertEqual(sheet.holdRemainingMs, 0)
+        // The release gives the page back its own countdown, not a
+        // longer one: it resumes on the rung the cycling left it.
+        XCTAssertEqual(Rung(rawValue: sheet.rungCode), .threeHours)
+        XCTAssertLessThanOrEqual(sheet.remainingMs, 3 * 60 * 60 * 1000)
 
         // Death: the page leaves the store and the ledger keeps the
         // account of what happened to it. Metadata only, newest first.

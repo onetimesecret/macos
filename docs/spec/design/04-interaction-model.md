@@ -168,16 +168,27 @@ teaches ⌘↩.
   carries its own gauge, so cross-sheet urgency reads as geometry. Under
   one hour it turns ember with a hatched texture — urgency is never
   colour-only.
-- **The pause.** Double-click a tab to hold that page's clock: the first
-  double-click holds it for **1 hour**; a second extends the hold to
-  **24 hours**; further double-clicks **top the hold back up** to 24
-  hours from now. While held, the tab shows ⏸, the gauge freezes with a
-  dashed fill, and remaining life does not drain. When the hold lapses,
-  the page is simply a regular page again — no notification, no state to
-  clean up. A pause holds the clock; it never extends the rung. The
-  honest tension — pausing is a lever against ephemerality — is bounded
-  by the top-up ceiling (24h per press, never cumulative) and logged in
-  doc 06.
+- **The pause.** Double-click a tab to hold that page's clock: the
+  gesture is a three-state cycle. The first double-click holds it for
+  **1 hour**; a second tops the hold up to **24 hours from now**; a
+  third **releases** it and the countdown resumes from exactly where it
+  froze. While held, the tab shows ⏸, the gauge freezes with a dashed
+  fill, and remaining life does not drain; the dash is longer once the
+  hold is topped up, so the tier reads as texture rather than as a
+  number, and the tab's tooltip and context menu name it in words.
+  An unreleased hold lapses on its own, to the same effect as a
+  release: the page is simply a regular page again — no notification,
+  no state to clean up. A pause holds the clock; it never extends the
+  rung. The honest tension — pausing is a lever against ephemerality —
+  is bounded by the top-up ceiling (24h per press, never cumulative)
+  and logged in doc 06.
+
+  The release was added 2026-08-10, after the two-state form shipped:
+  the gesture reads as a toggle, so a stray double-click on a held tab
+  silently bought a page another day with no way to give it back. A
+  gesture that only ever adds life is the wrong shape for this app.
+  Re-topping-up after a release costs two presses (hold, then top up),
+  which is the right price for the reversibility.
 - **Expiry is silent** — no notification, no badge. The dead page's ink
   rests in the ledger; its sealed bytes are zeroized at expiry.
 
@@ -253,7 +264,7 @@ titles strip the markup because a title is a name, not a document.
 
 Pointer-only gestures, for completeness: click the countdown to shorten
 it one rung · drag tabs to reorder · double-click a tab to pause its clock
-(1h → 24h → top-up) · ✕ on tab hover to close · drag the title bar to
+(1h → 24h → release) · ✕ on tab hover to close · drag the title bar to
 move · drag any edge to resize · double-click the title bar to stretch
 vertically · drop content onto the page to seal it.
 
@@ -294,7 +305,7 @@ window remembers its own position.)
 | Surface | Rev A (previously this doc) | Rev C |
 | --- | --- | --- |
 | The unit | a stack of SleeperCells | sheets of ink + sealed chips |
-| Time | per-cell TTL | one countdown per sheet; pausable (double-click tab: 1h → 24h → top-up) |
+| Time | per-cell TTL | one countdown per sheet; pausable (double-click tab: 1h → 24h → release) |
 | Masking | detection (`ConcealedType`, key/token regex), reveal-on-hold | gesture only (⇧⌘V, drop, ⌘↩); chips never revealable; detection deleted |
 | The container | fixed edge-docked panel | a real window — move, resize, double-click-stretch; still non-activating |
 | Capacity | soft cap ~12 cells | 9 sheets — the keyboard wall; refuse-don't-evict unchanged |

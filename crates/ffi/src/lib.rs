@@ -1510,12 +1510,17 @@ pub unsafe extern "C" fn companion_sheet_set_rung(
     guard.store.set_rung(SheetId::from_raw(id), ttl).is_some()
 }
 
-/// The pause gesture (double-click a tab): the first press holds the
-/// page's clock for **1 hour**; a press while held tops the hold up to
-/// **24 hours from now** — never cumulative. A pause holds the clock;
-/// it never extends the rung. The hold lapses on its own — the lapse
-/// is folded into [`companion_next_event_ms`]. Returns false for an
+/// The pause gesture (double-click a tab), a three state cycle: the
+/// first press holds the page's clock for **1 hour**; a press while
+/// held tops the hold up to **24 hours from now** — never cumulative;
+/// a press while topped up **releases** the hold and the countdown
+/// resumes where it froze. A pause holds the clock; it never extends
+/// the rung. An unreleased hold lapses on its own — the lapse is
+/// folded into [`companion_next_event_ms`]. Returns false for an
 /// unknown or already-due page.
+///
+/// The summary's `hold_topped_up` says which press comes next, so the
+/// shell can label the gesture honestly.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1925,6 +1930,7 @@ fn summary_json(sheet: &Sheet, now: std::time::Instant) -> serde_json::Value {
         "spoken_remaining": spoken_remaining(remaining),
         "fraction_remaining": f64::from(sheet.fraction_remaining(now)),
         "paused": sheet.is_held(now),
+        "hold_topped_up": sheet.hold_topped_up(now),
         "hold_remaining_ms":
             u64::try_from(sheet.hold_remaining(now).as_millis()).unwrap_or(u64::MAX),
         "chip_count": sheet.chip_count(),
