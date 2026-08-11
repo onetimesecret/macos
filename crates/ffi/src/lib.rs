@@ -60,8 +60,11 @@
 //! `.xcframework` wraps (`scripts/build-core.sh`). ADR-0003.
 #![allow(unsafe_code)] // A C ABI requires raw pointers; every unsafe fn documents its contract.
 
+mod diagnostics;
 mod persist;
 mod promotion;
+
+use diagnostics::diag_fault;
 
 use std::ffi::CStr;
 use std::ffi::{CString, c_char, c_int};
@@ -1254,8 +1257,17 @@ pub unsafe extern "C" fn companion_persist_restore(
             // alive with nothing left to retry against. A rotation that
             // removed nothing leaves the file exactly where it is, and
             // the next launch tries again.
-            if persist::rotate_key_halves(guard.credentials.as_ref()) {
-                persist::erase_state(Path::new(path));
+            if persist::rotate_key_halves(guard.credentials.as_ref())
+                && !persist::erase_state(Path::new(path))
+            {
+                // The rotation is what forgets, so the content is gone
+                // either way; but a file left behind is a file the next
+                // launch reads as "existed and would not open", which is
+                // the one combination that withholds the save licence.
+                diag_fault!(
+                    "companion-ffi: the halves rotated but the stale state file could not be \
+                     dropped. It will keep this app from writing state until it is removed."
+                );
             }
             false
         }
@@ -1276,6 +1288,14 @@ pub unsafe extern "C" fn companion_persist_restore(
                 .restore(&plaintext, saved_wall_ms.saturating_add(away_ms))
                 .is_err()
             {
+                // The file opened and authenticated: this is the
+                // snapshot itself the core would not take back, which is
+                // a different fault from every other refusal here and
+                // the only one that survives a fresh keychain.
+                diag_fault!(
+                    "companion-ffi: the state file authenticated but the core rejected the \
+                     snapshot inside it."
+                );
                 return false;
             }
             // Deaths-while-away leave ledger residue like any other death.
