@@ -68,7 +68,7 @@ public struct InkEditorView: NSViewRepresentable {
         textView.isRichText = true
         textView.isEditable = !readOnly
         textView.allowsUndo = true
-        textView.usesFindPanel = false
+        Self.enableFinding(on: textView)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
@@ -126,6 +126,26 @@ public struct InkEditorView: NSViewRepresentable {
         scroll.drawsBackground = false
         scroll.documentView = textView
         return scroll
+    }
+
+    /// ⌘F and its neighbours, switched on.
+    ///
+    /// The bar, not the floating panel: it docks under the card's top
+    /// edge rather than opening a second window over a surface whose
+    /// whole posture is staying out of the way. `usesFindPanel` is the
+    /// master switch even so — it is what the Find menu items validate
+    /// against — and `usesFindBar` only chooses which face the switch
+    /// puts on screen, so both are set and neither is redundant.
+    ///
+    /// Replacing cannot reach sealed bytes: the finder only ever
+    /// replaces ranges it matched, and no search string typed into the
+    /// bar can hold the attachment character a chip occupies. ⌘E is the
+    /// one route that could, and it refuses
+    /// (`InkTextView.refusesFinderAction`).
+    static func enableFinding(on textView: NSTextView) {
+        textView.usesFindPanel = true
+        textView.usesFindBar = true
+        textView.isIncrementalSearchingEnabled = true
     }
 
     public func updateNSView(_ scroll: NSScrollView, context: Context) {
@@ -1008,6 +1028,45 @@ final class InkTextView: NSTextView {
     /// no surprises (docs/spec/04).
     override func paste(_ sender: Any?) {
         pasteAsPlainText(sender)
+    }
+
+    // MARK: Find (the one route that could reach a chip)
+
+    /// Every other finder action works on ranges the finder matched, and
+    /// a match can never contain a chip: the chip is an attachment
+    /// character, and no search string typed into the bar can hold one.
+    /// ⌘E is the exception — it loads the *selection* into the search
+    /// field, so a selection holding a chip would make that chip findable
+    /// and, from there, replaceable, which would delete sealed bytes as
+    /// a side effect of a text operation. ADR-0009 says a chip leaves
+    /// only by a deliberate act aimed at the chip, so this one refuses
+    /// and says why.
+    ///
+    /// Both entry points are covered because both are live: the Find
+    /// menu sends `performFindPanelAction:`, and a find bar built by
+    /// something else sends `performTextFinderAction:`. The two share
+    /// the tag numbering the guard reads.
+    override func performFindPanelAction(_ sender: Any?) {
+        guard !refusesFinderAction(sender) else { return }
+        super.performFindPanelAction(sender)
+    }
+
+    override func performTextFinderAction(_ sender: Any?) {
+        guard !refusesFinderAction(sender) else { return }
+        super.performTextFinderAction(sender)
+    }
+
+    /// True for a ⌘E over a selection holding a chip. The action arrives
+    /// as the sender's tag; a sender carrying no readable tag is let
+    /// through, because this is a refusal to be certain about and not a
+    /// reason to break find.
+    func refusesFinderAction(_ sender: Any?) -> Bool {
+        guard (sender as? NSMenuItem)?.tag == NSTextFinder.Action.setSearchString.rawValue,
+              let storage = textStorage,
+              InkEditorView.Coordinator.containsChip(storage, in: selectedRange())
+        else { return false }
+        coordinator?.model.flash("a chip has no text to search for")
+        return true
     }
 
     // MARK: The IME gate (ADR-0013)

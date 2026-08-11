@@ -20,6 +20,13 @@ struct BackdropApp: App {
         // is required by the `App` protocol.
         Settings {}
             .commands {
+                // ⌘F and its neighbours. The editor answers
+                // `performTextFinderAction:` (its find bar is on), but
+                // nothing sends it without menu items to send it: the
+                // card is borderless and this app's only declared scene
+                // is the Settings placeholder, so the standard Edit menu
+                // is asked for by name rather than assumed.
+                TextEditingCommands()
                 // The scene's automatic "Settings…" (⌘,) item would open
                 // the empty placeholder as a blank window. Repoint it so
                 // every ⌘, in the app lands on the one real Settings
