@@ -319,11 +319,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reversibility; the 24-hour ceiling per press is unchanged, so
   docs/spec/06 Q8 is unaffected.
 
-  The tier is visible without being literal: a topped-up hold draws the
-  gauge's dash longer (7/2 rather than 3/2), the same language the gauge
-  already speaks for urgency, and the tab's tooltip and context menu
-  name it in words ("Release the hold", "Top the hold up to 24h") so the
-  gesture always says what the next double-click does. The summary JSON
+  The tier is on the tab, since the tab is where all three presses
+  happen: a held page carries a chip reading ⏸ and the span the last
+  press bought, `1h` or `24h`. The pause mark leads because `24h` is
+  also a rung label and the chip is about the hold, not the countdown.
+  The gauge's dash grows longer when a hold is topped up as well (7/2
+  rather than 3/2, the same language it already speaks for urgency),
+  which is what carries the tier on the page's own gauge where no tab
+  is in view; the tooltip and the context menu name the next press in
+  words ("Release the hold", "Top the hold up to 24h"). The summary JSON
   gains `hold_topped_up` (`companion-ffi` 0.9.0) and the snapshot gains
   a second held-clock tag, since a hold that came back from a relaunch
   as a first hold would answer the release with another 24 hours; an

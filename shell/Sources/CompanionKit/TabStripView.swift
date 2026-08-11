@@ -144,10 +144,7 @@ private struct SheetTab: View {
         VStack(spacing: 0) {
             HStack(spacing: 4) {
                 if sheet.paused {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 7))
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
+                    HoldChip(toppedUp: sheet.holdToppedUp)
                 }
                 Text(sheet.title)
                     .font(.system(.caption, design: .monospaced))
@@ -284,6 +281,42 @@ private struct TabFramesKey: PreferenceKey {
 
     static func reduce(value: inout [UInt64: CGRect], nextValue: () -> [UInt64: CGRect]) {
         value.merge(nextValue()) { _, newer in newer }
+    }
+}
+
+/// The hold, as a chip on the tab: ⏸ and the span the last press
+/// bought. The gesture does three different things now, and the tab is
+/// where all three happen, so the tier is worth the ~20 points it costs
+/// the title — the dashed gauge alone says *held* but never *which
+/// press comes next*.
+///
+/// The ⏸ stays in front of the number, and not for decoration: "24h"
+/// is also a rung label, and without the pause mark a chip reading
+/// "24h" would be read as the page's countdown rather than its hold.
+/// The tab carries no rung label of its own, so inside a tab the mark
+/// is enough to separate them.
+struct HoldChip: View {
+    let toppedUp: Bool
+
+    /// What the hold is worth in words — the tooltip and the context
+    /// menu say the same thing at length.
+    static func label(toppedUp: Bool) -> String {
+        toppedUp ? "24h" : "1h"
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "pause.fill")
+                .font(.system(size: 6))
+            Text(Self.label(toppedUp: toppedUp))
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+        }
+        .padding(.horizontal, 3)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(Color.secondary.opacity(0.15)))
+        .foregroundStyle(.secondary)
+        .fixedSize() // never squeezed by a long title
+        .accessibilityHidden(true) // the tab speaks the hold in words
     }
 }
 

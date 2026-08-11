@@ -172,10 +172,13 @@ teaches ⌘↩.
   gesture is a three-state cycle. The first double-click holds it for
   **1 hour**; a second tops the hold up to **24 hours from now**; a
   third **releases** it and the countdown resumes from exactly where it
-  froze. While held, the tab shows ⏸, the gauge freezes with a dashed
-  fill, and remaining life does not drain; the dash is longer once the
-  hold is topped up, so the tier reads as texture rather than as a
-  number, and the tab's tooltip and context menu name it in words.
+  froze. While held, the tab carries a chip — ⏸ and the span the last
+  press bought, `1h` or `24h` — the gauge freezes with a dashed fill
+  (longer dashes once topped up, which is the tier where the tab strip
+  is out of view), and remaining life does not drain. The tooltip and
+  the context menu name the next press in words. The ⏸ stays in front
+  of the number because `24h` is also a rung label, and the chip is
+  about the hold, not the countdown.
   An unreleased hold lapses on its own, to the same effect as a
   release: the page is simply a regular page again — no notification,
   no state to clean up. A pause holds the clock; it never extends the
