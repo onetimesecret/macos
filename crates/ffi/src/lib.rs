@@ -1024,17 +1024,20 @@ pub unsafe extern "C" fn companion_sheet_meta_json(
     }
 }
 
-/// A page's blocks (its paragraphs) in document order, each an
-/// object `{"id": uuid, "created_s": i64|null, "modified_s": i64|null}`
-/// (ADR-0013). The id is the block's random identity, stable across
-/// every edit that stays inside the paragraph and following Notion's
-/// split-and-merge convention across the ones that do not. The stamps
-/// are Unix seconds derived from the operation log, null for a block
-/// with no committed content. Identities and timestamps ONLY: no text,
-/// no counts, and no origin, which is content and stays inside the
-/// sealed snapshot. The caller owns the returned string and must
-/// release it with [`companion_string_free`]. Returns null for an
-/// unknown page.
+/// A page's blocks in document order, each an object
+/// `{"id": uuid, "created_s": i64|null, "modified_s": i64|null,
+/// "paragraphs": u32}` (ADR-0013). The id is the block's random
+/// identity, stable across every edit that stays inside the block and
+/// following Notion's split-and-merge convention across the ones that
+/// do not. The stamps are Unix seconds derived from the operation log,
+/// null for a block with no committed content. `paragraphs` is how many
+/// paragraphs the block covers: one usually, more where a paste kept
+/// its lines together, which is what lets the shell stand one stamp
+/// above a pasted passage instead of one above each of its lines.
+/// Identities, timestamps, and that reach ONLY: no text, no sizes, and
+/// no origin, which is content and stays inside the sealed snapshot.
+/// The caller owns the returned string and must release it with
+/// [`companion_string_free`]. Returns null for an unknown page.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -1060,6 +1063,7 @@ pub unsafe extern "C" fn companion_sheet_blocks_json(
                 "id": block.id.to_string(),
                 "created_s": block.created_s,
                 "modified_s": block.modified_s,
+                "paragraphs": block.paragraphs,
             })
         })
         .collect();
@@ -2401,7 +2405,11 @@ mod tests {
         let handle = handle();
         unsafe {
             let sheet = companion_sheet_new(handle);
-            let ops = cstring(r#"[{"ins": {"at": 0, "text": "alpha\nbeta"}}]"#);
+            // Typed, so the two lines are two blocks: a single op
+            // carrying both would be a paste, and a paste is one block.
+            let ops = cstring(
+                r#"[{"ins": {"at": 0, "text": "alpha\n"}}, {"ins": {"at": 6, "text": "beta"}}]"#,
+            );
             assert!(companion_sheet_apply_ops(handle, sheet, ops.as_ptr()));
 
             let meta: serde_json::Value =
@@ -2418,17 +2426,29 @@ mod tests {
                 serde_json::from_str(&take_json(companion_sheet_blocks_json(handle, sheet)))
                     .unwrap();
             let blocks = blocks.as_array().unwrap();
-            assert_eq!(blocks.len(), 2, "one entry per paragraph");
+            assert_eq!(blocks.len(), 2, "one entry per typed line");
             for block in blocks {
                 assert_eq!(block["id"].as_str().unwrap().len(), 36);
                 assert!(block["created_s"].as_i64().is_some_and(|s| s > 0));
                 assert!(block["modified_s"].as_i64().is_some_and(|s| s > 0));
+                assert_eq!(block["paragraphs"].as_u64(), Some(1));
                 assert_eq!(
                     block.as_object().unwrap().len(),
-                    3,
-                    "no text, no counts, no origin: {block}"
+                    4,
+                    "no text, no sizes, no origin: {block}"
                 );
             }
+
+            // A paste arrives as one op and answers as one block, with
+            // the reach that tells the shell where it ends.
+            let paste = cstring(r#"[{"ins": {"at": 10, "text": "\nfrom\nelsewhere"}}]"#);
+            assert!(companion_sheet_apply_ops(handle, sheet, paste.as_ptr()));
+            let blocks: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sheet_blocks_json(handle, sheet)))
+                    .unwrap();
+            let blocks = blocks.as_array().unwrap();
+            assert_eq!(blocks.len(), 2, "the paste joined the block it landed in");
+            assert_eq!(blocks[1]["paragraphs"].as_u64(), Some(3));
 
             // Unknown pages answer null on both.
             assert!(companion_sheet_meta_json(handle, 424242).is_null());

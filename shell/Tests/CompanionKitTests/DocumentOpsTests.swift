@@ -177,6 +177,16 @@ final class DocumentOpsWiringTests: XCTestCase {
 
     private var storage: NSTextStorage { model.storage(for: sheet) }
 
+    /// Keystrokes, not a paste: each piece arrives as its own edit,
+    /// which is what makes a typed newline a block boundary. A passage
+    /// handed over whole, newlines and all, is a paste and stays one
+    /// block (ADR-0013).
+    private func type(_ pieces: String...) {
+        for piece in pieces {
+            textView.insertText(piece, replacementRange: NSRange(location: NSNotFound, length: 0))
+        }
+    }
+
     /// The core's document, read back through the seam.
     private func coreRuns() -> [RestoredRun] {
         model.coreClient.documentRuns(sheet: sheet)
@@ -343,7 +353,7 @@ final class DocumentOpsWiringTests: XCTestCase {
 
     func testTypingCommitsAndLabelsItsBlock() {
         makeEditor()
-        textView.insertText("alpha", replacementRange: NSRange(location: NSNotFound, length: 0))
+        type("alpha")
         let labels = labelFields()
         XCTAssertEqual(labels.count, 1)
         XCTAssertFalse(labels[0].stringValue.isEmpty)
@@ -351,19 +361,41 @@ final class DocumentOpsWiringTests: XCTestCase {
 
     func testASplitParagraphGetsItsOwnLabel() {
         makeEditor()
-        textView.insertText(
-            "alpha\nbeta", replacementRange: NSRange(location: NSNotFound, length: 0))
-        XCTAssertEqual(labelFields().count, 2, "each committed paragraph stamps separately")
+        type("alpha", "\n", "beta")
+        XCTAssertEqual(labelFields().count, 2, "each typed line stamps separately")
     }
 
     func testBlankLinesBetweenParagraphsAreNotStamped() {
         makeEditor()
-        textView.insertText(
-            "alpha\n\n\n   \nbeta", replacementRange: NSRange(location: NSNotFound, length: 0))
+        type("alpha", "\n", "\n", "\n", "   ", "\n", "beta")
         XCTAssertEqual(
             labelFields().count, 2,
             "spacing between paragraphs is not writing, so it carries no visible stamp"
         )
+    }
+
+    /// The paste rule (ADR-0013): lines that arrived together stay
+    /// together, so the page shows one time above the passage instead of
+    /// the same time repeated down its margin.
+    func testAPastedPassageCarriesOneLabelAboveItsFirstLine() {
+        makeEditor()
+        // One edit carrying its own newlines: the shape ⌘V delivers, and
+        // the shape the core reads as a single block.
+        textView.insertText(
+            "one\ntwo\nthree", replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(labelFields().count, 1, "one stamp for the whole paste")
+        let layout = coordinator.blockLabelLayout
+        XCTAssertEqual(layout.count, 1)
+        XCTAssertEqual(
+            layout[0].range, NSRange(location: 0, length: 4),
+            "the stamp sits above the paste's first line, not above every line"
+        )
+
+        // What the reader types after it is their own block, stamped
+        // separately.
+        type("\n", "mine")
+        XCTAssertEqual(labelFields().count, 2)
+        XCTAssertEqual(coordinator.blockLabelLayout.last?.range.location, 14)
     }
 
     /// The gap a labeled block reserves is above its own first line, so
@@ -372,8 +404,7 @@ final class DocumentOpsWiringTests: XCTestCase {
     /// paragraph's last line, which is what the screen showed.
     func testALabelSitsInItsOwnGapAndNotOnThePrecedingLine() {
         makeEditor()
-        textView.insertText(
-            "alpha\nbeta", replacementRange: NSRange(location: NSNotFound, length: 0))
+        type("alpha", "\n", "beta")
         guard let layoutManager = textView.layoutManager,
               let container = textView.textContainer else {
             return XCTFail("the editor's TextKit stack is missing")

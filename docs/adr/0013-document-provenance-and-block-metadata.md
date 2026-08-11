@@ -156,7 +156,9 @@ architecture 3 as implemented by a library with change metadata.
 Block identity remains policy under any option. The CRDT gives
 characters intrinsic identity, but split keeping the original id and
 merge killing the absorbed one is a convention adopted from Notion, not
-a property of the data structure.
+a property of the data structure. So is what counts as a block at all:
+a paste keeps its lines together under one identity (see "A paste is
+one block" below), which no data structure decides for us.
 
 ### The editable-surface rule
 
@@ -211,9 +213,11 @@ it needs its own decision about which surface may hold content, not
 an extension of this one.
 
 Implemented. `InkEditorView.Coordinator.restyle()` pulls
-`client.blocks(sheet:)` on every pass, reserves a `paragraphSpacingBefore`
-gap above each block that has a `created_s`, and positions one
-non-interactive `NSTextField` per labeled block in that gap, using
+`client.blocks(sheet:)` on every pass, walks the page block by block
+(a block may cover several paragraphs, see below), reserves a
+`paragraphSpacingBefore` gap above the first line of each block that
+has a `created_s`, and positions one non-interactive `NSTextField` per
+labeled block in that gap, using
 `Coordinator.blockLabel(createdS:modifiedS:)` to format it as
 `DDD HH:mm`, or `DDD HH:mm → DDD HH:mm` once a block has been edited
 past its first commit. Labels are pure subviews, repositioned by
@@ -232,6 +236,45 @@ label goes immediately above that. And `paragraphSpacingBefore` is
 ignored on the storage's first paragraph, so the top block's gap
 comes from the text container's top inset, which `restyle()` grows by
 the reserve exactly when the first block is labeled.
+
+### A paste is one block
+
+Decided 2026-08-10. Text pasted with newlines inside it lands as a
+single block rather than one block per line: one identity, one created
+stamp, and one label above its first line.
+
+The gesture is the reason. Lines that arrive together were written
+somewhere else and dropped here in one motion, so they are one act of
+the reader's, not several. Stamping each of them repeats a single time
+down the margin and says nothing the first stamp did not, which is the
+same noise a blank line's stamp made. A typed Enter is the opposite: it
+is the reader deciding, at that moment, that what follows is a new
+thing.
+
+Nothing has to declare which gesture it was, because the shape of the
+edit already says. An insert op carrying its own newlines is a paste; a
+typed newline arrives alone. `BlockIndex::note_insert` therefore closes
+a block on an insert that *ends* with a newline, which is exactly the
+typed Enter and also a paste that ends on a blank line, so what the
+reader types next begins a block of its own, and widens the block
+otherwise. Deletion is unchanged: a delete across a boundary merges,
+and the absorbing block keeps its id.
+
+Three consequences follow. A block is now one or more paragraphs, so
+`BlockIndex::matches`, the self-check every mutation path ends with,
+asks that the blocks cover the body and end where paragraphs end
+instead of asking for equality with the paragraph widths; an
+unnarrated edit still moves the total width or strands a boundary
+inside a paragraph, so it is still caught. The blocks JSON gains
+`paragraphs`, how far a block reaches, which is what lets the editor
+walk the page block by block; it is structure rather than content, and
+the surface still carries no text, no sizes, and no origin. And the
+grouping is written into the snapshot beside the materialized
+summaries, because a restore rebuilds the index from the document,
+which knows only paragraphs. Those spans are refused whole unless they
+account for exactly the paragraphs the restored document has, and a
+refusal (or a file written before this decision) simply leaves the
+per-paragraph rebuild standing.
 
 ### Reordering is a margin gesture
 

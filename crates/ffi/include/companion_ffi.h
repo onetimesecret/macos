@@ -294,14 +294,18 @@ char *companion_sheet_document_json(CompanionHandle *handle, uint64_t sheet);
 char *companion_sheet_meta_json(CompanionHandle *handle, uint64_t sheet);
 
 /*
- * A page's blocks (its paragraphs) in document order:
- *   [{"id": uuid, "created_s": i64|null, "modified_s": i64|null}, …]
+ * A page's blocks in document order:
+ *   [{"id": uuid, "created_s": i64|null, "modified_s": i64|null,
+ *     "paragraphs": u32}, …]
  * The id is the block's random identity, stable across edits inside
- * the paragraph and following the split-keeps-the-first, merge-keeps-
+ * the block and following the split-keeps-the-first, merge-keeps-
  * the-absorber convention across the ones that are not. Stamps are
  * Unix seconds derived from the operation log, null for a block with
- * no committed content. Identities and timestamps ONLY: no text, no
- * counts, no origin. Free with companion_string_free(). Null for an
+ * no committed content. "paragraphs" is how many paragraphs the block
+ * covers: one usually, more where a paste kept its lines together, so
+ * one stamp stands above a pasted passage rather than one above each
+ * of its lines. Identities, timestamps, and that reach ONLY: no text,
+ * no sizes, no origin. Free with companion_string_free(). Null for an
  * unknown page.
  */
 char *companion_sheet_blocks_json(CompanionHandle *handle, uint64_t sheet);

@@ -2610,15 +2610,63 @@ mod tests {
     }
 
     #[test]
-    fn a_range_seal_across_a_newline_merges_blocks_like_typing_over_it() {
+    fn a_multi_line_insert_lands_as_one_block_the_way_a_paste_arrives() {
         let (mut store, _) = store();
         let id = store.new_sheet().unwrap();
+        // A paste crosses the seam whole, newlines and all: the shape
+        // of the op is the whole difference from typing.
         assert!(store.apply_ops(
             id,
             &[EditOp::Insert {
                 pos_u16: 0,
-                text: "top\nbottom".into()
+                text: "one\ntwo\nthree".into()
             }]
+        ));
+        let pasted = store.sheet(id).unwrap().blocks_meta();
+        assert_eq!(pasted.len(), 1, "one block, not one per line");
+        assert_eq!(pasted[0].paragraphs, 3, "reaching across three of them");
+
+        // Enter at the end closes the paste; what follows is the
+        // reader's own block, with its own name and its own stamp.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 13,
+                text: "\n".into()
+            }]
+        ));
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 14,
+                text: "mine".into()
+            }]
+        ));
+        let after = store.sheet(id).unwrap().blocks_meta();
+        assert_eq!(after.len(), 2);
+        assert_eq!(after[0].id, pasted[0].id, "the paste keeps its name");
+        assert_eq!(after[0].paragraphs, 3);
+        assert_eq!(after[1].paragraphs, 1);
+    }
+
+    #[test]
+    fn a_range_seal_across_a_newline_merges_blocks_like_typing_over_it() {
+        let (mut store, _) = store();
+        let id = store.new_sheet().unwrap();
+        // Typed, not pasted: the newline arrives on its own, so the two
+        // lines are two blocks.
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "top\n".into()
+                },
+                EditOp::Insert {
+                    pos_u16: 4,
+                    text: "bottom".into()
+                }
+            ]
         ));
         let before = store.sheet(id).unwrap().blocks_meta();
         assert_eq!(before.len(), 2);

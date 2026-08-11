@@ -141,12 +141,15 @@ final class CoreContractTests: XCTestCase {
         XCTAssertNil(meta.modifiedS)
         XCTAssertEqual(client.blocks(sheet: sheetID).count, 1)
 
-        // Two typed paragraphs: two blocks, each with a 36-character
-        // identity and stamps, and the page's modified stamp appears.
+        // Two typed lines: the newline arrives on its own, so this is
+        // two blocks, each with a 36-character identity, stamps, and a
+        // reach of one paragraph, and the page's modified stamp
+        // appears.
         XCTAssertTrue(
             client.applyOps(
                 sheet: sheetID,
-                json: #"[{"ins": {"at": 0, "text": "alpha\nbeta"}}]"#))
+                json: #"[{"ins": {"at": 0, "text": "alpha\n"}}, {"ins": {"at": 6, "text": "beta"}}]"#
+            ))
         meta = try XCTUnwrap(client.sheetMeta(sheet: sheetID))
         let modified = try XCTUnwrap(meta.modifiedS)
         XCTAssertGreaterThan(modified, 0)
@@ -156,14 +159,25 @@ final class CoreContractTests: XCTestCase {
             XCTAssertEqual(block.id.count, 36)
             XCTAssertGreaterThan(try XCTUnwrap(block.createdS), 0)
             XCTAssertGreaterThan(try XCTUnwrap(block.modifiedS), 0)
+            XCTAssertEqual(block.paragraphs, 1)
         }
 
-        // Identity holds across an intra-paragraph edit, and an
-        // unknown page answers nil and empty.
+        // Identity holds across an intra-block edit, and an unknown page
+        // answers nil and empty.
         XCTAssertTrue(
             client.applyOps(
                 sheet: sheetID, json: #"[{"ins": {"at": 10, "text": " grew"}}]"#))
         XCTAssertEqual(client.blocks(sheet: sheetID).map(\.id), blocks.map(\.id))
+
+        // A paste arrives whole, so it stays whole: one block reaching
+        // across the lines it brought, not one block per line.
+        XCTAssertTrue(
+            client.applyOps(
+                sheet: sheetID, json: #"[{"ins": {"at": 15, "text": "\nfrom\nelsewhere"}}]"#))
+        let pasted = client.blocks(sheet: sheetID)
+        XCTAssertEqual(pasted.count, 2)
+        XCTAssertEqual(pasted.map(\.id), blocks.map(\.id))
+        XCTAssertEqual(pasted[1].paragraphs, 3)
         XCTAssertNil(client.sheetMeta(sheet: 424_242))
         XCTAssertTrue(client.blocks(sheet: 424_242).isEmpty)
     }
