@@ -1,15 +1,23 @@
-//! Block identity over the flat body (ADR-0013): a block is a
-//! paragraph, the text between newlines in the one contiguous stream,
-//! and this module is the bookkeeping that lets a paragraph keep a name
-//! while it is edited.
+//! Block identity over the flat body (ADR-0013): a block is one or more
+//! paragraphs of the one contiguous stream, and this module is the
+//! bookkeeping that lets a block keep a name while it is edited.
 //!
 //! Identity is policy, not data structure. The document gives every
-//! character an intrinsic identity, but which paragraph survives a
-//! split or a merge is a convention, adopted here from Notion: an
-//! insert that carries a newline splits its block, the fragment holding
-//! the pre-split start keeps the original id and the remainder is
-//! minted fresh; deleting a separating newline merges, the earlier
-//! block absorbs and keeps its id, and the absorbed id dies.
+//! character an intrinsic identity, but which block survives a split or
+//! a merge is a convention, adopted here from Notion: a newline typed
+//! on its own splits the block it lands in, the fragment holding the
+//! pre-split start keeps the original id and the remainder is minted
+//! fresh; deleting a separating newline merges, the earlier block
+//! absorbs and keeps its id, and the absorbed id dies.
+//!
+//! Pasted text is the one place a block outgrows a paragraph. Text that
+//! arrives with its newlines already inside it was written elsewhere
+//! and dropped here in one gesture, so it stays one block: its lines
+//! share a name and a stamp, and the page shows one time above the
+//! paste rather than the same time repeated down its margin. The shape
+//! of the edit is the whole signal (a typed newline arrives alone, a
+//! paste arrives whole), so nothing has to be told which gesture it
+//! was.
 //!
 //! Nothing here touches the operation log directly. Offsets are UTF-16
 //! code units throughout, the crate's one wire unit; every question
@@ -93,13 +101,21 @@ pub struct BlockMeta {
     /// Latest change that touched the block, Unix seconds; `None` for
     /// a block with no committed content yet.
     pub modified_s: Option<i64>,
+    /// How many paragraphs the block covers: one for a block the reader
+    /// typed, more where a paste kept its lines together. Structure, not
+    /// content: it says where one block ends and the next begins in a
+    /// body the shell already holds, and says nothing about what any of
+    /// them contains.
+    pub paragraphs: usize,
 }
 
 /// One sheet's blocks, in document order. Records and lengths move in
 /// lockstep: `lens[i]` is block `i`'s width in UTF-16 code units, its
 /// terminating newline included, so the last block (and only the last)
-/// may be zero wide. There is always at least one block, because an
-/// empty page is one empty paragraph.
+/// may be zero wide. A block covers whole paragraphs, one usually,
+/// several when a paste landed, and never stops inside one. There is
+/// always at least one block, because an empty page is one empty
+/// paragraph.
 pub(crate) struct BlockIndex {
     records: Vec<BlockRecord>,
     lens: Vec<usize>,
@@ -118,38 +134,60 @@ impl BlockIndex {
         index
     }
 
-    /// Whether this index still describes `doc`: same paragraph
-    /// widths, block for block. The store checks this after every
-    /// mutation; a disagreement means the mutation path did not narrate
-    /// its edits here, and the honest answer is a rebuild, not a stale
-    /// identity.
+    /// Whether this index still describes `doc`: the blocks cover the
+    /// body exactly, and every block ends where a paragraph ends. Blocks
+    /// are no longer paragraphs one for one (a paste keeps its lines
+    /// together), so this is containment rather than equality. What it
+    /// still catches is a mutation path that failed to narrate its edits
+    /// here: an unnarrated edit moves the total width, or strands a
+    /// boundary inside a paragraph. The store checks this after every
+    /// mutation; a disagreement means the honest answer is a rebuild,
+    /// not a stale identity.
     pub(crate) fn matches(&self, doc: &SheetDocument) -> bool {
-        self.lens == document_lens(doc)
+        let mut block = 0usize;
+        let mut filled = 0usize;
+        for paragraph in document_lens(doc) {
+            if block >= self.lens.len() {
+                return false;
+            }
+            filled += paragraph;
+            if filled > self.lens[block] {
+                return false;
+            }
+            if filled == self.lens[block] {
+                block += 1;
+                filled = 0;
+            }
+        }
+        block == self.lens.len() && filled == 0
     }
 
-    /// Narrate an insert of `text` at a UTF-16 offset. No newline means
-    /// an intra-block edit and the block simply widens; each newline
-    /// splits, the fragment holding the pre-split start keeping the
-    /// original id and everything after it minting fresh.
+    /// Narrate an insert of `text` at a UTF-16 offset.
+    ///
+    /// No newline means an intra-block edit and the block simply widens.
+    /// Text ending in a newline closes the block it landed in: what
+    /// stood before the insertion point and the inserted text keep the
+    /// original id, and the remainder of the block is minted fresh, so
+    /// what the reader types next begins a block of its own. That one
+    /// rule covers both gestures. A typed Enter *is* a text ending in a
+    /// newline, and splits as it always did; a pasted passage arrives
+    /// whole, with its newlines inside it, and joins the block it landed
+    /// in rather than scattering across one block per line.
     pub(crate) fn note_insert(&mut self, pos_u16: usize, text: &str) {
+        if text.is_empty() {
+            return;
+        }
         let (block, start) = self.locate(pos_u16);
-        let pieces: Vec<usize> = text.split('\n').map(utf16_len).collect();
-        if pieces.len() == 1 {
-            self.lens[block] += pieces[0];
+        let len = utf16_len(text);
+        if !text.ends_with('\n') {
+            self.lens[block] += len;
             return;
         }
         let offset = pos_u16 - start;
         let tail = self.lens[block] - offset;
-        // The original block becomes the first fragment: what stood
-        // before the insertion point, the first piece, and the newline
-        // that now ends it.
-        self.lens[block] = offset + pieces[0] + 1;
-        for (index, piece) in pieces.iter().enumerate().skip(1) {
-            let last = index + 1 == pieces.len();
-            let len = piece + if last { tail } else { 1 };
-            self.lens.insert(block + index, len);
-            self.records.insert(block + index, BlockRecord::fresh());
-        }
+        self.lens[block] = offset + len;
+        self.lens.insert(block + 1, tail);
+        self.records.insert(block + 1, BlockRecord::fresh());
     }
 
     /// Narrate a delete of a UTF-16 range. A deletion that swallows a
@@ -202,10 +240,12 @@ impl BlockIndex {
     /// is later.
     pub(crate) fn metas(&self, doc: &SheetDocument) -> Vec<BlockMeta> {
         let mut start = 0usize;
+        let spans = self.spans(doc);
         self.records
             .iter()
             .zip(&self.lens)
-            .map(|(record, len)| {
+            .zip(&spans)
+            .map(|((record, len), paragraphs)| {
                 let span = doc.span_timestamps(start, *len);
                 let meta = match &record.materialized {
                     Some(frozen) => BlockMeta {
@@ -214,17 +254,80 @@ impl BlockIndex {
                         modified_s: Some(span.map_or(frozen.modified_s, |(_, modified)| {
                             modified.max(frozen.modified_s)
                         })),
+                        paragraphs: *paragraphs,
                     },
                     None => BlockMeta {
                         id: record.id,
                         created_s: span.map(|(created, _)| created),
                         modified_s: span.map(|(_, modified)| modified),
+                        paragraphs: *paragraphs,
                     },
                 };
                 start += len;
                 meta
             })
             .collect()
+    }
+
+    /// How many paragraphs each block covers, in document order. One
+    /// for a block the reader typed, more where a paste kept its lines
+    /// together. Every block covers at least one paragraph, so a stored
+    /// span of zero can only be a damaged file and is refused as such
+    /// by [`BlockIndex::regroup`].
+    pub(crate) fn spans(&self, doc: &SheetDocument) -> Vec<usize> {
+        let mut spans = vec![0usize; self.lens.len()];
+        let mut block = 0usize;
+        let mut filled = 0usize;
+        for paragraph in document_lens(doc) {
+            let Some(width) = self.lens.get(block) else {
+                break;
+            };
+            spans[block] += 1;
+            filled += paragraph;
+            if filled >= *width {
+                block += 1;
+                filled = 0;
+            }
+        }
+        spans
+    }
+
+    /// Restore the grouping a snapshot recorded: merge the blocks of a
+    /// per-paragraph rebuild back into the spans the file names, the
+    /// first block of each group keeping its record. The spans are
+    /// believed only when they account for exactly the paragraphs this
+    /// document has, each group holding at least one; anything else
+    /// leaves the rebuild alone, which is the answer a file written
+    /// before grouping existed gives anyway. Identity and stamps are
+    /// still [`BlockIndex::adopt`]'s business; this decides only where
+    /// the boundaries sit.
+    pub(crate) fn regroup(&mut self, doc: &SheetDocument, spans: &[usize]) {
+        if spans.contains(&0) {
+            return;
+        }
+        if spans.iter().sum::<usize>() != self.lens.len() {
+            return;
+        }
+        let mut lens: Vec<usize> = Vec::with_capacity(spans.len());
+        let mut records: Vec<BlockRecord> = Vec::with_capacity(spans.len());
+        let mut old_lens = std::mem::take(&mut self.lens).into_iter();
+        let mut old_records = std::mem::take(&mut self.records).into_iter();
+        for span in spans {
+            let mut width = 0usize;
+            let mut head = None;
+            for _ in 0..*span {
+                width += old_lens.next().expect("the spans account for every block");
+                let record = old_records
+                    .next()
+                    .expect("records and lens move in lockstep");
+                head.get_or_insert(record);
+            }
+            lens.push(width);
+            records.push(head.expect("a span of zero was refused above"));
+        }
+        self.lens = lens;
+        self.records = records;
+        self.retake_anchors(doc);
     }
 
     /// Graduate every block's provenance into its materialized slot:
@@ -412,18 +515,60 @@ mod tests {
         assert_ne!(ids[1], original, "the remainder is minted fresh");
         assert!(index.matches(&doc));
 
-        // A paste carrying two newlines splits twice in one op.
+        // A paste carrying two newlines lands as one block, closed by
+        // its trailing newline: what it displaced becomes the block
+        // after it.
         insert(&doc, &mut index, 0, "x\ny\n");
         let after = index.ids();
-        assert_eq!(after.len(), 4);
+        assert_eq!(after.len(), 3);
         assert_eq!(after[0], original, "the pre-split start still leads");
+        assert!(index.matches(&doc));
+    }
+
+    #[test]
+    fn a_pasted_passage_is_one_block() {
+        let (doc, mut index) = empty();
+        // Three lines arriving in one gesture: one name, one stamp, and
+        // no column of identical times down the margin.
+        insert(&doc, &mut index, 0, "alpha\nbeta\ngamma");
+        assert_eq!(index.ids().len(), 1, "the paste did not scatter");
+        assert!(index.matches(&doc), "one block over three paragraphs");
+        assert_eq!(index.spans(&doc), vec![3]);
+
+        // Enter inside it splits like anywhere else: the head keeps the
+        // name, the remainder is minted fresh.
+        let pasted = index.ids()[0];
+        insert(&doc, &mut index, 10, "\n");
+        let ids = index.ids();
+        assert_eq!(ids.len(), 2);
+        assert_eq!(ids[0], pasted);
+        assert_eq!(index.spans(&doc), vec![2, 2]);
+        assert!(index.matches(&doc));
+    }
+
+    #[test]
+    fn a_paste_that_ends_on_a_newline_closes_its_block() {
+        let (doc, mut index) = empty();
+        insert(&doc, &mut index, 0, "alpha\nbeta\n");
+        let ids = index.ids();
+        assert_eq!(ids.len(), 2, "the trailing newline opened a block");
+        assert_eq!(index.spans(&doc), vec![2, 1]);
+
+        // What the reader types next belongs to them, not to the paste.
+        insert(&doc, &mut index, 11, "mine");
+        assert_eq!(index.ids(), ids, "typing extended the open block");
+        assert_eq!(index.spans(&doc), vec![2, 1]);
         assert!(index.matches(&doc));
     }
 
     #[test]
     fn a_merge_kills_the_absorbed_id() {
         let (doc, mut index) = empty();
-        insert(&doc, &mut index, 0, "alpha\nbeta\ngamma");
+        // Typed, not pasted: each line arrives with the Enter that ends
+        // it, so each is its own block.
+        insert(&doc, &mut index, 0, "alpha\n");
+        insert(&doc, &mut index, 6, "beta\n");
+        insert(&doc, &mut index, 11, "gamma");
         let ids = index.ids();
         assert_eq!(ids.len(), 3);
 
@@ -448,8 +593,10 @@ mod tests {
     #[test]
     fn ids_survive_intra_block_edits() {
         let (doc, mut index) = empty();
-        insert(&doc, &mut index, 0, "first\nsecond");
+        insert(&doc, &mut index, 0, "first\n");
+        insert(&doc, &mut index, 6, "second");
         let ids = index.ids();
+        assert_eq!(ids.len(), 2);
 
         insert(&doc, &mut index, 5, " draft");
         delete(&doc, &mut index, 0, 2);
@@ -464,13 +611,15 @@ mod tests {
     #[test]
     fn created_is_the_earliest_and_modified_the_latest_change() {
         let (doc, mut index) = empty();
-        insert(&doc, &mut index, 0, "alpha\nbeta");
+        insert(&doc, &mut index, 0, "alpha\n");
+        insert(&doc, &mut index, 6, "beta");
         doc.commit_at(1_000);
         insert(&doc, &mut index, 10, " grew");
         doc.commit_at(2_000);
 
         let metas = index.metas(&doc);
         assert_eq!(metas.len(), 2);
+        assert!(metas.iter().all(|meta| meta.paragraphs == 1));
         // Block 0 was written once and never touched again.
         assert_eq!(metas[0].created_s, Some(1_000));
         assert_eq!(metas[0].modified_s, Some(1_000));
@@ -495,7 +644,8 @@ mod tests {
     #[test]
     fn graduation_freezes_provenance_and_newer_ops_merge_on_top() {
         let (mut doc, mut index) = empty();
-        insert(&doc, &mut index, 0, "alpha\n\u{1F680}beta");
+        insert(&doc, &mut index, 0, "alpha\n");
+        insert(&doc, &mut index, 6, "\u{1F680}beta");
         doc.commit_at(1_000);
         insert(&doc, &mut index, 12, " grew");
         doc.commit_at(2_000);
@@ -567,9 +717,38 @@ mod tests {
     }
 
     #[test]
+    fn regroup_restores_a_paste_and_refuses_a_shape_it_cannot_account_for() {
+        let (doc, mut index) = empty();
+        insert(&doc, &mut index, 0, "alpha\nbeta\ngamma");
+        doc.commit_at(1_000);
+        let spans = index.spans(&doc);
+        assert_eq!(spans, vec![3]);
+
+        // The restore path: a per-paragraph rebuild, then the grouping
+        // the file recorded laid back over it.
+        let mut rebuilt = BlockIndex::for_document(&doc);
+        assert_eq!(rebuilt.ids().len(), 3, "a rebuild knows only paragraphs");
+        let head = rebuilt.ids()[0];
+        rebuilt.regroup(&doc, &spans);
+        assert_eq!(rebuilt.ids(), vec![head], "the group's first block leads");
+        assert_eq!(rebuilt.spans(&doc), spans);
+        assert!(rebuilt.matches(&doc));
+        assert_eq!(rebuilt.metas(&doc)[0].created_s, Some(1_000));
+
+        // A shape that cannot account for this document's paragraphs is
+        // refused whole, leaving the honest per-paragraph rebuild.
+        for hostile in [vec![2], vec![4], vec![0, 3], vec![], vec![1, 1, 1, 1]] {
+            let mut fresh = BlockIndex::for_document(&doc);
+            fresh.regroup(&doc, &hostile);
+            assert_eq!(fresh.ids().len(), 3, "refused: {hostile:?}");
+        }
+    }
+
+    #[test]
     fn anchors_resolve_after_unrelated_edits() {
         let (doc, mut index) = empty();
-        insert(&doc, &mut index, 0, "alpha\nbeta");
+        insert(&doc, &mut index, 0, "alpha\n");
+        insert(&doc, &mut index, 6, "beta");
         doc.commit(None);
         index.retake_anchors(&doc);
 
@@ -593,7 +772,8 @@ mod tests {
     fn astral_paragraphs_split_merge_and_anchor_in_utf16() {
         let (doc, mut index) = empty();
         // Two units per emoji: the offsets below are UTF-16 throughout.
-        insert(&doc, &mut index, 0, "\u{1F600}a\n\u{1F680}b");
+        insert(&doc, &mut index, 0, "\u{1F600}a\n");
+        insert(&doc, &mut index, 4, "\u{1F680}b");
         let ids = index.ids();
         assert_eq!(ids.len(), 2);
         assert!(index.matches(&doc));

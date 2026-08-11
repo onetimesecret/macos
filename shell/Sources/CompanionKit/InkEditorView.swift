@@ -742,24 +742,48 @@ public struct InkEditorView: NSViewRepresentable {
             var location = 0
             var block = 0
             while location < text.length {
-                let paragraph = text.paragraphRange(for: NSRange(location: location, length: 0))
                 let meta = block < metas.count ? metas[block] : nil
-                // A blank line is spacing, not writing: it carries a
+                // A block is usually one paragraph and sometimes several
+                // (a paste keeps its lines together, ADR-0013), so the
+                // page is walked block by block, and the stamp stands
+                // above the block's first line rather than above every
+                // line the paste brought with it.
+                let extent = Self.blockRange(
+                    from: location, paragraphs: meta?.paragraphs ?? 1, of: text
+                )
+                // A blank block is spacing, not writing: it carries a
                 // stamp in the core but shows none, so a page of empty
                 // paragraphs no longer stacks a column of identical
                 // times down the margin.
-                let blank = Self.isBlank(paragraph, of: text)
+                let blank = Self.isBlank(extent, of: text)
                 let createdS = blank ? nil : meta?.createdS
-                styleParagraph(paragraph, of: storage, text: text, labeled: createdS != nil)
+                var head = extent
+                var paragraphStart = location
+                while paragraphStart < NSMaxRange(extent) {
+                    let paragraph = text.paragraphRange(
+                        for: NSRange(location: paragraphStart, length: 0)
+                    )
+                    // Only the block's first line reserves the gap the
+                    // label sits in; the rest of a pasted passage runs on
+                    // at ordinary spacing.
+                    let leads = paragraphStart == location
+                    if leads { head = paragraph }
+                    styleParagraph(
+                        paragraph, of: storage, text: text,
+                        labeled: createdS != nil && leads
+                    )
+                    if paragraph.length == 0 { break }
+                    paragraphStart = NSMaxRange(paragraph)
+                }
                 if let createdS {
                     displays.append(BlockDisplay(
-                        range: paragraph,
+                        range: head,
                         text: Self.blockLabel(createdS: createdS, modifiedS: meta?.modifiedS)
                     ))
                 }
                 block += 1
-                if paragraph.length == 0 { break }
-                location = NSMaxRange(paragraph)
+                if extent.length == 0 { break }
+                location = NSMaxRange(extent)
             }
             storage.endEditing()
             blockDisplays = displays
@@ -773,6 +797,22 @@ public struct InkEditorView: NSViewRepresentable {
                 textView.textContainerInset.height = inset
             }
             updateBlockLabelViews()
+        }
+
+        /// The range a block covers: `paragraphs` paragraphs from
+        /// `location`, or as many as the text still holds. One is the
+        /// ordinary case (a line the reader typed), and more means a
+        /// paste landed here and its lines answer to one name and one
+        /// stamp (ADR-0013). A count of zero cannot arise core-side and
+        /// is read as one, so a nonsense answer costs a grouping rather
+        /// than a walk that never advances.
+        static func blockRange(from location: Int, paragraphs: Int, of text: NSString) -> NSRange {
+            var end = location
+            for _ in 0..<max(1, paragraphs) {
+                guard end < text.length else { break }
+                end = NSMaxRange(text.paragraphRange(for: NSRange(location: end, length: 0)))
+            }
+            return NSRange(location: location, length: end - location)
         }
 
         /// Whitespace only, newline included: nothing a reader would call
@@ -830,6 +870,14 @@ public struct InkEditorView: NSViewRepresentable {
 
         private var blockDisplays: [BlockDisplay] = []
         private var blockLabelViews: [NSTextField] = []
+
+        /// What the last restyle laid out, in document order: one entry
+        /// per labeled block, the range being the line its label sits
+        /// above. The window tests get onto the block walk; nothing
+        /// writes through it.
+        var blockLabelLayout: [(range: NSRange, text: String)] {
+            blockDisplays.map { ($0.range, $0.text) }
+        }
 
         private static let blockLabelFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
         /// Vertical gap a labeled block reserves above its first line:

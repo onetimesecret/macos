@@ -26,6 +26,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   facts a launch knows, so the release branch is covered by tests from
   a debug binary.
 
+- **A multi-line paste is one block, with one stamp above it
+  (ADR-0013)**: text pasted with newlines inside it now lands as a
+  single block rather than one block per line, so the page shows one
+  `DDD HH:mm` label above the paste's first line instead of the same
+  time repeated down its margin. A typed Enter still starts a new
+  block, and so does a paste that ends on a newline, so what the reader
+  types after a paste is stamped as their own. Nothing has to be told
+  which gesture happened: an insert op carrying its own newlines is a
+  paste, a typed newline arrives alone, and `BlockIndex::note_insert`
+  reads exactly that. A block is therefore one or more paragraphs now,
+  which moves the index's self-check from equality with the paragraph
+  widths to coverage that ends on paragraph boundaries, gives the
+  blocks JSON a `paragraphs` field (structure, not content: still no
+  text, no sizes, no origin) for the editor to walk the page by, and
+  puts the grouping in the snapshot, since a restore rebuilds the index
+  from a document that knows only paragraphs. Persisted spans are
+  refused whole unless they account for exactly the paragraphs the
+  restored page has; a refusal, or a file written before this change,
+  leaves the per-paragraph rebuild standing.
+
 - **Created and modified render above each block (ADR-0013,
   editable-surface rule)**: the editor now shows a small `DDD HH:mm`
   label above every paragraph that has been committed, or

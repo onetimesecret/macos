@@ -142,10 +142,10 @@ public struct SheetMeta: Codable, Hashable, Sendable {
     }
 }
 
-/// One block (a paragraph) of a page, as identity and stamps only
-/// (ADR-0013): a random UUID that survives every edit inside the
-/// paragraph, and created/modified in Unix seconds derived from the
-/// operation log. No text, no counts, no origin.
+/// One block of a page, as identity, stamps, and reach (ADR-0013): a
+/// random UUID that survives every edit inside the block,
+/// created/modified in Unix seconds derived from the operation log, and
+/// how many paragraphs the block covers. No text, no sizes, no origin.
 public struct BlockInfo: Codable, Hashable, Sendable, Identifiable {
     /// The block's random identity, lowercase hyphenated UUID.
     public let id: String
@@ -155,11 +155,17 @@ public struct BlockInfo: Codable, Hashable, Sendable, Identifiable {
     /// Latest change that touched the block, Unix seconds; nil for a
     /// block with no committed content.
     public let modifiedS: Int64?
+    /// How many paragraphs this block covers: one for a line the reader
+    /// typed, more where a paste kept its lines together. The editor
+    /// walks the page by this, so a pasted passage carries one stamp
+    /// above its first line rather than one above every line in it.
+    public let paragraphs: Int
 
     enum CodingKeys: String, CodingKey {
         case id
         case createdS = "created_s"
         case modifiedS = "modified_s"
+        case paragraphs
     }
 }
 
@@ -278,8 +284,9 @@ public final class CompanionClient: @unchecked Sendable {
         decodeJSON(SheetMeta.self, from: companion_sheet_meta_json(handle, sheet))
     }
 
-    /// A page's blocks in document order: paragraph identities with
-    /// their derived created/modified stamps, and nothing else.
+    /// A page's blocks in document order: block identities with their
+    /// derived created/modified stamps and how far each reaches, and
+    /// nothing else.
     public func blocks(sheet: UInt64) -> [BlockInfo] {
         decodeJSON([BlockInfo].self, from: companion_sheet_blocks_json(handle, sheet)) ?? []
     }

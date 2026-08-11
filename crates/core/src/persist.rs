@@ -135,7 +135,7 @@ impl<C: Clock> SheetStore<C> {
         let metas: Vec<Zeroizing<Vec<u8>>> = self
             .sheets
             .iter()
-            .map(|sheet| encode_materialized(&sheet.blocks))
+            .map(|sheet| encode_materialized(&sheet.blocks, &sheet.document))
             .collect();
         let mut sizer = Sizer(0);
         emit(self, &blobs, &metas, now, wall_ms, &mut sizer);
@@ -376,23 +376,30 @@ fn emit<C: Clock>(
     }
 }
 
-/// Encode a sheet's materialized block summaries into their own buffer,
-/// sized exactly the same way as the outer snapshot: growing a buffer
-/// reallocates, and a frozen origin is content that must not strand in
-/// unwiped heap. An index with nothing frozen encodes to the empty
-/// slice, byte for byte the slot stage 4 wrote.
-fn encode_materialized(blocks: &BlockIndex) -> Zeroizing<Vec<u8>> {
-    if blocks
-        .records()
-        .iter()
-        .all(|record| record.materialized.is_none())
+/// Encode a sheet's block section into its own buffer, sized exactly
+/// the same way as the outer snapshot: growing a buffer reallocates,
+/// and a frozen origin is content that must not strand in unwiped heap.
+/// The section carries the materialized summaries the compaction
+/// ceremony froze, and after them the block grouping, so a pasted
+/// passage comes back as the one block it was written as rather than
+/// scattering into a line per paragraph. A sheet with nothing frozen
+/// and nothing grouped encodes to the empty slice, byte for byte the
+/// slot stage 4 wrote.
+fn encode_materialized(blocks: &BlockIndex, doc: &SheetDocument) -> Zeroizing<Vec<u8>> {
+    let spans = blocks.spans(doc);
+    let grouped = spans.iter().any(|span| *span > 1);
+    if !grouped
+        && blocks
+            .records()
+            .iter()
+            .all(|record| record.materialized.is_none())
     {
         return Zeroizing::new(Vec::new());
     }
     let mut sizer = Sizer(0);
-    emit_materialized(blocks, &mut sizer);
+    emit_materialized(blocks, &spans, grouped, &mut sizer);
     let mut buffer = Zeroizing::new(Vec::with_capacity(sizer.0));
-    emit_materialized(blocks, &mut Writer(&mut buffer));
+    emit_materialized(blocks, &spans, grouped, &mut Writer(&mut buffer));
     debug_assert_eq!(
         buffer.len(),
         sizer.0,
@@ -401,7 +408,7 @@ fn encode_materialized(blocks: &BlockIndex) -> Zeroizing<Vec<u8>> {
     buffer
 }
 
-fn emit_materialized(blocks: &BlockIndex, out: &mut impl Sink) {
+fn emit_materialized(blocks: &BlockIndex, spans: &[usize], grouped: bool, out: &mut impl Sink) {
     let frozen: Vec<_> = blocks
         .records()
         .iter()
@@ -424,6 +431,16 @@ fn emit_materialized(blocks: &BlockIndex, out: &mut impl Sink) {
                 out.u8(1);
                 out.bytes(origin.as_bytes());
             }
+        }
+    }
+    // The grouping, written only when there is grouping to write: a
+    // page whose blocks are its paragraphs one for one restores the
+    // same either way, and a file that says nothing here is exactly
+    // what every build before this one wrote.
+    if grouped {
+        out.u64(spans.len() as u64);
+        for span in spans {
+            out.u64(*span as u64);
         }
     }
 }
@@ -658,14 +675,19 @@ fn read_sheet(
     }
 
     // The block index is rebuilt from the imported document with fresh
-    // identities, then the materialized records are adopted over it:
+    // identities. The rebuild knows only paragraphs, so the recorded
+    // grouping goes back over it first, refused whole unless it
+    // accounts for exactly the paragraphs this document has, and the
+    // materialized records are adopted onto the blocks that result:
     // validated rather than trusted, a record believed only when its
     // anchor still resolves to the start of a block, its stamps clamped
     // to sane values on the way in. Everything else is dropped, which
     // leaves the affected block on the fresh identity the rebuild
     // minted (ADR-0013).
+    let (frozen, spans) = read_materialized(metadata, wall_ms)?;
     let mut blocks = BlockIndex::for_document(&document);
-    blocks.adopt(&document, read_materialized(metadata, wall_ms)?);
+    blocks.regroup(&document, &spans);
+    blocks.adopt(&document, frozen);
 
     let id = SheetId::from_raw(*next_sheet_id);
     *next_sheet_id += 1;
@@ -686,18 +708,25 @@ fn read_sheet(
     })
 }
 
-/// Decode a sheet's materialized-metadata slot into candidate records
-/// for [`BlockIndex::adopt`] to judge. Structural damage rejects the
+/// Decode a sheet's block slot into candidate records for
+/// [`BlockIndex::adopt`] to judge and the block grouping for
+/// [`BlockIndex::regroup`] to check. Structural damage rejects the
 /// whole snapshot like damage anywhere else; semantic doubt is handled
 /// by validation instead. Timestamps are clamped into the sane range
 /// (positive, no later than the wall clock now, modified never before
 /// created), because a stamp is trusted arithmetic downstream and a
-/// hand-edited file must not choose its values freely. The empty slot
-/// a pre-ceremony file carries decodes to no records.
-fn read_materialized(bytes: &[u8], wall_ms: u64) -> Result<Vec<PersistedBlock>, RestoreError> {
+/// hand-edited file must not choose its values freely. The grouping
+/// trails the records and is optional: a file whose blocks were its
+/// paragraphs writes none, and neither did any build before grouping
+/// existed, so an empty slot and a records-only slot both decode
+/// cleanly.
+fn read_materialized(
+    bytes: &[u8],
+    wall_ms: u64,
+) -> Result<(Vec<PersistedBlock>, Vec<usize>), RestoreError> {
     use RestoreError::Malformed;
     if bytes.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let ceiling = i64::try_from(wall_ms / 1000)
         .unwrap_or(i64::MAX)
@@ -727,10 +756,20 @@ fn read_materialized(bytes: &[u8], wall_ms: u64) -> Result<Vec<PersistedBlock>, 
             },
         });
     }
+    // Grown as each span decodes rather than reserved from the claimed
+    // count: eight bytes are read per block, so a count the buffer
+    // cannot cover must not reserve for what it promises.
+    let mut spans = Vec::new();
+    if !reader.done() {
+        let block_count = count(&mut reader)?;
+        for _ in 0..block_count {
+            spans.push(usize::try_from(reader.u64().ok_or(Malformed)?).map_err(|_| Malformed)?);
+        }
+    }
     if !reader.done() {
         return Err(Malformed);
     }
-    Ok(records)
+    Ok((records, spans))
 }
 
 fn read_record(reader: &mut Reader<'_>) -> Result<LedgerRecord, RestoreError> {
@@ -1006,7 +1045,7 @@ mod tests {
     }
 
     #[test]
-    fn hostile_materialized_stamps_are_clamped_and_dead_anchors_dropped() {
+    fn a_pasted_block_comes_back_from_the_file_as_one_block() {
         use crate::store::EditOp;
         let (mut store, clock) = store();
         let id = store.new_sheet().unwrap();
@@ -1014,8 +1053,42 @@ mod tests {
             id,
             &[EditOp::Insert {
                 pos_u16: 0,
-                text: "first\u{1F600}\nsecond".into()
+                text: "one\ntwo\nthree".into()
             }]
+        ));
+        let before = store.sheet(id).unwrap().blocks_meta();
+        assert_eq!(before.len(), 1);
+
+        let wall = real_wall_ms();
+        let snapshot = store.snapshot(wall);
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
+
+        // A rebuild knows only paragraphs; the recorded grouping is what
+        // keeps the paste from scattering into a stamp per line.
+        let after = revived.sheets().next().unwrap().blocks_meta();
+        assert_eq!(after.len(), 1, "the grouping survived the round trip");
+        assert_eq!(after[0].paragraphs, 3);
+        assert_eq!(after[0].created_s, before[0].created_s);
+    }
+
+    #[test]
+    fn hostile_materialized_stamps_are_clamped_and_dead_anchors_dropped() {
+        use crate::store::EditOp;
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "first\u{1F600}\n".into()
+                },
+                EditOp::Insert {
+                    pos_u16: 8,
+                    text: "second".into()
+                }
+            ]
         ));
         store.cycle_rung(id).unwrap();
         let honest = store.sheet(id).unwrap().blocks_meta();
