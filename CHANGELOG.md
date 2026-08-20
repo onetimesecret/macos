@@ -303,6 +303,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A third double-click releases the hold, so the pause is reversible**
+  (`companion-core` 0.9.0, docs/spec/04). The gesture held a page's
+  clock for an hour, then topped the hold up to 24 hours, and then had
+  nowhere left to go: every further double-click bought another day and
+  nothing gave one back. It reads as a toggle and behaved as a ratchet,
+  so a stray double-click on a held tab extended a page's life by a day
+  with no way to undo it, and the context menu could only offer to top
+  the hold up again. The press after the top-up now releases the hold:
+  the countdown resumes from exactly where it froze, and the held span
+  lands in `total_held` exactly as a lapse would leave it — the two ways
+  a hold can end are indistinguishable afterwards, which is what keeps
+  the release from being a life extension in disguise. Re-topping-up
+  costs two presses (hold, then top up), which is the price of the
+  reversibility; the 24-hour ceiling per press is unchanged, so
+  docs/spec/06 Q8 is unaffected.
+
+  The tier is on the tab, since the tab is where all three presses
+  happen: a held page carries a chip reading ⏸ and the span the last
+  press bought, `1h` or `24h`. The pause mark leads because `24h` is
+  also a rung label and the chip is about the hold, not the countdown.
+  The gauge's dash grows longer when a hold is topped up as well (7/2
+  rather than 3/2, the same language it already speaks for urgency),
+  which is what carries the tier on the page's own gauge where no tab
+  is in view; the tooltip and the context menu name the next press in
+  words ("Release the hold", "Top the hold up to 24h"). The summary JSON
+  gains `hold_topped_up` (`companion-ffi` 0.9.0) and the snapshot gains
+  a second held-clock tag, since a hold that came back from a relaunch
+  as a first hold would answer the release with another 24 hours; an
+  older build refuses the newer snapshot rather than misreading it.
+
 - **Clicking the countdown shortens it, one rung at a time**
   (`companion-core` 0.7.0, docs/spec/06 Q1 answered). The TTL wheel
   used to step up the ladder and wrap `7d → 1h`, which put a

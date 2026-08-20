@@ -1241,7 +1241,10 @@ public final class PageModel: ObservableObject {
         refresh()
     }
 
-    /// Double-click the tab: hold the clock 1h, then top-up to 24h.
+    /// Double-click the tab: a three state cycle — hold the clock 1h,
+    /// top up to 24h, then release it. The release is what keeps a
+    /// stray double-click from ratcheting a page's life up by a day
+    /// with no way back (docs/spec/04).
     public func pause(_ id: UInt64) {
         _ = client.pausePress(sheet: id)
         markDirty()

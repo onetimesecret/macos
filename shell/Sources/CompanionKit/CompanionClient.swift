@@ -29,6 +29,10 @@ public struct SheetSummary: Identifiable, Codable, Hashable, Sendable {
     public let spokenRemaining: String
     public let fractionRemaining: Double
     public let paused: Bool
+    /// The hold is already at its 24 hour ceiling, so the next pause
+    /// press releases it rather than topping it up. False whenever the
+    /// page is not held.
+    public let holdToppedUp: Bool
     public let holdRemainingMs: UInt64
     public let chipCount: UInt64
     public let lastHour: Bool
@@ -41,6 +45,7 @@ public struct SheetSummary: Identifiable, Codable, Hashable, Sendable {
         case remainingLabel = "remaining_label"
         case spokenRemaining = "spoken_remaining"
         case fractionRemaining = "fraction_remaining"
+        case holdToppedUp = "hold_topped_up"
         case holdRemainingMs = "hold_remaining_ms"
         case chipCount = "chip_count"
         case lastHour = "last_hour"
@@ -420,7 +425,8 @@ public final class CompanionClient: @unchecked Sendable {
         companion_sheet_set_rung(handle, sheet, rung.rawValue)
     }
 
-    /// Double-click the tab: hold 1h, then top-up to 24h from now.
+    /// Double-click the tab: hold 1h, top up to 24h from now, then
+    /// release — the countdown resumes where it froze.
     @discardableResult
     public func pausePress(sheet: UInt64) -> Bool {
         companion_sheet_pause_press(handle, sheet)

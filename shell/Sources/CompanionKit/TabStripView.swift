@@ -144,10 +144,7 @@ private struct SheetTab: View {
         VStack(spacing: 0) {
             HStack(spacing: 4) {
                 if sheet.paused {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 7))
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
+                    HoldChip(toppedUp: sheet.holdToppedUp)
                 }
                 Text(sheet.title)
                     .font(.system(.caption, design: .monospaced))
@@ -173,6 +170,7 @@ private struct SheetTab: View {
             GaugeBar(
                 fraction: sheet.fractionRemaining,
                 paused: sheet.paused,
+                toppedUp: sheet.holdToppedUp,
                 lastHour: sheet.lastHour
             )
             .frame(height: 3)
@@ -185,22 +183,54 @@ private struct SheetTab: View {
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        // Select on click; a double-click's second tap holds the clock
-        // (1h → 24h → top-up). The first tap selecting is harmless — a
-        // page being paused is a page worth looking at.
+        // Select on click; a double-click's second tap cycles the hold
+        // (1h → 24h → released). The first tap selecting is harmless —
+        // a page being paused is a page worth looking at.
         .gesture(TapGesture(count: 2).onEnded { model.pause(sheet.id) })
         .simultaneousGesture(TapGesture().onEnded { model.select(sheet.id) })
+        .help(holdDescription)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
             Button("Rename page…") { promptForRename() }
-            Button(sheet.paused ? "Top the hold up" : "Hold the clock") { model.pause(sheet.id) }
+            Button(holdMenuTitle) { model.pause(sheet.id) }
             Button("Shorten the countdown") { model.cycleRung(sheet.id) }
             Button("Close page", role: .destructive) { model.close(sheet.id) }
         }
     }
+
+    /// What the next double-click does, named plainly — the gesture is
+    /// a cycle, so the menu has to say which turn of it is next.
+    private var holdMenuTitle: String {
+        if sheet.holdToppedUp { return "Release the hold" }
+        return sheet.paused ? "Top the hold up to 24h" : "Hold the clock for 1h"
+    }
+
+    /// The tooltip: the tier in words, since the dash carries it only
+    /// as a texture. `holdRemainingMs` is what is left of the hold, not
+    /// of the page — the page's own time is the gauge and the header.
+    private var holdDescription: String {
+        guard sheet.paused else {
+            return "Double-click to hold this page's clock for an hour"
+        }
+        let left = Self.holdLeft.string(
+            from: TimeInterval(sheet.holdRemainingMs) / 1000
+        )
+        let tier = sheet.holdToppedUp ? "topped up to 24h" : "held 1h"
+        guard let left else { return "Clock \(tier)" }
+        let next = sheet.holdToppedUp ? "release it" : "top it up to 24h"
+        return "Clock \(tier), \(left) left — double-click to \(next)"
+    }
+
+    private static let holdLeft: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        return formatter
+    }()
 
     /// The rename gesture lives here because double-click is already
     /// the pause gesture: a tab that renamed on double-click could not
@@ -238,7 +268,7 @@ private struct SheetTab: View {
             description += ", \(sheet.chipCount) sealed chip\(sheet.chipCount == 1 ? "" : "s")"
         }
         if sheet.paused {
-            description += ", clock held"
+            description += sheet.holdToppedUp ? ", clock held, topped up" : ", clock held"
         }
         return description
     }
@@ -254,17 +284,65 @@ private struct TabFramesKey: PreferenceKey {
     }
 }
 
+/// The hold, as a chip on the tab: ⏸ and the span the last press
+/// bought. The gesture does three different things now, and the tab is
+/// where all three happen, so the tier is worth the ~20 points it costs
+/// the title — the dashed gauge alone says *held* but never *which
+/// press comes next*.
+///
+/// The ⏸ stays in front of the number, and not for decoration: "24h"
+/// is also a rung label, and without the pause mark a chip reading
+/// "24h" would be read as the page's countdown rather than its hold.
+/// The tab carries no rung label of its own, so inside a tab the mark
+/// is enough to separate them.
+struct HoldChip: View {
+    let toppedUp: Bool
+
+    /// What the hold is worth in words — the tooltip and the context
+    /// menu say the same thing at length.
+    static func label(toppedUp: Bool) -> String {
+        toppedUp ? "24h" : "1h"
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "pause.fill")
+                .font(.system(size: 6))
+            Text(Self.label(toppedUp: toppedUp))
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+        }
+        .padding(.horizontal, 3)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(Color.secondary.opacity(0.15)))
+        .foregroundStyle(.secondary)
+        .fixedSize() // never squeezed by a long title
+        .accessibilityHidden(true) // the tab speaks the hold in words
+    }
+}
+
 /// A tab's gauge: the page's remaining life as geometry. Ember with a
 /// hatched texture under one hour — urgency is never colour-only; a
 /// held clock draws dashed — state as geometry (docs/spec/04).
 public struct GaugeBar: View {
     let fraction: Double
     let paused: Bool
+    let toppedUp: Bool
     let lastHour: Bool
 
-    public init(fraction: Double, paused: Bool, lastHour: Bool) {
+    /// The dash a held clock draws with. The longer hold draws the
+    /// longer dash: the same language the gauge already speaks, since
+    /// the tier is a fact about duration and the dash is the only mark
+    /// on the gauge that measures anything. A tab is 140 points wide
+    /// with a title, a ⏸ and a ✕ already in it, so the tier gets no
+    /// glyph of its own — the tooltip and the context menu carry the
+    /// number.
+    static let firstHoldDash: [CGFloat] = [3, 2]
+    static let toppedUpDash: [CGFloat] = [7, 2]
+
+    public init(fraction: Double, paused: Bool, toppedUp: Bool = false, lastHour: Bool) {
         self.fraction = fraction
         self.paused = paused
+        self.toppedUp = toppedUp
         self.lastHour = lastHour
     }
 
@@ -282,7 +360,10 @@ public struct GaugeBar: View {
                     }
                     .stroke(
                         Color.secondary,
-                        style: StrokeStyle(lineWidth: geometry.size.height, dash: [3, 2])
+                        style: StrokeStyle(
+                            lineWidth: geometry.size.height,
+                            dash: toppedUp ? Self.toppedUpDash : Self.firstHoldDash
+                        )
                     )
                 } else if lastHour {
                     // Hatched ember: the texture carries the urgency

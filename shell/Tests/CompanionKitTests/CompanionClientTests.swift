@@ -19,6 +19,7 @@ final class CompanionClientTests: XCTestCase {
             "spoken_remaining": "about 8 hours remaining",
             "fraction_remaining": 1.0,
             "paused": false,
+            "hold_topped_up": false,
             "hold_remaining_ms": 0,
             "chip_count": 2,
             "last_hour": false
@@ -33,6 +34,7 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertEqual(sheet.spokenRemaining, "about 8 hours remaining")
         XCTAssertEqual(sheet.chipCount, 2)
         XCTAssertFalse(sheet.paused)
+        XCTAssertFalse(sheet.holdToppedUp)
         XCTAssertFalse(sheet.lastHour)
     }
 
@@ -48,6 +50,7 @@ final class CompanionClientTests: XCTestCase {
             "spoken_remaining": "about 30 minutes remaining",
             "fraction_remaining": 0.5,
             "paused": true,
+            "hold_topped_up": false,
             "hold_remaining_ms": 3600000,
             "chip_count": 0,
             "last_hour": true
@@ -55,9 +58,37 @@ final class CompanionClientTests: XCTestCase {
         """
         let sheets = try JSONDecoder().decode([SheetSummary].self, from: Data(json.utf8))
         XCTAssertTrue(sheets[0].paused)
+        XCTAssertFalse(sheets[0].holdToppedUp)
         XCTAssertEqual(sheets[0].holdRemainingMs, 3_600_000)
         XCTAssertTrue(sheets[0].lastHour)
         XCTAssertEqual(sheets[0].fractionRemaining, 0.5, accuracy: 0.0001)
+    }
+
+    /// The tier is a separate fact from the hold itself: the tab labels
+    /// the next double-click from it, so a summary that dropped it
+    /// would leave the gesture lying about what it does.
+    func testToppedUpHoldDecoding() throws {
+        let json = """
+        [{
+            "id": 3,
+            "title": "errands",
+            "rung_code": 0,
+            "rung_label": "1h",
+            "remaining_ms": 1800000,
+            "remaining_label": "30m",
+            "spoken_remaining": "about 30 minutes remaining",
+            "fraction_remaining": 0.5,
+            "paused": true,
+            "hold_topped_up": true,
+            "hold_remaining_ms": 86400000,
+            "chip_count": 0,
+            "last_hour": true
+        }]
+        """
+        let sheets = try JSONDecoder().decode([SheetSummary].self, from: Data(json.utf8))
+        XCTAssertTrue(sheets[0].paused)
+        XCTAssertTrue(sheets[0].holdToppedUp)
+        XCTAssertEqual(sheets[0].holdRemainingMs, 86_400_000)
     }
 
     func testChipInfoDecoding() throws {

@@ -334,9 +334,15 @@ fn emit<C: Clock>(
             SheetClock::Held {
                 until,
                 frozen_remaining,
+                topped_up,
                 ..
             } => {
-                out.u8(1);
+                // Two tags, one payload: the tier is what decides
+                // whether the next pause press tops the hold up or
+                // releases it, so it has to survive a relaunch. A build
+                // that predates the release refuses tag 2 outright
+                // rather than misreading it as a first hold.
+                out.u8(if topped_up { 2 } else { 1 });
                 out.u64(ms(until.saturating_duration_since(now)));
                 out.u64(ms(frozen_remaining));
             }
@@ -573,13 +579,16 @@ fn read_sheet(
     let rung = Ttl::from_secs(reader.u64().ok_or(Malformed)?).ok_or(Malformed)?;
     // Time away drains the clock as if the app had stayed open: a hold
     // absorbs it first (that is what a hold is for), then the countdown.
+    // Tag 1 is a first hold, tag 2 a hold already topped up to its 24
+    // hour ceiling; the two carry the same payload and differ only in
+    // what the next pause press does.
     let (clock, held_while_away) = match reader.u8().ok_or(Malformed)? {
         0 => {
             let remaining = span(reader.u64().ok_or(Malformed)?);
             let deadline = now + remaining.saturating_sub(away);
             (SheetClock::Running { deadline }, Duration::ZERO)
         }
-        1 => {
+        tag @ (1 | 2) => {
             let hold = span(reader.u64().ok_or(Malformed)?);
             let frozen = span(reader.u64().ok_or(Malformed)?);
             if away < hold {
@@ -588,6 +597,7 @@ fn read_sheet(
                         until: now + (hold - away),
                         frozen_remaining: frozen,
                         started: now,
+                        topped_up: tag == 2,
                     },
                     away,
                 )
@@ -1570,6 +1580,37 @@ mod tests {
         let sheet = revived.sheet(id).unwrap();
         assert!(!sheet.is_held(now));
         assert_eq!(sheet.remaining(now), 6 * HOUR);
+    }
+
+    #[test]
+    fn a_restored_hold_remembers_which_press_comes_next() {
+        // The tier is the whole reason the gesture is reversible: a
+        // topped-up hold that came back as a first hold would answer
+        // the next double-click with another 24 hours instead of the
+        // release the user asked for.
+        let (mut store, clock) = store();
+        let first = store.new_sheet().unwrap();
+        let topped = store.new_sheet().unwrap();
+        assert!(store.pause_press(first)); // 1h hold
+        assert!(store.pause_press(topped)); // 1h hold
+        assert!(store.pause_press(topped)); // topped up to 24h
+        let snapshot = store.snapshot(0);
+
+        let mut revived = SheetStore::new(clock.clone());
+        revived.restore(&snapshot, 30 * 60 * 1000).unwrap();
+        let now = revived.now();
+        assert!(revived.sheet(first).unwrap().is_held(now));
+        assert!(!revived.sheet(first).unwrap().hold_topped_up(now));
+        assert!(revived.sheet(topped).unwrap().hold_topped_up(now));
+
+        // And the press that follows the restore does what the tier
+        // promises: the first-hold page tops up, the topped-up one
+        // releases.
+        assert!(revived.pause_press(first));
+        assert!(revived.pause_press(topped));
+        let now = revived.now();
+        assert!(revived.sheet(first).unwrap().hold_topped_up(now));
+        assert!(!revived.sheet(topped).unwrap().is_held(now));
     }
 
     #[test]

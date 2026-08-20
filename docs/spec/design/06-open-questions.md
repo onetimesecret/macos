@@ -67,7 +67,11 @@ with a current leaning where one exists.
 8. **Pause abuse.** Serial top-ups can hold a page alive indefinitely,
    one deliberate double-click at a time. Is a cumulative ceiling (say,
    7d of total held time) needed, or is requiring presence-per-24h
-   discipline enough?
+   discipline enough? The gesture gained a release on 2026-08-10 (doc
+   04), which costs a serial top-up two presses per cycle instead of
+   one but changes nothing about the ceiling question; `total_held` is
+   already accounted across releases and lapses alike, so a ceiling
+   still has the number it would need.
 9. **Markdown scope.** Headings only for now. Inline emphasis
    (**bold**, `code`) is cheap to add and easy to regret — the page
    should read like a text file, not a wiki. Revisit with use.

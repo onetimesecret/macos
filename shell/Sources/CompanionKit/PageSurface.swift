@@ -131,6 +131,7 @@ public struct PageStatusStack: View {
             GaugeBar(
                 fraction: sheet.fractionRemaining,
                 paused: sheet.paused,
+                toppedUp: sheet.holdToppedUp,
                 lastHour: sheet.lastHour
             )
             .frame(height: 4)

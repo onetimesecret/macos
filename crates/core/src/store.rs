@@ -934,13 +934,19 @@ impl<C: Clock> SheetStore<C> {
         Some(rung)
     }
 
-    /// The pause gesture (double-click a tab): the first press holds
-    /// the page's clock for **1 hour**; a press while held tops the
-    /// hold up to **24 hours from now** — never cumulative. While held,
-    /// remaining life does not drain. A hold lapses on its own; the
-    /// page is simply a regular page again. A pause holds the clock; it
-    /// never extends the rung. Returns false for an unknown or
+    /// The pause gesture (double-click a tab): a three state cycle.
+    /// The first press holds the page's clock for **1 hour**; a press
+    /// while held tops the hold up to **24 hours from now** — never
+    /// cumulative; a press while topped up **releases** the hold, and
+    /// the countdown resumes from exactly where it froze. While held,
+    /// remaining life does not drain. An unreleased hold lapses on its
+    /// own, to the same effect. A pause holds the clock; it never
+    /// extends the rung. Returns false for an unknown or
     /// already-expired page.
+    ///
+    /// The release is what makes the gesture reversible: a stray
+    /// double-click used to ratchet a page's life up by a day with no
+    /// way back down (doc 04).
     pub fn pause_press(&mut self, id: SheetId) -> bool {
         let now = self.clock.now();
         let Some(sheet) = self.sheet_mut(id) else {
@@ -957,17 +963,20 @@ impl<C: Clock> SheetStore<C> {
                     until: now + HOLD_FIRST,
                     frozen_remaining: remaining,
                     started: now,
+                    topped_up: false,
                 };
             }
             SheetClock::Held {
                 frozen_remaining,
                 started,
+                topped_up: false,
                 ..
             } => {
                 sheet.clock = SheetClock::Held {
                     until: now + HOLD_TOPUP,
                     frozen_remaining,
                     started,
+                    topped_up: true,
                 };
                 // The top-up is a compaction boundary too (ADR-0013):
                 // repeated pauses are how a page outlives its rung
@@ -975,6 +984,24 @@ impl<C: Clock> SheetStore<C> {
                 // that way must still shed its history on the same
                 // clockwork.
                 sheet.compact();
+            }
+            SheetClock::Held {
+                frozen_remaining,
+                started,
+                topped_up: true,
+                ..
+            } => {
+                // The release. The held span closes into the running
+                // total exactly as a lapse would close it — the two
+                // ways a hold can end must account identically, or a
+                // released page would read as never having been held.
+                sheet.total_held += now.saturating_duration_since(started);
+                sheet.clock = SheetClock::Running {
+                    deadline: now + frozen_remaining,
+                };
+                // No compaction here: a release takes life away rather
+                // than granting it, so it is not one of ADR-0013's
+                // boundaries.
             }
         }
         true
@@ -1133,6 +1160,7 @@ fn normalize(sheet: &mut Sheet, now: Instant) {
         until,
         frozen_remaining,
         started,
+        ..
     } = sheet.clock
         && now >= until
     {
@@ -1793,21 +1821,110 @@ mod tests {
 
         assert!(store.pause_press(id)); // hold: 1h
         assert_eq!(store.sheet(id).unwrap().hold_remaining(store.now()), HOUR);
+        assert!(!store.sheet(id).unwrap().hold_topped_up(store.now()));
 
         assert!(store.pause_press(id)); // extend: 24h from now
         assert_eq!(
             store.sheet(id).unwrap().hold_remaining(store.now()),
             24 * HOUR
         );
+        assert!(store.sheet(id).unwrap().hold_topped_up(store.now()));
 
-        // 23 hours later, a third press tops back up to 24h from now —
-        // not 47h. Never cumulative.
+        // 23 hours later, a press releases and the next one holds for
+        // an hour again: the top-up ceiling is 24h from a single press,
+        // never cumulative, and re-topping-up costs two more presses.
         clock.advance(23 * HOUR);
-        assert!(store.pause_press(id));
+        assert!(store.pause_press(id)); // release
+        assert!(!store.sheet(id).unwrap().is_held(store.now()));
+        assert!(store.pause_press(id)); // hold again: 1h
+        assert_eq!(store.sheet(id).unwrap().hold_remaining(store.now()), HOUR);
+        assert!(store.pause_press(id)); // top up: 24h, not 47h
         assert_eq!(
             store.sheet(id).unwrap().hold_remaining(store.now()),
             24 * HOUR
         );
+    }
+
+    #[test]
+    fn a_third_pause_press_releases_the_hold_and_the_clock_resumes_where_it_froze() {
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap(); // 8h
+        clock.advance(2 * HOUR); // 6h remain
+
+        assert!(store.pause_press(id)); // hold 1h
+        assert!(store.pause_press(id)); // top up to 24h
+        clock.advance(3 * HOUR); // held: nothing drains
+        assert_eq!(store.sheet(id).unwrap().remaining(store.now()), 6 * HOUR);
+
+        assert!(store.pause_press(id)); // release
+        let now = store.now();
+        let sheet = store.sheet(id).unwrap();
+        assert!(!sheet.is_held(now), "the release ends the hold at once");
+        assert!(!sheet.hold_topped_up(now));
+        assert_eq!(sheet.hold_remaining(now), Duration::ZERO);
+        // The countdown picks up from exactly where it froze, and the
+        // held span is accounted exactly as a lapse would account it.
+        assert_eq!(sheet.remaining(now), 6 * HOUR);
+        assert_eq!(sheet.total_held(now), 3 * HOUR);
+
+        clock.advance(HOUR);
+        assert_eq!(store.sheet(id).unwrap().remaining(store.now()), 5 * HOUR);
+        assert_eq!(store.sheet(id).unwrap().total_held(store.now()), 3 * HOUR);
+    }
+
+    #[test]
+    fn a_released_page_expires_on_its_own_frozen_life() {
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        store.set_rung(id, Ttl::MIN).unwrap(); // 1h
+        clock.advance(HOUR / 2); // 30m remain
+
+        assert!(store.pause_press(id)); // hold
+        assert!(store.pause_press(id)); // top up
+        clock.advance(5 * HOUR); // still held, still 30m
+        assert!(store.pause_press(id)); // release: 30m from here
+
+        assert!(store.expire_due().is_empty());
+        clock.advance(Duration::from_secs(29 * 60));
+        assert!(store.expire_due().is_empty());
+        clock.advance(Duration::from_secs(2 * 60));
+        assert_eq!(store.expire_due(), vec![id]);
+    }
+
+    #[test]
+    fn a_lapse_and_a_release_leave_the_page_in_the_same_state() {
+        // The two ways a hold can end must be indistinguishable
+        // afterwards, or the gesture would be a life extension in
+        // disguise.
+        let lapsed = {
+            let (mut store, clock) = store();
+            let id = store.new_sheet().unwrap();
+            assert!(store.pause_press(id)); // 1h hold
+            clock.advance(HOUR); // lapses on its own
+            let now = store.now();
+            let sheet = store.sheet(id).unwrap();
+            (
+                sheet.remaining(now),
+                sheet.total_held(now),
+                sheet.is_held(now),
+            )
+        };
+        let released = {
+            let (mut store, clock) = store();
+            let id = store.new_sheet().unwrap();
+            assert!(store.pause_press(id)); // 1h hold
+            assert!(store.pause_press(id)); // top up, so the third can release
+            clock.advance(HOUR);
+            assert!(store.pause_press(id)); // release, one hour in
+            let now = store.now();
+            let sheet = store.sheet(id).unwrap();
+            (
+                sheet.remaining(now),
+                sheet.total_held(now),
+                sheet.is_held(now),
+            )
+        };
+        assert_eq!(lapsed, released);
     }
 
     #[test]

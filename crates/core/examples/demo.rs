@@ -172,7 +172,7 @@ fn help() {
   copy <n>           copy chip n back out (marked concealed + transient)
   clear              clear-after-copy: only if the clipboard is still ours
   rung               click the countdown label: one rung shorter, clock reset
-  pause              double-click the tab: hold 1h, then top-up to 24h
+  pause              double-click the tab: hold 1h, top up to 24h, release
   close              close the page; the ledger keeps the fact
   ledger             ⌘0, what happened, in metadata only
   clear-ledger       throw the whole ledger away
@@ -450,11 +450,23 @@ fn cycle_rung(store: &mut SheetStore<ManualClock>, page: SheetId) {
 fn pause(store: &mut SheetStore<ManualClock>, page: SheetId) {
     if store.pause_press(page) {
         let now = store.now();
-        let sheet = store.sheet(page).expect("just paused");
-        println!(
-            "held — lapses in {}. the clock is frozen; the rung is not extended.",
-            companion_core::ttl::human_remaining(sheet.hold_remaining(now))
-        );
+        let sheet = store.sheet(page).expect("just pressed");
+        if sheet.is_held(now) {
+            println!(
+                "held{} — lapses in {}. the clock is frozen; the rung is not extended.",
+                if sheet.hold_topped_up(now) {
+                    ", topped up"
+                } else {
+                    ""
+                },
+                companion_core::ttl::human_remaining(sheet.hold_remaining(now))
+            );
+        } else {
+            println!(
+                "released — the countdown resumes at {}.",
+                companion_core::ttl::human_remaining(sheet.remaining(now))
+            );
+        }
     } else {
         println!("nothing to hold");
     }

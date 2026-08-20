@@ -155,7 +155,9 @@ bool companion_sheet_set_title(CompanionHandle *handle, uint64_t id,
  *   rung_code (CompanionRung), rung_label ("8h"), remaining_ms,
  *   remaining_label ("3h 40m"), spoken_remaining ("about 3 hours
  *   remaining" — the VoiceOver value), fraction_remaining (0.0..1.0),
- *   paused (bool), hold_remaining_ms, chip_count, last_hour (bool).
+ *   paused (bool), hold_topped_up (bool — the hold is already at its
+ *     24 hour ceiling, so the next pause press releases it),
+ *   hold_remaining_ms, chip_count, last_hour (bool).
  */
 char *companion_sheets_json(CompanionHandle *handle);
 
@@ -368,11 +370,14 @@ int companion_sheet_cycle_rung(CompanionHandle *handle, uint64_t id);
 bool companion_sheet_set_rung(CompanionHandle *handle, uint64_t id, int rung);
 
 /*
- * The pause gesture (double-click a tab): first press holds the clock
- * 1 hour; a press while held tops the hold up to 24 hours from now —
- * never cumulative. Holds the clock, never extends the rung. The hold
- * lapses on its own (folded into companion_next_event_ms()). Returns
- * false for an unknown or already-due page.
+ * The pause gesture (double-click a tab), a three state cycle: first
+ * press holds the clock 1 hour; a press while held tops the hold up to
+ * 24 hours from now — never cumulative; a press while topped up
+ * releases the hold and the countdown resumes where it froze. Holds
+ * the clock, never extends the rung. An unreleased hold lapses on its
+ * own (folded into companion_next_event_ms()). Returns false for an
+ * unknown or already-due page. The summary's hold_topped_up says which
+ * press comes next.
  */
 bool companion_sheet_pause_press(CompanionHandle *handle, uint64_t id);
 

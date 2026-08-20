@@ -278,6 +278,13 @@ pub(crate) enum SheetClock {
         /// When this hold began — so cumulative held time stays
         /// accountable (a total-held ceiling is open question №8).
         started: Instant,
+        /// Whether the hold has already been topped up to its 24 hour
+        /// ceiling. The pause gesture is a three state cycle (doc 04):
+        /// hold, top up, release. Without this the third press could
+        /// only be inferred from the hold's length, and a restore
+        /// (which rebuilds `until` and `started` from time away) would
+        /// lose the distinction.
+        topped_up: bool,
     },
 }
 
@@ -460,6 +467,19 @@ impl Sheet {
             }
         };
         self.total_held + live
+    }
+
+    /// Whether the live hold has already been topped up to 24 hours,
+    /// meaning the next pause press releases it rather than extending
+    /// it. False when the page is not held at all.
+    #[must_use]
+    pub fn hold_topped_up(&self, now: Instant) -> bool {
+        match self.clock {
+            SheetClock::Running { .. } => false,
+            SheetClock::Held {
+                until, topped_up, ..
+            } => now < until && topped_up,
+        }
     }
 
     /// How much longer the hold lasts at `now`; zero when not held.
