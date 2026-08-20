@@ -518,21 +518,28 @@ today.
     every launch after an overnight expiry mints into a tab the user
     never selected and starts a fresh countdown on nothing, which is the
     outcome the expiry paragraph refuses.
-12. ADR-0013's interaction count gets its field reserved in this break
-    rather than paying for a second one. ADR-0013:168-175 declares the
-    count a stored field from birth, maintained at its interaction sites
-    and carried across compaction by persistence; nothing implements it,
-    as recorded at docs/plans/44-ground-truth.md:100. Write a u64 count
-    per materialized block in `emit_materialized` beside `created_s` and
-    `modified_s` (crates/core/src/persist.rs:417-452), zero until the
-    counting sites exist, with a matching field on `MaterializedMeta`
-    (crates/core/src/blocks.rs:38-47), `BlockRecord`
-    (crates/core/src/blocks.rs:51-66) and `PersistedBlock`
-    (crates/core/src/blocks.rs:72-79). It is a block field, so it is a
-    Page field, and it dies with the page. No page-level or tab-level
-    count ships: ADR-0013:168's "ordering pages in a switcher" is
-    dropped, because a manually ordered strip of at most nine tabs has
-    nothing for a count to sort.
+12. ADR-0013's interaction count is a Page field, and it needs no
+    reservation here. ADR-0013:168-175 declares the count a stored field
+    from birth, maintained at its interaction sites and carried across
+    compaction by persistence; nothing implements it, as recorded at
+    docs/plans/44-ground-truth.md:100. An earlier draft of this ADR
+    reserved a zero u64 per materialized block so the count would not
+    have to buy a second break. That reservation is withdrawn. Issue #54
+    makes every repeated record in the snapshot payload self-describing
+    in this same break, the per-block materialized record among them
+    (crates/core/src/persist.rs:417-452 writes it, :733-783 reads it back
+    positionally today), so the count is appended whenever ADR-0013 is
+    implemented and costs no break at all. Reserving a field for it now
+    would be guessing at a shape nobody has designed.
+
+    What this ADR does decide is where the count lives. It is a block
+    field, so it is a Page field, and it dies with the page. No
+    page-level or tab-level count ships: ADR-0013:168's "ordering pages
+    in a switcher" is dropped, because a manually ordered strip of at
+    most nine tabs has nothing for a count to sort. A count that
+    outlived its page would also be a durable per-tab record of how
+    often the user touched content that is gone, which is the kind of
+    residue the split exists to remove.
 
 ## Consequences
 
@@ -626,9 +633,11 @@ today.
   replacement page is born at the store's `default_rung`
   (crates/core/src/store.rs:214), at the cost the Decision already
   names.
-- The interaction count reservation at
-  crates/core/src/persist.rs:417-452 is still zero at the next format
-  break. Then the field was reserved for nothing and it comes back out.
+- Issue #54 slips out of this break while item 12 still assumes it. Then
+  the interaction count has no self-describing record to append to, and
+  ADR-0013 buys a second break with users' staged content. The check is
+  whether the length prefix and the skip rule ship under the same
+  `MAGIC` bump as this split, not merely before ADR-0013 is picked up.
 
 ## Deferred
 

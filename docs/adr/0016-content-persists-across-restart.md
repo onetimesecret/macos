@@ -623,21 +623,37 @@ it are unknowable (`crates/ffi/src/persist.rs:717-723`,
 **[ADR-0017](0017-durable-tabs-expiring-pages.md), "Durable tabs,
 expiring pages", rides this same break, deliberately.** The split
 (`docs/dogfood/ABERRATIONS.md:68`) moves page metadata onto a Tab object
-and therefore changes the persisted object graph. ADR-0013's interaction
-count, declared not derivable from the op log, is an obligation on the
-snapshot format that nothing implements today
-(`crates/core/src/persist.rs:417-441` writes `created_s`, `modified_s`
-and `origin` and no count; recorded at
-`docs/plans/44-ground-truth.md:100`). Taking those in a second
-break would cost users their staged content twice. They ship in the same
-`FILE_MAGIC` bump or they wait for the next one.
+and therefore changes the persisted object graph, which no compatibility
+rule absorbs. Taking it in a second break would cost users their staged
+content twice, so it ships in this `FILE_MAGIC` bump or it waits for the
+next one.
 
-**Whether the snapshot's page record becomes self-describing is open, and
-[issue #54](https://github.com/onetimesecret/macos/issues/54) rides this
-same break.** The record is positional today (`crates/core/src/persist.rs:311-383`
-writes it, `:562-653` reads it back in the same order), so every later
-field costs another break; this ADR records only that the question is
-answered here or not at all, not what the answer is.
+ADR-0013's interaction count is the other pending obligation on this
+format, declared not derivable from the op log and implemented nowhere
+today (`crates/core/src/persist.rs:417-441` writes `created_s`,
+`modified_s` and `origin` and no count; recorded at
+`docs/plans/44-ground-truth.md:100`). It is a trailing field, so the rule
+immediately below releases it from this break: it can land whenever
+ADR-0013 is implemented, at no cost to anyone's staged content.
+
+**The snapshot's records become self-describing in this same break.**
+They are positional today, all three of them: the page record
+(`crates/core/src/persist.rs:311-383` writes it, `:562-653` reads it back in
+the same order), the per-block materialized record (`:417-452`, `:733-783`)
+and the ledger record (`:454`, `:785`). A reader that does not know a field
+cannot skip past it, so every later field costs another break.
+[Issue #54](https://github.com/onetimesecret/macos/issues/54) carries the
+argument and fixes the shape: a length prefix per record, and a reader that
+consumes the fields it knows and then advances by the record's length rather
+than by where its own field walk stopped. A trailing field added after this
+break is then invisible to an older reader. Full tag-length-value encoding
+is rejected there, because it puts a parser inside the one module ADR-0012:30
+stakes the audit story on.
+
+The envelope does not follow. Its header is associated data in full
+(`crates/ffi/src/persist.rs:208-211`), so anything added there changes what
+authenticates, and an unknown envelope magic must keep failing closed
+(`:717-723`). Extensibility belongs in the payload.
 
 ### 10. Required test coverage
 
