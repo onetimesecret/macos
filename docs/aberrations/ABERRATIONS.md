@@ -57,15 +57,16 @@ August 19, 2026
 
 DOGFOOD
 
-
-- Multiple tabs, each with TTLs is a lot to think about.
-  - Perhaps separate the notion of the tab-page-ttl as all one time. The tab could be separate and long-lived structure; the page-ttl stay together so the page clears on expiry, but not the tab. This would affect the objects; some Page metadata moves to a Tab object.
-  - Perhaps there should be a separate visual treatment for the first line / tab title.
 - When writing a list (Enter, dash, space), it creates a new block for each list item. We may want to treat lists in a special way but within the same block (for example, there is no need for the timestamps to appear inbetween list items)
 - Still quirky behaviour when cmd-tab away and cmd-tab back
   - When pinned is enabled, on fullscreen in Zed editor, the window wasn't visible by clicks intended for Zed were captured and actioned on by OnetimePad.
   - Can't move to another desktop by dragging to the edge of the screen
   - When tabbing back, it always goes to Desktop 1 instead of to the most Desktop it was active in.
+  - When tabbing back, the window flickers in the same way every time.
+
+- Multiple tabs, each with TTLs is a lot to think about.
+  - Perhaps separate the notion of the tab-page-ttl as all one time. The tab could be separate and long-lived structure; the page-ttl stay together so the page clears on expiry, but not the tab. This would affect the objects; some Page metadata moves to a Tab object.
+  - Perhaps there should be a separate visual treatment for the first line / tab title.
 - Markdown hybrid rendering is not working or not implemented. e.g. a comment in a codeblock is treated as an h1 header.
 
 
