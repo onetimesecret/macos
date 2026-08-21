@@ -39,9 +39,11 @@ final class PersistenceRoundTripTests: XCTestCase {
         PageModel(
             formFactor: .panel,
             defaults: defaults,
-            stateDirectory: tempDir,
-            client: .ephemeral(tag: tag),
-            saveDebounce: 0.05
+            seams: .init(
+                stateDirectory: tempDir,
+                client: .ephemeral(tag: tag),
+                saveDebounce: 0.05
+            )
         )
     }
 

@@ -388,10 +388,11 @@ public final class PageModel: ObservableObject {
     /// ciphertext generations behind on disk (each atomic replace
     /// unlinks the prior one, it does not erase it). Measured from the
     /// first mutation of a burst, so it is the whole loss window and not
-    /// a per-keystroke restart. Public because it is the init
-    /// parameter's default, which Swift requires to be as visible as
-    /// the init itself.
-    public static let saveDebounce: TimeInterval = 2.0
+    /// a per-keystroke restart. Private once more: a seam left nil
+    /// resolves to this inside the init body, the one place the
+    /// visibility rule on a public init's default arguments cannot
+    /// reach.
+    private static let saveDebounce: TimeInterval = 2.0
 
     /// The window this instance actually runs: the shipping value above
     /// unless the caller injected a shorter one at init, which only a
@@ -413,35 +414,54 @@ public final class PageModel: ObservableObject {
     /// session hammering a path that keeps saying no.
     private static let saveRetryDebounce: TimeInterval = 10.0
 
+    /// The init's test seams, gathered into one struct so the shipping
+    /// signature stays narrow however many seams the tests grow. Each
+    /// member is optional and nil means the shipping value: a
+    /// `stateDirectory` moves the sealed files out of the form
+    /// factor's own locations and into a directory the test owns, a
+    /// `client` substitutes a core handle whose credentials never
+    /// reach the Keychain (`CompanionClient.ephemeral(tag:)`), and a
+    /// `saveDebounce` shortens the window so the real timer can fire
+    /// inside a test's patience. The default instance leaves all three
+    /// alone, which is exactly the construction every shipping call
+    /// site performs.
+    public struct Seams {
+        let stateDirectory: URL?
+        let client: CompanionClient?
+        let saveDebounce: TimeInterval?
+
+        public init(
+            stateDirectory: URL? = nil,
+            client: CompanionClient? = nil,
+            saveDebounce: TimeInterval? = nil
+        ) {
+            self.stateDirectory = stateDirectory
+            self.client = client
+            self.saveDebounce = saveDebounce
+        }
+    }
+
     /// `defaults` is injectable so tests can point at a throwaway
     /// domain; both shipping form factors take their own standard one
-    /// (`FormFactor.settingsDefaults`). The remaining parameters are
-    /// test seams with shipping defaults: `stateDirectory` moves the
-    /// sealed files out of the form factor's own locations and into a
-    /// directory the test owns, `client` substitutes a core handle
-    /// whose credentials never reach the Keychain
-    /// (`CompanionClient.ephemeral(tag:)`), and `saveDebounce` shortens
-    /// the window so the real timer can fire inside a test's patience.
-    /// Left alone, every one of them resolves to exactly the value the
-    /// shipping construction always had.
+    /// (`FormFactor.settingsDefaults`). Everything else a test would
+    /// reach for lives in `Seams`, whose default instance resolves to
+    /// exactly the values the shipping construction always had.
     public init(
         formFactor: FormFactor,
         defaults: UserDefaults = FormFactor.settingsDefaults,
-        stateDirectory: URL? = nil,
-        client: CompanionClient? = nil,
-        saveDebounce: TimeInterval = PageModel.saveDebounce
+        seams: Seams = Seams()
     ) {
         // Before the first call into the core, so nothing it refuses on
         // the way up is written to a stderr this process may not have.
         CoreDiagnostics.route(subsystem: formFactor.loggerSubsystem)
         self.formFactor = formFactor
         self.defaults = defaults
-        self.client = client ?? CompanionClient(credentialService: formFactor.credentialService)
-        stateFileURL = stateDirectory.map(FormFactor.stateFileURL(in:))
+        client = seams.client ?? CompanionClient(credentialService: formFactor.credentialService)
+        stateFileURL = seams.stateDirectory.map(FormFactor.stateFileURL(in:))
             ?? formFactor.stateFileURL
-        ledgerFileURL = stateDirectory.map(FormFactor.ledgerFileURL(in:))
+        ledgerFileURL = seams.stateDirectory.map(FormFactor.ledgerFileURL(in:))
             ?? formFactor.ledgerFileURL
-        self.saveDebounce = saveDebounce
+        saveDebounce = seams.saveDebounce ?? Self.saveDebounce
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         // Unset → float on top, matching the original behavior.
         floatsOnTop = defaults.object(forKey: Self.floatsKey) as? Bool ?? true
