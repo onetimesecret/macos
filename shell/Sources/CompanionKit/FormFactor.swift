@@ -67,6 +67,14 @@ public struct FormFactor: Sendable {
     /// one a test injected: a test that spelled the name itself could
     /// drift from the name the app writes and pass against a file the
     /// app never reads.
+    ///
+    /// **The core knows this name too**, as `STATE_FILE_NAME` in
+    /// `crates/ffi/src/persist.rs`, where it decides whether dropping a
+    /// file should take the content key with it: only the state file
+    /// may, and a ledger Clear that did would destroy every staged page.
+    /// Renaming this does not break that decision, since the core falls
+    /// back to reading the envelope magic, but it does move the
+    /// unreadable-file case onto the fallback, so change both together.
     public static func stateFileURL(in directory: URL) -> URL {
         directory.appendingPathComponent("state.sealed")
     }

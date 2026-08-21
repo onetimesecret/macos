@@ -1404,9 +1404,13 @@ pub unsafe extern "C" fn companion_persist_restore(
 ///
 /// **Only a content file takes the halves with it.** The same entry
 /// point drops the ledger file when the user clears the ledger, and that
-/// gesture asked nothing about pages, so the rotation is gated on the
-/// magic actually at the path (`persist::holds_content_envelope`) rather
-/// than on the caller's intent or on the file's name. When ADR-0017
+/// gesture asked nothing about pages, so the rotation is decided from
+/// the path itself (`persist::drop_takes_the_content_key`): the state
+/// file's name, or failing that the envelope magic actually at the
+/// path, never the caller's intent. The name leads because it is
+/// knowable when the file is absent or unreadable, and those are exactly
+/// the cases where a magic-only gate skipped the rotation and dropped
+/// the ciphertext anyway. When ADR-0017
 /// splits the emptiness predicate in two, this call keeps the "no tabs
 /// remain" half and the "no tab holds a page" half needs a rotation of
 /// its own; wiring them the other way round destroys tabs an expiry was
@@ -1452,7 +1456,7 @@ pub unsafe extern "C" fn companion_persist_erase(
         return false;
     };
     let path = Path::new(path);
-    if persist::holds_content_envelope(path)
+    if persist::drop_takes_the_content_key(path)
         && !persist::rotate_key_halves(guard.credentials.as_ref(), path)
     {
         // The file stays. Unlinking it here would leave every prior
@@ -3912,6 +3916,40 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A content file the core cannot read is still a content file, and
+    /// dropping it still takes the key. The gate used to read the
+    /// envelope magic and nothing else, so a file truncated below eight
+    /// bytes, or mode 000, or absent, or with a FIFO planted at the
+    /// name, answered "not content" and the drop unlinked it with both
+    /// halves alive. Every unlinked generation before it stayed
+    /// decryptable, and the shell was told the write had succeeded.
+    #[test]
+    fn a_content_file_the_core_cannot_read_still_takes_the_key_with_it() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            companion_sheet_new(handle);
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            assert!(persist::load_state_key(&*credentials, &path).is_some());
+
+            // Truncated below the magic: unreadable as an envelope, and
+            // still the file the pad has just emptied.
+            std::fs::write(&path, b"OTS").unwrap();
+
+            assert!(companion_persist_erase(handle, c_path.as_ptr()));
+            assert!(
+                persist::load_state_key(&*credentials, &path).is_none(),
+                "the halves outlived the content file because its magic could not be read"
+            );
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// A drop that could not erase the file half must not drop the
     /// ciphertext. Before this, the refusal was logged and the erase ran
     /// anyway: the content file was gone, both halves were alive, every
@@ -4020,6 +4058,19 @@ mod tests {
             assert!(companion_persist_restore(second, c_state.as_ptr()));
             assert!(first_remaining_ms(second).unwrap() > 0);
             companion_free(second);
+
+            // And an *unreadable* ledger file is still not the content
+            // file. Neither half of the decision may be talked into it:
+            // the name is the ledger's and no magic can be read at all.
+            std::fs::write(&ledger_path, b"OTS").unwrap();
+            let clearing = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_erase(clearing, c_ledger.as_ptr()));
+            companion_free(clearing);
+            assert_eq!(
+                *persist::load_state_key(&*credentials, &state_path)
+                    .expect("a damaged ledger file took the content key with it"),
+                key_before
+            );
         }
         std::fs::remove_dir_all(&dir).unwrap();
     }

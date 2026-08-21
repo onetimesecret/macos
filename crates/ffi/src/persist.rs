@@ -852,25 +852,59 @@ fn is_write_private_temp(name: &str) -> bool {
     !stem.is_empty() && tag.len() == 16 && tag.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+/// Whether dropping `path` should take the content key with it.
+///
+/// One entry point drops files for two different reasons: the state
+/// file when the pad empties, and the ledger file when the user clears
+/// the ledger (`PageModel.clearLedger`). Only the first may rotate, and
+/// a ledger clear that rotated would destroy every staged page the user
+/// still had. It is decided from the path and its contents rather than
+/// from which caller asked, because the callers are indistinguishable
+/// here and the consequence of believing the wrong one is a silent
+/// total loss.
+///
+/// **The name is the primary answer and the magic is a confirmation**,
+/// which is a deliberate ordering. The name is knowable when nothing
+/// about the file is: absent, mode 000, truncated below a magic, or a
+/// FIFO somebody planted at it. Reading the magic first meant every one
+/// of those answered "not the content file", and the drop then unlinked
+/// the ciphertext with both halves alive, which is the same fail-open
+/// this function exists to prevent.
+///
+/// The magic still earns its place as the second half of the `or`: it
+/// covers a state file the shell has renamed out from under
+/// [`STATE_FILE_NAME`], which is a real risk, because that constant is
+/// this module's copy of a name chosen in `FormFactor.stateFileURL`.
+/// Neither half can turn a ledger drop into a rotation: the ledger's
+/// name is its own and its magic is [`LEDGER_MAGIC`].
+pub(crate) fn drop_takes_the_content_key(path: &Path) -> bool {
+    names_the_content_file(path) || holds_content_envelope(path)
+}
+
+/// The state file's name, as `FormFactor.stateFileURL` spells it
+/// (`shell/Sources/CompanionKit/FormFactor.swift`). A copy of a name
+/// the shell owns, which is a coupling worth naming: if the shell ever
+/// renames the file, this stops matching and the rotation falls back to
+/// the envelope read below rather than silently ceasing to happen.
+const STATE_FILE_NAME: &str = "state.sealed";
+
+/// Whether `path`'s final component is the state file's name. Answers
+/// without touching the filesystem, which is the point: an unreadable
+/// file still has a name.
+fn names_the_content_file(path: &Path) -> bool {
+    path.file_name().and_then(|name| name.to_str()) == Some(STATE_FILE_NAME)
+}
+
 /// Whether the file at `path` is this app's **content** envelope, this
 /// build's or one it has replaced.
 ///
-/// The question is answered by reading the magic rather than by looking
-/// at the name, because a name is the shell's to choose and this module
-/// has no list of them. It exists because one entry point drops files
-/// for two different reasons: the state file when the pad empties, and
-/// the ledger file when the user clears the ledger
-/// (`PageModel.clearLedger`). Only the first of those may take the
-/// content key with it, and a ledger clear that rotated the content
-/// halves would destroy every staged page the user still had.
-///
 /// A file that is absent, unreadable, shorter than a magic, or sealed
-/// under any other envelope answers `false`, which costs a rotation that
-/// would have been sound rather than performing one that would not be.
-/// The open carries the same refusals [`open_for_erase`] does, for the
-/// same reason: this runs against a path anyone running as the user
-/// could have replaced.
-pub(crate) fn holds_content_envelope(path: &Path) -> bool {
+/// under any other envelope answers `false`. That is the right answer
+/// for a confirmation and the wrong one for a gate, which is why
+/// [`drop_takes_the_content_key`] asks the name first. The open carries
+/// the same refusals [`open_for_erase`] does, for the same reason: this
+/// runs against a path anyone running as the user could have replaced.
+fn holds_content_envelope(path: &Path) -> bool {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     #[cfg(any(target_os = "macos", target_os = "linux"))]
