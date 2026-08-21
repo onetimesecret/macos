@@ -320,73 +320,96 @@ pub(crate) fn load_state_key(
     derive_content_key(&keychain_half, &file_half)
 }
 
-/// Kill the content key: unlink the file half beside `state_path`, then
-/// delete the keychain half. Called when the content that key protects
-/// is being discarded, so it is discarded for good.
+/// Kill the content key: erase every file half in the state directory,
+/// then delete the keychain half. Called when the content that key
+/// protects is being discarded, so it is discarded for good.
 ///
-/// **Returns whether the content key is gone afterwards**, meaning the
-/// keychain half was removed or was never there. A locked keychain, a
-/// dismissed ACL or any other refusing backend leaves it alive and
-/// returns `false`, so a caller whose next step destroys the only
-/// evidence that a rotation is owed can decline to take it.
+/// **Returns whether the file halves are gone**, which is the whole of
+/// the question. Both halves are required to derive the key
+/// ([`derive_content_key`]), so erasing either one makes every
+/// ciphertext generation the pair ever sealed undecryptable, including
+/// the ones an atomic rename unlinked and nothing sweeps. The file half
+/// is the half this app can destroy with certainty and without asking
+/// anyone's permission, so it is the half the answer rests on.
 ///
-/// **The keychain half is the sufficient deletion**, and the only one.
-/// Every file half's *content* and its *filename* are both derived from
-/// it, so once the item is gone no half on disk can be named or combined
-/// into a key again. Unlinking the file half is ordered first only
-/// because naming it needs the keychain half still readable. So the
-/// return value tracks the keychain item and nothing else.
+/// **Nothing here reads the keychain**, and that is deliberate twice
+/// over. A read is the call that can raise the ACL prompt
+/// ([`CredentialStore::load`]), and this runs on the quit path and
+/// under a background debounce, where a prompt has no business
+/// appearing (ADR-0004). It also used to mean a keychain that would not
+/// answer a *read* skipped the unlink entirely and left both halves
+/// alive while reporting the failure as a keychain problem. The halves
+/// are found by scanning for [`FILE_HALF_PREFIX`] instead, so the
+/// deletion no longer depends on being able to re-derive the name.
+///
+/// The keychain half still goes, for hygiene: an item nothing will ever
+/// use again should not sit in the keychain forever. A delete the
+/// backend refuses is announced and does **not** fail the rotation,
+/// because by then the file half is gone and the content is already
+/// unreadable. It is the surviving-but-useless half, not a surviving key.
 ///
 /// The ledger key is **never** touched here. Discarding staged content
 /// must leave the audit record that describes it readable, which is the
 /// entire reason [`LEDGER_KEY_ACCOUNT`] sits outside this derivation.
 pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore, state_path: &Path) -> bool {
-    let keys = credentials.key_material_store();
-    if let Some(keychain_half) = load_key_for(&*keys, STATE_KEY_ACCOUNT)
-        && let Some(dir) = containing_dir(state_path)
-        && let Some(path) = file_half_path(&keychain_half, dir)
-    {
-        let _ = std::fs::remove_file(path);
-    }
-    // A backend that errors on delete, or one that reports the item
-    // still present afterwards, has not rotated anything. An `exists`
-    // that will not answer is treated the same way: unknown is not gone.
-    //
-    // Both refusals are announced, because both are otherwise invisible
-    // and both are permanent: a rotation that reports failure leaves the
-    // state file in place, and a state file that will not open is what
-    // withholds the save licence for the session. Silent, that reads in
-    // the interface as an app that has simply stopped remembering
-    // anything, on every launch, with nothing anywhere naming a cause.
-    // The message carries a backend string, never key material.
-    if let Err(error) = keys.delete(STATE_KEY_ACCOUNT) {
-        diag_fault!(
-            "companion-ffi: the rotation could not delete the {STATE_KEY_ACCOUNT} item ({error}). \
-             The half that opens every ciphertext generation on disk is therefore still in the \
-             keychain, so the content this rotation was meant to forget is still readable by \
-             anyone holding both halves. Every later rotation repeats this until the keychain \
-             answers."
-        );
+    let Some(dir) = containing_dir(state_path) else {
         return false;
+    };
+    let erased = erase_file_halves(dir);
+    // Announced, never decisive. Silent, a keychain that will not delete
+    // is invisible: the item outlives every use it had, and the only
+    // trace is that it is still there.
+    if let Err(error) = credentials.key_material_store().delete(STATE_KEY_ACCOUNT) {
+        diag_fault!(
+            "companion-ffi: the rotation erased the file half but could not delete the \
+             {STATE_KEY_ACCOUNT} item ({error}). The content is unreadable either way, since \
+             its other half is gone; what is left behind is a keychain item nothing will use \
+             again."
+        );
     }
-    match keys.exists(STATE_KEY_ACCOUNT) {
-        Ok(false) => true,
-        Ok(true) => {
-            diag_fault!(
-                "companion-ffi: the {STATE_KEY_ACCOUNT} item is still present after a delete the \
-                 keychain accepted; treating the rotation as refused."
-            );
-            false
-        }
-        Err(error) => {
-            diag_fault!(
-                "companion-ffi: the {STATE_KEY_ACCOUNT} item was deleted but the keychain will \
-                 not say whether it is gone ({error}); unknown is not gone, so the rotation \
-                 counts as refused."
-            );
-            false
+    erased
+}
+
+/// Erase every file half in `dir`, with the same discipline the
+/// ciphertext gets, and report whether none is left.
+///
+/// The half is erased rather than unlinked because it is the more
+/// valuable of the two files: destroying it is the crypto-erasure, and
+/// the ciphertext's own zeroing is the belt to that pair of braces. A
+/// plain `remove_file` leaves 32 bytes of live key material in blocks
+/// the filesystem will hand out again whenever it pleases.
+///
+/// Every half in the directory goes, not just the one this credential
+/// store would derive: they all key content in this directory, and a
+/// scan cannot ask which store minted which without the read this
+/// function exists to avoid.
+///
+/// A directory that is not there holds no halves and counts as erased.
+/// Any other refusal, a directory that will not open, an entry that
+/// will not stat, a half that will not unlink, counts as not erased:
+/// the caller's next step destroys the file that would have triggered
+/// the retry, so an unknown must not read as success.
+fn erase_file_halves(dir: &Path) -> bool {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
+        Err(_) => return false,
+    };
+    let mut gone = true;
+    for entry in entries {
+        let Ok(entry) = entry else {
+            gone = false;
+            continue;
+        };
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(FILE_HALF_PREFIX))
+        {
+            gone &= erase_state(&entry.path());
         }
     }
+    gone
 }
 
 /// `HKDF-SHA256`: salt from the file half, extract the keychain half,
@@ -696,11 +719,18 @@ pub(crate) fn open_ledger(key: &[u8], file: &[u8]) -> Option<Zeroizing<Vec<u8>>>
     open_body(key, LEDGER_MAGIC, body)
 }
 
-/// Drop a state file: overwrite its length with zeros, truncate, sync,
-/// unlink. Returns whether the path is **confirmed** empty, decided
-/// without following a symlink. A stat that will not answer counts as
-/// not empty, because the caller settles the sudden-termination hold on
-/// this and an unknown must not read as success.
+/// Drop a file this app wrote: overwrite its length with zeros,
+/// truncate, sync, unlink. Returns whether the path is **confirmed**
+/// empty, decided without following a symlink. A stat that will not
+/// answer counts as not empty, because the caller settles the
+/// sudden-termination hold on this and an unknown must not read as
+/// success.
+///
+/// Three callers, all of them holding secrets: the sealed state file, a
+/// stranded temp generation of one ([`sweep_stranded_temps`]), and a
+/// key half ([`erase_file_halves`]). The half gets the same treatment
+/// as the ciphertext deliberately, since it is the more valuable file
+/// of the two.
 ///
 /// This doc comment is the canonical statement of the erase contract.
 /// `companion_persist_erase` in lib.rs, its block in `companion_ffi.h`,
@@ -914,9 +944,9 @@ pub(crate) mod test_stores {
 
     /// An ordinary in-memory store with `delete` wired to fail: a
     /// keychain still locked at launch, an ACL confirmation the user
-    /// dismissed, a backend that simply errored. That is the case where
-    /// a rotation accomplishes nothing, and the case the caller must not
-    /// mistake for a rotation that erased.
+    /// dismissed, a backend that simply errored. The item survives a
+    /// rotation that meant to remove it, and the caller must not mistake
+    /// the announcement for a content that stayed readable.
     #[derive(Clone, Default)]
     pub(crate) struct RefusesToDelete {
         /// Shared so [`CredentialStore::key_material_store`] can hand
@@ -942,6 +972,59 @@ pub(crate) mod test_stores {
 
         fn exists(&self, account: &str) -> Result<bool, CredentialError> {
             self.inner.exists(account)
+        }
+
+        fn key_material_store(&self) -> Arc<dyn CredentialStore> {
+            Arc::new(self.clone())
+        }
+    }
+
+    /// A store that answers nothing at all: every read, every delete and
+    /// every existence check errors, which is what a locked keychain or
+    /// a dismissed ACL looks like from here. Nothing in the tree modelled
+    /// this before, and a store that will not answer a **read** is
+    /// exactly the case where a rotation that had to re-derive the file
+    /// half's name from the keychain half quietly deleted nothing.
+    ///
+    /// `store` succeeds, because the case being modelled is a session
+    /// that once wrote its halves and then met a keychain that stopped
+    /// answering.
+    #[derive(Clone, Default)]
+    pub(crate) struct AnswersNothing {
+        inner: Arc<InMemoryCredentialStore>,
+    }
+
+    impl AnswersNothing {
+        /// What the store holds, asked from the test rather than through
+        /// the refusing surface: the point of most of these tests is
+        /// whether an item survived, and the surface under test is not
+        /// allowed to say.
+        pub(crate) fn behind_the_refusal(&self) -> &InMemoryCredentialStore {
+            &self.inner
+        }
+    }
+
+    impl CredentialStore for AnswersNothing {
+        fn store(&self, account: &str, secret: &[u8]) -> Result<(), CredentialError> {
+            self.inner.store(account, secret)
+        }
+
+        fn load(&self, _account: &str) -> Result<Zeroizing<Vec<u8>>, CredentialError> {
+            Err(CredentialError::Backend(
+                "the keychain is locked; nothing was read".to_string(),
+            ))
+        }
+
+        fn delete(&self, _account: &str) -> Result<(), CredentialError> {
+            Err(CredentialError::Backend(
+                "the keychain is locked; the item was not deleted".to_string(),
+            ))
+        }
+
+        fn exists(&self, _account: &str) -> Result<bool, CredentialError> {
+            Err(CredentialError::Backend(
+                "the keychain is locked; it will not say".to_string(),
+            ))
         }
 
         fn key_material_store(&self) -> Arc<dyn CredentialStore> {
@@ -1820,8 +1903,8 @@ mod tests {
     }
 
     /// Rotation is idempotent and survives a store that has nothing to
-    /// rotate: it runs on the load path, where "already gone" is a
-    /// perfectly ordinary state. Nothing left to remove is the erased
+    /// rotate: a pad that empties twice, or empties having never saved,
+    /// is perfectly ordinary. Nothing left to remove is the erased
     /// state, so it reports success and the caller may drop the file.
     #[test]
     fn rotating_an_empty_store_is_not_an_error() {
@@ -1834,33 +1917,156 @@ mod tests {
         assert!(load_state_key(&store, &path).is_none());
     }
 
-    /// A rotation the backend refused must say so. A locked keychain
-    /// leaves the keychain half alive, which leaves every ciphertext
-    /// generation it can open readable, and the forgetting the user
-    /// asked for has not happened.
+    /// A keychain that refuses the delete no longer means the content
+    /// stayed readable. The file half is erased without asking the
+    /// keychain anything, and the content needs both halves, so what
+    /// survives is an item nothing can use rather than a key. Reporting
+    /// failure here would be worse than useless: the caller would keep
+    /// the ciphertext file on disk, forever, next to a key half that is
+    /// already gone.
     #[test]
-    fn a_rotation_the_keychain_refused_reports_failure() {
+    fn a_rotation_the_keychain_refused_still_forgot_the_content() {
         let dir = StateDir::new();
         let path = dir.state_path();
         let store = test_stores::RefusesToDelete::default();
-        ensure_state_key(&store, &path).unwrap();
-        let keychain_half = load_key_for(&store, STATE_KEY_ACCOUNT).unwrap();
+        let key = ensure_state_key(&store, &path).unwrap();
+        let sealed = seal(&key, b"staged content the user has discarded");
 
         assert!(
-            !rotate_key_halves(&store, &path),
-            "a rotation that deleted nothing reported success"
+            rotate_key_halves(&store, &path),
+            "a rotation that erased the file half reported failure"
+        );
+        assert!(dir.halves().is_empty(), "the file half survived rotation");
+        assert!(
+            load_key_for(&store, STATE_KEY_ACCOUNT).is_some(),
+            "the refusing store lost the item it refused to delete"
+        );
+        // The surviving item is not a key: half a key derives nothing,
+        // and the half that is gone is gone.
+        assert!(
+            load_state_key(&store, &path).is_none(),
+            "the content key was reassembled after a rotation"
+        );
+        let fresh = ensure_state_key(&store, &path).unwrap();
+        assert!(
+            plaintext_of(open(&fresh, &sealed)).is_none(),
+            "the pre-rotation file opened after the rotation"
+        );
+    }
+
+    /// A keychain that answers **nothing**, which is what a locked one
+    /// or a dismissed ACL looks like from here. This is the case that
+    /// used to fail open: the rotation asked the keychain for the half
+    /// so it could re-derive the file half's filename, the read errored,
+    /// the whole `if let` chain was skipped, and both halves stayed
+    /// alive while the caller went on to delete the ciphertext. Nothing
+    /// in the tree modelled a store that refuses a read, which is why it
+    /// was invisible.
+    ///
+    /// The rotation does not read the keychain at all now: it finds the
+    /// halves by name in the directory it was given.
+    #[test]
+    fn a_rotation_against_a_keychain_that_answers_nothing_still_erases_the_half() {
+        let dir = StateDir::new();
+        let path = dir.state_path();
+        let store = test_stores::AnswersNothing::default();
+        // A session that minted its halves while the keychain still
+        // worked, and then met one that stopped answering.
+        let keychain_half = Zeroizing::new(vec![0x5A_u8; KEY_LEN]);
+        store.store(STATE_KEY_ACCOUNT, &keychain_half).unwrap();
+        let half_path = file_half_path(&keychain_half, containing_dir(&path).unwrap()).unwrap();
+        assert!(write_private(&half_path, &keychain_half));
+        assert_eq!(dir.halves().len(), 1);
+
+        assert!(
+            rotate_key_halves(&store, &path),
+            "a keychain that would not answer stopped the erase and reported it as a refusal"
         );
         assert!(
             dir.halves().is_empty(),
-            "the file half survived a rotation that could still reach it"
+            "the file half outlived a rotation that could not read the keychain"
         );
-        // The surviving keychain half is the whole problem: it is the
-        // sufficient deletion, and it did not happen.
+        assert!(
+            store
+                .behind_the_refusal()
+                .exists(STATE_KEY_ACCOUNT)
+                .unwrap(),
+            "the store under test lost an item it was supposed to refuse to delete"
+        );
+    }
+
+    /// The half is erased, not unlinked. It is the more valuable of the
+    /// two files: destroying it is what makes every ciphertext
+    /// generation undecryptable, so leaving its 32 bytes in a block the
+    /// filesystem will hand out again would undo the thing the rotation
+    /// is for.
+    #[test]
+    fn rotation_erases_the_half_rather_than_unlinking_it() {
+        let dir = StateDir::new();
+        let path = dir.state_path();
+        let store = InMemoryCredentialStore::default();
+        ensure_state_key(&store, &path).unwrap();
+        let half_path = file_half_path(
+            &load_key_for(&store, STATE_KEY_ACCOUNT).unwrap(),
+            containing_dir(&path).unwrap(),
+        )
+        .unwrap();
+
+        // The bytes are overwritten and the file truncated before it is
+        // unlinked, which is observable by watching a hard link to the
+        // same inode: the unlink alone would leave the link's contents
+        // untouched.
+        let witness = dir.0.join("witness");
+        std::fs::hard_link(&half_path, &witness).unwrap();
+        assert_eq!(std::fs::read(&witness).unwrap().len(), KEY_LEN);
+
+        assert!(rotate_key_halves(&store, &path));
+
+        assert!(dir.halves().is_empty());
         assert_eq!(
-            &*load_key_for(&store, STATE_KEY_ACCOUNT).unwrap(),
-            &*keychain_half,
-            "the refusing store lost the item it refused to delete"
+            std::fs::read(&witness).unwrap(),
+            Vec::<u8>::new(),
+            "the file half was unlinked with its key material still in it"
         );
+    }
+
+    /// A file half that could **not** be erased must report failure, so
+    /// the caller keeps the ciphertext file rather than dropping it and
+    /// losing the only thing that will bring it back to try again.
+    #[cfg(unix)]
+    #[test]
+    fn a_half_that_will_not_erase_reports_failure() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = StateDir::new();
+        let path = dir.state_path();
+        let store = InMemoryCredentialStore::default();
+        ensure_state_key(&store, &path).unwrap();
+        assert_eq!(dir.halves().len(), 1);
+
+        // Read and search but no write: the half can be read and cannot
+        // be unlinked, which is what a directory somebody else owns
+        // looks like.
+        std::fs::set_permissions(&dir.0, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let immovable = rotate_key_halves(&store, &path);
+        std::fs::set_permissions(&dir.0, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        // Running as root, or on a filesystem that ignores the mode, the
+        // branch under test is simply unreachable.
+        if !dir.halves().is_empty() {
+            assert!(
+                !immovable,
+                "a rotation that could not erase the half reported success, so the caller went \
+                 on to drop the ciphertext it still opens"
+            );
+        }
+    }
+
+    /// A directory that is not there holds no halves, which is an
+    /// erased state and not an unknown one. Any other refusal is an
+    /// answer this code did not get, and unknown is not gone.
+    #[test]
+    fn a_state_directory_that_is_not_there_counts_as_erased() {
+        assert!(erase_file_halves(Path::new("/nowhere/at/all")));
     }
 
     #[test]
