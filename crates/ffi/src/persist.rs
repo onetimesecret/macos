@@ -162,6 +162,16 @@ const FILE_MAGIC: &[u8; 8] = b"OTSSEAL3";
 /// spelled out rather than computed from the version byte. `OTSSEAL1`
 /// stays out of it: it was refused outright before this break and it is
 /// refused outright after it.
+///
+/// **Adding an entry is not a one-line change.** The disposal arm
+/// leaves the key halves alone, which is only sound while every entry
+/// predates ADR-0016's move of the file half out of the temp directory:
+/// such a file's half is somewhere this build never reads, so there is
+/// no live key material to take away. An entry from any format after
+/// the move brings a durable file half and a live keychain half with it,
+/// and disposal without rotation would leave a working key behind.
+/// [`tests::the_superseded_set_predates_the_key_half_move`] pins this so
+/// the question arrives with the entry.
 const SUPERSEDED_MAGICS: [&[u8; 8]; 1] = [b"OTSSEAL2"];
 
 /// Magic + version prefix of the sealed ledger file. Distinct from
@@ -1315,6 +1325,36 @@ mod tests {
             open_state(b"OTSSEAL2", || None),
             Opened::Superseded
         ));
+    }
+
+    /// The disposal arm drops the file and leaves both key halves alone,
+    /// and that is sound because of *which* magics are in the set, not
+    /// because of anything the arm itself does. Every entry here predates
+    /// ADR-0016's move of the file half, so the half that sealed such a
+    /// file is in a per-boot temp directory this build never reads: there
+    /// is no live key material for the disposal to leave behind.
+    ///
+    /// This test exists so that the next person to add an entry has to
+    /// answer that question rather than inherit its old answer. Nothing
+    /// else in the tree would notice: the arm would keep compiling, keep
+    /// passing, and quietly start dropping ciphertext while the key that
+    /// opens it stayed alive.
+    #[test]
+    fn the_superseded_set_predates_the_key_half_move() {
+        // Compared as slices, so that a set of a different length fails
+        // here with the paragraph below rather than at the type checker
+        // with a length mismatch and no reason attached.
+        assert_eq!(
+            SUPERSEDED_MAGICS.as_slice(),
+            [b"OTSSEAL2"].as_slice(),
+            "the superseded set changed. Every entry it held predated ADR-0016's move of the \
+             file half out of the per-boot temp directory, which is the only reason the \
+             disposal arm in companion_persist_restore may drop a file without rotating the \
+             halves. An entry from any format sealed after that move carries a durable file \
+             half in the state directory and a keychain half that is still live, so disposing \
+             of the file alone leaves a working key for whatever copy of that ciphertext \
+             already exists. Decide whether that arm must now rotate before changing this line."
+        );
     }
 
     /// Both fields of the header are associated data, so no edit to

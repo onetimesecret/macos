@@ -1312,12 +1312,24 @@ pub unsafe extern "C" fn companion_persist_restore(
             // the ledger for what is being dropped: the file was never
             // decrypted, so the identities inside it are unknowable.
             //
-            // The halves are deliberately not rotated here. The disposal
-            // happens at launch, before the user has asked this app for
-            // anything, and a rotation is a keychain write; key access
-            // belongs at the moment of use (ADR-0004), and the next save
-            // mints a fresh file half anyway, since the one that sealed
-            // this file lived in a directory that is no longer read.
+            // The halves are deliberately not rotated here, and the
+            // reason belongs to the entries in the superseded set rather
+            // than to this arm. Every entry today predates ADR-0016's
+            // move of the file half, so the half that sealed such a file
+            // is in a per-boot temp directory this build never looks in
+            // again: there is no live key material to take away, and the
+            // rotation would be nothing but a keychain write at launch,
+            // before the user has asked this app for anything, which is
+            // where key access does not belong (ADR-0004).
+            //
+            // A later entry breaks that reasoning without touching this
+            // code. Its file half will sit in the state directory,
+            // durable, beside a keychain half that is still live, and
+            // dropping the file without rotating would leave a working
+            // key behind for a ciphertext copy somebody may already
+            // hold. `the_superseded_set_predates_the_key_half_move` in
+            // persist.rs is what makes that decision arrive with the
+            // entry rather than years later.
             if !persist::erase_state(Path::new(path)) {
                 diag_fault!(
                     "companion-ffi: a state file from a superseded format could not be dropped. \
