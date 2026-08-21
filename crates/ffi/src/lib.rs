@@ -1384,15 +1384,23 @@ pub unsafe extern "C" fn companion_persist_restore(
 /// the path, including when there was nothing to begin with.
 ///
 /// **The rotation is what forgets; the unlink is the tidy on top of
-/// it.** Deleting the keychain half makes every ciphertext generation
-/// this key ever sealed undecryptable, including the ones an atomic
-/// rename unlinked and nothing sweeps, and it is the finishing step of a
+/// it.** Erasing the file half makes every ciphertext generation this
+/// key ever sealed undecryptable, including the ones an atomic rename
+/// unlinked and nothing sweeps, and it is the finishing step of a
 /// deletion the user already asked for: emptying the pad, or clearing it
 /// (ADR-0016 section 6's two triggers, which both arrive here). It runs
 /// first, so the generation left behind is already undecryptable by the
-/// time its name goes away. A keychain that refuses the delete is
-/// announced and does not cancel the drop: the user asked for the file
-/// to go.
+/// time its name goes away.
+///
+/// **A rotation that could not erase the half cancels the drop**, and
+/// this returns false with the file still on disk. Dropping it anyway
+/// would forget nothing, since the half that opens every generation
+/// would still be sitting there, and it would consume its own trigger:
+/// this call fires when the pad goes empty, and an empty pad with no
+/// file on disk is indistinguishable from an ordinary session with
+/// nothing to do. The false is what arms the shell's retry
+/// (`PageModel.saveState`), and the file it left behind is what the
+/// retry comes back to.
 ///
 /// **Only a content file takes the halves with it.** The same entry
 /// point drops the ledger file when the user clears the ledger, and that
@@ -1447,11 +1455,20 @@ pub unsafe extern "C" fn companion_persist_erase(
     if persist::holds_content_envelope(path)
         && !persist::rotate_key_halves(guard.credentials.as_ref(), path)
     {
+        // The file stays. Unlinking it here would leave every prior
+        // ciphertext generation on disk still decryptable, hand the
+        // shell a success, and destroy the one thing that brings this
+        // call back: the drop fires when the pad is empty, and an empty
+        // pad with no file on disk looks exactly like an ordinary
+        // session with nothing to do. Reporting failure instead is what
+        // arms the shell's retry, and every retry until the erase lands
+        // finds the file still there.
         diag_fault!(
-            "companion-ffi: the content file is being dropped but its key halves would not \
-             rotate, so what is unlinked here stays decryptable to anyone holding them. The \
-             next drop tries again."
+            "companion-ffi: the content file was left alone because its file half could not be \
+             erased. Dropping the ciphertext while the half that opens it is still on disk \
+             would forget nothing and would consume the retry."
         );
+        return false;
     }
     persist::erase_state(path)
 }
@@ -3890,6 +3907,67 @@ mod tests {
                 dropped_key,
                 "the pad came back on the very key it had just discarded"
             );
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A drop that could not erase the file half must not drop the
+    /// ciphertext. Before this, the refusal was logged and the erase ran
+    /// anyway: the content file was gone, both halves were alive, every
+    /// unlinked generation stayed decryptable, the shell was told the
+    /// write had succeeded, and nothing ever came back, because the drop
+    /// fires on an empty pad and an empty pad with no file on disk is an
+    /// ordinary session with nothing to do. The trigger consumed itself.
+    #[cfg(unix)]
+    #[test]
+    fn a_drop_that_could_not_erase_the_half_keeps_the_content_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            companion_sheet_new(handle);
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            assert!(persist::load_state_key(&*credentials, &path).is_some());
+            let sealed_before = std::fs::read(&path).unwrap();
+
+            // Read and search but no write: nothing in the directory can
+            // be unlinked, the half included.
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+            let dropped = companion_persist_erase(handle, c_path.as_ptr());
+            let still_there = path.exists();
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+            // Running as root, or on a filesystem that ignores the mode,
+            // the branch under test is unreachable and the erase simply
+            // succeeded.
+            if still_there {
+                assert!(
+                    !dropped,
+                    "the drop reported success while leaving the ciphertext on disk"
+                );
+                assert_eq!(
+                    std::fs::read(&path).unwrap(),
+                    sealed_before,
+                    "the drop that refused still went and truncated the file it kept"
+                );
+                // The zeros went into the half even though the unlink
+                // could not, which is why this is a refusal and not a
+                // success: on a copy-on-write filesystem the overwrite
+                // is best effort and the unlink is the only observable
+                // fact, so an erase that cannot finish is unknown, and
+                // unknown is not gone.
+                //
+                // The retry the false arms finds the file where it was,
+                // and this time the drop lands.
+                assert!(companion_persist_erase(handle, c_path.as_ptr()));
+                assert!(!path.exists());
+                assert!(persist::load_state_key(&*credentials, &path).is_none());
+            }
             companion_free(handle);
         }
         std::fs::remove_dir_all(&dir).unwrap();
