@@ -43,8 +43,18 @@ there. You lose the pages, not the install.
 
 The second key half also moves, from the per-user temp directory into
 the state directory beside `state.sealed`, at mode 0600. That is what
-makes content survive a restart at all. Any half left in the temp
-directory is dead weight; the system clears that directory at boot.
+makes content survive a restart at all.
+
+One honest note about the half left behind in the temp directory. This
+build never reads it again, and macOS clears that directory at boot, so
+it is expected to be gone. Expected is the strongest word available:
+nothing here verifies it, and the Keychain half that was its partner is
+unchanged by this update and is still in your Keychain. So if someone
+took a copy of your old `state.sealed` *and* a copy of that temp half
+before you updated, the pair still opens it. Dropping the old file does
+not change that either way. If that matters to you, the fix is to
+restart the Mac, which clears the directory, before or soon after
+installing.
 
 ## One-time reset when you updated to the ADR-0012 build
 
@@ -80,12 +90,26 @@ What changes:
   The content key is still two halves, one in the Keychain and one in a
   file, but the file half now lives in the state directory at mode 0600
   rather than in the per-user temp directory macOS clears at boot.
-  Nothing outlives its TTL, whose ceiling is seven days; what forgets
-  content is the TTL running out, the pad emptying, or a Clear, and
-  each of those rotates both halves so that every ciphertext generation
-  on disk becomes undecryptable at that moment. Restarting the Mac is
-  no longer a clean slate, which is the whole point: accepting a system
+  Nothing outlives its TTL, whose ceiling is seven days: a page that
+  runs out leaves memory, is not written into the next sealed
+  generation, and its death goes in the ledger. Restarting the Mac is no
+  longer a clean slate, which is the whole point: accepting a system
   update stops costing you your staged work.
+
+  Be precise about what the key rotation does and does not cover,
+  because "rotates" is the word that makes generations already on disk
+  unreadable, and it fires in one place only. **Emptying the pad**
+  rotates: the last page leaving is what drops the sealed file, and that
+  drop erases the file half and deletes the Keychain item, so every
+  ciphertext generation this install ever wrote, including the ones a
+  rename unlinked and nothing sweeps, stops being decryptable at that
+  moment. A page expiring **beside pages that remain** does not rotate,
+  and cannot: the file is re-sealed under the same live halves because
+  the surviving pages are in it. An explicit content-side Clear does not
+  exist yet at all; the ledger has one and content does not. And a
+  rotation the filesystem refuses is not silent and not skipped: the app
+  keeps the sealed file rather than dropping it, tells you the write
+  failed, and tries again.
 - **Signed builds carry a new entitlement.** `keychain-access-groups`
   is what the data protection keychain requires, and only a real
   signing identity can carry it. Ad-hoc builds skip it and log a single
@@ -172,8 +196,9 @@ Two categories answer two different questions. `persistence` is the
 shell's: a restore failed, a save was refused, the licence was
 withheld. `core` is why: the step that refused, named. A key half that
 would not load, a file that would not authenticate under the key this
-session holds, a snapshot the core would not take back, or a key
-rotation the keychain refused. Metadata only, and deliberately not
+session holds, a snapshot the core would not take back, a key half that
+could not be erased so the sealed file was kept rather than dropped, or
+a Keychain item that outlived the rotation meant to remove it. Metadata only, and deliberately not
 redacted: no page content and no key material passes here, so there is
 nothing in these lines to hide from the person reading them.
 

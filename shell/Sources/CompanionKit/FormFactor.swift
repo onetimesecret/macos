@@ -106,9 +106,13 @@ public struct FormFactor: Sendable {
     /// write renames a fresh sealed file over the old one, and a rename
     /// unlinks rather than erases, so a backup or a local snapshot that
     /// captured the directory would hold ciphertext generations the app
-    /// believes it has replaced. Crypto-erasure at the next boot session
-    /// still covers those generations, but there is no reason to hand
-    /// them out in the first place.
+    /// believes it has replaced. Nothing covers those generations on a
+    /// schedule any more: ADR-0016 retracted crypto-erasure at the next
+    /// boot session, and what replaces it fires when the pad empties,
+    /// which may be never. A generation captured before that moment,
+    /// together with a captured pair of key halves, stays readable
+    /// (ADR-0016 section 8), which is exactly why the copies are worth
+    /// keeping out of the backup in the first place.
     ///
     /// The ledger rests in this same directory, so it inherits both
     /// without a second preparation path.
