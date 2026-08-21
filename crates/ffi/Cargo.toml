@@ -1,6 +1,6 @@
 [package]
 name = "companion-ffi"
-version = "0.9.0"
+version = "0.10.0"
 description = "The C-ABI seam for the Onetime Secret macOS companion: the only crate a non-Rust shell may call. Hands out opaque handles and non-secret JSON — never plaintext."
 publish = false
 edition.workspace = true
