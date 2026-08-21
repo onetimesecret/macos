@@ -10,9 +10,9 @@
 //!   emptied pad, or an explicit Clear (ADR-0016).
 //! - **The ledger file** holds metadata plus the capped, page-owned
 //!   title, never content. It rests under `ledger-key`, a single
-//!   long-lived keychain half that is deliberately not boot-bound: an
-//!   audit record that vanished on every restart would not be an audit
-//!   record.
+//!   long-lived keychain half that no rotation touches: an audit
+//!   record that vanished with the content it describes would not be an
+//!   audit record.
 //!
 //! The core hands over each plaintext snapshot
 //! ([`companion_core::persist`]) only ever inside a [`Zeroizing`]
@@ -177,11 +177,11 @@ const STATE_KEY_ACCOUNT: &str = "state-key";
 /// The credential-store account holding the ledger key.
 ///
 /// This is a SINGLE keychain half and is deliberately not run through
-/// the two-half boot-session HKDF the content key gets: its whole
-/// purpose is to outlive the boot session. A boot-session mismatch
-/// discards staged content and rotates the content halves; the ledger
-/// key must survive that untouched, so [`rotate_key_halves`] must never
-/// touch `ledger-key`.
+/// the two-half HKDF the content key gets: its whole purpose is to
+/// outlive the content it describes. Emptying the pad discards staged
+/// content and rotates the content halves; the ledger key must survive
+/// that untouched, so [`rotate_key_halves`] must never touch
+/// `ledger-key`.
 const LEDGER_KEY_ACCOUNT: &str = "ledger-key";
 
 /// ChaCha20-Poly1305 key length, and the length of each key half.
@@ -270,7 +270,7 @@ fn load_key_for(credentials: &dyn CredentialStore, account: &str) -> Option<Zero
     }
 }
 
-/// The content key for saving: `HKDF(keychain_half, boot_half)`, minting
+/// The content key for saving: `HKDF(keychain_half, file_half)`, minting
 /// either half if it is missing. `None` when a half cannot be obtained,
 /// which is a refusal to save rather than a save under a guessed key.
 ///
@@ -379,12 +379,12 @@ pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore, state_path: &
     }
 }
 
-/// `HKDF-SHA256`: salt from the boot half, extract the keychain half,
+/// `HKDF-SHA256`: salt from the file half, extract the keychain half,
 /// expand under a versioned info string into a 32-byte AEAD key. Both
 /// inputs are required and neither is recoverable from the output.
-fn derive_content_key(keychain_half: &[u8], boot_half: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+fn derive_content_key(keychain_half: &[u8], file_half: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
     // The pseudorandom key is bound to a name because `Okm` borrows it.
-    let prk = Salt::new(HKDF_SHA256, boot_half).extract(keychain_half);
+    let prk = Salt::new(HKDF_SHA256, file_half).extract(keychain_half);
     let okm = prk.expand(&[CONTENT_KEY_INFO], Bytes(KEY_LEN)).ok()?;
     let mut key = Zeroizing::new(vec![0u8; KEY_LEN]);
     okm.fill(&mut key).ok()?;
@@ -667,9 +667,9 @@ fn superseded_magic(file: &[u8]) -> Option<&'static str> {
 
 /// Seal a ledger snapshot under the ledger envelope.
 ///
-/// Deliberately *not* boot-bound: no session id, no stamps, nothing
-/// that a reboot invalidates. The audit record is long-lived by design,
-/// and the boot binding belongs to the content envelope alone.
+/// Deliberately stamped with nothing at all: the audit record does not
+/// age, is not drained, and has no gap to measure, so the one field the
+/// content envelope carries would mean nothing here.
 pub(crate) fn seal_ledger(key: &[u8], plaintext: &[u8]) -> Option<Vec<u8>> {
     let body = seal_body(key, LEDGER_MAGIC, plaintext)?;
     let mut file = Vec::with_capacity(LEDGER_MAGIC.len() + body.len());
@@ -1072,7 +1072,7 @@ mod tests {
     /// An envelope key for the tests that only care that sealing and
     /// opening are sound. Where the key came from is the derivation
     /// tests' business, and going through the credential store here
-    /// would litter the real temp directory with boot halves.
+    /// would litter a scratch directory with key halves.
     fn key() -> Zeroizing<Vec<u8>> {
         let mut key = Zeroizing::new(vec![0u8; KEY_LEN]);
         SystemRandom::new().fill(&mut key).unwrap();

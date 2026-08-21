@@ -961,8 +961,8 @@ pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> 
 }
 
 /// Throw the whole ledger away: the user-facing "clear the ledger"
-/// affordance. The records outlive the boot session by design, so a way
-/// to end them on demand is part of that bargain. In-memory only: the
+/// affordance. The records outlive the pages they describe by design,
+/// so a way to end them on demand is part of that bargain. In-memory only: the
 /// shell must save afterwards for the empty ledger to reach the file.
 ///
 /// # Safety
@@ -1447,9 +1447,9 @@ pub unsafe extern "C" fn companion_persist_erase(
 /// Save the ledger to `path`, sealed with ChaCha20-Poly1305 under its
 /// **own** 32-byte key (`ledger-key` account, minted on first save) and
 /// its own envelope magic. That key is deliberately long-lived: it is
-/// not derived from the boot session, so the audit record survives the
-/// reboot that discards staged content, and a state-key rotation must
-/// never touch it. The write is atomic (temp file + rename) and
+/// not the two-half content key, so the audit record survives the
+/// emptying that forgets the content it describes, and a state-key
+/// rotation must never touch it. The write is atomic (temp file + rename) and
 /// owner-only. Call it beside [`companion_persist_save`], behind the
 /// same debounce.
 ///
@@ -3947,9 +3947,9 @@ mod tests {
         dir
     }
 
-    /// The ledger is its own file under its own long-lived key, so it
-    /// comes back across a relaunch even though the content file is
-    /// boot-session-bound. The two files are not interchangeable.
+    /// The ledger is its own file under its own long-lived key, and it
+    /// comes back across a relaunch on its own terms: neither file's
+    /// restore can stand in for the other's, in either direction.
     #[test]
     fn ledger_save_and_restore_round_trip_through_a_scratch_file() {
         let credentials: Arc<dyn CredentialStore> =
