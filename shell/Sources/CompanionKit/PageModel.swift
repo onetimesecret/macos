@@ -646,6 +646,15 @@ public final class PageModel: ObservableObject {
     private static let extidKey = "connection.extid"
     private static let shareDomainKey = "connection.shareDomain"
 
+    #if DEBUG
+    /// How many times a mutation has asked for a write, counted before
+    /// the licence guard. The invariant test for issue #52 reads this,
+    /// because a test session never loads a state file and the guard
+    /// in `markDirty` rightly stands down there; the call itself is the
+    /// fact the invariant is about.
+    private(set) var dirtyMarks = 0
+    #endif
+
     /// A mutation landed: the store now differs from the sealed file.
     /// Take the sudden-termination hold and make sure a write is armed.
     /// This, not the quit-time flush, is the mechanism (ADR-0012): a
@@ -659,6 +668,9 @@ public final class PageModel: ObservableObject {
     /// buffer that may never reach disk buys nothing. One licence is
     /// enough, though: the ledger's write is not the content file's.
     private func markDirty() {
+        #if DEBUG
+        dirtyMarks += 1
+        #endif
         guard Self.writesEitherFile(
             loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence
         ) else { return }
@@ -1346,9 +1358,12 @@ public final class PageModel: ObservableObject {
     }
 
     /// Copy a chip back out — the core writes the pasteboard itself,
-    /// marked transient + concealed; non-consuming.
+    /// marked transient + concealed; non-consuming. Non-consuming is
+    /// not read-only: a successful copy appends a sent record to the
+    /// ledger, and that record is lost unless a write is armed for it
+    /// (issue #52).
     public func copyOutChip(_ id: UInt64) {
-        _ = client.copyOutChip(id: id)
+        if client.copyOutChip(id: id) { markDirty() }
     }
 
     /// True while the shell is writing the projection itself: a
