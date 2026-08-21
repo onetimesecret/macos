@@ -601,10 +601,14 @@ public final class CompanionClient: @unchecked Sendable {
         path.withCString { companion_persist_restore(handle, $0) }
     }
 
-    /// Drop the file at `path`: overwrite, truncate, sync, unlink. The
-    /// call is path-scoped rather than state-specific: it touches no key
-    /// and no store, so it serves the state file and equally the ledger
-    /// file on a user clear.
+    /// Drop the file at `path`: rotate the content key halves if a
+    /// content envelope is what sits there, then overwrite, truncate,
+    /// sync, unlink. The call stays path-scoped and touches no store, so
+    /// it serves the state file and equally the ledger file on a user
+    /// clear; what it no longer does is leave the content key alive
+    /// behind a dropped content file. The rotation is decided by the
+    /// magic at the path, never by which caller made the call, so
+    /// clearing the ledger cannot take the staged pages with it.
     /// The open refuses a final symlink and refuses to block, and the
     /// writes refuse anything that is not a regular file. Those checks
     /// are narrower than they sound: a hard link at the path is a
@@ -622,10 +626,11 @@ public final class CompanionClient: @unchecked Sendable {
     /// Not erasure, and not to be described as erasure: the filesystem is
     /// copy on write and every generation an atomic rename already
     /// unlinked is out of reach. What forgets staged content is
-    /// crypto-erasure: the boot half dying with the boot session and the
-    /// halves rotating on a session mismatch. This is for the moment the
-    /// store empties, so the last ciphertext generation does not sit
-    /// there for the rest of the session describing nothing.
+    /// crypto-erasure, which is the rotation above: those unlinked
+    /// generations stop being decryptable at the moment the keychain half
+    /// goes. This is for the moment the store empties, so the last
+    /// ciphertext generation does not sit there for the rest of the
+    /// session describing nothing.
     ///
     /// The in-memory store is untouched: this deletes a file, not a page.
     @discardableResult

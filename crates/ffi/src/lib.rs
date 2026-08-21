@@ -1343,17 +1343,36 @@ pub unsafe extern "C" fn companion_persist_restore(
     }
 }
 
-/// Drop the state file at `path`: overwrite, truncate, sync, unlink.
-/// Returns whether nothing is left there, including when there was
-/// nothing to begin with.
+/// Drop the state file at `path`: rotate the content key halves, then
+/// overwrite, truncate, sync, unlink. Returns whether nothing is left at
+/// the path, including when there was nothing to begin with.
+///
+/// **The rotation is what forgets; the unlink is the tidy on top of
+/// it.** Deleting the keychain half makes every ciphertext generation
+/// this key ever sealed undecryptable, including the ones an atomic
+/// rename unlinked and nothing sweeps, and it is the finishing step of a
+/// deletion the user already asked for: emptying the pad, or clearing it
+/// (ADR-0016 section 6's two triggers, which both arrive here). It runs
+/// first, so the generation left behind is already undecryptable by the
+/// time its name goes away. A keychain that refuses the delete is
+/// announced and does not cancel the drop: the user asked for the file
+/// to go.
+///
+/// **Only a content file takes the halves with it.** The same entry
+/// point drops the ledger file when the user clears the ledger, and that
+/// gesture asked nothing about pages, so the rotation is gated on the
+/// magic actually at the path (`persist::holds_content_envelope`) rather
+/// than on the caller's intent or on the file's name. When ADR-0017
+/// splits the emptiness predicate in two, this call keeps the "no tabs
+/// remain" half and the "no tab holds a page" half needs a rotation of
+/// its own; wiring them the other way round destroys tabs an expiry was
+/// meant to leave standing.
 ///
 /// **Not erasure, and it must not be described as erasure anywhere.**
-/// The filesystem is copy on write and every previous generation the
-/// atomic rename unlinked is out of reach; what actually forgets staged
-/// content is crypto-erasure, the boot half dying with the boot session
-/// and the halves rotating on a session mismatch. Call this when the
-/// store empties, so the last ciphertext generation does not sit on disk
-/// for the rest of the session describing nothing.
+/// The filesystem is copy on write, so the zeros are as likely to land
+/// in fresh blocks as over the old ones. Call this when the store
+/// empties, so the last ciphertext generation does not sit on disk for
+/// the rest of the session describing nothing.
 ///
 /// The in-memory store is untouched: this deletes a file, not a page.
 ///
@@ -1383,12 +1402,22 @@ pub unsafe extern "C" fn companion_persist_erase(
     let Some(path) = (unsafe { cstr(path) }) else {
         return false;
     };
-    // Taken for its exclusion, not its contents: a save in flight owns
-    // the same path.
-    let Ok(_guard) = handle.inner.lock() else {
+    // Taken for its exclusion as much as for the credentials: a save in
+    // flight owns the same path and the same halves.
+    let Ok(guard) = handle.inner.lock() else {
         return false;
     };
-    persist::erase_state(Path::new(path))
+    let path = Path::new(path);
+    if persist::holds_content_envelope(path)
+        && !persist::rotate_key_halves(guard.credentials.as_ref(), path)
+    {
+        diag_fault!(
+            "companion-ffi: the content file is being dropped but its key halves would not \
+             rotate, so what is unlinked here stays decryptable to anyone holding them. The \
+             next drop tries again."
+        );
+    }
+    persist::erase_state(path)
 }
 
 /// Save the ledger to `path`, sealed with ChaCha20-Poly1305 under its
@@ -3675,6 +3704,96 @@ mod tests {
             assert!(!companion_persist_erase(ptr::null_mut(), c_path.as_ptr()));
             assert!(!companion_persist_erase(handle, ptr::null()));
             companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Dropping the content file is the moment its key dies with it
+    /// (ADR-0016 section 6). Without the rotation both halves outlive
+    /// every ciphertext generation the atomic rename unlinked, and
+    /// nothing sweeps those, so an emptied pad would leave a decryptable
+    /// trail behind it.
+    #[test]
+    fn dropping_the_content_file_rotates_the_halves_with_it() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            companion_sheet_new(handle);
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            let dropped_key = persist::load_state_key(&*credentials, &path)
+                .expect("a saved file has a key")
+                .to_vec();
+
+            assert!(companion_persist_erase(handle, c_path.as_ptr()));
+            assert!(
+                persist::load_state_key(&*credentials, &path).is_none(),
+                "the halves outlived the content file they sealed"
+            );
+
+            // And what the pad writes next shares nothing with what it
+            // just dropped.
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            assert_ne!(
+                *persist::load_state_key(&*credentials, &path).unwrap(),
+                dropped_key,
+                "the pad came back on the very key it had just discarded"
+            );
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Clearing the ledger drops a file through this same call, and that
+    /// gesture asked nothing about pages. If the drop rotated on the
+    /// caller's intent rather than on the envelope actually at the path,
+    /// a user clearing their audit log would silently lose every staged
+    /// page along with it.
+    #[test]
+    fn clearing_the_ledger_file_leaves_the_content_halves_alone() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let state_path = dir.join("state.sealed");
+        let ledger_path = dir.join("ledger.sealed");
+        let c_state = cstring(state_path.to_str().unwrap());
+        let c_ledger = cstring(ledger_path.to_str().unwrap());
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            let sheet = companion_sheet_new(first);
+            let _ = take_json(companion_sheet_seal_text(
+                first,
+                sheet,
+                cstring("hunter2-the-sealed-bytes").as_ptr(),
+                0,
+                0,
+            ));
+            assert!(companion_persist_save(first, c_state.as_ptr()));
+            assert!(companion_ledger_save(first, c_ledger.as_ptr()));
+            let key_before = persist::load_state_key(&*credentials, &state_path)
+                .expect("a saved file has a key")
+                .to_vec();
+            companion_free(first);
+
+            let clearing = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_erase(clearing, c_ledger.as_ptr()));
+            companion_free(clearing);
+            assert_eq!(
+                *persist::load_state_key(&*credentials, &state_path).expect(
+                    "clearing the ledger destroyed the content key: every staged page is gone"
+                ),
+                key_before
+            );
+
+            // The staged content itself still comes back, which is the
+            // property the key comparison above is a proxy for.
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(second, c_state.as_ptr()));
+            assert!(first_remaining_ms(second).unwrap() > 0);
+            companion_free(second);
         }
         std::fs::remove_dir_all(&dir).unwrap();
     }

@@ -142,7 +142,7 @@ compile_error!(
 );
 
 use std::fmt::Write as _;
-use std::io::Write;
+use std::io::{Read as _, Write};
 use std::path::{Path, PathBuf};
 
 use companion_credentials::{CredentialError, CredentialStore};
@@ -721,7 +721,7 @@ pub(crate) fn open_ledger(key: &[u8], file: &[u8]) -> Option<Zeroizing<Vec<u8>>>
 /// **This path is never handed a name it authenticated.** The shell
 /// fires it on demand (`companion_persist_erase`, the erase-on-empty
 /// path) with a path this module has no way to check, so another process
-/// running as the same user, the exact adversary the 0600 boot half and
+/// running as the same user, the exact adversary the 0600 file half and
 /// the keychain ACL exist to stop, could otherwise plant something at
 /// that name and turn this into an arbitrary-file zero-and-truncate
 /// primitive. Three narrow checks stand in the way, all of them before a
@@ -772,6 +772,38 @@ pub(crate) fn erase_state(path: &Path) -> bool {
     // permissions failure would report success over ciphertext still on
     // disk. Same standard as `rotate_key_halves`: an unknown is a no.
     matches!(std::fs::symlink_metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+}
+
+/// Whether the file at `path` is this app's **content** envelope.
+///
+/// The question is answered by reading the magic rather than by looking
+/// at the name, because a name is the shell's to choose and this module
+/// has no list of them. It exists because one entry point drops files
+/// for two different reasons: the state file when the pad empties, and
+/// the ledger file when the user clears the ledger
+/// (`PageModel.clearLedger`). Only the first of those may take the
+/// content key with it, and a ledger clear that rotated the content
+/// halves would destroy every staged page the user still had.
+///
+/// A file that is absent, unreadable, shorter than a magic, or sealed
+/// under any other envelope answers `false`, which costs a rotation that
+/// would have been sound rather than performing one that would not be.
+/// The open carries the same refusals [`open_for_erase`] does, for the
+/// same reason: this runs against a path anyone running as the user
+/// could have replaced.
+pub(crate) fn holds_content_envelope(path: &Path) -> bool {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(O_NOFOLLOW | O_NONBLOCK);
+    }
+    let Ok(mut file) = options.open(path) else {
+        return false;
+    };
+    let mut magic = [0u8; 8];
+    file.read_exact(&mut magic).is_ok() && magic == *FILE_MAGIC
 }
 
 /// Open `path` for writing without following a final symlink and

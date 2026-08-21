@@ -533,7 +533,22 @@ bool companion_persist_save(CompanionHandle *handle, const char *path);
 bool companion_persist_restore(CompanionHandle *handle, const char *path);
 
 /*
- * Drop the state file at `path`: overwrite, truncate, sync, unlink.
+ * Drop the state file at `path`: rotate the content key halves, then
+ * overwrite, truncate, sync, unlink.
+ *
+ * The rotation is what forgets. Deleting the keychain half makes every
+ * ciphertext generation that key ever sealed undecryptable, including
+ * the ones an atomic rename unlinked and nothing sweeps, and it is the
+ * finishing step of a deletion the user already asked for: emptying the
+ * pad, or clearing it (ADR-0016 section 6). It runs first, so what is
+ * unlinked is already undecryptable, and a keychain that refuses the
+ * delete is announced without cancelling the drop.
+ *
+ * ONLY a content file takes the halves with it. This same call drops
+ * the ledger file on a user's Clear, and that gesture asked nothing
+ * about pages, so the rotation is gated on the envelope magic actually
+ * at the path rather than on the caller's intent.
+ *
  * The open refuses to follow a FINAL symlink and refuses to block, so a
  * FIFO planted at the name cannot park the call; the writes then refuse
  * anything that is not a regular file. That is the whole of the check,
@@ -550,12 +565,10 @@ bool companion_persist_restore(CompanionHandle *handle, const char *path);
  * though the name resolves to nothing.
  *
  * NOT erasure, and it must not be described as erasure. The filesystem
- * is copy on write and every earlier generation the atomic rename
- * unlinked is out of reach; what actually forgets staged content is
- * crypto-erasure: the boot half dying with the boot session, and the
- * halves rotating on a session mismatch. Call this when the store
- * empties, so the last ciphertext generation does not sit on disk for
- * the rest of the session describing nothing.
+ * is copy on write, so the zeros are as likely to land in fresh blocks
+ * as over the old ones; the rotation above is what actually forgets.
+ * Call this when the store empties, so the last ciphertext generation
+ * does not sit on disk for the rest of the session describing nothing.
  *
  * The in-memory store is untouched: this deletes a file, not a page.
  */
