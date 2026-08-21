@@ -66,12 +66,11 @@ mod promotion;
 
 use diagnostics::diag_fault;
 
-use std::collections::HashMap;
 use std::ffi::CStr;
 use std::ffi::{CString, c_char, c_int};
 use std::path::Path;
 use std::ptr;
-use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use companion_credentials::{CredentialStore, credential_store_for, default_credential_store};
@@ -296,10 +295,17 @@ pub unsafe extern "C" fn companion_new_scoped(service: *const c_char) -> *mut Co
 /// scope rather than inventing a fresh scope per call, matching
 /// [`companion_new_scoped`]'s fallback shape.
 ///
+/// Compiled only under the `test-util` feature (ADR-0018): the release
+/// artifact never exports this symbol, and the packaging path checks.
+///
 /// # Safety
 /// `tag` must be null or a valid NUL-terminated C string.
+#[cfg(feature = "test-util")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_new_ephemeral(tag: *const c_char) -> *mut CompanionHandle {
+    use std::collections::HashMap;
+    use std::sync::{OnceLock, PoisonError};
+
     static STORES: OnceLock<Mutex<HashMap<String, Arc<dyn CredentialStore>>>> = OnceLock::new();
     let tag = unsafe { cstr(tag) }.unwrap_or("").to_string();
     let credentials =
@@ -2312,7 +2318,9 @@ mod tests {
     /// tag see each other's keys and a handle under another tag sees
     /// none of them. The shell's persistence suite leans on exactly
     /// this to restore, through a second handle, what a first handle
-    /// sealed.
+    /// sealed. Gated with the seam it exercises (ADR-0018): run it
+    /// with `cargo test -p companion-ffi --features test-util`.
+    #[cfg(feature = "test-util")]
     #[test]
     fn ephemeral_handles_share_credentials_by_tag() {
         let tag = cstring("ephemeral-share-by-tag");

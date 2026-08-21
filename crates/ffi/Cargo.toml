@@ -16,6 +16,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [lints]
 workspace = true
 
+[features]
+# Test-only surface, off by default and part of no umbrella feature
+# (ADR-0018): `companion_new_ephemeral` and any future seam of its
+# kind. The dev xcframework enables it (scripts/build-core.sh
+# --test-util) so the Swift suite can link the seams; the release
+# build omits it, and packaging fails if the symbol reaches the
+# artifact it ships.
+test-util = []
+
 [dependencies]
 companion-core = { path = "../core" }
 companion-credentials = { path = "../credentials" }

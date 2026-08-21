@@ -420,7 +420,8 @@ public final class PageModel: ObservableObject {
     /// `stateDirectory` moves the sealed files out of the form
     /// factor's own locations and into a directory the test owns, a
     /// `client` substitutes a core handle whose credentials never
-    /// reach the Keychain (`CompanionClient.ephemeral(tag:)`), and a
+    /// reach the Keychain (the test target's
+    /// `CompanionClient.ephemeral(tag:)` extension, ADR-0018), and a
     /// `saveDebounce` shortens the window so the real timer can fire
     /// inside a test's patience. The default instance leaves all three
     /// alone, which is exactly the construction every shipping call

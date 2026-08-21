@@ -22,7 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and die with it, shared by tag so a second handle can open what a
   first one sealed. The first integration test drives load, mutation,
   the real timer, and a relaunch inside a temporary directory it owns,
-  and never touches the login Keychain.
+  and never touches the login Keychain. The seam sits behind the
+  off-by-default `test-util` cargo feature (ADR-0018): the dev
+  xcframework (`scripts/build-core.sh --test-util`) exports it for the
+  Swift suite, release artifacts omit it, and the release packaging
+  path checks the shipped binary's symbol table to prove it.
 
 - **Find in the page (⌘F), and line wrapping you can turn off (⌥Z)**:
   the editor is an `NSTextView`, so the machine's own find machinery was

@@ -34,9 +34,15 @@ let package = Package(
         // decision the app makes. The executable target keeps only
         // AppKit plumbing, which the project tests by hand on hardware
         // (docs/hardware-verification.md) rather than by mocking.
+        // CompanionCore is a direct dependency because the suite calls
+        // `companion_new_ephemeral` itself (EphemeralClient.swift): the
+        // seam exists only in test-util builds of the core (ADR-0018),
+        // so the reference must live here rather than in any shipping
+        // target. Running these tests therefore takes the dev
+        // xcframework: scripts/build-core.sh --test-util.
         .testTarget(
             name: "CompanionKitTests",
-            dependencies: ["CompanionKit"],
+            dependencies: ["CompanionKit", "CompanionCore"],
             path: "Tests/CompanionKitTests"
         ),
         // OnetimePad, the background-surface form factor (ADR-0010,

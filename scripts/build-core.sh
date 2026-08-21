@@ -12,19 +12,38 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 XCF=bindings/CompanionCore.xcframework
-if [[ "${1:-}" == "--if-stale" ]]; then
-  # Rebuild only when the xcframework is missing outright or older than
-  # any Rust source, manifest, or C header it is built from. The
-  # workspace manifest and lockfile live at the repo root, so a cargo
-  # update that touches only root files still triggers a rebuild, and
-  # the packaged FFI header is a direct input too.
-  if [[ -d "$XCF" && -z "$(find crates Cargo.toml Cargo.lock -type f \( -name '*.rs' -o -name 'Cargo.*' -o -name '*.h' \) -newer "$XCF" -print -quit)" ]]; then
+# The feature set the last build baked in, recorded beside the
+# xcframework so --if-stale can tell a dev build from a release build:
+# the two differ only in cargo features, which no timestamp reflects.
+STAMP=bindings/CompanionCore.features
+
+IF_STALE=0
+# Empty means the release shape: the C interface and nothing else.
+# --test-util adds the gated test seams (ADR-0018) for the dev build
+# the Swift suite links against.
+FEATURES=""
+for arg in "$@"; do
+  case "$arg" in
+    --if-stale) IF_STALE=1 ;;
+    --test-util) FEATURES="test-util" ;;
+    *)
+      echo "unknown argument: $arg (the flags are --if-stale and --test-util)" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$IF_STALE" == 1 ]]; then
+  # Rebuild only when the xcframework is missing outright, was built
+  # with a different feature set, or is older than any Rust source,
+  # manifest, or C header it is built from. The workspace manifest and
+  # lockfile live at the repo root, so a cargo update that touches only
+  # root files still triggers a rebuild, and the packaged FFI header is
+  # a direct input too.
+  if [[ -d "$XCF" && "$(cat "$STAMP" 2>/dev/null)" == "$FEATURES" && -z "$(find crates Cargo.toml Cargo.lock -type f \( -name '*.rs' -o -name 'Cargo.*' -o -name '*.h' \) -newer "$XCF" -print -quit)" ]]; then
     echo "==> $XCF is current; skipping core build"
     exit 0
   fi
-elif [[ -n "${1:-}" ]]; then
-  echo "unknown argument: $1 (the only flag is --if-stale)" >&2
-  exit 1
 fi
 
 # Must match the shell's platform floor (Package.swift: .macOS(.v13)),
@@ -43,8 +62,8 @@ echo "==> Ensuring Apple targets are installed"
 rustup target add "${TARGETS[@]}"
 
 for t in "${TARGETS[@]}"; do
-  echo "==> cargo build --release -p companion-ffi --target $t"
-  cargo build --release -p companion-ffi --target "$t"
+  echo "==> cargo build --release -p companion-ffi --target $t${FEATURES:+ --features $FEATURES}"
+  cargo build --release -p companion-ffi --target "$t" ${FEATURES:+--features "$FEATURES"}
 done
 
 echo "==> lipo -> universal static lib"
@@ -70,4 +89,5 @@ xcodebuild -create-xcframework \
   -library "$UNIVERSAL/$LIB" -headers "$HEADERS" \
   -output "$XCF"
 
-echo "Built $XCF"
+printf '%s\n' "$FEATURES" > "$STAMP"
+echo "Built $XCF${FEATURES:+ (features: $FEATURES)}"
