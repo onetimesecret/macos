@@ -243,6 +243,27 @@ public final class CompanionClient: @unchecked Sendable {
         handle = created
     }
 
+    /// Adopt a handle another constructor already created.
+    private init(adopting handle: OpaquePointer) {
+        self.handle = handle
+    }
+
+    /// A client whose credentials rest in ordinary process memory
+    /// core-side (`companion_new_ephemeral`): keys minted through it
+    /// never reach the login Keychain and die with the process. Clients
+    /// built over the same `tag` share one store, which is what lets a
+    /// file sealed through one be restored through another in the same
+    /// test run, the way a relaunch would. A test seam, never a
+    /// shipping path: the form factors construct through
+    /// `init(credentialService:)`.
+    public static func ephemeral(tag: String) -> CompanionClient {
+        companion_init()
+        guard let created = tag.withCString({ companion_new_ephemeral($0) }) else {
+            fatalError("the core refused to create an ephemeral handle")
+        }
+        return CompanionClient(adopting: created)
+    }
+
     deinit {
         companion_free(handle)
     }

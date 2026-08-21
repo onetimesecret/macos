@@ -388,8 +388,24 @@ public final class PageModel: ObservableObject {
     /// ciphertext generations behind on disk (each atomic replace
     /// unlinks the prior one, it does not erase it). Measured from the
     /// first mutation of a burst, so it is the whole loss window and not
-    /// a per-keystroke restart.
-    private static let saveDebounce: TimeInterval = 2.0
+    /// a per-keystroke restart. Public because it is the init
+    /// parameter's default, which Swift requires to be as visible as
+    /// the init itself.
+    public static let saveDebounce: TimeInterval = 2.0
+
+    /// The window this instance actually runs: the shipping value above
+    /// unless the caller injected a shorter one at init, which only a
+    /// test does. The round-trip suite lets the real timer fire rather
+    /// than calling the write by hand, and it should not spend two
+    /// seconds per test doing it.
+    private let saveDebounce: TimeInterval
+
+    /// Where this model's two sealed files rest: the form factor's own
+    /// locations unless the caller pointed the model elsewhere at init,
+    /// which again only a test does. The whole persistence cycle has
+    /// to be drivable inside a temporary directory the test owns.
+    private let stateFileURL: URL
+    private let ledgerFileURL: URL
 
     /// The interval after a refused write. Longer than the debounce: a
     /// full volume or a denied Keychain prompt does not clear in two
@@ -399,14 +415,33 @@ public final class PageModel: ObservableObject {
 
     /// `defaults` is injectable so tests can point at a throwaway
     /// domain; both shipping form factors take their own standard one
-    /// (`FormFactor.settingsDefaults`).
-    public init(formFactor: FormFactor, defaults: UserDefaults = FormFactor.settingsDefaults) {
+    /// (`FormFactor.settingsDefaults`). The remaining parameters are
+    /// test seams with shipping defaults: `stateDirectory` moves the
+    /// sealed files out of the form factor's own locations and into a
+    /// directory the test owns, `client` substitutes a core handle
+    /// whose credentials never reach the Keychain
+    /// (`CompanionClient.ephemeral(tag:)`), and `saveDebounce` shortens
+    /// the window so the real timer can fire inside a test's patience.
+    /// Left alone, every one of them resolves to exactly the value the
+    /// shipping construction always had.
+    public init(
+        formFactor: FormFactor,
+        defaults: UserDefaults = FormFactor.settingsDefaults,
+        stateDirectory: URL? = nil,
+        client: CompanionClient? = nil,
+        saveDebounce: TimeInterval = PageModel.saveDebounce
+    ) {
         // Before the first call into the core, so nothing it refuses on
         // the way up is written to a stderr this process may not have.
         CoreDiagnostics.route(subsystem: formFactor.loggerSubsystem)
         self.formFactor = formFactor
         self.defaults = defaults
-        client = CompanionClient(credentialService: formFactor.credentialService)
+        self.client = client ?? CompanionClient(credentialService: formFactor.credentialService)
+        stateFileURL = stateDirectory.map(FormFactor.stateFileURL(in:))
+            ?? formFactor.stateFileURL
+        ledgerFileURL = stateDirectory.map(FormFactor.ledgerFileURL(in:))
+            ?? formFactor.ledgerFileURL
+        self.saveDebounce = saveDebounce
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         // Unset → float on top, matching the original behavior.
         floatsOnTop = defaults.object(forKey: Self.floatsKey) as? Bool ?? true
@@ -423,13 +458,13 @@ public final class PageModel: ObservableObject {
         // Configuring with a nil token keeps whatever the Keychain
         // holds, so guest promotion works with zero setup and a saved
         // token survives relaunch.
-        _ = client.configureConnection(
+        _ = self.client.configureConnection(
             serverUrl: defaults.string(forKey: Self.serverKey) ?? Self.defaultServer,
             shareDomain: defaults.string(forKey: Self.shareDomainKey) ?? "",
             extid: defaults.string(forKey: Self.extidKey) ?? "",
             token: nil
         )
-        connection = client.connectionInfo()
+        connection = self.client.connectionInfo()
     }
 
     /// Whether the first reveal has run — restore is attempted once.
@@ -483,7 +518,7 @@ public final class PageModel: ObservableObject {
     public func loadStateIfNeeded() {
         guard !stateLoaded else { return }
         stateLoaded = true
-        let path = formFactor.stateFileURL.path
+        let path = stateFileURL.path
         let restored = client.persistRestore(from: path)
         saveLicence = Self.grantsSaveLicence(
             fileExists: FileManager.default.fileExists(atPath: path), restored: restored
@@ -499,7 +534,7 @@ public final class PageModel: ObservableObject {
         // content refusal: the session runs, the trail simply does not
         // go back any further, and this session may not overwrite the
         // file it could not read.
-        let ledgerPath = formFactor.ledgerFileURL.path
+        let ledgerPath = ledgerFileURL.path
         let ledgerRestored = client.ledgerRestore(from: ledgerPath)
         // Probed after the restore for the same reason as above, though
         // the restore itself never has cause to discard this file: the
@@ -675,7 +710,7 @@ public final class PageModel: ObservableObject {
             loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence
         ) else { return }
         terminationLatch.acquire()
-        scheduleSave()
+        scheduleSave(after: saveDebounce)
     }
 
     /// Arm the deferred write, unless one is already armed. The timer
@@ -683,9 +718,7 @@ public final class PageModel: ObservableObject {
     /// its window; the failure retry runs in `.default` instead, so it
     /// cannot fire underneath the terminate path's modal alert and make
     /// that alert's text false while the user reads it.
-    private func scheduleSave(
-        after interval: TimeInterval = saveDebounce, mode: RunLoop.Mode = .common
-    ) {
+    private func scheduleSave(after interval: TimeInterval, mode: RunLoop.Mode = .common) {
         guard let generation = saveSchedule.arm() else { return }
         let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
             Task { @MainActor in
@@ -747,7 +780,7 @@ public final class PageModel: ObservableObject {
         // name keeps Spotlight out the same way). A refusal here is not
         // fatal on its own: the write below reports what actually
         // happened, and the retry it arms comes back to try again.
-        let url = (try? formFactor.prepareStateDirectory()) ?? formFactor.stateFileURL
+        let url = (try? FormFactor.prepareStateDirectory(holding: stateFileURL)) ?? stateFileURL
         // The content leg, under its own licence. Emptiness is asked of
         // the core rather than of the published summaries, which a write
         // can reach before the refresh does, and a store with no pages
@@ -776,7 +809,7 @@ public final class PageModel: ObservableObject {
         // One debounce covers both files: the ledger only ever changes
         // on a mutation that already marked the store dirty.
         let ledgerSaved = ledgerLicence
-            ? client.ledgerSave(to: formFactor.ledgerFileURL.path)
+            ? client.ledgerSave(to: ledgerFileURL.path)
             : true
         if !ledgerSaved {
             logger.error("save refused; the sealed ledger file was not rewritten")
@@ -996,7 +1029,7 @@ public final class PageModel: ObservableObject {
         // symlinks and anything that is not a regular file, so this
         // reaches the ledger file and nothing else. No key is touched and
         // no page is touched.
-        let ledgerPath = formFactor.ledgerFileURL.path
+        let ledgerPath = ledgerFileURL.path
         if !client.persistErase(at: ledgerPath) {
             logger.error(
                 "the ledger file could not be dropped on a user clear; an empty ledger follows"
