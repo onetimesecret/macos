@@ -326,8 +326,8 @@ fn rm_chip(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
 }
 
 fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
-    if store.is_empty() {
-        println!("(no pages — the system working, not the product failing)");
+    if store.has_no_tabs() {
+        println!("(no tabs — the system working, not the product failing)");
         return;
     }
     let now = store.now();

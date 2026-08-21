@@ -199,41 +199,64 @@ impl<C: Clock> SheetStore<C> {
         if self.tabs.len() >= self.cap {
             return Err(Refusal::AtCapacity { cap: self.cap });
         }
-        let now = self.clock.now();
-        let created_wall_ms = self.clock.wall_ms();
-        let offset = self.clock.local_offset_seconds();
-        let id = SheetId(self.next_sheet_id);
-        self.next_sheet_id += 1;
         let tab_id = TabId(self.next_tab_id);
         self.next_tab_id += 1;
-        let uuid = ItemId::random();
-        let document = SheetDocument::new();
-        let blocks = BlockIndex::for_document(&document);
-        let rung = self.default_rung;
         self.tabs.push(Tab {
             id: tab_id,
             uuid: ItemId::random(),
-            created_wall_ms,
+            created_wall_ms: self.clock.wall_ms(),
             name: None,
-            rung,
-            page: Some(Sheet {
-                id,
-                uuid,
-                derived_title: None,
-                created_wall_ms,
-                document,
-                segments: Vec::new(),
-                blocks,
-                chips: Vec::new(),
-                clock: SheetClock::Running {
-                    deadline: now + rung.duration(),
-                },
-                total_held: Duration::ZERO,
-            }),
+            rung: self.default_rung,
+            page: None,
+        });
+        Ok(self
+            .open_page(tab_id)
+            .expect("a slot opened a moment ago holds no page"))
+    }
+
+    /// Mint a page into a tab that holds none, at **that tab's** rung
+    /// rather than the store's default, with its countdown started and
+    /// one `Created` record behind it. Returns the new page's id, or
+    /// `None` for an unknown tab or one that already holds a page.
+    ///
+    /// The rung is the whole reason this is not [`new_sheet`]: the slot
+    /// carries the countdown length the user chose for it, so the
+    /// replacement page starts where its predecessor did and the user
+    /// does not re-set it after every expiry (ADR-0017).
+    ///
+    /// [`new_sheet`]: SheetStore::new_sheet
+    pub fn open_page(&mut self, tab: TabId) -> Option<SheetId> {
+        let now = self.clock.now();
+        let created_wall_ms = self.clock.wall_ms();
+        let offset = self.clock.local_offset_seconds();
+        let index = self.tabs.iter().position(|slot| slot.id == tab)?;
+        if self.tabs[index].page.is_some() {
+            return None; // one page to a slot; the caller closes or waits
+        }
+        let id = SheetId(self.next_sheet_id);
+        self.next_sheet_id += 1;
+        let uuid = ItemId::random();
+        let document = SheetDocument::new();
+        let blocks = BlockIndex::for_document(&document);
+        let slot = &mut self.tabs[index];
+        let rung = slot.rung;
+        slot.page = Some(Sheet {
+            id,
+            uuid,
+            derived_title: None,
+            created_wall_ms,
+            document,
+            segments: Vec::new(),
+            blocks,
+            chips: Vec::new(),
+            clock: SheetClock::Running {
+                deadline: now + rung.duration(),
+            },
+            total_held: Duration::ZERO,
         });
         // The slot names itself the moment it exists, so no record can
         // ever reach the ledger without a label already resolved.
-        let label = self.tabs.last().expect("just pushed").label(offset);
+        let label = self.tabs[index].label(offset);
         self.record(
             LedgerEvent::Created,
             uuid,
@@ -242,7 +265,7 @@ impl<C: Clock> SheetStore<C> {
             SizeClass::Tiny,
             DestinationClass::None,
         );
-        Ok(id)
+        Some(id)
     }
 
     /// Close the tab a page stands in: the page's sealed bytes zeroize
@@ -325,13 +348,36 @@ impl<C: Clock> SheetStore<C> {
     /// Number of live pages. Not the width of the strip: a tab holding
     /// no page is still a tab.
     #[must_use]
+    #[expect(
+        clippy::len_without_is_empty,
+        reason = "the emptiness question split in two (ADR-0017): holds_no_page and has_no_tabs. An is_empty beside them would have to mean one of the two silently, which is the ambiguity the split exists to end"
+    )]
     pub fn len(&self) -> usize {
         self.sheets().count()
     }
 
-    /// True when no pages exist — the system working, not failing.
+    /// True when no tab holds a page: the pad is empty of content
+    /// while the strip stands, which is the state an overnight expiry
+    /// leaves behind. The system working, not failing.
+    ///
+    /// This is ADR-0016 section 6's first key rotation trigger, which
+    /// is why it lives here rather than being recomputed above the
+    /// seam: a predicate the shell derives is a predicate that can
+    /// drift from the one the rotation fires on.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub fn holds_no_page(&self) -> bool {
+        self.tabs.iter().all(|tab| tab.page.is_none())
+    }
+
+    /// True when no tabs remain at all: nothing left even to reseal.
+    /// Distinct from [`holds_no_page`] on purpose, and wiring the two
+    /// backwards fails in both directions (ADR-0017): this one is the
+    /// condition for dropping the sealed file, and the other one would
+    /// destroy the tabs an expiry was supposed to leave standing.
+    ///
+    /// [`holds_no_page`]: SheetStore::holds_no_page
+    #[must_use]
+    pub fn has_no_tabs(&self) -> bool {
         self.tabs.is_empty()
     }
 
@@ -1097,6 +1143,12 @@ impl<C: Clock> SheetStore<C> {
     /// change). This is the **only** timer the shell ever arms. `None`
     /// means nothing to schedule: no timers ticking, no wakeups
     /// (doc 05 frugality budget).
+    ///
+    /// The walk is over live pages, so a tab holding none contributes
+    /// nothing. That skip is the mechanism that makes "nothing about a
+    /// tab expires" true rather than merely stated: a stored rung is a
+    /// number with no clock and no deadline, and there is nothing here
+    /// for the timer path to read.
     #[must_use]
     pub fn next_event(&self) -> Option<Instant> {
         let now = self.clock.now();
@@ -1119,34 +1171,41 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Settle the clock: lapsed holds become regular pages again, and
-    /// every page whose countdown has reached zero is moved to the
-    /// ledger, its sealed bytes zeroized. Returns the expired ids (the
-    /// shell drops them from view silently; the user set the clock).
-    /// Call when the armed timer fires, then re-arm from
-    /// [`SheetStore::next_event`].
+    /// every page whose countdown has reached zero is taken out of its
+    /// tab and moved to the ledger, its sealed bytes zeroized. Returns
+    /// the expired ids (the shell drops them from view silently; the
+    /// user set the clock). Call when the armed timer fires, then
+    /// re-arm from [`SheetStore::next_event`].
+    ///
+    /// **The tab stays.** It keeps its slot, its position, its name and
+    /// its rung, and it holds nothing (ADR-0017). The page drops whole,
+    /// so ADR-0009's no-tombstone contract and the zeroize-on-drop path
+    /// below are untouched: what changes is only who is left standing
+    /// afterwards. No replacement page is minted here, because a
+    /// countdown that ran out at 03:00 with the app closed must not
+    /// silently start a fresh one on nothing.
     pub fn expire_due(&mut self) -> Vec<SheetId> {
         let now = self.clock.now();
         let offset = self.clock.local_offset_seconds();
-        for sheet in self.tabs.iter_mut().filter_map(|tab| tab.page.as_mut()) {
-            normalize(sheet, now);
-        }
-        let due = |tab: &Tab| {
-            tab.page
-                .as_ref()
-                .is_some_and(|page| page.remaining(now).is_zero())
-        };
-        let (dead, live): (Vec<Tab>, Vec<Tab>) =
-            std::mem::take(&mut self.tabs).into_iter().partition(due);
-        self.tabs = live;
-        let ids: Vec<SheetId> = dead
-            .iter()
-            .filter_map(|tab| tab.page.as_ref().map(|page| page.id))
-            .collect();
-        for tab in dead {
-            let label = tab.label(offset);
-            if let Some(page) = tab.page {
-                self.entomb(page, label, LedgerEvent::Expired);
+        let mut dead: Vec<(Sheet, String)> = Vec::new();
+        for tab in &mut self.tabs {
+            let spent = tab.page.as_mut().is_some_and(|page| {
+                normalize(page, now);
+                page.remaining(now).is_zero()
+            });
+            if !spent {
+                continue;
             }
+            // The label is taken while the page is still standing, so
+            // the death record carries the name the strip was showing
+            // rather than the one it falls back to a line later.
+            let label = tab.label(offset);
+            let page = tab.page.take().expect("a spent page is a page");
+            dead.push((page, label));
+        }
+        let ids: Vec<SheetId> = dead.iter().map(|(page, _)| page.id).collect();
+        for (page, label) in dead {
+            self.entomb(page, label, LedgerEvent::Expired);
         }
         ids
     }
@@ -1625,8 +1684,120 @@ mod tests {
 
         clock.advance(Duration::from_secs(1));
         assert_eq!(store.expire_due(), vec![id]);
-        assert!(store.is_empty());
+        // The page is gone and the slot it stood in is not: an expiry
+        // is a death for the page and nothing at all for the tab.
+        assert!(store.holds_no_page());
+        assert_eq!(store.tabs().count(), 1);
         assert_eq!(store.next_event(), None, "nothing left to arm");
+    }
+
+    #[test]
+    fn an_expiring_page_leaves_its_tab_standing_in_place() {
+        let (mut store, clock) = store();
+        let first = store.new_sheet().unwrap();
+        let doomed = store.new_sheet().unwrap();
+        let third = store.new_sheet().unwrap();
+        assert!(store.set_title(doomed, "payroll"));
+        store.set_rung(doomed, Ttl::MIN).unwrap(); // 1h
+        assert!(store.sync_document(doomed, vec![Segment::Ink("rotate the key".into())]));
+
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due(), vec![doomed]);
+
+        // The strip keeps its width and its order; the slot in the
+        // middle simply holds nothing now. ⌘2 still means the same slot.
+        let tabs: Vec<&Tab> = store.tabs().collect();
+        assert_eq!(tabs.len(), 3);
+        assert_eq!(tabs[0].page().map(Sheet::id), Some(first));
+        assert_eq!(tabs[2].page().map(Sheet::id), Some(third));
+        assert!(tabs[1].page().is_none());
+        assert_eq!(tabs[1].name(), Some("payroll"), "the name outlived it");
+        assert_eq!(tabs[1].rung(), Ttl::MIN, "and so did the rung");
+        assert_eq!(tabs[1].label(0), "payroll");
+        assert_eq!(store.len(), 2, "two live pages across three tabs");
+
+        // The death record carries the label the strip was showing at
+        // the moment the page died.
+        let record = store.ledger().next().unwrap();
+        assert_eq!(record.event(), LedgerEvent::Expired);
+        assert_eq!(record.title(), "payroll");
+    }
+
+    #[test]
+    fn an_unnamed_tab_falls_back_to_its_own_stamp_when_its_page_expires() {
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        store.set_rung(id, Ttl::MIN).unwrap();
+        assert!(store.sync_document(id, vec![Segment::Ink("deploy notes".into())]));
+        assert_eq!(label(&store, id), "deploy notes", "the control");
+
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due(), vec![id]);
+        // The label falls back one step, to the tab's creation stamp
+        // and not to any stamp of the page that just died.
+        assert_eq!(store.tabs().next().unwrap().label(0), PLACEHOLDER);
+    }
+
+    #[test]
+    fn a_strip_of_empty_tabs_schedules_nothing() {
+        let (mut store, clock) = store();
+        for _ in 0..3 {
+            let id = store.new_sheet().unwrap();
+            store.set_rung(id, Ttl::MIN).unwrap();
+        }
+        assert!(
+            store.next_event().is_some(),
+            "the control: live pages arm the one timer"
+        );
+
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due().len(), 3);
+        assert_eq!(store.tabs().count(), 3, "the slots are all still here");
+        assert!(store.holds_no_page());
+        assert!(!store.has_no_tabs(), "the two predicates disagree here");
+        assert_eq!(
+            store.next_event(),
+            None,
+            "a rung is a number with no clock behind it"
+        );
+    }
+
+    #[test]
+    fn open_page_mints_at_the_tabs_rung_and_refuses_an_occupied_tab() {
+        let (mut store, clock) = store();
+        let first = store.new_sheet().unwrap();
+        let slot = store.tabs().next().unwrap().id();
+        store.set_rung(first, Ttl::MIN).unwrap(); // 1h, the slot's rung
+        let born = store.sheet(first).unwrap().uuid();
+
+        assert_eq!(store.open_page(slot), None, "one page to a slot");
+        assert_eq!(store.open_page(TabId::from_raw(999)), None, "no such tab");
+        assert_eq!(store.ledger().count(), 1, "a refusal records nothing");
+
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due(), vec![first]);
+        let replacement = store.open_page(slot).expect("the slot is free now");
+        assert_ne!(replacement, first);
+
+        // The replacement starts at the rung the user set on the slot,
+        // not at the store's eight hour default: that is the whole
+        // point of the rung being the tab's.
+        let now = store.now();
+        let page = store.sheet(replacement).unwrap();
+        assert_eq!(page.remaining(now), HOUR);
+        assert_eq!(store.tabs().next().unwrap().rung(), Ttl::MIN);
+        assert_ne!(page.uuid(), born, "a reused slot holds a new item");
+        assert_eq!(
+            store.tabs().next().unwrap().label(0),
+            PLACEHOLDER,
+            "the label is the slot's stamp, an hour older than this page"
+        );
+        assert_eq!(
+            events(&store)[0],
+            LedgerEvent::Created,
+            "one Created record, as a click through an empty tab costs"
+        );
+        assert_eq!(store.tabs().count(), 1, "and no new slot");
     }
 
     /// A token chosen so that no run of four or more of its characters

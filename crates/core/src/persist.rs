@@ -191,9 +191,16 @@ impl<C: Clock> SheetStore<C> {
     /// [`SheetStore::restore_ledger`]. On error the store is untouched.
     /// Pages already due are *kept*: call [`SheetStore::expire_due`]
     /// right after to entomb them, so they leave ledger residue like any
-    /// other death.
+    /// other death, and so the tabs they were standing in are left
+    /// empty rather than refilled.
     ///
-    /// Returns the number of live pages restored.
+    /// Returns the number of live **pages** restored, which is not the
+    /// width of the strip. The two diverge the moment a tab outlives
+    /// its page (ADR-0017): a file holding nine named tabs and no
+    /// content restores nine slots and answers zero. Callers that want
+    /// the strip read [`SheetStore::tabs`], and callers asking whether
+    /// anything is left read [`SheetStore::holds_no_page`] or
+    /// [`SheetStore::has_no_tabs`], which are different questions.
     ///
     /// # Errors
     ///
@@ -1409,7 +1416,7 @@ mod tests {
         let mut revived = SheetStore::new(clock.clone());
         assert_eq!(revived.restore(&snapshot, 0).unwrap(), 2);
 
-        let tabs: Vec<&crate::sheet::Tab> = revived.tabs().collect();
+        let tabs: Vec<&Tab> = revived.tabs().collect();
         assert_eq!(tabs.len(), 2);
         assert_eq!(tabs[0].name(), Some("quarterly numbers"));
         assert_eq!(tabs[0].rung(), Ttl::MIN);
@@ -1418,14 +1425,51 @@ mod tests {
         assert_eq!(tabs[1].rung(), Ttl::default());
         assert_eq!(tabs[1].label(0), "errands", "its page supplies the label");
         // Identity is what persists, for the slot as much as the page.
-        let before: Vec<ItemId> = store.tabs().map(crate::sheet::Tab::uuid).collect();
-        assert_eq!(
-            revived
-                .tabs()
-                .map(crate::sheet::Tab::uuid)
-                .collect::<Vec<_>>(),
-            before
+        let before: Vec<ItemId> = store.tabs().map(Tab::uuid).collect();
+        assert_eq!(revived.tabs().map(Tab::uuid).collect::<Vec<_>>(), before);
+    }
+
+    #[test]
+    fn an_emptied_strip_reseals_as_names_rungs_and_order_with_no_content() {
+        // ADR-0016 section 6's first rotation trigger, from the file's
+        // side: when the last page expires and tabs remain, emptying
+        // the pad writes a file rather than removing one, and what it
+        // writes is the strip and nothing else.
+        let (mut store, clock) = store();
+        let first = store.new_sheet().unwrap();
+        let second = store.new_sheet().unwrap();
+        assert!(store.set_title(second, "payroll"));
+        store.set_rung(first, Ttl::MIN).unwrap();
+        store.set_rung(second, Ttl::MIN).unwrap();
+        assert!(store.sync_document(first, vec![Segment::Ink("rotate the key".into())]));
+        let uuids: Vec<ItemId> = store.tabs().map(Tab::uuid).collect();
+
+        clock.advance(Duration::from_secs(60 * 60));
+        assert_eq!(store.expire_due().len(), 2);
+        assert!(store.holds_no_page());
+        assert!(!store.has_no_tabs());
+
+        let snapshot = store.snapshot(0);
+        assert!(
+            !contains(&snapshot, b"rotate the key"),
+            "a resealed empty strip must carry no page content"
         );
+
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&snapshot, 0).unwrap(), 0, "no live page");
+        let tabs: Vec<&Tab> = revived.tabs().collect();
+        assert_eq!(tabs.len(), 2, "both slots came back");
+        assert!(tabs.iter().all(|tab| tab.page().is_none()));
+        assert_eq!(tabs[0].name(), None);
+        assert_eq!(tabs[1].name(), Some("payroll"));
+        assert_eq!(tabs[0].rung(), Ttl::MIN, "the rung outlived its page");
+        assert_eq!(tabs[1].rung(), Ttl::MIN);
+        assert_eq!(
+            revived.tabs().map(Tab::uuid).collect::<Vec<_>>(),
+            uuids,
+            "identity and order both survive the emptying"
+        );
+        assert_eq!(revived.next_event(), None, "and nothing is scheduled");
     }
 
     #[test]
@@ -1436,7 +1480,7 @@ mod tests {
         let (mut store, survivor) = occupied();
         let empty = empty_tab_snapshot(Some("payroll"));
         assert_eq!(store.restore(&empty, 0).unwrap(), 0, "no live page");
-        let tabs: Vec<&crate::sheet::Tab> = store.tabs().collect();
+        let tabs: Vec<&Tab> = store.tabs().collect();
         assert_eq!(tabs.len(), 1, "the slot itself came back");
         assert!(tabs[0].page().is_none());
         assert_eq!(tabs[0].name(), Some("payroll"));
@@ -1544,8 +1588,8 @@ mod tests {
         assert_eq!(records[0].title(), "old thoughts");
         assert_eq!(records[0].event(), LedgerEvent::Discarded);
 
-        // A ledger restore leaves the pages alone, in both directions.
-        assert!(revived.is_empty());
+        // A ledger restore leaves the strip alone, in both directions.
+        assert!(revived.has_no_tabs());
         assert_eq!(
             revived.restore_ledger(&original.snapshot(0), 0),
             Err(RestoreError::UnknownFormat),
@@ -2217,7 +2261,10 @@ mod tests {
         revived.restore(&snapshot, nine_hours_ms).unwrap();
         let expired = revived.expire_due();
         assert_eq!(expired, vec![id]);
-        assert!(revived.is_empty());
+        // The page is gone and its slot is still standing, which is
+        // what an overnight expiry looks like at the 09:00 relaunch.
+        assert!(revived.holds_no_page());
+        assert_eq!(revived.tabs().count(), 1);
         let record = revived.ledger().next().unwrap();
         assert_eq!(record.event(), LedgerEvent::Expired);
         assert_eq!(record.title(), "perishable");
@@ -2353,7 +2400,7 @@ mod tests {
         assert_eq!(revived.restore(&padded, 0), Err(RestoreError::Malformed));
 
         assert!(
-            revived.is_empty(),
+            revived.has_no_tabs(),
             "a failed restore must leave nothing behind"
         );
         assert_eq!(revived.ledger().count(), 0);
@@ -2374,7 +2421,10 @@ mod tests {
                 revived.restore(&snapshot[..cut], 7_000).is_err(),
                 "a snapshot truncated at {cut} must not restore"
             );
-            assert!(revived.is_empty(), "a rejected restore left pages behind");
+            assert!(
+                revived.has_no_tabs(),
+                "a rejected restore left a strip behind"
+            );
         }
         for cut in 0..ledger.len() {
             assert!(
@@ -2469,7 +2519,7 @@ mod tests {
             revived.restore(&hostile_metadata, 0),
             Err(RestoreError::Malformed)
         );
-        assert!(revived.is_empty());
+        assert!(revived.has_no_tabs());
     }
 
     #[test]
