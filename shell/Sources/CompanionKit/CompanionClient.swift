@@ -70,8 +70,9 @@ public struct ChipInfo: Codable, Hashable, Sendable {
 }
 
 /// One line of the audit trail (⌘0): what the app did with one item,
-/// and when. The ledger outlives the boot session, so this type carries
-/// a guarantee, not a convention: **no field on it can hold content**.
+/// and when. The ledger outlives the pages it describes, so this type
+/// carries a guarantee, not a convention: **no field on it can hold
+/// content**.
 /// `event`, `size` and `destination` are closed vocabularies, `item` is
 /// a random UUID, the two stamps are numbers, and `title` is the one
 /// piece of page-owned text on the record, already capped at 80
@@ -539,9 +540,9 @@ public final class CompanionClient: @unchecked Sendable {
     }
 
     /// Save the ledger to `path`. It rests under its OWN long-lived
-    /// key, minted on first save and never derived from the boot
-    /// session, which is why the audit record survives the reboot that
-    /// discards staged content. Its envelope magic is its own AEAD
+    /// key, minted on first save and never rotated with the content
+    /// halves, which is why the audit record survives the emptying that
+    /// forgets the content it describes. Its envelope magic is its own AEAD
     /// associated data, so this file and the state file are not
     /// interchangeable in either direction. Call it beside
     /// `persistSave(to:)`, behind the same debounce.
@@ -588,14 +589,19 @@ public final class CompanionClient: @unchecked Sendable {
 
     /// Restore the store from `path` at startup, before the first page
     /// is created. False means a fresh start (no file) as much as a
-    /// refused one (missing key, failed authentication), and, since the
-    /// envelope carries the boot session, a file from an earlier session.
-    /// That last case rotates both content key halves and then drops the
-    /// file, in that order and only if the rotation took: a keychain that
-    /// refuses the delete leaves the file in place so the next launch can
-    /// try again. The caller tells the cases apart by probing the path
+    /// refused one (missing key, failed authentication, a damaged
+    /// snapshot). A refusal leaves the file exactly where it is, which
+    /// is what withholds this session's save licence rather than writing
+    /// over content it could not read.
+    ///
+    /// One case answers false and leaves nothing behind: a file sealed
+    /// under an envelope the core has since replaced is dropped on the
+    /// spot, because nothing in it can ever be decrypted and an install
+    /// that refused it forever would simply stop saving (ADR-0016
+    /// section 9). The caller tells the cases apart by probing the path
     /// *after* this returns, never before (see
-    /// `PageModel.loadStateIfNeeded`).
+    /// `PageModel.loadStateIfNeeded`), so that disposal reads as "no
+    /// file", which is what it now is.
     @discardableResult
     public func persistRestore(from path: String) -> Bool {
         path.withCString { companion_persist_restore(handle, $0) }

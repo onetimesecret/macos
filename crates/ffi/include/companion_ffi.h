@@ -428,8 +428,8 @@ char *companion_ledger_json(CompanionHandle *handle);
 
 /*
  * Throw the whole ledger away: the user-facing "clear the ledger"
- * affordance. The records outlive the boot session by design, so a way
- * to end them on demand is part of that bargain. In-memory only: call
+ * affordance. The records outlive the pages they describe by design, so
+ * a way to end them on demand is part of that bargain. In-memory only: call
  * companion_ledger_save() afterwards for the empty ledger to reach the
  * file.
  */
@@ -439,9 +439,9 @@ void companion_ledger_clear(CompanionHandle *handle);
  * Save the ledger to `path`, sealed with ChaCha20-Poly1305 under its
  * OWN 32-byte key ("ledger-key" account, minted on first save) and its
  * own envelope magic. That key is SEPARATE and LONG-LIVED: it is not
- * derived from the boot session, unlike the content key. That is the whole
- * point: the audit record survives the reboot that discards staged
- * content, and a content-key rotation must never touch it. The two
+ * the two-half content key and never rotates with it. That is the whole
+ * point: the audit record survives the emptying that forgets the staged
+ * content it describes, and a content-key rotation must never touch it. The two
  * files are not interchangeable; each magic is its own AEAD associated
  * data, so presenting one as the other fails authentication.
  *
@@ -478,23 +478,23 @@ bool companion_ledger_save(CompanionHandle *handle, const char *path);
 bool companion_ledger_restore(CompanionHandle *handle, const char *path);
 
 /* ------------------------------------------------------------------ */
-/* Persistence: the sealed state file, bound to this boot session      */
+/* Persistence: the sealed state file, bounded by its TTL and by policy */
 /* ------------------------------------------------------------------ */
 
 /*
  * Save the staged content (sheets, sealed chips, clocks) to `path`,
- * encrypted (ChaCha20-Poly1305) under a key that exists only while this
- * boot session does: HKDF of a keychain half and a boot half, the boot
- * half living in the per-user temp directory macOS clears at restart
- * (ADR-0012). Neither half alone unwraps anything, and no key byte
- * crosses this seam: the shell passes a path and receives a bool.
+ * encrypted (ChaCha20-Poly1305) under HKDF of a keychain half and a
+ * file half, the file half being a 0600 file in the same directory as
+ * `path` (ADR-0016). Neither half alone unwraps anything, and no key
+ * byte crosses this seam: the shell passes a path and receives a bool.
  *
- * The envelope stamps itself with kern.bootsessionuuid and with both
- * clocks at the save, all of it authenticated, so a file cannot be
- * re-dated and cannot be opened by a later boot session. The ledger is
- * NOT in this file; it has its own file under its own long-lived key
- * (companion_ledger_save), because content is boot-session-bound and
- * the audit record is not.
+ * The envelope stamps itself with the wall clock at the save, inside
+ * the authenticated header, so a file cannot be re-dated to buy the
+ * pages in it more life. That stamp measures one thing: the gap until
+ * the next restore, which is the interval no process of this app was
+ * running to observe. The ledger is NOT in this file; it has its own
+ * file under its own long-lived key (companion_ledger_save), because
+ * the two have different lifetimes and different keys.
  *
  * Only ciphertext touches disk; the write is atomic and owner-only.
  * Call on every mutation, debounced, and once more at quit to flush
@@ -510,25 +510,29 @@ bool companion_persist_save(CompanionHandle *handle, const char *path);
  * closed; pages that came due while away expire into the ledger
  * immediately. Call at startup, before creating the first page.
  *
- * A file from another boot session is discarded before anything in it
- * is decrypted: both content key halves are rotated FIRST, and the
- * file is dropped from disk only if that rotation succeeded. The
- * rotation is what actually forgets the content; the unlink is a tidy
- * on top of it. A keychain that refuses the delete (locked at launch,
- * an ACL dismissed) therefore leaves the file exactly where it is,
- * because that file is the only thing that triggers this path and
- * dropping it would consume the trigger while both halves stayed
- * alive. The next launch tries again. The ledger key is untouched
- * either way, so the audit record survives the restart that discards
- * the content it describes.
+ * A FILE THIS CALL CANNOT OPEN IS NEVER DESTROYED BY IT. A missing
+ * key, a failed authentication and a snapshot the core rejects all
+ * leave the file where it is, so the probe the shell takes afterwards
+ * sees it and withholds this session's save licence rather than
+ * writing over content nobody could read. The one exception is not a
+ * failure to open: a file carrying an envelope this build has REPLACED
+ * is dropped and the licence granted, because nothing in it can ever
+ * be read again and refusing it forever would present as an install
+ * that had permanently stopped saving (ADR-0016 section 9).
  *
- * Time away is measured from the file's monotonic stamp, not from the
- * calendar, so stepping the system clock backwards buys a page no extra
- * life.
+ * Launch is also where stranded *.tmp generations in the state
+ * directory are swept; nothing else ever clears that directory.
+ *
+ * Time away is the wall-clock gap between the file's sealed stamp and
+ * now, which is the one interval this app measures by the calendar: the
+ * monotonic clock restarts with the machine and cannot measure it. A
+ * clock stepped backwards therefore freezes a countdown for the length
+ * of the gap and can never rewind one.
  *
  * Returns whether a state was restored. False covers "no file yet" (a
- * fresh start, not an error) and a discarded foreign-session file, as
- * well as a missing key, failed authentication, or a damaged snapshot.
+ * fresh start, not an error) and a superseded file just dropped, as
+ * well as a missing key, failed authentication, an unreadable wall
+ * clock, or a damaged snapshot.
  */
 bool companion_persist_restore(CompanionHandle *handle, const char *path);
 

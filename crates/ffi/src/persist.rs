@@ -5,8 +5,9 @@
 //! the split is the point (ADR-0012).
 //!
 //! - **The state file** holds staged content: sheets, sealed chips,
-//!   clocks. It rests under `state-key` and is bound to the boot
-//!   session, so a reboot discards it.
+//!   clocks. It rests under `state-key` and survives every ordinary
+//!   process and machine lifecycle event: what ends it is its TTL, an
+//!   emptied pad, or an explicit Clear (ADR-0016).
 //! - **The ledger file** holds metadata plus the capped, page-owned
 //!   title, never content. It rests under `ledger-key`, a single
 //!   long-lived keychain half that is deliberately not boot-bound: an
@@ -23,44 +24,36 @@
 //! (ADR-0012). Restore is the mirror: read, authenticate, decrypt in
 //! place, feed the core, and the plaintext wipes on drop.
 //!
-//! # The state envelope carries its boot session and its two stamps
+//! # The state envelope carries one stamp
 //!
 //! A state file is
-//! `magic ‖ boot_uuid[16] ‖ saved_wall_ms[8] ‖ saved_mono_ns[8] ‖
-//! nonce[12] ‖ ciphertext ‖ tag`, and the whole 40-byte header is the
-//! AEAD's associated data, so not one field of it can be edited without
-//! failing authentication.
+//! `magic ‖ sealed_wall_ms[8] ‖ nonce[12] ‖ ciphertext ‖ tag`, and the
+//! whole 16-byte header is the AEAD's associated data, so neither field
+//! of it can be edited without failing authentication.
 //!
-//! - `boot_uuid` is `kern.bootsessionuuid`, the deterministic backstop
-//!   under the crypto-erasure ADR-0012 relies on. A file whose header
-//!   names another boot session is never decrypted at all: it is
-//!   reported as [`Opened::BootMismatch`], and the caller rotates the
-//!   halves and erases the file once the rotation has actually removed
-//!   one. On macOS a kernel that refuses the query does **not** fall
-//!   back to a fixed value: the session reads as a random sentinel
-//!   minted once for this process ([`unreadable_boot_session`]), so
-//!   every file any other process sealed reads as a mismatch and is
-//!   discarded. A constant there would be a session identity every
-//!   process on the machine agrees on, which is the one failure that
-//!   hands a page back at its full pre-reboot TTL.
-//! - `saved_wall_ms` is the same Unix-epoch stamp the plaintext
-//!   snapshot carries, repeated in the clear so restore can reach it
-//!   without trusting an unauthenticated field.
-//! - `saved_mono_ns` is [`companion_core::clock::sleep_inclusive_ns`] at
-//!   the save. Time away is measured from that reading, not from the
-//!   calendar, so stepping the system clock backwards buys a page no
-//!   extra life. Two readings of that clock are only comparable inside
-//!   one boot session, which is exactly and only when a restore can
-//!   happen: a file from any other session is discarded before the
-//!   stamps are ever read. The comparison is direction-safe as well as
-//!   monotonic: a saved stamp that reads *later* than now cannot have
-//!   come from this session's clock, so the caller ages the snapshot to
-//!   the ceiling rather than to zero. A bent stamp can only ever cost a
-//!   page life.
+//! `sealed_wall_ms` is the Unix-epoch stamp at the save, the same one
+//! the plaintext snapshot carries inside itself. It measures one
+//! interval and only one: the gap between the last save and the next
+//! restore, which is the span no process of this app was running to
+//! observe (ADR-0016 section 4). Every interval a running process does
+//! observe stays on the sleep-inclusive monotonic clock, which is not
+//! settable, so a clock step mid-session buys nothing. Across a restart
+//! the calendar is the only witness there is, and the gap is charged
+//! with `saturating_sub`, so a backward step reads as zero rather than
+//! as a credit: it can freeze a countdown, never rewind one. That
+//! freeze is accepted rather than defended, because a user who can set
+//! the machine's clock already has the plaintext on screen.
 //!
-//! [`FILE_MAGIC`] is `OTSSEAL2`. A v1 file has no boot session in it,
-//! so it fails the magic check and is refused rather than misparsed.
-//! There is no migration: the format broke, the old files are dropped.
+//! Being inside the associated data makes the stamp unforgeable and
+//! leaves it replayable, since a stamp cannot detect the rollback of the
+//! file that carries it; ADR-0016 section 8 prices that and accepts it.
+//!
+//! [`FILE_MAGIC`] is `OTSSEAL3`. [`SUPERSEDED_MAGICS`] holds the
+//! versions this build has replaced and can therefore dispose of rather
+//! than refuse; anything else, `OTSSEAL1` included, is refused outright
+//! and left where it lies. There is no migration and none is possible:
+//! the associated data changed, so the old bytes cannot authenticate
+//! even in a session that still holds their key.
 //!
 //! # The content key is two halves, and neither one unwraps anything
 //!
@@ -156,8 +149,20 @@ use crate::diagnostics::diag_fault;
 /// Magic + version prefix of the sealed state file. A format change
 /// gets a new final byte; the prefix opens the AEAD's associated data,
 /// so a relabeled file fails authentication rather than misparsing.
-/// `2` is the boot-bound envelope: a `1` file is refused outright.
-const FILE_MAGIC: &[u8; 8] = b"OTSSEAL2";
+/// `3` is the durable envelope of ADR-0016: no boot session, no
+/// monotonic stamp, one wall stamp.
+const FILE_MAGIC: &[u8; 8] = b"OTSSEAL3";
+
+/// The envelope versions this build has replaced. A file carrying one
+/// of these is disposed of and the save licence granted, rather than
+/// refused forever ([`Opened::Superseded`], ADR-0016 section 9), and the
+/// list grows by one entry per format break.
+///
+/// Membership is a promise about *this app's own* past output, so it is
+/// spelled out rather than computed from the version byte. `OTSSEAL1`
+/// stays out of it: it was refused outright before this break and it is
+/// refused outright after it.
+const SUPERSEDED_MAGICS: [&[u8; 8]; 1] = [b"OTSSEAL2"];
 
 /// Magic + version prefix of the sealed ledger file. Distinct from
 /// [`FILE_MAGIC`] on purpose: it is the associated data too, so the two
@@ -215,25 +220,9 @@ const FILE_HALF_TAG_LEN: usize = 16;
 /// about it is per-boot any more.
 const FILE_HALF_PREFIX: &str = "ots-companion-key-half-";
 
-/// Bytes of boot session identity in the state header. A UUID.
-const BOOT_UUID_LEN: usize = 16;
-
-/// The authenticated state header:
-/// `magic[8] ‖ boot_uuid[16] ‖ saved_wall_ms[8] ‖ saved_mono_ns[8]`.
+/// The authenticated state header: `magic[8] ‖ sealed_wall_ms[8]`.
 /// Fixed length, and every byte of it is associated data.
-const STATE_HEADER_LEN: usize = 8 + BOOT_UUID_LEN + 8 + 8;
-
-/// The boot session off macOS, where nothing ships, no boot-cleared
-/// temp directory exists to bound anything to, and a fixed value keeps
-/// the crate testable on a CI host.
-///
-/// **Not a fallback on macOS.** A kernel that refuses
-/// `kern.bootsessionuuid` gets [`unreadable_boot_session`] instead: a
-/// constant would be a session identity every process agrees on, so the
-/// boot check would pass across a real restart and hand every page back
-/// at its full pre-reboot TTL.
-#[cfg(any(not(target_os = "macos"), test))]
-const PORTABLE_BOOT_UUID: [u8; BOOT_UUID_LEN] = *b"ots-no-boot-uuid";
+pub(crate) const STATE_HEADER_LEN: usize = 8 + 8;
 
 /// Bytes of zeros pushed per pass in [`erase_state`].
 const ERASE_CHUNK: usize = 4096;
@@ -545,17 +534,12 @@ fn open_body(key: &[u8], aad: &[u8], body: &[u8]) -> Option<Zeroizing<Vec<u8>>> 
     Some(buffer)
 }
 
-/// The authenticated head of a state file: which boot session sealed
-/// it, and the two stamps that say when.
+/// The authenticated head of a state file: the one stamp that says
+/// when it was sealed.
 struct StateHeader {
-    /// `kern.bootsessionuuid` as it read at the save.
-    boot: [u8; BOOT_UUID_LEN],
     /// Unix epoch milliseconds at the save, the same stamp the
     /// plaintext snapshot carries inside itself.
-    wall_ms: u64,
-    /// [`companion_core::clock::sleep_inclusive_ns`] at the save. Time
-    /// away is measured from this, never from the calendar.
-    mono_ns: u64,
+    sealed_wall_ms: u64,
 }
 
 impl StateHeader {
@@ -564,62 +548,50 @@ impl StateHeader {
     fn to_bytes(&self) -> [u8; STATE_HEADER_LEN] {
         let mut out = [0u8; STATE_HEADER_LEN];
         out[..8].copy_from_slice(FILE_MAGIC.as_slice());
-        out[8..8 + BOOT_UUID_LEN].copy_from_slice(&self.boot);
-        out[24..32].copy_from_slice(&self.wall_ms.to_be_bytes());
-        out[32..40].copy_from_slice(&self.mono_ns.to_be_bytes());
+        out[8..16].copy_from_slice(&self.sealed_wall_ms.to_be_bytes());
         out
     }
 
     /// Read a header off the front of a file. `None` for a file that is
-    /// too short or does not carry this magic, which covers every v1
-    /// file: they have no boot session in them, so there is nothing to
-    /// check and nothing to salvage.
+    /// too short or does not carry this magic, which covers every
+    /// earlier envelope: their fields sit at different offsets and mean
+    /// different things, so there is nothing to parse and nothing to
+    /// salvage.
     fn parse(file: &[u8]) -> Option<Self> {
         let head = file.get(..STATE_HEADER_LEN)?;
         if !head.starts_with(FILE_MAGIC.as_slice()) {
             return None;
         }
         Some(Self {
-            boot: head[8..8 + BOOT_UUID_LEN].try_into().ok()?,
-            wall_ms: u64::from_be_bytes(head[24..32].try_into().ok()?),
-            mono_ns: u64::from_be_bytes(head[32..40].try_into().ok()?),
+            sealed_wall_ms: u64::from_be_bytes(head[8..16].try_into().ok()?),
         })
     }
 }
 
 /// What a state file turned out to be.
 pub(crate) enum Opened {
-    /// This boot session's file, authenticated and decrypted, with the
-    /// stamps its header carried.
+    /// Authenticated and decrypted, with the stamp its header carried.
     Plaintext {
         /// The snapshot the core reads back, wiped on drop.
         plaintext: Zeroizing<Vec<u8>>,
         /// Unix epoch milliseconds at the save.
-        saved_wall_ms: u64,
-        /// Sleep-inclusive monotonic nanoseconds at the save.
-        saved_mono_ns: u64,
+        sealed_wall_ms: u64,
     },
-    /// A file some other boot session sealed. Its content key died with
-    /// that session; the caller erases the file and rotates the halves.
-    BootMismatch,
+    /// A file this app wrote under an envelope it has since replaced.
+    /// Nothing in it can be read, so the caller disposes of it and lets
+    /// the session write: an install that refused this file forever
+    /// would present as one that had permanently stopped saving
+    /// (ADR-0016 section 9).
+    Superseded,
     /// Not a state file this build reads, or not one this key opens.
+    /// The caller leaves it exactly where it is.
     Refused,
 }
 
-/// Seal a content snapshot under the state envelope, stamped with this
-/// boot session and the two clock readings at the save.
-pub(crate) fn seal_state(
-    key: &[u8],
-    plaintext: &[u8],
-    wall_ms: u64,
-    mono_ns: u64,
-) -> Option<Vec<u8>> {
-    let header = StateHeader {
-        boot: current_boot_uuid(),
-        wall_ms,
-        mono_ns,
-    }
-    .to_bytes();
+/// Seal a content snapshot under the state envelope, stamped with the
+/// wall clock at the save.
+pub(crate) fn seal_state(key: &[u8], plaintext: &[u8], sealed_wall_ms: u64) -> Option<Vec<u8>> {
+    let header = StateHeader { sealed_wall_ms }.to_bytes();
     let body = seal_body(key, &header, plaintext)?;
     let mut file = Vec::with_capacity(header.len() + body.len());
     file.extend_from_slice(&header);
@@ -629,34 +601,41 @@ pub(crate) fn seal_state(
 
 /// Open a content snapshot from the state envelope.
 ///
-/// The boot session is checked before `key` is ever called, so a file
-/// from a dead session costs no keychain access and is never decrypted:
-/// there is nothing to learn from content this app has already decided
-/// to discard. `key` is a closure for exactly that reason.
+/// The magic is read before `key` is ever called, so a file this build
+/// cannot read at all costs no keychain access. `key` is a closure for
+/// exactly that reason, and on macOS a keychain access is a prompt the
+/// user may have to answer (ADR-0004), which is not a thing to spend on
+/// a file that is about to be refused.
 ///
-/// A hostile edit to the header reads as a mismatch rather than as
-/// tampering, which at worst provokes the erase-and-rotate the caller
-/// would perform anyway. Anyone able to rewrite the header could have
-/// deleted the file instead, so this trades nothing away.
+/// **Only the magic decides disposal, and only a magic this app itself
+/// once wrote.** A header edit fails authentication and is refused, so
+/// nothing an outsider can write to the file turns into a deletion; the
+/// destructive answer is reserved for the two byte strings this app has
+/// shipped and replaced.
 pub(crate) fn open_state(file: &[u8], key: impl FnOnce() -> Option<Zeroizing<Vec<u8>>>) -> Opened {
-    // Each refusal names itself. They are three different failures with
-    // one visible symptom (a session that will not write), and telling
-    // them apart from the outside means reading ciphertext.
+    // Each refusal names itself. They are different failures with one
+    // visible symptom (a session that will not write), and telling them
+    // apart from the outside means reading ciphertext.
     let Some(header) = StateHeader::parse(file) else {
+        if let Some(magic) = superseded_magic(file) {
+            diag_fault!(
+                "companion-ffi: the state file carries {magic}, an envelope this build has \
+                 replaced. Nothing in it can be decrypted, so it is being dropped and this \
+                 session will write a new one. Whatever was staged under it is gone."
+            );
+            return Opened::Superseded;
+        }
         diag_fault!(
             "companion-ffi: the state file does not carry this build's envelope header; \
-             refusing it."
+             refusing it and leaving it where it is."
         );
         return Opened::Refused;
     };
-    if header.boot != current_boot_uuid() {
-        return Opened::BootMismatch;
-    }
     let Some(key) = key() else {
         diag_fault!(
-            "companion-ffi: the state file names this boot session, but its content key could \
-             not be assembled. Either the keychain half would not load or this session's boot \
-             half is missing from the temp directory; the file stays and this session will not \
+            "companion-ffi: the state file carries this build's envelope, but its content key \
+             could not be assembled. Either the keychain half would not load or the file half \
+             is missing from the state directory; the file stays and this session will not \
              write one."
         );
         return Opened::Refused;
@@ -671,9 +650,19 @@ pub(crate) fn open_state(file: &[u8], key: impl FnOnce() -> Option<Zeroizing<Vec
     };
     Opened::Plaintext {
         plaintext,
-        saved_wall_ms: header.wall_ms,
-        saved_mono_ns: header.mono_ns,
+        sealed_wall_ms: header.sealed_wall_ms,
     }
+}
+
+/// The superseded envelope `file` carries, as a name for the
+/// diagnostic, or `None` for anything else. Every entry of
+/// [`SUPERSEDED_MAGICS`] is an ASCII literal in this file, so naming it
+/// discloses nothing and cannot fail.
+fn superseded_magic(file: &[u8]) -> Option<&'static str> {
+    SUPERSEDED_MAGICS
+        .iter()
+        .find(|magic| file.starts_with(magic.as_slice()))
+        .and_then(|magic| std::str::from_utf8(magic.as_slice()).ok())
 }
 
 /// Seal a ledger snapshot under the ledger envelope.
@@ -774,7 +763,57 @@ pub(crate) fn erase_state(path: &Path) -> bool {
     matches!(std::fs::symlink_metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
 }
 
-/// Whether the file at `path` is this app's **content** envelope.
+/// Erase every stranded temp generation in `dir`, which is work for
+/// launch and only launch.
+///
+/// [`write_private`] writes to `<path>.<16 hex>.tmp` and renames. A
+/// death between the two, a power loss above all, leaves that temp file
+/// behind holding a complete sealed generation of staged content or, now
+/// that the file half is written through the same function into the same
+/// directory, a complete copy of a key half. Nothing swept them: the
+/// state directory, unlike the per-user temp directory this material
+/// used to sit in, is never cleared by anything (ADR-0016 section 8).
+///
+/// The shape is matched exactly rather than by the `.tmp` suffix alone,
+/// because [`erase_state`] zeroes and truncates what it is given and
+/// this is the one caller that chooses its own paths. A stranded temp is
+/// erased with the same discipline as the file it was going to become,
+/// since that is what it holds.
+///
+/// A save in flight from a second instance of the same form factor owns
+/// a path of this shape too, and a sweep can reach it between its write
+/// and its rename. That costs that instance its save, which its own
+/// return value reports, and it cannot corrupt anything: the rename
+/// either lands whole or fails.
+pub(crate) fn sweep_stranded_temps(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(is_write_private_temp)
+        {
+            erase_state(&entry.path());
+        }
+    }
+}
+
+/// Whether `name` has the exact shape [`write_private`] gives a temp
+/// file: some name, a dot, sixteen hex digits, `.tmp`.
+fn is_write_private_temp(name: &str) -> bool {
+    let Some(rest) = name.strip_suffix(".tmp") else {
+        return false;
+    };
+    let Some((stem, tag)) = rest.rsplit_once('.') else {
+        return false;
+    };
+    !stem.is_empty() && tag.len() == 16 && tag.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+/// Whether the file at `path` is this app's **content** envelope, this
+/// build's or one it has replaced.
 ///
 /// The question is answered by reading the magic rather than by looking
 /// at the name, because a name is the shell's to choose and this module
@@ -803,7 +842,8 @@ pub(crate) fn holds_content_envelope(path: &Path) -> bool {
         return false;
     };
     let mut magic = [0u8; 8];
-    file.read_exact(&mut magic).is_ok() && magic == *FILE_MAGIC
+    file.read_exact(&mut magic).is_ok()
+        && (magic == *FILE_MAGIC || SUPERSEDED_MAGICS.iter().any(|old| magic == **old))
 }
 
 /// Open `path` for writing without following a final symlink and
@@ -850,158 +890,6 @@ const O_NONBLOCK: i32 = libc::O_NONBLOCK;
 /// test below fails loudly if it ever stops being the flag.
 #[cfg(target_os = "linux")]
 const O_NONBLOCK: i32 = 0x0000_0800;
-
-/// This boot session, as the envelope stamps and checks it.
-#[cfg(not(test))]
-fn current_boot_uuid() -> [u8; BOOT_UUID_LEN] {
-    boot_session_uuid()
-}
-
-/// Under test the same reading, unless a test has pinned one: that is
-/// how a reboot is simulated without one.
-#[cfg(test)]
-fn current_boot_uuid() -> [u8; BOOT_UUID_LEN] {
-    boot_uuid_override::get().unwrap_or_else(boot_session_uuid)
-}
-
-/// `kern.bootsessionuuid`: opaque, and stable for the whole boot
-/// session.
-///
-/// Deliberately not `kern.boottime`, which the kernel re-derives
-/// whenever the calendar clock steps (NTP, a manual change, a timezone
-/// tool). Reading boot time would discard staged content in the middle
-/// of a session for no reason at all; the session UUID only changes
-/// when the machine actually restarts.
-#[cfg(target_os = "macos")]
-fn boot_session_uuid() -> [u8; BOOT_UUID_LEN] {
-    // A 36-character UUID string and its NUL; the buffer is generous.
-    let mut buffer = [0u8; 64];
-    let mut len = buffer.len();
-    // SAFETY: `buffer` is a live allocation of exactly the length in
-    // `len`, which sysctlbyname reads and then overwrites with the
-    // number of bytes it wrote; the name is a NUL-terminated literal and
-    // the new-value pointer is null, so this is a pure read.
-    let rc = unsafe {
-        libc::sysctlbyname(
-            c"kern.bootsessionuuid".as_ptr(),
-            buffer.as_mut_ptr().cast::<libc::c_void>(),
-            &raw mut len,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    if rc != 0 || len == 0 || len > buffer.len() {
-        return unreadable_boot_session();
-    }
-    parse_uuid(&buffer[..len]).unwrap_or_else(unreadable_boot_session)
-}
-
-/// The boot session when the kernel will not name one: 16 random bytes
-/// minted once for this process and never written anywhere.
-///
-/// This is the fail-closed direction, and it is not interchangeable with
-/// a constant. A sandbox or a kernel that consistently refuses
-/// `kern.bootsessionuuid` would, with a constant, make every process on
-/// the machine agree on one session identity: the boot check would pass
-/// across an actual restart, the previous boot's file would decrypt, and
-/// the aging math would measure zero time away and hand every page back
-/// at its full pre-reboot TTL. Extending an item's life past its TTL is
-/// the one outcome that must be impossible.
-///
-/// With a per-process sentinel the check reports a mismatch instead, so
-/// the file is erased and the halves rotated. Within one process the
-/// value is stable, which costs nothing: a save and a restore in the
-/// same process are the same session by definition.
-#[cfg(target_os = "macos")]
-fn unreadable_boot_session() -> [u8; BOOT_UUID_LEN] {
-    static SENTINEL: std::sync::OnceLock<[u8; BOOT_UUID_LEN]> = std::sync::OnceLock::new();
-    *SENTINEL.get_or_init(|| {
-        let mut bytes = [0u8; BOOT_UUID_LEN];
-        if SystemRandom::new().fill(&mut bytes).is_err() {
-            // An RNG that refuses must still not collapse onto a value
-            // another process can reproduce. The pid and the moment this
-            // ran are not secret, and they do not need to be: all this
-            // value has to do is differ between processes.
-            bytes[..8].copy_from_slice(&u64::from(std::process::id()).to_be_bytes());
-            let stamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .and_then(|since| u64::try_from(since.as_nanos()).ok())
-                .unwrap_or(u64::MAX);
-            bytes[8..].copy_from_slice(&stamp.to_be_bytes());
-        }
-        bytes
-    })
-}
-
-/// Off macOS there is no boot session to read, and nothing off macOS
-/// ships (the assertion at the top of this module makes that a build
-/// error rather than a promise): a fixed value keeps the envelope's
-/// shape identical so the tests cover the same code the app runs.
-#[cfg(not(target_os = "macos"))]
-fn boot_session_uuid() -> [u8; BOOT_UUID_LEN] {
-    PORTABLE_BOOT_UUID
-}
-
-/// The 16 bytes behind a `8-4-4-4-12` UUID string, NUL-terminated or
-/// not. `None` unless exactly 32 hex digits are present, so a truncated
-/// or reshaped answer is never padded into a plausible-looking session.
-///
-/// Gated to where it is called: only the macOS reader has a string to
-/// parse, but the tests below exercise it on every host, so the Linux
-/// test build keeps it while the Linux lib build sheds it.
-#[cfg(any(target_os = "macos", test))]
-fn parse_uuid(bytes: &[u8]) -> Option<[u8; BOOT_UUID_LEN]> {
-    let mut nibbles = bytes
-        .iter()
-        .copied()
-        .take_while(|byte| *byte != 0)
-        .filter(|byte| *byte != b'-')
-        .map(hex_value);
-    let mut out = [0u8; BOOT_UUID_LEN];
-    for byte in &mut out {
-        let high = nibbles.next()??;
-        let low = nibbles.next()??;
-        *byte = (high << 4) | low;
-    }
-    nibbles.next().is_none().then_some(out)
-}
-
-/// One hexadecimal digit's value, either case. The gate follows
-/// [`parse_uuid`], its only caller.
-#[cfg(any(target_os = "macos", test))]
-fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
-}
-
-/// A per-thread redirect for [`current_boot_uuid`], so a test can stage
-/// a reboot without one. Test-only: the shipping path reads the kernel
-/// and nothing else.
-#[cfg(test)]
-pub(crate) mod boot_uuid_override {
-    use std::cell::RefCell;
-
-    thread_local! {
-        static UUID: RefCell<Option<[u8; super::BOOT_UUID_LEN]>> = const { RefCell::new(None) };
-    }
-
-    pub(crate) fn get() -> Option<[u8; super::BOOT_UUID_LEN]> {
-        UUID.with(|uuid| *uuid.borrow())
-    }
-
-    pub(crate) fn set(value: [u8; super::BOOT_UUID_LEN]) {
-        UUID.with(|uuid| *uuid.borrow_mut() = Some(value));
-    }
-
-    pub(crate) fn clear() {
-        UUID.with(|uuid| *uuid.borrow_mut() = None);
-    }
-}
 
 /// Credential stores that behave in ways the in-memory one cannot, so
 /// the tests can see behaviour the shipping backends have and it does
@@ -1191,9 +1079,9 @@ mod tests {
         key
     }
 
-    /// Seal a state file with the stamps a test does not care about.
+    /// Seal a state file with a stamp a test does not care about.
     fn seal(key: &[u8], plaintext: &[u8]) -> Vec<u8> {
-        seal_state(key, plaintext, 1_700_000_000_000, 42).unwrap()
+        seal_state(key, plaintext, 1_700_000_000_000).unwrap()
     }
 
     /// The plaintext of an [`Opened::Plaintext`], or `None` for either
@@ -1201,30 +1089,13 @@ mod tests {
     fn plaintext_of(opened: Opened) -> Option<Zeroizing<Vec<u8>>> {
         match opened {
             Opened::Plaintext { plaintext, .. } => Some(plaintext),
-            Opened::BootMismatch | Opened::Refused => None,
+            Opened::Superseded | Opened::Refused => None,
         }
     }
 
     /// Open a state file under a key that is always available.
     fn open(key: &Zeroizing<Vec<u8>>, file: &[u8]) -> Opened {
         open_state(file, || Some(key.clone()))
-    }
-
-    /// A boot session other than this one, in force for the current
-    /// test thread and released when the test ends.
-    struct RebootedInto;
-
-    impl RebootedInto {
-        fn new(uuid: [u8; BOOT_UUID_LEN]) -> Self {
-            boot_uuid_override::set(uuid);
-            Self
-        }
-    }
-
-    impl Drop for RebootedInto {
-        fn drop(&mut self) {
-            boot_uuid_override::clear();
-        }
     }
 
     /// A scratch state directory standing in for the app support
@@ -1268,21 +1139,16 @@ mod tests {
     #[test]
     fn seal_and_open_round_trip() {
         let key = key();
-        let sealed = seal_state(&key, b"the whole store, serialized", 1_234, 5_678).unwrap();
+        let sealed = seal_state(&key, b"the whole store, serialized", 1_234).unwrap();
         let Opened::Plaintext {
             plaintext,
-            saved_wall_ms,
-            saved_mono_ns,
+            sealed_wall_ms,
         } = open(&key, &sealed)
         else {
-            panic!("a file this session sealed did not open");
+            panic!("a file sealed under this build's envelope did not open");
         };
         assert_eq!(&*plaintext, b"the whole store, serialized");
-        assert_eq!(saved_wall_ms, 1_234, "the wall stamp came back changed");
-        assert_eq!(
-            saved_mono_ns, 5_678,
-            "the monotonic stamp came back changed"
-        );
+        assert_eq!(sealed_wall_ms, 1_234, "the wall stamp came back changed");
     }
 
     #[test]
@@ -1406,77 +1272,91 @@ mod tests {
         );
     }
 
-    /// The envelope that ships is `OTSSEAL2`. A file from the previous
-    /// format carries no boot session at all, so there is nothing to
-    /// check it against: it fails the magic and is refused outright,
-    /// never parsed as though its first bytes meant something.
+    /// `OTSSEAL1` was refused outright before this break and stays
+    /// refused: it is not in the superseded set, so it is left on disk
+    /// rather than disposed of, and it is never parsed as though its
+    /// first bytes meant something.
     #[test]
     fn a_v1_file_is_refused() {
         let key = key();
-        let mut v1 = seal(&key, b"staged content from the old format");
+        let mut v1 = seal(&key, b"staged content from the oldest format");
         v1[..8].copy_from_slice(b"OTSSEAL1");
         assert!(
             matches!(open(&key, &v1), Opened::Refused),
-            "a v1 file must be refused, not read as a boot mismatch"
+            "a v1 file must be refused, not disposed of"
         );
         // And nothing shorter than a header is a state file either.
-        assert!(matches!(open(&key, b"OTSSEAL2"), Opened::Refused));
+        assert!(matches!(open(&key, b"OTSSEAL3"), Opened::Refused));
         assert!(matches!(open(&key, b""), Opened::Refused));
+        // Nor is a magic this app has never written, however close to
+        // one it has.
+        let mut stranger = seal(&key, b"staged content from nowhere");
+        stranger[..8].copy_from_slice(b"OTSSEAL9");
+        assert!(matches!(open(&key, &stranger), Opened::Refused));
     }
 
-    /// Every field of the header is associated data, so an edit to any
-    /// of it fails: the boot session as a mismatch (the caller's cue to
-    /// erase and rotate), the stamps as an authentication failure. A
-    /// stamp that could be edited would be a free extension of any
-    /// page's life.
+    /// The one superseded envelope is disposed of rather than refused,
+    /// and the key is never asked for on the way: its bytes cannot be
+    /// authenticated under any key this build can assemble, so a
+    /// keychain access there would be a prompt spent on nothing
+    /// (ADR-0016 section 9, ADR-0004).
     #[test]
-    fn header_fields_are_authenticated() {
+    fn a_superseded_file_is_disposed_of_rather_than_refused() {
         let key = key();
-        let sealed = seal_state(&key, b"payload", 1_700_000_000_000, 9_000_000_000).unwrap();
-
-        for index in 8..8 + BOOT_UUID_LEN {
-            let mut bent = sealed.clone();
-            bent[index] ^= 0x01;
-            assert!(
-                matches!(open(&key, &bent), Opened::BootMismatch),
-                "an edited boot session at {index} did not read as another session"
-            );
-        }
-        for index in 24..STATE_HEADER_LEN {
-            let mut bent = sealed.clone();
-            bent[index] ^= 0x01;
-            assert!(
-                matches!(open(&key, &bent), Opened::Refused),
-                "an edited stamp at {index} still opened"
-            );
-        }
-    }
-
-    /// The deterministic backstop. A file sealed in one boot session is
-    /// never decrypted in another, whatever the keys say, and the key
-    /// is not even asked for: there is nothing to learn from content
-    /// this app has already decided to discard.
-    #[test]
-    fn a_file_from_another_boot_session_is_refused() {
-        let key = key();
-        let sealed = seal(&key, b"staged content from the last boot");
-        assert!(plaintext_of(open(&key, &sealed)).is_some(), "same session");
-
-        let _rebooted = RebootedInto::new([0x5A; BOOT_UUID_LEN]);
+        let mut v2 = seal(&key, b"staged content from the boot-bound format");
+        v2[..8].copy_from_slice(b"OTSSEAL2");
         assert!(matches!(
-            open_state(&sealed, || panic!("the key was loaded for a dead session")),
-            Opened::BootMismatch
+            open_state(&v2, || panic!("a superseded file cost a keychain access")),
+            Opened::Superseded
+        ));
+        // Truncated to nothing but the magic, it is still recognisably
+        // this app's own past output.
+        assert!(matches!(
+            open_state(b"OTSSEAL2", || None),
+            Opened::Superseded
         ));
     }
 
-    /// The ledger is long-lived on purpose: same simulated reboot, and
-    /// the audit record still opens. If this ever fails, the ledger has
+    /// Both fields of the header are associated data, so no edit to
+    /// either one opens. The stamp matters most: one that could be
+    /// edited would be a free extension of any page's life.
+    ///
+    /// The version digit is the one byte where an edit is destructive
+    /// rather than merely refused, since `OTSSEAL3` and `OTSSEAL2` are
+    /// one bit apart. That is stated rather than defended, because it
+    /// costs nothing either way: the magic is inside the associated
+    /// data, so a file whose magic was flipped can never authenticate
+    /// again under any key, and refusing it forever would only withhold
+    /// the licence over bytes nobody will ever read. Anyone who can
+    /// write that byte could have deleted the file outright.
+    #[test]
+    fn header_fields_are_authenticated() {
+        let key = key();
+        let sealed = seal_state(&key, b"payload", 1_700_000_000_000).unwrap();
+
+        for index in 0..STATE_HEADER_LEN {
+            let mut bent = sealed.clone();
+            bent[index] ^= 0x01;
+            match open(&key, &bent) {
+                Opened::Refused => {}
+                Opened::Superseded => assert_eq!(
+                    index, 7,
+                    "an edited header byte at {index} read as one of this app's own past formats"
+                ),
+                Opened::Plaintext { .. } => {
+                    panic!("an edited header byte at {index} still opened")
+                }
+            }
+        }
+    }
+
+    /// The ledger keeps its own envelope and its own key, and neither
+    /// one moved in this break. If this ever fails, the ledger has
     /// picked up the content file's lifetime and stopped being a ledger.
     #[test]
-    fn the_ledger_envelope_is_not_boot_bound() {
+    fn the_ledger_envelope_is_its_own() {
         let key = key();
         let record = seal_ledger(&key, b"created 0001, sent link").unwrap();
-        let _rebooted = RebootedInto::new([0x11; BOOT_UUID_LEN]);
         assert_eq!(
             &*open_ledger(&key, &record).unwrap(),
             b"created 0001, sent link"
@@ -1485,6 +1365,68 @@ mod tests {
             !record.starts_with(FILE_MAGIC.as_slice()),
             "the ledger must not carry the state envelope's magic"
         );
+        assert!(
+            !SUPERSEDED_MAGICS
+                .iter()
+                .any(|magic| record.starts_with(magic.as_slice())),
+            "a ledger file would be disposed of as a superseded state file"
+        );
+    }
+
+    /// A death between the write and the rename strands a whole sealed
+    /// generation, or a whole key half, in the state directory, and
+    /// nothing used to sweep them: the per-user temp directory these
+    /// once landed in was cleared at boot and this one never is
+    /// (ADR-0016 section 8). They go with the same discipline as the
+    /// files they were going to become, because that is what they hold.
+    #[test]
+    fn the_sweep_takes_stranded_temp_generations_and_nothing_else() {
+        let dir = scratch_dir();
+        let sealed = seal(&key(), b"a generation that never got its name");
+        let stranded = dir.join("state.sealed.0123456789abcdef.tmp");
+        std::fs::write(&stranded, &sealed).unwrap();
+        std::fs::write(dir.join("ledger.sealed.fedcba9876543210.tmp"), b"audit").unwrap();
+        std::fs::write(
+            dir.join("ots-companion-key-half-00112233.00112233445566aa.tmp"),
+            [0x5A; KEY_LEN],
+        )
+        .unwrap();
+
+        // Everything that is not that exact shape stays: the sweep
+        // chooses its own paths, and what it calls zeroes and truncates.
+        let spared = [
+            "state.sealed",
+            "ledger.sealed",
+            "notes.tmp",
+            ".tmp",
+            "state.sealed.notsixteenhex.tmp",
+            "state.sealed.0123456789abcdefg.tmp",
+            "state.sealed.0123456789abcdef.tmp.keep",
+        ];
+        for name in spared {
+            std::fs::write(dir.join(name), b"not this app's to erase").unwrap();
+        }
+
+        sweep_stranded_temps(&dir);
+
+        assert_eq!(
+            temp_litter(&dir).len(),
+            spared.len() - 1,
+            "the sweep took a file that was not a stranded generation, or left one that was"
+        );
+        assert!(!stranded.exists(), "a stranded generation survived");
+        for name in spared {
+            assert!(dir.join(name).exists(), "the sweep took {name}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A directory that cannot be read is not a failure worth a return
+    /// value: the sweep is best effort at launch, and everything after
+    /// it must still run.
+    #[test]
+    fn sweeping_a_directory_that_is_not_there_is_not_an_error() {
+        sweep_stranded_temps(Path::new("/nowhere/at/all"));
     }
 
     /// Best effort, and never called erasure: what it must do is leave
@@ -1643,68 +1585,13 @@ mod tests {
         );
     }
 
-    /// A kernel that will not name the boot session must not collapse
-    /// onto a value every process agrees on. That would make the boot
-    /// check pass across a real restart, decrypt the previous boot's
-    /// file and, with zero time away, restore every page at its full
-    /// pre-reboot TTL.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn an_unreadable_boot_session_fails_closed() {
-        let sentinel = unreadable_boot_session();
-        assert_ne!(
-            sentinel, PORTABLE_BOOT_UUID,
-            "the refusal fell back to a value every process shares"
-        );
-        assert_ne!(sentinel, [0u8; BOOT_UUID_LEN]);
-        assert_ne!(
-            sentinel,
-            boot_session_uuid(),
-            "the sentinel collided with the real session"
-        );
-        assert_eq!(
-            sentinel,
-            unreadable_boot_session(),
-            "the sentinel must be stable inside one process"
-        );
-    }
-
-    /// The kernel hands back a `8-4-4-4-12` string; anything else is not
-    /// a session identity and must not be padded into one.
-    #[test]
-    fn a_boot_session_string_parses_only_when_it_is_whole() {
-        assert_eq!(
-            parse_uuid(b"1B2C3D4E-5F60-7182-93A4-B5C6D7E8F901\0").unwrap(),
-            [
-                0x1B, 0x2C, 0x3D, 0x4E, 0x5F, 0x60, 0x71, 0x82, 0x93, 0xA4, 0xB5, 0xC6, 0xD7, 0xE8,
-                0xF9, 0x01
-            ]
-        );
-        assert_eq!(
-            parse_uuid(b"1b2c3d4e-5f60-7182-93a4-b5c6d7e8f901").unwrap(),
-            parse_uuid(b"1B2C3D4E-5F60-7182-93A4-B5C6D7E8F901").unwrap(),
-            "case is not identity"
-        );
-        assert!(parse_uuid(b"1B2C3D4E-5F60-7182-93A4-B5C6D7E8F9").is_none());
-        assert!(parse_uuid(b"1B2C3D4E-5F60-7182-93A4-B5C6D7E8F90123").is_none());
-        assert!(parse_uuid(b"not-a-uuid-at-all").is_none());
-        assert!(parse_uuid(b"").is_none());
-    }
-
-    /// On macOS the kernel must actually answer, or the boot bound is
-    /// inert and every restart quietly keeps its content.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn the_boot_session_reads_from_the_kernel() {
-        let uuid = boot_session_uuid();
-        assert_ne!(
-            uuid, PORTABLE_BOOT_UUID,
-            "kern.bootsessionuuid did not answer"
-        );
-        assert_ne!(uuid, [0u8; BOOT_UUID_LEN]);
-        assert_eq!(uuid, boot_session_uuid(), "the session is not stable");
-    }
-
+    /// Stability across calls is the whole of ADR-0016 as the key
+    /// derivation sees it. Nothing here reads the boot session any more,
+    /// so a later launch is indistinguishable from a later call: it
+    /// finds the half the earlier one wrote, joins it to the keychain
+    /// half, and lands on the same key, which is what lets content
+    /// outlive a restart. Under the previous design each boot session
+    /// derived a key unrelated to the last.
     #[test]
     fn ensure_is_stable_and_load_never_mints() {
         let dir = StateDir::new();
@@ -1830,48 +1717,6 @@ mod tests {
                 .to_str()
                 .unwrap()
                 .starts_with(FILE_HALF_PREFIX)
-        );
-    }
-
-    /// Both halves are durable across boot sessions now, which is the
-    /// whole of ADR-0016 as the key derivation sees it. The session
-    /// changes and nothing else does: the same file half is found under
-    /// the same name, the same keychain half joins it, and the derived
-    /// key is byte-identical, so the content sealed before the restart
-    /// still opens after it. Under the previous design each of these
-    /// three sessions derived a key unrelated to the last.
-    #[test]
-    fn the_derived_key_survives_a_new_boot_session() {
-        let dir = StateDir::new();
-        let path = dir.state_path();
-        let store = InMemoryCredentialStore::default();
-
-        let first = {
-            let _booted = RebootedInto::new([0xA1; BOOT_UUID_LEN]);
-            ensure_state_key(&store, &path).unwrap()
-        };
-
-        let second = {
-            let _rebooted = RebootedInto::new([0xB2; BOOT_UUID_LEN]);
-            ensure_state_key(&store, &path).unwrap()
-        };
-        assert_eq!(
-            &*first, &*second,
-            "a restart derived a key that opens nothing it wrote before"
-        );
-        assert_eq!(
-            dir.halves().len(),
-            1,
-            "the second session minted a half of its own rather than finding the one on disk"
-        );
-
-        // And a restore in a third session, which mints nothing, still
-        // assembles that same key from the two halves it finds.
-        let _rebooted = RebootedInto::new([0xC3; BOOT_UUID_LEN]);
-        assert_eq!(
-            &*load_state_key(&store, &path).unwrap(),
-            &*first,
-            "a restart could not reassemble the key its own file rests under"
         );
     }
 

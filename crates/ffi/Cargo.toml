@@ -40,8 +40,8 @@ serde_json = { workspace = true }
 zeroize = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# confstr(_CS_DARWIN_USER_TEMP_DIR): the per-user temp directory macOS
-# clears at boot, which is where the boot half of the content key lives
-# (src/persist.rs, ADR-0012). Already in the workspace lock by way of
+# The open flags the erase path refuses a planted symlink and a planted
+# FIFO with, spelled where their values belong rather than transcribed
+# (src/persist.rs). Already in the workspace lock by way of
 # companion-core, so this adds no new supply chain.
 libc = "0.2"
