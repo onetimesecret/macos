@@ -47,14 +47,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forward: with both halves durable the split is an ACL gate and a
   separation of backup domains, and it bounds nothing in time.
   Crypto-erasure stops being a scheduled event and becomes the
-  finishing step of a deletion the user or the TTL asked for, so the
-  halves now rotate when the content file is dropped. That rotation is
-  gated on the envelope magic actually at the path rather than on the
-  caller, because the same entry point drops the ledger file on a user's
-  Clear and that gesture asked nothing about pages. Launch also sweeps
-  the stranded `*.tmp` generations a death mid-write leaves behind:
-  they hold whole sealed generations and whole key halves, and nothing
-  ever clears the state directory.
+  finishing step of a deletion the user asked for, so the halves rotate
+  when the content file is dropped, which today means when the pad goes
+  empty. A page expiring beside pages that remain rotates nothing and
+  cannot: the file is re-sealed under the same halves, because the
+  survivors are in it.
+
+  Rotation itself changed shape. It erases the file half, found by
+  scanning the state directory for its filename prefix, with the same
+  zero, truncate, sync, unlink discipline the ciphertext gets, and then
+  deletes the Keychain item for hygiene. It no longer reads the
+  Keychain at all: the read was the call that can raise the ACL prompt,
+  on the quit path and under a background debounce, which is where
+  ADR-0004 says a prompt has no business being, and a Keychain that
+  would not answer that read used to skip the erase entirely and leave
+  both halves alive. Since both halves are needed to derive the key,
+  erasing the file half is the whole of the forgetting, and a refused
+  Keychain delete now leaves an item that opens nothing rather than a
+  live key. A file half that cannot be erased cancels the drop: the
+  sealed file stays, the shell is told the write failed, and the retry
+  comes back to it, rather than the ciphertext being unlinked while the
+  half that opens it sits beside it. Whether a drop rotates is decided
+  from the path, its name first and its envelope magic second, never
+  from which caller asked, because the same entry point drops the
+  ledger file on a user's Clear and that gesture asked nothing about
+  pages.
+
+  Launch also sweeps the stranded `*.tmp` generations a death mid-write
+  leaves behind: they hold whole sealed generations and whole key
+  halves, and nothing ever clears the state directory.
 
   Issue #51 is closed by deletion rather than by repair. A transient
   `sysctlbyname` failure substituted a per-process sentinel that no
