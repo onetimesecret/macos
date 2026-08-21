@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The shell's persistence lifecycle now runs in CI**
+  (`companion_new_ephemeral`, companion-ffi 0.10.0): no Swift test had
+  ever constructed a `PageModel`, let the save debounce fire, and read
+  the sealed file back, because neither the state directory nor the
+  credential store could be pointed anywhere but at the real ones.
+  `PageModel.init` now takes a state directory, a core client, and a
+  debounce interval as defaulted parameters that resolve to exactly the
+  shipping values when left alone, and the seam gained
+  `companion_new_ephemeral`: a handle whose keys rest in process memory
+  and die with it, shared by tag so a second handle can open what a
+  first one sealed. The first integration test drives load, mutation,
+  the real timer, and a relaunch inside a temporary directory it owns,
+  and never touches the login Keychain.
+
 - **Find in the page (⌘F), and line wrapping you can turn off (⌥Z)**:
   the editor is an `NSTextView`, so the machine's own find machinery was
   already under it and switched off at one line. It is on now, as the
