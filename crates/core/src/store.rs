@@ -18,7 +18,7 @@ use crate::document::SheetDocument;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
     ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId,
-    TITLE_CAP, derive_title,
+    TITLE_CAP, Tab, TabId, derive_title,
 };
 use crate::ttl::Ttl;
 
@@ -136,7 +136,10 @@ pub enum EditOp {
 /// a byte on its own.
 pub struct SheetStore<C: Clock> {
     pub(crate) clock: C,
-    pub(crate) sheets: Vec<Sheet>,
+    /// The strip, in visible order: durable slots, each holding at most
+    /// one perishable page (ADR-0017). This vector is what the user
+    /// arranged by dragging, and only the user shortens it.
+    pub(crate) tabs: Vec<Tab>,
     /// The audit trail, newest first. Append-only from the store's side
     /// (the user may clear it whole), bounded by a rolling 90 day window
     /// on wall-clock time rather than by a record count: see
@@ -147,6 +150,7 @@ pub struct SheetStore<C: Clock> {
     pub(crate) ledger: VecDeque<LedgerRecord>,
     pub(crate) cap: usize,
     pub(crate) default_rung: Ttl,
+    pub(crate) next_tab_id: u64,
     pub(crate) next_sheet_id: u64,
     pub(crate) next_chip_id: u64,
 }
@@ -157,10 +161,11 @@ impl<C: Clock> SheetStore<C> {
     pub fn new(clock: C) -> Self {
         Self {
             clock,
-            sheets: Vec::new(),
+            tabs: Vec::new(),
             ledger: VecDeque::new(),
             cap: DEFAULT_SHEET_CAP,
             default_rung: Ttl::default(),
+            next_tab_id: 1,
             next_sheet_id: 1,
             next_chip_id: 1,
         }
@@ -181,46 +186,58 @@ impl<C: Clock> SheetStore<C> {
     }
 
     // -----------------------------------------------------------------
-    // Sheets: create, close, order
+    // Tabs and sheets: create, close, order
     // -----------------------------------------------------------------
 
-    /// A new page at the end of the tab strip, on the default rung, its
-    /// countdown started. Refuses at the cap.
+    /// A new tab at the end of the strip, holding a new page on the
+    /// default rung with its countdown started. Refuses at the cap.
+    ///
+    /// The id returned is the page's. The tab that carries it is
+    /// addressed through the page for now; the tab-addressed routes
+    /// arrive with the seam that needs them.
     pub fn new_sheet(&mut self) -> Result<SheetId, Refusal> {
-        if self.sheets.len() >= self.cap {
+        if self.tabs.len() >= self.cap {
             return Err(Refusal::AtCapacity { cap: self.cap });
         }
         let now = self.clock.now();
-        // A page names itself the moment it exists, so no record can
-        // ever reach the ledger without a title already on it.
         let created_wall_ms = self.clock.wall_ms();
         let offset = self.clock.local_offset_seconds();
         let id = SheetId(self.next_sheet_id);
         self.next_sheet_id += 1;
+        let tab_id = TabId(self.next_tab_id);
+        self.next_tab_id += 1;
         let uuid = ItemId::random();
-        let title = derive_title(&[], created_wall_ms, offset);
         let document = SheetDocument::new();
         let blocks = BlockIndex::for_document(&document);
-        self.sheets.push(Sheet {
-            id,
-            uuid,
-            title: title.clone(),
-            title_is_user_set: false,
+        let rung = self.default_rung;
+        self.tabs.push(Tab {
+            id: tab_id,
+            uuid: ItemId::random(),
             created_wall_ms,
-            document,
-            segments: Vec::new(),
-            blocks,
-            chips: Vec::new(),
-            rung: self.default_rung,
-            clock: SheetClock::Running {
-                deadline: now + self.default_rung.duration(),
-            },
-            total_held: Duration::ZERO,
+            name: None,
+            rung,
+            page: Some(Sheet {
+                id,
+                uuid,
+                derived_title: None,
+                created_wall_ms,
+                document,
+                segments: Vec::new(),
+                blocks,
+                chips: Vec::new(),
+                clock: SheetClock::Running {
+                    deadline: now + rung.duration(),
+                },
+                total_held: Duration::ZERO,
+            }),
         });
+        // The slot names itself the moment it exists, so no record can
+        // ever reach the ledger without a label already resolved.
+        let label = self.tabs.last().expect("just pushed").label(offset);
         self.record(
             LedgerEvent::Created,
             uuid,
-            title,
+            label,
             created_wall_ms,
             SizeClass::Tiny,
             DestinationClass::None,
@@ -228,56 +245,94 @@ impl<C: Clock> SheetStore<C> {
         Ok(id)
     }
 
-    /// Close a page: its sealed bytes zeroize on the way out and the
-    /// ledger keeps one `Discarded` record of the fact. Returns whether
-    /// the page existed.
+    /// Close the tab a page stands in: the page's sealed bytes zeroize
+    /// on the way out, the ledger keeps one `Discarded` record of the
+    /// fact, and the slot leaves the strip. Returns whether the page
+    /// existed.
     pub fn close_sheet(&mut self, id: SheetId) -> bool {
-        let Some(index) = self.sheets.iter().position(|s| s.id == id) else {
+        let offset = self.clock.local_offset_seconds();
+        let Some(index) = self.tab_index_of(id) else {
             return false;
         };
-        let sheet = self.sheets.remove(index);
-        self.entomb(sheet, LedgerEvent::Discarded);
+        let tab = self.tabs.remove(index);
+        let label = tab.label(offset);
+        if let Some(page) = tab.page {
+            self.entomb(page, label, LedgerEvent::Discarded);
+        }
         true
     }
 
-    /// Move a page to `index` in the visible order (drag-to-reorder;
-    /// the ⌘-number map follows). Out-of-range indices clamp to the
-    /// end. Returns whether the page existed.
+    /// Move a page's tab to `index` in the visible order
+    /// (drag-to-reorder; the ⌘-number map follows). Out-of-range
+    /// indices clamp to the end. Returns whether the page existed.
     pub fn move_sheet(&mut self, id: SheetId, index: usize) -> bool {
-        let Some(from) = self.sheets.iter().position(|s| s.id == id) else {
+        let Some(from) = self.tab_index_of(id) else {
             return false;
         };
-        let sheet = self.sheets.remove(from);
-        let to = index.min(self.sheets.len());
-        self.sheets.insert(to, sheet);
+        let tab = self.tabs.remove(from);
+        let to = index.min(self.tabs.len());
+        self.tabs.insert(to, tab);
         true
     }
 
-    /// The pages, in visible (tab) order.
+    /// The tabs, in visible (strip) order.
+    pub fn tabs(&self) -> impl Iterator<Item = &Tab> {
+        self.tabs.iter()
+    }
+
+    /// The live pages, in visible (tab) order. Tabs holding no page
+    /// contribute nothing, so this is shorter than the strip.
     pub fn sheets(&self) -> impl Iterator<Item = &Sheet> {
-        self.sheets.iter()
+        self.tabs.iter().filter_map(|tab| tab.page.as_ref())
     }
 
     /// A page by id.
     #[must_use]
     pub fn sheet(&self, id: SheetId) -> Option<&Sheet> {
-        self.sheets.iter().find(|s| s.id == id)
+        self.sheets().find(|s| s.id == id)
     }
 
     fn sheet_mut(&mut self, id: SheetId) -> Option<&mut Sheet> {
-        self.sheets.iter_mut().find(|s| s.id == id)
+        self.tabs
+            .iter_mut()
+            .filter_map(|tab| tab.page.as_mut())
+            .find(|s| s.id == id)
     }
 
-    /// Number of live pages.
+    /// The tab a page stands in.
+    fn tab_of(&self, page: SheetId) -> Option<&Tab> {
+        self.tabs.iter().find(|tab| tab.holds(page))
+    }
+
+    /// The tab a page stands in, mutably.
+    fn tab_of_mut(&mut self, page: SheetId) -> Option<&mut Tab> {
+        self.tabs.iter_mut().find(|tab| tab.holds(page))
+    }
+
+    /// Where in the strip a page's tab sits.
+    fn tab_index_of(&self, page: SheetId) -> Option<usize> {
+        self.tabs.iter().position(|tab| tab.holds(page))
+    }
+
+    /// The clock's offset from UTC in seconds, which is everything a
+    /// caller needs to render a [`Tab::label`] the same way the ledger
+    /// records it.
+    #[must_use]
+    pub fn local_offset_seconds(&self) -> i32 {
+        self.clock.local_offset_seconds()
+    }
+
+    /// Number of live pages. Not the width of the strip: a tab holding
+    /// no page is still a tab.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.sheets.len()
+        self.sheets().count()
     }
 
     /// True when no pages exist — the system working, not failing.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.sheets.is_empty()
+        self.tabs.is_empty()
     }
 
     /// The cap.
@@ -306,17 +361,20 @@ impl<C: Clock> SheetStore<C> {
         if self.sheet(sheet).is_none() {
             return Err(Refusal::UnknownSheet);
         }
+        let offset = self.clock.local_offset_seconds();
         let id = ChipId(self.next_chip_id);
         self.next_chip_id += 1;
         let chip = SealedChip::text(id, text);
         let uuid = chip.uuid;
-        let host = self.sheet_mut(sheet).expect("checked above");
-        host.chips.push(chip);
-        let (title, created) = (host.title.clone(), host.created_wall_ms);
+        let host = self.tab_of_mut(sheet).expect("checked above");
+        let page = host.page.as_mut().expect("the tab holds the checked page");
+        page.chips.push(chip);
+        let created = page.created_wall_ms;
+        let label = host.label(offset);
         self.record(
             LedgerEvent::Sealed,
             uuid,
-            title,
+            label,
             created,
             SizeClass::of(text.len()),
             DestinationClass::None,
@@ -333,18 +391,21 @@ impl<C: Clock> SheetStore<C> {
         if self.sheet(sheet).is_none() {
             return Err(Refusal::UnknownSheet);
         }
+        let offset = self.clock.local_offset_seconds();
         let id = ChipId(self.next_chip_id);
         self.next_chip_id += 1;
         let size = SizeClass::of(bytes.len());
         let chip = SealedChip::image(id, bytes);
         let uuid = chip.uuid;
-        let host = self.sheet_mut(sheet).expect("checked above");
-        host.chips.push(chip);
-        let (title, created) = (host.title.clone(), host.created_wall_ms);
+        let host = self.tab_of_mut(sheet).expect("checked above");
+        let page = host.page.as_mut().expect("the tab holds the checked page");
+        page.chips.push(chip);
+        let created = page.created_wall_ms;
+        let label = host.label(offset);
         self.record(
             LedgerEvent::Sealed,
             uuid,
-            title,
+            label,
             created,
             size,
             DestinationClass::None,
@@ -640,14 +701,15 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// The invariant every document mutation restores: the segments
-    /// projection mirrors the document, the title is current, and no
-    /// sealed chip outlives its sentinel.
+    /// projection mirrors the document, the derived title is current,
+    /// and no sealed chip outlives its sentinel.
     fn settle_document(&mut self, id: SheetId) {
-        // Read the clock before the mutable borrow of the sheet.
+        // Read the clock before the mutable borrow of the tab.
         let offset = self.clock.local_offset_seconds();
-        let Some(sheet) = self.sheet_mut(id) else {
+        let Some(tab) = self.tab_of_mut(id) else {
             return;
         };
+        let sheet = tab.page.as_mut().expect("the tab holds the page found");
         sheet.rebuild_segments();
         // The block index settles against the document: anchors are
         // re-taken, and an index the mutation path failed to narrate
@@ -655,12 +717,12 @@ impl<C: Clock> SheetStore<C> {
         // refusal) is rebuilt with fresh identities rather than served
         // stale (ADR-0013).
         sheet.settle_blocks();
-        // The title is re-derived here, on edit, and never later: by
-        // the time a record reaches the ledger the page already knows
-        // its name (ADR-0012).
-        if !sheet.title_is_user_set {
-            sheet.title = derive_title(&sheet.segments, sheet.created_wall_ms, offset);
-        }
+        // The derived title is re-derived here, on edit, and never
+        // later: by the time a record reaches the ledger the page
+        // already knows what it would answer (ADR-0012). There is no
+        // user-set guard any more, because the name the user typed sits
+        // on the tab and this write cannot reach it (ADR-0017).
+        sheet.derived_title = derive_title(&sheet.segments);
         // Chips the document no longer holds die now (zeroize on drop).
         // A chip removed with ⌫ is as gone as one removed by
         // `delete_chip`, so it leaves the same record.
@@ -673,13 +735,17 @@ impl<C: Clock> SheetStore<C> {
             }
             alive
         });
-        let title = sheet.title.clone();
         let created = sheet.created_wall_ms;
+        // The label resolves after the re-derivation above and after
+        // the page's mutable borrow has fallen, so a chip that died in
+        // the same edit that renamed the page is recorded under the
+        // name the page ended up with.
+        let label = tab.label(offset);
         for (uuid, len) in dropped {
             self.record(
                 LedgerEvent::Discarded,
                 uuid,
-                title.clone(),
+                label.clone(),
                 created,
                 SizeClass::of(len),
                 DestinationClass::None,
@@ -687,24 +753,26 @@ impl<C: Clock> SheetStore<C> {
         }
     }
 
-    /// Set a page's title explicitly. An empty or all-whitespace title
-    /// clears the override and re-derives from the page's content;
-    /// anything else is capped at 80 characters and is never overwritten
-    /// by re-derivation afterwards (ADR-0012). Returns whether the page
-    /// existed.
+    /// Name the tab a page stands in. An empty or all-whitespace
+    /// submission clears the name; anything else is capped at 80
+    /// characters and outlives every later edit. Returns whether the
+    /// page existed.
+    ///
+    /// Clearing writes `None` and derives nothing. That is the whole of
+    /// "a tab is named by the user or not at all" (ADR-0017): the label
+    /// falls back to the live page's derived title, which is a read of
+    /// the page rather than a write to the tab, so no string the app
+    /// made up ever lands in the durable object.
     pub fn set_title(&mut self, id: SheetId, title: &str) -> bool {
-        let offset = self.clock.local_offset_seconds();
-        let Some(sheet) = self.sheet_mut(id) else {
+        let Some(tab) = self.tab_of_mut(id) else {
             return false;
         };
         let trimmed = title.trim();
-        if trimmed.is_empty() {
-            sheet.title_is_user_set = false;
-            sheet.title = derive_title(&sheet.segments, sheet.created_wall_ms, offset);
+        tab.name = if trimmed.is_empty() {
+            None
         } else {
-            sheet.title_is_user_set = true;
-            sheet.title = trimmed.chars().take(TITLE_CAP).collect();
-        }
+            Some(trimmed.chars().take(TITLE_CAP).collect())
+        };
         true
     }
 
@@ -713,9 +781,7 @@ impl<C: Clock> SheetStore<C> {
     // -----------------------------------------------------------------
 
     fn chip_home(&self, id: ChipId) -> Option<(SheetId, &SealedChip)> {
-        self.sheets
-            .iter()
-            .find_map(|s| s.chip(id).map(|c| (s.id, c)))
+        self.sheets().find_map(|s| s.chip(id).map(|c| (s.id, c)))
     }
 
     /// Copy a chip's bytes back out, with what they are. Copy-out does
@@ -733,19 +799,23 @@ impl<C: Clock> SheetStore<C> {
     /// no resurrection path (open question №5: undo never un-seals).
     /// Returns whether the chip existed.
     pub fn delete_chip(&mut self, id: ChipId) -> bool {
+        let offset = self.clock.local_offset_seconds();
         let mut removed: Option<(ItemId, usize, String, u64)> = None;
-        for sheet in &mut self.sheets {
+        for tab in &mut self.tabs {
+            // The label is resolved before the page is borrowed
+            // mutably, and it cannot change under the deletion: a chip
+            // leaving the body moves neither the tab's name nor the
+            // page's first line.
+            let label = tab.label(offset);
+            let Some(sheet) = tab.page.as_mut() else {
+                continue;
+            };
             let Some(index) = sheet.chips.iter().position(|c| c.id == id) else {
                 continue;
             };
             let chip = &sheet.chips[index];
             let uuid = chip.uuid;
-            removed = Some((
-                uuid,
-                chip.bytes.len(),
-                sheet.title.clone(),
-                sheet.created_wall_ms,
-            ));
+            removed = Some((uuid, chip.bytes.len(), label, sheet.created_wall_ms));
             // The sentinel leaves the document first, so the source of
             // truth forgets the position before the bytes die. A chip
             // sealed but never placed has no sentinel to remove. One
@@ -761,13 +831,13 @@ impl<C: Clock> SheetStore<C> {
             sheet.settle_blocks();
             break;
         }
-        let Some((uuid, len, title, created)) = removed else {
+        let Some((uuid, len, label, created)) = removed else {
             return false;
         };
         self.record(
             LedgerEvent::Discarded,
             uuid,
-            title,
+            label,
             created,
             SizeClass::of(len),
             DestinationClass::None,
@@ -782,15 +852,20 @@ impl<C: Clock> SheetStore<C> {
     /// most useful line in the ledger (ADR-0012). Returns whether the
     /// chip existed.
     pub fn record_sent(&mut self, chip: ChipId, destination: DestinationClass) -> bool {
+        let offset = self.clock.local_offset_seconds();
         let Some((sheet_id, sealed)) = self.chip_home(chip) else {
             return false;
         };
         let uuid = sealed.uuid;
         let size = SizeClass::of(sealed.bytes.len());
-        let host = self.sheet(sheet_id).expect("chip_home found it");
-        let title = host.title.clone();
-        let created = host.created_wall_ms;
-        self.record(LedgerEvent::Sent, uuid, title, created, size, destination);
+        let host = self.tab_of(sheet_id).expect("chip_home found it");
+        let label = host.label(offset);
+        let created = host
+            .page
+            .as_ref()
+            .expect("chip_home found the page in it")
+            .created_wall_ms;
+        self.record(LedgerEvent::Sent, uuid, label, created, size, destination);
         true
     }
 
@@ -801,24 +876,26 @@ impl<C: Clock> SheetStore<C> {
     /// the pasteboard path leave. Without it the ledger's `sent` claim
     /// would be silently incomplete (ADR-0012).
     ///
-    /// The record carries the page's own [`ItemId`] and the title the
-    /// page already owned; nothing is derived from ink here. The size
+    /// The record carries the page's own [`ItemId`] and the label its
+    /// tab already resolved; nothing is derived from ink here. The size
     /// class is the page's sealed byte total, the same figure
     /// [`SheetStore::close_sheet`] and [`SheetStore::expire_due`] record,
     /// and the stamp is the wall clock, as for every other record.
     /// Returns whether the page existed.
     pub fn record_sheet_sent(&mut self, sheet: SheetId, destination: DestinationClass) -> bool {
-        let Some(page) = self.sheet(sheet) else {
+        let offset = self.clock.local_offset_seconds();
+        let Some(tab) = self.tab_of(sheet) else {
             return false;
         };
+        let label = tab.label(offset);
+        let page = tab.page.as_ref().expect("the tab holds the page found");
         let uuid = page.uuid;
-        let title = page.title.clone();
         let created = page.created_wall_ms;
         let sealed_bytes: usize = page.chips.iter().map(|c| c.bytes.len()).sum();
         self.record(
             LedgerEvent::Sent,
             uuid,
-            title,
+            label,
             created,
             SizeClass::of(sealed_bytes),
             destination,
@@ -829,7 +906,7 @@ impl<C: Clock> SheetStore<C> {
     /// Record a successful promotion: only the receipt identifier stays
     /// on the live chip (no link, no history — doc 03 §5).
     pub fn mark_chip_promoted(&mut self, id: ChipId, receipt_id: String) -> bool {
-        for sheet in &mut self.sheets {
+        for sheet in self.tabs.iter_mut().filter_map(|tab| tab.page.as_mut()) {
             if let Some(chip) = sheet.chips.iter_mut().find(|c| c.id == id) {
                 chip.promotion = Some(Promotion { receipt_id });
                 return true;
@@ -903,18 +980,22 @@ impl<C: Clock> SheetStore<C> {
     /// the new rung.
     pub fn cycle_rung(&mut self, id: SheetId) -> Option<Ttl> {
         let now = self.clock.now();
-        let sheet = self.sheet_mut(id)?;
+        let tab = self.tab_of_mut(id)?;
+        let rung = tab.rung.shorter();
+        let sheet = tab.page.as_mut().expect("the tab holds the page found");
         normalize(sheet, now);
         if sheet.remaining(now).is_zero() {
             return None; // due; the timer will reap it
         }
-        let rung = sheet.rung.shorter();
-        set_clock(sheet, rung, now);
+        set_clock(tab, rung, now);
         // A rung transition is the compaction boundary (ADR-0013): the
         // ceremony runs on the same clockwork as everything else, after
         // the transition is accepted, so a due page's refusal above
         // means compaction can never race the reap.
-        sheet.compact();
+        tab.page
+            .as_mut()
+            .expect("the tab holds the page found")
+            .compact();
         Some(rung)
     }
 
@@ -922,15 +1003,19 @@ impl<C: Clock> SheetStore<C> {
     /// page refuses (see [`SheetStore::cycle_rung`]).
     pub fn set_rung(&mut self, id: SheetId, rung: Ttl) -> Option<Ttl> {
         let now = self.clock.now();
-        let sheet = self.sheet_mut(id)?;
+        let tab = self.tab_of_mut(id)?;
+        let sheet = tab.page.as_mut().expect("the tab holds the page found");
         normalize(sheet, now);
         if sheet.remaining(now).is_zero() {
             return None; // due; the timer will reap it
         }
-        set_clock(sheet, rung, now);
+        set_clock(tab, rung, now);
         // The same boundary as [`SheetStore::cycle_rung`]: any accepted
         // rung transition sheds the history.
-        sheet.compact();
+        tab.page
+            .as_mut()
+            .expect("the tab holds the page found")
+            .compact();
         Some(rung)
     }
 
@@ -1015,8 +1100,7 @@ impl<C: Clock> SheetStore<C> {
     #[must_use]
     pub fn next_event(&self) -> Option<Instant> {
         let now = self.clock.now();
-        self.sheets
-            .iter()
+        self.sheets()
             .map(|s| match s.clock {
                 SheetClock::Running { deadline } => deadline,
                 SheetClock::Held {
@@ -1042,16 +1126,27 @@ impl<C: Clock> SheetStore<C> {
     /// [`SheetStore::next_event`].
     pub fn expire_due(&mut self) -> Vec<SheetId> {
         let now = self.clock.now();
-        for sheet in &mut self.sheets {
+        let offset = self.clock.local_offset_seconds();
+        for sheet in self.tabs.iter_mut().filter_map(|tab| tab.page.as_mut()) {
             normalize(sheet, now);
         }
-        let (dead, live): (Vec<Sheet>, Vec<Sheet>) = std::mem::take(&mut self.sheets)
-            .into_iter()
-            .partition(|s| s.remaining(now).is_zero());
-        self.sheets = live;
-        let ids: Vec<SheetId> = dead.iter().map(|s| s.id).collect();
-        for sheet in dead {
-            self.entomb(sheet, LedgerEvent::Expired);
+        let due = |tab: &Tab| {
+            tab.page
+                .as_ref()
+                .is_some_and(|page| page.remaining(now).is_zero())
+        };
+        let (dead, live): (Vec<Tab>, Vec<Tab>) =
+            std::mem::take(&mut self.tabs).into_iter().partition(due);
+        self.tabs = live;
+        let ids: Vec<SheetId> = dead
+            .iter()
+            .filter_map(|tab| tab.page.as_ref().map(|page| page.id))
+            .collect();
+        for tab in dead {
+            let label = tab.label(offset);
+            if let Some(page) = tab.page {
+                self.entomb(page, label, LedgerEvent::Expired);
+            }
         }
         ids
     }
@@ -1128,7 +1223,7 @@ impl<C: Clock> SheetStore<C> {
         clippy::needless_pass_by_value,
         reason = "consuming is the point: the page dies here, and its SecretBuffers zeroize as it drops"
     )]
-    fn entomb(&mut self, sheet: Sheet, event: LedgerEvent) {
+    fn entomb(&mut self, sheet: Sheet, label: String, event: LedgerEvent) {
         let has_ink = sheet.segments.iter().any(|s| match s {
             Segment::Ink(text) => !text.trim().is_empty(),
             Segment::Chip(_) => false,
@@ -1136,14 +1231,16 @@ impl<C: Clock> SheetStore<C> {
         if !has_ink && sheet.chips.is_empty() {
             return;
         }
-        // The inversion (ADR-0012): the ledger copies a name the page
-        // already owned. Nothing is derived from ink at death, and no
-        // ink, excerpt or byte count crosses into the record.
+        // The inversion (ADR-0012): the ledger copies a name that was
+        // already resolved, by the caller, from the same three steps
+        // every other record took. Nothing is derived from ink at
+        // death, and no ink, excerpt or byte count crosses into the
+        // record.
         let sealed_bytes: usize = sheet.chips.iter().map(|c| c.bytes.len()).sum();
         self.record(
             event,
             sheet.uuid,
-            sheet.title.clone(),
+            label,
             sheet.created_wall_ms,
             SizeClass::of(sealed_bytes),
             DestinationClass::None,
@@ -1254,9 +1351,14 @@ fn sim_admit(units: &mut Vec<SimUnit>, chips: &[SealedChip], op: &EditOp) -> boo
     }
 }
 
-/// Reset a (normalized) page's clock to the full value of `rung`.
-fn set_clock(sheet: &mut Sheet, rung: Ttl, now: Instant) {
-    sheet.rung = rung;
+/// Store `rung` on the tab and reset its (normalized) page's clock to
+/// the full value. The rung is the slot's from here on, so it stands
+/// whether or not a page is there to take it.
+fn set_clock(tab: &mut Tab, rung: Ttl, now: Instant) {
+    tab.rung = rung;
+    let Some(sheet) = tab.page.as_mut() else {
+        return;
+    };
     match &mut sheet.clock {
         SheetClock::Running { deadline } => *deadline = now + rung.duration(),
         SheetClock::Held {
@@ -1286,6 +1388,20 @@ mod tests {
         store.seal_text(sheet, text).unwrap()
     }
 
+    /// The label the strip shows for the tab a page stands in: the
+    /// three step resolution, read the way the ledger reads it.
+    fn label(store: &SheetStore<ManualClock>, page: SheetId) -> String {
+        store
+            .tab_of(page)
+            .expect("the page is in a tab")
+            .label(store.local_offset_seconds())
+    }
+
+    /// The name the user typed on the tab a page stands in, or `None`.
+    fn name(store: &SheetStore<ManualClock>, page: SheetId) -> Option<&str> {
+        store.tab_of(page).expect("the page is in a tab").name()
+    }
+
     /// Every recorded event, newest first.
     fn events(store: &SheetStore<ManualClock>) -> Vec<LedgerEvent> {
         store.ledger().map(LedgerRecord::event).collect()
@@ -1298,9 +1414,9 @@ mod tests {
         let second = store.new_sheet().unwrap();
         let order: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
         assert_eq!(order, vec![first, second]);
-        let sheet = store.sheet(first).unwrap();
-        assert_eq!(sheet.rung(), Ttl::default());
-        assert_eq!(sheet.remaining_label(store.now()), "8h");
+        let tab = store.tabs().next().unwrap();
+        assert_eq!(tab.rung(), Ttl::default());
+        assert_eq!(tab.page().unwrap().remaining_label(store.now()), "8h");
     }
 
     #[test]
@@ -1365,80 +1481,98 @@ mod tests {
                 Segment::Chip(chip_a)
             ]
         ));
-        assert_eq!(store.sheet(a).unwrap().title(), "dsn for the migration");
+        assert_eq!(label(&store, a), "dsn for the migration");
     }
 
     #[test]
-    fn a_fresh_page_is_titled_by_its_creation_stamp() {
+    fn a_fresh_tab_is_labelled_by_its_creation_stamp_and_holds_no_name() {
         let (mut store, clock) = store();
         let id = store.new_sheet().unwrap();
-        let sheet = store.sheet(id).unwrap();
-        assert_eq!(sheet.title(), PLACEHOLDER);
-        assert!(!sheet.title_is_user_set());
-        assert_eq!(sheet.created_wall_ms(), 1_700_000_000_000);
+        let tab = store.tabs().next().unwrap();
+        assert_eq!(tab.label(0), PLACEHOLDER);
+        assert_eq!(tab.name(), None, "a tab is born with no name at all");
+        assert_eq!(tab.created_wall_ms(), 1_700_000_000_000);
+        assert_eq!(tab.page().unwrap().created_wall_ms(), 1_700_000_000_000);
+        assert_eq!(tab.page().unwrap().derived_title(), None);
 
-        // The stamp is the page's birthday, not the current time: an
+        // The stamp is the tab's birthday, not the current time: an
         // hour later the placeholder still reads the same.
         clock.advance(HOUR);
         assert!(store.sync_document(id, vec![Segment::Ink("   ".into())]));
-        assert_eq!(store.sheet(id).unwrap().title(), PLACEHOLDER);
+        assert_eq!(label(&store, id), PLACEHOLDER);
     }
 
     #[test]
-    fn a_page_renames_itself_from_the_first_typed_line() {
+    fn a_page_derives_its_own_title_from_the_first_typed_line() {
         let (mut store, _) = store();
         let id = store.new_sheet().unwrap();
         assert!(store.sync_document(
             id,
             vec![Segment::Ink("## prod DB credentials\nrotate after".into())]
         ));
-        assert_eq!(store.sheet(id).unwrap().title(), "prod DB credentials");
-        assert!(!store.sheet(id).unwrap().title_is_user_set());
+        assert_eq!(
+            store.sheet(id).unwrap().derived_title(),
+            Some("prod DB credentials")
+        );
+        // The derivation reaches the label without ever reaching the
+        // tab: the slot still holds no name of its own.
+        assert_eq!(label(&store, id), "prod DB credentials");
+        assert_eq!(name(&store, id), None);
     }
 
     #[test]
-    fn a_user_title_survives_every_re_derivation() {
+    fn a_tab_name_survives_every_re_derivation() {
         let (mut store, _) = store();
         let id = store.new_sheet().unwrap();
         assert!(store.set_title(id, "  the vault  "));
-        let sheet = store.sheet(id).unwrap();
-        assert_eq!(sheet.title(), "the vault", "trimmed, not stored raw");
-        assert!(sheet.title_is_user_set());
+        assert_eq!(name(&store, id), Some("the vault"), "trimmed, not raw");
+        assert_eq!(label(&store, id), "the vault");
 
-        // Editing the page does not take the name back.
+        // Editing the page does not take the name back. The page's own
+        // derived title moves underneath it and the label ignores it.
         assert!(store.sync_document(id, vec![Segment::Ink("something else\n".into())]));
-        assert_eq!(store.sheet(id).unwrap().title(), "the vault");
+        assert_eq!(
+            store.sheet(id).unwrap().derived_title(),
+            Some("something else")
+        );
+        assert_eq!(label(&store, id), "the vault");
 
-        // Nor does closing it: the ledger copies what the page owned.
+        // Nor does closing it: the ledger copies the label the strip
+        // was showing.
         assert!(store.close_sheet(id));
         assert_eq!(store.ledger().next().unwrap().title(), "the vault");
     }
 
     #[test]
-    fn an_empty_set_title_hands_the_name_back_to_derivation() {
+    fn clearing_a_tab_name_writes_none_and_derives_nothing_onto_the_tab() {
         let (mut store, _) = store();
         let id = store.new_sheet().unwrap();
         assert!(store.sync_document(id, vec![Segment::Ink("derived name\n".into())]));
         assert!(store.set_title(id, "chosen name"));
-        assert_eq!(store.sheet(id).unwrap().title(), "chosen name");
+        assert_eq!(label(&store, id), "chosen name");
 
+        // The load-bearing assertion of "never derived": clearing the
+        // name leaves the tab holding nothing, not holding the page's
+        // derived title copied across. The label falls back by reading
+        // the page, which is why it still reads the derived name.
         assert!(store.set_title(id, "   "));
-        let sheet = store.sheet(id).unwrap();
-        assert!(!sheet.title_is_user_set());
-        assert_eq!(sheet.title(), "derived name");
+        assert_eq!(name(&store, id), None);
+        assert_eq!(label(&store, id), "derived name");
 
-        // And with no ink at all, back to the creation stamp.
+        // And with no ink at all, back to the tab's creation stamp,
+        // still with nothing written on the tab.
         assert!(store.sync_document(id, Vec::new()));
-        assert_eq!(store.sheet(id).unwrap().title(), PLACEHOLDER);
+        assert_eq!(name(&store, id), None);
+        assert_eq!(label(&store, id), PLACEHOLDER);
         assert!(!store.set_title(SheetId(999), "nowhere"));
     }
 
     #[test]
-    fn a_user_title_is_capped_like_a_derived_one() {
+    fn a_tab_name_is_capped_like_a_derived_title() {
         let (mut store, _) = store();
         let id = store.new_sheet().unwrap();
         assert!(store.set_title(id, &"é".repeat(200)));
-        assert_eq!(store.sheet(id).unwrap().title().chars().count(), 80);
+        assert_eq!(name(&store, id).unwrap().chars().count(), 80);
     }
 
     #[test]
@@ -2091,14 +2225,15 @@ mod tests {
         let (mut store, clock) = store();
         let id = store.new_sheet().unwrap(); // 8h
         let now = store.now();
+        let rung = store.tabs().next().unwrap().rung();
         let sheet = store.sheet(id).unwrap();
-        assert!((sheet.fraction_remaining(now) - 1.0).abs() < 0.001);
+        assert!((sheet.fraction_remaining(rung, now) - 1.0).abs() < 0.001);
         assert!(!sheet.last_hour(now));
 
         clock.advance(4 * HOUR); // half of 8h
         let now = store.now();
         let sheet = store.sheet(id).unwrap();
-        assert!((sheet.fraction_remaining(now) - 0.5).abs() < 0.001);
+        assert!((sheet.fraction_remaining(rung, now) - 0.5).abs() < 0.001);
         assert!(!sheet.last_hour(now), "3h59m over the line is not urgent");
 
         clock.advance(3 * HOUR); // 1h remains — the boundary is inclusive
@@ -2109,7 +2244,7 @@ mod tests {
         let now = store.now();
         let sheet = store.sheet(id).unwrap();
         assert!(!sheet.last_hour(now));
-        assert!((sheet.fraction_remaining(now) - 0.0).abs() < 0.001);
+        assert!((sheet.fraction_remaining(rung, now) - 0.0).abs() < 0.001);
     }
 
     #[test]
@@ -2164,7 +2299,7 @@ mod tests {
         ));
         let sheet = store.sheet(id).unwrap();
         let old_peer = sheet.document.peer_id();
-        let title = sheet.title().to_string();
+        let derived = sheet.derived_title().map(str::to_string);
         let segments = sheet.segments().to_vec();
         let metas = sheet.blocks_meta();
         let modified = sheet.modified_s().unwrap();
@@ -2176,7 +2311,7 @@ mod tests {
         // materialized summaries instead of the destroyed ops.
         let sheet = store.sheet(id).unwrap();
         assert_eq!(sheet.segments(), segments.as_slice());
-        assert_eq!(sheet.title(), title);
+        assert_eq!(sheet.derived_title().map(str::to_string), derived);
         assert_eq!(sheet.blocks_meta(), metas);
         assert_eq!(sheet.modified_s(), Some(modified));
         assert_ne!(sheet.document.peer_id(), old_peer);
@@ -2317,8 +2452,8 @@ mod tests {
         let ops_sheet = by_ops.sheet(ops_page).unwrap();
         let sync_sheet = by_sync.sheet(sync_page).unwrap();
         assert_eq!(ops_sheet.segments(), sync_sheet.segments());
-        assert_eq!(ops_sheet.title(), sync_sheet.title());
-        assert_eq!(ops_sheet.title(), "plan \u{1F680}");
+        assert_eq!(ops_sheet.derived_title(), sync_sheet.derived_title());
+        assert_eq!(ops_sheet.derived_title(), Some("plan \u{1F680}"));
     }
 
     #[test]
@@ -2638,7 +2773,7 @@ mod tests {
                 text: "## prod DB credentials\nrotate after".into()
             }]
         ));
-        assert_eq!(store.sheet(id).unwrap().title(), "prod DB credentials");
+        assert_eq!(label(&store, id), "prod DB credentials");
 
         // A user-chosen name survives every later batch.
         assert!(store.set_title(id, "the vault"));
@@ -2649,7 +2784,7 @@ mod tests {
                 text: "something else\n".into()
             }]
         ));
-        assert_eq!(store.sheet(id).unwrap().title(), "the vault");
+        assert_eq!(label(&store, id), "the vault");
 
         // Handing the name back to derivation, then emptying the page
         // by ops, lands on the creation-stamp placeholder as the legacy
@@ -2672,7 +2807,7 @@ mod tests {
                 len_u16: len
             }]
         ));
-        assert_eq!(store.sheet(id).unwrap().title(), PLACEHOLDER);
+        assert_eq!(label(&store, id), PLACEHOLDER);
     }
 
     #[test]

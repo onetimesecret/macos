@@ -32,12 +32,17 @@
 //!   app was closed drains every countdown exactly as if it had been
 //!   open; pages due by restore time expire into the ledger on the
 //!   caller's next [`SheetStore::expire_due`].
-//! - **No counter is ever written down.** [`SheetId`] and [`ChipId`] are
-//!   in-process ordering handles, nothing more. The snapshot carries the
-//!   random [`ItemId`] instead, and restore re-mints the counters densely
-//!   in read order. That is safe precisely because a restore only ever
-//!   runs before the shell has read anything out of the store, so no id
-//!   has escaped to be reused.
+//! - **No counter is ever written down.** [`TabId`], [`SheetId`] and
+//!   [`ChipId`] are in-process ordering handles, nothing more. The
+//!   snapshot carries the random [`ItemId`] instead, and restore
+//!   re-mints the counters densely in read order. That is safe
+//!   precisely because a restore only ever runs before the shell has
+//!   read anything out of the store, so no id has escaped to be reused.
+//! - **The durable half carries nothing the app derived.** A tab
+//!   record holds a name the user typed or no name at all; the page's
+//!   derived title is not written and is recomputed from the restored
+//!   segments on the way back in (ADR-0017), the same discipline that
+//!   already refuses to store a chip's excerpt.
 //!
 //! The format is a versioned, length-prefixed binary layout, written
 //! into one exact-size buffer: growing a buffer reallocates, and
@@ -50,9 +55,14 @@
 //! so a truncated or hostile buffer errors instead of panicking or
 //! allocating on a number it chose.
 //!
+//! A page sits inside its tab's record, which is why an orphan page is
+//! not a case this module checks: no byte sequence encodes one. The
+//! layout refuses it rather than the reader.
+//!
 //! Every repeated record states its own byte length before its fields:
-//! the page record, the chip records inside it, the materialized block
-//! record, and the ledger record. A reader takes the fields it knows
+//! the tab record, the page record nested inside it, the chip records
+//! inside that, the materialized block record, and the ledger record. A
+//! reader takes the fields it knows
 //! and then reaches the next record by that length rather than by
 //! wherever its own field walk stopped, so a file written by a build
 //! that added a trailing field still reads here, minus the field this
@@ -73,7 +83,8 @@ use crate::clock::Clock;
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
-    ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId, TITLE_CAP,
+    ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId,
+    TITLE_CAP, Tab, TabId, derive_title,
 };
 use crate::store::SheetStore;
 use crate::ttl::Ttl;
@@ -134,9 +145,10 @@ impl std::fmt::Display for RestoreError {
 impl std::error::Error for RestoreError {}
 
 impl<C: Clock> SheetStore<C> {
-    /// Serialize the store's content, meaning sheets, chips (bytes
-    /// included), titles and clocks, into one plaintext buffer, stamped
-    /// with `wall_ms` (Unix epoch milliseconds at save) so restore can
+    /// Serialize the store's content, meaning the strip of tabs with
+    /// their names and rungs, and inside them the pages, chips (bytes
+    /// included) and clocks, into one plaintext buffer, stamped with
+    /// `wall_ms` (Unix epoch milliseconds at save) so restore can
     /// account for time away. The ledger is *not* here; it has its own
     /// snapshot, [`SheetStore::ledger_snapshot`]. The buffer wipes on
     /// drop; the caller encrypts it and lets it fall.
@@ -149,15 +161,13 @@ impl<C: Clock> SheetStore<C> {
         // and the write would grow the buffer, stranding sealed bytes
         // in freed, unwiped heap.
         let blobs: Vec<Zeroizing<Vec<u8>>> = self
-            .sheets
-            .iter()
+            .sheets()
             .map(|sheet| sheet.document.export_snapshot())
             .collect();
         // The materialized sections are encoded once too, and zeroizing
         // for the same reason as the blobs: a frozen origin is content.
         let metas: Vec<Zeroizing<Vec<u8>>> = self
-            .sheets
-            .iter()
+            .sheets()
             .map(|sheet| encode_materialized(&sheet.blocks, &sheet.document))
             .collect();
         let mut sizer = Sizer(0);
@@ -168,13 +178,13 @@ impl<C: Clock> SheetStore<C> {
         buffer
     }
 
-    /// Replace this store's sheets with a snapshot's, draining every
+    /// Replace this store's strip with a snapshot's, draining every
     /// countdown by the wall time that passed since it was taken
     /// (`wall_ms` is Unix epoch milliseconds now). Meant for startup,
     /// before the store has issued anything: the sequential ids are
     /// re-minted densely from 1 in read order, which is only sound
-    /// because nothing has yet read an id out of this store. Page and
-    /// chip identity across the relaunch is carried by the stored
+    /// because nothing has yet read an id out of this store. Tab, page
+    /// and chip identity across the relaunch is carried by the stored
     /// [`ItemId`], not by the counter.
     ///
     /// The ledger is untouched: restore it separately with
@@ -201,17 +211,26 @@ impl<C: Clock> SheetStore<C> {
         let away = span(wall_ms.saturating_sub(saved_wall));
         let now = self.clock.now();
 
-        let sheet_count = count(&mut reader)?;
-        let mut sheets = Vec::new();
+        let tab_count = count(&mut reader)?;
+        // The cap is the tab's lifetime bound now, not only the
+        // anti-eviction bound, so a file claiming a wider strip than
+        // this store would ever write is damage or a hand edit and
+        // refuses like any other.
+        if tab_count > self.cap {
+            return Err(RestoreError::Malformed);
+        }
+        let mut tabs = Vec::new();
+        let mut next_tab_id = 1;
         let mut next_sheet_id = 1;
         let mut next_chip_id = 1;
-        for _ in 0..sheet_count {
+        for _ in 0..tab_count {
             let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
-            sheets.push(read_sheet(
+            tabs.push(read_tab(
                 &mut record,
                 now,
                 away,
                 wall_ms,
+                &mut next_tab_id,
                 &mut next_sheet_id,
                 &mut next_chip_id,
             )?);
@@ -224,8 +243,9 @@ impl<C: Clock> SheetStore<C> {
             return Err(RestoreError::Malformed);
         }
 
-        let restored = sheets.len();
-        self.sheets = sheets;
+        let restored = tabs.iter().filter(|tab| tab.page.is_some()).count();
+        self.tabs = tabs;
+        self.next_tab_id = next_tab_id;
         self.next_sheet_id = next_sheet_id;
         self.next_chip_id = next_chip_id;
         Ok(restored)
@@ -365,21 +385,61 @@ fn emit<C: Clock>(
 ) {
     out.raw(MAGIC);
     out.u64(wall_ms);
-    out.u64(store.sheets.len() as u64);
-    for ((sheet, blob), meta) in store.sheets.iter().zip(blobs).zip(metas) {
-        framed(&mut *out, |out| emit_sheet(sheet, blob, meta, now, out));
+    out.u64(store.tabs.len() as u64);
+    // The blobs and the materialized sections were exported per live
+    // page, in strip order, so one walk of the tabs consumes them in
+    // the order they were made. The step happens out here rather than
+    // inside the framed body, which is called twice and must stay a
+    // pure function of what it captures.
+    let mut pages = blobs.iter().zip(metas);
+    for tab in &store.tabs {
+        let page = tab.page.as_ref().map(|sheet| {
+            let (blob, meta) = pages.next().expect("one export per live page");
+            (sheet, blob.as_slice(), meta.as_slice())
+        });
+        framed(&mut *out, |out| emit_tab(tab, page, now, out));
     }
 }
 
-/// One page record, framed by its caller: identity, title, clock, the
-/// chip roster, the document blob, and the materialized slot.
+/// One tab record, framed by its caller: identity, the slot's birthday,
+/// the name the user typed if they typed one, the rung, and then the
+/// page it holds, framed again inside this frame.
+///
+/// The page-present flag is written even when it is `1`, so that a tab
+/// with a page and a tab without one differ by a byte rather than by a
+/// length the reader would have to infer.
+fn emit_tab(tab: &Tab, page: Option<(&Sheet, &[u8], &[u8])>, now: Instant, out: &mut dyn Sink) {
+    // Identity, not the in-process counter (ADR-0012).
+    out.raw(tab.uuid.as_bytes());
+    out.u64(tab.created_wall_ms);
+    match &tab.name {
+        None => out.u8(0),
+        Some(name) => {
+            out.u8(1);
+            out.bytes(name.as_bytes());
+        }
+    }
+    out.u64(tab.rung.duration().as_secs());
+    match page {
+        None => out.u8(0),
+        Some((sheet, blob, meta)) => {
+            out.u8(1);
+            framed(&mut *out, |out| emit_sheet(sheet, blob, meta, now, out));
+        }
+    }
+}
+
+/// One page record, framed by its caller: identity, clock, the chip
+/// roster, the document blob, and the materialized slot.
+///
+/// No title. The page's derived title is a string the app made from the
+/// body, so it is recomputed at restore from the restored segments
+/// rather than written down (ADR-0017), and the rung it used to carry
+/// belongs to the tab above.
 fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut dyn Sink) {
     // Identity, not the in-process counter (ADR-0012).
     out.raw(sheet.uuid.as_bytes());
     out.u64(sheet.created_wall_ms);
-    out.bytes(sheet.title.as_bytes());
-    out.u8(u8::from(sheet.title_is_user_set));
-    out.u64(sheet.rung.duration().as_secs());
     match sheet.clock {
         SheetClock::Running { deadline } => {
             out.u8(0);
@@ -629,7 +689,80 @@ fn span(claimed_ms: u64) -> Duration {
     Duration::from_millis(claimed_ms.min(MAX_SPAN_MS))
 }
 
-fn read_sheet(
+/// One tab record, read from its own framed sub-reader: the durable
+/// half of the object graph, and then the page it holds if it holds
+/// one.
+///
+/// The rung is validated against the ladder here rather than in the
+/// page arm, because it moved to the tab and its validation moved with
+/// it: an off-ladder number is damage wherever it is written.
+fn read_tab(
+    reader: &mut Reader<'_>,
+    now: Instant,
+    away: Duration,
+    wall_ms: u64,
+    next_tab_id: &mut u64,
+    next_sheet_id: &mut u64,
+    next_chip_id: &mut u64,
+) -> Result<Tab, RestoreError> {
+    use RestoreError::Malformed;
+    let uuid = reader.uuid().ok_or(Malformed)?;
+    let created_wall_ms = reader.u64().ok_or(Malformed)?;
+    let name = match reader.u8().ok_or(Malformed)? {
+        0 => None,
+        // Re-cap on the way in: a hand-edited file must not smuggle a
+        // label longer than the strip and the ledger agreed to carry.
+        // The cap matters more here than it did on the page's title,
+        // because this string is durable and reaches the ledger through
+        // every record the tab's pages produce.
+        1 => Some(
+            reader
+                .str()
+                .ok_or(Malformed)?
+                .chars()
+                .take(TITLE_CAP)
+                .collect(),
+        ),
+        _ => return Err(Malformed),
+    };
+    let rung = Ttl::from_secs(reader.u64().ok_or(Malformed)?).ok_or(Malformed)?;
+    let page = match reader.u8().ok_or(Malformed)? {
+        0 => None,
+        1 => {
+            let mut body = reader.framed().ok_or(Malformed)?;
+            // A flag that promises a page and a frame that carries no
+            // bytes disagree, and the disagreement is the damage: an
+            // empty body would otherwise fail field by field and read
+            // as a truncation somewhere deeper.
+            if body.buf.is_empty() {
+                return Err(Malformed);
+            }
+            Some(read_page(
+                &mut body,
+                now,
+                away,
+                wall_ms,
+                next_sheet_id,
+                next_chip_id,
+            )?)
+        }
+        _ => return Err(Malformed),
+    };
+
+    let id = TabId::from_raw(*next_tab_id);
+    *next_tab_id += 1;
+
+    Ok(Tab {
+        id,
+        uuid,
+        created_wall_ms,
+        name,
+        rung,
+        page,
+    })
+}
+
+fn read_page(
     reader: &mut Reader<'_>,
     now: Instant,
     away: Duration,
@@ -640,20 +773,6 @@ fn read_sheet(
     use RestoreError::Malformed;
     let uuid = reader.uuid().ok_or(Malformed)?;
     let created_wall_ms = reader.u64().ok_or(Malformed)?;
-    // Re-cap on the way in: a hand-edited file must not smuggle a title
-    // longer than the tab strip and the ledger agreed to carry.
-    let title: String = reader
-        .str()
-        .ok_or(Malformed)?
-        .chars()
-        .take(TITLE_CAP)
-        .collect();
-    let title_is_user_set = match reader.u8().ok_or(Malformed)? {
-        0 => false,
-        1 => true,
-        _ => return Err(Malformed),
-    };
-    let rung = Ttl::from_secs(reader.u64().ok_or(Malformed)?).ok_or(Malformed)?;
     // Time away drains the clock as if the app had stayed open: a hold
     // absorbs it first (that is what a hold is for), then the countdown.
     // Tag 1 is a first hold, tag 2 a hold already topped up to its 24
@@ -780,17 +899,22 @@ fn read_sheet(
     let id = SheetId::from_raw(*next_sheet_id);
     *next_sheet_id += 1;
 
+    // The derived title is recomputed rather than read: it is never
+    // written, so this is the only place it can come from, and it comes
+    // from the segments the walk above just rebuilt (ADR-0017). No
+    // clock reading is involved, because the placeholder is the tab's
+    // business and this is the page's.
+    let derived_title = derive_title(&segments);
+
     Ok(Sheet {
         id,
         uuid,
-        title,
-        title_is_user_set,
+        derived_title,
         created_wall_ms,
         document,
         segments,
         blocks,
         chips,
-        rung,
         clock,
         total_held,
     })
@@ -921,6 +1045,12 @@ mod tests {
     /// chip on the first, plain ink on the second — and a closed page in
     /// the ledger. The trailing ink carries an astral character so every
     /// test over this fixture crosses a surrogate pair.
+    ///
+    /// The first line carries emphasis inside a word on purpose. The
+    /// title it derives to, "deploy notes", is then a string the
+    /// derivation produces and the ink does not contain, so a scan for
+    /// it over the snapshot bytes answers exactly one question: whether
+    /// the file wrote the derived title down.
     fn populated() -> (SheetStore<ManualClock>, ManualClock, SheetId, SheetId) {
         let (mut store, clock) = store();
         let first = store.new_sheet().unwrap();
@@ -932,7 +1062,7 @@ mod tests {
         assert!(store.sync_document(
             first,
             vec![
-                Segment::Ink("# deploy notes\n".into()),
+                Segment::Ink("# dep**loy** notes\n".into()),
                 Segment::Chip(token),
                 Segment::Ink("\ntrailing \u{1F511} ink".into()),
                 Segment::Chip(image),
@@ -958,9 +1088,24 @@ mod tests {
         let order: Vec<SheetId> = revived.sheets().map(Sheet::id).collect();
         assert_eq!(order, vec![first, second]);
 
+        // OTSSNAP4 stores no content-derived title at all: the string
+        // is absent from the bytes and comes back recomputed from the
+        // restored segments (ADR-0017).
+        assert!(
+            contains(&snapshot, b"dep**loy** notes"),
+            "the control: the line it derives from is in the blob"
+        );
+        assert!(
+            !contains(&snapshot, b"deploy notes"),
+            "a content-derived title reached the sealed file"
+        );
         let sheet = revived.sheet(first).unwrap();
-        assert_eq!(sheet.title(), "deploy notes");
-        assert!(!sheet.title_is_user_set());
+        assert_eq!(sheet.derived_title(), Some("deploy notes"));
+        assert_eq!(
+            revived.tabs().next().unwrap().label(0),
+            "deploy notes",
+            "the label falls through to it, this tab having no name"
+        );
         assert_eq!(
             sheet.created_wall_ms(),
             original.sheet(first).unwrap().created_wall_ms()
@@ -1088,7 +1233,7 @@ mod tests {
                 len_u16: 8
             }]
         ));
-        let old_peer = store.sheets[0].document.peer_id();
+        let old_peer = store.tabs[0].page.as_ref().unwrap().document.peer_id();
 
         // The rung gesture runs the ceremony; everything after asserts
         // against the compacted page.
@@ -1186,7 +1331,7 @@ mod tests {
         // future and the deep past on block 0, and an anchor on block 1
         // that resolves nowhere.
         {
-            let records = store.sheets[0].blocks.records_mut();
+            let records = store.tabs[0].page.as_mut().unwrap().blocks.records_mut();
             let frozen = records[0].materialized.as_mut().unwrap();
             frozen.created_s = i64::MAX;
             frozen.modified_s = -40;
@@ -1216,18 +1361,173 @@ mod tests {
     }
 
     #[test]
-    fn a_user_set_title_survives_the_round_trip_verbatim() {
+    fn a_tab_name_is_written_down_and_the_pages_own_title_is_not() {
+        // The two strings the split separates, in one file. One is the
+        // user's and is durable; the other is the app's and dies with
+        // the page it was made from.
         let (mut store, clock) = store();
         let id = store.new_sheet().unwrap();
         assert!(store.set_title(id, "quarterly numbers"));
-        assert!(store.sync_document(id, vec![Segment::Ink("# something else".into())]));
+        assert!(store.sync_document(id, vec![Segment::Ink("# some**thing** else".into())]));
         let snapshot = store.snapshot(0);
+
+        assert!(
+            contains(&snapshot, b"quarterly numbers"),
+            "the name the user typed must survive verbatim"
+        );
+        assert!(
+            contains(&snapshot, b"some**thing** else"),
+            "the control: the line it derives from is in the blob"
+        );
+        assert!(
+            !contains(&snapshot, b"something else"),
+            "the page's derived title must not be in the file"
+        );
 
         let mut revived = SheetStore::new(clock.clone());
         revived.restore(&snapshot, 0).unwrap();
-        let sheet = revived.sheets().next().unwrap();
-        assert_eq!(sheet.title(), "quarterly numbers");
-        assert!(sheet.title_is_user_set());
+        let tab = revived.tabs().next().unwrap();
+        assert_eq!(tab.name(), Some("quarterly numbers"));
+        assert_eq!(tab.label(0), "quarterly numbers");
+        assert_eq!(
+            tab.page().unwrap().derived_title(),
+            Some("something else"),
+            "recomputed from the restored segments, not read back"
+        );
+    }
+
+    #[test]
+    fn a_two_tab_strip_round_trips_with_its_names_rungs_and_order() {
+        let (mut store, clock) = store();
+        let named = store.new_sheet().unwrap();
+        let unnamed = store.new_sheet().unwrap();
+        assert!(store.set_title(named, "quarterly numbers"));
+        store.set_rung(named, Ttl::MIN).unwrap();
+        assert!(store.sync_document(unnamed, vec![Segment::Ink("errands".into())]));
+
+        let snapshot = store.snapshot(0);
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&snapshot, 0).unwrap(), 2);
+
+        let tabs: Vec<&crate::sheet::Tab> = revived.tabs().collect();
+        assert_eq!(tabs.len(), 2);
+        assert_eq!(tabs[0].name(), Some("quarterly numbers"));
+        assert_eq!(tabs[0].rung(), Ttl::MIN);
+        assert_eq!(tabs[0].label(0), "quarterly numbers");
+        assert_eq!(tabs[1].name(), None, "an unnamed tab stays unnamed");
+        assert_eq!(tabs[1].rung(), Ttl::default());
+        assert_eq!(tabs[1].label(0), "errands", "its page supplies the label");
+        // Identity is what persists, for the slot as much as the page.
+        let before: Vec<ItemId> = store.tabs().map(crate::sheet::Tab::uuid).collect();
+        assert_eq!(
+            revived
+                .tabs()
+                .map(crate::sheet::Tab::uuid)
+                .collect::<Vec<_>>(),
+            before
+        );
+    }
+
+    #[test]
+    fn a_tab_that_holds_no_page_restores_as_an_empty_slot() {
+        // Nothing in this build writes an absent page yet, so the file
+        // is assembled by hand: the flag is the whole of the difference
+        // between a slot with a page and a slot without one.
+        let (mut store, survivor) = occupied();
+        let empty = empty_tab_snapshot(Some("payroll"));
+        assert_eq!(store.restore(&empty, 0).unwrap(), 0, "no live page");
+        let tabs: Vec<&crate::sheet::Tab> = store.tabs().collect();
+        assert_eq!(tabs.len(), 1, "the slot itself came back");
+        assert!(tabs[0].page().is_none());
+        assert_eq!(tabs[0].name(), Some("payroll"));
+        assert_eq!(tabs[0].label(0), "payroll");
+        assert_eq!(tabs[0].rung(), Ttl::from_secs(8 * 60 * 60).unwrap());
+        assert!(
+            store.sheet(survivor).is_none(),
+            "the restore replaced the strip, as any restore does"
+        );
+        // A tab with no page schedules nothing.
+        assert_eq!(store.next_event(), None);
+    }
+
+    #[test]
+    fn a_page_present_flag_that_is_neither_zero_nor_one_is_malformed() {
+        let (mut store, survivor) = occupied();
+        let mut hostile = empty_tab_snapshot(Some("payroll"));
+        let flag = hostile.len() - 1; // the record's last byte
+        assert_eq!(hostile[flag], 0, "the control: an absent page");
+        for claim in [2u8, 3, 0xFF] {
+            hostile[flag] = claim;
+            assert_eq!(
+                store.restore(&hostile, 0),
+                Err(RestoreError::Malformed),
+                "page-present {claim} was not refused"
+            );
+        }
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
+    }
+
+    #[test]
+    fn a_page_present_flag_over_an_empty_body_is_malformed() {
+        // The flag promises a page and the frame carries no bytes. The
+        // two disagree, and the disagreement is the damage.
+        let (mut store, survivor) = occupied();
+        let mut hostile = empty_tab_snapshot(Some("payroll"));
+        let flag = hostile.len() - 1;
+        hostile[flag] = 1;
+        hostile.extend_from_slice(&0u64.to_le_bytes()); // an empty frame
+        // Both enclosing lengths have to admit the eight new bytes, or
+        // the reject would be about the frame rather than the flag.
+        widen_first_tab(&mut hostile, 8);
+        assert_eq!(store.restore(&hostile, 0), Err(RestoreError::Malformed));
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
+    }
+
+    #[test]
+    fn a_hand_edited_tab_name_is_recapped_at_eighty_characters() {
+        // The re-cap is load-bearing after the split: this string is
+        // durable and reaches the ledger through every record the tab's
+        // pages produce, so a file must not smuggle a longer one in.
+        let (mut store, _survivor) = occupied();
+        let long: String = "é".repeat(200);
+        let snapshot = empty_tab_snapshot(Some(&long));
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 0);
+        let name = store.tabs().next().unwrap().name().unwrap();
+        assert_eq!(name.chars().count(), TITLE_CAP);
+        assert_eq!(name.len(), TITLE_CAP * 2, "counted in chars, not bytes");
+    }
+
+    #[test]
+    fn a_strip_wider_than_the_cap_is_malformed() {
+        // The writer never produces more than the cap, and the cap is
+        // the tab's lifetime bound now, so a file that claims a wider
+        // strip is damage or a hand edit.
+        let (mut store, survivor) = occupied();
+        let cap = store.cap();
+        let mut hostile = Vec::new();
+        hostile.extend_from_slice(MAGIC);
+        hostile.extend_from_slice(&0u64.to_le_bytes());
+        hostile.extend_from_slice(&((cap + 1) as u64).to_le_bytes());
+        for _ in 0..=cap {
+            hostile.extend_from_slice(&frame(&tab_record(None, None)));
+        }
+        assert_eq!(store.restore(&hostile, 0), Err(RestoreError::Malformed));
+        let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
+        assert_eq!(ids, vec![survivor], "the failed restore touched the store");
+
+        // Exactly the cap is not damage: the boundary belongs to the
+        // side that the writer can actually reach.
+        let mut full = Vec::new();
+        full.extend_from_slice(MAGIC);
+        full.extend_from_slice(&0u64.to_le_bytes());
+        full.extend_from_slice(&(cap as u64).to_le_bytes());
+        for _ in 0..cap {
+            full.extend_from_slice(&frame(&tab_record(None, None)));
+        }
+        assert_eq!(store.restore(&full, 0).unwrap(), 0);
+        assert_eq!(store.tabs().count(), cap);
     }
 
     #[test]
@@ -1342,6 +1642,7 @@ mod tests {
         // Push the in-process counters far past dense, the way a long
         // session does, so a restore visibly re-mints rather than
         // carrying anything over.
+        store.next_tab_id = 7_700;
         store.next_sheet_id = 4_242;
         store.next_chip_id = 9_100;
         let first = store.new_sheet().unwrap();
@@ -1363,6 +1664,8 @@ mod tests {
 
         let ids: Vec<u64> = revived.sheets().map(|s| s.id().raw()).collect();
         assert_eq!(ids, vec![1, 2]);
+        let tab_ids: Vec<u64> = revived.tabs().map(|t| t.id().raw()).collect();
+        assert_eq!(tab_ids, vec![1, 2], "the tab counter re-mints too");
         let chip_ids: Vec<u64> = revived
             .sheets()
             .flat_map(|s| s.chips().map(|c| c.id().raw()))
@@ -1385,6 +1688,7 @@ mod tests {
         // And the next id issued does not collide with a restored one.
         let fresh = revived.new_sheet().unwrap();
         assert_eq!(fresh.raw(), 3);
+        assert_eq!(revived.tabs().last().unwrap().id().raw(), 3);
         let fresh_chip = revived.seal_text(fresh, "four").unwrap();
         assert_eq!(fresh_chip.raw(), 4);
     }
@@ -1421,29 +1725,87 @@ mod tests {
         out
     }
 
-    /// The same, for the first materialized record, which sits three
-    /// lengths deep: its own, the metadata slot's, and the page
-    /// record's. The slot is the page record's last field, so
-    /// `meta_len` locates it from the end.
+    /// The same, for the first page record, which sits inside its
+    /// tab's frame: the field lands inside the page's own length, and
+    /// the tab's length is re-stated to cover it.
+    fn with_page_tail(snapshot: &[u8], extra: &[u8]) -> Vec<u8> {
+        let tab = first_tab(snapshot);
+        let mut rebuilt = tab[..UNNAMED_TAB_PREFIX].to_vec();
+        rebuilt.extend_from_slice(&with_trailing_field(&tab[UNNAMED_TAB_PREFIX..], 0, extra));
+        with_first_tab(snapshot, &rebuilt)
+    }
+
+    /// The same, for the first materialized record, which sits four
+    /// lengths deep: its own, the metadata slot's, the page record's
+    /// and the tab record's. The slot is the page record's last field,
+    /// so `meta_len` locates it from the end.
     fn with_materialized_tail(snapshot: &[u8], meta_len: usize, extra: &[u8]) -> Vec<u8> {
-        let head = MAGIC.len() + 16; // magic, saved wall stamp, page count
-        let page_len = le_u64(&snapshot[head..]);
-        let page = &snapshot[head + 8..head + 8 + page_len];
+        let tab = first_tab(snapshot);
+        let page_len = le_u64(&tab[UNNAMED_TAB_PREFIX..]);
+        let page_at = UNNAMED_TAB_PREFIX + 8;
+        let page = &tab[page_at..page_at + page_len];
         let slot_at = page.len() - meta_len;
         // The slot's own preamble is a record count, then the records.
         let slot = with_trailing_field(&page[slot_at..], 8, extra);
-        let mut rebuilt = page[..slot_at - 8].to_vec();
-        rebuilt.extend_from_slice(&frame(&slot));
-        let mut out = snapshot[..head].to_vec();
-        out.extend_from_slice(&frame(&rebuilt));
-        out.extend_from_slice(&snapshot[head + 8 + page_len..]);
+        let mut rebuilt_page = page[..slot_at - 8].to_vec();
+        rebuilt_page.extend_from_slice(&frame(&slot));
+        let mut rebuilt_tab = tab[..UNNAMED_TAB_PREFIX].to_vec();
+        rebuilt_tab.extend_from_slice(&frame(&rebuilt_page));
+        with_first_tab(snapshot, &rebuilt_tab)
+    }
+
+    /// The fixed span at the front of a tab record for a tab nobody
+    /// named: identity, the slot's birthday, the absent-name flag, the
+    /// rung, and the page-present flag. The page's own frame starts
+    /// straight after it, which is how the tests below reach in.
+    const UNNAMED_TAB_PREFIX: usize = 16 + 8 + 1 + 8 + 1;
+
+    /// One hand-assembled tab record: a name when the user typed one,
+    /// and a page body when the slot holds one. The writer cannot
+    /// produce a roster that disagrees with its own document, nor (in
+    /// this stage) a slot holding nothing, so the trust-boundary tests
+    /// build their bytes by hand.
+    fn tab_record(name: Option<&str>, page: Option<&[u8]>) -> Vec<u8> {
+        let mut tab = Vec::new();
+        tab.extend_from_slice(ItemId::random().as_bytes());
+        tab.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
+        match name {
+            None => tab.push(0),
+            Some(name) => {
+                tab.push(1);
+                tab.extend_from_slice(&(name.len() as u64).to_le_bytes());
+                tab.extend_from_slice(name.as_bytes());
+            }
+        }
+        tab.extend_from_slice(&(8 * 60 * 60u64).to_le_bytes()); // 8h rung
+        match page {
+            None => tab.push(0),
+            Some(page) => {
+                tab.push(1);
+                tab.extend_from_slice(&frame(page));
+            }
+        }
+        tab
+    }
+
+    /// A whole v4 snapshot holding exactly one tab record.
+    fn one_tab_snapshot(tab: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(MAGIC);
+        out.extend_from_slice(&0u64.to_le_bytes()); // saved wall stamp
+        out.extend_from_slice(&1u64.to_le_bytes()); // one tab
+        out.extend_from_slice(&frame(tab));
         out
     }
 
-    /// A hand-assembled v4 snapshot holding one sheet: the given chip
-    /// records, the given document blob, and an empty metadata slot.
-    /// The writer cannot produce a roster that disagrees with its own
-    /// document, so the trust-boundary tests build their bytes by hand.
+    /// A snapshot holding one tab that holds no page.
+    fn empty_tab_snapshot(name: Option<&str>) -> Vec<u8> {
+        one_tab_snapshot(&tab_record(name, None))
+    }
+
+    /// A hand-assembled v4 snapshot holding one unnamed tab and, inside
+    /// it, one page: the given chip records, the given document blob,
+    /// and an empty metadata slot.
     fn sheet_snapshot(chips: &[(ItemId, &str)], blob: &[u8]) -> Vec<u8> {
         sheet_snapshot_with_tails(chips, blob, &[])
     }
@@ -1458,9 +1820,6 @@ mod tests {
         let mut page = Vec::new();
         page.extend_from_slice(ItemId::random().as_bytes());
         page.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
-        page.extend_from_slice(&0u64.to_le_bytes()); // empty title
-        page.push(0); // title not user set
-        page.extend_from_slice(&(8 * 60 * 60u64).to_le_bytes()); // 8h rung
         page.push(0); // running
         page.extend_from_slice(&60_000u64.to_le_bytes()); // remaining ms
         page.extend_from_slice(&0u64.to_le_bytes()); // total_held
@@ -1479,11 +1838,33 @@ mod tests {
         page.extend_from_slice(blob);
         page.extend_from_slice(&0u64.to_le_bytes()); // empty metadata slot
 
-        let mut out = Vec::new();
-        out.extend_from_slice(MAGIC);
-        out.extend_from_slice(&0u64.to_le_bytes()); // saved wall stamp
-        out.extend_from_slice(&1u64.to_le_bytes()); // one sheet
-        out.extend_from_slice(&frame(&page));
+        one_tab_snapshot(&tab_record(None, Some(&page)))
+    }
+
+    /// Grow the first tab record's stated length by `extra`, for a test
+    /// that appended bytes inside it: the record's own frame is the one
+    /// length that has to admit them.
+    fn widen_first_tab(snapshot: &mut [u8], extra: usize) {
+        let at = MAGIC.len() + 16;
+        let len = le_u64(&snapshot[at..]) + extra;
+        snapshot[at..at + 8].copy_from_slice(&(len as u64).to_le_bytes());
+    }
+
+    /// The first tab's record, without its length prefix.
+    fn first_tab(snapshot: &[u8]) -> &[u8] {
+        let at = MAGIC.len() + 16;
+        let len = le_u64(&snapshot[at..]);
+        &snapshot[at + 8..at + 8 + len]
+    }
+
+    /// The same snapshot with the first tab's record replaced, which
+    /// re-states its length for whatever the replacement did inside it.
+    fn with_first_tab(snapshot: &[u8], rebuilt: &[u8]) -> Vec<u8> {
+        let at = MAGIC.len() + 16;
+        let len = le_u64(&snapshot[at..]);
+        let mut out = snapshot[..at].to_vec();
+        out.extend_from_slice(&frame(rebuilt));
+        out.extend_from_slice(&snapshot[at + 8 + len..]);
         out
     }
 
@@ -1503,10 +1884,10 @@ mod tests {
     // field costs everyone their staged content again.
 
     #[test]
-    fn a_trailing_field_on_a_page_record_is_skipped_not_refused() {
+    fn a_trailing_field_on_a_tab_record_is_skipped_not_refused() {
         let (original, clock, first, second) = populated();
         let snapshot = original.snapshot(1_000_000);
-        let extended = with_trailing_field(&snapshot, MAGIC.len() + 16, b"a page field from 2027");
+        let extended = with_trailing_field(&snapshot, MAGIC.len() + 16, b"a tab field from 2027");
 
         let mut revived = SheetStore::new(clock.clone());
         assert_eq!(revived.restore(&extended, 1_000_000).unwrap(), 2);
@@ -1514,13 +1895,30 @@ mod tests {
         assert_eq!(
             order,
             vec![first, second],
-            "the page after the unknown field was not found"
+            "the tab after the unknown field was not found"
+        );
+        assert_eq!(revived.tabs().next().unwrap().label(0), "deploy notes");
+    }
+
+    #[test]
+    fn a_trailing_field_on_a_page_record_is_skipped_not_refused() {
+        let (original, clock, first, second) = populated();
+        let snapshot = original.snapshot(1_000_000);
+        let extended = with_page_tail(&snapshot, b"a page field from 2027");
+
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&extended, 1_000_000).unwrap(), 2);
+        let order: Vec<SheetId> = revived.sheets().map(Sheet::id).collect();
+        assert_eq!(
+            order,
+            vec![first, second],
+            "the tab after the extended page was not found"
         );
 
         // The known fields of the extended record read exactly as they
         // did, sealed bytes included: the tail is skipped, not absorbed.
         let sheet = revived.sheet(first).unwrap();
-        assert_eq!(sheet.title(), "deploy notes");
+        assert_eq!(sheet.derived_title(), Some("deploy notes"));
         assert_eq!(sheet.segments(), original.sheet(first).unwrap().segments());
         let chips: Vec<&SealedChip> = sheet.chips().collect();
         assert_eq!(chips.len(), 2);
@@ -1576,8 +1974,8 @@ mod tests {
             "the control: the ceremony froze a summary onto both blocks"
         );
 
-        let meta_len =
-            encode_materialized(&store.sheets[0].blocks, &store.sheets[0].document).len();
+        let page = store.tabs[0].page.as_ref().unwrap();
+        let meta_len = encode_materialized(&page.blocks, &page.document).len();
         let wall = real_wall_ms();
         let snapshot = store.snapshot(wall);
         let extended = with_materialized_tail(&snapshot, meta_len, b"a block field from 2027");
@@ -1683,7 +2081,9 @@ mod tests {
         // by chance in a length, a span, or a wall stamp.
         const SHEET_RAW: u64 = 0x1234_5678_9ABC_DEF0;
         const CHIP_RAW: u64 = 0x0FED_CBA9_8765_4321;
+        const TAB_RAW: u64 = 0x2143_6587_A9CB_ED0F;
         let (mut store, _clock) = store();
+        store.next_tab_id = TAB_RAW;
         store.next_sheet_id = SHEET_RAW;
         store.next_chip_id = CHIP_RAW;
         let id = store.new_sheet().unwrap();
@@ -1691,11 +2091,16 @@ mod tests {
         assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
         assert_eq!(id.raw(), SHEET_RAW);
         assert_eq!(chip.raw(), CHIP_RAW);
+        assert_eq!(store.tabs().next().unwrap().id().raw(), TAB_RAW);
         assert!(store.record_sent(chip, DestinationClass::Clipboard));
 
         let content = store.snapshot(0);
         let ledger = store.ledger_snapshot();
-        for needle in [SHEET_RAW.to_le_bytes(), CHIP_RAW.to_le_bytes()] {
+        for needle in [
+            SHEET_RAW.to_le_bytes(),
+            CHIP_RAW.to_le_bytes(),
+            TAB_RAW.to_le_bytes(),
+        ] {
             assert!(
                 !content.windows(8).any(|w| w == needle),
                 "a sequential id reached the content snapshot"
@@ -1900,7 +2305,11 @@ mod tests {
         let (original, _clock, ..) = populated();
         let (mut revived, survivor) = occupied();
         for magic in [
-            b"OTSSNAP1", b"OTSSNAP2", b"OTSSNAP3", b"OTSSNAP9", b"NOTSNAPS",
+            b"OTSSNAP1",
+            b"OTSSNAP2",
+            b"OTSSNAP3",
+            b"OTSSNAP9",
+            b"NOTSNAPS",
         ] {
             let mut relabeled = original.snapshot(0).to_vec();
             relabeled[..8].copy_from_slice(magic.as_slice());
@@ -1986,7 +2395,7 @@ mod tests {
         let (_, clock, ..) = populated();
         let mut revived = SheetStore::new(clock.clone());
 
-        // A page count of u64::MAX, with no pages behind it.
+        // A tab count of u64::MAX, with no tabs behind it.
         let mut hostile = Vec::new();
         hostile.extend_from_slice(MAGIC);
         hostile.extend_from_slice(&0u64.to_le_bytes());
@@ -2002,7 +2411,7 @@ mod tests {
             Err(RestoreError::Malformed)
         );
 
-        // A page record that claims u64::MAX bytes for itself. The
+        // A tab record that claims u64::MAX bytes for itself. The
         // frame is the first thing read per record and the first thing
         // that has to disbelieve what it is told.
         let mut hostile_frame = Vec::new();
@@ -2015,19 +2424,29 @@ mod tests {
             Err(RestoreError::Malformed)
         );
 
-        // A title length of u64::MAX inside an otherwise plausible page
-        // record, so the lie is one the record's own frame contains.
-        let mut page = Vec::new();
-        page.extend_from_slice(ItemId::random().as_bytes());
-        page.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
-        page.extend_from_slice(&u64::MAX.to_le_bytes()); // title length
-        let mut hostile_title = Vec::new();
-        hostile_title.extend_from_slice(MAGIC);
-        hostile_title.extend_from_slice(&0u64.to_le_bytes());
-        hostile_title.extend_from_slice(&1u64.to_le_bytes());
-        hostile_title.extend_from_slice(&frame(&page));
+        // And the page's own frame, one level in, told the same lie:
+        // the nesting must not turn a claim into an assumption.
+        let mut inner = Vec::new();
+        inner.extend_from_slice(ItemId::random().as_bytes());
+        inner.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
+        inner.push(0); // no name
+        inner.extend_from_slice(&(8 * 60 * 60u64).to_le_bytes()); // 8h rung
+        inner.push(1); // a page follows
+        inner.extend_from_slice(&u64::MAX.to_le_bytes()); // its claimed length
         assert_eq!(
-            revived.restore(&hostile_title, 0),
+            revived.restore(&one_tab_snapshot(&inner), 0),
+            Err(RestoreError::Malformed)
+        );
+
+        // A name length of u64::MAX inside an otherwise plausible tab
+        // record, so the lie is one the record's own frame contains.
+        let mut tab = Vec::new();
+        tab.extend_from_slice(ItemId::random().as_bytes());
+        tab.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
+        tab.push(1); // a name follows
+        tab.extend_from_slice(&u64::MAX.to_le_bytes()); // its claimed length
+        assert_eq!(
+            revived.restore(&one_tab_snapshot(&tab), 0),
             Err(RestoreError::Malformed)
         );
 

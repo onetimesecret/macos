@@ -48,6 +48,8 @@ pub use harden::harden_process;
 pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecord, SizeClass};
 pub use persist::RestoreError;
 pub use secret::SecretBuffer;
-pub use sheet::{ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetId};
+pub use sheet::{
+    ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetId, Tab, TabId,
+};
 pub use store::{DEFAULT_SHEET_CAP, EditOp, PayloadError, Refusal, SheetStore};
 pub use ttl::{TTL_LADDER, Ttl};
