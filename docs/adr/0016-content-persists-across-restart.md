@@ -591,14 +591,34 @@ leaving `magic[8] ‖ sealed_wall_ms[8]`. `STATE_HEADER_LEN` therefore
 changes (`crates/ffi/src/persist.rs:206-211`), and since the whole header
 is the AEAD associated data (`crates/ffi/src/persist.rs:636-643`, `:736-743`), every
 existing `state.sealed` fails authentication. The snapshot's own `MAGIC`
-bumps from `OTSSNAP3` to `OTSSNAP4` (`crates/core/src/persist.rs:73`) in
-the same break, because each page's record replaces its running span with
-`drained_ms` (section 4).
+bumps from `OTSSNAP3` to `OTSSNAP4` (`crates/core/src/persist.rs:91`) in
+the same break, and it carries two causes rather than one. Each page's
+record replaces its running span with `drained_ms` (section 4), and
+issue #54 gives every repeated record its own length prefix
+(`crates/core/src/persist.rs:340-356`). #54 landed first and took the
+bump; this decision rides it rather than spending a second one.
+
+**The ledger payload magic breaks in the same release, and it did not
+have to.** `LEDGER_MAGIC` goes `OTSLEDR1` to `OTSLEDR2`
+(`crates/core/src/persist.rs:100`), because the ledger record is framed
+under the same rule as the content records (`:515-519`). Nothing else
+about the ledger changes: `LedgerRecord` is unchanged, the file keeps its
+own envelope magic (`crates/ffi/src/persist.rs:160`) and its own
+long-lived key (`crates/ffi/src/persist.rs:175`), and the `OTSSEAL3`
+bump reaches neither. The ledger file would have sat out this break;
+framing its records is what breaks it. The cost is the retained history:
+the capped titles and the event records, back to the ninety day retention
+window, destroyed once, in this release, alongside the staged content. It
+is accepted so the module carries one encoding rule rather than two, and
+so a later per-record field costs the ledger nothing. A superseded ledger
+magic refuses as unknown format, tested alongside the content magics
+(`crates/core/src/persist.rs:1892`, `:1919`).
 
 **There is no migration path and none is possible.** An `OTSSEAL2` file's
 key derives from a half in the temp directory that the restart already
 cleared, and even in-session the changed associated data makes the bytes
-unauthenticatable. Users lose whatever is staged, once. This is the
+unauthenticatable. Users lose whatever is staged, once, and the retained
+ledger history with it. This is the
 second announced break (the repo-root `DOGFOOD.md:50-56` announced the first, in which
 the envelope and the snapshot each took a version byte at once) and it is
 announced the same way.
@@ -620,6 +640,29 @@ ledger for the discarded pages: a superseded magic fails
 it are unknowable (`crates/ffi/src/persist.rs:717-723`,
 `crates/ffi/src/lib.rs:1248`).
 
+**Required work.** The same question exists one layer down, for a known
+superseded *ledger payload* magic, and the paragraph above does not
+answer it. The envelope's superseded magic never decrypts. An `OTSLEDR1`
+file authenticates and opens under the unchanged envelope and the
+unchanged key, and is then refused inside `restore_ledger`
+(`crates/core/src/persist.rs:271-273`). The seam reports that as a failed
+restore (`crates/ffi/src/lib.rs:1483-1489`), the file is still on disk
+when the probe runs, so the ledger licence is withheld for the session
+(`shell/Sources/CompanionKit/PageModel.swift:568-571`), and it is
+withheld again on every later launch, because nothing removes that file
+except the user's own Clear (`:1047-1066`), which the log line at
+`:572-588` already names as the only way out. Every install carrying a
+ledger file meets this on first launch after the release. So a known
+superseded ledger payload magic is disposed of and the ledger licence
+granted, on the rule this section already sets for the envelope. The
+known superseded set is exactly one entry, `OTSLEDR1`. Where that
+disposal belongs is open: the refusal is the core's, one layer below the
+seam that owns the file and the licence, so neither path that exists
+today, the envelope's erase and the user's Clear, is the answer as it
+stands. Salvage is not on the table: there is no reader for a superseded
+version and no downgrade writer
+(`crates/core/src/persist.rs:1892`).
+
 **[ADR-0017](0017-durable-tabs-expiring-pages.md), "Durable tabs,
 expiring pages", rides this same break, deliberately.** The split
 (`docs/dogfood/ABERRATIONS.md:68`) moves page metadata onto a Tab object
@@ -630,25 +673,36 @@ next one.
 
 ADR-0013's interaction count is the other pending obligation on this
 format, declared not derivable from the op log and implemented nowhere
-today (`crates/core/src/persist.rs:417-441` writes `created_s`,
+today (`crates/core/src/persist.rs:484-501` writes `created_s`,
 `modified_s` and `origin` and no count; recorded at
 `docs/plans/44-ground-truth.md:100`). It is a trailing field, so the rule
 immediately below releases it from this break: it can land whenever
 ADR-0013 is implemented, at no cost to anyone's staged content.
 
-**The snapshot's records become self-describing in this same break.**
-They are positional today, all three of them: the page record
-(`crates/core/src/persist.rs:311-383` writes it, `:562-653` reads it back in
-the same order), the per-block materialized record (`:417-452`, `:733-783`)
-and the ledger record (`:454`, `:785`). A reader that does not know a field
-cannot skip past it, so every later field costs another break.
-[Issue #54](https://github.com/onetimesecret/macos/issues/54) carries the
-argument and fixes the shape: a length prefix per record, and a reader that
-consumes the fields it knows and then advances by the record's length rather
-than by where its own field walk stopped. A trailing field added after this
-break is then invisible to an older reader. Full tag-length-value encoding
-is rejected there, because it puts a parser inside the one module ADR-0012:30
-stakes the audit story on.
+**The snapshot's records are self-describing as of this break.** They
+were positional, and
+[issue #54](https://github.com/onetimesecret/macos/issues/54) gave each
+repeated record its own byte length in front of its fields
+(`crates/core/src/persist.rs:340-356`): the page record (`:370`), the chip
+records inside it (`:411`), the materialized block record (`:484`) and the
+ledger record (`:519`). Four kinds, not the three #54 named. The chips
+were taken in deliberately, so the rule has no exception inside the
+module and a later per-chip field costs no break either. A reader
+consumes the fields it knows and then reaches the next record by that
+record's length rather than by where its own field walk stopped
+(`:604-609`), so a file written by a build that added a trailing field
+still reads here, minus the field this build has never heard of. One test
+per record kind holds the rule (`:1506`, `:1532`, `:1555`, `:1595`). Full
+tag-length-value encoding is rejected in #54, because it puts a parser
+inside the one module ADR-0012:30 stakes the audit story on.
+
+**What the rule does not buy.** A field that moved, changed width or
+changed meaning is not a trailing field and still costs a new magic, and
+so does anything outside a record: the magics, the counts, and the
+sections that trail a record list. A new magic still refuses every
+existing file, and a tail after the last record is still damage, because
+it sits outside every frame and nothing states how long it is
+(`crates/core/src/persist.rs:219-225`).
 
 The envelope does not follow. Its header is associated data in full
 (`crates/ffi/src/persist.rs:208-211`), so anything added there changes what
