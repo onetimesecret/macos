@@ -49,6 +49,19 @@
 //! length read is bounds-checked against the bytes actually remaining,
 //! so a truncated or hostile buffer errors instead of panicking or
 //! allocating on a number it chose.
+//!
+//! Every repeated record states its own byte length before its fields:
+//! the page record, the chip records inside it, the materialized block
+//! record, and the ledger record. A reader takes the fields it knows
+//! and then reaches the next record by that length rather than by
+//! wherever its own field walk stopped, so a file written by a build
+//! that added a trailing field still reads here, minus the field this
+//! build has never heard of. That is the whole of what the rule buys
+//! (issue #54). It does not survive a field that moved, changed width,
+//! or changed meaning, and it does not cover what sits outside a
+//! record: the magics, the counts, and the sections that trail a
+//! record list. Those still take a new magic, and a new magic still
+//! refuses every existing file.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -67,14 +80,24 @@ use crate::ttl::Ttl;
 
 /// Magic + version prefix of a plaintext content snapshot. A format
 /// change gets a new final byte; old builds refuse rather than misread.
-/// `3` replaces the segments section with the sheet's full Loro
-/// document blob (ADR-0013). There is no v2 reader and no downgrade
-/// writer: v1 and v2 files refuse as unknown, deliberately.
-const MAGIC: &[u8; 8] = b"OTSSNAP3";
+/// `3` replaced the segments section with the sheet's full Loro
+/// document blob (ADR-0013). `4` gives every repeated record its own
+/// length prefix (issue #54), which is why it is the last break a
+/// trailing field will ever cost. It is the one break ADR-0016 section
+/// 9 and ADR-0017 ride too, so a `4` file is readable only by a build
+/// carrying all three. There is no reader and no downgrade writer for
+/// any earlier version: `1`, `2` and `3` files refuse as unknown,
+/// deliberately.
+const MAGIC: &[u8; 8] = b"OTSSNAP4";
 
 /// Magic + version prefix of a plaintext ledger snapshot. Separate from
-/// [`MAGIC`] so the two files can never be mistaken for each other.
-const LEDGER_MAGIC: &[u8; 8] = b"OTSLEDR1";
+/// [`MAGIC`] so the two files can never be mistaken for each other. `2`
+/// takes the same per-record length prefix as the content snapshot,
+/// because one encoding rule in this module is the point. The ledger
+/// file survives on its own long-lived key and would otherwise have sat
+/// out this break, so `1` refusing costs the retained history once, and
+/// that is announced with the content loss rather than under it.
+const LEDGER_MAGIC: &[u8; 8] = b"OTSLEDR2";
 
 /// Ceiling on any span read back from a snapshot (30 days — well past
 /// the 7-day rung and the 24-hour hold). Keeps `Instant` arithmetic
@@ -183,8 +206,9 @@ impl<C: Clock> SheetStore<C> {
         let mut next_sheet_id = 1;
         let mut next_chip_id = 1;
         for _ in 0..sheet_count {
+            let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
             sheets.push(read_sheet(
-                &mut reader,
+                &mut record,
                 now,
                 away,
                 wall_ms,
@@ -192,6 +216,10 @@ impl<C: Clock> SheetStore<C> {
                 &mut next_chip_id,
             )?);
         }
+        // The envelope stays strict even though the records do not: a
+        // tail after the last record is outside every frame, so nothing
+        // states how long it is or promises it was ever meant to be
+        // here.
         if !reader.done() {
             return Err(RestoreError::Malformed);
         }
@@ -246,7 +274,8 @@ impl<C: Clock> SheetStore<C> {
         let record_count = count(&mut reader)?;
         let mut ledger = VecDeque::new();
         for _ in 0..record_count {
-            ledger.push_back(read_record(&mut reader)?);
+            let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
+            ledger.push_back(read_record(&mut record)?);
         }
         if !reader.done() {
             return Err(RestoreError::Malformed);
@@ -308,78 +337,108 @@ impl Sink for Writer<'_> {
     }
 }
 
+/// Write one record as its own byte length followed by its fields, so a
+/// reader holding fewer fields than the writer wrote can still find
+/// where the next record starts.
+///
+/// The length comes from running the same body through a [`Sizer`]
+/// first, which is exact for the same reason the outer two-pass write
+/// is, and which costs no intermediate buffer. That matters here rather
+/// than only being tidy: a page record carries sealed bytes, and a
+/// second copy of those is a second allocation that has to be wiped.
+/// The body is therefore called twice and must be a pure function of
+/// what it captures.
+fn framed(out: &mut dyn Sink, body: impl Fn(&mut dyn Sink)) {
+    let mut sizer = Sizer(0);
+    body(&mut sizer);
+    out.u64(sizer.0 as u64);
+    body(out);
+}
+
 fn emit<C: Clock>(
     store: &SheetStore<C>,
     blobs: &[Zeroizing<Vec<u8>>],
     metas: &[Zeroizing<Vec<u8>>],
     now: Instant,
     wall_ms: u64,
-    out: &mut impl Sink,
+    out: &mut dyn Sink,
 ) {
     out.raw(MAGIC);
     out.u64(wall_ms);
     out.u64(store.sheets.len() as u64);
     for ((sheet, blob), meta) in store.sheets.iter().zip(blobs).zip(metas) {
-        // Identity, not the in-process counter (ADR-0012).
-        out.raw(sheet.uuid.as_bytes());
-        out.u64(sheet.created_wall_ms);
-        out.bytes(sheet.title.as_bytes());
-        out.u8(u8::from(sheet.title_is_user_set));
-        out.u64(sheet.rung.duration().as_secs());
-        match sheet.clock {
-            SheetClock::Running { deadline } => {
-                out.u8(0);
-                out.u64(ms(deadline.saturating_duration_since(now)));
-            }
-            SheetClock::Held {
-                until,
-                frozen_remaining,
-                topped_up,
-                ..
-            } => {
-                // Two tags, one payload: the tier is what decides
-                // whether the next pause press tops the hold up or
-                // releases it, so it has to survive a relaunch. A build
-                // that predates the release refuses tag 2 outright
-                // rather than misreading it as a first hold.
-                out.u8(if topped_up { 2 } else { 1 });
-                out.u64(ms(until.saturating_duration_since(now)));
-                out.u64(ms(frozen_remaining));
-            }
-        }
-        // total_held(now) folds a live hold's span in; restore restarts
-        // the live hold's accounting from its own `now`.
-        out.u64(ms(sheet.total_held(now)));
-        // Chips before the document blob, so the reader has every chip
-        // identity in hand before a mark asks it to resolve one.
-        out.u64(sheet.chips.len() as u64);
-        for chip in &sheet.chips {
-            out.raw(chip.uuid.as_bytes());
-            out.u8(match chip.meta {
-                ChipMeta::Text { .. } => 0,
-                ChipMeta::Image { .. } => 1,
-            });
-            match &chip.promotion {
-                None => out.u8(0),
-                Some(promotion) => {
-                    out.u8(1);
-                    out.bytes(promotion.receipt_id.as_bytes());
-                }
-            }
-            out.bytes(chip.bytes.expose());
-        }
-        // The whole document, history included: the projection is not
-        // written because the document is its source of truth, and a
-        // snapshot that carried both could smuggle a divergent
-        // projection back in.
-        out.bytes(blob.as_slice());
-        // The materialized-metadata section, filled by the compaction
-        // ceremony (ADR-0013): each block that carries a frozen summary
-        // writes its identity, its anchor, its stamps, and its origin.
-        // The slot was reserved in stage 4, so a compacted file differs
-        // from an uncompacted one only by this section's contents.
-        out.bytes(meta.as_slice());
+        framed(&mut *out, |out| emit_sheet(sheet, blob, meta, now, out));
     }
+}
+
+/// One page record, framed by its caller: identity, title, clock, the
+/// chip roster, the document blob, and the materialized slot.
+fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut dyn Sink) {
+    // Identity, not the in-process counter (ADR-0012).
+    out.raw(sheet.uuid.as_bytes());
+    out.u64(sheet.created_wall_ms);
+    out.bytes(sheet.title.as_bytes());
+    out.u8(u8::from(sheet.title_is_user_set));
+    out.u64(sheet.rung.duration().as_secs());
+    match sheet.clock {
+        SheetClock::Running { deadline } => {
+            out.u8(0);
+            out.u64(ms(deadline.saturating_duration_since(now)));
+        }
+        SheetClock::Held {
+            until,
+            frozen_remaining,
+            topped_up,
+            ..
+        } => {
+            // Two tags, one payload: the tier is what decides whether
+            // the next pause press tops the hold up or releases it, so
+            // it has to survive a relaunch. A build that predates the
+            // release refuses tag 2 outright rather than misreading it
+            // as a first hold.
+            out.u8(if topped_up { 2 } else { 1 });
+            out.u64(ms(until.saturating_duration_since(now)));
+            out.u64(ms(frozen_remaining));
+        }
+    }
+    // total_held(now) folds a live hold's span in; restore restarts the
+    // live hold's accounting from its own `now`.
+    out.u64(ms(sheet.total_held(now)));
+    // Chips before the document blob, so the reader has every chip
+    // identity in hand before a mark asks it to resolve one.
+    out.u64(sheet.chips.len() as u64);
+    for chip in &sheet.chips {
+        framed(&mut *out, |out| emit_chip(chip, out));
+    }
+    // The whole document, history included: the projection is not
+    // written because the document is its source of truth, and a
+    // snapshot that carried both could smuggle a divergent projection
+    // back in.
+    out.bytes(blob);
+    // The materialized-metadata section, filled by the compaction
+    // ceremony (ADR-0013): each block that carries a frozen summary
+    // writes its identity, its anchor, its stamps, and its origin. The
+    // slot was reserved in stage 4, so a compacted file differs from an
+    // uncompacted one only by this section's contents.
+    out.bytes(meta);
+}
+
+/// One chip record, framed by its caller. The face (excerpt, size
+/// label) is absent on purpose: it is recomputed on the way back in.
+fn emit_chip(chip: &SealedChip, out: &mut dyn Sink) {
+    out.raw(chip.uuid.as_bytes());
+    out.u8(match chip.meta {
+        ChipMeta::Text { .. } => 0,
+        ChipMeta::Image { .. } => 1,
+    });
+    match &chip.promotion {
+        None => out.u8(0),
+        Some(promotion) => {
+            out.u8(1);
+            out.bytes(promotion.receipt_id.as_bytes());
+        }
+    }
+    out.bytes(chip.bytes.expose());
 }
 
 /// Encode a sheet's block section into its own buffer, sized exactly
@@ -414,7 +473,7 @@ fn encode_materialized(blocks: &BlockIndex, doc: &SheetDocument) -> Zeroizing<Ve
     buffer
 }
 
-fn emit_materialized(blocks: &BlockIndex, spans: &[usize], grouped: bool, out: &mut impl Sink) {
+fn emit_materialized(blocks: &BlockIndex, spans: &[usize], grouped: bool, out: &mut dyn Sink) {
     let frozen: Vec<_> = blocks
         .records()
         .iter()
@@ -422,22 +481,24 @@ fn emit_materialized(blocks: &BlockIndex, spans: &[usize], grouped: bool, out: &
         .collect();
     out.u64(frozen.len() as u64);
     for (record, meta) in frozen {
-        // The block's identity, then the anchor that must still resolve
-        // for the record to be believed on the way back in.
-        out.raw(record.id.as_bytes());
-        out.bytes(&record.anchor);
-        // Stamps are positive by construction (derivation skips the
-        // epoch-stamped rebuild), so the sign bit never survives the
-        // round trip through u64.
-        out.u64(meta.created_s.max(0) as u64);
-        out.u64(meta.modified_s.max(0) as u64);
-        match &meta.origin {
-            None => out.u8(0),
-            Some(origin) => {
-                out.u8(1);
-                out.bytes(origin.as_bytes());
+        framed(&mut *out, |out| {
+            // The block's identity, then the anchor that must still
+            // resolve for the record to be believed on the way back in.
+            out.raw(record.id.as_bytes());
+            out.bytes(&record.anchor);
+            // Stamps are positive by construction (derivation skips the
+            // epoch-stamped rebuild), so the sign bit never survives
+            // the round trip through u64.
+            out.u64(meta.created_s.max(0) as u64);
+            out.u64(meta.modified_s.max(0) as u64);
+            match &meta.origin {
+                None => out.u8(0),
+                Some(origin) => {
+                    out.u8(1);
+                    out.bytes(origin.as_bytes());
+                }
             }
-        }
+        });
     }
     // The grouping, written only when there is grouping to write: a
     // page whose blocks are its paragraphs one for one restores the
@@ -451,34 +512,36 @@ fn emit_materialized(blocks: &BlockIndex, spans: &[usize], grouped: bool, out: &
     }
 }
 
-fn emit_ledger<C: Clock>(store: &SheetStore<C>, out: &mut impl Sink) {
+fn emit_ledger<C: Clock>(store: &SheetStore<C>, out: &mut dyn Sink) {
     out.raw(LEDGER_MAGIC);
     out.u64(store.ledger.len() as u64);
     for record in &store.ledger {
-        out.u8(match record.event {
-            LedgerEvent::Created => 0,
-            LedgerEvent::Sealed => 1,
-            LedgerEvent::Sent => 2,
-            LedgerEvent::Expired => 3,
-            LedgerEvent::Discarded => 4,
-        });
-        out.raw(record.item.as_bytes());
-        out.bytes(record.title.as_bytes());
-        // Wall-clock, not an age relative to some `now`: a record
-        // outlives the reboot that makes an `Instant` meaningless.
-        out.u64(record.at_wall_ms);
-        out.u64(record.item_created_wall_ms);
-        out.u8(match record.size {
-            SizeClass::Tiny => 0,
-            SizeClass::Small => 1,
-            SizeClass::Medium => 2,
-            SizeClass::Large => 3,
-            SizeClass::Huge => 4,
-        });
-        out.u8(match record.destination {
-            DestinationClass::None => 0,
-            DestinationClass::Clipboard => 1,
-            DestinationClass::OneTimeLink => 2,
+        framed(&mut *out, |out| {
+            out.u8(match record.event {
+                LedgerEvent::Created => 0,
+                LedgerEvent::Sealed => 1,
+                LedgerEvent::Sent => 2,
+                LedgerEvent::Expired => 3,
+                LedgerEvent::Discarded => 4,
+            });
+            out.raw(record.item.as_bytes());
+            out.bytes(record.title.as_bytes());
+            // Wall-clock, not an age relative to some `now`: a record
+            // outlives the reboot that makes an `Instant` meaningless.
+            out.u64(record.at_wall_ms);
+            out.u64(record.item_created_wall_ms);
+            out.u8(match record.size {
+                SizeClass::Tiny => 0,
+                SizeClass::Small => 1,
+                SizeClass::Medium => 2,
+                SizeClass::Large => 3,
+                SizeClass::Huge => 4,
+            });
+            out.u8(match record.destination {
+                DestinationClass::None => 0,
+                DestinationClass::Clipboard => 1,
+                DestinationClass::OneTimeLink => 2,
+            });
         });
     }
 }
@@ -529,6 +592,20 @@ impl<'a> Reader<'a> {
     fn uuid(&mut self) -> Option<ItemId> {
         let raw: [u8; 16] = self.raw(16)?.try_into().ok()?;
         Some(ItemId::from_bytes(raw))
+    }
+
+    /// A reader bounded to the next length-prefixed record. Fields this
+    /// build does not know are left behind inside that bound, and this
+    /// reader is already standing at the record after it: nothing has
+    /// to seek, because the length was consumed to make the bound. The
+    /// returned reader is deliberately never asked whether it is
+    /// [`done`](Reader::done) — an unread tail is the rule working, not
+    /// damage.
+    fn framed(&mut self) -> Option<Reader<'a>> {
+        Some(Reader {
+            buf: self.bytes()?,
+            pos: 0,
+        })
     }
 
     fn done(&self) -> bool {
@@ -617,16 +694,17 @@ fn read_sheet(
     let chip_count = count(reader)?;
     let mut chips = Vec::new();
     for _ in 0..chip_count {
-        let chip_uuid = reader.uuid().ok_or(Malformed)?;
-        let kind = reader.u8().ok_or(Malformed)?;
-        let promotion = match reader.u8().ok_or(Malformed)? {
+        let mut record = reader.framed().ok_or(Malformed)?;
+        let chip_uuid = record.uuid().ok_or(Malformed)?;
+        let kind = record.u8().ok_or(Malformed)?;
+        let promotion = match record.u8().ok_or(Malformed)? {
             0 => None,
             1 => Some(Promotion {
-                receipt_id: reader.str().ok_or(Malformed)?.to_string(),
+                receipt_id: record.str().ok_or(Malformed)?.to_string(),
             }),
             _ => return Err(Malformed),
         };
-        let bytes = reader.bytes().ok_or(Malformed)?;
+        let bytes = record.bytes().ok_or(Malformed)?;
         let chip_id = ChipId::from_raw(*next_chip_id);
         *next_chip_id += 1;
         // Rebuild through the same constructors that sealed it: the
@@ -747,13 +825,14 @@ fn read_materialized(
     let record_count = count(&mut reader)?;
     let mut records = Vec::new();
     for _ in 0..record_count {
-        let id = reader.uuid().ok_or(Malformed)?;
-        let anchor = reader.bytes().ok_or(Malformed)?.to_vec();
-        let created_s = clamp(reader.u64().ok_or(Malformed)?);
-        let modified_s = clamp(reader.u64().ok_or(Malformed)?).max(created_s);
-        let origin = match reader.u8().ok_or(Malformed)? {
+        let mut record = reader.framed().ok_or(Malformed)?;
+        let id = record.uuid().ok_or(Malformed)?;
+        let anchor = record.bytes().ok_or(Malformed)?.to_vec();
+        let created_s = clamp(record.u64().ok_or(Malformed)?);
+        let modified_s = clamp(record.u64().ok_or(Malformed)?).max(created_s);
+        let origin = match record.u8().ok_or(Malformed)? {
             0 => None,
-            1 => Some(reader.str().ok_or(Malformed)?.to_string()),
+            1 => Some(record.str().ok_or(Malformed)?.to_string()),
             _ => return Err(Malformed),
         };
         records.push(PersistedBlock {
@@ -1310,34 +1389,101 @@ mod tests {
         assert_eq!(fresh_chip.raw(), 4);
     }
 
-    /// A hand-assembled v3 snapshot holding one sheet: the given chip
+    /// A record as the writer frames it: its own byte length, then its
+    /// fields.
+    fn frame(record: &[u8]) -> Vec<u8> {
+        let mut out = (record.len() as u64).to_le_bytes().to_vec();
+        out.extend_from_slice(record);
+        out
+    }
+
+    /// The `u64` length at the front of `bytes`, as a usize.
+    fn le_u64(bytes: &[u8]) -> usize {
+        usize::try_from(u64::from_le_bytes(
+            bytes[..8].try_into().expect("eight bytes"),
+        ))
+        .expect("a length this test wrote")
+    }
+
+    /// The same bytes, written the way a later build that appended one
+    /// field to the first record would write them: `header` is the
+    /// preamble before that record's length prefix, and the new field
+    /// lands inside the record's own length, where this build's reader
+    /// must step over it to reach the record after.
+    fn with_trailing_field(bytes: &[u8], header: usize, extra: &[u8]) -> Vec<u8> {
+        let len = le_u64(&bytes[header..]);
+        let start = header + 8;
+        let mut out = bytes[..header].to_vec();
+        out.extend_from_slice(&((len + extra.len()) as u64).to_le_bytes());
+        out.extend_from_slice(&bytes[start..start + len]);
+        out.extend_from_slice(extra);
+        out.extend_from_slice(&bytes[start + len..]);
+        out
+    }
+
+    /// The same, for the first materialized record, which sits three
+    /// lengths deep: its own, the metadata slot's, and the page
+    /// record's. The slot is the page record's last field, so
+    /// `meta_len` locates it from the end.
+    fn with_materialized_tail(snapshot: &[u8], meta_len: usize, extra: &[u8]) -> Vec<u8> {
+        let head = MAGIC.len() + 16; // magic, saved wall stamp, page count
+        let page_len = le_u64(&snapshot[head..]);
+        let page = &snapshot[head + 8..head + 8 + page_len];
+        let slot_at = page.len() - meta_len;
+        // The slot's own preamble is a record count, then the records.
+        let slot = with_trailing_field(&page[slot_at..], 8, extra);
+        let mut rebuilt = page[..slot_at - 8].to_vec();
+        rebuilt.extend_from_slice(&frame(&slot));
+        let mut out = snapshot[..head].to_vec();
+        out.extend_from_slice(&frame(&rebuilt));
+        out.extend_from_slice(&snapshot[head + 8 + page_len..]);
+        out
+    }
+
+    /// A hand-assembled v4 snapshot holding one sheet: the given chip
     /// records, the given document blob, and an empty metadata slot.
     /// The writer cannot produce a roster that disagrees with its own
     /// document, so the trust-boundary tests build their bytes by hand.
     fn sheet_snapshot(chips: &[(ItemId, &str)], blob: &[u8]) -> Vec<u8> {
+        sheet_snapshot_with_tails(chips, blob, &[])
+    }
+
+    /// The same, written the way a later build that added a field to
+    /// the end of every chip record would write it.
+    fn sheet_snapshot_with_tails(
+        chips: &[(ItemId, &str)],
+        blob: &[u8],
+        chip_tail: &[u8],
+    ) -> Vec<u8> {
+        let mut page = Vec::new();
+        page.extend_from_slice(ItemId::random().as_bytes());
+        page.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
+        page.extend_from_slice(&0u64.to_le_bytes()); // empty title
+        page.push(0); // title not user set
+        page.extend_from_slice(&(8 * 60 * 60u64).to_le_bytes()); // 8h rung
+        page.push(0); // running
+        page.extend_from_slice(&60_000u64.to_le_bytes()); // remaining ms
+        page.extend_from_slice(&0u64.to_le_bytes()); // total_held
+        page.extend_from_slice(&(chips.len() as u64).to_le_bytes());
+        for (uuid, text) in chips {
+            let mut chip = Vec::new();
+            chip.extend_from_slice(uuid.as_bytes());
+            chip.push(0); // a text chip
+            chip.push(0); // never promoted
+            chip.extend_from_slice(&(text.len() as u64).to_le_bytes());
+            chip.extend_from_slice(text.as_bytes());
+            chip.extend_from_slice(chip_tail);
+            page.extend_from_slice(&frame(&chip));
+        }
+        page.extend_from_slice(&(blob.len() as u64).to_le_bytes());
+        page.extend_from_slice(blob);
+        page.extend_from_slice(&0u64.to_le_bytes()); // empty metadata slot
+
         let mut out = Vec::new();
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&0u64.to_le_bytes()); // saved wall stamp
         out.extend_from_slice(&1u64.to_le_bytes()); // one sheet
-        out.extend_from_slice(ItemId::random().as_bytes());
-        out.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
-        out.extend_from_slice(&0u64.to_le_bytes()); // empty title
-        out.push(0); // title not user set
-        out.extend_from_slice(&(8 * 60 * 60u64).to_le_bytes()); // 8h rung
-        out.push(0); // running
-        out.extend_from_slice(&60_000u64.to_le_bytes()); // remaining ms
-        out.extend_from_slice(&0u64.to_le_bytes()); // total_held
-        out.extend_from_slice(&(chips.len() as u64).to_le_bytes());
-        for (uuid, text) in chips {
-            out.extend_from_slice(uuid.as_bytes());
-            out.push(0); // a text chip
-            out.push(0); // never promoted
-            out.extend_from_slice(&(text.len() as u64).to_le_bytes());
-            out.extend_from_slice(text.as_bytes());
-        }
-        out.extend_from_slice(&(blob.len() as u64).to_le_bytes());
-        out.extend_from_slice(blob);
-        out.extend_from_slice(&0u64.to_le_bytes()); // empty metadata slot
+        out.extend_from_slice(&frame(&page));
         out
     }
 
@@ -1347,6 +1493,122 @@ mod tests {
         let (mut store, _clock) = store();
         let survivor = store.new_sheet().unwrap();
         (store, survivor)
+    }
+
+    // The skip rule, once per record kind (issue #54). Each test writes
+    // the buffer a later build would write, with one field this build
+    // has never heard of on the end of the first record, and asserts
+    // that the record after it is still found. Refusing here is the
+    // failure the rule exists to prevent: it would mean the next added
+    // field costs everyone their staged content again.
+
+    #[test]
+    fn a_trailing_field_on_a_page_record_is_skipped_not_refused() {
+        let (original, clock, first, second) = populated();
+        let snapshot = original.snapshot(1_000_000);
+        let extended = with_trailing_field(&snapshot, MAGIC.len() + 16, b"a page field from 2027");
+
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&extended, 1_000_000).unwrap(), 2);
+        let order: Vec<SheetId> = revived.sheets().map(Sheet::id).collect();
+        assert_eq!(
+            order,
+            vec![first, second],
+            "the page after the unknown field was not found"
+        );
+
+        // The known fields of the extended record read exactly as they
+        // did, sealed bytes included: the tail is skipped, not absorbed.
+        let sheet = revived.sheet(first).unwrap();
+        assert_eq!(sheet.title(), "deploy notes");
+        assert_eq!(sheet.segments(), original.sheet(first).unwrap().segments());
+        let chips: Vec<&SealedChip> = sheet.chips().collect();
+        assert_eq!(chips.len(), 2);
+        let (bytes, _) = revived.copy_out_chip(chips[0].id()).unwrap();
+        assert_eq!(&*bytes, b"ghp_expected-to-survive");
+    }
+
+    #[test]
+    fn a_trailing_field_on_a_chip_record_is_skipped_not_refused() {
+        let (mut store, _clock) = store();
+        let uuid = ItemId::random();
+        let doc = SheetDocument::new();
+        doc.insert_chip(0, uuid).unwrap();
+        doc.insert(1, " and ink \u{1F600}").unwrap();
+        doc.commit(None);
+        let snapshot = sheet_snapshot_with_tails(
+            &[(uuid, "ghp_still-here")],
+            &doc.export_snapshot(),
+            b"a chip field from 2027",
+        );
+
+        assert_eq!(store.restore(&snapshot, 0).unwrap(), 1);
+        let chip = store.sheets().next().unwrap().chips().next().unwrap();
+        assert_eq!(chip.uuid(), uuid);
+        // The document blob follows the chip roster, so a reader that
+        // walked into the unknown field would have lost the blob too.
+        let (bytes, _) = store.copy_out_chip(chip.id()).unwrap();
+        assert_eq!(&*bytes, b"ghp_still-here");
+    }
+
+    #[test]
+    fn a_trailing_field_on_a_materialized_record_is_skipped_not_refused() {
+        use crate::store::EditOp;
+        let (mut store, clock) = store();
+        let id = store.new_sheet().unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "first\u{1F600}\n".into()
+                },
+                EditOp::Insert {
+                    pos_u16: 8,
+                    text: "second".into()
+                }
+            ]
+        ));
+        store.cycle_rung(id).unwrap();
+        let honest = store.sheet(id).unwrap().blocks_meta();
+        assert!(
+            honest.len() == 2 && honest[1].created_s.is_some(),
+            "the control: the ceremony froze a summary onto both blocks"
+        );
+
+        let meta_len =
+            encode_materialized(&store.sheets[0].blocks, &store.sheets[0].document).len();
+        let wall = real_wall_ms();
+        let snapshot = store.snapshot(wall);
+        let extended = with_materialized_tail(&snapshot, meta_len, b"a block field from 2027");
+
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&extended, wall).unwrap(), 1);
+        assert_eq!(
+            revived.sheets().next().unwrap().blocks_meta(),
+            honest,
+            "the record after the unknown field did not adopt onto its block"
+        );
+    }
+
+    #[test]
+    fn a_trailing_field_on_a_ledger_record_is_skipped_not_refused() {
+        let (original, clock, ..) = populated();
+        let ledger = original.ledger_snapshot();
+        let expected: Vec<LedgerRecord> = original.ledger().cloned().collect();
+        assert!(
+            expected.len() > 1,
+            "the control: a record follows the extended one"
+        );
+        let extended =
+            with_trailing_field(&ledger, LEDGER_MAGIC.len() + 8, b"a ledger field from 2027");
+
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(
+            revived.restore_ledger(&extended, 0).unwrap(),
+            expected.len()
+        );
+        assert_eq!(revived.ledger().cloned().collect::<Vec<_>>(), expected);
     }
 
     #[test]
@@ -1627,14 +1889,19 @@ mod tests {
     }
 
     #[test]
-    fn v1_v2_and_unknown_magics_all_refuse_as_unknown_format() {
-        // The format break is clean and deliberate (decided 2026-08-07):
-        // there is no v2 reader and no downgrade writer, so every
-        // earlier magic and every unknown one refuses the same way,
-        // with the store untouched.
+    fn superseded_and_unknown_magics_all_refuse_as_unknown_format() {
+        // The format break is clean and deliberate (decided 2026-08-07,
+        // taken again for v4): there is no reader for a superseded
+        // version and no downgrade writer, so every earlier magic and
+        // every unknown one refuses the same way, with the store
+        // untouched. The skip rule changes nothing here. It buys a
+        // trailing field inside a record and buys nothing across a
+        // version byte.
         let (original, _clock, ..) = populated();
         let (mut revived, survivor) = occupied();
-        for magic in [b"OTSSNAP1", b"OTSSNAP2", b"OTSSNAP9", b"NOTSNAPS"] {
+        for magic in [
+            b"OTSSNAP1", b"OTSSNAP2", b"OTSSNAP3", b"OTSSNAP9", b"NOTSNAPS",
+        ] {
             let mut relabeled = original.snapshot(0).to_vec();
             relabeled[..8].copy_from_slice(magic.as_slice());
             assert_eq!(
@@ -1646,12 +1913,18 @@ mod tests {
             assert_eq!(ids, vec![survivor], "the refused restore touched the store");
         }
 
-        let mut v0_ledger = original.ledger_snapshot().to_vec();
-        v0_ledger[..8].copy_from_slice(b"OTSLEDR0");
-        assert_eq!(
-            revived.restore_ledger(&v0_ledger, 0),
-            Err(RestoreError::UnknownFormat)
-        );
+        // The ledger takes the same rule, including for the version it
+        // just superseded: framing its records broke `OTSLEDR1`, and a
+        // v1 file refuses rather than being read positionally.
+        for magic in [b"OTSLEDR0", b"OTSLEDR1"] {
+            let mut relabeled = original.ledger_snapshot().to_vec();
+            relabeled[..8].copy_from_slice(magic.as_slice());
+            assert_eq!(
+                revived.restore_ledger(&relabeled, 0),
+                Err(RestoreError::UnknownFormat),
+                "ledger magic {magic:?} did not refuse as unknown"
+            );
+        }
     }
 
     #[test]
@@ -1729,14 +2002,30 @@ mod tests {
             Err(RestoreError::Malformed)
         );
 
-        // A title length of u64::MAX inside an otherwise plausible page.
+        // A page record that claims u64::MAX bytes for itself. The
+        // frame is the first thing read per record and the first thing
+        // that has to disbelieve what it is told.
+        let mut hostile_frame = Vec::new();
+        hostile_frame.extend_from_slice(MAGIC);
+        hostile_frame.extend_from_slice(&0u64.to_le_bytes());
+        hostile_frame.extend_from_slice(&1u64.to_le_bytes());
+        hostile_frame.extend_from_slice(&u64::MAX.to_le_bytes());
+        assert_eq!(
+            revived.restore(&hostile_frame, 0),
+            Err(RestoreError::Malformed)
+        );
+
+        // A title length of u64::MAX inside an otherwise plausible page
+        // record, so the lie is one the record's own frame contains.
+        let mut page = Vec::new();
+        page.extend_from_slice(ItemId::random().as_bytes());
+        page.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
+        page.extend_from_slice(&u64::MAX.to_le_bytes()); // title length
         let mut hostile_title = Vec::new();
         hostile_title.extend_from_slice(MAGIC);
         hostile_title.extend_from_slice(&0u64.to_le_bytes());
         hostile_title.extend_from_slice(&1u64.to_le_bytes());
-        hostile_title.extend_from_slice(ItemId::random().as_bytes());
-        hostile_title.extend_from_slice(&0u64.to_le_bytes());
-        hostile_title.extend_from_slice(&u64::MAX.to_le_bytes());
+        hostile_title.extend_from_slice(&frame(&page));
         assert_eq!(
             revived.restore(&hostile_title, 0),
             Err(RestoreError::Malformed)
