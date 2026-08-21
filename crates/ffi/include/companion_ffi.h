@@ -102,6 +102,20 @@ CompanionHandle *companion_new(void);
  * other's key. Null or empty falls back to the default scope. */
 CompanionHandle *companion_new_scoped(const char *service);
 
+/* As companion_new_scoped(), but the credentials rest in ordinary
+ * process memory rather than any OS keychain: keys minted through this
+ * handle never reach the login Keychain and die with the process.
+ * Handles created with the same `tag` share one store, so a file
+ * sealed through one can be opened through another in the same
+ * process. A test seam for the shell's persistence suite; the shipping
+ * form factors never call it. Null or empty falls back to one unnamed
+ * scope. The symbol exists only in test-util builds of the core
+ * (ADR-0018; scripts/build-core.sh --test-util): a release build does
+ * not export it, so a caller linking against one fails at link time
+ * rather than falling back to anything. The declaration stays because
+ * a C header carries no cargo features. */
+CompanionHandle *companion_new_ephemeral(const char *tag);
+
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */

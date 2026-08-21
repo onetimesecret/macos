@@ -79,6 +79,23 @@ echo "==> swift build -c $CONFIG --product OnetimePad"
 swift build --package-path shell -c "$CONFIG" --product OnetimePad
 BIN="$(swift build --package-path shell -c "$CONFIG" --show-bin-path)/OnetimePad"
 
+# ADR-0018: test seams are compiled out of release artifacts, and the
+# claim is checked by machine here rather than trusted. The check reads
+# the linked binary, not the static library, because the binary is the
+# artifact this script ships (and because the library's thin-LTO
+# members defeat nm). A debug bundle may carry the seams: it links the
+# dev xcframework on purpose so `swift test` and dev.sh share one
+# build.
+if [[ "$CONFIG" == "release" ]]; then
+  echo "==> Verifying no test seams in the release binary (ADR-0018)"
+  if nm -gU "$BIN" 2>/dev/null | grep -q '_companion_new_ephemeral$'; then
+    echo "release binary exports companion_new_ephemeral, a test-only seam" >&2
+    echo "(ADR-0018): bindings/ holds the dev xcframework. Rebuild the release" >&2
+    echo "shape with scripts/build-core.sh (no flags) and package again." >&2
+    exit 1
+  fi
+fi
+
 APP=dist/OnetimePad.app
 echo "==> Assembling $APP ($VERSION, $CONFIG)"
 rm -rf "$APP"

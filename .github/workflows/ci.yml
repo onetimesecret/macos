@@ -32,6 +32,11 @@ jobs:
         run: cargo clippy -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-transport --all-targets -- -D warnings
       - name: Test
         run: cargo test -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-transport
+      # cargo test enables no features on its own (cargo issue 2911),
+      # so the gated test seams (ADR-0018) are exercised by name here
+      # and stay absent from every run above.
+      - name: Test (test-util seams)
+        run: cargo test -p companion-ffi --features test-util
       - name: cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
 
@@ -59,8 +64,13 @@ jobs:
       - name: Install pinned toolchain
         run: rustup show
       - uses: Swatinem/rust-cache@v2
+      # The dev shape, test seams included (ADR-0018): swift test links
+      # companion_new_ephemeral, which only a --test-util build exports.
+      # The debug bundle assembled below inherits the same shape; only
+      # the release packaging path is required to be seam-free, and
+      # package-app.sh checks that.
       - name: Build CompanionCore.xcframework
-        run: ./scripts/build-core.sh
+        run: ./scripts/build-core.sh --test-util
       - name: swift build
         run: swift build --package-path shell
       - name: swift test

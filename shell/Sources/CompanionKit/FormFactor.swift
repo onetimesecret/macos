@@ -57,9 +57,23 @@ public struct FormFactor: Sendable {
     /// Where the sealed store rests between runs. Ciphertext only: the
     /// key lives in the Keychain, so the file alone says nothing.
     public var stateFileURL: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(stateDirectory, isDirectory: true)
-            .appendingPathComponent("state.sealed")
+        Self.stateFileURL(
+            in: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent(stateDirectory, isDirectory: true))
+    }
+
+    /// The sealed store's place inside any state directory. One name,
+    /// stated once, whether the directory is the form factor's own or
+    /// one a test injected: a test that spelled the name itself could
+    /// drift from the name the app writes and pass against a file the
+    /// app never reads.
+    public static func stateFileURL(in directory: URL) -> URL {
+        directory.appendingPathComponent("state.sealed")
+    }
+
+    /// The ledger's place beside it, under the same single-naming rule.
+    public static func ledgerFileURL(in directory: URL) -> URL {
+        directory.appendingPathComponent("ledger.sealed")
     }
 
     /// Where the ledger rests: its own file under its own long-lived
@@ -72,9 +86,7 @@ public struct FormFactor: Sendable {
     /// naming, `.noindex`, backup exclusion) covers the ledger without
     /// a second directory-preparation path.
     public var ledgerFileURL: URL {
-        stateFileURL
-            .deletingLastPathComponent()
-            .appendingPathComponent("ledger.sealed")
+        Self.ledgerFileURL(in: stateFileURL.deletingLastPathComponent())
     }
 
     /// Makes the state directory ready to be written into, and hands
@@ -92,9 +104,12 @@ public struct FormFactor: Sendable {
     ///
     /// The ledger rests in this same directory, so it inherits both
     /// without a second preparation path.
+    ///
+    /// Static and keyed on the state file rather than on `self`, so a
+    /// model writing into an injected directory prepares it through
+    /// exactly the code the shipping directories go through.
     @discardableResult
-    public func prepareStateDirectory() throws -> URL {
-        let stateFile = stateFileURL
+    public static func prepareStateDirectory(holding stateFile: URL) throws -> URL {
         var directory = stateFile.deletingLastPathComponent()
 
         try FileManager.default.createDirectory(
@@ -107,6 +122,12 @@ public struct FormFactor: Sendable {
         try directory.setResourceValues(values)
 
         return stateFile
+    }
+
+    /// This form factor's own directory, through the same preparation.
+    @discardableResult
+    public func prepareStateDirectory() throws -> URL {
+        try Self.prepareStateDirectory(holding: stateFileURL)
     }
 
     /// The base identifier the panel shipped under before it was

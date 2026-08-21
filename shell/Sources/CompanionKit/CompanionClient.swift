@@ -243,6 +243,16 @@ public final class CompanionClient: @unchecked Sendable {
         handle = created
     }
 
+    /// Adopt a handle another constructor already created. Internal
+    /// rather than private for one client: the test target's
+    /// `ephemeral(tag:)` extension wraps the core's gated
+    /// `companion_new_ephemeral` seam, which lives outside this target
+    /// because the symbol exists only in test-util builds of the core
+    /// (ADR-0018) and a shipping target must never need it to link.
+    init(adopting handle: OpaquePointer) {
+        self.handle = handle
+    }
+
     deinit {
         companion_free(handle)
     }

@@ -23,7 +23,12 @@ elif [[ -n "${1:-}" ]]; then
   exit 1
 fi
 
-scripts/build-core.sh --if-stale
+# The dev lane builds the dev shape of the core, test seams included
+# (ADR-0018), which keeps bindings/ linkable by `swift test` between
+# runs. The release lane (scripts/install.sh) builds without the
+# feature, and the stamp build-core.sh leaves means each lane rebuilds
+# the other's leftovers automatically.
+scripts/build-core.sh --if-stale --test-util
 
 # package-app.sh deletes and reassembles the dist/ bundle, so a copy
 # still running from there has to quit first. Only the graceful

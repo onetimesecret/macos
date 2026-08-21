@@ -281,6 +281,46 @@ pub unsafe extern "C" fn companion_new_scoped(service: *const c_char) -> *mut Co
     new_handle(credentials)
 }
 
+/// As [`companion_new_scoped`], but the credentials rest in ordinary
+/// process memory ([`companion_credentials::InMemoryCredentialStore`])
+/// rather than any OS keychain: keys minted through this handle never
+/// reach the login Keychain and die with the process. Handles created
+/// with the same `tag` share one store, which is what lets a file
+/// sealed through one handle be opened through another in the same
+/// process, the way the shell's persistence suite exercises a save and
+/// the relaunch that restores it. A test seam, then, and only that:
+/// the shipping form factors construct through [`companion_new_scoped`],
+/// and a handle built here can reach no key but the ones it minted
+/// itself. A null, empty, or non-UTF-8 `tag` falls back to one unnamed
+/// scope rather than inventing a fresh scope per call, matching
+/// [`companion_new_scoped`]'s fallback shape.
+///
+/// Compiled only under the `test-util` feature (ADR-0018): the release
+/// artifact never exports this symbol, and the packaging path checks.
+///
+/// # Safety
+/// `tag` must be null or a valid NUL-terminated C string.
+#[cfg(feature = "test-util")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_new_ephemeral(tag: *const c_char) -> *mut CompanionHandle {
+    use std::collections::HashMap;
+    use std::sync::{OnceLock, PoisonError};
+
+    static STORES: OnceLock<Mutex<HashMap<String, Arc<dyn CredentialStore>>>> = OnceLock::new();
+    let tag = unsafe { cstr(tag) }.unwrap_or("").to_string();
+    let credentials =
+        {
+            let mut stores = STORES
+                .get_or_init(|| Mutex::new(HashMap::new()))
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            Arc::clone(stores.entry(tag).or_insert_with(|| {
+                Arc::new(companion_credentials::InMemoryCredentialStore::default())
+            }))
+        };
+    new_handle(credentials)
+}
+
 fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
     companion_core::harden_process();
     // The one place the backend is chosen: the real system clipboard on
@@ -2271,6 +2311,40 @@ mod tests {
             companion_free(stranger);
         }
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// The ephemeral constructor's whole contract in one place: a tag
+    /// names one shared in-memory store, so two handles under the same
+    /// tag see each other's keys and a handle under another tag sees
+    /// none of them. The shell's persistence suite leans on exactly
+    /// this to restore, through a second handle, what a first handle
+    /// sealed. Gated with the seam it exercises (ADR-0018): run it
+    /// with `cargo test -p companion-ffi --features test-util`.
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn ephemeral_handles_share_credentials_by_tag() {
+        let tag = cstring("ephemeral-share-by-tag");
+        let other = cstring("ephemeral-share-by-tag-other");
+        unsafe {
+            let first = companion_new_ephemeral(tag.as_ptr());
+            {
+                let guard = (*first).inner.lock().unwrap();
+                guard.credentials.store("probe", b"half").unwrap();
+            }
+            let second = companion_new_ephemeral(tag.as_ptr());
+            {
+                let guard = (*second).inner.lock().unwrap();
+                assert_eq!(guard.credentials.load("probe").unwrap().as_slice(), b"half");
+            }
+            let third = companion_new_ephemeral(other.as_ptr());
+            {
+                let guard = (*third).inner.lock().unwrap();
+                assert!(guard.credentials.load("probe").is_err());
+            }
+            companion_free(first);
+            companion_free(second);
+            companion_free(third);
+        }
     }
 
     #[test]
