@@ -164,12 +164,13 @@ const FILE_MAGIC: &[u8; 8] = b"OTSSEAL3";
 /// refused outright after it.
 ///
 /// **Adding an entry is not a one-line change.** The disposal arm
-/// leaves the key halves alone, which is only sound while every entry
-/// predates ADR-0016's move of the file half out of the temp directory:
-/// such a file's half is somewhere this build never reads, so there is
-/// no live key material to take away. An entry from any format after
-/// the move brings a durable file half and a live keychain half with it,
-/// and disposal without rotation would leave a working key behind.
+/// leaves the key halves alone, which holds while every entry predates
+/// ADR-0016's move of the file half out of the temp directory: such a
+/// file's other half is presumed cleared with that directory, so what
+/// stays reachable is the keychain half, which opens nothing on its own.
+/// An entry from any format sealed after the move brings a durable file
+/// half and that same live keychain half, and disposal without rotation
+/// would leave a whole working key behind.
 /// [`tests::the_superseded_set_predates_the_key_half_move`] pins this so
 /// the question arrives with the entry.
 const SUPERSEDED_MAGICS: [&[u8; 8]; 1] = [b"OTSSEAL2"];
@@ -641,10 +642,21 @@ pub(crate) fn seal_state(key: &[u8], plaintext: &[u8], sealed_wall_ms: u64) -> O
 /// a file that is about to be refused.
 ///
 /// **Only the magic decides disposal, and only a magic this app itself
-/// once wrote.** A header edit fails authentication and is refused, so
-/// nothing an outsider can write to the file turns into a deletion; the
-/// destructive answer is reserved for the two byte strings this app has
-/// shipped and replaced.
+/// once wrote.** The destructive answer is reserved for the byte
+/// strings in [`SUPERSEDED_MAGICS`]; every other header edit fails
+/// authentication and is refused, file untouched.
+///
+/// Be exact about the gap in that sentence, because the obvious
+/// stronger claim, that nothing an outsider writes to this file turns
+/// into a deletion, is false: `OTSSEAL3` and `OTSSEAL2` differ in one
+/// bit, so flipping the version digit does turn a refusal into a
+/// disposal. It costs nothing, which is why the behaviour stands. The
+/// magic is inside the associated data, so a file whose magic was
+/// flipped can never authenticate under any key again, and refusing it
+/// forever would only withhold the save licence over bytes nobody will
+/// ever read. Anyone able to write that byte could have unlinked the
+/// file instead. The alternative, refusing a superseded magic, is the
+/// permanently unwritable install ADR-0016 section 9 forbids.
 pub(crate) fn open_state(file: &[u8], key: impl FnOnce() -> Option<Zeroizing<Vec<u8>>>) -> Opened {
     // Each refusal names itself. They are different failures with one
     // visible symptom (a session that will not write), and telling them
@@ -1445,17 +1457,24 @@ mod tests {
     }
 
     /// The disposal arm drops the file and leaves both key halves alone,
-    /// and that is sound because of *which* magics are in the set, not
-    /// because of anything the arm itself does. Every entry here predates
-    /// ADR-0016's move of the file half, so the half that sealed such a
-    /// file is in a per-boot temp directory this build never reads: there
-    /// is no live key material for the disposal to leave behind.
+    /// and whether that is sound depends on *which* magics are in the
+    /// set rather than on anything the arm itself does.
     ///
-    /// This test exists so that the next person to add an entry has to
-    /// answer that question rather than inherit its old answer. Nothing
-    /// else in the tree would notice: the arm would keep compiling, keep
-    /// passing, and quietly start dropping ciphertext while the key that
-    /// opens it stayed alive.
+    /// Every entry here predates ADR-0016's move of the file half, so
+    /// the half that sealed such a file is in a per-boot temp directory
+    /// this build never reads again. That is a presumption and not a
+    /// guarantee: the keychain half is untouched by the break and is
+    /// alive right now, and ADR-0012:45 conceded that the temp bytes may
+    /// still be on disk if the directory was not cleared. So what is
+    /// left behind today is half a key plus a residual that ADR-0016
+    /// section 8 prices, and what would be left behind by an entry
+    /// sealed after the move is a whole one.
+    ///
+    /// This test exists so the next person to add an entry answers that
+    /// question rather than inheriting its old answer. Nothing else in
+    /// the tree would notice: the arm would keep compiling, keep
+    /// passing, and quietly start dropping ciphertext whose key was
+    /// entirely reachable.
     #[test]
     fn the_superseded_set_predates_the_key_half_move() {
         // Compared as slices, so that a set of a different length fails
@@ -1465,12 +1484,14 @@ mod tests {
             SUPERSEDED_MAGICS.as_slice(),
             [b"OTSSEAL2"].as_slice(),
             "the superseded set changed. Every entry it held predated ADR-0016's move of the \
-             file half out of the per-boot temp directory, which is the only reason the \
-             disposal arm in companion_persist_restore may drop a file without rotating the \
-             halves. An entry from any format sealed after that move carries a durable file \
-             half in the state directory and a keychain half that is still live, so disposing \
-             of the file alone leaves a working key for whatever copy of that ciphertext \
-             already exists. Decide whether that arm must now rotate before changing this line."
+             file half out of the per-boot temp directory, which is what lets the disposal arm \
+             in companion_persist_restore drop a file without rotating: such a file's other \
+             half is presumed cleared with that directory, so what stays reachable is the \
+             keychain half alone, which opens nothing by itself. An entry sealed after the \
+             move has its file half in the state directory, durable and reachable, beside that \
+             same live keychain half, so disposing of the file alone would leave a whole \
+             working key for whatever copy of that ciphertext already exists. Decide whether \
+             that arm must now rotate before changing this line."
         );
     }
 

@@ -1314,20 +1314,33 @@ pub unsafe extern "C" fn companion_persist_restore(
             //
             // The halves are deliberately not rotated here, and the
             // reason belongs to the entries in the superseded set rather
-            // than to this arm. Every entry today predates ADR-0016's
-            // move of the file half, so the half that sealed such a file
-            // is in a per-boot temp directory this build never looks in
-            // again: there is no live key material to take away, and the
-            // rotation would be nothing but a keychain write at launch,
-            // before the user has asked this app for anything, which is
-            // where key access does not belong (ADR-0004).
+            // than to this arm.
             //
-            // A later entry breaks that reasoning without touching this
-            // code. Its file half will sit in the state directory,
-            // durable, beside a keychain half that is still live, and
-            // dropping the file without rotating would leave a working
-            // key behind for a ciphertext copy somebody may already
-            // hold. `the_superseded_set_predates_the_key_half_move` in
+            // State the residual exactly, because half of it survives.
+            // The keychain half does not change across this break: the
+            // account and the HKDF info string are the same strings they
+            // were, so an OTSSEAL2 file's keychain half is sitting in
+            // the keychain right now, durable, and this arm leaves it
+            // there. What is presumed gone is the other half, which
+            // lived in the per-boot temp directory macOS clears at boot
+            // and this build never reads again. Presumed, not
+            // guaranteed: ADR-0012:45 already conceded that those bytes
+            // may still be on disk if the directory was not cleared. So
+            // the honest residual is that a captured OTSSEAL2 ciphertext
+            // stays readable to anyone who also kept that temp half, and
+            // dropping the file here does not change that either way.
+            //
+            // What buys the decision is ADR-0004: a rotation is a
+            // keychain write, this runs at launch before the user has
+            // asked this app for anything, and a Keychain prompt there
+            // is precisely what that ADR exists to prevent.
+            //
+            // A later entry in the set changes the arithmetic without
+            // touching this code. Its file half will sit in the state
+            // directory, durable and reachable, beside that same live
+            // keychain half, so disposal without rotation would leave a
+            // working key rather than half of one.
+            // `the_superseded_set_predates_the_key_half_move` in
             // persist.rs is what makes that decision arrive with the
             // entry rather than years later.
             if !persist::erase_state(Path::new(path)) {
@@ -3634,6 +3647,21 @@ mod tests {
                 !path.exists(),
                 "the superseded file is still there, so the probe withholds the licence and \
                  this install never writes again"
+            );
+            // What the disposal does *not* do, pinned so the comment on
+            // that arm cannot drift away from it: the keychain half is
+            // untouched by the break and untouched by the disposal, so
+            // it is still there afterwards. This is the residual ADR-0016
+            // section 8 prices rather than a defect. The other half is
+            // what is presumed gone, and the arm's comment says why that
+            // is a presumption.
+            assert!(
+                credentials
+                    .key_material_store()
+                    .exists("state-key")
+                    .unwrap(),
+                "the disposal rotated the keychain half; the arm's reasoning and its ADR-0004 \
+                 justification both assume it does not"
             );
             // And the session that follows can write and read its own.
             assert!(companion_persist_save(second, c_path.as_ptr()));
