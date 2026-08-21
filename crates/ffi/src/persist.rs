@@ -1601,10 +1601,30 @@ mod tests {
 
     /// A directory that cannot be read is not a failure worth a return
     /// value: the sweep is best effort at launch, and everything after
-    /// it must still run.
+    /// it must still run. What it must not do is create anything, or
+    /// touch a directory that simply has nothing to sweep.
+    ///
+    /// The assertions matter more than they look. Written as a bare
+    /// call, this test passed against an empty function body, which is
+    /// the one implementation that would let every stranded generation
+    /// through.
     #[test]
-    fn sweeping_a_directory_that_is_not_there_is_not_an_error() {
-        sweep_stranded_temps(Path::new("/nowhere/at/all"));
+    fn sweeping_a_directory_with_nothing_to_sweep_changes_nothing() {
+        let absent = Path::new("/nowhere/at/all");
+        sweep_stranded_temps(absent);
+        assert!(!absent.exists(), "the sweep created the path it was given");
+
+        let dir = scratch_dir();
+        let kept = ["state.sealed", "ledger.sealed", "notes.txt"];
+        for name in kept {
+            std::fs::write(dir.join(name), b"not a stranded generation").unwrap();
+        }
+        sweep_stranded_temps(&dir);
+        for name in kept {
+            assert!(dir.join(name).exists(), "the sweep took {name}");
+        }
+        assert_eq!(temp_litter(&dir).len(), kept.len() - 1);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Best effort, and never called erasure: what it must do is leave
