@@ -27,7 +27,26 @@ Re-run `scripts/install.sh` to update. `--no-launch` installs without
 opening the app afterward. For a debug build that runs beside the
 installed copy, use `scripts/dev.sh`.
 
-## One-time reset when you update to the ADR-0012 build
+## One-time reset when you update to the ADR-0016 build
+
+The sealed envelope takes another version byte, `OTSSEAL2` to
+`OTSSEAL3`: the boot session UUID and the monotonic stamp leave the
+header, and the whole header is what authenticates the file, so no
+existing `state.sealed` can be opened by this build. Whatever is staged
+when you install it is gone, once. Send or copy out anything you still
+need **before** you install.
+
+Unlike the previous break, the old file does not sit there withholding
+your save licence: a `state.sealed` carrying the superseded envelope is
+recognised, erased on the spot, and the session writes normally from
+there. You lose the pages, not the install.
+
+The second key half also moves, from the per-user temp directory into
+the state directory beside `state.sealed`, at mode 0600. That is what
+makes content survive a restart at all. Any half left in the temp
+directory is dead weight; the system clears that directory at boot.
+
+## One-time reset when you updated to the ADR-0012 build
 
 Everything an existing install kept lands on the floor at once with
 this update. Nothing migrates, deliberately: the formats broke and old
@@ -54,13 +73,19 @@ What changes:
   and actively hurts: a restore that fails over a file that exists
   withholds this session's save licence, so that session cannot write
   either.
-- **Staged content no longer survives a reboot, by design.** The
-  content key is derived from two halves: one in the Keychain, one in
-  the per-user temp directory that macOS clears at boot. Without the
-  temp half there is no key, and the sealed record also carries the
-  boot session UUID, so a file from an earlier boot is discarded and
-  both halves are rotated. Restarting the Mac is now a clean slate for
-  staged pages. Quit and reopen inside one boot session still restores.
+- **Staged content is bounded by its TTL and by policy, not by the
+  boot session** (ADR-0016, whose own reset section is above).
+  This bullet used to read "staged content no longer survives a reboot,
+  by design", and that claim is withdrawn rather than quietly dropped.
+  The content key is still two halves, one in the Keychain and one in a
+  file, but the file half now lives in the state directory at mode 0600
+  rather than in the per-user temp directory macOS clears at boot.
+  Nothing outlives its TTL, whose ceiling is seven days; what forgets
+  content is the TTL running out, the pad emptying, or a Clear, and
+  each of those rotates both halves so that every ciphertext generation
+  on disk becomes undecryptable at that moment. Restarting the Mac is
+  no longer a clean slate, which is the whole point: accepting a system
+  update stops costing you your staged work.
 - **Signed builds carry a new entitlement.** `keychain-access-groups`
   is what the data protection keychain requires, and only a real
   signing identity can carry it. Ad-hoc builds skip it and log a single
@@ -111,7 +136,7 @@ the other two lose at most the last couple of seconds of edits.
 
 ## Trusting persistence across a quit and reopen
 
-Trust it within a boot session, including for a crash. Content is
+Trust it, including across a crash and across a restart. Content is
 sealed to disk (ChaCha20-Poly1305) on every mutation, debounced by
 about two seconds, and written atomically. The debounce is measured
 from the first edit of a burst rather than the last, so typing steadily
@@ -120,9 +145,13 @@ termination while the buffer is dirty. A crash, a force quit or a
 logout therefore costs you one debounce window, not the session.
 Restore runs once, on the first reveal after launch.
 
-Across a reboot, expect nothing back. That is the design, not a bug:
-half the content key lives in a temp directory the system clears at
-boot. See the one-time reset section above for the mechanism.
+Across a reboot, expect your unexpired pages back, with less time on
+them: the countdown is charged the wall-clock gap between the last save
+and the next launch, and a page that came due while you were away
+expires into the ledger at that first launch rather than reappearing.
+A page that was held keeps its hold, and the gap shortens the hold
+before it reaches the countdown. Nothing outlives its TTL, and the
+ceiling is seven days.
 
 If a save at quit fails (locked Keychain, full disk, a failed rename)
 you get an alert with the choice to quit anyway or stay and retry.

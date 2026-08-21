@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Staged content survives a restart, and the sealed envelope breaks
+  once to make that true** (`companion-ffi` 0.11.0, ADR-0016, closes
+  issue #51). Accepting a system update used to cost the user
+  everything on the pad, which is the report that opened the milestone.
+  The content key's second half moves out of `_CS_DARWIN_USER_TEMP_DIR`,
+  which macOS clears at boot, and into the state directory beside
+  `state.sealed` at mode 0600, where it inherits that directory's
+  `.noindex` naming and its exclusion from Time Machine; its name stops
+  folding `kern.bootsessionuuid` and the derivation is otherwise
+  untouched, so two form factors still land on two different files. The
+  envelope goes `OTSSEAL2` to `OTSSEAL3` and its header goes from
+  `magic ‖ boot_uuid ‖ wall_ms ‖ mono_ns` to `magic ‖ sealed_wall_ms`.
+  The whole header is the AEAD's associated data, so every existing
+  `state.sealed` fails authentication: there is no migration, none is
+  possible, and the loss is announced in `DOGFOOD.md` the way the
+  previous break was. A file carrying the one superseded magic is
+  erased with the full discipline and the save licence granted, so the
+  first launch after the update does not present as an install that has
+  permanently stopped saving; `OTSSEAL1` and anything else are still
+  refused and left where they lie, because disposal is a promise about
+  this app's own past output.
+
+  Time away is now the wall-clock gap between the sealed stamp and the
+  restore, which is the one interval no running process was there to
+  observe; every interval a session does observe stays on the
+  sleep-inclusive monotonic clock. The monotonic stamp had to leave the
+  header for a reason worth stating: two readings of that clock are
+  comparable only inside one boot session, so after a restart the
+  subtraction underflowed, charged `u64::MAX` milliseconds away, and
+  drained every countdown the instant the surface opened, while
+  reporting success. A clock stepped backwards now freezes a countdown
+  for the length of the gap and can never rewind one, which ADR-0016
+  section 4 prices and accepts.
+
+  What the two halves buy shrinks, and is stated rather than carried
+  forward: with both halves durable the split is an ACL gate and a
+  separation of backup domains, and it bounds nothing in time.
+  Crypto-erasure stops being a scheduled event and becomes the
+  finishing step of a deletion the user or the TTL asked for, so the
+  halves now rotate when the content file is dropped. That rotation is
+  gated on the envelope magic actually at the path rather than on the
+  caller, because the same entry point drops the ledger file on a user's
+  Clear and that gesture asked nothing about pages. Launch also sweeps
+  the stranded `*.tmp` generations a death mid-write leaves behind:
+  they hold whole sealed generations and whole key halves, and nothing
+  ever clears the state directory.
+
+  Issue #51 is closed by deletion rather than by repair. A transient
+  `sysctlbyname` failure substituted a per-process sentinel that no
+  file could match, so the live session's own valid file read as
+  another boot session's and was rotated and erased; the defect was
+  that "fail closed" had been written as "destroy the input". The arm
+  that did the destroying no longer exists, and nothing in the restore
+  path deletes a file it could not open.
+
 ### Added
 
 - **The shell's persistence lifecycle now runs in CI**
