@@ -64,7 +64,7 @@
 //!
 //! # The content key is two halves, and neither one unwraps anything
 //!
-//! The content wrapping key is `HKDF(keychain_half, boot_half)`,
+//! The content wrapping key is `HKDF(keychain_half, file_half)`,
 //! derived here and never anywhere else:
 //!
 //! - The **keychain half** is a random 32 bytes in the OS credential
@@ -75,36 +75,40 @@
 //!   device only, with the documented fallback to the login keychain on
 //!   ad hoc signed builds. The API token is not key material and does
 //!   not move; it stays on the store the handle was built with.
-//! - The **boot half** is a random 32 bytes that exists only in the per
-//!   user temp directory (`_CS_DARWIN_USER_TEMP_DIR`), mode 0600, under
-//!   a filename derived from the keychain half **and the current boot
-//!   session**. A new session cannot name, let alone read, the previous
-//!   session's half: the lookup misses, a fresh half is minted, and the
-//!   derived key is unrelated to the one before it. That happens with no
-//!   keychain access and needs no leftover file to trigger it, so the
-//!   bind is a property of the session rather than of whatever the temp
-//!   directory happened to keep. The directory being cleared at boot is
-//!   a second line under that, not the mechanism.
+//! - The **file half** is a random 32 bytes at mode 0600 in the state
+//!   directory, beside the sealed file it keys, under a filename
+//!   derived from the keychain half. It used to live in the per-user
+//!   temp directory under a name that folded the boot session, which is
+//!   what made the content die at every restart; ADR-0016 moved it here
+//!   so that staged content survives a restart and its TTL is what ends
+//!   it. In its new home it inherits the state directory's `.noindex`
+//!   naming and its exclusion from Time Machine.
 //!
-//! Neither half alone unwraps content. A same session process running
-//! as the user can read the 0600 temp file and still gets nothing
-//! without passing the keychain ACL, and an extracted keychain item is
-//! useless once its partner is gone. Be exact about when that is: the
-//! partner is gone when the temp directory was actually cleared, or when
-//! [`rotate_key_halves`] ran. The session-folded filename is a
-//! different and weaker guarantee than the bytes being unreachable. What
-//! it promises is that the **app** can never re-derive an earlier
-//! session's key, because it can no longer name the file that half sits
-//! in; a half a stale temp directory kept is still on disk, under a name
-//! anyone reading the directory can see. Note the asymmetry precisely:
-//! [`rotate_key_halves`] removes the keychain item and **this** session's
-//! half, so the extracted-item adversary loses the current session's
-//! content, while an earlier session's half stays on disk until the
-//! directory is actually cleared.
-//! [`rotate_key_halves`] kills both on demand, which is what a boot
-//! session mismatch calls for, and reports whether it actually removed
-//! anything: a rotation that quietly did nothing must never be mistaken
-//! for one that erased.
+//! Deriving the name from the keychain half is what keeps two form
+//! factors out of each other's half: each form factor's credential
+//! store is scoped to its own service, so each holds a different
+//! keychain half and lands on a different filename.
+//!
+//! Neither half alone unwraps content, and **both halves are now
+//! durable across boot sessions, so the split bounds nothing in time.**
+//! ADR-0012 could say an extracted keychain item was useless once its
+//! per-boot partner was gone; that sentence is retired rather than
+//! quietly reworded (ADR-0016 section 3). What the split still buys is
+//! two things and exactly two. The ACL gate: a process running as the
+//! user that reads the 0600 file half derives nothing without also
+//! passing the keychain. And separation of backup domains: the state
+//! directory is excluded from Time Machine and the keychain database is
+//! not, so neither a backup nor a copy of the state directory yields a
+//! key on its own.
+//!
+//! [`rotate_key_halves`] is what forgets. It removes the keychain half,
+//! which is the sufficient deletion because the file half's name and
+//! its use are both derived from it, and it unlinks the file half on the
+//! way past. It reports whether it actually removed anything: a rotation
+//! that quietly did nothing must never be mistaken for one that erased.
+//! Because rotation is no longer a scheduled event, it is the finishing
+//! step of a deletion the user or the TTL already asked for, which is
+//! the two triggers of ADR-0016 section 6.
 //!
 //! The ledger key is the deliberate exception: a single long-lived
 //! keychain secret, never run through this derivation, because an audit
@@ -118,22 +122,23 @@
 //! A file is useless without its keys, and the keys name nothing
 //! without their file: deleting either forgets everything on that side.
 
-// Every property above is a macOS property, and the portable path drops
-// all of them at once: it honours a `TMPDIR` the environment can point
-// anywhere (the macOS path refuses exactly that), its boot session is a
-// constant so the bind is inert, and its monotonic clock restarts at
-// reboot so restore ages by nothing. That path exists to keep the crate
-// buildable and testable on a Linux CI host and for nothing else, so a
-// build that could actually ship off macOS is a compile error rather
-// than a documented gap. Shipping artifacts are release builds
-// (`scripts/build-core.sh`), which is what `debug_assertions` separates
-// here; the unit tests and the ubuntu clippy and test lanes are debug
-// and keep compiling.
+// Every property above is a macOS property, and the portable path keeps
+// none of them: the keychain half rests in the data protection keychain
+// only there, `sync_all` is `F_FULLFSYNC` only there, and the state
+// directory's owner-only, Spotlight-excluded, Time-Machine-excluded
+// shape is the shell's doing on that one platform. This path exists to
+// keep the crate buildable and testable on a Linux CI host and for
+// nothing else, so a build that could actually ship off macOS is a
+// compile error rather than a documented gap. Shipping artifacts are
+// release builds (`scripts/build-core.sh`), which is what
+// `debug_assertions` separates here; the unit tests and the ubuntu
+// clippy and test lanes are debug and keep compiling.
 #[cfg(all(not(target_os = "macos"), not(test), not(debug_assertions)))]
 compile_error!(
-    "companion-ffi persistence ships on macOS only: the boot-session bind, the boot-cleared \
-     per-user temp directory and the sleep-inclusive clock have no portable equivalent. The \
-     portable path is for tests and CI checks, never for a release artifact (ADR-0012)."
+    "companion-ffi persistence ships on macOS only: the data protection keychain, F_FULLFSYNC \
+     and the state directory the shell excludes from Spotlight and Time Machine have no \
+     portable equivalent. The portable path is for tests and CI checks, never for a release \
+     artifact (ADR-0012, ADR-0016)."
 );
 
 use std::fmt::Write as _;
@@ -182,25 +187,33 @@ const KEY_LEN: usize = 32;
 /// existing state file by construction.
 const CONTENT_KEY_INFO: &[u8] = b"ots-companion-content-key-v1";
 
-/// Versioned HKDF info string for the boot half's filename tag. A
+/// Versioned HKDF info string for the file half's filename tag. A
 /// separate info string from [`CONTENT_KEY_INFO`], so the name and the
 /// key are independent outputs of the same secret.
-const BOOT_HALF_NAME_INFO: &[u8] = b"ots-companion-boot-half-name-v1";
+///
+/// The bytes still spell "boot" and deliberately keep spelling it. What
+/// ADR-0016 changed is where the half lives and what salts its name, not
+/// this derivation, and rotating the string would move every form
+/// factor's filename for no reason at all.
+const FILE_HALF_NAME_INFO: &[u8] = b"ots-companion-boot-half-name-v1";
 
-/// Fixed part of the salt for the filename tag. The boot half cannot
-/// salt its own name, so this derivation gets a constant prefix; the
-/// current boot session UUID is appended to it ([`boot_half_path`]),
-/// which is what makes the name unreproducible in any later session. It
-/// is a naming tag, not key material.
-const BOOT_HALF_NAME_SALT: &[u8] = b"ots-companion-boot-half-name-salt-v1";
+/// The salt for the filename tag. The file half cannot salt its own
+/// name, so this derivation gets a constant. The current boot session
+/// UUID used to be appended to it, which is what made the name
+/// unreproducible in any later session; ADR-0016 section 3 takes that
+/// appendix off and leaves the constant itself untouched. It is a naming
+/// tag, not key material.
+const FILE_HALF_NAME_SALT: &[u8] = b"ots-companion-boot-half-name-salt-v1";
 
-/// Bytes of tag in the boot half's filename. Sixteen is more than
+/// Bytes of tag in the file half's filename. Sixteen is more than
 /// enough to make a collision between two form factors impossible in
 /// practice, and short enough to read in a directory listing.
-const BOOT_HALF_TAG_LEN: usize = 16;
+const FILE_HALF_TAG_LEN: usize = 16;
 
-/// Filename prefix of the boot half inside the per-user temp directory.
-const BOOT_HALF_PREFIX: &str = "ots-companion-boot-";
+/// Filename prefix of the file half inside the state directory. It
+/// names what the file is now rather than when it dies, since nothing
+/// about it is per-boot any more.
+const FILE_HALF_PREFIX: &str = "ots-companion-key-half-";
 
 /// Bytes of boot session identity in the state header. A UUID.
 const BOOT_UUID_LEN: usize = 16;
@@ -277,54 +290,62 @@ fn load_key_for(credentials: &dyn CredentialStore, account: &str) -> Option<Zero
 /// handle was built with: on macOS that is the data protection keychain
 /// ADR-0012 requires. No key byte crosses the seam either way; the
 /// accessor hands back a store, never a secret.
-pub(crate) fn ensure_state_key(credentials: &dyn CredentialStore) -> Option<Zeroizing<Vec<u8>>> {
+///
+/// `state_path` is the sealed file being keyed; the file half is minted
+/// and read in the directory that holds it, which is how the state
+/// directory the shell chose reaches this module at all.
+pub(crate) fn ensure_state_key(
+    credentials: &dyn CredentialStore,
+    state_path: &Path,
+) -> Option<Zeroizing<Vec<u8>>> {
     let keys = credentials.key_material_store();
     let keychain_half = ensure_key_for(&*keys, STATE_KEY_ACCOUNT)?;
-    let boot_half = ensure_boot_half(&keychain_half)?;
-    derive_content_key(&keychain_half, &boot_half)
+    let file_half = ensure_file_half(&keychain_half, containing_dir(state_path)?)?;
+    derive_content_key(&keychain_half, &file_half)
 }
 
 /// The content key for restoring: both halves loaded, neither minted.
-/// A missing boot half is the normal state after a reboot and is
-/// exactly the case that must fail, so minting one here would only
-/// manufacture a key that opens nothing.
-pub(crate) fn load_state_key(credentials: &dyn CredentialStore) -> Option<Zeroizing<Vec<u8>>> {
+/// A missing file half means the key that sealed the file is gone for
+/// good, which is exactly the case that must fail: minting one here
+/// would only manufacture a key that opens nothing.
+pub(crate) fn load_state_key(
+    credentials: &dyn CredentialStore,
+    state_path: &Path,
+) -> Option<Zeroizing<Vec<u8>>> {
     let keys = credentials.key_material_store();
     let keychain_half = load_key_for(&*keys, STATE_KEY_ACCOUNT)?;
-    let boot_half = read_half(&boot_half_path(&keychain_half)?)?;
-    derive_content_key(&keychain_half, &boot_half)
+    let file_half = read_half(&file_half_path(
+        &keychain_half,
+        containing_dir(state_path)?,
+    )?)?;
+    derive_content_key(&keychain_half, &file_half)
 }
 
-/// Kill the content key: unlink this session's boot half, then delete
-/// the keychain half. Called when a sealed file belongs to another boot
-/// session, so the discarded content is discarded for good.
+/// Kill the content key: unlink the file half beside `state_path`, then
+/// delete the keychain half. Called when the content that key protects
+/// is being discarded, so it is discarded for good.
 ///
 /// **Returns whether the content key is gone afterwards**, meaning the
 /// keychain half was removed or was never there. A locked keychain, a
 /// dismissed ACL or any other refusing backend leaves it alive and
-/// returns `false`, and the caller must then leave the file that
-/// triggered the rotation exactly where it is: erasing it first would
-/// consume the only trigger there is and a rotation that accomplished
-/// nothing would never be retried.
+/// returns `false`, so a caller whose next step destroys the only
+/// evidence that a rotation is owed can decline to take it.
 ///
 /// **The keychain half is the sufficient deletion**, and the only one.
-/// Every boot half's *content* and its *filename* are both derived from
-/// it, so once the item is gone no half on disk, this session's or any
-/// earlier session's, can be named or combined into a key again.
-/// Unlinking the boot half is ordered first only because naming it needs
-/// the keychain half still readable; on its own it forces a fresh
-/// derivation this session but says nothing about a file another session
-/// sealed, which is precisely the file this arm is discarding. So the
+/// Every file half's *content* and its *filename* are both derived from
+/// it, so once the item is gone no half on disk can be named or combined
+/// into a key again. Unlinking the file half is ordered first only
+/// because naming it needs the keychain half still readable. So the
 /// return value tracks the keychain item and nothing else.
 ///
-/// The ledger key is **never** touched here. A boot session mismatch
-/// discards staged content; the audit record it wrote must survive
-/// that, which is the entire reason [`LEDGER_KEY_ACCOUNT`] sits outside
-/// this derivation.
-pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore) -> bool {
+/// The ledger key is **never** touched here. Discarding staged content
+/// must leave the audit record that describes it readable, which is the
+/// entire reason [`LEDGER_KEY_ACCOUNT`] sits outside this derivation.
+pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore, state_path: &Path) -> bool {
     let keys = credentials.key_material_store();
     if let Some(keychain_half) = load_key_for(&*keys, STATE_KEY_ACCOUNT)
-        && let Some(path) = boot_half_path(&keychain_half)
+        && let Some(dir) = containing_dir(state_path)
+        && let Some(path) = file_half_path(&keychain_half, dir)
     {
         let _ = std::fs::remove_file(path);
     }
@@ -341,10 +362,11 @@ pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore) -> bool {
     // The message carries a backend string, never key material.
     if let Err(error) = keys.delete(STATE_KEY_ACCOUNT) {
         diag_fault!(
-            "companion-ffi: the boot-session rotation could not delete the {STATE_KEY_ACCOUNT} \
-             item ({error}). The stale state file stays on disk and this session will not write \
-             one, so nothing typed this session survives a quit. Every later launch repeats it \
-             until the keychain answers."
+            "companion-ffi: the rotation could not delete the {STATE_KEY_ACCOUNT} item ({error}). \
+             The half that opens every ciphertext generation on disk is therefore still in the \
+             keychain, so the content this rotation was meant to forget is still readable by \
+             anyone holding both halves. Every later rotation repeats this until the keychain \
+             answers."
         );
         return false;
     }
@@ -392,45 +414,33 @@ impl KeyType for Bytes {
     }
 }
 
-/// The boot half's file, named by a one-way tag over the keychain half
-/// **and the current boot session**.
+/// The file half's path in `dir`, named by a one-way tag over the
+/// keychain half.
 ///
-/// Folding the session UUID into the salt is what makes the boot bind
-/// unconditional. Without it the bind depends on a state file surviving
-/// to be found at launch: a session that staged pages, discarded them
-/// all and so erased its own file leaves both halves alive, and a next
-/// boot whose temp directory was not cleared would find the same half
-/// under the same name and derive a byte-identical content key, with
-/// unlinked ciphertext generations still on disk. With it there is
-/// nothing to trigger and nothing to miss: a new session looks under a
-/// name no earlier session ever wrote, finds nothing, and mints a half
-/// whose derived key shares nothing with the old one.
-///
-/// Deriving the name from the keychain half as well is what keeps two
-/// form factors out of each other's boot half: each form factor's
-/// credential store is scoped to its own service, so each holds a
-/// different keychain half and therefore lands on a different filename.
-/// The tag is an HKDF output under its own info string, so the name
+/// Deriving the name from the keychain half is what keeps two form
+/// factors out of each other's half: each form factor's credential store
+/// is scoped to its own service, so each holds a different keychain half
+/// and therefore lands on a different filename. It is also what makes
+/// deleting the keychain item a sufficient deletion, since a half whose
+/// name cannot be recomputed can never be combined into a key again. The
+/// tag is an HKDF output under its own info string, so the name
 /// discloses nothing about either input.
-fn boot_half_path(keychain_half: &[u8]) -> Option<PathBuf> {
-    let mut salt = Vec::with_capacity(BOOT_HALF_NAME_SALT.len() + BOOT_UUID_LEN);
-    salt.extend_from_slice(BOOT_HALF_NAME_SALT);
-    salt.extend_from_slice(&current_boot_uuid());
-    let prk = Salt::new(HKDF_SHA256, &salt).extract(keychain_half);
+fn file_half_path(keychain_half: &[u8], dir: &Path) -> Option<PathBuf> {
+    let prk = Salt::new(HKDF_SHA256, FILE_HALF_NAME_SALT).extract(keychain_half);
     let okm = prk
-        .expand(&[BOOT_HALF_NAME_INFO], Bytes(BOOT_HALF_TAG_LEN))
+        .expand(&[FILE_HALF_NAME_INFO], Bytes(FILE_HALF_TAG_LEN))
         .ok()?;
-    let mut tag = [0u8; BOOT_HALF_TAG_LEN];
+    let mut tag = [0u8; FILE_HALF_TAG_LEN];
     okm.fill(&mut tag).ok()?;
-    let mut name = String::with_capacity(BOOT_HALF_PREFIX.len() + BOOT_HALF_TAG_LEN * 2);
-    name.push_str(BOOT_HALF_PREFIX);
+    let mut name = String::with_capacity(FILE_HALF_PREFIX.len() + FILE_HALF_TAG_LEN * 2);
+    name.push_str(FILE_HALF_PREFIX);
     for byte in tag {
         write!(name, "{byte:02x}").ok()?;
     }
-    Some(boot_half_dir()?.join(name))
+    Some(dir.join(name))
 }
 
-/// The boot half itself: the existing file, or a fresh 32 bytes written
+/// The file half itself: the existing file, or a fresh 32 bytes written
 /// through [`write_private`] so it inherits the atomic, owner-only path.
 ///
 /// Two instances of the same form factor starting at once can both find
@@ -438,8 +448,8 @@ fn boot_half_path(keychain_half: &[u8]) -> Option<PathBuf> {
 /// does for the state file, and the loser's next save simply seals under
 /// a key its own restore will refuse. That costs a state file, never a
 /// misread one.
-fn ensure_boot_half(keychain_half: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
-    let path = boot_half_path(keychain_half)?;
+fn ensure_file_half(keychain_half: &[u8], dir: &Path) -> Option<Zeroizing<Vec<u8>>> {
+    let path = file_half_path(keychain_half, dir)?;
     if let Some(existing) = read_half(&path) {
         return Some(existing);
     }
@@ -456,88 +466,6 @@ fn ensure_boot_half(keychain_half: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
 fn read_half(path: &Path) -> Option<Zeroizing<Vec<u8>>> {
     let bytes = Zeroizing::new(std::fs::read(path).ok()?);
     (bytes.len() == KEY_LEN).then_some(bytes)
-}
-
-/// The directory the boot half lives in, and the whole reason the boot
-/// half dies at reboot.
-#[cfg(not(test))]
-fn boot_half_dir() -> Option<PathBuf> {
-    platform_temp_dir()
-}
-
-/// Under test the same directory, except that a test never writes key
-/// material into the live per-user temp directory: an explicit override
-/// if one is set, otherwise a per-process subdirectory. Tests over the
-/// C seam mint halves too, and those halves must not sit beside the
-/// running app's.
-#[cfg(test)]
-fn boot_half_dir() -> Option<PathBuf> {
-    if let Some(dir) = boot_half_dir_override::get() {
-        return Some(dir);
-    }
-    let dir = platform_temp_dir()?.join(format!("companion-ffi-test-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
-}
-
-/// `_CS_DARWIN_USER_TEMP_DIR`: the per-user, mode 0700 temp directory
-/// that macOS clears at boot. Deliberately not `TMPDIR`, which the
-/// environment can point anywhere, and not the shared `/tmp`.
-#[cfg(target_os = "macos")]
-fn platform_temp_dir() -> Option<PathBuf> {
-    use std::ffi::OsString;
-    use std::os::unix::ffi::OsStringExt;
-
-    let mut buffer = vec![0u8; libc::PATH_MAX as usize];
-    // SAFETY: `buffer` is a live allocation of exactly the length passed,
-    // and confstr writes at most that many bytes including the NUL.
-    let written = unsafe {
-        libc::confstr(
-            libc::_CS_DARWIN_USER_TEMP_DIR,
-            buffer.as_mut_ptr().cast::<libc::c_char>(),
-            buffer.len(),
-        )
-    };
-    // Zero means the name is not defined; a length past the buffer means
-    // the value was truncated. Neither is a path worth writing a key to.
-    if written == 0 || written > buffer.len() {
-        return None;
-    }
-    buffer.truncate(written - 1);
-    Some(PathBuf::from(OsString::from_vec(buffer)))
-}
-
-/// Off macOS there is no `_CS_DARWIN_USER_TEMP_DIR`, so the crate stays
-/// portable and testable on the ordinary temp directory. The boot bound
-/// is a macOS property; nothing off macOS ships.
-#[cfg(not(target_os = "macos"))]
-fn platform_temp_dir() -> Option<PathBuf> {
-    Some(std::env::temp_dir())
-}
-
-/// A per-thread redirect for [`boot_half_dir`], so a test can mint and
-/// rotate real halves without writing into the live per-user temp
-/// directory. Test-only: the shipping path has no override at all.
-#[cfg(test)]
-mod boot_half_dir_override {
-    use std::cell::RefCell;
-    use std::path::PathBuf;
-
-    thread_local! {
-        static DIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
-    }
-
-    pub(super) fn get() -> Option<PathBuf> {
-        DIR.with(|dir| dir.borrow().clone())
-    }
-
-    pub(super) fn set(path: PathBuf) {
-        DIR.with(|dir| *dir.borrow_mut() = Some(path));
-    }
-
-    pub(super) fn clear() {
-        DIR.with(|dir| *dir.borrow_mut() = None);
-    }
 }
 
 /// The ledger key for saving. Long-lived by design: see
@@ -1184,17 +1112,18 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> bool {
 /// cannot open or sync leaves the bytes written either way, so a failure
 /// here must never unwrite the save.
 fn sync_parent_dir(path: &Path) {
-    if let Some(parent) = parent_to_sync(path) {
+    if let Some(parent) = containing_dir(path) {
         let _ = sync_dir(parent);
     }
 }
 
-/// The directory that holds `path`'s entry, the one whose flush makes
-/// the rename durable. A path with no directory component has parent
-/// `Some("")` rather than `None`, and its entry lands in the working
-/// directory, so that case resolves to `.` instead of skipping the sync.
-/// Only a root path has nothing above it.
-fn parent_to_sync(path: &Path) -> Option<&Path> {
+/// The directory that holds `path`'s entry: the one whose flush makes a
+/// rename durable, and the one the file half is minted in. A path with
+/// no directory component has parent `Some("")` rather than `None`, and
+/// its entry lands in the working directory, so that case resolves to
+/// `.` instead of skipping the sync. Only a root path has nothing above
+/// it, and a key half has nowhere to live beside it.
+fn containing_dir(path: &Path) -> Option<&Path> {
     match path.parent() {
         None => None,
         Some(parent) if parent.as_os_str().is_empty() => Some(Path::new(".")),
@@ -1266,32 +1195,40 @@ mod tests {
         }
     }
 
-    /// A scratch boot-half directory, in force for the current test
-    /// thread and removed when the test ends. Every test that mints,
-    /// loads or rotates a real half takes one first.
-    struct BootHalfScratch(std::path::PathBuf);
+    /// A scratch state directory standing in for the app support
+    /// directory the shell chooses: the sealed file's home, and since
+    /// ADR-0016 the file half's home too. Removed when the test ends, so
+    /// no test ever mints key material beside the running app's.
+    struct StateDir(std::path::PathBuf);
 
-    impl BootHalfScratch {
+    impl StateDir {
         fn new() -> Self {
-            let dir = scratch_dir();
-            boot_half_dir_override::set(dir.clone());
-            Self(dir)
+            Self(scratch_dir())
         }
 
-        /// The halves currently on disk, by filename.
-        fn files(&self) -> Vec<std::ffi::OsString> {
+        /// The path the sealed state file would take, which is also the
+        /// path every key call is scoped by.
+        fn state_path(&self) -> std::path::PathBuf {
+            self.0.join("state.sealed")
+        }
+
+        /// The key halves currently on disk, by filename.
+        fn halves(&self) -> Vec<std::ffi::OsString> {
             let mut names: Vec<_> = std::fs::read_dir(&self.0)
                 .unwrap()
                 .map(|entry| entry.unwrap().file_name())
+                .filter(|name| {
+                    name.to_str()
+                        .is_some_and(|name| name.starts_with(FILE_HALF_PREFIX))
+                })
                 .collect();
             names.sort();
             names
         }
     }
 
-    impl Drop for BootHalfScratch {
+    impl Drop for StateDir {
         fn drop(&mut self) {
-            boot_half_dir_override::clear();
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
@@ -1363,10 +1300,11 @@ mod tests {
     /// rotation deletes nothing and the old half survives.
     #[test]
     fn key_material_lives_in_the_key_store_and_rotation_deletes_it_there() {
-        let _scratch = BootHalfScratch::new();
+        let dir = StateDir::new();
+        let state_path = dir.state_path();
         let store = test_stores::SplitKeyStore::default();
 
-        let state = ensure_state_key(&store).unwrap();
+        let state = ensure_state_key(&store, &state_path).unwrap();
         let ledger = ensure_ledger_key(&store).unwrap();
         assert!(store.keys().exists(STATE_KEY_ACCOUNT).unwrap());
         assert!(store.keys().exists(LEDGER_KEY_ACCOUNT).unwrap());
@@ -1380,11 +1318,11 @@ mod tests {
         );
 
         // Restore reads where the save wrote.
-        assert_eq!(&*load_state_key(&store).unwrap(), &*state);
+        assert_eq!(&*load_state_key(&store, &state_path).unwrap(), &*state);
         assert_eq!(&*load_ledger_key(&store).unwrap(), &*ledger);
 
         // And rotation deletes where the item actually is.
-        assert!(rotate_key_halves(&store));
+        assert!(rotate_key_halves(&store, &state_path));
         assert!(
             !store.keys().exists(STATE_KEY_ACCOUNT).unwrap(),
             "rotation deleted nothing: the old keychain half survived"
@@ -1401,15 +1339,15 @@ mod tests {
     /// pretend to hold a ledger key.
     #[test]
     fn the_ledger_key_is_a_separate_credential() {
-        let _scratch = BootHalfScratch::new();
+        let dir = StateDir::new();
         let store = InMemoryCredentialStore::default();
-        let state = ensure_state_key(&store).unwrap();
+        let state = ensure_state_key(&store, &dir.state_path()).unwrap();
         let ledger = ensure_ledger_key(&store).unwrap();
         assert_ne!(&*state, &*ledger, "one key sealing both files");
         assert_eq!(&*ensure_ledger_key(&store).unwrap(), &*ledger, "stable");
 
         let content_only = InMemoryCredentialStore::default();
-        ensure_state_key(&content_only).unwrap();
+        ensure_state_key(&content_only, &dir.state_path()).unwrap();
         assert!(
             load_ledger_key(&content_only).is_none(),
             "restore must never mint a ledger key"
@@ -1737,163 +1675,172 @@ mod tests {
 
     #[test]
     fn ensure_is_stable_and_load_never_mints() {
-        let scratch = BootHalfScratch::new();
+        let dir = StateDir::new();
+        let path = dir.state_path();
         let store = InMemoryCredentialStore::default();
         assert!(
-            load_state_key(&store).is_none(),
+            load_state_key(&store, &path).is_none(),
             "restore must not mint a key for a file it cannot decrypt anyway"
         );
         assert!(
-            scratch.files().is_empty(),
-            "a restore that found no keychain half still wrote a boot half"
+            dir.halves().is_empty(),
+            "a restore that found no keychain half still wrote a file half"
         );
-        let first = ensure_state_key(&store).unwrap();
-        let second = ensure_state_key(&store).unwrap();
+        let first = ensure_state_key(&store, &path).unwrap();
+        let second = ensure_state_key(&store, &path).unwrap();
         assert_eq!(&*first, &*second, "the key survives across saves");
-        assert_eq!(&*load_state_key(&store).unwrap(), &*first);
-        assert_eq!(scratch.files().len(), 1, "one store, one boot half");
+        assert_eq!(&*load_state_key(&store, &path).unwrap(), &*first);
+        assert_eq!(dir.halves().len(), 1, "one store, one file half");
     }
 
     /// The derivation is over both halves, so replacing either one
-    /// yields a different key. This is the property the whole
-    /// boot-session bound rests on: the temp directory clearing at boot
-    /// is what makes the derived key unrecoverable.
+    /// yields a different key. That is what makes deleting one of them a
+    /// crypto-erasure of everything sealed under the pair.
     #[test]
     fn changing_either_half_changes_the_derived_key() {
-        let scratch = BootHalfScratch::new();
+        let dir = StateDir::new();
+        let path = dir.state_path();
         let store = InMemoryCredentialStore::default();
-        let original = ensure_state_key(&store).unwrap();
+        let original = ensure_state_key(&store, &path).unwrap();
 
-        // A new boot session: the temp directory is empty, the keychain
+        // The file half is taken away and minted afresh; the keychain
         // half is untouched, and the derived key is different.
         let keychain_half = load_key_for(&store, STATE_KEY_ACCOUNT).unwrap();
-        std::fs::remove_file(boot_half_path(&keychain_half).unwrap()).unwrap();
-        let after_reboot = ensure_state_key(&store).unwrap();
+        let half_path = file_half_path(&keychain_half, containing_dir(&path).unwrap()).unwrap();
+        std::fs::remove_file(&half_path).unwrap();
+        let after = ensure_state_key(&store, &path).unwrap();
         assert_ne!(
-            &*original, &*after_reboot,
-            "a fresh boot half derived the same key"
+            &*original, &*after,
+            "a fresh file half derived the same key"
         );
         assert_eq!(
             &*load_key_for(&store, STATE_KEY_ACCOUNT).unwrap(),
             &*keychain_half,
-            "a fresh boot half must not disturb the keychain half"
+            "a fresh file half must not disturb the keychain half"
         );
 
         // A different keychain half over the same directory: different
-        // key again, and a boot half of its own.
+        // key again, and a file half of its own.
         let other = InMemoryCredentialStore::default();
-        let stranger = ensure_state_key(&other).unwrap();
-        assert_ne!(&*after_reboot, &*stranger);
+        let stranger = ensure_state_key(&other, &path).unwrap();
+        assert_ne!(&*after, &*stranger);
         assert_eq!(
-            scratch.files().len(),
+            dir.halves().len(),
             2,
-            "two credential stores must not share a boot half"
+            "two credential stores must not share a file half"
         );
 
         // And the derivation itself is a pure function of the two.
-        let boot_half = read_half(&boot_half_path(&keychain_half).unwrap()).unwrap();
+        let file_half = read_half(&half_path).unwrap();
         assert_eq!(
-            &*derive_content_key(&keychain_half, &boot_half).unwrap(),
-            &*after_reboot
+            &*derive_content_key(&keychain_half, &file_half).unwrap(),
+            &*after
         );
         assert_ne!(
-            &*derive_content_key(&boot_half, &keychain_half).unwrap(),
-            &*after_reboot,
+            &*derive_content_key(&file_half, &keychain_half).unwrap(),
+            &*after,
             "the halves are not interchangeable"
         );
     }
 
-    /// Restore loads both halves and mints neither. A boot half that is
-    /// gone is the ordinary post-reboot state, and the only correct
-    /// answer is to refuse.
+    /// Restore loads both halves and mints neither. A file half that is
+    /// gone means the content it keyed is gone, and the only correct
+    /// answer is to refuse rather than to manufacture a key that opens
+    /// nothing.
     #[test]
-    fn a_missing_boot_half_is_never_minted_on_restore() {
-        let scratch = BootHalfScratch::new();
+    fn a_missing_file_half_is_never_minted_on_restore() {
+        let dir = StateDir::new();
+        let path = dir.state_path();
         let store = InMemoryCredentialStore::default();
-        ensure_state_key(&store).unwrap();
+        ensure_state_key(&store, &path).unwrap();
         let keychain_half = load_key_for(&store, STATE_KEY_ACCOUNT).unwrap();
-        std::fs::remove_file(boot_half_path(&keychain_half).unwrap()).unwrap();
+        std::fs::remove_file(
+            file_half_path(&keychain_half, containing_dir(&path).unwrap()).unwrap(),
+        )
+        .unwrap();
 
-        assert!(load_state_key(&store).is_none(), "restore minted a half");
-        assert!(scratch.files().is_empty(), "restore wrote a boot half");
+        assert!(
+            load_state_key(&store, &path).is_none(),
+            "restore minted a half"
+        );
+        assert!(dir.halves().is_empty(), "restore wrote a file half");
     }
 
+    /// The half is a whole key's worth of bytes, readable by nobody but
+    /// the owner, and it sits in the state directory rather than in the
+    /// per-user temp directory. That last clause is the ADR-0016 change:
+    /// a half in a directory macOS clears at boot cannot key content
+    /// that survives a restart.
     #[cfg(unix)]
     #[test]
-    fn the_boot_half_is_owner_only_and_a_full_key_length() {
+    fn the_file_half_is_owner_only_and_sits_in_the_state_directory() {
         use std::os::unix::fs::PermissionsExt;
-        let _scratch = BootHalfScratch::new();
+        let dir = StateDir::new();
+        let state_path = dir.state_path();
         let store = InMemoryCredentialStore::default();
-        ensure_state_key(&store).unwrap();
-        let path = boot_half_path(&load_key_for(&store, STATE_KEY_ACCOUNT).unwrap()).unwrap();
+        ensure_state_key(&store, &state_path).unwrap();
+        let path = file_half_path(
+            &load_key_for(&store, STATE_KEY_ACCOUNT).unwrap(),
+            containing_dir(&state_path).unwrap(),
+        )
+        .unwrap();
         let metadata = std::fs::metadata(&path).unwrap();
         assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
         assert_eq!(metadata.len(), KEY_LEN as u64);
+        assert_eq!(
+            path.parent(),
+            state_path.parent(),
+            "the file half did not land beside the file it keys"
+        );
         assert!(
             path.file_name()
                 .unwrap()
                 .to_str()
                 .unwrap()
-                .starts_with(BOOT_HALF_PREFIX)
+                .starts_with(FILE_HALF_PREFIX)
         );
     }
 
-    /// The boot bind is a property of the session, not of a file that
-    /// happened to survive to be found. Nothing is deleted here, nothing
-    /// is rotated, and no state file exists at all: only the session
-    /// changes, and that alone must change the derived key. The path
-    /// this closes is a session that staged pages, discarded them all
-    /// (which erases the file, the only thing that can trigger a
-    /// rotation) and rebooted into a temp directory that was not
-    /// cleared.
+    /// Both halves are durable across boot sessions now, which is the
+    /// whole of ADR-0016 as the key derivation sees it. The session
+    /// changes and nothing else does: the same file half is found under
+    /// the same name, the same keychain half joins it, and the derived
+    /// key is byte-identical, so the content sealed before the restart
+    /// still opens after it. Under the previous design each of these
+    /// three sessions derived a key unrelated to the last.
     #[test]
-    fn a_new_boot_session_derives_a_new_key_with_no_file_and_no_rotation() {
-        let scratch = BootHalfScratch::new();
+    fn the_derived_key_survives_a_new_boot_session() {
+        let dir = StateDir::new();
+        let path = dir.state_path();
         let store = InMemoryCredentialStore::default();
 
         let first = {
             let _booted = RebootedInto::new([0xA1; BOOT_UUID_LEN]);
-            ensure_state_key(&store).unwrap()
+            ensure_state_key(&store, &path).unwrap()
         };
-        let keychain_half = load_key_for(&store, STATE_KEY_ACCOUNT).unwrap();
 
         let second = {
             let _rebooted = RebootedInto::new([0xB2; BOOT_UUID_LEN]);
-            ensure_state_key(&store).unwrap()
+            ensure_state_key(&store, &path).unwrap()
         };
-        assert_ne!(
+        assert_eq!(
             &*first, &*second,
-            "a new boot session derived the previous session's content key"
+            "a restart derived a key that opens nothing it wrote before"
         );
         assert_eq!(
-            &*load_key_for(&store, STATE_KEY_ACCOUNT).unwrap(),
-            &*keychain_half,
-            "the keychain half must be untouched: the bind is not a rotation"
+            dir.halves().len(),
+            1,
+            "the second session minted a half of its own rather than finding the one on disk"
         );
+
+        // And a restore in a third session, which mints nothing, still
+        // assembles that same key from the two halves it finds.
+        let _rebooted = RebootedInto::new([0xC3; BOOT_UUID_LEN]);
         assert_eq!(
-            scratch.files().len(),
-            2,
-            "the second session reused the first session's boot half"
+            &*load_state_key(&store, &path).unwrap(),
+            &*first,
+            "a restart could not reassemble the key its own file rests under"
         );
-
-        // The old half is still on disk (an uncleared temp directory)
-        // and is still unreachable from the new session: a restore in
-        // that session finds nothing to load.
-        {
-            let _rebooted = RebootedInto::new([0xC3; BOOT_UUID_LEN]);
-            assert!(
-                load_state_key(&store).is_none(),
-                "a third session found a half it never wrote"
-            );
-        }
-
-        // And returning to a session does return its own key, which is
-        // what makes a save and a restore inside one session work at all.
-        let again = {
-            let _booted = RebootedInto::new([0xA1; BOOT_UUID_LEN]);
-            load_state_key(&store).unwrap()
-        };
-        assert_eq!(&*first, &*again, "the same session derived a different key");
     }
 
     /// Rotation kills both halves, so every file sealed under the old
@@ -1901,29 +1848,27 @@ mod tests {
     /// key that shares nothing with it.
     #[test]
     fn rotate_key_halves_makes_a_sealed_file_unopenable() {
-        let scratch = BootHalfScratch::new();
+        let dir = StateDir::new();
+        let path = dir.state_path();
         let store = InMemoryCredentialStore::default();
-        let key = ensure_state_key(&store).unwrap();
-        let sealed = seal(&key, b"staged content from another boot");
+        let key = ensure_state_key(&store, &path).unwrap();
+        let sealed = seal(&key, b"staged content the user has discarded");
 
         assert!(
-            rotate_key_halves(&store),
+            rotate_key_halves(&store, &path),
             "a rotation that removed both halves reported failure"
         );
-        assert!(
-            scratch.files().is_empty(),
-            "the boot half survived rotation"
-        );
+        assert!(dir.halves().is_empty(), "the file half survived rotation");
         assert!(
             load_key_for(&store, STATE_KEY_ACCOUNT).is_none(),
             "the keychain half survived rotation"
         );
         assert!(
-            load_state_key(&store).is_none(),
+            load_state_key(&store, &path).is_none(),
             "a rotated store still produced a content key"
         );
 
-        let fresh = ensure_state_key(&store).unwrap();
+        let fresh = ensure_state_key(&store, &path).unwrap();
         assert_ne!(&*fresh, &*key);
         assert!(
             plaintext_of(open(&fresh, &sealed)).is_none(),
@@ -1931,19 +1876,19 @@ mod tests {
         );
     }
 
-    /// The ledger outlives the boot session on purpose, so the rotation
-    /// a boot-session mismatch triggers must leave its key exactly where
-    /// it was. If this ever fails, every audit record on disk is lost on
-    /// the first reboot.
+    /// The ledger outlives the content on purpose, so a rotation must
+    /// leave its key exactly where it was. If this ever fails, every
+    /// audit record on disk is lost the first time the pad empties.
     #[test]
     fn rotation_leaves_the_ledger_key_intact() {
-        let _scratch = BootHalfScratch::new();
+        let dir = StateDir::new();
+        let path = dir.state_path();
         let store = InMemoryCredentialStore::default();
-        ensure_state_key(&store).unwrap();
+        ensure_state_key(&store, &path).unwrap();
         let ledger = ensure_ledger_key(&store).unwrap();
         let record = seal_ledger(&ledger, b"created 0001, sent clipboard").unwrap();
 
-        assert!(rotate_key_halves(&store));
+        assert!(rotate_key_halves(&store, &path));
 
         assert_eq!(
             &*load_ledger_key(&store).unwrap(),
@@ -1963,35 +1908,37 @@ mod tests {
     /// state, so it reports success and the caller may drop the file.
     #[test]
     fn rotating_an_empty_store_is_not_an_error() {
-        let scratch = BootHalfScratch::new();
+        let dir = StateDir::new();
+        let path = dir.state_path();
         let store = InMemoryCredentialStore::default();
-        assert!(rotate_key_halves(&store));
-        assert!(rotate_key_halves(&store));
-        assert!(scratch.files().is_empty());
-        assert!(load_state_key(&store).is_none());
+        assert!(rotate_key_halves(&store, &path));
+        assert!(rotate_key_halves(&store, &path));
+        assert!(dir.halves().is_empty());
+        assert!(load_state_key(&store, &path).is_none());
     }
 
-    /// A rotation the backend refused must say so. A locked keychain at
-    /// launch leaves the keychain half alive, which leaves every state
-    /// file it can open readable: reporting success there would let the
-    /// caller consume the only trigger that would ever retry it.
+    /// A rotation the backend refused must say so. A locked keychain
+    /// leaves the keychain half alive, which leaves every ciphertext
+    /// generation it can open readable, and the forgetting the user
+    /// asked for has not happened.
     #[test]
     fn a_rotation_the_keychain_refused_reports_failure() {
-        let scratch = BootHalfScratch::new();
+        let dir = StateDir::new();
+        let path = dir.state_path();
         let store = test_stores::RefusesToDelete::default();
-        ensure_state_key(&store).unwrap();
+        ensure_state_key(&store, &path).unwrap();
         let keychain_half = load_key_for(&store, STATE_KEY_ACCOUNT).unwrap();
 
         assert!(
-            !rotate_key_halves(&store),
+            !rotate_key_halves(&store, &path),
             "a rotation that deleted nothing reported success"
         );
         assert!(
-            scratch.files().is_empty(),
-            "the boot half survived a rotation that could still reach it"
+            dir.halves().is_empty(),
+            "the file half survived a rotation that could still reach it"
         );
-        // The surviving keychain half is the whole problem, and the
-        // reason the caller must keep the file that triggered this.
+        // The surviving keychain half is the whole problem: it is the
+        // sufficient deletion, and it did not happen.
         assert_eq!(
             &*load_key_for(&store, STATE_KEY_ACCOUNT).unwrap(),
             &*keychain_half,
@@ -2057,20 +2004,20 @@ mod tests {
     /// filesystem and without touching the process-wide working
     /// directory (which `cargo test` shares across every test thread).
     #[test]
-    fn the_directory_to_sync_covers_the_bare_filename_case() {
-        assert_eq!(parent_to_sync(Path::new("/a/b")), Some(Path::new("/a")));
+    fn the_containing_directory_covers_the_bare_filename_case() {
+        assert_eq!(containing_dir(Path::new("/a/b")), Some(Path::new("/a")));
         assert_eq!(
-            parent_to_sync(Path::new("state.sealed")),
+            containing_dir(Path::new("state.sealed")),
             Some(Path::new(".")),
             "a bare filename lands in the working directory, so sync that"
         );
         assert_eq!(
-            parent_to_sync(Path::new("a/")),
+            containing_dir(Path::new("a/")),
             Some(Path::new(".")),
             "a trailing slash still leaves the empty parent"
         );
         assert_eq!(
-            parent_to_sync(Path::new("/")),
+            containing_dir(Path::new("/")),
             None,
             "the root has no directory above it to flush"
         );

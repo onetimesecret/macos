@@ -1160,14 +1160,12 @@ pub unsafe extern "C" fn companion_expire_due(handle: *mut CompanionHandle) -> u
 // ---------------------------------------------------------------------------
 
 /// Save the staged content (sheets, sealed chips, clocks) to `path`,
-/// encrypted with ChaCha20-Poly1305 under a key that exists only while
-/// this boot session does: `HKDF(keychain_half, boot_half)`. The
-/// keychain half rests in the data protection keychain (lock gated,
-/// this device only, ADR-0012); the boot half is a file in the per-user
-/// temp directory whose very *name* is derived from the current boot
-/// session, so a later session cannot find it whether or not the
-/// directory was cleared. Neither half alone unwraps anything, and no
-/// key byte crosses this seam.
+/// encrypted with ChaCha20-Poly1305 under `HKDF(keychain_half,
+/// file_half)`. The keychain half rests in the data protection keychain
+/// (lock gated, this device only, ADR-0012); the file half is a 0600
+/// file in the same directory as `path`, which is how the state
+/// directory the shell chose reaches the key derivation. Neither half
+/// alone unwraps anything, and no key byte crosses this seam.
 ///
 /// The envelope stamps itself with `kern.bootsessionuuid` and with both
 /// clocks at the save, all of it authenticated, so a file cannot be
@@ -1202,7 +1200,7 @@ pub unsafe extern "C" fn companion_persist_save(
     let Some(wall_ms) = wall_now_ms() else {
         return false;
     };
-    let Some(key) = persist::ensure_state_key(guard.credentials.as_ref()) else {
+    let Some(key) = persist::ensure_state_key(guard.credentials.as_ref(), Path::new(path)) else {
         return false;
     };
     let snapshot = guard.store.snapshot(wall_ms);
@@ -1282,7 +1280,7 @@ pub unsafe extern "C" fn companion_persist_restore(
     // The key is loaded only for a file this boot session sealed, so a
     // discarded one costs no keychain access.
     let opened = persist::open_state(&file, || {
-        persist::load_state_key(guard.credentials.as_ref())
+        persist::load_state_key(guard.credentials.as_ref(), Path::new(path))
     });
     match opened {
         persist::Opened::Refused => false,
@@ -1297,7 +1295,7 @@ pub unsafe extern "C" fn companion_persist_restore(
             // alive with nothing left to retry against. A rotation that
             // removed nothing leaves the file exactly where it is, and
             // the next launch tries again.
-            if persist::rotate_key_halves(guard.credentials.as_ref())
+            if persist::rotate_key_halves(guard.credentials.as_ref(), Path::new(path))
                 && !persist::erase_state(Path::new(path))
             {
                 // The rotation is what forgets, so the content is gone
@@ -2262,10 +2260,12 @@ mod tests {
     fn persist_round_trips_over_the_seam() {
         let credentials: Arc<dyn CredentialStore> =
             Arc::new(companion_credentials::InMemoryCredentialStore::default());
-        let path = std::env::temp_dir().join(format!(
-            "companion-persist-seam-{}.sealed",
-            std::process::id()
-        ));
+        // A directory of its own, because the sealed file is no longer
+        // the only thing this call writes: the file half of the content
+        // key is minted beside it (ADR-0016 section 3), and key material
+        // does not belong loose in the system temp directory.
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
         let c_path = cstring(path.to_str().unwrap());
         let secret = "hunter2-the-sealed-bytes";
         unsafe {
@@ -2310,7 +2310,7 @@ mod tests {
             assert!(!companion_persist_restore(stranger, c_path.as_ptr()));
             companion_free(stranger);
         }
-        let _ = std::fs::remove_file(&path);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// The ephemeral constructor's whole contract in one place: a tag
@@ -3370,7 +3370,7 @@ mod tests {
                 let guard = (*first).inner.lock().unwrap();
                 guard.store.snapshot(stale_wall_ms)
             };
-            let key = persist::ensure_state_key(&*credentials).unwrap();
+            let key = persist::ensure_state_key(&*credentials, &path).unwrap();
             let mono_ns = sleep_inclusive_ns();
             let sealed = persist::seal_state(&key, &snapshot, stale_wall_ms, mono_ns).unwrap();
             assert!(persist::write_private(&path, &sealed));
@@ -3456,7 +3456,7 @@ mod tests {
                 "the discarded state file is still on disk"
             );
             assert!(
-                persist::load_state_key(&*credentials).is_none(),
+                persist::load_state_key(&*credentials, &state_path).is_none(),
                 "the content key halves survived the boot mismatch"
             );
 
@@ -3580,7 +3580,7 @@ mod tests {
                 let guard = (*first).inner.lock().unwrap();
                 guard.store.snapshot(wall_ms)
             };
-            let key = persist::ensure_state_key(&*credentials).unwrap();
+            let key = persist::ensure_state_key(&*credentials, &path).unwrap();
             // A day ahead of this session's clock: no reading taken in
             // this boot session can be later than the one taken now.
             let ahead_ns = sleep_inclusive_ns().saturating_add(24 * 60 * 60 * 1_000_000_000);
