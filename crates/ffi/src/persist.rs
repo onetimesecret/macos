@@ -2,7 +2,7 @@
 //! launch.
 //!
 //! There are two of them, with two keys and two envelope magics, and
-//! the split is the point (ADR-0012).
+//! the split is the point (ADR-0012, amended by ADR-0016).
 //!
 //! - **The state file** holds staged content: sheets, sealed chips,
 //!   clocks. It rests under `state-key` and survives every ordinary
@@ -105,8 +105,8 @@
 //!
 //! The ledger key is the deliberate exception: a single long-lived
 //! keychain secret, never run through this derivation, because an audit
-//! record that vanished on every restart would not be an audit record.
-//! Rotation must never touch it.
+//! record that died with the content it describes would not be an audit
+//! record. Rotation must never touch it.
 //!
 //! Each envelope's magic is its own AEAD associated data, so a ledger
 //! file presented as a state file (or the reverse) fails authentication
@@ -1043,7 +1043,7 @@ fn sync_parent_dir(path: &Path) {
 /// its entry lands in the working directory, so that case resolves to
 /// `.` instead of skipping the sync. Only a root path has nothing above
 /// it, and a key half has nowhere to live beside it.
-fn containing_dir(path: &Path) -> Option<&Path> {
+pub(crate) fn containing_dir(path: &Path) -> Option<&Path> {
     match path.parent() {
         None => None,
         Some(parent) if parent.as_os_str().is_empty() => Some(Path::new(".")),

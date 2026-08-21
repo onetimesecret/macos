@@ -1292,7 +1292,7 @@ pub unsafe extern "C" fn companion_persist_restore(
     // this app's own save cannot be mid-write beneath it, and it runs
     // before the read so that a file whose absence ends this call early
     // does not leave the litter behind.
-    if let Some(dir) = Path::new(path).parent() {
+    if let Some(dir) = persist::containing_dir(Path::new(path)) {
         persist::sweep_stranded_temps(dir);
     }
     let Ok(file) = std::fs::read(path) else {
