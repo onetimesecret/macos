@@ -202,6 +202,41 @@ public struct SaveSchedule {
 /// one timer armed at the core's next event (page expiry or hold lapse),
 /// re-armed after it fires. The only periodic work is a countdown
 /// redraw, and its cadence is the surrounding form factor's business.
+/// What the surface says about the sealed files' currency: nothing at
+/// all until the first mutation owes a write, then the write's own
+/// lifecycle. `saved` is quiet and `failed` is loud, and a session whose
+/// content licence is withheld shows the withholding instead of any of
+/// these, because "saved" there would describe the ledger leg while the
+/// pages go nowhere (issue #49).
+public enum SaveStatus: Equatable, Sendable {
+    /// No write owed yet this session.
+    case idle
+    /// A write is armed or in flight; the buffer differs from the file.
+    case saving
+    /// The last write settled; the files match the session.
+    case saved
+    /// The last write was refused and the retry is armed. Sticky: a
+    /// fresh mutation does not talk over it, only a settle clears it.
+    case failed
+}
+
+/// What the quit path learned from its flush, in the order the alert
+/// cares about: a refused write is the loudest, a session that was
+/// never allowed to write but holds real content repeats the warning
+/// the banner has been showing, and everything else quits silently
+/// (issue #49: the quit-time behavior repeats the warning if unsaved
+/// work remains).
+public enum QuitSaveOutcome: Equatable, Sendable {
+    /// Every owed write landed, or nothing was owed. Quit proceeds.
+    case settled
+    /// A write was attempted and refused; the pages are not on disk.
+    case refused
+    /// The content licence is withheld and the session accumulated
+    /// work after the load, none of which was ever written. The writes
+    /// that were owed, if any, settled.
+    case unsavableWithContent
+}
+
 @MainActor
 public final class PageModel: ObservableObject {
     /// What this form factor decides differently — where its Keychain
@@ -234,6 +269,25 @@ public final class PageModel: ObservableObject {
     /// clock, and the line clears itself unless a newer notice has
     /// taken its place.
     private var noticeGeneration = 0
+
+    /// The state file existed and would not open, so the content
+    /// licence is withheld and nothing typed this session reaches disk.
+    /// Persistent for the whole run, unlike a notice: it ends only
+    /// through `clearUnreadableStateFile`, the user's own discard
+    /// (ADR-0016 section 7, issue #49).
+    @Published public private(set) var contentRestoreRefused = false
+
+    /// The ledger file existed and would not open, so the trail is not
+    /// recording and will not on any later launch either, until the
+    /// user clears the ledger in Settings (`clearLedger`). Persistent
+    /// for the same reason as the content flag; quieter in the surface
+    /// because no page is at stake.
+    @Published public private(set) var ledgerRestoreRefused = false
+
+    /// The write lifecycle the surface shows (issue #49). Moves in
+    /// `markDirty` and `saveState` only, and deliberately not on the
+    /// withheld-licence leg, where the two flags above own the story.
+    @Published public private(set) var saveStatus: SaveStatus = .idle
 
     /// True while the page holds the keyboard — drives the ember
     /// border. Set by the controller from window key status.
@@ -514,6 +568,15 @@ public final class PageModel: ObservableObject {
     /// Whether the first reveal has run — restore is attempted once.
     private var stateLoaded = false
 
+    /// Whether anything changed after the load settled: typed ink, a
+    /// new or closed tab, a rename, a rung. Set at every `markDirty`
+    /// and reset once at the end of `loadStateIfNeeded`, so the mint
+    /// that launch itself performs does not count as the user's work.
+    /// The quit warning under a withheld licence hangs off this: in a
+    /// session that cannot write, everything it records is exactly
+    /// what a quit would lose (issue #49).
+    private var mutatedSinceLoad = false
+
     /// The licence `saveState` requires, granted separately from
     /// `stateLoaded`: a restore that failed over an *existing* file —
     /// Keychain key denied or missing, damaged snapshot — leaves the
@@ -571,6 +634,7 @@ public final class PageModel: ObservableObject {
         saveLicence = Self.grantsSaveLicence(
             fileExists: FileManager.default.fileExists(atPath: path), restored: restored
         )
+        contentRestoreRefused = !saveLicence
         if !saveLicence {
             logger.error(
                 "restore failed over an existing state file; withholding the save licence"
@@ -594,9 +658,10 @@ public final class PageModel: ObservableObject {
             fileExists: FileManager.default.fileExists(atPath: ledgerPath),
             restored: ledgerRestored
         )
+        ledgerRestoreRefused = !ledgerLicence
         if !ledgerLicence {
-            // Said plainly, because the consequence is invisible in the
-            // interface: the ledger tab still opens, it simply stops
+            // Said plainly here as well as in the surface's standing
+            // line: the ledger tab still opens, it simply stops
             // gaining records, and it will keep stopping on every future
             // launch until someone acts. Metadata only, as everywhere on
             // this trail: a path, never a title and never a byte of the
@@ -624,6 +689,9 @@ public final class PageModel: ObservableObject {
         }
         refresh()
         selection = tabs.first?.id
+        // The load is settled, mint included: what happens from here is
+        // the user's work, and only that arms the quit warning.
+        mutatedSinceLoad = false
     }
 
     /// The licence's truth table. The core folds "no file yet" and
@@ -774,6 +842,22 @@ public final class PageModel: ObservableObject {
         (content: content, ledger: true)
     }
 
+    /// The mirror rule for the content side (ADR-0016 section 7's
+    /// required work): the pair of licences after the user discards the
+    /// unreadable state file. The content licence comes back
+    /// unconditionally, on the same reasoning as the ledger's re-grant:
+    /// the discard is the user saying the file may go, which is a
+    /// stronger instruction than the licence's caution about
+    /// overwriting it, and without a way back the withholding is
+    /// permanent by construction. The ledger licence passes through
+    /// untouched: a different file under a different key that the
+    /// gesture did not ask about.
+    public nonisolated static func licencesAfterContentClear(
+        content: Bool, ledger: Bool
+    ) -> (content: Bool, ledger: Bool) {
+        (content: true, ledger: ledger)
+    }
+
     private static let defaultServer = "https://eu.onetimesecret.com"
     private static let serverKey = "connection.serverURL"
     private static let extidKey = "connection.extid"
@@ -804,10 +888,20 @@ public final class PageModel: ObservableObject {
         #if DEBUG
         dirtyMarks += 1
         #endif
+        // Before the licence guard, deliberately: a session that may
+        // write nothing still accumulates work, and that work is what
+        // the quit warning is about.
+        mutatedSinceLoad = true
         guard Self.writesEitherFile(
             loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence
         ) else { return }
         terminationLatch.acquire()
+        // The surface's "saving" begins at the mark, not at the timer's
+        // far end, because the buffer differs from the file from this
+        // moment on. A failed status stays put: the retry is already
+        // armed, and a keystroke on top of a refusal does not make the
+        // refusal old news. Only a settle in `saveState` clears it.
+        if saveStatus != .failed { saveStatus = .saving }
         scheduleSave(after: saveDebounce)
     }
 
@@ -957,6 +1051,12 @@ public final class PageModel: ObservableObject {
         // which is what the conjunction says. A leg with no licence
         // reports true because it owes nothing, not because it wrote.
         let settled = saved && ledgerSaved
+        // The surface's answer, from the write's own outcome and
+        // nowhere else. On the withheld-content leg this can read
+        // "saved" while the pages went nowhere; the surface shows the
+        // standing `contentRestoreRefused` state ahead of this one, so
+        // that reading is never displayed (issue #49).
+        saveStatus = settled ? .saved : .failed
         if !settled {
             // The buffer is still dirty and nothing else is going to ask
             // for it: the debounce only arms on a mutation, so a session
@@ -967,6 +1067,37 @@ public final class PageModel: ObservableObject {
         }
         terminationLatch.settle(saved: settled)
         return settled
+    }
+
+    /// The quit alert's truth table (issue #49). A refused write is the
+    /// loudest outcome regardless of the licence, because pages that
+    /// were supposed to land did not. A settled flush over a withheld
+    /// content licence warns only when the session accumulated work
+    /// after the load: an untouched session under a withheld licence
+    /// loses nothing by quitting, and warning there would teach the
+    /// user to click through the one alert that matters.
+    public nonisolated static func quitOutcome(
+        settled: Bool, contentLicence: Bool, loaded: Bool, mutatedSinceLoad: Bool
+    ) -> QuitSaveOutcome {
+        if !settled { return .refused }
+        if loaded && !contentLicence && mutatedSinceLoad { return .unsavableWithContent }
+        return .settled
+    }
+
+    /// The terminate path's flush: `saveState` plus the one question it
+    /// cannot answer alone, whether a settled flush still left this
+    /// session's work nowhere but in memory. Work is `mutatedSinceLoad`
+    /// rather than a content probe, because in a session that cannot
+    /// write, everything recorded since the load is exactly what the
+    /// quit loses, and the empty page launch itself mints is not.
+    public func saveStateForQuit() -> QuitSaveOutcome {
+        let settled = saveState()
+        return Self.quitOutcome(
+            settled: settled,
+            contentLicence: saveLicence,
+            loaded: stateLoaded,
+            mutatedSinceLoad: mutatedSinceLoad
+        )
     }
 
     deinit {
@@ -1257,6 +1388,48 @@ public final class PageModel: ObservableObject {
         )
         saveLicence = licences.content
         ledgerLicence = licences.ledger
+        // The standing not-recording line comes down with the refusal
+        // it described: the licence is back, so the trail records again
+        // from here.
+        ledgerRestoreRefused = false
+        markDirty()
+        refresh()
+    }
+
+    /// Discard the state file this session could not read and start
+    /// saving (the banner's one action; ADR-0016 section 7, issue #49).
+    /// The ledger clear's shape, ported to the content side, and like
+    /// it this is the user's gesture only: nothing auto-clears a
+    /// refused restore.
+    ///
+    /// 1. The file goes, by path, key halves rotated on the way out.
+    ///    This is the half a write cannot do while the licence is
+    ///    withheld, and without the unlink the licence would have
+    ///    nothing to come back for. A refusal here is not fatal: the
+    ///    reseal armed below still puts this session's store over it,
+    ///    which is now what the user asked for.
+    /// 2. The content licence comes back (`licencesAfterContentClear`),
+    ///    before `markDirty`, which consults it.
+    /// 3. The banner comes down, and the session's current store is
+    ///    marked dirty so the first sealed generation lands within one
+    ///    debounce rather than waiting on the next keystroke.
+    ///
+    /// Guarded to the one condition it exists for: a session that holds
+    /// its licence has no unreadable file to discard, and running the
+    /// erase there would drop a file this session can and does write.
+    public func clearUnreadableStateFile() {
+        guard stateLoaded, !saveLicence else { return }
+        if !client.persistErase(at: stateFileURL.path) {
+            logger.error(
+                "the unreadable state file could not be dropped on a user discard; the reseal will try to replace it instead"
+            )
+        }
+        let licences = Self.licencesAfterContentClear(
+            content: saveLicence, ledger: ledgerLicence
+        )
+        saveLicence = licences.content
+        ledgerLicence = licences.ledger
+        contentRestoreRefused = false
         markDirty()
         refresh()
     }
