@@ -1178,9 +1178,14 @@ public final class PageModel: ObservableObject {
     /// seam rather than here, so the "one page to a slot" rule has a
     /// single home.
     private func openPageIfSlotIsEmpty(_ tab: UInt64) {
-        // Cleared first, so what this records is the mint of the tap
-        // that just happened and never one from a gesture ago.
-        mintedBySelection = nil
+        // Selecting some other slot retires the record of the last
+        // mint, so what stands is always the mint of a tap on this
+        // slot and never one from a gesture ago. Reaching the same
+        // slot again keeps it: with a simultaneous gesture the double
+        // click's second single tap re-enters here before the hold
+        // resolves, and clearing on that re-entry is what let the hold
+        // strike the page the first tap had just minted.
+        if mintedBySelection?.tab != tab { mintedBySelection = nil }
         guard tabs.first(where: { $0.id == tab })?.hasPage == false else { return }
         guard client.openPage(tab: tab) != 0 else { return }
         mintedBySelection = (tab: tab, at: ProcessInfo.processInfo.systemUptime)
