@@ -1,4 +1,11 @@
-//! The sheet: ink and sealed chips (interaction-model rev C, doc 04).
+//! The tab and the sheet: a durable slot and the perishable page
+//! inside it (interaction-model rev C, doc 04; ADR-0017).
+//!
+//! A [`Tab`] is the thing the user navigates with: an identity, a
+//! creation stamp, an optional name they typed, the rung pages born in
+//! the slot start at, and at most one page. A [`Sheet`] is everything
+//! that expires. Nothing the app derived from content ever reaches the
+//! tab, which is why the tab may outlive every page it held.
 //!
 //! A sheet reads like a little text file. **Ink** is anything typed —
 //! visible, editable, ordinary text, held authoritatively in the
@@ -79,6 +86,29 @@ impl std::fmt::Display for ItemId {
 pub struct SheetId(pub(crate) u64);
 
 impl SheetId {
+    /// The raw id, for carrying across an FFI seam.
+    #[must_use]
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+
+    /// Rebuild an id from its raw form (an FFI caller handing one back).
+    /// Unknown ids are harmless: lookups simply return `None`.
+    #[must_use]
+    pub fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+}
+
+/// Opaque, monotonically assigned tab identifier. `0` is never issued.
+///
+/// A slot's handle, distinct from the [`SheetId`] of whatever page is
+/// standing in it: the tab survives the page, so one number cannot do
+/// both jobs (ADR-0017).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TabId(pub(crate) u64);
+
+impl TabId {
     /// The raw id, for carrying across an FFI seam.
     #[must_use]
     pub fn raw(self) -> u64 {
@@ -297,16 +327,15 @@ pub(crate) enum SheetClock {
 pub struct Sheet {
     pub(crate) id: SheetId,
     pub(crate) uuid: ItemId,
-    /// The page's name, held as state. Derived at creation and
-    /// re-derived on edit, never recomputed at read time and never
-    /// derived at ledger time (ADR-0012).
-    pub(crate) title: String,
-    /// Set once the user names the page by hand. While it is set, no
-    /// edit re-derives the title.
-    pub(crate) title_is_user_set: bool,
-    /// Unix epoch milliseconds at creation, kept solely so the
-    /// placeholder title stays the same string for the page's whole
-    /// life. Expiry math never reads it.
+    /// The first non-blank line of the body, held as state: re-derived
+    /// on edit, never recomputed at read time and never derived at
+    /// ledger time (ADR-0012). `None` while the body has no line to
+    /// take one from. It is content the app derived on its own, so it
+    /// dies with the page and is never written down (ADR-0017): the
+    /// restore path recomputes it from the restored segments.
+    pub(crate) derived_title: Option<String>,
+    /// Unix epoch milliseconds at creation, the page's own birth, now
+    /// distinct from the tab's. Expiry math never reads it.
     pub(crate) created_wall_ms: u64,
     /// The body as an operation-logged document (ADR-0013): the source
     /// of truth for ink and chip positions inside the core.
@@ -320,15 +349,15 @@ pub struct Sheet {
     /// across edits, and settled by [`Sheet::settle_blocks`].
     pub(crate) blocks: BlockIndex,
     pub(crate) chips: Vec<SealedChip>,
-    pub(crate) rung: Ttl,
     pub(crate) clock: SheetClock,
     /// Held time from holds that have already lapsed; the live hold's
     /// span is added on normalization (open question №8 accounting).
     pub(crate) total_held: Duration,
 }
 
-/// A title is a page property, not a projection: the tab strip and the
-/// ledger both read the same stored string.
+/// A derived title is a page property, not a projection: it is
+/// computed once per edit and read from state afterwards, so nothing
+/// re-derives it at ledger time.
 impl Sheet {
     /// Identifier.
     #[must_use]
@@ -440,12 +469,6 @@ impl Sheet {
         self.chips.len()
     }
 
-    /// The active rung (what the countdown label shows after a reset).
-    #[must_use]
-    pub fn rung(&self) -> Ttl {
-        self.rung
-    }
-
     /// Whether the clock is held by the pause gesture at `now`.
     #[must_use]
     pub fn is_held(&self, now: Instant) -> bool {
@@ -519,9 +542,13 @@ impl Sheet {
     }
 
     /// Fraction of the gauge still full at `now`, in `0.0..=1.0`.
+    ///
+    /// The rung is passed in because it belongs to the tab that owns
+    /// this page, not to the page (ADR-0017): the gauge is a reading of
+    /// a page's life against the slot it was born into.
     #[must_use]
-    pub fn fraction_remaining(&self, now: Instant) -> f32 {
-        let total = self.rung.duration().as_secs_f32();
+    pub fn fraction_remaining(&self, rung: Ttl, now: Instant) -> f32 {
+        let total = rung.duration().as_secs_f32();
         if total <= 0.0 {
             return 0.0;
         }
@@ -536,28 +563,117 @@ impl Sheet {
         !remaining.is_zero() && remaining <= Duration::from_secs(60 * 60)
     }
 
-    /// The tab title: a name the page owns, not a rendering of its
-    /// content. It is the first typed line with markdown syntax
-    /// stripped, or the creation-stamp placeholder, or whatever the
-    /// user named it. Chips never contribute: the author's own typed
-    /// line does the naming.
+    /// The page's own name for itself: its first typed line with
+    /// markdown syntax stripped, `None` while nothing has been typed.
+    /// Chips never contribute — the author's own typed line does the
+    /// naming — and the user never sets this one, which is the tab's
+    /// [`name`](Tab::name) instead. It is the middle step of the label
+    /// the strip shows, and it dies with the page.
     #[must_use]
-    pub fn title(&self) -> &str {
-        &self.title
+    pub fn derived_title(&self) -> Option<&str> {
+        self.derived_title.as_deref()
     }
 
-    /// Whether the user named this page by hand. While true, an edit
-    /// never re-derives the title (ADR-0012).
-    #[must_use]
-    pub fn title_is_user_set(&self) -> bool {
-        self.title_is_user_set
-    }
-
-    /// Unix epoch milliseconds at creation, the stamp the placeholder
-    /// title is rendered from. Never used for expiry math.
+    /// Unix epoch milliseconds at this page's creation. Never used for
+    /// expiry math, and no longer the stamp any placeholder renders
+    /// from: that is the tab's birthday now (ADR-0017).
     #[must_use]
     pub fn created_wall_ms(&self) -> u64 {
         self.created_wall_ms
+    }
+}
+
+/// A tab: the durable slot a page stands in. Not `Debug` — it may hold
+/// a [`Sheet`], and a sheet owns [`SealedChip`]s.
+///
+/// Everything here outlives every page the slot ever held, so nothing
+/// here may be derived from what a page contained (ADR-0017). The
+/// `name` is the user's own word for the slot or nothing at all; the
+/// `rung` is a number with no clock behind it, so a tab schedules
+/// nothing and expires never.
+pub struct Tab {
+    pub(crate) id: TabId,
+    /// Minted once, when the slot is opened, and carried through a
+    /// restore rather than re-minted. Distinct from the page's identity
+    /// and named by no ledger record.
+    pub(crate) uuid: ItemId,
+    /// Unix epoch milliseconds when the slot was opened: the stamp the
+    /// `MMDD-HHmm` placeholder renders from, and the reason an unnamed
+    /// tab keeps the same label across every page it holds.
+    pub(crate) created_wall_ms: u64,
+    /// The name the user typed, capped at [`TITLE_CAP`] characters.
+    /// `Some` means they typed it; `None` means the tab has no name.
+    /// Never derived from content, at any point, by any path.
+    pub(crate) name: Option<String>,
+    /// The rung pages born in this slot start at. Not a countdown:
+    /// there is no clock, no deadline and nothing remaining, so the
+    /// timer path has nothing here to read and nothing to schedule.
+    pub(crate) rung: Ttl,
+    /// The page standing in the slot, if one is. `None` is a tab whose
+    /// page expired, or one that has never held a page.
+    pub(crate) page: Option<Sheet>,
+}
+
+impl Tab {
+    /// Identifier.
+    #[must_use]
+    pub fn id(&self) -> TabId {
+        self.id
+    }
+
+    /// The random item identity, minted when this tab was opened.
+    #[must_use]
+    pub fn uuid(&self) -> ItemId {
+        self.uuid
+    }
+
+    /// Unix epoch milliseconds when this tab was opened.
+    #[must_use]
+    pub fn created_wall_ms(&self) -> u64 {
+        self.created_wall_ms
+    }
+
+    /// The name the user typed, if they typed one.
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// The rung pages born in this slot start at.
+    #[must_use]
+    pub fn rung(&self) -> Ttl {
+        self.rung
+    }
+
+    /// The page standing in this slot, if one is.
+    #[must_use]
+    pub fn page(&self) -> Option<&Sheet> {
+        self.page.as_ref()
+    }
+
+    /// Whether this slot holds the page with that id.
+    pub(crate) fn holds(&self, page: SheetId) -> bool {
+        self.page.as_ref().is_some_and(|held| held.id == page)
+    }
+
+    /// The label the strip and the ledger read, resolved in three
+    /// steps: the name the user typed, else the live page's derived
+    /// title, else the placeholder from *this tab's* creation stamp.
+    ///
+    /// The stamp is the tab's rather than the page's on purpose. An
+    /// unnamed tab that keeps taking fresh pages would otherwise change
+    /// its label every time one was born, and the slot the user
+    /// arranged by dragging would stop being recognizable.
+    #[must_use]
+    pub fn label(&self, utc_offset_seconds: i32) -> String {
+        self.name
+            .clone()
+            .or_else(|| {
+                self.page
+                    .as_ref()
+                    .and_then(|page| page.derived_title.clone())
+            })
+            .unwrap_or_else(|| placeholder_title(self.created_wall_ms, utc_offset_seconds))
     }
 }
 
@@ -566,16 +682,15 @@ impl Sheet {
 pub(crate) const TITLE_CAP: usize = 80;
 
 /// First non-blank ink line across the document, markdown syntax
-/// stripped and capped at [`TITLE_CAP`] characters; the creation-stamp
-/// placeholder when there is none.
+/// stripped and capped at [`TITLE_CAP`] characters; `None` when the
+/// body offers no such line.
 ///
-/// The word "untitled" no longer exists in the core: an unnamed page
-/// reads as `MMDD-HHmm`, which tells the user when they opened it.
-pub(crate) fn derive_title(
-    segments: &[Segment],
-    created_wall_ms: u64,
-    utc_offset_seconds: i32,
-) -> String {
+/// The walk stops at the walk (ADR-0017): the fallback is
+/// [`Tab::label`]'s business, because the placeholder renders from the
+/// tab's stamp and not the page's. Answering `None` here is what keeps
+/// a label from jumping to a different four-digit stamp the moment a
+/// page expires under it.
+pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
     segments
         .iter()
         .filter_map(|s| match s {
@@ -585,14 +700,15 @@ pub(crate) fn derive_title(
         .flat_map(|text| text.lines())
         .map(strip_markdown)
         .find(|line| !line.is_empty())
-        .map_or_else(
-            || placeholder_title(created_wall_ms, utc_offset_seconds),
-            |line| line.chars().take(TITLE_CAP).collect(),
-        )
+        .map(|line| line.chars().take(TITLE_CAP).collect())
 }
 
-/// `MMDD-HHmm` in the user's local time, from the page's creation
-/// stamp. The common case: a page whose first line is still empty.
+/// `MMDD-HHmm` in the user's local time, from the tab's creation
+/// stamp. The common case: a slot nobody has named holding a page whose
+/// first line is still empty.
+///
+/// The word "untitled" no longer exists in the core: an unnamed tab
+/// reads as `MMDD-HHmm`, which tells the user when they opened it.
 pub(crate) fn placeholder_title(wall_ms: u64, utc_offset_seconds: i32) -> String {
     let epoch_seconds = i64::try_from(wall_ms / 1000).unwrap_or(i64::MAX);
     let local_seconds = epoch_seconds.saturating_add(i64::from(utc_offset_seconds));
@@ -925,15 +1041,28 @@ mod tests {
     const STAMP: u64 = 1_700_000_000_000;
 
     fn title_of(line: &str) -> String {
-        derive_title(&[Segment::Ink(line.into())], STAMP, 0)
+        derive_title(&[Segment::Ink(line.into())]).expect("this line derives a title")
+    }
+
+    /// A tab holding `page`, born at [`STAMP`] and never named: the
+    /// fixture the label resolution is read through.
+    fn unnamed_tab(page: Option<Sheet>) -> Tab {
+        Tab {
+            id: TabId(1),
+            uuid: ItemId::random(),
+            created_wall_ms: STAMP,
+            name: None,
+            rung: Ttl::default(),
+            page,
+        }
     }
 
     #[test]
     fn titles_strip_heading_markup_only_when_it_is_markup() {
         let segs = vec![Segment::Ink("### deploy friday\nrest".into())];
-        assert_eq!(derive_title(&segs, STAMP, 0), "deploy friday");
+        assert_eq!(derive_title(&segs).as_deref(), Some("deploy friday"));
         let segs = vec![Segment::Ink("#hashtag stays".into())];
-        assert_eq!(derive_title(&segs, STAMP, 0), "#hashtag stays");
+        assert_eq!(derive_title(&segs).as_deref(), Some("#hashtag stays"));
     }
 
     #[test]
@@ -980,15 +1109,62 @@ mod tests {
             Segment::Chip(ChipId(9)),
             Segment::Ink("\n\n  \nerrands".into()),
         ];
-        assert_eq!(derive_title(&segs, STAMP, 0), "errands");
+        assert_eq!(derive_title(&segs).as_deref(), Some("errands"));
     }
 
     #[test]
-    fn an_empty_page_takes_the_creation_stamp_placeholder() {
-        // 1_700_000_000_000 ms is 2023-11-14 22:13:20 UTC.
-        assert_eq!(derive_title(&[], STAMP, 0), "1114-2213");
+    fn a_body_with_no_line_to_take_derives_nothing_at_all() {
+        // The walk answers None rather than reaching for a stamp: the
+        // fallback belongs to the tab, which is the object that still
+        // exists once this page is gone (ADR-0017).
+        assert_eq!(derive_title(&[]), None);
         let segs = vec![Segment::Ink("   \n".into()), Segment::Chip(ChipId(1))];
-        assert_eq!(derive_title(&segs, STAMP, 0), "1114-2213");
+        assert_eq!(derive_title(&segs), None);
+    }
+
+    #[test]
+    fn a_label_resolves_name_then_derived_title_then_the_tabs_own_stamp() {
+        // 1_700_000_000_000 ms is 2023-11-14 22:13:20 UTC.
+        let mut tab = unnamed_tab(None);
+        assert_eq!(tab.label(0), "1114-2213", "no name, no page");
+
+        // A page with a first line supplies the middle step. The page's
+        // own birthday sits a day later than the tab's, which is what
+        // makes the last step's stamp visibly the tab's.
+        let day = 24 * 60 * 60 * 1000;
+        let mut page = bare_sheet(STAMP + day);
+        page.derived_title = Some("deploy notes".into());
+        tab.page = Some(page);
+        assert_eq!(tab.label(0), "deploy notes");
+
+        // An untyped page falls straight through to the tab's stamp,
+        // never the page's.
+        tab.page = Some(bare_sheet(STAMP + day));
+        assert_eq!(tab.label(0), "1114-2213");
+
+        // And a name the user typed wins over both.
+        tab.name = Some("the vault".into());
+        assert_eq!(tab.label(0), "the vault");
+    }
+
+    /// A page with nothing in it, born at `created_wall_ms`.
+    fn bare_sheet(created_wall_ms: u64) -> Sheet {
+        let document = SheetDocument::new();
+        let blocks = BlockIndex::for_document(&document);
+        Sheet {
+            id: SheetId(1),
+            uuid: ItemId::random(),
+            derived_title: None,
+            created_wall_ms,
+            document,
+            segments: Vec::new(),
+            blocks,
+            chips: Vec::new(),
+            clock: SheetClock::Running {
+                deadline: Instant::now(),
+            },
+            total_held: Duration::ZERO,
+        }
     }
 
     #[test]

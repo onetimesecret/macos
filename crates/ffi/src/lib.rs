@@ -81,7 +81,7 @@ use promotion::{Connection, PromoteOpts, Promoted, ladder_snapped_ttl, promote};
 use companion_core::clock::sleep_inclusive_ns;
 use companion_core::{
     ChipId, ChipMeta, DestinationClass, EditOp, LedgerEvent, Segment, Sheet, SheetId, SheetStore,
-    SizeClass, SystemClock, TTL_LADDER, Ttl,
+    SizeClass, SystemClock, TTL_LADDER, Tab, Ttl,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -877,10 +877,17 @@ pub unsafe extern "C" fn companion_sheets_json(handle: *mut CompanionHandle) -> 
         return ptr::null_mut();
     };
     let now = guard.store.now();
+    let offset = guard.store.local_offset_seconds();
+    // The walk is over the slots, because the label is the slot's: a
+    // tab holding no page contributes no summary yet, and the seam that
+    // gives it one is ADR-0017's own work.
     let summaries: Vec<serde_json::Value> = guard
         .store
-        .sheets()
-        .map(|sheet| summary_json(sheet, now))
+        .tabs()
+        .filter_map(|tab| {
+            tab.page()
+                .map(|sheet| summary_json(tab, sheet, now, offset))
+        })
         .collect();
     match serde_json::to_string(&summaries) {
         Ok(json) => into_c_string(json),
@@ -1954,21 +1961,28 @@ pub unsafe extern "C" fn companion_string_free(s: *mut c_char) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// One page's non-secret snapshot. There is deliberately no field that
-/// could carry sealed content. The excerpt lives in the chip JSON
-/// returned at seal time and in the replayed document, and that is the
-/// only rendering sealed content ever gets. The ledger has none of it.
-fn summary_json(sheet: &Sheet, now: std::time::Instant) -> serde_json::Value {
+/// One page's non-secret snapshot, read through the tab it stands in:
+/// the label and the rung are the slot's, everything about the
+/// countdown is the page's. There is deliberately no field that could
+/// carry sealed content. The excerpt lives in the chip JSON returned at
+/// seal time and in the replayed document, and that is the only
+/// rendering sealed content ever gets. The ledger has none of it.
+fn summary_json(
+    tab: &Tab,
+    sheet: &Sheet,
+    now: std::time::Instant,
+    utc_offset_seconds: i32,
+) -> serde_json::Value {
     let remaining = sheet.remaining(now);
     serde_json::json!({
         "id": sheet.id().raw(),
-        "title": sheet.title(),
-        "rung_code": ttl_to_code(sheet.rung()),
-        "rung_label": sheet.rung().to_string(),
+        "title": tab.label(utc_offset_seconds),
+        "rung_code": ttl_to_code(tab.rung()),
+        "rung_label": tab.rung().to_string(),
         "remaining_ms": u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX),
         "remaining_label": sheet.remaining_label(now),
         "spoken_remaining": spoken_remaining(remaining),
-        "fraction_remaining": f64::from(sheet.fraction_remaining(now)),
+        "fraction_remaining": f64::from(sheet.fraction_remaining(tab.rung(), now)),
         "paused": sheet.is_held(now),
         "hold_topped_up": sheet.hold_topped_up(now),
         "hold_remaining_ms":

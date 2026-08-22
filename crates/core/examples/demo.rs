@@ -16,7 +16,7 @@
 use std::io::{BufRead, Write as _};
 use std::time::Duration;
 
-use companion_core::{DestinationClass, ManualClock, Segment, Sheet, SheetId, SheetStore};
+use companion_core::{DestinationClass, ManualClock, Segment, Sheet, SheetId, SheetStore, Tab};
 use companion_credentials::default_credential_store;
 use companion_pasteboard::{ContentKind, MemoryPasteboard, Pasteboard, WriteOptions};
 use companion_transport::UreqTransport;
@@ -50,9 +50,10 @@ fn main() {
 
     let stdin = std::io::stdin();
     loop {
-        let title = current
-            .and_then(|id| store.sheet(id))
-            .map_or("no page", Sheet::title);
+        let title = current.and_then(|id| tab_holding(&store, id)).map_or_else(
+            || "no page".to_string(),
+            |tab| tab.label(store.local_offset_seconds()),
+        );
         print!("companionapp:{title}> ");
         std::io::stdout().flush().ok();
         let Some(Ok(line)) = stdin.lock().lines().next() else {
@@ -325,26 +326,35 @@ fn rm_chip(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
 }
 
 fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
-    if store.is_empty() {
-        println!("(no pages — the system working, not the product failing)");
+    if store.has_no_tabs() {
+        println!("(no tabs — the system working, not the product failing)");
         return;
     }
     let now = store.now();
-    // The tab strip, Excel-anchored in spirit.
+    let offset = store.local_offset_seconds();
+    // The tab strip, Excel-anchored in spirit. It is a walk of the
+    // slots, not of the pages: a slot holding nothing still shows.
     let mut strip = String::new();
-    for (i, sheet) in store.sheets().enumerate() {
-        let marker = if Some(sheet.id()) == current {
+    for (i, tab) in store.tabs().enumerate() {
+        let marker = if tab.page().map(Sheet::id) == current {
             "▸"
         } else {
             " "
         };
-        let held = if sheet.is_held(now) { "⏸ " } else { "" };
-        strip.push_str(&format!("[{marker}{} {held}{}]", i + 1, sheet.title()));
+        let held = if tab.page().is_some_and(|page| page.is_held(now)) {
+            "⏸ "
+        } else {
+            ""
+        };
+        strip.push_str(&format!("[{marker}{} {held}{}]", i + 1, tab.label(offset)));
     }
     strip.push_str(&format!("[◌ {}]", store.ledger().count()));
     println!("{strip}");
 
-    let Some(sheet) = current.and_then(|id| store.sheet(id)) else {
+    let Some(tab) = current.and_then(|id| tab_holding(store, id)) else {
+        return;
+    };
+    let Some(sheet) = tab.page() else {
         return;
     };
     let held = if sheet.is_held(now) {
@@ -357,9 +367,9 @@ fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
     };
     println!(
         "┌ {} ── {} of {}{held} ┐",
-        sheet.title(),
+        tab.label(offset),
         sheet.remaining_label(now),
-        sheet.rung()
+        tab.rung()
     );
     let mut chip_no = 0;
     for segment in sheet.segments() {
@@ -385,8 +395,19 @@ fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
             }
         }
     }
-    let gauge = gauge_glyphs(sheet.fraction_remaining(now), sheet.last_hour(now));
+    let gauge = gauge_glyphs(
+        sheet.fraction_remaining(tab.rung(), now),
+        sheet.last_hour(now),
+    );
     println!("└ {gauge} ┘");
+}
+
+/// The slot a page is standing in, which is where its label and its
+/// rung live now.
+fn tab_holding(store: &SheetStore<ManualClock>, page: SheetId) -> Option<&Tab> {
+    store
+        .tabs()
+        .find(|tab| tab.page().map(Sheet::id) == Some(page))
 }
 
 fn gauge_glyphs(fraction: f32, last_hour: bool) -> String {

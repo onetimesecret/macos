@@ -43,7 +43,7 @@ restart, TTL becomes the only lifetime mechanism, and `FILE_MAGIC` bumps
 with no migration path. Every existing sealed file is refused. Users
 lose whatever is staged, once. The durable-Tab versus expiring-Page
 split changes the persisted object graph, so it rides the same break:
-`OTSSNAP3` (crates/core/src/persist.rs:73) goes to `OTSSNAP4` in the
+`OTSSNAP3` (crates/core/src/persist.rs:91) goes to `OTSSNAP4` in the
 same commit range as `OTSSEAL2`'s bump. Two breaks cost users twice,
 which is the reasoning recorded at docs/plans/44-ground-truth.md:100.
 
@@ -217,7 +217,7 @@ filename.
 
 The net effect on the sealed file is a reduction. `OTSSNAP3` stores an
 80 character content-derived string for every sheet
-(crates/core/src/persist.rs:326). `OTSSNAP4` stores none: only names the
+(crates/core/src/persist.rs:380). `OTSSNAP4` stores none: only names the
 user typed, and only for tabs where they typed one. Required work: the
 derived title stops being written and is recomputed at restore from the
 restored segments, the same discipline that already refuses to store a
@@ -383,26 +383,35 @@ and strip order, and no page content.
 
 ### Required work
 
-All of the following is work this ADR requires and none of it exists
-today.
+All of the following is work this ADR requires. None of it exists today
+except the magic bump in item 1, which issue #54 has already taken.
 
 1. `MAGIC` goes `OTSSNAP3` to `OTSSNAP4`
-   (crates/core/src/persist.rs:73), in the same break as ADR-0016's
-   envelope bump. The refusal path for an unknown magic already exists
-   and is exercised (crates/core/src/persist.rs:1637).
-2. `emit` changes shape (crates/core/src/persist.rs:311-381). After
+   (crates/core/src/persist.rs:91), in the same break as ADR-0016's
+   envelope bump. This is the one item already taken: #54 landed the
+   bump first and this ADR rides it rather than spending a second
+   version byte (ADR-0016 section 9). The refusal path for an unknown
+   or superseded magic exists and is exercised
+   (crates/core/src/persist.rs:1892).
+2. `emit` changes shape (crates/core/src/persist.rs:358-372). After
    `wall_ms`, write a tab count, then per tab in strip order:
    `uuid[16]`, `created_wall_ms` u64, `name` as an optional (a u8
    present flag plus length-prefixed bytes, mirroring the promotion
-   encoding at crates/core/src/persist.rs:362-368), rung seconds u64, a
+   encoding at crates/core/src/persist.rs:434-440), rung seconds u64, a
    u8 page-present flag, then the per-page body as ADR-0016 section 4
    leaves it, with `drained_ms` in place of the running span at
-   crates/core/src/persist.rs:329-332.
+   crates/core/src/persist.rs:383-387. Both records are written under
+   #54's framing rule from the start (`framed`,
+   crates/core/src/persist.rs:340-356): the tab record states its own
+   byte length, and so does the page body inside it, so a trailing field
+   on either costs no version byte later. The chip records inside the
+   page stay framed as they already are
+   (crates/core/src/persist.rs:411).
 3. Fields leave the page record: `rung`
-   (crates/core/src/persist.rs:328) moves to the tab; `title`
-   (crates/core/src/persist.rs:326) is deleted outright and recomputed
+   (crates/core/src/persist.rs:382) moves to the tab; `title`
+   (crates/core/src/persist.rs:380) is deleted outright and recomputed
    at restore by `derive_title` (crates/core/src/sheet.rs:574-592);
-   `title_is_user_set` (crates/core/src/persist.rs:327) disappears.
+   `title_is_user_set` (crates/core/src/persist.rs:381) disappears.
 
    **3a.** `set_title` splits with the object
    (crates/core/src/store.rs:695-709). The non-empty branch writes
@@ -415,10 +424,12 @@ today.
    field, so changing it is what makes "never derived" true rather than
    aspirational.
 4. `read_sheet` splits into `read_tab` plus `read_page`
-   (crates/core/src/persist.rs:555), with the page arm skipped on the
-   absent flag. A third counter, `next_tab_id`, joins `next_sheet_id`
-   and `next_chip_id` (crates/core/src/persist.rs:183-193), re-minted
-   densely in read order.
+   (crates/core/src/persist.rs:632), each reading from its own framed
+   sub-reader (crates/core/src/persist.rs:604-609) and with the page arm
+   skipped on the absent flag. A third counter, `next_tab_id`, joins
+   `next_sheet_id` and `next_chip_id`
+   (crates/core/src/persist.rs:206-207), re-minted densely in read
+   order.
 5. `SheetStore.sheets: Vec<Sheet>` becomes `tabs: Vec<Tab>` with
    `Tab.page: Option<Sheet>` (crates/core/src/store.rs:139). Every
    reader of `self.sheets` follows. Thirteen sit in the store:
@@ -429,8 +440,8 @@ today.
    `delete_chip` (:737) and `mark_chip_promoted` (:832), and
    `next_event` (:1016-1018). The persistence seam holds the rest: the
    two per-sheet export passes in `snapshot`
-   (crates/core/src/persist.rs:128-139) and `emit`'s own pass
-   (crates/core/src/persist.rs:321-322), which item 2 already reshapes.
+   (crates/core/src/persist.rs:151-162) and `emit`'s own pass
+   (crates/core/src/persist.rs:369-371), which item 2 already reshapes.
 6. `expire_due` stops partitioning the vector
    (crates/core/src/store.rs:1043-1057). It walks tabs, takes the page
    out of each tab whose page has zero remaining, entombs it
@@ -468,8 +479,12 @@ today.
    (crates/core/src/store.rs:220, :316, :344, :679, :767, :793, :818,
    :1143), so every record a page produces carries one label rather than
    two. The field is the one `record` already fills
-   (crates/core/src/store.rs:1104, :1146). No change to `LedgerRecord`
-   or to `OTSLEDR1` (crates/core/src/persist.rs:77, :454).
+   (crates/core/src/store.rs:1104, :1146). No change to `LedgerRecord`.
+   `OTSLEDR1` is a different matter: issue #54 framed the ledger record
+   and bumped the payload magic to `OTSLEDR2`
+   (crates/core/src/persist.rs:100, :515-519), a break ADR-0016 section
+   9 prices. This item neither causes that break nor changes the
+   record's shape.
 8. `summary_json` takes the tab rather than the sheet
    (crates/ffi/src/lib.rs:1921) and gains `has_page: bool`
    (crates/ffi/src/lib.rs:1922-1938); every clock field is meaningful
@@ -525,11 +540,11 @@ today.
     docs/plans/44-ground-truth.md:100. An earlier draft of this ADR
     reserved a zero u64 per materialized block so the count would not
     have to buy a second break. That reservation is withdrawn. Issue #54
-    makes every repeated record in the snapshot payload self-describing
-    in this same break, the per-block materialized record among them
-    (crates/core/src/persist.rs:417-452 writes it, :733-783 reads it back
-    positionally today), so the count is appended whenever ADR-0013 is
-    implemented and costs no break at all. Reserving a field for it now
+    has already made every repeated record in the snapshot payload
+    self-describing, the per-block materialized record among them
+    (crates/core/src/persist.rs:484-501 writes it inside its frame,
+    :828-837 reads it back inside the same frame), so the count is
+    appended whenever ADR-0013 is implemented and costs no break at all. Reserving a field for it now
     would be guessing at a shape nobody has designed.
 
     What this ADR does decide is where the count lives. It is a block
@@ -549,10 +564,10 @@ today.
   only by the user.
 - Users pay one format loss, not two. Whatever is staged when ADR-0016
   and this ADR ship together is refused once, by the same magic bump
-  (crates/core/src/persist.rs:73).
+  (crates/core/src/persist.rs:91).
 - The sealed file gets less content-derived, not more. `OTSSNAP3` writes
   an 80 character derived title for every sheet
-  (crates/core/src/persist.rs:326); `OTSSNAP4` writes none, and
+  (crates/core/src/persist.rs:380); `OTSSNAP4` writes none, and
   recomputes the derived title at restore.
 - Emptying the pad now writes a file instead of removing one. When the
   last page expires and tabs remain, ADR-0016 section 6's rotation runs
@@ -633,11 +648,12 @@ today.
   replacement page is born at the store's `default_rung`
   (crates/core/src/store.rs:214), at the cost the Decision already
   names.
-- Issue #54 slips out of this break while item 12 still assumes it. Then
-  the interaction count has no self-describing record to append to, and
-  ADR-0013 buys a second break with users' staged content. The check is
-  whether the length prefix and the skip rule ship under the same
-  `MAGIC` bump as this split, not merely before ADR-0013 is picked up.
+- Issue #54 slips out of this break while item 12 still assumes it.
+  **Discharged.** #54 landed first and took the `OTSSNAP4` bump
+  (crates/core/src/persist.rs:91, :340-356), so the interaction count
+  has a self-describing record to append to. The check that remains is
+  the mirror of it: this split lands under `OTSSNAP4` too, or it buys a
+  second break with users' staged content.
 
 ## Deferred
 

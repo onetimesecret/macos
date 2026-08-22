@@ -322,6 +322,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Every repeated record in the two sealed files states its own length,
+  and both formats break once to get there** (`companion-core` 0.10.0,
+  issue #54, ADR-0016 section 9). The records were positional: a reader
+  that met a field it did not know could not step over it, so every
+  field added later cost a version byte, and a version byte costs
+  whoever is holding staged content. Four record kinds now write their
+  own byte length in front of their fields, and a reader takes the
+  fields it knows and then reaches the next record by that length
+  instead of by wherever its own field walk stopped. The four are the
+  page record, the chip records inside it, the materialized block
+  record, and the ledger record. Chips were taken in deliberately, so
+  the module carries one encoding rule rather than two and a later
+  per-chip field costs nothing either. A file written by a build that
+  added a trailing field still reads here, minus the field this build
+  has never heard of, and one test per record kind holds that. The rule
+  buys that and no more: a field that moved, changed width or changed
+  meaning still costs a new magic, and so does anything outside a
+  record, meaning the magics, the counts, and the sections that trail a
+  record list.
+
+  **Two losses, taken once.** The content snapshot's magic goes
+  `OTSSNAP3` to `OTSSNAP4`. That is the break ADR-0016 and ADR-0017 had
+  already scheduled and #54 simply took it first, so it costs one break
+  and not two; there is no v3 reader and no downgrade writer, and pages
+  staged by an earlier build are gone. The ledger is a second loss and a
+  new one. It has its own envelope and its own long-lived key, so it
+  would have come through the content break untouched, and framing its
+  records is what takes it: `OTSLEDR1` goes to `OTSLEDR2` and the
+  retained audit trail, the capped titles and the event records back to
+  the ninety day window, is destroyed here, once. Until the disposal
+  path ADR-0016 section 9 requires is built, the first launch after this
+  update finds a ledger file it cannot read, leaves it on disk rather
+  than overwriting it, and records nothing further until the ledger is
+  cleared from Settings. That clear is the one action this release asks
+  for; pages are not involved in it.
+
 - **A third double-click releases the hold, so the pause is reversible**
   (`companion-core` 0.9.0, docs/spec/04). The gesture held a page's
   clock for an hour, then topped the hold up to 24 hours, and then had
