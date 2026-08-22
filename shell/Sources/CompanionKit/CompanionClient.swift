@@ -683,6 +683,28 @@ public final class CompanionClient: @unchecked Sendable {
         path.withCString { companion_persist_save(handle, $0) }
     }
 
+    /// Rotate both content key halves and reseal the store under the
+    /// new ones: the write for the moment no tab holds a page, which is
+    /// ADR-0016 section 6's first rotation trigger and the reason
+    /// `StoreEmptiness.holdsNoPage` is asked of the core rather than
+    /// derived here.
+    ///
+    /// The rotation is the forgetting: every ciphertext generation the
+    /// old halves ever sealed, including the ones an atomic rename
+    /// unlinked and nothing sweeps, stops being decryptable at once.
+    /// The reseal is what keeps the strip, since an empty pad still has
+    /// tab names, rungs and an order the user arranged, and there is no
+    /// page content left in the file to lose.
+    ///
+    /// False means the rotation refused and nothing was written, which
+    /// leaves the old generation where it was and arms the caller's
+    /// retry. Sealing a fresh generation under halves the rotation could
+    /// not replace would report a forgetting that did not happen.
+    @discardableResult
+    public func persistRotateAndSave(to path: String) -> Bool {
+        path.withCString { companion_persist_rotate_and_save(handle, $0) }
+    }
+
     /// Restore the store from `path` at startup, before the first page
     /// is created. False means a fresh start (no file) as much as a
     /// refused one (missing key, failed authentication, a damaged

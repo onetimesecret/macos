@@ -47,6 +47,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unlinked, so emptying the pad writes a file where it used to remove
   one.
 
+  Each question has its own write. `companion_persist_rotate_and_save`
+  is the new one and it takes the first: when the last page expires and
+  tabs remain, both content key halves are rotated and the surviving
+  names, rungs and order are resealed under new ones, so every
+  ciphertext generation the pages lived in, the unlinked ones included,
+  stops being decryptable at that moment. `companion_persist_erase`
+  keeps the second and still drops the file when no tabs are left. A
+  rotation that could not erase the file half cancels the write and
+  says so rather than sealing a fresh generation under the key that
+  still opens every old one. What this costs is a window between the
+  erase and the write in which the strip exists only in memory: a crash
+  inside it loses the tab names, rungs and order, and nothing else,
+  because there is no page content left in the file by then.
+
   A name is the user's or the tab has none. `Tab.name` is set only by
   the rename gesture, capped at 80 characters as before, and never
   derived: the label resolves to the typed name, else the live page's

@@ -244,7 +244,7 @@ char *companion_tabs_json(CompanionHandle *handle);
  * They are separate because emptying the pad is two questions
  * (ADR-0017). "No tab holds a page" is the key rotation trigger: rotate
  * both halves and reseal the surviving tab names, rungs and order under
- * the new ones. "No tabs remain" is the one condition for dropping the
+ * the new ones, which is companion_persist_rotate_and_save(). "No tabs remain" is the one condition for dropping the
  * sealed file. Wiring them backwards destroys the tabs an expiry was
  * supposed to leave standing, or leaves the install on one content key
  * for as long as any tab exists. Do not recompute either one from the
@@ -586,6 +586,38 @@ bool companion_ledger_restore(CompanionHandle *handle, const char *path);
  * success.
  */
 bool companion_persist_save(CompanionHandle *handle, const char *path);
+
+/*
+ * Rotate both content key halves and reseal the store under the new
+ * ones: the write for the moment no tab holds a page (ADR-0016 section
+ * 6's first rotation trigger, ADR-0017). Returns whether the file at
+ * `path` now holds the store under halves nothing else has ever sealed
+ * with.
+ *
+ * The rotation is the forgetting and the reseal is what keeps the
+ * strip. Erasing the file half makes every ciphertext generation this
+ * key ever sealed undecryptable at once, including the ones an atomic
+ * rename unlinked and nothing sweeps. What is then written carries tab
+ * names, rungs and strip order and no page content, because by the time
+ * this is called there is none. companion_persist_erase() is the other
+ * half of the pair and takes the other predicate: no tabs remain, so
+ * there is nothing left to reseal and the file goes.
+ *
+ * A rotation that could not erase the half CANCELS the write and this
+ * returns false, leaving the old generation on disk under the old
+ * halves: writing anyway would seal the new generation under the key
+ * that still opens every earlier one and would report a forgetting that
+ * did not happen. The false is what arms the caller's retry. A path
+ * that is not the content file is refused outright rather than rotated,
+ * on the same gate a drop uses: the ledger rests under its own
+ * long-lived key.
+ *
+ * The window between the erase and the write is one where the strip
+ * exists only in memory, so a crash inside it costs the tab names,
+ * rungs and order, and nothing else. The in-memory store is untouched:
+ * this rewrites a file, not a page.
+ */
+bool companion_persist_rotate_and_save(CompanionHandle *handle, const char *path);
 
 /*
  * Restore from a state file companion_persist_save() wrote: decrypt

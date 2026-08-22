@@ -250,6 +250,59 @@ final class ContentFileEraseTests: XCTestCase {
     }
 }
 
+/// The other half of the same decision (ADR-0016 section 6, ADR-0017):
+/// the write that rotates both content key halves and reseals the strip
+/// under new ones. It fires on the state the drop refuses, which is what
+/// keeps an emptied pad a forgetting instead of a fresh generation
+/// resting beside every old one under the same key.
+final class ContentKeyRotationTests: XCTestCase {
+    func testAStripOfEmptyTabsRotatesAndReseals() {
+        XCTAssertTrue(
+            PageModel.rotatesContentKey(
+                loaded: true, contentLicence: true, holdsNoPage: true, noTabsRemain: false))
+    }
+
+    /// The predicates are not interchangeable and this is the pair of
+    /// assertions that says so: exactly one of them is true in each of
+    /// the two empty states, and neither is true while a page stands.
+    func testTheDropAndTheRotationNeverFireTogether() {
+        for noTabsRemain in [true, false] {
+            let drops = PageModel.erasesContentFile(
+                loaded: true, contentLicence: true, noTabsRemain: noTabsRemain)
+            let rotates = PageModel.rotatesContentKey(
+                loaded: true, contentLicence: true, holdsNoPage: true,
+                noTabsRemain: noTabsRemain)
+            XCTAssertNotEqual(drops, rotates, "one file, one decision")
+        }
+    }
+
+    func testAPadStillHoldingAPageSealsUnderTheKeyItHas() {
+        // A rotation on every save would leave the pages in the file
+        // this write is replacing unreadable to the next launch.
+        XCTAssertFalse(
+            PageModel.rotatesContentKey(
+                loaded: true, contentLicence: true, holdsNoPage: false, noTabsRemain: false))
+    }
+
+    func testASessionWithoutTheContentLicenceNeverRotates() {
+        // It could not read the file, so it may not write over it, and
+        // rotating would make the file it never read unreadable to every
+        // session after it.
+        XCTAssertFalse(
+            PageModel.rotatesContentKey(
+                loaded: true, contentLicence: false, holdsNoPage: true, noTabsRemain: false))
+    }
+
+    func testASessionThatNeverLoadedNeverRotates() {
+        // A store that has not been filled yet holds no page in exactly
+        // the way a launch does, and rotating on that would forget
+        // yesterday's pages at every start.
+        XCTAssertFalse(
+            PageModel.rotatesContentKey(
+                loaded: false, contentLicence: true, holdsNoPage: true, noTabsRemain: false))
+    }
+}
+
 /// How the two licences meet at the write: `saveState` returns the
 /// conjunction of both writes and hands that same value to the latch, so
 /// a refused ledger write holds the process open exactly as a refused

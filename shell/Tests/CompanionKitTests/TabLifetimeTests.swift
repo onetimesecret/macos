@@ -243,6 +243,72 @@ final class TabLifetimeTests: XCTestCase {
         XCTAssertEqual(morning.selection, morning.tabs.first?.id, "and it is selected")
     }
 
+    /// The other predicate's write, and the one that keeps the
+    /// forgetting claim true (ADR-0016 section 6, ADR-0017). When the
+    /// last page expires and tabs remain, the save rotates both content
+    /// key halves and reseals the strip under new ones, so every
+    /// ciphertext generation the pages lived in stops being decryptable
+    /// at that moment rather than resting beside the new one under the
+    /// same key.
+    func testAnEmptiedPadRotatesItsKeyAndReselsTheStrip() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("companion-tabs-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let suiteName = "companion-tabs-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let tag = "tabs-\(UUID().uuidString)"
+        addTeardownBlock {
+            UserDefaults.standard.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+        // The 0600 file half rests beside the ciphertext under a name
+        // derived from its keychain partner, so a new name is a rotation
+        // that actually happened rather than one the shell reported.
+        func fileHalfName() throws -> String? {
+            try FileManager.default.contentsOfDirectory(atPath: tempDir.path)
+                .first { $0.hasPrefix("ots-companion-key-half-") }
+        }
+
+        let model = PageModel(
+            formFactor: .panel,
+            defaults: defaults,
+            seams: .init(
+                stateDirectory: tempDir, client: .ephemeral(tag: tag), saveDebounce: 0.05
+            )
+        )
+        model.loadStateIfNeeded()
+        let page = try XCTUnwrap(model.selectedPageID)
+        model.renameTab(try XCTUnwrap(model.selection), to: "payroll")
+        XCTAssertTrue(
+            model.coreClient.syncDocument(sheet: page, json: #"[{"ink": "the credentials"}]"#))
+        XCTAssertTrue(model.saveState())
+
+        let stateFile = FormFactor.stateFileURL(in: tempDir)
+        let generationHoldingThePage = try Data(contentsOf: stateFile)
+        let halfBefore = try XCTUnwrap(fileHalfName())
+
+        expireEverything(in: model)
+        XCTAssertTrue(model.saveState(), "the strip is resealed, not dropped")
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: stateFile.path),
+            "the names, rungs and order have to live somewhere"
+        )
+        XCTAssertNotEqual(
+            try XCTUnwrap(fileHalfName()), halfBefore,
+            "the emptied pad stayed on the halves its pages were sealed under"
+        )
+
+        // What the rotation bought: put the generation the page lived in
+        // back at the path and nothing can open it, in this session or
+        // any later one.
+        try generationHoldingThePage.write(to: stateFile)
+        let ghost = CompanionClient.ephemeral(tag: tag)
+        XCTAssertFalse(
+            ghost.persistRestore(from: stateFile.path),
+            "a generation sealed before the rotation opened after it"
+        )
+    }
+
     /// Closing the last tab is what empties the strip, and only then is
     /// there nothing left to seal. The two predicates disagree in
     /// between, which is the whole reason they are separate.
@@ -260,6 +326,12 @@ final class TabLifetimeTests: XCTestCase {
                 loaded: true, contentLicence: true, noTabsRemain: afterExpiry.hasNoTabs),
             "an expiry must not drop the file the strip lives in"
         )
+        XCTAssertTrue(
+            PageModel.rotatesContentKey(
+                loaded: true, contentLicence: true, holdsNoPage: afterExpiry.holdsNoPage,
+                noTabsRemain: afterExpiry.hasNoTabs),
+            "and it must rotate the halves the dead pages were sealed under"
+        )
 
         model.close(tab)
         let afterClose = try XCTUnwrap(model.coreClient.emptiness())
@@ -270,5 +342,11 @@ final class TabLifetimeTests: XCTestCase {
         XCTAssertTrue(
             PageModel.erasesContentFile(
                 loaded: true, contentLicence: true, noTabsRemain: afterClose.hasNoTabs))
+        XCTAssertFalse(
+            PageModel.rotatesContentKey(
+                loaded: true, contentLicence: true, holdsNoPage: afterClose.holdsNoPage,
+                noTabsRemain: afterClose.hasNoTabs),
+            "with no strip left to reseal the file goes instead"
+        )
     }
 }

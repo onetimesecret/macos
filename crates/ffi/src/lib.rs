@@ -1358,19 +1358,113 @@ pub unsafe extern "C" fn companion_persist_save(
     let Ok(guard) = handle.inner.lock() else {
         return false;
     };
+    seal_state_to(&guard, Path::new(path))
+}
+
+/// Seal the store as it stands and write it to `path`, minting the
+/// content key halves if this is the first save under them. The body of
+/// [`companion_persist_save`], factored out because the rotate-and-
+/// reseal route ([`companion_persist_rotate_and_save`]) has to do the
+/// identical write after it has taken the old halves away, and two
+/// copies of a seal is two chances for one of them to drift.
+///
+/// The caller holds the lock, which is what keeps the halves the write
+/// mints from racing a second writer at the same path.
+fn seal_state_to(state: &Companion, path: &Path) -> bool {
     let Some(wall_ms) = wall_now_ms() else {
         return false;
     };
-    let Some(key) = persist::ensure_state_key(guard.credentials.as_ref(), Path::new(path)) else {
+    let Some(key) = persist::ensure_state_key(state.credentials.as_ref(), path) else {
         return false;
     };
-    let snapshot = guard.store.snapshot(wall_ms);
+    let snapshot = state.store.snapshot(wall_ms);
     // The same wall stamp the snapshot carries inside itself, repeated
     // in the header where the AEAD authenticates it.
     let Some(sealed) = persist::seal_state(&key, &snapshot, wall_ms) else {
         return false;
     };
-    persist::write_private(Path::new(path), &sealed)
+    persist::write_private(path, &sealed)
+}
+
+/// Rotate both content key halves and reseal the store under the new
+/// ones: the write for the moment no tab holds a page (ADR-0016
+/// section 6's first rotation trigger, ADR-0017). Returns whether the
+/// file at `path` now holds the store under halves nothing else has
+/// ever sealed with.
+///
+/// **The rotation is the forgetting and the reseal is what keeps the
+/// strip.** Erasing the file half makes every ciphertext generation
+/// this key ever sealed undecryptable at once, including the ones an
+/// atomic rename unlinked and nothing sweeps, so the pages that lived
+/// in those generations are gone from the disk in the only sense a copy
+/// on write filesystem allows. What the reseal then writes carries tab
+/// names, rungs and strip order and no page content, because by the
+/// time this is called there is none: an empty pad still has an
+/// arrangement the user built, and dropping the file to forget the
+/// pages would destroy it. [`companion_persist_erase`] is the other
+/// half of this pair and takes the other predicate: no tabs remain at
+/// all, so there is nothing left to reseal and the file goes.
+///
+/// **A rotation that could not erase the half cancels the write**, and
+/// this returns false with the old generation still on disk under the
+/// old halves. Writing a new generation anyway would seal it under the
+/// key that still opens every earlier one, report a forgetting that did
+/// not happen, and consume the trigger: the shell's retry
+/// (`PageModel.saveState`) is armed by the false, and the state that
+/// brings it back here is the same emptiness. The path is asked the
+/// same question a drop asks it (`persist::drop_takes_the_content_key`)
+/// and a path that is not the content file is refused outright rather
+/// than rotated: the ledger rests under its own long-lived key, and
+/// rotating on its behalf would destroy staged pages the user still
+/// has.
+///
+/// **The residual, stated rather than engineered around.** The window
+/// between the erase and the write is one where the strip exists only
+/// in memory: a crash or a refused write inside it costs the tab names,
+/// rungs and order, and costs nothing else, because there is no page
+/// content left to lose. The reverse order would close that window and
+/// open a worse one, since minting a second live key while the first is
+/// still on disk is exactly the state the rotation exists to end.
+///
+/// The in-memory store is untouched: this rewrites a file, not a page.
+///
+/// # Safety
+/// `handle` must be a valid handle; `path` a valid NUL-terminated
+/// UTF-8 path whose parent directory exists.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_persist_rotate_and_save(
+    handle: *mut CompanionHandle,
+    path: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(path) = (unsafe { cstr(path) }) else {
+        return false;
+    };
+    // Taken for its exclusion as much as for the credentials: an
+    // ordinary save in flight owns the same path and the same halves.
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    let path = Path::new(path);
+    if !persist::drop_takes_the_content_key(path) {
+        diag_fault!(
+            "companion-ffi: a rotation was asked for at a path that is not the content file. \
+             Nothing was rotated and nothing was written: the ledger rests under its own \
+             long-lived key, and rotating on its behalf would destroy staged pages."
+        );
+        return false;
+    }
+    if !persist::rotate_key_halves(guard.credentials.as_ref(), path) {
+        diag_fault!(
+            "companion-ffi: the content file was left alone because its file half could not be \
+             erased. Resealing over it would seal the new generation under the key that still \
+             opens every old one, and would consume the retry."
+        );
+        return false;
+    }
+    seal_state_to(&guard, path)
 }
 
 /// The milliseconds of wall-clock time between the stamp a file was
@@ -1583,11 +1677,11 @@ pub unsafe extern "C" fn companion_persist_restore(
 /// path, never the caller's intent. The name leads because it is
 /// knowable when the file is absent or unreadable, and those are exactly
 /// the cases where a magic-only gate skipped the rotation and dropped
-/// the ciphertext anyway. When ADR-0017
-/// splits the emptiness predicate in two, this call keeps the "no tabs
-/// remain" half and the "no tab holds a page" half needs a rotation of
-/// its own; wiring them the other way round destroys tabs an expiry was
-/// meant to leave standing.
+/// the ciphertext anyway. ADR-0017 split the emptiness predicate in two
+/// and this call takes the "no tabs remain" half; the "no tab holds a
+/// page" half rotates through [`companion_persist_rotate_and_save`],
+/// which keeps the file it reseals. Wiring them the other way round
+/// destroys tabs an expiry was meant to leave standing.
 ///
 /// **Not erasure, and it must not be described as erasure anywhere.**
 /// The filesystem is copy on write, so the zeros are as likely to land
@@ -4455,6 +4549,190 @@ mod tests {
                 dropped_key,
                 "the pad came back on the very key it had just discarded"
             );
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The other half of ADR-0016 section 6's first trigger: the pad
+    /// holds no page, so both halves go and the strip is resealed under
+    /// new ones. Without the rotation the tab metadata would be written
+    /// under the key that still opens every generation the pages lived
+    /// in, and an overnight expiry would forget nothing at all.
+    #[test]
+    fn resealing_an_emptied_pad_rotates_the_halves_and_keeps_the_strip() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            let (tab, page) = new_page(handle);
+            assert!(companion_tab_set_title(
+                handle,
+                tab,
+                cstring("payroll").as_ptr()
+            ));
+            assert!(companion_tab_set_rung(handle, tab, 0)); // 1h
+            assert!(companion_sheet_sync_document(
+                handle,
+                page,
+                cstring(r#"[{"ink": "the credentials"}]"#).as_ptr()
+            ));
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            let key_of_the_pages = persist::load_state_key(&*credentials, &path)
+                .expect("a saved file has a key")
+                .to_vec();
+            let generation_holding_the_pages = std::fs::read(&path).unwrap();
+
+            // Overnight: the page dies and the tab stays, which is the
+            // state the rotation fires on.
+            age_by(handle, 2 * 60 * 60 * 1_000);
+            assert_eq!(companion_expire_due(handle), 1);
+            let mut holds_no_page = false;
+            let mut has_no_tabs = true;
+            assert!(companion_store_emptiness(
+                handle,
+                &raw mut holds_no_page,
+                &raw mut has_no_tabs
+            ));
+            assert!(holds_no_page && !has_no_tabs, "the trigger's own state");
+
+            assert!(companion_persist_rotate_and_save(handle, c_path.as_ptr()));
+            assert!(path.exists(), "the strip has a file to live in");
+            let key_of_the_strip = persist::load_state_key(&*credentials, &path)
+                .expect("the reseal minted fresh halves")
+                .to_vec();
+            assert_ne!(
+                key_of_the_strip, key_of_the_pages,
+                "the strip was resealed under the very key the pages died under"
+            );
+            let generation_holding_the_strip = std::fs::read(&path).unwrap();
+
+            // The generation the pages lived in is undecryptable now,
+            // which is the whole of the forgetting: put those bytes back
+            // at the path and a fresh session cannot open them.
+            std::fs::write(&path, &generation_holding_the_pages).unwrap();
+            let ghost = handle_with(Arc::clone(&credentials));
+            assert!(
+                !companion_persist_restore(ghost, c_path.as_ptr()),
+                "a generation sealed before the rotation opened after it"
+            );
+            companion_free(ghost);
+
+            // And what the reseal did write comes back whole: the slot,
+            // its name and its rung, holding nothing.
+            std::fs::write(&path, &generation_holding_the_strip).unwrap();
+            let morning = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(morning, c_path.as_ptr()));
+            let summaries = strip(morning);
+            assert_eq!(summaries.len(), 1, "the tab came back");
+            assert_eq!(summaries[0]["title"].as_str(), Some("payroll"));
+            assert_eq!(summaries[0]["has_page"].as_bool(), Some(false));
+            assert_eq!(summaries[0]["rung_code"].as_i64(), Some(0));
+            companion_free(morning);
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Fail closed at the seam: a refused handle or path rotates
+    /// nothing, and a path that is not the content file is refused
+    /// outright rather than rotated. The ledger is the caller that
+    /// makes the last one matter: it rests under its own long-lived
+    /// key, and rotating on its behalf would destroy staged pages the
+    /// user still has.
+    #[test]
+    fn a_reseal_refuses_every_path_that_is_not_the_content_file() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let state_path = dir.join("state.sealed");
+        let ledger_path = dir.join("ledger.sealed");
+        let c_state = cstring(state_path.to_str().unwrap());
+        let c_ledger = cstring(ledger_path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            new_page(handle);
+            assert!(companion_persist_save(handle, c_state.as_ptr()));
+            assert!(companion_ledger_save(handle, c_ledger.as_ptr()));
+            let key_before = persist::load_state_key(&*credentials, &state_path)
+                .expect("a saved file has a key")
+                .to_vec();
+
+            assert!(!companion_persist_rotate_and_save(
+                handle,
+                c_ledger.as_ptr()
+            ));
+            assert!(!companion_persist_rotate_and_save(
+                ptr::null_mut(),
+                c_state.as_ptr()
+            ));
+            assert!(!companion_persist_rotate_and_save(handle, ptr::null()));
+
+            assert_eq!(
+                *persist::load_state_key(&*credentials, &state_path).unwrap(),
+                key_before,
+                "a refused rotation took the content halves anyway"
+            );
+            assert!(ledger_path.exists(), "and left the audit trail standing");
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A reseal that could not erase the file half must not write a new
+    /// generation. Sealing it under the key that still opens every
+    /// earlier one would report a forgetting that did not happen, and
+    /// would consume the retry: the trigger is the pad's emptiness, and
+    /// the pad stays empty either way.
+    #[cfg(unix)]
+    #[test]
+    fn a_reseal_that_could_not_rotate_leaves_the_old_generation_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            new_page(handle);
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            let sealed_before = std::fs::read(&path).unwrap();
+            let key_before = persist::load_state_key(&*credentials, &path)
+                .expect("a saved file has a key")
+                .to_vec();
+
+            // Read and search but no write: the half cannot be unlinked.
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+            let resealed = companion_persist_rotate_and_save(handle, c_path.as_ptr());
+            let unchanged = std::fs::read(&path).unwrap() == sealed_before;
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+            // Running as root, or on a filesystem that ignores the mode,
+            // the branch under test is unreachable and the reseal simply
+            // succeeded.
+            if unchanged {
+                assert!(!resealed, "a reseal that rotated nothing reported success");
+                // The generation on disk is the one that was already
+                // there, sealed under halves this call did not replace.
+                // Whether the keychain half survived the attempt is the
+                // rotation's business and not asserted here; what this
+                // pins is that no second generation was written while
+                // the first one's file half was still on disk.
+                assert_eq!(std::fs::read(&path).unwrap(), sealed_before);
+
+                // The retry the false arms finds the file where it was,
+                // and this time the reseal lands on fresh halves.
+                assert!(companion_persist_rotate_and_save(handle, c_path.as_ptr()));
+                assert_ne!(
+                    *persist::load_state_key(&*credentials, &path).expect("fresh halves"),
+                    key_before
+                );
+                assert_ne!(std::fs::read(&path).unwrap(), sealed_before);
+            }
             companion_free(handle);
         }
         std::fs::remove_dir_all(&dir).unwrap();

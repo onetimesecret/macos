@@ -696,6 +696,40 @@ public final class PageModel: ObservableObject {
         loaded && contentLicence && noTabsRemain
     }
 
+    /// Whether this write should rotate both content key halves and
+    /// reseal the strip under the new ones rather than seal over the old
+    /// ones: the other predicate's job, and the one that makes an
+    /// emptied pad a forgetting (ADR-0016 section 6's first rotation
+    /// trigger, ADR-0017).
+    ///
+    /// **`holdsNoPage` is "no tab holds a page" and never "no tabs
+    /// remain".** Taking the second here would leave the install on one
+    /// content key for as long as any tab exists, which is the whole
+    /// failure the split names: a user who keeps a slot around would
+    /// keep every ciphertext generation their pages ever lived in
+    /// decryptable, including the ones an atomic rename unlinked and
+    /// nothing sweeps.
+    ///
+    /// The drop takes precedence, which is why it is excluded here
+    /// rather than merely ordered after: a pad with no tabs also holds
+    /// no page, and there is nothing left to reseal, so the file goes
+    /// instead. The two are one decision with three outcomes, not two
+    /// independent tests.
+    ///
+    /// Rotating on the state rather than on the transition into it is
+    /// deliberate. A second rotation while the pad is still empty costs
+    /// a keychain item and another generation of tab names, and it is
+    /// another forgetting rather than a leak; a latch that remembered
+    /// whether the last write had already rotated would be a second
+    /// source of truth about what is on disk, and it would be wrong in
+    /// exactly the case that matters, a write that failed after the
+    /// rotation landed.
+    public nonisolated static func rotatesContentKey(
+        loaded: Bool, contentLicence: Bool, holdsNoPage: Bool, noTabsRemain: Bool
+    ) -> Bool {
+        loaded && contentLicence && holdsNoPage && !noTabsRemain
+    }
+
     /// The pair of licences after the user clears the ledger, which is
     /// the only thing in the app that moves a licence after launch.
     ///
@@ -798,9 +832,14 @@ public final class PageModel: ObservableObject {
     /// with its empty store; nor may one whose restore of that
     /// particular file was refused.
     ///
-    /// When nothing at all is staged, the content leg drops the file
-    /// instead of sealing an empty store over it
-    /// (`erasesContentFile`). No write ever drops the ledger's own file:
+    /// The content leg has three outcomes rather than two. When no tabs
+    /// remain it drops the file instead of sealing an empty store over
+    /// it (`erasesContentFile`); when tabs remain but none of them holds
+    /// a page it rotates both key halves and reseals the strip under the
+    /// new ones (`rotatesContentKey`), which is what makes an emptied
+    /// pad a forgetting rather than a fresh generation beside the old
+    /// readable ones; otherwise it seals as usual.
+    /// No write ever drops the ledger's own file:
     /// it is long-lived by design, and an emptied ledger is written as an
     /// empty ledger. The single thing that unlinks it is the user's own
     /// Clear, which does it from `clearLedger` rather than from here,
@@ -837,6 +876,13 @@ public final class PageModel: ObservableObject {
         // the core rather than of the published summaries, which a write
         // can reach before the refresh does, and a store with no pages
         // has no chips either: chips ride on pages.
+        // Both predicates, in one answer, from the core (ADR-0017). The
+        // shell derives neither: one of them decides a key rotation and
+        // a predicate recomputed from the summaries can drift from the
+        // one the rotation uses. A seam that will not answer reads as
+        // neither, which drops nothing and rotates nothing, and is the
+        // reading that loses nothing.
+        let emptiness = client.emptiness()
         let saved: Bool
         if !saveLicence {
             // Deliberately left alone, which is settled, not refused:
@@ -847,19 +893,33 @@ public final class PageModel: ObservableObject {
         } else if Self.erasesContentFile(
             loaded: stateLoaded,
             contentLicence: saveLicence,
-            // The second predicate and only the second (ADR-0017): the
-            // file is dropped when no tabs remain, never when the tabs
-            // merely hold no page. A strip of empty slots still carries
-            // names, rungs and an order, so it is resealed rather than
+            // The second predicate and only the second: the file is
+            // dropped when no tabs remain, never when the tabs merely
+            // hold no page. A strip of empty slots still carries names,
+            // rungs and an order, so it is resealed rather than
             // unlinked, and feeding the other predicate here would
             // destroy the tabs an expiry was supposed to leave standing.
-            // A seam that will not answer keeps the file, which is the
-            // reading that loses nothing.
-            noTabsRemain: client.emptiness()?.hasNoTabs ?? false
+            noTabsRemain: emptiness?.hasNoTabs ?? false
         ) {
             saved = client.persistErase(at: url.path)
             if !saved {
                 logger.error("the emptied state file could not be dropped")
+            }
+        } else if Self.rotatesContentKey(
+            loaded: stateLoaded,
+            contentLicence: saveLicence,
+            // And the first predicate here, where it belongs: the pad
+            // holds no content while the strip stands, so both halves
+            // go and the names, rungs and order are resealed under new
+            // ones. This is the write that makes an overnight expiry a
+            // forgetting rather than a rename of the ciphertext on
+            // disk.
+            holdsNoPage: emptiness?.holdsNoPage ?? false,
+            noTabsRemain: emptiness?.hasNoTabs ?? false
+        ) {
+            saved = client.persistRotateAndSave(to: url.path)
+            if !saved {
+                logger.error("the emptied pad could not rotate its key; the state file stands")
             }
         } else {
             saved = client.persistSave(to: url.path)
