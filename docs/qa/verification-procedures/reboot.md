@@ -4,7 +4,8 @@
 **Required by:** [ADR-0016](../../adr/0016-content-persists-across-restart.md)
 section 10, case 3 (macOS restart). CI cannot reach a real reboot.
 **Owner:** delano.
-**Status:** open. Not yet run on hardware.
+**Status:** open. Case 1 passed on hardware 2026-08-22; cases 2 and 3
+not yet run.
 
 ## Prerequisite: rebuild and reinstall first
 
@@ -164,11 +165,8 @@ the hold.
 
 ## Results
 
-Not yet run. This procedure has never been executed on hardware as of
-2026-08-22.
-
 Record each run below, one row per case, and keep the rows.
 
 | Date | Machine and macOS | Case | Pass or fail | Notes |
 |---|---|---|---|---|
-| | | | | |
+| 2026-08-22 | Mac14,6, macOS 27.0 (26A5416b) | 1 | Pass | Run by hand after a rebuild and reinstall. Two pages, both came back with content exact after the restart. No restore failure or refusal lines. Cases 2 and 3 still to run. |
