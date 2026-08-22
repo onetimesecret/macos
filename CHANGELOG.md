@@ -54,9 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ciphertext generation the pages lived in, the unlinked ones included,
   stops being decryptable at that moment. `companion_persist_erase`
   keeps the second and still drops the file when no tabs are left. A
-  rotation that could not erase the file half cancels the write and
-  says so rather than sealing a fresh generation under the key that
-  still opens every old one. What this costs is a window between the
+  rotation that finds a file half it cannot even zero cancels the write
+  and says so rather than sealing a fresh generation under a key that
+  may still open every old one; a half that was zeroed but whose unlink
+  was refused is already a forgetting, so the reseal proceeds and a
+  false from the call means only that the new write did not land. What this costs is a window between the
   erase and the write in which the strip exists only in memory: a crash
   inside it loses the tab names, rungs and order, and nothing else,
   because there is no page content left in the file by then.

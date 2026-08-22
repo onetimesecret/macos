@@ -1405,12 +1405,15 @@ fn seal_state_to(state: &Companion, path: &Path) -> bool {
 /// half of this pair and takes the other predicate: no tabs remain at
 /// all, so there is nothing left to reseal and the file goes.
 ///
-/// **A rotation that could not erase the half cancels the write**, and
-/// this returns false with the old generation still on disk under the
-/// old halves. Writing a new generation anyway would seal it under the
-/// key that still opens every earlier one, report a forgetting that did
-/// not happen, and consume the trigger: the shell's retry
-/// (`PageModel.saveState`) is armed by the false, and the state that
+/// **Only a half that survived with its bytes cancels the write**
+/// ([`persist::Erasure::Survived`]): sealing a new generation under a
+/// key that may still open every earlier one would report a forgetting
+/// that did not happen, and would consume the trigger. A half that was
+/// zeroed but whose name would not unlink
+/// ([`persist::Erasure::Neutralized`]) is a forgetting that already
+/// happened, so the reseal proceeds over the inert carcass, and a
+/// false then means the reseal write itself did not land. Either false
+/// arms the shell's retry (`PageModel.saveState`), and the state that
 /// brings it back here is the same emptiness. The path is asked the
 /// same question a drop asks it (`persist::drop_takes_the_content_key`)
 /// and a path that is not the content file is refused outright rather
@@ -1456,13 +1459,25 @@ pub unsafe extern "C" fn companion_persist_rotate_and_save(
         );
         return false;
     }
-    if !persist::rotate_key_halves(guard.credentials.as_ref(), path) {
-        diag_fault!(
-            "companion-ffi: the content file was left alone because its file half could not be \
-             erased. Resealing over it would seal the new generation under the key that still \
-             opens every old one, and would consume the retry."
-        );
-        return false;
+    match persist::rotate_key_halves(guard.credentials.as_ref(), path) {
+        persist::Erasure::Survived => {
+            diag_fault!(
+                "companion-ffi: the content file was left alone because its file half could not \
+                 be erased. Resealing over it would seal the new generation under a key that \
+                 may still open every old one, and would consume the retry."
+            );
+            return false;
+        }
+        persist::Erasure::Neutralized => {
+            // The forgetting landed; only the unlink was refused. The
+            // carcass is inert: zeroed, the wrong length for a half,
+            // and under a name the next keychain half will not derive.
+            diag_fault!(
+                "companion-ffi: a file half was zeroed but its name could not be unlinked. The \
+                 content it keyed is already unreadable, so the reseal proceeds."
+            );
+        }
+        persist::Erasure::Gone => {}
     }
     seal_state_to(&guard, path)
 }
@@ -1659,10 +1674,11 @@ pub unsafe extern "C" fn companion_persist_restore(
 /// first, so the generation left behind is already undecryptable by the
 /// time its name goes away.
 ///
-/// **A rotation that could not erase the half cancels the drop**, and
-/// this returns false with the file still on disk. Dropping it anyway
-/// would forget nothing, since the half that opens every generation
-/// would still be sitting there, and it would consume its own trigger:
+/// **Only a half that survived with its bytes cancels the drop**
+/// ([`persist::Erasure::Survived`]), and this returns false with the
+/// file still on disk. Dropping it then would forget nothing, since a
+/// half that may still open every generation would still be sitting
+/// there, and it would consume its own trigger:
 /// this call fires when the pad goes empty, and an empty pad with no
 /// file on disk is indistinguishable from an ordinary session with
 /// nothing to do. The false is what arms the shell's retry
@@ -1724,10 +1740,11 @@ pub unsafe extern "C" fn companion_persist_erase(
     };
     let path = Path::new(path);
     if persist::drop_takes_the_content_key(path)
-        && !persist::rotate_key_halves(guard.credentials.as_ref(), path)
+        && persist::rotate_key_halves(guard.credentials.as_ref(), path)
+            == persist::Erasure::Survived
     {
         // The file stays. Unlinking it here would leave every prior
-        // ciphertext generation on disk still decryptable, hand the
+        // ciphertext generation on disk possibly still decryptable, hand the
         // shell a success, and destroy the one thing that brings this
         // call back: the drop fires when the pad is empty, and an empty
         // pad with no file on disk looks exactly like an ordinary
@@ -4682,14 +4699,94 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// A reseal that could not erase the file half must not write a new
-    /// generation. Sealing it under the key that still opens every
+    /// A reseal whose half was zeroed but would not unlink has already
+    /// forgotten: the generation on disk is unreadable the moment the
+    /// zero lands, whatever the unlink said. The reseal proceeds, and
+    /// in this directory its own write cannot land either, so the call
+    /// still answers false, but the false now means the new generation
+    /// was not written and never that the forgetting was cancelled. The
+    /// retry the false arms comes back to a file whose old key no
+    /// longer exists and reseals it under fresh halves.
+    #[cfg(unix)]
+    #[test]
+    fn a_reseal_that_could_not_unlink_the_half_has_still_forgotten() {
+        use std::os::unix::fs::PermissionsExt;
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        let half_lens = |dir: &std::path::Path| -> Vec<u64> {
+            let mut lens: Vec<u64> = std::fs::read_dir(dir)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|e| {
+                    e.file_name()
+                        .to_str()
+                        .is_some_and(|n| n.starts_with("ots-companion-key-half-"))
+                })
+                .map(|e| e.metadata().unwrap().len())
+                .collect();
+            lens.sort_unstable();
+            lens
+        };
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            new_page(handle);
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            let sealed_before = std::fs::read(&path).unwrap();
+            let key_before = persist::load_state_key(&*credentials, &path)
+                .expect("a saved file has a key")
+                .to_vec();
+            assert_eq!(half_lens(&dir), vec![32]);
+
+            // Read and search but no write: the half can be zeroed and
+            // cannot be unlinked, and no reseal write can land.
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+            let resealed = companion_persist_rotate_and_save(handle, c_path.as_ptr());
+            let carcass = half_lens(&dir);
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+            // Running as root, or on a filesystem that ignores the mode,
+            // the branch under test is unreachable and the reseal simply
+            // succeeded.
+            if carcass == vec![0] {
+                assert!(
+                    !resealed,
+                    "a reseal whose write could not land reported success"
+                );
+                // The forgetting happened anyway: the half is zeroed
+                // and the old key derives from nothing.
+                assert!(
+                    persist::load_state_key(&*credentials, &path).is_none(),
+                    "the old content key survived a rotation that zeroed its half"
+                );
+                // What did not happen is a write: the generation on
+                // disk is the bytes the old key sealed, now unreadable.
+                assert_eq!(std::fs::read(&path).unwrap(), sealed_before);
+
+                // The retry the false arms finds the file where it was,
+                // and this time the reseal lands on fresh halves.
+                assert!(companion_persist_rotate_and_save(handle, c_path.as_ptr()));
+                assert_ne!(
+                    *persist::load_state_key(&*credentials, &path).expect("fresh halves"),
+                    key_before
+                );
+                assert_ne!(std::fs::read(&path).unwrap(), sealed_before);
+            }
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A reseal whose half survived untouched must not write a new
+    /// generation. Sealing it under a key that may still open every
     /// earlier one would report a forgetting that did not happen, and
     /// would consume the retry: the trigger is the pad's emptiness, and
     /// the pad stays empty either way.
     #[cfg(unix)]
     #[test]
-    fn a_reseal_that_could_not_rotate_leaves_the_old_generation_alone() {
+    fn a_reseal_that_could_not_touch_the_half_leaves_the_old_generation_alone() {
         use std::os::unix::fs::PermissionsExt;
         let credentials: Arc<dyn CredentialStore> =
             Arc::new(companion_credentials::InMemoryCredentialStore::default());
@@ -4701,36 +4798,40 @@ mod tests {
             new_page(handle);
             assert!(companion_persist_save(handle, c_path.as_ptr()));
             let sealed_before = std::fs::read(&path).unwrap();
-            let key_before = persist::load_state_key(&*credentials, &path)
-                .expect("a saved file has a key")
-                .to_vec();
+            let halves: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|e| {
+                    e.file_name()
+                        .to_str()
+                        .is_some_and(|n| n.starts_with("ots-companion-key-half-"))
+                })
+                .map(|e| e.path())
+                .collect();
+            assert_eq!(halves.len(), 1);
+            let half = &halves[0];
 
-            // Read and search but no write: the half cannot be unlinked.
+            // No write on the half and no write in the directory: the
+            // half can be neither zeroed nor unlinked.
+            std::fs::set_permissions(half, std::fs::Permissions::from_mode(0o400)).unwrap();
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
             let resealed = companion_persist_rotate_and_save(handle, c_path.as_ptr());
-            let unchanged = std::fs::read(&path).unwrap() == sealed_before;
+            let untouched = std::fs::metadata(half).unwrap().len() == 32;
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::set_permissions(half, std::fs::Permissions::from_mode(0o600)).unwrap();
 
-            // Running as root, or on a filesystem that ignores the mode,
-            // the branch under test is unreachable and the reseal simply
-            // succeeded.
-            if unchanged {
+            // Running as root, or on a filesystem that ignores the
+            // modes, the branch under test is unreachable and the
+            // reseal simply succeeded.
+            if untouched {
                 assert!(!resealed, "a reseal that rotated nothing reported success");
-                // The generation on disk is the one that was already
-                // there, sealed under halves this call did not replace.
-                // Whether the keychain half survived the attempt is the
-                // rotation's business and not asserted here; what this
-                // pins is that no second generation was written while
-                // the first one's file half was still on disk.
+                // No second generation was written while the first
+                // one's file half was still on disk with its bytes.
                 assert_eq!(std::fs::read(&path).unwrap(), sealed_before);
 
                 // The retry the false arms finds the file where it was,
                 // and this time the reseal lands on fresh halves.
                 assert!(companion_persist_rotate_and_save(handle, c_path.as_ptr()));
-                assert_ne!(
-                    *persist::load_state_key(&*credentials, &path).expect("fresh halves"),
-                    key_before
-                );
                 assert_ne!(std::fs::read(&path).unwrap(), sealed_before);
             }
             companion_free(handle);
@@ -4772,16 +4873,74 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// A drop that could not erase the file half must not drop the
-    /// ciphertext. Before this, the refusal was logged and the erase ran
-    /// anyway: the content file was gone, both halves were alive, every
-    /// unlinked generation stayed decryptable, the shell was told the
-    /// write had succeeded, and nothing ever came back, because the drop
-    /// fires on an empty pad and an empty pad with no file on disk is an
-    /// ordinary session with nothing to do. The trigger consumed itself.
+    /// A drop whose half was zeroed but would not unlink proceeds: the
+    /// forgetting already happened, so the ciphertext goes through the
+    /// same zero and truncate, and what the refused unlink leaves is a
+    /// pair of empty carcasses and a false that means "not confirmed
+    /// absent". The retry the false arms finds the carcass and finishes
+    /// the unlink.
     #[cfg(unix)]
     #[test]
-    fn a_drop_that_could_not_erase_the_half_keeps_the_content_file() {
+    fn a_drop_that_could_not_unlink_the_half_still_forgets_the_content() {
+        use std::os::unix::fs::PermissionsExt;
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            new_page(handle);
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            assert!(persist::load_state_key(&*credentials, &path).is_some());
+
+            // Read and search but no write: nothing in the directory can
+            // be unlinked, but everything in it can be zeroed.
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+            let dropped = companion_persist_erase(handle, c_path.as_ptr());
+            let still_there = path.exists();
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+            // Running as root, or on a filesystem that ignores the mode,
+            // the branch under test is unreachable and the erase simply
+            // succeeded.
+            if still_there {
+                assert!(
+                    !dropped,
+                    "the drop reported the path confirmed absent while the carcass remained"
+                );
+                // The half was zeroed, so the old key no longer exists,
+                // and the ciphertext went through the same treatment:
+                // an empty husk under the old name, not a readable
+                // generation.
+                assert!(
+                    persist::load_state_key(&*credentials, &path).is_none(),
+                    "the content key survived a drop that zeroed its half"
+                );
+                assert_eq!(
+                    std::fs::metadata(&path).unwrap().len(),
+                    0,
+                    "the kept file still holds the old generation's bytes"
+                );
+
+                // The retry the false arms finds the carcass where the
+                // file was, and this time the unlink lands.
+                assert!(companion_persist_erase(handle, c_path.as_ptr()));
+                assert!(!path.exists());
+            }
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A drop that could not so much as zero the file half must not
+    /// drop the ciphertext. Dropping it then would forget nothing,
+    /// since the half's bytes may be intact, and it would consume the
+    /// trigger: the drop fires on an empty pad, and an empty pad with
+    /// no file on disk is an ordinary session with nothing to do.
+    #[cfg(unix)]
+    #[test]
+    fn a_drop_that_could_not_touch_the_half_keeps_the_content_file() {
         use std::os::unix::fs::PermissionsExt;
         let credentials: Arc<dyn CredentialStore> =
             Arc::new(companion_credentials::InMemoryCredentialStore::default());
@@ -4794,18 +4953,32 @@ mod tests {
             assert!(companion_persist_save(handle, c_path.as_ptr()));
             assert!(persist::load_state_key(&*credentials, &path).is_some());
             let sealed_before = std::fs::read(&path).unwrap();
+            let halves: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|e| {
+                    e.file_name()
+                        .to_str()
+                        .is_some_and(|n| n.starts_with("ots-companion-key-half-"))
+                })
+                .map(|e| e.path())
+                .collect();
+            assert_eq!(halves.len(), 1);
+            let half = &halves[0];
 
-            // Read and search but no write: nothing in the directory can
-            // be unlinked, the half included.
+            // No write on the half and no write in the directory: the
+            // half can be neither zeroed nor unlinked.
+            std::fs::set_permissions(half, std::fs::Permissions::from_mode(0o400)).unwrap();
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
             let dropped = companion_persist_erase(handle, c_path.as_ptr());
-            let still_there = path.exists();
+            let untouched = std::fs::metadata(half).unwrap().len() == 32;
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::set_permissions(half, std::fs::Permissions::from_mode(0o600)).unwrap();
 
-            // Running as root, or on a filesystem that ignores the mode,
-            // the branch under test is unreachable and the erase simply
-            // succeeded.
-            if still_there {
+            // Running as root, or on a filesystem that ignores the
+            // modes, the branch under test is unreachable and the erase
+            // simply succeeded.
+            if untouched {
                 assert!(
                     !dropped,
                     "the drop reported success while leaving the ciphertext on disk"
@@ -4815,13 +4988,6 @@ mod tests {
                     sealed_before,
                     "the drop that refused still went and truncated the file it kept"
                 );
-                // The zeros went into the half even though the unlink
-                // could not, which is why this is a refusal and not a
-                // success: on a copy-on-write filesystem the overwrite
-                // is best effort and the unlink is the only observable
-                // fact, so an erase that cannot finish is unknown, and
-                // unknown is not gone.
-                //
                 // The retry the false arms finds the file where it was,
                 // and this time the drop lands.
                 assert!(companion_persist_erase(handle, c_path.as_ptr()));

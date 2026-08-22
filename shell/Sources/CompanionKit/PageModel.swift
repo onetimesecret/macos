@@ -927,7 +927,8 @@ public final class PageModel: ObservableObject {
         ) {
             saved = client.persistRotateAndSave(to: url.path)
             if !saved {
-                logger.error("the emptied pad could not rotate its key; the state file stands")
+                logger.error(
+                    "the emptied pad's rotation or reseal did not land; the retry returns to it")
             }
         } else {
             saved = client.persistSave(to: url.path)
