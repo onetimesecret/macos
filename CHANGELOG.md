@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A superseded ledger file is dropped on first launch instead of
+  refusing forever** (`companion-core` 0.11.0, `companion-ffi` 0.11.1,
+  ADR-0016 section 9, closes issue #61). The ledger's envelope and key
+  did not change at the break below, so an `OTSLEDR1` file opened like
+  a current one and was refused one layer down, inside the core, which
+  left it on disk withholding the ledger licence on every launch until
+  the user found Clear in Settings. The audit trail silently stopped
+  recording, on every install that had ever written one. The core now
+  names that refusal (`RestoreError::Superseded`, for the one entry of
+  `SUPERSEDED_LEDGER_MAGICS`) and the seam erases the file with the
+  same zero, truncate, sync, unlink discipline as a superseded
+  `state.sealed`, so the probe finds no file and the session records a
+  fresh trail. The ledger key is not rotated and nothing is written
+  about the records dropped. `OTSLEDR0` and every other unknown payload
+  are still refused and left where they lie.
+
 - **Staged content survives a restart, and the sealed envelope breaks
   once to make that true** (`companion-ffi` 0.11.0, ADR-0016, closes
   issue #51). Accepting a system update used to cost the user
@@ -429,12 +445,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would have come through the content break untouched, and framing its
   records is what takes it: `OTSLEDR1` goes to `OTSLEDR2` and the
   retained audit trail, the capped titles and the event records back to
-  the ninety day window, is destroyed here, once. Until the disposal
-  path ADR-0016 section 9 requires is built, the first launch after this
-  update finds a ledger file it cannot read, leaves it on disk rather
-  than overwriting it, and records nothing further until the ledger is
-  cleared from Settings. That clear is the one action this release asks
-  for; pages are not involved in it.
+  the ninety day window, is destroyed here, once. The first launch after
+  this update drops the old ledger file and starts a new trail; see the
+  `OTSLEDR1` entry above. Pages are not involved in it.
 
 - **A third double-click releases the hold, so the pause is reversible**
   (`companion-core` 0.9.0, docs/spec/04). The gesture held a page's
