@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A tab outlives every page it holds, so an expiry empties a slot
+  instead of closing it** (`companion-core` 0.12.0, `companion-ffi`
+  0.12.0, ADR-0017). The strip stopped being nine deadlines: when a
+  page's countdown reaches zero the page drops whole, sealed bytes
+  zeroized as before, and the tab stays exactly where the user dragged
+  it, keeping its name, its rung, its position and its place in the
+  ⌘-number map. Selecting an empty tab, by click, by ⌘1 through ⌘9, by
+  ⌥⌘←/→ or by Return, opens a fresh page into it at that tab's own
+  rung. Nothing else mints: a page that expires under the cursor leaves
+  an empty tab rather than a silent new countdown, and the morning
+  after an overnight expiry the app opens on the strip the user left
+  rather than on a page nobody asked for.
+
+  The C ABI changes shape with the object graph, which is what the
+  minor bump prices. The routes divide into tab addressed
+  (`companion_tab_new`, `_open_page`, `_close`, `_move`, `_set_title`,
+  `_set_rung`, `_cycle_rung`, `_pause_press`, `companion_tabs_json`)
+  and page addressed (the sealing, document, meta, blocks and promotion
+  routes, unchanged). The summaries move from
+  `companion_sheets_json` to `companion_tabs_json`, one entry per slot
+  rather than per live page, and each carries `has_page` and both ids:
+  the tab's `id`, which the keyboard and the selection address, and
+  `page_id`, which the document routes and the shell's per-page text
+  storage and undo stacks are keyed by, null when the slot is empty.
+  Neither id can do the other's job, and the shell's maps are keyed by
+  page identity so a reused tab cannot hand its next page a dead one's
+  undo stack, which is how a zeroized chip's glyph would come back
+  under ⌘Z (ADR-0009).
+
+  Emptying the pad became two questions and `companion_store_emptiness`
+  answers both in one call, because the shell may derive neither. No
+  tab holding a page is a key rotation trigger and therefore a security
+  decision (ADR-0016 section 6); no tabs remaining is the only
+  condition that drops `state.sealed`, which now carries tab names,
+  rungs and strip order. A strip of empty slots is resealed rather than
+  unlinked, so emptying the pad writes a file where it used to remove
+  one.
+
+  A name is the user's or the tab has none. `Tab.name` is set only by
+  the rename gesture, capped at 80 characters as before, and never
+  derived: the label resolves to the typed name, else the live page's
+  derived title, else `MMDD-HHmm` from the tab's own creation stamp, so
+  an expiry falls the label back a step instead of freezing a string
+  the app invented onto a durable object. The residual exposure is
+  unchanged in kind and longer in life: a secret typed into the rename
+  field now lives as long as the tab, and the prompt says so.
+
 - **A superseded ledger file is dropped on first launch instead of
   refusing forever** (`companion-core` 0.11.0, `companion-ffi` 0.11.1,
   ADR-0016 section 9, closes issue #61). The ledger's envelope and key
