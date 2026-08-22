@@ -54,8 +54,8 @@ could not be assembled" and returns `Opened::Refused` (`:679-687`). The
 seam maps that to a failed restore and leaves the file exactly where it
 is (`crates/ffi/src/lib.rs:1315`). The shell probes the file after the
 restore, finds it present, and withholds the save licence
-(`shell/Sources/CompanionKit/PageModel.swift:543-553`), so nothing is
-written over it for the whole session (`:808-813`).
+(`shell/Sources/CompanionKit/PageModel.swift:606-616`), so nothing is
+written over it for the whole session (`:896-907`).
 
 ## Case 1: the keychain is locked when the app loads
 
@@ -92,8 +92,8 @@ written over it for the whole session (`:808-813`).
   stays and this session will not write one".
 - The shell logs "restore failed over an existing state file;
   withholding the save licence"
-  (`shell/Sources/CompanionKit/PageModel.swift:552`), and the ledger's
-  own line about not recording to the audit trail (`:581-588`) if the
+  (`shell/Sources/CompanionKit/PageModel.swift:615`), and the ledger's
+  own line about not recording to the audit trail (`:645-652`) if the
   ledger key was refused too.
 - Both sha256 values are **identical** to step 2, after the typing and
   after the quit. No overwrite.
@@ -102,7 +102,7 @@ written over it for the whole session (`:808-813`).
   rotation: rotation deletes the keychain half
   (`crates/ffi/src/persist.rs:355-372`) and must not run on this path.
 - The `state-key` item still exists once the keychain is unlocked.
-- No quit alert appears (`shell/Sources/OnetimePad/BackdropApp.swift:121-133`),
+- No quit alert appears (`shell/Sources/OnetimePad/BackdropApp.swift:121-151`),
   because a session without the licence owes no write.
 
 **Fail:** any change to either sha256, a missing file, a missing key
