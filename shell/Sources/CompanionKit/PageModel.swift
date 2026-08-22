@@ -227,7 +227,7 @@ public final class PageModel: ObservableObject {
     @Published public private(set) var ledgerEntries: [LedgerEntry] = []
 
     /// A refusal or status line the surface shows briefly ("the window
-    /// holds 9 pages…"). Refuse-don't-evict means the app says so.
+    /// holds 9 tabs…"). Refuse-don't-evict means the app says so.
     @Published public var notice: String?
 
     /// Notices are transient by contract: each `flash` restarts the
@@ -1260,7 +1260,11 @@ public final class PageModel: ObservableObject {
         notice = nil
         let created = newTab()
         if created == 0 {
-            flash("the window holds 9 pages — let one expire, or close one")
+            // Not "let one expire" any more: an expiry empties a slot
+            // and never frees it, so closing is the only thing that
+            // moves the wall (ADR-0017). Saying otherwise would send
+            // the user off to wait for something that cannot happen.
+            flash("the window holds 9 tabs — close one to make room")
         }
         refresh()
         if created != 0 {
