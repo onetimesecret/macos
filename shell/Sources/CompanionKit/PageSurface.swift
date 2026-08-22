@@ -91,6 +91,44 @@ public struct PageStatusStack: View {
     }
 
     public var body: some View {
+        if model.contentRestoreRefused {
+            // The standing restore-failure state (issue #49): persistent
+            // for the whole session, unlike a notice, because the
+            // condition is. One action, the content-side discard that
+            // ADR-0016 section 7 requires; until it is taken, nothing
+            // typed here reaches disk and the unreadable file is left
+            // untouched.
+            HStack(spacing: 8) {
+                Text("the existing state file would not open, so nothing in this session is being saved")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.ember)
+                Button("discard it and start saving") { model.clearUnreadableStateFile() }
+                    .font(.system(.caption, design: .monospaced))
+                    .controlSize(.small)
+                    .help(
+                        "Deletes the sealed file this session could not read and starts "
+                        + "saving this session's pages in its place. The unreadable file "
+                        + "cannot be recovered afterwards."
+                    )
+                    .accessibilityLabel(
+                        Text("Discard the unreadable state file and start saving this session"))
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        }
+        if model.ledgerRestoreRefused {
+            // Quieter than the content banner because no page is at
+            // stake, but standing for the same reason: the trail stops
+            // recording on this and every later launch until the user
+            // clears the ledger in Settings.
+            Text("the audit trail would not open and is not recording; clear the ledger in Settings to start a new trail")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(Color.ember)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
         if PageModel.shouldShowPasteboardOffer(
             boardHolds: model.pasteboardOffer,
             hasPage: model.selectedPageID != nil,

@@ -119,13 +119,31 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// and try again. Never a retry loop; cancelling simply returns to
     /// the surface.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !model.saveState() else { return .terminateNow }
-        let alert = NSAlert()
+        let alert: NSAlert
+        switch model.saveStateForQuit() {
+        case .settled:
+            return .terminateNow
+        case .refused:
+            alert = NSAlert()
+            alert.messageText = "This page could not be saved"
+            alert.informativeText =
+                "The sealed state file was not written, so this session's page "
+                + "will not survive the quit. The previous file, if any, is untouched."
+        case .unsavableWithContent:
+            // The banner's warning, repeated at the last moment it can
+            // still change the outcome (issue #49): the session never
+            // held the licence, so unlike the refused case there is no
+            // write to retry, only the choice to accept the loss or go
+            // back and discard the unreadable file first.
+            alert = NSAlert()
+            alert.messageText = "This session was never being saved"
+            alert.informativeText =
+                "The existing sealed state file could not be read at launch, so "
+                + "nothing written this session is on disk, and it will not survive "
+                + "the quit. That file is untouched. Cancel and use \"discard it and "
+                + "start saving\" on the page to keep this session's content instead."
+        }
         alert.alertStyle = .warning
-        alert.messageText = "This page could not be saved"
-        alert.informativeText =
-            "The sealed state file was not written, so this session's page "
-            + "will not survive the quit. The previous file, if any, is untouched."
         alert.addButton(withTitle: "Quit Anyway")
         alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)

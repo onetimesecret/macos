@@ -119,6 +119,14 @@ final class BackdropModel: ObservableObject {
         pages.saveState()
     }
 
+    /// The quit path's flush with its verdict: settled, refused, or
+    /// settled but over a withheld licence with content still in the
+    /// session (issue #49). The delegate's alert text hangs off the
+    /// distinction, so it is carried rather than folded into a Bool.
+    func saveStateForQuit() -> QuitSaveOutcome {
+        pages.saveStateForQuit()
+    }
+
     // MARK: Stance
 
     /// ⌃⌥Space and the menu-bar item: a summon first, a dismissal only
