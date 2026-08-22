@@ -208,10 +208,15 @@ public final class PageModel: ObservableObject {
     /// items and sealed file live, which rung a fresh page opens on.
     public let formFactor: FormFactor
 
-    @Published public private(set) var sheets: [SheetSummary] = []
+    /// The strip: one entry per durable tab, in visible order, whether
+    /// or not the tab holds a page (ADR-0017). A tab whose page expired
+    /// keeps its place here, named and empty.
+    @Published public private(set) var tabs: [TabSummary] = []
 
-    /// The visibly selected page — the one the editor shows and the
-    /// gestures act on. Nil only when no pages exist.
+    /// The visibly selected **tab** — the slot the editor shows a page
+    /// from and the gestures act on. It is the tab's id and never the
+    /// page's, because a slot the user is looking at may hold nothing.
+    /// Nil only when no tabs exist.
     @Published public var selection: UInt64?
 
     /// The ledger tab (⌘0) is showing instead of a page.
@@ -347,17 +352,27 @@ public final class PageModel: ObservableObject {
     /// outside without a second handle.
     var coreClient: CompanionClient { client }
 
-    /// Each live page's document, shell-side: the ink is ordinary text
-    /// in an `NSTextStorage`; chips appear as attachment characters
-    /// carrying only ids and excerpts. Pruned when pages die.
+    /// Each live page's document, shell-side, **keyed by page identity
+    /// and never by tab** (ADR-0017): the ink is ordinary text in an
+    /// `NSTextStorage`; chips appear as attachment characters carrying
+    /// only ids and excerpts. Pruned when pages die.
+    ///
+    /// The key is the whole mitigation for the split's one real
+    /// correctness trap. A tab outlives every page it holds, so a map
+    /// keyed by the slot would hand a replacement page the dead one's
+    /// storage, and an attachment character for a zeroized chip would
+    /// sit there within reach of ⌘Z — the exact resurrection ADR-0009
+    /// closed.
     private var storages: [UInt64: NSTextStorage] = [:]
 
     /// Each live page's undo history. Undo is as document-scoped as
     /// the storage it rewrites (ADR-0006): one editor serves every
     /// page, so letting the window's single manager span pages would
-    /// let ⌘Z on one page replay edits against another. Pruned with
-    /// the storages; cleared for a page whose storage is changed
-    /// behind the editor's back.
+    /// let ⌘Z on one page replay edits against another. Keyed by page
+    /// identity for the reason `storages` is: undo carried across a
+    /// page replacement in a reused tab is how a dead chip's glyph
+    /// comes back. Pruned with the storages; cleared for a page whose
+    /// storage is changed behind the editor's back.
     private var undoManagers: [UInt64: UndoManager] = [:]
 
     // nonisolated(unsafe): deinit is always nonisolated, even on a
@@ -588,11 +603,19 @@ public final class PageModel: ObservableObject {
                 """
             )
         }
-        if client.sheets().isEmpty {
-            newSheet()
+        // The restore path is the one that would make relaunch mint,
+        // and it takes the second predicate only (ADR-0017): a tab
+        // remains, so nothing is conjured, even when every tab came
+        // back empty after an overnight expiry. Minting on the first
+        // predicate would start a fresh countdown on nothing in a slot
+        // the user never selected. A seam that will not answer mints
+        // nothing either: Return still conjures a page, and that is a
+        // gesture rather than a guess.
+        if client.emptiness()?.hasNoTabs == true {
+            newTab()
         }
         refresh()
-        selection = sheets.first?.id
+        selection = tabs.first?.id
     }
 
     /// The licence's truth table. The core folds "no file yet" and
@@ -640,10 +663,20 @@ public final class PageModel: ObservableObject {
     }
 
     /// Whether this write should drop the state file rather than seal an
-    /// empty store over it. Nothing is staged, so the ciphertext on disk
-    /// describes nothing, and leaving the generation there for the rest
-    /// of the session buys the user nothing (ADR-0012: the last
+    /// empty store over it. Nothing is left at all, so the ciphertext on
+    /// disk describes nothing, and leaving the generation there for the
+    /// rest of the session buys the user nothing (ADR-0012: the last
     /// generation should not outlive what it held).
+    ///
+    /// **`storeEmpty` is "no tabs remain" and never "no tab holds a
+    /// page"** (ADR-0017). The two are different questions since the
+    /// sealed file started carrying tab names, rungs and strip order: a
+    /// pad whose pages have all expired still has a strip to reseal,
+    /// and dropping the file there would destroy exactly what the
+    /// expiry was supposed to leave standing. The other predicate has
+    /// its own job, ADR-0016 section 6's key rotation, and the core
+    /// answers both in one call so neither can be recomputed into
+    /// disagreement.
     ///
     /// All three conditions are the write's own preconditions, restated
     /// because deleting a file is the one thing that cannot be taken
@@ -658,9 +691,9 @@ public final class PageModel: ObservableObject {
     /// veto this would leave the erase permanently unreachable in the
     /// case it was written for.
     public nonisolated static func erasesContentFile(
-        loaded: Bool, contentLicence: Bool, storeEmpty: Bool
+        loaded: Bool, contentLicence: Bool, noTabsRemain: Bool
     ) -> Bool {
-        loaded && contentLicence && storeEmpty
+        loaded && contentLicence && noTabsRemain
     }
 
     /// The pair of licences after the user clears the ledger, which is
@@ -812,7 +845,17 @@ public final class PageModel: ObservableObject {
             // different key and is not held back by this.
             saved = true
         } else if Self.erasesContentFile(
-            loaded: stateLoaded, contentLicence: saveLicence, storeEmpty: client.sheets().isEmpty
+            loaded: stateLoaded,
+            contentLicence: saveLicence,
+            // The second predicate and only the second (ADR-0017): the
+            // file is dropped when no tabs remain, never when the tabs
+            // merely hold no page. A strip of empty slots still carries
+            // names, rungs and an order, so it is resealed rather than
+            // unlinked, and feeding the other predicate here would
+            // destroy the tabs an expiry was supposed to leave standing.
+            // A seam that will not answer keeps the file, which is the
+            // reading that loses nothing.
+            noTabsRemain: client.emptiness()?.hasNoTabs ?? false
         ) {
             saved = client.persistErase(at: url.path)
             if !saved {
@@ -870,18 +913,38 @@ public final class PageModel: ObservableObject {
 
     // MARK: State
 
-    public var selectedSheet: SheetSummary? {
-        sheets.first { $0.id == selection }
+    /// The selected slot's summary, page or no page.
+    public var selectedTab: TabSummary? {
+        tabs.first { $0.id == selection }
+    }
+
+    /// The page the selected slot holds, or nil when it holds none.
+    /// Every page-addressed call goes through this rather than through
+    /// `selection`, which names a slot and may name an empty one.
+    public var selectedPageID: UInt64? {
+        selectedTab?.pageID
+    }
+
+    /// The pages the strip is holding right now, by identity. The
+    /// pruning set for the document maps, and the liveness set the
+    /// promotion drafts are checked against.
+    private var livePageIDs: Set<UInt64> {
+        Set(tabs.compactMap(\.pageID))
     }
 
     public func refresh() {
-        sheets = client.sheets()
-        let live = Set(sheets.map(\.id))
+        tabs = client.tabs()
+        let livePages = livePageIDs
         // A dead page's ink lives on only in the ledger; drop the
-        // editor-side document, and its undo history with it.
-        storages = storages.filter { live.contains($0.key) }
-        undoManagers = undoManagers.filter { live.contains($0.key) }
-        selection = Self.reconciledSelection(current: selection, live: sheets.map(\.id))
+        // editor-side document, and its undo history with it. The
+        // filter is on the live PAGE identities and never on the tabs,
+        // because a tab outlives its page: keyed by the slot, a reused
+        // tab would inherit the dead page's storage and undo stack, and
+        // a ⌘Z past the page boundary would re-insert a zeroized chip's
+        // attachment character (ADR-0009, ADR-0017 item 9).
+        storages = storages.filter { livePages.contains($0.key) }
+        undoManagers = undoManagers.filter { livePages.contains($0.key) }
+        selection = Self.reconciledSelection(current: selection, live: tabs.map(\.id))
         // A promotion whose subject died — expiry, mostly; `close`
         // clears its own — must not keep the confirmation standing:
         // ↩ lands on "Create link", and a stale draft would answer a
@@ -893,10 +956,10 @@ public final class PageModel: ObservableObject {
         if let draft = promotion {
             var liveChips: Set<UInt64> = []
             if case .chip = draft.target {
-                liveChips = Set(sheets.flatMap { chipIds(onSheet: $0.id) })
+                liveChips = Set(livePages.flatMap { chipIds(onSheet: $0) })
             }
             if Self.isRefreshOrphan(
-                target: draft.target, liveSheets: live, liveChips: liveChips
+                target: draft.target, liveSheets: livePages, liveChips: liveChips
             ) {
                 promotion = nil
             }
@@ -910,16 +973,24 @@ public final class PageModel: ObservableObject {
         // Esc remains the way to give the keyboard back.
     }
 
-    /// Which page holds the selection after the model reloads. A
-    /// selection that still names a live page keeps it: the reload
-    /// changed the world around the page, not the page itself. A
-    /// selection whose page is gone (expiry, a close, a reorder that
-    /// dropped it) falls to the first live page in tab order, the same
-    /// page a nil selection seats, so the "it died" path and the
-    /// "nothing was selected" path land together. An empty model
-    /// selects nothing: the keyed-empty state ADR-0005's grants are
-    /// built to hold. Pure, so the decision is testable without a
-    /// window; `live` is ordered, so "first" is the first visible tab.
+    /// Which **tab** holds the selection after the model reloads. A
+    /// selection that still names a tab on the strip keeps it, and an
+    /// expiry therefore changes nothing about the selection: the slot
+    /// is still there, holding nothing, and the surface renders its
+    /// empty state rather than jumping the user to another page. A
+    /// selection whose tab is gone (a close, a reorder that dropped it)
+    /// falls to the first tab in strip order, the same tab a nil
+    /// selection seats, so the "it went" path and the "nothing was
+    /// selected" path land together. A model with no tabs selects
+    /// nothing: the keyed-empty state ADR-0005's grants are built to
+    /// hold. Pure, so the decision is testable without a window; `live`
+    /// is ordered, so "first" is the first visible tab.
+    ///
+    /// This never mints. Minting on a reconciled selection would mint
+    /// whenever the selected tab's page expired under the user's
+    /// cursor, which is the silent countdown on nothing ADR-0017
+    /// refuses; only the three deliberate gestures and Return open a
+    /// page into a slot.
     public nonisolated static func reconciledSelection(current: UInt64?, live: [UInt64]) -> UInt64? {
         if let current, live.contains(current) { return current }
         return live.first
@@ -974,29 +1045,59 @@ public final class PageModel: ObservableObject {
 
     // MARK: Navigation — the keyboard map
 
+    /// Select a tab, and open a page into it if it holds none.
+    ///
+    /// This is one of the three gestures that mint, and the mint is
+    /// deliberate on both counts (ADR-0017). It happens on selection
+    /// rather than lazily on the first keystroke, because the empty
+    /// branch renders no editor at all: a selected empty tab would
+    /// unmount the editor and re-mount it on the first character,
+    /// turning every expiry into an editor teardown and putting
+    /// ADR-0005's Return grant in competition with this path. And it
+    /// happens only here, on a user's gesture, never on the selection
+    /// `refresh()` reconciles, so a page that expires under the cursor
+    /// leaves an empty tab rather than a fresh countdown on nothing.
     public func select(_ id: UInt64) {
         let leavingLedger = showingLedger
         showingLedger = false
         selection = id
+        openPageIfSlotIsEmpty(id)
         if leavingLedger { refocusEditorIfKeyed() }
     }
 
-    /// ⌘1–⌘9: jump by visible tab order.
+    /// ⌘1–⌘9: jump by visible tab order. The index is into the strip,
+    /// so ⌘3 means the third slot whether or not it holds a page, and
+    /// it means the same slot next week.
     public func select(index: Int) {
-        guard sheets.indices.contains(index) else { return }
-        select(sheets[index].id)
+        guard tabs.indices.contains(index) else { return }
+        select(tabs[index].id)
     }
 
-    /// ⌥⌘← / ⌥⌘→.
+    /// ⌥⌘← / ⌥⌘→. Steps slots, not pages, and mints into the slot it
+    /// lands on when that slot is empty.
     public func step(_ delta: Int) {
-        guard !sheets.isEmpty else { return }
+        guard !tabs.isEmpty else { return }
         if showingLedger {
             showingLedger = false
             refocusEditorIfKeyed()
         }
-        let current = sheets.firstIndex { $0.id == selection } ?? 0
-        let next = Self.steppedIndex(from: current, by: delta, within: sheets.count)
-        selection = sheets[next].id
+        let current = tabs.firstIndex { $0.id == selection } ?? 0
+        let next = Self.steppedIndex(from: current, by: delta, within: tabs.count)
+        let landed = tabs[next].id
+        selection = landed
+        openPageIfSlotIsEmpty(landed)
+    }
+
+    /// The mint the three selection gestures share: a page into the
+    /// named slot at that slot's own rung, and nothing at all when the
+    /// slot already holds one or the tab is unknown. Refuses at the
+    /// seam rather than here, so the "one page to a slot" rule has a
+    /// single home.
+    private func openPageIfSlotIsEmpty(_ tab: UInt64) {
+        guard tabs.first(where: { $0.id == tab })?.hasPage == false else { return }
+        guard client.openPage(tab: tab) != 0 else { return }
+        markDirty()
+        refresh()
     }
 
     /// The next tab index after a ⌥⌘←/→ step, clamped to the ends. A
@@ -1139,15 +1240,16 @@ public final class PageModel: ObservableObject {
 
     // MARK: Pages
 
-    /// A new page at this form factor's opening rung. 0 means the store
-    /// refused at the cap of 9.
+    /// A new tab at this form factor's opening rung, holding a new
+    /// page. 0 means the store refused at the cap of 9. Returns the
+    /// TAB's id, which is what the selection keeps.
     @discardableResult
-    private func newSheet() -> UInt64 {
-        let id = client.newSheet()
+    private func newTab() -> UInt64 {
+        let id = client.newTab()
         if id != 0, let rung = formFactor.defaultRung {
-            _ = client.setRung(sheet: id, rung: rung)
+            _ = client.setRung(tab: id, rung: rung)
         }
-        // A refusal at the cap changed nothing; only a real page is dirt.
+        // A refusal at the cap changed nothing; only a real tab is dirt.
         if id != 0 { markDirty() }
         return id
     }
@@ -1156,7 +1258,7 @@ public final class PageModel: ObservableObject {
     /// says so.
     public func newPage() {
         notice = nil
-        let created = newSheet()
+        let created = newTab()
         if created == 0 {
             flash("the window holds 9 pages — let one expire, or close one")
         }
@@ -1198,25 +1300,55 @@ public final class PageModel: ObservableObject {
         // second Return (or another create path that won the race before
         // SwiftUI unmounted the catcher) finds the model already peopled,
         // so focus the page that exists rather than stack a blank one.
-        if sheets.isEmpty { newPage() }
+        // Three cases, in the order the strip can be in. No tabs at
+        // all: conjure one, which is the launch-into-emptiness case.
+        // A selected slot holding nothing: open a page into it, so
+        // Return lands on the slot the user was looking at rather than
+        // widening the strip (ADR-0017 item 11). A selected slot that
+        // already holds a page: the grant promises one page and not one
+        // per keystroke, so focus what exists.
+        if tabs.isEmpty {
+            newPage()
+        } else if let tab = selection, selectedTab?.hasPage == false {
+            openPageIfSlotIsEmpty(tab)
+        }
         focusEditorWhenMounted(in: window)
     }
 
     /// Whether the empty state's catcher should hold first responder,
     /// which is the whole of the fourth grant's availability: yes
-    /// exactly when the sheet list is empty while the window holds the
-    /// keys. The grant spends key status an earlier grant conferred,
-    /// never takes it; an unkeyed window still receives no keystrokes
-    /// at all, so it has nothing to offer Return. Pure, so the
-    /// decision is testable without a window.
+    /// exactly when the selected tab holds no page while the window
+    /// holds the keys. The grant spends key status an earlier grant
+    /// conferred, never takes it; an unkeyed window still receives no
+    /// keystrokes at all, so it has nothing to offer Return. Pure, so
+    /// the decision is testable without a window.
+    ///
+    /// It follows the selection and not the strip (ADR-0017 item 11): a
+    /// selected empty tab offers the create surface while another tab
+    /// holds a page, because that is the surface the user is actually
+    /// looking at. Neither store-wide predicate belongs here — both are
+    /// about the whole pad, and feeding either one in would hide the
+    /// create surface at exactly the moment a user is looking at an
+    /// empty tab. A strip with no tabs at all also holds no page in the
+    /// selected one, so the launch-into-emptiness case falls out of the
+    /// same sentence.
     public nonisolated static func shouldOfferEnterCreate(
-        sheetsEmpty: Bool, holdsKeys: Bool
+        selectedTabHoldsNoPage: Bool, holdsKeys: Bool
     ) -> Bool {
-        sheetsEmpty && holdsKeys
+        selectedTabHoldsNoPage && holdsKeys
     }
 
-    /// Close the page; it rests in the ledger. Closing also clears any
-    /// standing refusal — the cap condition it named may be resolved.
+    /// The fact the create grant reads, taken from the model: the
+    /// selected slot holds no page, which a strip with nothing selected
+    /// satisfies too.
+    public var selectedTabHoldsNoPage: Bool {
+        selectedPageID == nil
+    }
+
+    /// Close the tab; whatever page it held rests in the ledger.
+    /// Closing also clears any standing refusal — the cap condition it
+    /// named may be resolved. Explicit close is one of the two things
+    /// that end a tab (ADR-0017), and it takes the slot with the page.
     public func close(_ id: UInt64) {
         notice = nil
         // A draft aimed at this page — or at a chip riding on it —
@@ -1225,15 +1357,16 @@ public final class PageModel: ObservableObject {
         // network call over a page that no longer exists (issue #19).
         // The chips must be asked for *before* the close; a dead page
         // replays no runs.
-        if let draft = promotion,
+        let closingPage = tabs.first { $0.id == id }?.pageID
+        if let draft = promotion, let closingPage,
            Self.shouldClearPromotion(
                target: draft.target,
-               closingSheet: id,
-               chipsOnSheet: chipIds(onSheet: id)
+               closingSheet: closingPage,
+               chipsOnSheet: chipIds(onSheet: closingPage)
            ) {
             promotion = nil
         }
-        _ = client.closeSheet(id: id)
+        _ = client.closeTab(id: id)
         markDirty()
         refresh()
     }
@@ -1289,10 +1422,11 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// Drag-to-reorder: move `id` to `index` in visible order; the
-    /// ⌘-number map follows.
+    /// Drag-to-reorder: move the tab `id` to `index` in visible order;
+    /// the ⌘-number map follows. The arrangement is the slot's, so it
+    /// survives every page the slot holds.
     public func move(_ id: UInt64, to index: Int) {
-        _ = client.moveSheet(id: id, to: UInt64(max(0, index)))
+        _ = client.moveTab(id: id, to: UInt64(max(0, index)))
         markDirty()
         refresh()
     }
@@ -1300,7 +1434,7 @@ public final class PageModel: ObservableObject {
     /// Click the countdown label: one rung shorter, clock reset
     /// (docs/spec/04).
     public func cycleRung(_ id: UInt64) {
-        _ = client.cycleRung(sheet: id)
+        _ = client.cycleRung(tab: id)
         markDirty()
         refresh()
     }
@@ -1310,20 +1444,21 @@ public final class PageModel: ObservableObject {
     /// stray double-click from ratcheting a page's life up by a day
     /// with no way back (docs/spec/04).
     public func pause(_ id: UInt64) {
-        _ = client.pausePress(sheet: id)
+        _ = client.pausePress(tab: id)
         markDirty()
         refresh()
     }
 
     /// The rename gesture, from the tab context menu (double-click is
     /// already the pause gesture, so the name is set through the menu).
-    /// An empty or all-whitespace submission clears the override and
-    /// lets the title derive from the page's own content again, which is
-    /// the core's contract. The title is persisted state and it is what
-    /// every future ledger record freezes, so a rename is a mutation
-    /// like any other.
-    public func renameSheet(_ id: UInt64, to title: String) {
-        guard client.setTitle(sheet: id, title) else { return }
+    /// An empty or all-whitespace submission clears the name and lets
+    /// the label fall back to the live page's derived title, which is
+    /// the core's contract. The name is durable state on the tab and it
+    /// is what every future ledger record freezes — for this page and
+    /// for every page the slot goes on to hold — so a rename is a
+    /// mutation like any other.
+    public func renameTab(_ id: UInt64, to title: String) {
+        guard client.setTitle(tab: id, title) else { return }
         markDirty()
         refresh()
     }
@@ -1341,7 +1476,7 @@ public final class PageModel: ObservableObject {
     /// the board is the failure this route exists to prevent.
     public func sealPasteboard(replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selection, let (at, length) = Self.wireRange(range) else { return nil }
+        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
         let (chip, cleared) = client.sealFromPasteboard(sheet: sheet, at: at, length: length)
         guard let chip else {
             flash("nothing to seal")
@@ -1391,7 +1526,7 @@ public final class PageModel: ObservableObject {
     /// point (zero length) or the selection the drop replaces.
     public func sealDrag(replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selection, let (at, length) = Self.wireRange(range) else { return nil }
+        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
         if chip == nil { flash("nothing to seal") } else { markDirty() }
         return chip
@@ -1403,7 +1538,7 @@ public final class PageModel: ObservableObject {
     /// to match rather than performing an edit of its own.
     public func sealText(_ text: String, replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selection, let (at, length) = Self.wireRange(range) else { return nil }
+        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealText(sheet: sheet, text, at: at, length: length)
         if chip != nil { markDirty() }
         return chip
@@ -1543,11 +1678,13 @@ public final class PageModel: ObservableObject {
     /// network boundary is the one confirming click.
     public func beginPromotion(_ target: PromotionDraft.Target) {
         notice = nil
-        let sheetId: UInt64? = switch target {
+        // A page draft names a page; a chip draft borrows the selected
+        // slot's page, which is the page the chip is showing on.
+        let pageId: UInt64? = switch target {
         case .page(let id): id
-        case .chip: selection
+        case .chip: selectedPageID
         }
-        let remaining = sheets.first { $0.id == sheetId }?.remainingMs ?? 0
+        let remaining = tabs.first { $0.pageID == pageId }?.remainingMs ?? 0
         promotion = PromotionDraft(
             target: target,
             ttlSecs: PromotionDraft.snappedTtl(remainingMs: remaining)
@@ -1614,7 +1751,11 @@ public final class PageModel: ObservableObject {
         case .chip(let id):
             removeChipFromDocument(id)
         case .page(let id):
-            close(id)
+            // The draft names a page and closing is the slot's gesture,
+            // so the burn goes through the tab that holds it. Burning a
+            // page the user promoted takes its slot with it, exactly as
+            // it did before the split.
+            if let tab = tabs.first(where: { $0.pageID == id })?.id { close(tab) }
         }
         promotion = nil
     }
@@ -1735,7 +1876,7 @@ public final class PageModel: ObservableObject {
     /// that re-arms timers and reconciles selection, work the clock
     /// tick has no business doing.
     private func refreshSummaries() {
-        sheets = client.sheets()
+        tabs = client.tabs()
     }
 
     /// Arm exactly one timer, at the core's next event — a page expiry

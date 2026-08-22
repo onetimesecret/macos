@@ -1086,6 +1086,15 @@ mod tests {
         (SheetStore::new(clock.clone()), clock)
     }
 
+    /// The slot a page stands in, for the tab-addressed routes.
+    fn slot(store: &SheetStore<ManualClock>, page: SheetId) -> TabId {
+        store
+            .tabs()
+            .find(|tab| tab.page().map(Sheet::id) == Some(page))
+            .expect("the page is in a tab")
+            .id()
+    }
+
     /// A populated store: two pages — ink + text chip (promoted) + image
     /// chip on the first, plain ink on the second — and a closed page in
     /// the ledger. The trailing ink carries an astral character so every
@@ -1098,7 +1107,7 @@ mod tests {
     /// the file wrote the derived title down.
     fn populated() -> (SheetStore<ManualClock>, ManualClock, SheetId, SheetId) {
         let (mut store, clock) = store();
-        let first = store.new_sheet().unwrap();
+        let first = store.new_tab().unwrap().1;
         let token = store.seal_text(first, "ghp_expected-to-survive").unwrap();
         let image = store
             .seal_image(first, vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3])
@@ -1113,11 +1122,11 @@ mod tests {
                 Segment::Chip(image),
             ],
         ));
-        let second = store.new_sheet().unwrap();
+        let second = store.new_tab().unwrap().1;
         assert!(store.sync_document(second, vec![Segment::Ink("errands".into())]));
-        let doomed = store.new_sheet().unwrap();
+        let doomed = store.new_tab().unwrap().1;
         assert!(store.sync_document(doomed, vec![Segment::Ink("old thoughts".into())]));
-        assert!(store.close_sheet(doomed));
+        assert!(store.close_tab(slot(&store, doomed)));
         (store, clock, first, second)
     }
 
@@ -1197,7 +1206,7 @@ mod tests {
     #[test]
     fn the_origin_message_survives_the_round_trip() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         // A URL-bearing paste, sealed at the caret: the origin persists
         // as the seal commit's message and nowhere else.
         let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
@@ -1259,7 +1268,7 @@ mod tests {
     fn a_compacted_store_round_trips_materialized_metadata_and_origin() {
         use crate::store::EditOp;
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
         store
             .seal_text_at_with_origin(id, "the pasted secret", 0, 0, Some(origin))
@@ -1282,7 +1291,7 @@ mod tests {
 
         // The rung gesture runs the ceremony; everything after asserts
         // against the compacted page.
-        store.cycle_rung(id).unwrap();
+        store.cycle_rung(slot(&store, id)).unwrap();
         let sheet = store.sheet(id).unwrap();
         let segments = sheet.segments().to_vec();
         let metas = sheet.blocks_meta();
@@ -1327,7 +1336,7 @@ mod tests {
     fn a_pasted_block_comes_back_from_the_file_as_one_block() {
         use crate::store::EditOp;
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.apply_ops(
             id,
             &[EditOp::Insert {
@@ -1355,7 +1364,7 @@ mod tests {
     fn hostile_materialized_stamps_are_clamped_and_dead_anchors_dropped() {
         use crate::store::EditOp;
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.apply_ops(
             id,
             &[
@@ -1369,7 +1378,7 @@ mod tests {
                 }
             ]
         ));
-        store.cycle_rung(id).unwrap();
+        store.cycle_rung(slot(&store, id)).unwrap();
         let honest = store.sheet(id).unwrap().blocks_meta();
 
         // Tamper the way a hand-edited file would: stamps from the far
@@ -1411,8 +1420,8 @@ mod tests {
         // user's and is durable; the other is the app's and dies with
         // the page it was made from.
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
-        assert!(store.set_title(id, "quarterly numbers"));
+        let id = store.new_tab().unwrap().1;
+        assert!(store.set_title(slot(&store, id), "quarterly numbers"));
         assert!(store.sync_document(id, vec![Segment::Ink("# some**thing** else".into())]));
         let snapshot = store.snapshot(0);
 
@@ -1444,10 +1453,10 @@ mod tests {
     #[test]
     fn a_two_tab_strip_round_trips_with_its_names_rungs_and_order() {
         let (mut store, clock) = store();
-        let named = store.new_sheet().unwrap();
-        let unnamed = store.new_sheet().unwrap();
-        assert!(store.set_title(named, "quarterly numbers"));
-        store.set_rung(named, Ttl::MIN).unwrap();
+        let named = store.new_tab().unwrap().1;
+        let unnamed = store.new_tab().unwrap().1;
+        assert!(store.set_title(slot(&store, named), "quarterly numbers"));
+        store.set_rung(slot(&store, named), Ttl::MIN).unwrap();
         assert!(store.sync_document(unnamed, vec![Segment::Ink("errands".into())]));
 
         let snapshot = store.snapshot(0);
@@ -1474,11 +1483,11 @@ mod tests {
         // the pad writes a file rather than removing one, and what it
         // writes is the strip and nothing else.
         let (mut store, clock) = store();
-        let first = store.new_sheet().unwrap();
-        let second = store.new_sheet().unwrap();
-        assert!(store.set_title(second, "payroll"));
-        store.set_rung(first, Ttl::MIN).unwrap();
-        store.set_rung(second, Ttl::MIN).unwrap();
+        let first = store.new_tab().unwrap().1;
+        let second = store.new_tab().unwrap().1;
+        assert!(store.set_title(slot(&store, second), "payroll"));
+        store.set_rung(slot(&store, first), Ttl::MIN).unwrap();
+        store.set_rung(slot(&store, second), Ttl::MIN).unwrap();
         assert!(store.sync_document(first, vec![Segment::Ink("rotate the key".into())]));
         let uuids: Vec<ItemId> = store.tabs().map(Tab::uuid).collect();
 
@@ -1662,7 +1671,7 @@ mod tests {
         // long-lived key forever.
         const TITLE: &str = "prod DB credentials";
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.sync_document(id, vec![Segment::Ink(format!("# {TITLE}\n"))]));
         let chip = store.seal_text(id, "hunter2-rotate-me").unwrap();
         assert!(store.sync_document(
@@ -1704,9 +1713,9 @@ mod tests {
     #[test]
     fn the_write_path_sweep_keeps_records_inside_the_window() {
         let (mut store, clock) = store();
-        store.new_sheet().unwrap();
+        store.new_tab().unwrap();
         clock.advance(Duration::from_millis(crate::LEDGER_RETENTION_MS));
-        store.new_sheet().unwrap();
+        store.new_tab().unwrap();
         // Exactly 90 days old is inside the window, as on load.
         assert_eq!(store.evict_ledger(clock.wall_ms()), 0);
         assert_eq!(store.ledger().count(), 2);
@@ -1727,10 +1736,10 @@ mod tests {
         store.next_tab_id = 7_700;
         store.next_sheet_id = 4_242;
         store.next_chip_id = 9_100;
-        let first = store.new_sheet().unwrap();
+        let first = store.new_tab().unwrap().1;
         store.seal_text_at(first, "one", 0, 0).unwrap();
         store.seal_text_at(first, "two", 1, 0).unwrap();
-        let second = store.new_sheet().unwrap();
+        let second = store.new_tab().unwrap().1;
         store.seal_text_at(second, "three", 0, 0).unwrap();
         assert!(first.raw() > 1000);
 
@@ -1768,7 +1777,7 @@ mod tests {
         );
 
         // And the next id issued does not collide with a restored one.
-        let fresh = revived.new_sheet().unwrap();
+        let fresh = revived.new_tab().unwrap().1;
         assert_eq!(fresh.raw(), 3);
         assert_eq!(revived.tabs().last().unwrap().id().raw(), 3);
         let fresh_chip = revived.seal_text(fresh, "four").unwrap();
@@ -1954,7 +1963,7 @@ mod tests {
     /// every rejection test asserts survived the failed restore.
     fn occupied() -> (SheetStore<ManualClock>, SheetId) {
         let (mut store, _clock) = store();
-        let survivor = store.new_sheet().unwrap();
+        let survivor = store.new_tab().unwrap().1;
         (store, survivor)
     }
 
@@ -2035,7 +2044,7 @@ mod tests {
     fn a_trailing_field_on_a_materialized_record_is_skipped_not_refused() {
         use crate::store::EditOp;
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.apply_ops(
             id,
             &[
@@ -2049,7 +2058,7 @@ mod tests {
                 }
             ]
         ));
-        store.cycle_rung(id).unwrap();
+        store.cycle_rung(slot(&store, id)).unwrap();
         let honest = store.sheet(id).unwrap().blocks_meta();
         assert!(
             honest.len() == 2 && honest[1].created_s.is_some(),
@@ -2168,7 +2177,7 @@ mod tests {
         store.next_tab_id = TAB_RAW;
         store.next_sheet_id = SHEET_RAW;
         store.next_chip_id = CHIP_RAW;
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = store.seal_text(id, "counted").unwrap();
         assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
         assert_eq!(id.raw(), SHEET_RAW);
@@ -2223,7 +2232,7 @@ mod tests {
         const TOKEN: &str = "ghp_never-in-the-ledger";
         const DELETED: &str = "ghp_typed-then-deleted";
         let (mut store, _clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = store.seal_text(id, TOKEN).unwrap();
         assert!(store.sync_document(
             id,
@@ -2257,7 +2266,7 @@ mod tests {
             "the control: deleted ink survives in the blob's history"
         );
 
-        assert!(store.close_sheet(id));
+        assert!(store.close_tab(slot(&store, id)));
         let ledger = store.ledger_snapshot();
         assert!(store.ledger().count() >= 4, "created, sealed, sent, died");
         assert!(
@@ -2274,7 +2283,7 @@ mod tests {
     #[test]
     fn time_away_drains_the_countdown() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap(); // 8h default rung
+        let id = store.new_tab().unwrap().1; // 8h default rung
         let snapshot = store.snapshot(0);
 
         // Two hours pass while the app is closed (wall time only — the
@@ -2290,7 +2299,7 @@ mod tests {
     #[test]
     fn pages_due_while_away_expire_into_the_ledger_on_restore() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.sync_document(id, vec![Segment::Ink("perishable".into())]));
         let snapshot = store.snapshot(0);
 
@@ -2311,8 +2320,8 @@ mod tests {
     #[test]
     fn a_hold_absorbs_time_away_before_the_countdown_drains() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
-        assert!(store.pause_press(id)); // 1h hold, 8h frozen
+        let id = store.new_tab().unwrap().1;
+        assert!(store.pause_press(slot(&store, id))); // 1h hold, 8h frozen
         let snapshot = store.snapshot(0);
 
         // Away 30 minutes: still held, hold shrunk, frozen life intact.
@@ -2341,11 +2350,11 @@ mod tests {
         // the next double-click with another 24 hours instead of the
         // release the user asked for.
         let (mut store, clock) = store();
-        let first = store.new_sheet().unwrap();
-        let topped = store.new_sheet().unwrap();
-        assert!(store.pause_press(first)); // 1h hold
-        assert!(store.pause_press(topped)); // 1h hold
-        assert!(store.pause_press(topped)); // topped up to 24h
+        let first = store.new_tab().unwrap().1;
+        let topped = store.new_tab().unwrap().1;
+        assert!(store.pause_press(slot(&store, first))); // 1h hold
+        assert!(store.pause_press(slot(&store, topped))); // 1h hold
+        assert!(store.pause_press(slot(&store, topped))); // topped up to 24h
         let snapshot = store.snapshot(0);
 
         let mut revived = SheetStore::new(clock.clone());
@@ -2358,8 +2367,8 @@ mod tests {
         // And the press that follows the restore does what the tier
         // promises: the first-hold page tops up, the topped-up one
         // releases.
-        assert!(revived.pause_press(first));
-        assert!(revived.pause_press(topped));
+        assert!(revived.pause_press(slot(&revived, first)));
+        assert!(revived.pause_press(slot(&revived, topped)));
         let now = revived.now();
         assert!(revived.sheet(first).unwrap().hold_topped_up(now));
         assert!(!revived.sheet(topped).unwrap().is_held(now));
@@ -2368,7 +2377,7 @@ mod tests {
     #[test]
     fn a_backwards_wall_clock_grants_no_extra_life() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         clock.advance(2 * HOUR); // 6h left on the 8h rung
         let snapshot = store.snapshot(1_000_000_000);
 

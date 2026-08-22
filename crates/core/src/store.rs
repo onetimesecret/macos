@@ -192,10 +192,11 @@ impl<C: Clock> SheetStore<C> {
     /// A new tab at the end of the strip, holding a new page on the
     /// default rung with its countdown started. Refuses at the cap.
     ///
-    /// The id returned is the page's. The tab that carries it is
-    /// addressed through the page for now; the tab-addressed routes
-    /// arrive with the seam that needs them.
-    pub fn new_sheet(&mut self) -> Result<SheetId, Refusal> {
+    /// Both ids come back, because the two halves are addressed
+    /// separately from here (ADR-0017): the caller selects the slot and
+    /// edits the page, and nothing at the seam can turn one id into the
+    /// other by arithmetic.
+    pub fn new_tab(&mut self) -> Result<(TabId, SheetId), Refusal> {
         if self.tabs.len() >= self.cap {
             return Err(Refusal::AtCapacity { cap: self.cap });
         }
@@ -209,9 +210,10 @@ impl<C: Clock> SheetStore<C> {
             rung: self.default_rung,
             page: None,
         });
-        Ok(self
+        let page = self
             .open_page(tab_id)
-            .expect("a slot opened a moment ago holds no page"))
+            .expect("a slot opened a moment ago holds no page");
+        Ok((tab_id, page))
     }
 
     /// Mint a page into a tab that holds none, at **that tab's** rung
@@ -219,12 +221,12 @@ impl<C: Clock> SheetStore<C> {
     /// one `Created` record behind it. Returns the new page's id, or
     /// `None` for an unknown tab or one that already holds a page.
     ///
-    /// The rung is the whole reason this is not [`new_sheet`]: the slot
+    /// The rung is the whole reason this is not [`new_tab`]: the slot
     /// carries the countdown length the user chose for it, so the
     /// replacement page starts where its predecessor did and the user
     /// does not re-set it after every expiry (ADR-0017).
     ///
-    /// [`new_sheet`]: SheetStore::new_sheet
+    /// [`new_tab`]: SheetStore::new_tab
     pub fn open_page(&mut self, tab: TabId) -> Option<SheetId> {
         let now = self.clock.now();
         let created_wall_ms = self.clock.wall_ms();
@@ -268,13 +270,19 @@ impl<C: Clock> SheetStore<C> {
         Some(id)
     }
 
-    /// Close the tab a page stands in: the page's sealed bytes zeroize
-    /// on the way out, the ledger keeps one `Discarded` record of the
-    /// fact, and the slot leaves the strip. Returns whether the page
-    /// existed.
-    pub fn close_sheet(&mut self, id: SheetId) -> bool {
+    /// Close a tab: whatever page it holds has its sealed bytes
+    /// zeroized on the way out, the ledger keeps one `Discarded` record
+    /// of the fact, and the slot leaves the strip. Returns whether the
+    /// tab existed.
+    ///
+    /// Tab addressed, because this is one of the two things that end a
+    /// tab (ADR-0017) and the other one is the cap. An empty slot
+    /// closes as readily as a full one: what the gesture dismisses is
+    /// the slot, and a slot that holds nothing is still the user's to
+    /// be rid of.
+    pub fn close_tab(&mut self, id: TabId) -> bool {
         let offset = self.clock.local_offset_seconds();
-        let Some(index) = self.tab_index_of(id) else {
+        let Some(index) = self.tab_index(id) else {
             return false;
         };
         let tab = self.tabs.remove(index);
@@ -285,11 +293,15 @@ impl<C: Clock> SheetStore<C> {
         true
     }
 
-    /// Move a page's tab to `index` in the visible order
-    /// (drag-to-reorder; the ⌘-number map follows). Out-of-range
-    /// indices clamp to the end. Returns whether the page existed.
-    pub fn move_sheet(&mut self, id: SheetId, index: usize) -> bool {
-        let Some(from) = self.tab_index_of(id) else {
+    /// Move a tab to `index` in the visible order (drag-to-reorder;
+    /// the ⌘-number map follows). Out-of-range indices clamp to the
+    /// end. Returns whether the tab existed.
+    ///
+    /// The order is the strip's, so this is the slot's gesture and not
+    /// the page's: an empty tab is dragged like any other, and the
+    /// arrangement the user built survives every page it held.
+    pub fn move_tab(&mut self, id: TabId, index: usize) -> bool {
+        let Some(from) = self.tab_index(id) else {
             return false;
         };
         let tab = self.tabs.remove(from);
@@ -315,6 +327,22 @@ impl<C: Clock> SheetStore<C> {
         self.sheets().find(|s| s.id == id)
     }
 
+    /// A tab by id.
+    #[must_use]
+    pub fn tab(&self, id: TabId) -> Option<&Tab> {
+        self.tabs.iter().find(|tab| tab.id == id)
+    }
+
+    /// Where in the strip a tab sits.
+    fn tab_index(&self, id: TabId) -> Option<usize> {
+        self.tabs.iter().position(|tab| tab.id == id)
+    }
+
+    /// A tab by id, mutably.
+    fn tab_mut(&mut self, id: TabId) -> Option<&mut Tab> {
+        self.tabs.iter_mut().find(|tab| tab.id == id)
+    }
+
     fn sheet_mut(&mut self, id: SheetId) -> Option<&mut Sheet> {
         self.tabs
             .iter_mut()
@@ -330,11 +358,6 @@ impl<C: Clock> SheetStore<C> {
     /// The tab a page stands in, mutably.
     fn tab_of_mut(&mut self, page: SheetId) -> Option<&mut Tab> {
         self.tabs.iter_mut().find(|tab| tab.holds(page))
-    }
-
-    /// Where in the strip a page's tab sits.
-    fn tab_index_of(&self, page: SheetId) -> Option<usize> {
-        self.tabs.iter().position(|tab| tab.holds(page))
     }
 
     /// The clock's offset from UTC in seconds, which is everything a
@@ -799,18 +822,21 @@ impl<C: Clock> SheetStore<C> {
         }
     }
 
-    /// Name the tab a page stands in. An empty or all-whitespace
-    /// submission clears the name; anything else is capped at 80
-    /// characters and outlives every later edit. Returns whether the
-    /// page existed.
+    /// Name a tab. An empty or all-whitespace submission clears the
+    /// name; anything else is capped at 80 characters and outlives
+    /// every later edit, and every page the slot goes on to hold.
+    /// Returns whether the tab existed.
+    ///
+    /// Tab addressed, because the name is the durable half's and a slot
+    /// holding no page is exactly the slot a user most wants to name.
     ///
     /// Clearing writes `None` and derives nothing. That is the whole of
     /// "a tab is named by the user or not at all" (ADR-0017): the label
     /// falls back to the live page's derived title, which is a read of
     /// the page rather than a write to the tab, so no string the app
     /// made up ever lands in the durable object.
-    pub fn set_title(&mut self, id: SheetId, title: &str) -> bool {
-        let Some(tab) = self.tab_of_mut(id) else {
+    pub fn set_title(&mut self, id: TabId, title: &str) -> bool {
+        let Some(tab) = self.tab_mut(id) else {
             return false;
         };
         let trimmed = title.trim();
@@ -925,7 +951,7 @@ impl<C: Clock> SheetStore<C> {
     /// The record carries the page's own [`ItemId`] and the label its
     /// tab already resolved; nothing is derived from ink here. The size
     /// class is the page's sealed byte total, the same figure
-    /// [`SheetStore::close_sheet`] and [`SheetStore::expire_due`] record,
+    /// [`SheetStore::close_tab`] and [`SheetStore::expire_due`] record,
     /// and the stamp is the wall clock, as for every other record.
     /// Returns whether the page existed.
     pub fn record_sheet_sent(&mut self, sheet: SheetId, destination: DestinationClass) -> bool {
@@ -1024,11 +1050,19 @@ impl<C: Clock> SheetStore<C> {
     /// [`SheetStore::pause_press`]: zero means zeroized, and a click in
     /// the sliver before the timer reaps must not resurrect it. Returns
     /// the new rung.
-    pub fn cycle_rung(&mut self, id: SheetId) -> Option<Ttl> {
+    ///
+    /// Tab addressed, and on a slot holding no page the gesture stores
+    /// the shorter rung and stops there (ADR-0017): an empty tab is not
+    /// a due page, and the rung it keeps is the one its next page is
+    /// born at.
+    pub fn cycle_rung(&mut self, id: TabId) -> Option<Ttl> {
         let now = self.clock.now();
-        let tab = self.tab_of_mut(id)?;
+        let tab = self.tab_mut(id)?;
         let rung = tab.rung.shorter();
-        let sheet = tab.page.as_mut().expect("the tab holds the page found");
+        let Some(sheet) = tab.page.as_mut() else {
+            tab.rung = rung;
+            return Some(rung);
+        };
         normalize(sheet, now);
         if sheet.remaining(now).is_zero() {
             return None; // due; the timer will reap it
@@ -1045,12 +1079,18 @@ impl<C: Clock> SheetStore<C> {
         Some(rung)
     }
 
-    /// Set a page to a specific rung, resetting the clock to it. A due
-    /// page refuses (see [`SheetStore::cycle_rung`]).
-    pub fn set_rung(&mut self, id: SheetId, rung: Ttl) -> Option<Ttl> {
+    /// Set a tab to a specific rung, resetting its page's clock to it.
+    /// A due page refuses (see [`SheetStore::cycle_rung`]); a tab
+    /// holding no page stores the rung and returns it, because there is
+    /// no clock to reset and no document to compact, and an empty tab
+    /// is not a due page.
+    pub fn set_rung(&mut self, id: TabId, rung: Ttl) -> Option<Ttl> {
         let now = self.clock.now();
-        let tab = self.tab_of_mut(id)?;
-        let sheet = tab.page.as_mut().expect("the tab holds the page found");
+        let tab = self.tab_mut(id)?;
+        let Some(sheet) = tab.page.as_mut() else {
+            tab.rung = rung;
+            return Some(rung);
+        };
         normalize(sheet, now);
         if sheet.remaining(now).is_zero() {
             return None; // due; the timer will reap it
@@ -1078,9 +1118,13 @@ impl<C: Clock> SheetStore<C> {
     /// The release is what makes the gesture reversible: a stray
     /// double-click used to ratchet a page's life up by a day with no
     /// way back down (doc 04).
-    pub fn pause_press(&mut self, id: SheetId) -> bool {
+    ///
+    /// Tab addressed, because the gesture is a double-click on the tab,
+    /// but it is the page's clock it holds: a slot with no page in it
+    /// refuses, having nothing to hold.
+    pub fn pause_press(&mut self, id: TabId) -> bool {
         let now = self.clock.now();
-        let Some(sheet) = self.sheet_mut(id) else {
+        let Some(sheet) = self.tab_mut(id).and_then(|tab| tab.page.as_mut()) else {
             return false;
         };
         normalize(sheet, now);
@@ -1456,6 +1500,12 @@ mod tests {
             .label(store.local_offset_seconds())
     }
 
+    /// The slot a page stands in: the tab-addressed routes take this
+    /// where a test has a page in hand, which is most of them.
+    fn slot(store: &SheetStore<ManualClock>, page: SheetId) -> TabId {
+        store.tab_of(page).expect("the page is in a tab").id()
+    }
+
     /// The name the user typed on the tab a page stands in, or `None`.
     fn name(store: &SheetStore<ManualClock>, page: SheetId) -> Option<&str> {
         store.tab_of(page).expect("the page is in a tab").name()
@@ -1469,8 +1519,8 @@ mod tests {
     #[test]
     fn new_sheets_append_in_tab_order_on_the_default_rung() {
         let (mut store, _) = store();
-        let first = store.new_sheet().unwrap();
-        let second = store.new_sheet().unwrap();
+        let first = store.new_tab().unwrap().1;
+        let second = store.new_tab().unwrap().1;
         let order: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
         assert_eq!(order, vec![first, second]);
         let tab = store.tabs().next().unwrap();
@@ -1482,9 +1532,9 @@ mod tests {
     fn refuses_the_tenth_page_instead_of_evicting() {
         let (mut store, _) = store();
         for _ in 0..DEFAULT_SHEET_CAP {
-            store.new_sheet().unwrap();
+            store.new_tab().unwrap();
         }
-        let err = store.new_sheet().unwrap_err();
+        let err = store.new_tab().unwrap_err();
         assert_eq!(
             err,
             Refusal::AtCapacity {
@@ -1499,7 +1549,7 @@ mod tests {
     #[test]
     fn sealing_refuses_empty_content_and_unknown_sheets() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert_eq!(store.seal_text(id, ""), Err(Refusal::EmptyContent));
         assert_eq!(store.seal_image(id, Vec::new()), Err(Refusal::EmptyContent));
         assert_eq!(
@@ -1511,7 +1561,7 @@ mod tests {
     #[test]
     fn sealed_chips_carry_the_mechanical_face() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, "correct horse battery staple!!");
         let sheet = store.sheet(id).unwrap();
         let sealed = sheet.chip(chip).unwrap();
@@ -1523,8 +1573,8 @@ mod tests {
     #[test]
     fn sync_rejects_foreign_and_duplicate_chips() {
         let (mut store, _) = store();
-        let a = store.new_sheet().unwrap();
-        let b = store.new_sheet().unwrap();
+        let a = store.new_tab().unwrap().1;
+        let b = store.new_tab().unwrap().1;
         let chip_a = seal(&mut store, a, "belongs to a");
         // Foreign chip: b may not claim a's chip.
         assert!(!store.sync_document(b, vec![Segment::Chip(chip_a)]));
@@ -1546,7 +1596,7 @@ mod tests {
     #[test]
     fn a_fresh_tab_is_labelled_by_its_creation_stamp_and_holds_no_name() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let tab = store.tabs().next().unwrap();
         assert_eq!(tab.label(0), PLACEHOLDER);
         assert_eq!(tab.name(), None, "a tab is born with no name at all");
@@ -1564,7 +1614,7 @@ mod tests {
     #[test]
     fn a_page_derives_its_own_title_from_the_first_typed_line() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.sync_document(
             id,
             vec![Segment::Ink("## prod DB credentials\nrotate after".into())]
@@ -1582,8 +1632,8 @@ mod tests {
     #[test]
     fn a_tab_name_survives_every_re_derivation() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
-        assert!(store.set_title(id, "  the vault  "));
+        let id = store.new_tab().unwrap().1;
+        assert!(store.set_title(slot(&store, id), "  the vault  "));
         assert_eq!(name(&store, id), Some("the vault"), "trimmed, not raw");
         assert_eq!(label(&store, id), "the vault");
 
@@ -1598,23 +1648,23 @@ mod tests {
 
         // Nor does closing it: the ledger copies the label the strip
         // was showing.
-        assert!(store.close_sheet(id));
+        assert!(store.close_tab(slot(&store, id)));
         assert_eq!(store.ledger().next().unwrap().title(), "the vault");
     }
 
     #[test]
     fn clearing_a_tab_name_writes_none_and_derives_nothing_onto_the_tab() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.sync_document(id, vec![Segment::Ink("derived name\n".into())]));
-        assert!(store.set_title(id, "chosen name"));
+        assert!(store.set_title(slot(&store, id), "chosen name"));
         assert_eq!(label(&store, id), "chosen name");
 
         // The load-bearing assertion of "never derived": clearing the
         // name leaves the tab holding nothing, not holding the page's
         // derived title copied across. The label falls back by reading
         // the page, which is why it still reads the derived name.
-        assert!(store.set_title(id, "   "));
+        assert!(store.set_title(slot(&store, id), "   "));
         assert_eq!(name(&store, id), None);
         assert_eq!(label(&store, id), "derived name");
 
@@ -1623,21 +1673,21 @@ mod tests {
         assert!(store.sync_document(id, Vec::new()));
         assert_eq!(name(&store, id), None);
         assert_eq!(label(&store, id), PLACEHOLDER);
-        assert!(!store.set_title(SheetId(999), "nowhere"));
+        assert!(!store.set_title(TabId(999), "nowhere"));
     }
 
     #[test]
     fn a_tab_name_is_capped_like_a_derived_title() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
-        assert!(store.set_title(id, &"é".repeat(200)));
+        let id = store.new_tab().unwrap().1;
+        assert!(store.set_title(slot(&store, id), &"é".repeat(200)));
         assert_eq!(name(&store, id).unwrap().chars().count(), 80);
     }
 
     #[test]
     fn a_sync_that_omits_a_chip_zeroizes_it() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, "deleted in the editor");
         assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
         // ⌫ removed the chip; the next snapshot no longer references it.
@@ -1649,7 +1699,7 @@ mod tests {
     #[test]
     fn delete_chip_removes_it_whole() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, "one ⌫ removes it whole");
         assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
         assert!(store.delete_chip(chip));
@@ -1660,7 +1710,7 @@ mod tests {
     #[test]
     fn copy_out_does_not_consume_the_chip() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, "multi-paste me");
         for _ in 0..3 {
             let (bytes, meta) = store.copy_out_chip(chip).unwrap();
@@ -1673,8 +1723,8 @@ mod tests {
     #[test]
     fn expiry_is_scheduled_not_polled() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
-        store.set_rung(id, Ttl::MIN).unwrap(); // 1h
+        let id = store.new_tab().unwrap().1;
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap(); // 1h
 
         let deadline = store.next_event().unwrap();
         assert_eq!(deadline - store.now(), HOUR);
@@ -1694,11 +1744,11 @@ mod tests {
     #[test]
     fn an_expiring_page_leaves_its_tab_standing_in_place() {
         let (mut store, clock) = store();
-        let first = store.new_sheet().unwrap();
-        let doomed = store.new_sheet().unwrap();
-        let third = store.new_sheet().unwrap();
-        assert!(store.set_title(doomed, "payroll"));
-        store.set_rung(doomed, Ttl::MIN).unwrap(); // 1h
+        let first = store.new_tab().unwrap().1;
+        let doomed = store.new_tab().unwrap().1;
+        let third = store.new_tab().unwrap().1;
+        assert!(store.set_title(slot(&store, doomed), "payroll"));
+        store.set_rung(slot(&store, doomed), Ttl::MIN).unwrap(); // 1h
         assert!(store.sync_document(doomed, vec![Segment::Ink("rotate the key".into())]));
 
         clock.advance(HOUR);
@@ -1726,8 +1776,8 @@ mod tests {
     #[test]
     fn an_unnamed_tab_falls_back_to_its_own_stamp_when_its_page_expires() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
-        store.set_rung(id, Ttl::MIN).unwrap();
+        let id = store.new_tab().unwrap().1;
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
         assert!(store.sync_document(id, vec![Segment::Ink("deploy notes".into())]));
         assert_eq!(label(&store, id), "deploy notes", "the control");
 
@@ -1742,8 +1792,8 @@ mod tests {
     fn a_strip_of_empty_tabs_schedules_nothing() {
         let (mut store, clock) = store();
         for _ in 0..3 {
-            let id = store.new_sheet().unwrap();
-            store.set_rung(id, Ttl::MIN).unwrap();
+            let id = store.new_tab().unwrap().1;
+            store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
         }
         assert!(
             store.next_event().is_some(),
@@ -1763,11 +1813,66 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_tab_takes_a_rung_and_holds_it_for_its_next_page() {
+        let (mut store, clock) = store();
+        let page = store.new_tab().unwrap().1;
+        let tab = slot(&store, page);
+        store.set_rung(tab, Ttl::MIN).unwrap(); // 1h
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due(), vec![page]);
+
+        // The gesture succeeds on a slot with no page in it: there is
+        // no clock to reset and no document to compact, so the store is
+        // all it does. An empty tab is not a due page.
+        assert_eq!(store.set_rung(tab, Ttl::MAX), Some(Ttl::MAX));
+        assert_eq!(store.tab(tab).unwrap().rung(), Ttl::MAX);
+        assert_eq!(store.cycle_rung(tab), Some(Ttl::MAX.shorter()));
+        assert_eq!(store.tab(tab).unwrap().rung(), Ttl::MAX.shorter());
+        assert_eq!(store.next_event(), None, "and still nothing to arm");
+
+        // What the stored rung is for: the next page born here starts
+        // on it rather than on the store's default.
+        let replacement = store.open_page(tab).expect("the slot is free");
+        let now = store.now();
+        assert_eq!(
+            store.sheet(replacement).unwrap().remaining(now),
+            Ttl::MAX.shorter().duration()
+        );
+    }
+
+    #[test]
+    fn an_empty_tab_has_no_clock_to_hold_and_closes_all_the_same() {
+        let (mut store, clock) = store();
+        let page = store.new_tab().unwrap().1;
+        let tab = slot(&store, page);
+        store.set_rung(tab, Ttl::MIN).unwrap();
+        assert!(store.set_title(tab, "payroll"), "named while it lived");
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due(), vec![page]);
+
+        assert!(!store.pause_press(tab), "no clock, nothing to hold");
+        assert!(!store.pause_press(TabId::from_raw(999)), "no such tab");
+        assert!(store.set_title(tab, "still mine"), "and still nameable");
+
+        // Explicit close is one of the two things that end a tab, and
+        // an empty slot goes as readily as a full one.
+        assert!(store.close_tab(tab));
+        assert!(store.has_no_tabs());
+        assert!(!store.close_tab(tab), "already gone");
+        assert_eq!(
+            events(&store),
+            vec![LedgerEvent::Created],
+            "the page held nothing, so neither its death nor the close \
+             was worth a record; the slot's own life is never recorded"
+        );
+    }
+
+    #[test]
     fn open_page_mints_at_the_tabs_rung_and_refuses_an_occupied_tab() {
         let (mut store, clock) = store();
-        let first = store.new_sheet().unwrap();
+        let first = store.new_tab().unwrap().1;
         let slot = store.tabs().next().unwrap().id();
-        store.set_rung(first, Ttl::MIN).unwrap(); // 1h, the slot's rung
+        store.set_rung(slot, Ttl::MIN).unwrap(); // 1h, the slot's rung
         let born = store.sheet(first).unwrap().uuid();
 
         assert_eq!(store.open_page(slot), None, "one page to a slot");
@@ -1858,7 +1963,7 @@ mod tests {
     #[test]
     fn a_dead_page_leaves_metadata_and_nothing_else() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, TOKEN);
         assert!(store.sync_document(
             id,
@@ -1874,7 +1979,7 @@ mod tests {
         drop(bytes);
         assert!(store.record_sent(chip, DestinationClass::Clipboard));
         let uuid = store.sheet(id).unwrap().uuid();
-        store.set_rung(id, Ttl::MIN).unwrap();
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
         clock.advance(HOUR);
         store.expire_due();
 
@@ -1897,7 +2002,7 @@ mod tests {
         // bytes are still live and reachable, which is exactly when a
         // convenience excerpt would be tempting.
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, TOKEN);
         assert_content_free(&store);
         assert!(store.delete_chip(chip));
@@ -1907,10 +2012,11 @@ mod tests {
     #[test]
     fn closing_a_page_records_the_page_and_the_chip_separately() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let _chip = seal(&mut store, id, "sealed then never synced");
-        assert!(store.close_sheet(id));
-        assert!(!store.close_sheet(id), "already gone");
+        let tab = slot(&store, id);
+        assert!(store.close_tab(tab));
+        assert!(!store.close_tab(tab), "already gone");
 
         assert_eq!(
             events(&store),
@@ -1938,9 +2044,9 @@ mod tests {
     #[test]
     fn empty_pages_leave_no_death_record() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.sync_document(id, vec![Segment::Ink("   \n".into())]));
-        store.close_sheet(id);
+        store.close_tab(slot(&store, id));
         // The page's birth is on the record; its death is not, because
         // a page that held nothing did nothing worth auditing.
         assert_eq!(events(&store), vec![LedgerEvent::Created]);
@@ -1950,9 +2056,9 @@ mod tests {
     fn the_ledger_is_a_rolling_window_not_a_record_cap() {
         let (mut store, clock) = store();
         for i in 0..50 {
-            let id = store.new_sheet().unwrap();
+            let id = store.new_tab().unwrap().1;
             assert!(store.sync_document(id, vec![Segment::Ink(format!("page {i}"))]));
-            assert!(store.close_sheet(id));
+            assert!(store.close_tab(slot(&store, id)));
         }
         // A hundred records, none of them old. A count cap would have
         // thrown most of these away; the window keeps every one.
@@ -1964,26 +2070,26 @@ mod tests {
         // out, and the next write is what sweeps it: no timer runs.
         clock.advance(Duration::from_millis(LEDGER_RETENTION_MS + 1));
         assert_eq!(store.ledger().count(), 100, "nothing ran on its own");
-        store.new_sheet().unwrap();
+        store.new_tab().unwrap();
         assert_eq!(events(&store), vec![LedgerEvent::Created]);
     }
 
     #[test]
     fn the_window_boundary_keeps_a_record_exactly_ninety_days_old() {
         let (mut store, clock) = store();
-        store.new_sheet().unwrap();
+        store.new_tab().unwrap();
         clock.advance(Duration::from_millis(LEDGER_RETENTION_MS));
-        store.new_sheet().unwrap();
+        store.new_tab().unwrap();
         assert_eq!(store.ledger().count(), 2, "the boundary is inclusive");
         clock.advance(Duration::from_millis(1));
-        store.new_sheet().unwrap();
+        store.new_tab().unwrap();
         assert_eq!(store.ledger().count(), 2, "the oldest fell off");
     }
 
     #[test]
     fn every_lifecycle_step_lands_exactly_one_record() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert_eq!(events(&store), vec![LedgerEvent::Created]);
 
         let chip = seal(&mut store, id, "one secret");
@@ -2004,7 +2110,7 @@ mod tests {
         assert_eq!(sent.size(), SizeClass::of("one secret".len()));
         assert!(!store.record_sent(ChipId(999), DestinationClass::Clipboard));
 
-        assert!(store.close_sheet(id));
+        assert!(store.close_tab(slot(&store, id)));
         assert_eq!(
             events(&store),
             vec![
@@ -2019,7 +2125,7 @@ mod tests {
     #[test]
     fn promoting_a_whole_page_lands_one_content_free_sent_record() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, TOKEN);
         // The token sits in the ink as well as in the chip, and never on
         // the first line: the title is the one field allowed to be
@@ -2062,7 +2168,7 @@ mod tests {
     #[test]
     fn a_chip_removed_in_the_editor_records_the_same_as_an_explicit_delete() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, "removed with a backspace");
         assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
         assert!(store.sync_document(id, vec![Segment::Ink("just ink now".into())]));
@@ -2079,7 +2185,7 @@ mod tests {
     #[test]
     fn clearing_the_ledger_leaves_nothing_behind() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         seal(&mut store, id, "something");
         assert!(store.ledger().count() > 0);
         store.clear_ledger();
@@ -2093,10 +2199,10 @@ mod tests {
     #[test]
     fn a_hold_freezes_the_clock_and_lapses_on_its_own() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap(); // 8h
+        let id = store.new_tab().unwrap().1; // 8h
         clock.advance(2 * HOUR); // 6h remain
 
-        assert!(store.pause_press(id));
+        assert!(store.pause_press(slot(&store, id)));
         let now = store.now();
         let sheet = store.sheet(id).unwrap();
         assert!(sheet.is_held(now));
@@ -2122,13 +2228,13 @@ mod tests {
     #[test]
     fn pause_presses_go_one_hour_then_topup_to_twentyfour_never_cumulative() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
 
-        assert!(store.pause_press(id)); // hold: 1h
+        assert!(store.pause_press(slot(&store, id))); // hold: 1h
         assert_eq!(store.sheet(id).unwrap().hold_remaining(store.now()), HOUR);
         assert!(!store.sheet(id).unwrap().hold_topped_up(store.now()));
 
-        assert!(store.pause_press(id)); // extend: 24h from now
+        assert!(store.pause_press(slot(&store, id))); // extend: 24h from now
         assert_eq!(
             store.sheet(id).unwrap().hold_remaining(store.now()),
             24 * HOUR
@@ -2139,11 +2245,11 @@ mod tests {
         // an hour again: the top-up ceiling is 24h from a single press,
         // never cumulative, and re-topping-up costs two more presses.
         clock.advance(23 * HOUR);
-        assert!(store.pause_press(id)); // release
+        assert!(store.pause_press(slot(&store, id))); // release
         assert!(!store.sheet(id).unwrap().is_held(store.now()));
-        assert!(store.pause_press(id)); // hold again: 1h
+        assert!(store.pause_press(slot(&store, id))); // hold again: 1h
         assert_eq!(store.sheet(id).unwrap().hold_remaining(store.now()), HOUR);
-        assert!(store.pause_press(id)); // top up: 24h, not 47h
+        assert!(store.pause_press(slot(&store, id))); // top up: 24h, not 47h
         assert_eq!(
             store.sheet(id).unwrap().hold_remaining(store.now()),
             24 * HOUR
@@ -2153,15 +2259,15 @@ mod tests {
     #[test]
     fn a_third_pause_press_releases_the_hold_and_the_clock_resumes_where_it_froze() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap(); // 8h
+        let id = store.new_tab().unwrap().1; // 8h
         clock.advance(2 * HOUR); // 6h remain
 
-        assert!(store.pause_press(id)); // hold 1h
-        assert!(store.pause_press(id)); // top up to 24h
+        assert!(store.pause_press(slot(&store, id))); // hold 1h
+        assert!(store.pause_press(slot(&store, id))); // top up to 24h
         clock.advance(3 * HOUR); // held: nothing drains
         assert_eq!(store.sheet(id).unwrap().remaining(store.now()), 6 * HOUR);
 
-        assert!(store.pause_press(id)); // release
+        assert!(store.pause_press(slot(&store, id))); // release
         let now = store.now();
         let sheet = store.sheet(id).unwrap();
         assert!(!sheet.is_held(now), "the release ends the hold at once");
@@ -2180,14 +2286,14 @@ mod tests {
     #[test]
     fn a_released_page_expires_on_its_own_frozen_life() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
-        store.set_rung(id, Ttl::MIN).unwrap(); // 1h
+        let id = store.new_tab().unwrap().1;
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap(); // 1h
         clock.advance(HOUR / 2); // 30m remain
 
-        assert!(store.pause_press(id)); // hold
-        assert!(store.pause_press(id)); // top up
+        assert!(store.pause_press(slot(&store, id))); // hold
+        assert!(store.pause_press(slot(&store, id))); // top up
         clock.advance(5 * HOUR); // still held, still 30m
-        assert!(store.pause_press(id)); // release: 30m from here
+        assert!(store.pause_press(slot(&store, id))); // release: 30m from here
 
         assert!(store.expire_due().is_empty());
         clock.advance(Duration::from_secs(29 * 60));
@@ -2203,8 +2309,8 @@ mod tests {
         // disguise.
         let lapsed = {
             let (mut store, clock) = store();
-            let id = store.new_sheet().unwrap();
-            assert!(store.pause_press(id)); // 1h hold
+            let id = store.new_tab().unwrap().1;
+            assert!(store.pause_press(slot(&store, id))); // 1h hold
             clock.advance(HOUR); // lapses on its own
             let now = store.now();
             let sheet = store.sheet(id).unwrap();
@@ -2216,11 +2322,11 @@ mod tests {
         };
         let released = {
             let (mut store, clock) = store();
-            let id = store.new_sheet().unwrap();
-            assert!(store.pause_press(id)); // 1h hold
-            assert!(store.pause_press(id)); // top up, so the third can release
+            let id = store.new_tab().unwrap().1;
+            assert!(store.pause_press(slot(&store, id))); // 1h hold
+            assert!(store.pause_press(slot(&store, id))); // top up, so the third can release
             clock.advance(HOUR);
-            assert!(store.pause_press(id)); // release, one hour in
+            assert!(store.pause_press(slot(&store, id))); // release, one hour in
             let now = store.now();
             let sheet = store.sheet(id).unwrap();
             (
@@ -2235,18 +2341,18 @@ mod tests {
     #[test]
     fn a_lapsed_hold_restarts_the_ladder_at_one_hour() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
-        assert!(store.pause_press(id)); // 1h hold
+        let id = store.new_tab().unwrap().1;
+        assert!(store.pause_press(slot(&store, id))); // 1h hold
         clock.advance(2 * HOUR); // lapses
-        assert!(store.pause_press(id)); // a fresh first press again
+        assert!(store.pause_press(slot(&store, id))); // a fresh first press again
         assert_eq!(store.sheet(id).unwrap().hold_remaining(store.now()), HOUR);
     }
 
     #[test]
     fn the_one_timer_covers_hold_lapses_too() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap(); // 8h
-        assert!(store.pause_press(id)); // hold lapses in 1h; expiry at 1h+8h
+        let id = store.new_tab().unwrap().1; // 8h
+        assert!(store.pause_press(slot(&store, id))); // hold lapses in 1h; expiry at 1h+8h
         let now = store.now();
         assert_eq!(
             store.next_event().unwrap() - now,
@@ -2265,10 +2371,10 @@ mod tests {
     #[test]
     fn a_held_page_expires_only_after_hold_plus_frozen_life() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
-        store.set_rung(id, Ttl::MIN).unwrap(); // 1h
+        let id = store.new_tab().unwrap().1;
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap(); // 1h
         clock.advance(HOUR / 2); // 30m remain
-        assert!(store.pause_press(id)); // held 1h; expiry at lapse + 30m
+        assert!(store.pause_press(slot(&store, id))); // held 1h; expiry at lapse + 30m
 
         clock.advance(HOUR + Duration::from_secs(60)); // hold lapsed, 29m left
         assert!(store.expire_due().is_empty());
@@ -2279,20 +2385,20 @@ mod tests {
     #[test]
     fn cycling_resets_the_clock_and_respects_a_hold() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         clock.advance(2 * HOUR);
 
         // Running: 8h → 3h, one rung shorter, clock reset to the full
         // rung.
-        let rung = store.cycle_rung(id).unwrap();
+        let rung = store.cycle_rung(slot(&store, id)).unwrap();
         assert_eq!(rung.to_string(), "3h");
         assert_eq!(store.sheet(id).unwrap().remaining(store.now()), 3 * HOUR);
 
         // Held: the rung steps and the frozen life resets, but the hold
         // stays — the pause is the tab's lever, the countdown the
         // header's.
-        assert!(store.pause_press(id));
-        let rung = store.cycle_rung(id).unwrap();
+        assert!(store.pause_press(slot(&store, id)));
+        let rung = store.cycle_rung(slot(&store, id)).unwrap();
         assert_eq!(rung.to_string(), "1h");
         let now = store.now();
         let sheet = store.sheet(id).unwrap();
@@ -2303,22 +2409,25 @@ mod tests {
     #[test]
     fn pausing_a_due_page_refuses() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
-        store.set_rung(id, Ttl::MIN).unwrap();
+        let id = store.new_tab().unwrap().1;
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
         clock.advance(HOUR);
-        assert!(!store.pause_press(id), "a due page cannot be held");
+        assert!(
+            !store.pause_press(slot(&store, id)),
+            "a due page cannot be held"
+        );
     }
 
     #[test]
     fn total_held_accumulates_across_lapses() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
-        assert!(store.pause_press(id)); // 1h hold
+        let id = store.new_tab().unwrap().1;
+        assert!(store.pause_press(slot(&store, id))); // 1h hold
         clock.advance(2 * HOUR); // lapses after 1h of holding
         store.expire_due(); // normalizes
         assert_eq!(store.sheet(id).unwrap().total_held(store.now()), HOUR);
 
-        assert!(store.pause_press(id));
+        assert!(store.pause_press(slot(&store, id)));
         clock.advance(HOUR / 2); // live hold, 30m so far
         assert_eq!(
             store.sheet(id).unwrap().total_held(store.now()),
@@ -2329,22 +2438,22 @@ mod tests {
     #[test]
     fn reorder_moves_a_page_and_clamps() {
         let (mut store, _) = store();
-        let a = store.new_sheet().unwrap();
-        let b = store.new_sheet().unwrap();
-        let c = store.new_sheet().unwrap();
-        assert!(store.move_sheet(c, 0));
+        let a = store.new_tab().unwrap().1;
+        let b = store.new_tab().unwrap().1;
+        let c = store.new_tab().unwrap().1;
+        assert!(store.move_tab(slot(&store, c), 0));
         let order: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
         assert_eq!(order, vec![c, a, b]);
-        assert!(store.move_sheet(c, 99)); // clamps to the end
+        assert!(store.move_tab(slot(&store, c), 99)); // clamps to the end
         let order: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
         assert_eq!(order, vec![a, b, c]);
-        assert!(!store.move_sheet(SheetId(999), 0));
+        assert!(!store.move_tab(TabId(999), 0));
     }
 
     #[test]
     fn sheet_payload_inlines_chips_in_document_order() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, "s3cr3t-dsn");
         assert!(store.sync_document(
             id,
@@ -2364,7 +2473,7 @@ mod tests {
     #[test]
     fn sheet_payload_refuses_image_chips_and_unknown_sheets() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         store.seal_image(id, vec![0u8; 16]).unwrap();
         assert!(matches!(
             store.sheet_payload(id),
@@ -2379,7 +2488,7 @@ mod tests {
     #[test]
     fn promotion_marks_the_chip_and_keeps_only_the_receipt() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, "promote me");
         assert_eq!(&**store.chip_payload(chip).unwrap(), b"promote me");
         assert!(store.mark_chip_promoted(chip, "9f2abc".into()));
@@ -2394,7 +2503,7 @@ mod tests {
     #[test]
     fn the_gauge_drains_linearly_and_turns_last_hour_under_sixty_minutes() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap(); // 8h
+        let id = store.new_tab().unwrap().1; // 8h
         let now = store.now();
         let rung = store.tabs().next().unwrap().rung();
         let sheet = store.sheet(id).unwrap();
@@ -2421,8 +2530,8 @@ mod tests {
     #[test]
     fn cycling_or_setting_a_due_page_refuses_instead_of_resurrecting() {
         let (mut store, clock) = store();
-        let id = store.new_sheet().unwrap();
-        store.set_rung(id, Ttl::MIN).unwrap(); // 1h
+        let id = store.new_tab().unwrap().1;
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap(); // 1h
         assert!(store.apply_ops(
             id,
             &[EditOp::Insert {
@@ -2440,8 +2549,8 @@ mod tests {
         clock.advance(HOUR);
         // The timer has not fired yet, but the page is due: a click in
         // that sliver must not resurrect it. Zero means zeroized.
-        assert_eq!(store.cycle_rung(id), None);
-        assert_eq!(store.set_rung(id, Ttl::MAX), None);
+        assert_eq!(store.cycle_rung(slot(&store, id)), None);
+        assert_eq!(store.set_rung(slot(&store, id), Ttl::MAX), None);
         // A refused transition compacts nothing either: the ceremony
         // runs only after an accepted transition, so it cannot race the
         // reap that is about to take the whole document.
@@ -2452,7 +2561,7 @@ mod tests {
     #[test]
     fn a_rung_transition_compacts_the_history_and_the_body_survives() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = store.seal_text_at(id, TOKEN, 0, 0).unwrap();
         assert!(store.apply_ops(
             id,
@@ -2475,7 +2584,7 @@ mod tests {
         let metas = sheet.blocks_meta();
         let modified = sheet.modified_s().unwrap();
 
-        store.cycle_rung(id).unwrap();
+        store.cycle_rung(slot(&store, id)).unwrap();
 
         // The page is intact: same projection, same title, same chip,
         // and provenance reads exactly as it did, now answered by the
@@ -2508,7 +2617,7 @@ mod tests {
         let sheet = store.sheet(id).unwrap();
         assert!(sheet.modified_s().unwrap() >= modified);
         let second_peer = sheet.document.peer_id();
-        store.set_rung(id, Ttl::MAX).unwrap();
+        store.set_rung(slot(&store, id), Ttl::MAX).unwrap();
         assert!(!contains(&store.snapshot(0), &second_peer.to_le_bytes()));
         assert_ne!(store.sheet(id).unwrap().document.peer_id(), second_peer);
     }
@@ -2516,7 +2625,7 @@ mod tests {
     #[test]
     fn a_pause_topup_compacts_but_a_first_press_does_not() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.apply_ops(
             id,
             &[EditOp::Insert {
@@ -2534,13 +2643,13 @@ mod tests {
 
         // The first press holds the clock for an hour and keeps the
         // trail: it is not the gesture that keeps a page alive.
-        assert!(store.pause_press(id));
+        assert!(store.pause_press(slot(&store, id)));
         assert!(contains(&store.snapshot(0), b"DOOMED"));
 
         // The top-up is: a page kept alive by repeated pauses sheds
         // its history at the same gesture that extends its life, and
         // the hold semantics themselves are untouched.
-        assert!(store.pause_press(id));
+        assert!(store.pause_press(slot(&store, id)));
         assert!(!contains(&store.snapshot(0), b"DOOMED"));
         assert_eq!(
             store.sheet(id).unwrap().hold_remaining(store.now()),
@@ -2551,7 +2660,7 @@ mod tests {
     #[test]
     fn compaction_moves_no_clock_and_arms_no_timer() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.apply_ops(
             id,
             &[EditOp::Insert {
@@ -2570,7 +2679,7 @@ mod tests {
     #[test]
     fn an_empty_snapshot_is_select_all_delete_and_zeroizes_every_chip() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let a = seal(&mut store, id, "first secret");
         let b = seal(&mut store, id, "second secret");
         assert!(store.sync_document(id, vec![Segment::Chip(a), Segment::Chip(b)]));
@@ -2585,8 +2694,8 @@ mod tests {
     fn ops_and_a_legacy_snapshot_build_the_same_projection() {
         let (mut by_ops, _) = store();
         let (mut by_sync, _) = store();
-        let ops_page = by_ops.new_sheet().unwrap();
-        let sync_page = by_sync.new_sheet().unwrap();
+        let ops_page = by_ops.new_tab().unwrap().1;
+        let sync_page = by_sync.new_tab().unwrap().1;
         let ops_chip = seal(&mut by_ops, ops_page, "same secret");
         let sync_chip = seal(&mut by_sync, sync_page, "same secret");
 
@@ -2630,7 +2739,7 @@ mod tests {
     #[test]
     fn a_range_seal_replaces_the_selection_atomically() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         // Body: a(0) 😀(1,2) S(3) E(4) C(5) 😀(6,7) b(8).
         assert!(store.apply_ops(
             id,
@@ -2668,7 +2777,7 @@ mod tests {
     #[test]
     fn a_range_seal_with_a_bad_range_seals_nothing() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.apply_ops(
             id,
             &[EditOp::Insert {
@@ -2705,7 +2814,7 @@ mod tests {
     #[test]
     fn a_range_seal_over_a_selected_chip_reaps_it() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let old = seal(&mut store, id, "the earlier secret");
         assert!(store.apply_ops(
             id,
@@ -2731,7 +2840,7 @@ mod tests {
     #[test]
     fn a_batch_with_one_bad_op_mutates_nothing() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, "held through every refusal");
         // Body: a(0) 😀(1,2) b(3) chip(4).
         assert!(store.apply_ops(
@@ -2804,7 +2913,7 @@ mod tests {
     #[test]
     fn coalesced_batches_validate_against_the_simulated_state() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, "survives the shuffle");
         // Body: 🔑(0,1) space(2) k(3) e(4) y(5) chip(6).
         assert!(store.apply_ops(
@@ -2872,7 +2981,7 @@ mod tests {
     #[test]
     fn deleting_a_sentinel_by_op_zeroizes_the_chip() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, "deleted in the editor");
         assert!(store.apply_ops(id, &[EditOp::InsertChip { pos_u16: 0, chip }]));
         // ⌫ on the sentinel travels as a one-unit delete.
@@ -2898,7 +3007,7 @@ mod tests {
     #[test]
     fn a_select_all_delete_batch_zeroizes_every_chip() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let a = seal(&mut store, id, "first secret");
         let b = seal(&mut store, id, "second secret");
         // Body: chip a(0) space(1) 🗿(2,3) space(4) chip b(5).
@@ -2936,7 +3045,7 @@ mod tests {
     #[test]
     fn ops_re_derive_the_title_unless_the_user_named_the_page() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.apply_ops(
             id,
             &[EditOp::Insert {
@@ -2947,7 +3056,7 @@ mod tests {
         assert_eq!(label(&store, id), "prod DB credentials");
 
         // A user-chosen name survives every later batch.
-        assert!(store.set_title(id, "the vault"));
+        assert!(store.set_title(slot(&store, id), "the vault"));
         assert!(store.apply_ops(
             id,
             &[EditOp::Insert {
@@ -2960,7 +3069,7 @@ mod tests {
         // Handing the name back to derivation, then emptying the page
         // by ops, lands on the creation-stamp placeholder as the legacy
         // path does.
-        assert!(store.set_title(id, ""));
+        assert!(store.set_title(slot(&store, id), ""));
         let len: u32 = store
             .sheet(id)
             .unwrap()
@@ -2984,7 +3093,7 @@ mod tests {
     #[test]
     fn block_identity_rides_the_op_path_and_a_restate_reissues_it() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         assert!(store.apply_ops(
             id,
             &[EditOp::Insert {
@@ -3035,7 +3144,7 @@ mod tests {
     #[test]
     fn a_multi_line_insert_lands_as_one_block_the_way_a_paste_arrives() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         // A paste crosses the seam whole, newlines and all: the shape
         // of the op is the whole difference from typing.
         assert!(store.apply_ops(
@@ -3075,7 +3184,7 @@ mod tests {
     #[test]
     fn a_range_seal_across_a_newline_merges_blocks_like_typing_over_it() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         // Typed, not pasted: the newline arrives on its own, so the two
         // lines are two blocks.
         assert!(store.apply_ops(
@@ -3106,7 +3215,7 @@ mod tests {
     #[test]
     fn page_modified_derives_from_the_ops_and_created_stays_the_birth_stamp() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let sheet = store.sheet(id).unwrap();
         assert_eq!(sheet.created_wall_ms(), 1_700_000_000_000);
         assert!(
@@ -3133,7 +3242,7 @@ mod tests {
     #[test]
     fn a_seal_carrying_an_origin_leaves_no_trace_in_the_ledger() {
         let (mut store, _) = store();
-        let id = store.new_sheet().unwrap();
+        let id = store.new_tab().unwrap().1;
         let origin = format!("{{\"origin\":\"{ORIGIN_URL}\"}}");
         store
             .seal_text_at_with_origin(id, TOKEN, 0, 0, Some(&origin))
@@ -3144,7 +3253,7 @@ mod tests {
         // origin from the commit trail into the materialized summary,
         // and neither the live ledger nor its persisted snapshot may
         // learn it in transit.
-        store.cycle_rung(id).unwrap();
+        store.cycle_rung(slot(&store, id)).unwrap();
         assert_content_free(&store);
         let ledger = store.ledger_snapshot();
         for fragment in fragments_of(ORIGIN_URL) {
@@ -3156,7 +3265,7 @@ mod tests {
 
         // Through death too: the origin rides the document's commit,
         // and the record of the page's end carries none of it.
-        assert!(store.close_sheet(id));
+        assert!(store.close_tab(slot(&store, id)));
         assert_content_free(&store);
     }
 }

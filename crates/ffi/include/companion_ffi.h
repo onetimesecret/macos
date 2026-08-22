@@ -43,7 +43,7 @@ typedef struct CompanionHandle CompanionHandle;
 
 /*
  * TTL ladder rung codes, in ascending order (docs/spec/04). Passed to
- * companion_sheet_set_rung(); returned by companion_sheet_cycle_rung().
+ * companion_tab_set_rung(); returned by companion_tab_cycle_rung().
  */
 typedef enum {
     COMPANION_RUNG_1H  = 0,
@@ -119,61 +119,118 @@ CompanionHandle *companion_new_ephemeral(const char *tag);
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */
-/* Sheets                                                              */
+/* Tabs: the durable slots                                             */
 /* ------------------------------------------------------------------ */
 
 /*
- * A new page at the end of the tab strip, default rung, countdown
- * running. Returns its id, or 0 when the store refused at the cap of 9
- * — the keyboard wall; the app declines the tenth and says so (0 is
- * never a valid id).
+ * Two objects, two ids, and the routes split between them (ADR-0017).
+ * A tab is a durable slot: an identity, a name the user may type, a
+ * rung, a place in the strip, and at most one page. A page is
+ * everything that expires: the ink, the chips, the clock. On expiry
+ * the page is dropped whole and the tab stays where it is, empty and
+ * reusable, and the strip still shows it.
+ *
+ * The routes below take a TAB id. The sealing, document, promotion and
+ * meta routes further down take a PAGE id, which the summary carries
+ * as page_id. The two counters are unrelated: never pass one where the
+ * other belongs, and never derive one from the other.
  */
-uint64_t companion_sheet_new(CompanionHandle *handle);
 
 /*
- * Close a page: it rests in the ledger like an expired one, sealed
- * bytes zeroized. Returns whether the page existed.
+ * A new tab at the end of the strip, holding a new page on the default
+ * rung with its countdown running. Returns the TAB's id, or 0 when the
+ * store refused at the cap of 9 — the keyboard wall; the app declines
+ * the tenth and says so (0 is never a valid id).
  */
-bool companion_sheet_close(CompanionHandle *handle, uint64_t id);
+uint64_t companion_tab_new(CompanionHandle *handle);
 
 /*
- * Move a page to `index` in visible order (drag-to-reorder; the
+ * Mint a page into a tab that holds none, at THAT TAB's rung. Returns
+ * the new page's id, or 0 for an unknown tab and for one that already
+ * holds a page. This is the route every deliberate mint into an
+ * existing slot takes: a click on the tab, cmd-1..9, opt-cmd-left or
+ * right, and the Return grant. Expiry never mints, so a countdown that
+ * ran out overnight leaves an empty tab rather than a fresh countdown
+ * on nothing.
+ */
+uint64_t companion_tab_open_page(CompanionHandle *handle, uint64_t tab);
+
+/*
+ * Close a tab: whatever page it holds rests in the ledger like an
+ * expired one, sealed bytes zeroized, and the slot leaves the strip.
+ * An empty slot closes as readily as a full one. Returns whether the
+ * tab existed. Explicit close and the cap are the only two things that
+ * end a tab.
+ */
+bool companion_tab_close(CompanionHandle *handle, uint64_t tab);
+
+/*
+ * Move a tab to `index` in visible order (drag-to-reorder; the
  * command-number map follows). Out-of-range clamps to the end.
  */
-bool companion_sheet_move(CompanionHandle *handle, uint64_t id,
-                          uint64_t index);
+bool companion_tab_move(CompanionHandle *handle, uint64_t tab,
+                        uint64_t index);
 
 /*
- * Name a page explicitly (the rename gesture in the tab context menu).
- * An empty or all-whitespace title clears the user override and
- * re-derives from the page's own content, the way back to the default.
- * Anything else is trimmed, capped at 80 characters, and from then on
- * sticky: editing the page never overwrites it again. Returns whether
- * the page existed.
+ * Name a tab explicitly (the rename gesture in the tab context menu).
+ * An empty or all-whitespace title clears the name, and the label falls
+ * back to the live page's derived title and then to the tab's own
+ * creation stamp. Anything else is trimmed, capped at 80 characters,
+ * and from then on sticky: editing the page never overwrites it, and
+ * neither does the page dying. Returns whether the tab existed.
  *
- * The title is the one piece of page-owned text that reaches the
- * ledger, so a secret typed into the rename field lands in the audit
- * record. Documented exception, not an accident; the cap bounds it.
+ * The name is the one piece of user-typed text that reaches the ledger,
+ * so a secret typed into the rename field lands in the audit record and
+ * stays on the strip until the tab is closed. Documented exception, not
+ * an accident; the cap bounds it, and the app never derives one.
  */
-bool companion_sheet_set_title(CompanionHandle *handle, uint64_t id,
-                               const char *title);
+bool companion_tab_set_title(CompanionHandle *handle, uint64_t tab,
+                             const char *title);
 
 /*
- * JSON array of non-secret page summaries, in visible (tab) order.
- * Free with companion_string_free(). Fields per page:
- *   id, title (the page's own name): the first non-empty line of its
- *     ink with markdown markup stripped, capped at 80 characters;
- *     "MMDD-HHmm" from the page's creation stamp in LOCAL time while
- *     there is no ink to derive from; or whatever
- *     companion_sheet_set_title() last set, which then sticks,
- *   rung_code (CompanionRung), rung_label ("8h"), remaining_ms,
- *   remaining_label ("3h 40m"), spoken_remaining ("about 3 hours
- *   remaining" — the VoiceOver value), fraction_remaining (0.0..1.0),
- *   paused (bool), hold_topped_up (bool — the hold is already at its
- *     24 hour ceiling, so the next pause press releases it),
- *   hold_remaining_ms, chip_count, last_hour (bool).
+ * JSON array of non-secret tab summaries, in visible (strip) order: one
+ * entry per slot, whether or not it holds a page. Free with
+ * companion_string_free(). Fields per tab:
+ *   id (the TAB's id — what the selection and the keyboard address),
+ *   has_page (bool — false is a slot whose page expired or was never
+ *     opened; every clock field below is meaningless then, and the
+ *     strip draws the dashed empty treatment instead of a gauge),
+ *   page_id (the PAGE's id, or null when has_page is false — what the
+ *     sealing and document routes address, and what a shell-side
+ *     storage map is keyed by),
+ *   title (the tab's label, resolved three ways: the name the user
+ *     typed; else the live page's derived title, its first non-empty
+ *     ink line with markdown stripped, capped at 80 characters; else
+ *     "MMDD-HHmm" from the TAB's creation stamp in LOCAL time),
+ *   rung_code (CompanionRung), rung_label ("8h") — both the tab's,
+ *   remaining_ms, remaining_label ("3h 40m"), spoken_remaining ("about
+ *     3 hours remaining" — the VoiceOver value), fraction_remaining
+ *     (0.0..1.0), paused (bool), hold_topped_up (bool — the hold is
+ *     already at its 24 hour ceiling, so the next pause press releases
+ *     it), hold_remaining_ms, chip_count, last_hour (bool).
  */
-char *companion_sheets_json(CompanionHandle *handle);
+char *companion_tabs_json(CompanionHandle *handle);
+
+/*
+ * The two emptiness predicates, both of them, in one call. Writes
+ * whether no tab holds a page and whether no tabs remain; returns
+ * false when the handle or the lock will not answer, having written
+ * false into both, which is the reading that changes nothing. Either
+ * output may be null.
+ *
+ * They are separate because emptying the pad is two questions
+ * (ADR-0017). "No tab holds a page" is the key rotation trigger: rotate
+ * both halves and reseal the surviving tab names, rungs and order under
+ * the new ones. "No tabs remain" is the one condition for dropping the
+ * sealed file. Wiring them backwards destroys the tabs an expiry was
+ * supposed to leave standing, or leaves the install on one content key
+ * for as long as any tab exists. Do not recompute either one from the
+ * summary array: the first is a security decision and it must be the
+ * core's answer that fires the rotation.
+ */
+bool companion_store_emptiness(CompanionHandle *handle,
+                               bool *holds_no_page_out,
+                               bool *has_no_tabs_out);
 
 /* ------------------------------------------------------------------ */
 /* Sealing — the gesture routes                                        */
@@ -373,15 +430,19 @@ int64_t companion_next_event_ms(CompanionHandle *handle);
  */
 uint64_t companion_expire_due(CompanionHandle *handle);
 
-/* Cycle the countdown one rung SHORTER (clock reset to the full rung —
- * each click resets the clock). The ladder tapers, 7d -> 3d -> 24h ->
- * 8h -> 3h -> 1h, and wraps back to 7d at the bottom, so the most
- * precarious rung is five clicks away rather than one. Returns the new
- * code, or -1 if the page is gone. */
-int companion_sheet_cycle_rung(CompanionHandle *handle, uint64_t id);
+/* Cycle a TAB's countdown one rung SHORTER (clock reset to the full
+ * rung — each click resets the clock). The ladder tapers, 7d -> 3d ->
+ * 24h -> 8h -> 3h -> 1h, and wraps back to 7d at the bottom, so the
+ * most precarious rung is five clicks away rather than one. Returns the
+ * new code, or -1 if the tab is gone. A tab holding no page takes the
+ * shorter rung and keeps it for its next page: the rung is the slot's
+ * property and never a countdown of the slot's own. */
+int companion_tab_cycle_rung(CompanionHandle *handle, uint64_t tab);
 
-/* Set an explicit rung (clock reset). Returns success. */
-bool companion_sheet_set_rung(CompanionHandle *handle, uint64_t id, int rung);
+/* Set a TAB to an explicit rung (its page's clock reset to it). Returns
+ * success; a tab holding no page stores the rung and succeeds, having
+ * no clock to reset. */
+bool companion_tab_set_rung(CompanionHandle *handle, uint64_t tab, int rung);
 
 /*
  * The pause gesture (double-click a tab), a three state cycle: first
@@ -390,10 +451,10 @@ bool companion_sheet_set_rung(CompanionHandle *handle, uint64_t id, int rung);
  * releases the hold and the countdown resumes where it froze. Holds
  * the clock, never extends the rung. An unreleased hold lapses on its
  * own (folded into companion_next_event_ms()). Returns false for an
- * unknown or already-due page. The summary's hold_topped_up says which
- * press comes next.
+ * unknown tab, one holding no page, and one whose page is already due.
+ * The summary's hold_topped_up says which press comes next.
  */
-bool companion_sheet_pause_press(CompanionHandle *handle, uint64_t id);
+bool companion_tab_pause_press(CompanionHandle *handle, uint64_t tab);
 
 /* ------------------------------------------------------------------ */
 /* The ledger                                                          */

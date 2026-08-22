@@ -39,15 +39,15 @@ public struct PageContentView: View {
     public var body: some View {
         if model.showingLedger {
             LedgerView(entries: model.ledgerEntries)
-        } else if let selection = model.selection {
-            // No `.id(selection)` on the editor, and the omission is
+        } else if let page = model.selectedPageID {
+            // No `.id(page)` on the editor, and the omission is
             // contract, not oversight (ADR-0006): one editor persists
             // across page switches, and `updateNSView` swaps the
             // page's storage underneath it. Re-adding an id would make
             // every switch an identity change again — the swap path
             // goes dead, and caret, scroll, and undo are quietly
             // discarded on every tab change.
-            InkEditorView(model: model, sheetID: selection, readOnly: readOnly)
+            InkEditorView(model: model, sheetID: page, readOnly: readOnly)
         } else {
             // The empty state: static text over a catcher that serves
             // two grants (ADR-0005). A click into the emptiness, the
@@ -58,7 +58,7 @@ public struct PageContentView: View {
             // keyboard back.
             ZStack {
                 EmptyStateKeyGrant(
-                    sheetsEmpty: { [model] in model.sheets.isEmpty },
+                    selectedTabHoldsNoPage: { [model] in model.selectedTabHoldsNoPage },
                     onCreate: { window in model.createPageAndFocus(in: window) },
                     onEscape: { model.escape() }
                 )
@@ -93,7 +93,7 @@ public struct PageStatusStack: View {
     public var body: some View {
         if PageModel.shouldShowPasteboardOffer(
             boardHolds: model.pasteboardOffer,
-            hasPage: model.selection != nil,
+            hasPage: model.selectedPageID != nil,
             ledgerShowing: model.showingLedger
         ) {
             // The summon-time offer (ADR-0007 Amendment 1): one
@@ -126,7 +126,7 @@ public struct PageStatusStack: View {
             // the network boundary is the one confirming click.
             PromotionView(model: model, draft: draft)
         }
-        if let sheet = model.selectedSheet, !model.showingLedger {
+        if let sheet = model.selectedTab, sheet.hasPage, !model.showingLedger {
             // The page's bottom edge drains continuously.
             GaugeBar(
                 fraction: sheet.fractionRemaining,
@@ -148,10 +148,10 @@ public struct PageStatusStack: View {
 /// ladder tapers rather than falling off its top, so shortening a
 /// page to the precarious end is a deliberate five clicks.
 public struct CountdownButton: View {
-    let sheet: SheetSummary
+    let sheet: TabSummary
     let cycle: () -> Void
 
-    public init(sheet: SheetSummary, cycle: @escaping () -> Void) {
+    public init(sheet: TabSummary, cycle: @escaping () -> Void) {
         self.sheet = sheet
         self.cycle = cycle
     }
@@ -246,7 +246,7 @@ public struct PageKeyboardMap: View {
 /// Esc hands the keyboard back. Chrome (tabs, header, pin) carries no
 /// such view and stays mute.
 struct EmptyStateKeyGrant: NSViewRepresentable {
-    let sheetsEmpty: () -> Bool
+    let selectedTabHoldsNoPage: () -> Bool
     let onCreate: (NSWindow?) -> Void
     let onEscape: () -> Void
 
@@ -261,7 +261,7 @@ struct EmptyStateKeyGrant: NSViewRepresentable {
     }
 
     private func apply(to view: KeyGrantingClickView) {
-        view.sheetsEmpty = sheetsEmpty
+        view.selectedTabHoldsNoPage = selectedTabHoldsNoPage
         view.onCreate = onCreate
         view.onEscape = onEscape
     }
@@ -279,14 +279,14 @@ final class KeyGrantingClickView: NSView {
     var onEscape: (() -> Void)?
 
     /// The model's live fact, read through a closure rather than cached
-    /// as a bool: a page created this instant flips `model.sheets` at
+    /// as a bool: a page opened this instant fills the selected slot at
     /// once, but the representable only pushes a cached snapshot on the
     /// next render pass. The `didBecomeKey` observer can fire inside
     /// that gap — after the editor already took focus — and a stale
     /// `true` would let the catcher seize first responder back from the
     /// editor, then unmount and strand it (issue #23). Reading live
     /// closes the gap.
-    var sheetsEmpty: () -> Bool = { true }
+    var selectedTabHoldsNoPage: () -> Bool = { true }
 
     // nonisolated(unsafe): deinit is always nonisolated, even on a
     // main-actor class (Swift 6), and the observation token isn't
@@ -346,12 +346,12 @@ final class KeyGrantingClickView: NSView {
     }
 
     /// The seat is taken exactly when the pure decision says the
-    /// fourth grant is on offer; the window's key status and the
-    /// model's sheet count are both consulted live.
+    /// fourth grant is on offer; the window's key status and whether
+    /// the selected slot holds a page are both consulted live.
     private func claimFirstResponderIfEntitled() {
         guard let window else { return }
         guard PageModel.shouldOfferEnterCreate(
-            sheetsEmpty: sheetsEmpty(), holdsKeys: window.isKeyWindow
+            selectedTabHoldsNoPage: selectedTabHoldsNoPage(), holdsKeys: window.isKeyWindow
         ) else { return }
         window.makeFirstResponder(self)
     }

@@ -208,8 +208,11 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.observeClip(of: scroll)
         coordinator.applyWrap(model.wrapsLines)
         // Dead pages take their saved view state with them — the same
-        // pruning `refresh()` applies to the storage cache.
-        coordinator.pruneViewState(keeping: Set(model.sheets.map(\.id)))
+        // pruning `refresh()` applies to the storage cache, and keyed
+        // the same way, by page identity: a tab outlives its pages
+        // (ADR-0017), so a slot's id would keep a dead page's caret and
+        // scroll alive for whatever page came next.
+        coordinator.pruneViewState(keeping: Set(model.tabs.compactMap(\.pageID)))
         guard coordinator.currentSheet != sheetID else { return }
         // A page switch reaches this editor as data, not identity
         // (ADR-0006): the view — and with it first responder, and the

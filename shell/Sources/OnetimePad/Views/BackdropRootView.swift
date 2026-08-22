@@ -187,8 +187,12 @@ struct BackdropRootView: View {
                     .help("Capture exclusion is OFF: this surface shows up in screenshots and screen sharing")
                     .accessibilityLabel(Text("Screenshots allowed"))
             }
-            if let sheet = pages.selectedSheet, !pages.showingLedger {
-                CountdownButton(sheet: sheet) { pages.cycleRung(sheet.id) }
+            // A countdown belongs to a page, so a slot holding none
+            // shows no label: there is nothing counting down, and the
+            // rung it keeps for its next page is not a deadline
+            // (ADR-0017).
+            if let tab = pages.selectedTab, tab.hasPage, !pages.showingLedger {
+                CountdownButton(sheet: tab) { pages.cycleRung(tab.id) }
             }
             pinToggle
         }

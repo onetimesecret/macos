@@ -210,7 +210,7 @@ final class LedgerClearRecoveryTests: XCTestCase {
         let after = PageModel.licencesAfterLedgerClear(content: false, ledger: false)
         XCTAssertFalse(
             PageModel.erasesContentFile(
-                loaded: true, contentLicence: after.content, storeEmpty: true))
+                loaded: true, contentLicence: after.content, noTabsRemain: true))
     }
 }
 
@@ -220,28 +220,33 @@ final class LedgerClearRecoveryTests: XCTestCase {
 /// cannot be taken back, so every precondition of the write is restated
 /// on it.
 final class ContentFileEraseTests: XCTestCase {
-    func testAnEmptiedStoreDropsTheFile() {
+    func testAStripWithNoTabsLeftDropsTheFile() {
         XCTAssertTrue(
-            PageModel.erasesContentFile(loaded: true, contentLicence: true, storeEmpty: true))
+            PageModel.erasesContentFile(loaded: true, contentLicence: true, noTabsRemain: true))
     }
 
-    func testAStoreWithPagesIsSealedNotDropped() {
+    /// The state ADR-0017 made possible and the reason this predicate
+    /// is the second one: every page expired overnight, the strip still
+    /// stands with its names, rungs and order, and that strip is
+    /// resealed rather than unlinked. A drop here would destroy exactly
+    /// what the expiry was supposed to leave standing.
+    func testAStripOfEmptyTabsIsResealedNotDropped() {
         XCTAssertFalse(
-            PageModel.erasesContentFile(loaded: true, contentLicence: true, storeEmpty: false))
+            PageModel.erasesContentFile(loaded: true, contentLicence: true, noTabsRemain: false))
     }
 
     func testASessionWithoutTheContentLicenceNeverDropsTheFile() {
         // It could not read that file. Deleting what it was not allowed
         // to overwrite would be the same loss by another route.
         XCTAssertFalse(
-            PageModel.erasesContentFile(loaded: true, contentLicence: false, storeEmpty: true))
+            PageModel.erasesContentFile(loaded: true, contentLicence: false, noTabsRemain: true))
     }
 
     func testASessionThatNeverLoadedNeverDropsTheFile() {
         // An empty store before the restore has run is not an emptied
         // store; it is a store that has not been filled yet.
         XCTAssertFalse(
-            PageModel.erasesContentFile(loaded: false, contentLicence: true, storeEmpty: true))
+            PageModel.erasesContentFile(loaded: false, contentLicence: true, noTabsRemain: true))
     }
 }
 

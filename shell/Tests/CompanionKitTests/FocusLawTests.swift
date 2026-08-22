@@ -91,22 +91,33 @@ final class FocusLawTests: XCTestCase {
 
     // MARK: The Return grant (ADR-0005): keyed emptiness offers create
 
-    func testAKeyedWindowKeepsTheKeysWhenTheLastPageDies() {
+    func testAKeyedWindowKeepsTheKeysWhenTheSelectedPageDies() {
         // The old policy handed the keyboard back at this moment; the
         // new one keeps it, seats the empty state's catcher as first
-        // responder, and lets Return conjure the next page.
-        XCTAssertTrue(PageModel.shouldOfferEnterCreate(sheetsEmpty: true, holdsKeys: true))
+        // responder, and lets Return conjure the next page. Under
+        // ADR-0017 the moment arrives more often: the selected tab's
+        // page can expire while the strip stands full.
+        XCTAssertTrue(
+            PageModel.shouldOfferEnterCreate(selectedTabHoldsNoPage: true, holdsKeys: true))
     }
 
     func testAnUnkeyedEmptyWindowOffersNoReturnGrant() {
         // Unkeyed emptiness never receives a keystroke; the click or
         // summon stays the price of entry, by design.
-        XCTAssertFalse(PageModel.shouldOfferEnterCreate(sheetsEmpty: true, holdsKeys: false))
+        XCTAssertFalse(
+            PageModel.shouldOfferEnterCreate(selectedTabHoldsNoPage: true, holdsKeys: false))
     }
 
-    func testLivePagesLeaveTheKeyboardToTheEditor() {
-        XCTAssertFalse(PageModel.shouldOfferEnterCreate(sheetsEmpty: false, holdsKeys: true))
-        XCTAssertFalse(PageModel.shouldOfferEnterCreate(sheetsEmpty: false, holdsKeys: false))
+    /// The predicate follows the selection and not the strip
+    /// (ADR-0017 item 11): what decides the create surface is whether
+    /// the tab the user is looking at holds a page, so a strip with
+    /// eight live pages and an empty selected slot still offers it, and
+    /// a selected slot holding a page never does.
+    func testTheGrantFollowsTheSelectedTabAndNotTheStrip() {
+        XCTAssertFalse(
+            PageModel.shouldOfferEnterCreate(selectedTabHoldsNoPage: false, holdsKeys: true))
+        XCTAssertFalse(
+            PageModel.shouldOfferEnterCreate(selectedTabHoldsNoPage: false, holdsKeys: false))
     }
 
     // MARK: Clearing the promotion draft on close (issue #19)

@@ -80,7 +80,7 @@ use promotion::{Connection, PromoteOpts, Promoted, ladder_snapped_ttl, promote};
 
 use companion_core::{
     ChipId, ChipMeta, DestinationClass, EditOp, LedgerEvent, RestoreError, Segment, Sheet, SheetId,
-    SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, Ttl,
+    SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, TabId, Ttl,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -361,54 +361,87 @@ pub unsafe extern "C" fn companion_free(handle: *mut CompanionHandle) {
 // Sheets: create, close, order
 // ---------------------------------------------------------------------------
 
-/// A new page at the end of the tab strip, on the default rung, its
-/// countdown started. Returns the sheet id, or `0` when the store
-/// refused — the cap is 9, the keyboard wall, and at the wall the app
-/// declines the tenth and says so (refuse-don't-evict, doc 04). `0` is
-/// never a valid id.
+/// A new tab at the end of the strip, holding a new page on the
+/// default rung with its countdown started. Returns the **tab** id, or
+/// `0` when the store refused — the cap is 9, the keyboard wall, and at
+/// the wall the app declines the tenth and says so (refuse-don't-evict,
+/// doc 04). `0` is never a valid id.
+///
+/// The tab is what comes back because the tab is what the shell
+/// selects and addresses afterwards (ADR-0017); the page inside it is
+/// named by the summary's `page_id`, and the two ids are separate
+/// counters that nothing may convert between.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_sheet_new(handle: *mut CompanionHandle) -> u64 {
+pub unsafe extern "C" fn companion_tab_new(handle: *mut CompanionHandle) -> u64 {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return 0;
     };
     let Ok(mut guard) = handle.inner.lock() else {
         return 0;
     };
-    match guard.store.new_sheet() {
-        Ok(id) => id.raw(),
+    match guard.store.new_tab() {
+        Ok((tab, _)) => tab.raw(),
         Err(_) => 0,
     }
 }
 
-/// Close a page: it rests in the ledger like an expired one, its sealed
-/// bytes zeroized. Returns whether the page existed.
+/// Mint a page into a tab that holds none, at **that tab's** rung.
+/// Returns the new page's id, or `0` for an unknown tab and for one
+/// that already holds a page — a tab holds at most one page, and
+/// replacing a live one here would drop a page nobody closed.
+///
+/// This is the route every deliberate mint into an existing slot takes:
+/// the three selection gestures and the Return grant (ADR-0017), and
+/// nothing else. Expiry never calls it, which is what keeps a countdown
+/// that ran out overnight from silently starting a fresh one on
+/// nothing.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_sheet_close(handle: *mut CompanionHandle, id: u64) -> bool {
+pub unsafe extern "C" fn companion_tab_open_page(handle: *mut CompanionHandle, tab: u64) -> u64 {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return 0;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return 0;
+    };
+    match guard.store.open_page(TabId::from_raw(tab)) {
+        Some(page) => page.raw(),
+        None => 0,
+    }
+}
+
+/// Close a tab: whatever page it holds rests in the ledger like an
+/// expired one, its sealed bytes zeroized, and the slot leaves the
+/// strip. Returns whether the tab existed.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_tab_close(handle: *mut CompanionHandle, tab: u64) -> bool {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    guard.store.close_sheet(SheetId::from_raw(id))
+    guard.store.close_tab(TabId::from_raw(tab))
 }
 
-/// Move a page to `index` in the visible order (drag-to-reorder; the
+/// Move a tab to `index` in the visible order (drag-to-reorder; the
 /// ⌘-number map follows). Out-of-range indices clamp to the end.
-/// Returns whether the page existed.
+/// Returns whether the tab existed.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_sheet_move(
+pub unsafe extern "C" fn companion_tab_move(
     handle: *mut CompanionHandle,
-    id: u64,
+    tab: u64,
     index: u64,
 ) -> bool {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
@@ -418,31 +451,32 @@ pub unsafe extern "C" fn companion_sheet_move(
         return false;
     };
     let index = usize::try_from(index).unwrap_or(usize::MAX);
-    guard.store.move_sheet(SheetId::from_raw(id), index)
+    guard.store.move_tab(TabId::from_raw(tab), index)
 }
 
-/// Name a page explicitly (the rename gesture in the tab context menu).
+/// Name a tab explicitly (the rename gesture in the tab context menu).
 ///
-/// An empty or all-whitespace `title` clears the user override and
-/// re-derives the title from the page's own content, which is the
-/// escape hatch back to the default. Anything else is trimmed, capped
-/// at 80 characters, and from then on **sticky**: editing the page
-/// never overwrites it again (ADR-0012).
+/// An empty or all-whitespace `title` clears the name, and the label
+/// falls back to the live page's derived title and then to the tab's
+/// own creation stamp. Anything else is trimmed, capped at 80
+/// characters, and from then on **sticky**: editing the page never
+/// overwrites it, and neither does the page dying (ADR-0017).
 ///
-/// The title is the one piece of page-owned text that reaches the
+/// The name is the one piece of user-owned text that reaches the
 /// ledger, so a user who types a secret into the rename field has put
-/// it into the audit record. That is the documented exception, not an
-/// accident; the cap bounds it.
+/// it into the audit record, and under a durable tab it stays on the
+/// strip until the tab is closed. That is the documented exception, not
+/// an accident; the cap bounds it and the app never derives one.
 ///
-/// Returns whether the page existed.
+/// Returns whether the tab existed.
 ///
 /// # Safety
 /// `handle` must be a valid handle. `title` must be a valid,
 /// NUL-terminated UTF-8 C string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_sheet_set_title(
+pub unsafe extern "C" fn companion_tab_set_title(
     handle: *mut CompanionHandle,
-    id: u64,
+    tab: u64,
     title: *const c_char,
 ) -> bool {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
@@ -454,7 +488,7 @@ pub unsafe extern "C" fn companion_sheet_set_title(
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    guard.store.set_title(SheetId::from_raw(id), title)
+    guard.store.set_title(TabId::from_raw(tab), title)
 }
 
 // ---------------------------------------------------------------------------
@@ -861,14 +895,20 @@ pub unsafe extern "C" fn companion_clear_clipboard_if_ours(handle: *mut Companio
 // Reading state — non-secret metadata only
 // ---------------------------------------------------------------------------
 
-/// A JSON array of non-secret page summaries, in visible (tab) order.
-/// The caller owns the returned string and must release it with
+/// A JSON array of non-secret tab summaries, in visible (strip) order:
+/// one entry per slot, whether or not it holds a page. The caller owns
+/// the returned string and must release it with
 /// [`companion_string_free`]. Returns null on error.
+///
+/// The walk is over the slots and not over the live pages, because the
+/// strip is the slots (ADR-0017). A tab whose page expired keeps its
+/// place, its label and its rung here, with `has_page` false and every
+/// clock field meaningless.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_sheets_json(handle: *mut CompanionHandle) -> *mut c_char {
+pub unsafe extern "C" fn companion_tabs_json(handle: *mut CompanionHandle) -> *mut c_char {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -877,21 +917,67 @@ pub unsafe extern "C" fn companion_sheets_json(handle: *mut CompanionHandle) -> 
     };
     let now = guard.store.now();
     let offset = guard.store.local_offset_seconds();
-    // The walk is over the slots, because the label is the slot's: a
-    // tab holding no page contributes no summary yet, and the seam that
-    // gives it one is ADR-0017's own work.
     let summaries: Vec<serde_json::Value> = guard
         .store
         .tabs()
-        .filter_map(|tab| {
-            tab.page()
-                .map(|sheet| summary_json(tab, sheet, now, offset))
-        })
+        .map(|tab| summary_json(tab, now, offset))
         .collect();
     match serde_json::to_string(&summaries) {
         Ok(json) => into_c_string(json),
         Err(_) => ptr::null_mut(),
     }
+}
+
+/// The two emptiness predicates, both of them, in one call: whether no
+/// tab holds a page, and whether no tabs remain. Returns false and
+/// writes nothing but the fail-closed `false` into both outputs when
+/// the handle or the lock will not answer.
+///
+/// They are the core's and they cross together for a reason
+/// (ADR-0017). The first is ADR-0016 section 6's key rotation trigger,
+/// which makes it a security decision rather than a rendering
+/// convenience: a predicate the shell recomputed from the summary array
+/// could drift from the one the rotation fires on. The second is the
+/// one condition under which the sealed file is dropped rather than
+/// resealed, because a strip of empty tabs still has names, rungs and
+/// an order to keep.
+///
+/// Wiring them backwards fails in both directions: the first fed to the
+/// drop destroys the tabs an expiry was supposed to leave standing, and
+/// the second fed to the rotation leaves the install on one content key
+/// for as long as any tab exists.
+///
+/// # Safety
+/// `handle` must be a valid handle. `holds_no_page_out` and
+/// `has_no_tabs_out`, when non-null, must point to writable memory.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_store_emptiness(
+    handle: *mut CompanionHandle,
+    holds_no_page_out: *mut bool,
+    has_no_tabs_out: *mut bool,
+) -> bool {
+    // Both answers start at the reading that changes nothing: no
+    // rotation, no drop. A caller that ignores the return value still
+    // gets the cautious answer rather than a stale one.
+    if !holds_no_page_out.is_null() {
+        unsafe { *holds_no_page_out = false };
+    }
+    if !has_no_tabs_out.is_null() {
+        unsafe { *has_no_tabs_out = false };
+    }
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    if !holds_no_page_out.is_null() {
+        unsafe { *holds_no_page_out = guard.store.holds_no_page() };
+    }
+    if !has_no_tabs_out.is_null() {
+        unsafe { *has_no_tabs_out = guard.store.has_no_tabs() };
+    }
+    true
 }
 
 /// The ledger (⌘0): an audit trail of what the app did with items,
@@ -1643,41 +1729,43 @@ fn wall_now_ms() -> Option<u64> {
 // Time: the ladder and the pause
 // ---------------------------------------------------------------------------
 
-/// Cycle a page's countdown label: one rung *shorter* on the ladder,
+/// Cycle a tab's countdown label: one rung *shorter* on the ladder,
 /// clock *reset* to the full rung value (each click resets the clock to
 /// the shown rung — doc 04). The ladder tapers, `7d → 3d → 24h → 8h →
 /// 3h → 1h`, and wraps back to `7d` at the bottom. A held page keeps
-/// its hold. Returns the new rung code, or `-1` if the page is gone.
+/// its hold. Returns the new rung code, or `-1` if the tab is gone.
+///
+/// Tab addressed, and a tab holding no page takes the shorter rung and
+/// keeps it for its next page: the rung is the slot's property, not a
+/// countdown of the slot's own (ADR-0017).
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_sheet_cycle_rung(
-    handle: *mut CompanionHandle,
-    id: u64,
-) -> c_int {
+pub unsafe extern "C" fn companion_tab_cycle_rung(handle: *mut CompanionHandle, tab: u64) -> c_int {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return -1;
     };
     let Ok(mut guard) = handle.inner.lock() else {
         return -1;
     };
-    match guard.store.cycle_rung(SheetId::from_raw(id)) {
+    match guard.store.cycle_rung(TabId::from_raw(tab)) {
         Some(rung) => ttl_to_code(rung),
         None => -1,
     }
 }
 
-/// Set a page to an explicit rung (see the `CompanionRung` codes in the
-/// header), resetting the clock to it. Returns `true` when the page
-/// existed and the code was valid.
+/// Set a tab to an explicit rung (see the `CompanionRung` codes in the
+/// header), resetting its page's clock to it. Returns `true` when the
+/// tab existed and the code was valid; a tab holding no page stores the
+/// rung and answers true, having no clock to reset.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_sheet_set_rung(
+pub unsafe extern "C" fn companion_tab_set_rung(
     handle: *mut CompanionHandle,
-    id: u64,
+    tab: u64,
     rung: c_int,
 ) -> bool {
     let Some(ttl) = ttl_from_code(rung) else {
@@ -1689,7 +1777,7 @@ pub unsafe extern "C" fn companion_sheet_set_rung(
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    guard.store.set_rung(SheetId::from_raw(id), ttl).is_some()
+    guard.store.set_rung(TabId::from_raw(tab), ttl).is_some()
 }
 
 /// The pause gesture (double-click a tab), a three state cycle: the
@@ -1699,7 +1787,7 @@ pub unsafe extern "C" fn companion_sheet_set_rung(
 /// resumes where it froze. A pause holds the clock; it never extends
 /// the rung. An unreleased hold lapses on its own — the lapse is
 /// folded into [`companion_next_event_ms`]. Returns false for an
-/// unknown or already-due page.
+/// unknown tab, one holding no page, and one whose page is already due.
 ///
 /// The summary's `hold_topped_up` says which press comes next, so the
 /// shell can label the gesture honestly.
@@ -1707,17 +1795,14 @@ pub unsafe extern "C" fn companion_sheet_set_rung(
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_sheet_pause_press(
-    handle: *mut CompanionHandle,
-    id: u64,
-) -> bool {
+pub unsafe extern "C" fn companion_tab_pause_press(handle: *mut CompanionHandle, tab: u64) -> bool {
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    guard.store.pause_press(SheetId::from_raw(id))
+    guard.store.pause_press(TabId::from_raw(tab))
 }
 
 // ---------------------------------------------------------------------------
@@ -2096,34 +2181,55 @@ pub unsafe extern "C" fn companion_string_free(s: *mut c_char) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// One page's non-secret snapshot, read through the tab it stands in:
-/// the label and the rung are the slot's, everything about the
-/// countdown is the page's. There is deliberately no field that could
-/// carry sealed content. The excerpt lives in the chip JSON returned at
-/// seal time and in the replayed document, and that is the only
-/// rendering sealed content ever gets. The ledger has none of it.
-fn summary_json(
-    tab: &Tab,
-    sheet: &Sheet,
-    now: std::time::Instant,
-    utc_offset_seconds: i32,
-) -> serde_json::Value {
-    let remaining = sheet.remaining(now);
+/// One tab's non-secret snapshot: the label and the rung are the
+/// slot's, everything about the countdown is the page's, and
+/// `has_page` says which half of the object is answering. There is
+/// deliberately no field that could carry sealed content. The excerpt
+/// lives in the chip JSON returned at seal time and in the replayed
+/// document, and that is the only rendering sealed content ever gets.
+/// The ledger has none of it.
+///
+/// Two ids, because neither one can do both jobs (ADR-0017). `id` is
+/// the tab's and addresses the slot, since the keyboard gestures have
+/// to land on a slot that may hold nothing. `page_id` is the page's and
+/// addresses the content, since the shell's storage maps must be keyed
+/// to something that dies with the page; it is null when the slot is
+/// empty. Page identity here is the in-process `SheetId` and never the
+/// item's UUID: the counter does not repeat inside a session, the maps
+/// it keys are per session, and a 36 character string has no business
+/// on the keystroke path.
+///
+/// The clock fields are present whatever `has_page` says, because a
+/// missing key is harder to read on the far side than a zero, but they
+/// mean nothing at all when it is false: an empty tab has no clock, so
+/// there is nothing for them to describe and the strip draws the dashed
+/// treatment instead of a gauge.
+fn summary_json(tab: &Tab, now: std::time::Instant, utc_offset_seconds: i32) -> serde_json::Value {
+    let page = tab.page();
+    let remaining = page.map_or(std::time::Duration::ZERO, |sheet| sheet.remaining(now));
     serde_json::json!({
-        "id": sheet.id().raw(),
+        "id": tab.id().raw(),
+        "has_page": page.is_some(),
+        "page_id": page.map(|sheet| sheet.id().raw()),
         "title": tab.label(utc_offset_seconds),
         "rung_code": ttl_to_code(tab.rung()),
         "rung_label": tab.rung().to_string(),
         "remaining_ms": u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX),
-        "remaining_label": sheet.remaining_label(now),
-        "spoken_remaining": spoken_remaining(remaining),
-        "fraction_remaining": f64::from(sheet.fraction_remaining(tab.rung(), now)),
-        "paused": sheet.is_held(now),
-        "hold_topped_up": sheet.hold_topped_up(now),
-        "hold_remaining_ms":
-            u64::try_from(sheet.hold_remaining(now).as_millis()).unwrap_or(u64::MAX),
-        "chip_count": sheet.chip_count(),
-        "last_hour": sheet.last_hour(now),
+        "remaining_label": page.map(|sheet| sheet.remaining_label(now)).unwrap_or_default(),
+        "spoken_remaining": page.map_or_else(
+            || "this tab holds no page".to_string(),
+            |_| spoken_remaining(remaining),
+        ),
+        "fraction_remaining": page.map_or(0.0, |sheet| {
+            f64::from(sheet.fraction_remaining(tab.rung(), now))
+        }),
+        "paused": page.is_some_and(|sheet| sheet.is_held(now)),
+        "hold_topped_up": page.is_some_and(|sheet| sheet.hold_topped_up(now)),
+        "hold_remaining_ms": page.map_or(0, |sheet| {
+            u64::try_from(sheet.hold_remaining(now).as_millis()).unwrap_or(u64::MAX)
+        }),
+        "chip_count": page.map_or(0, Sheet::chip_count),
+        "last_hour": page.is_some_and(|sheet| sheet.last_hour(now)),
     })
 }
 
@@ -2350,6 +2456,54 @@ mod tests {
         CString::new(s).unwrap()
     }
 
+    /// A fresh tab and the page it was born holding, as the two ids the
+    /// seam now hands out separately. Most tests want the page; the
+    /// tab-addressed routes want the tab, and nothing may guess one
+    /// from the other.
+    unsafe fn new_page(handle: *mut CompanionHandle) -> (u64, u64) {
+        let tab = unsafe { companion_tab_new(handle) };
+        assert_ne!(tab, 0, "the store refused a tab");
+        (
+            tab,
+            unsafe { page_of(handle, tab) }.expect("born holding one"),
+        )
+    }
+
+    /// Age every staged page by `gap_ms` of wall time, the way a
+    /// relaunch after a night away does: snapshot at one wall reading
+    /// and restore at a later one. A `SystemClock` store has no other
+    /// way to reach the far side of a countdown, and the restore
+    /// re-mints both id counters densely, so a caller reads the ids
+    /// back afterwards rather than keeping the ones it had.
+    unsafe fn age_by(handle: *mut CompanionHandle, gap_ms: u64) {
+        let handle = unsafe { &*handle };
+        let mut guard = handle.inner.lock().unwrap();
+        let sealed_wall_ms = 1_700_000_000_000;
+        let snapshot = guard.store.snapshot(sealed_wall_ms);
+        guard
+            .store
+            .restore(&snapshot, sealed_wall_ms + gap_ms)
+            .expect("a store reads back its own snapshot");
+    }
+
+    /// The whole strip as summaries, in visible order.
+    unsafe fn strip(handle: *mut CompanionHandle) -> Vec<serde_json::Value> {
+        serde_json::from_str(&unsafe { take_json(companion_tabs_json(handle)) }).unwrap()
+    }
+
+    /// The page a tab holds, read back through the summaries, or `None`
+    /// for an empty slot.
+    unsafe fn page_of(handle: *mut CompanionHandle, tab: u64) -> Option<u64> {
+        let json = unsafe { take_json(companion_tabs_json(handle)) };
+        let summaries: serde_json::Value = serde_json::from_str(&json).unwrap();
+        summaries
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"].as_u64() == Some(tab))
+            .and_then(|entry| entry["page_id"].as_u64())
+    }
+
     /// The drag route reads the real drag pasteboard core-side. macOS
     /// only — the drag board exists only there; off macOS the entry
     /// returns null by construction. Seeding the shared drag board is
@@ -2360,7 +2514,7 @@ mod tests {
         use companion_pasteboard::SystemPasteboard;
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             assert_ne!(sheet, 0);
 
             // Nothing dragged → null, no chip.
@@ -2421,7 +2575,7 @@ mod tests {
         let secret = "hunter2-the-sealed-bytes";
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
-            let sheet = companion_sheet_new(first);
+            let (_tab, sheet) = new_page(first);
             assert_ne!(sheet, 0);
             let chip_json: serde_json::Value = serde_json::from_str(&take_json(
                 companion_sheet_seal_text(first, sheet, cstring(secret).as_ptr(), 0, 0),
@@ -2443,7 +2597,7 @@ mod tests {
 
             let second = handle_with(Arc::clone(&credentials));
             assert!(companion_persist_restore(second, c_path.as_ptr()));
-            let sheets = take_json(companion_sheets_json(second));
+            let sheets = take_json(companion_tabs_json(second));
             assert!(sheets.contains("\"title\":\"deploy notes\""), "{sheets}");
             let document = take_json(companion_sheet_document_json(second, sheet));
             assert!(document.contains("\"ink\""));
@@ -2506,7 +2660,7 @@ mod tests {
         let secret = format!("ghp_{}", "n0ts3cr3t".repeat(4));
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (tab, sheet) = new_page(handle);
             assert_ne!(sheet, 0);
 
             // Route 1: the ⌘↩ ingest entry.
@@ -2535,7 +2689,7 @@ mod tests {
             assert!(!chip2.contains("n0ts3cr3t"), "{chip2}");
 
             // Summaries carry counts and titles, never chip contents.
-            let sheets = take_json(companion_sheets_json(handle));
+            let sheets = take_json(companion_tabs_json(handle));
             assert!(!sheets.contains("n0ts3cr3t"), "{sheets}");
             assert!(sheets.contains("\"chip_count\":2"), "{sheets}");
 
@@ -2543,7 +2697,7 @@ mod tests {
             // bytes, and no excerpt of them either. The excerpt was the
             // last rendering of sealed content that reached this
             // surface, and it is gone.
-            assert!(companion_sheet_close(handle, sheet));
+            assert!(companion_tab_close(handle, tab));
             let ledger = take_json(companion_ledger_json(handle));
             assert!(!ledger.contains("n0ts3cr3t"), "{ledger}");
             assert!(!ledger.contains("tombstone"), "{ledger}");
@@ -2578,7 +2732,7 @@ mod tests {
         let origin = "https://origin.example.test/reset?tk=Vq9Zx-Chutney";
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (tab, sheet) = new_page(handle);
             seed_with_origin(handle, "pasted out of a browser", origin);
             let chip = take_json(companion_sheet_seal_from_pasteboard(
                 handle,
@@ -2618,13 +2772,13 @@ mod tests {
                     );
                 }
             };
-            clean(&take_json(companion_sheets_json(handle)), "summaries");
+            clean(&take_json(companion_tabs_json(handle)), "summaries");
             clean(&take_json(companion_sheet_meta_json(handle, sheet)), "meta");
             clean(
                 &take_json(companion_sheet_blocks_json(handle, sheet)),
                 "blocks",
             );
-            assert!(companion_sheet_close(handle, sheet));
+            assert!(companion_tab_close(handle, tab));
             clean(&take_json(companion_ledger_json(handle)), "ledger");
 
             companion_free(handle);
@@ -2635,7 +2789,7 @@ mod tests {
     fn meta_and_blocks_json_carry_identities_and_stamps_only() {
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             // Typed, so the two lines are two blocks: a single op
             // carrying both would be a paste, and a paste is one block.
             let ops = cstring(
@@ -2695,7 +2849,7 @@ mod tests {
         // gone from the wire.
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             let _ = take_json(companion_sheet_seal_text(
                 handle,
                 sheet,
@@ -2703,7 +2857,7 @@ mod tests {
                 0,
                 0,
             ));
-            let sheets = take_json(companion_sheets_json(handle));
+            let sheets = take_json(companion_tabs_json(handle));
             assert!(!sheets.contains("detected_as"), "{sheets}");
             assert!(!sheets.contains("recognition"), "{sheets}");
             companion_free(handle);
@@ -2715,7 +2869,7 @@ mod tests {
         let handle = handle();
         seed(handle, "on its way somewhere else");
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             let chip = take_json(companion_sheet_seal_from_pasteboard(
                 handle,
                 sheet,
@@ -2737,7 +2891,7 @@ mod tests {
         let handle = handle();
         seed(handle, "hunter2");
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             assert!(companion_pasteboard_has_content(handle));
 
             let mut cleared = false;
@@ -2786,7 +2940,7 @@ mod tests {
         unsafe {
             assert!(!companion_pasteboard_has_content(handle), "empty board");
 
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             let chip = take_json(companion_sheet_seal_text(
                 handle,
                 sheet,
@@ -2827,7 +2981,7 @@ mod tests {
                 .put_external(PasteboardContent::Image(png), false, None);
         }
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             let chip_json = take_json(companion_sheet_seal_from_pasteboard(
                 handle,
                 sheet,
@@ -2862,7 +3016,7 @@ mod tests {
     fn copy_out_writes_the_pasteboard_in_core_marked_concealed() {
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             let chip_json = take_json(companion_sheet_seal_text(
                 handle,
                 sheet,
@@ -2890,7 +3044,7 @@ mod tests {
             }
 
             // Copy-out does not consume the chip.
-            let sheets = take_json(companion_sheets_json(handle));
+            let sheets = take_json(companion_tabs_json(handle));
             assert!(sheets.contains("\"chip_count\":1"), "{sheets}");
 
             // Guarded clear: succeeds while the board still holds our
@@ -2909,7 +3063,7 @@ mod tests {
     fn sync_document_names_the_page_and_reaps_omitted_chips() {
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             let chip_json = take_json(companion_sheet_seal_text(
                 handle,
                 sheet,
@@ -2926,7 +3080,7 @@ mod tests {
                 sheet,
                 cstring(&doc).as_ptr()
             ));
-            let sheets = take_json(companion_sheets_json(handle));
+            let sheets = take_json(companion_tabs_json(handle));
             assert!(
                 sheets.contains("\"title\":\"deploy friday\""),
                 "markup-stripped title: {sheets}"
@@ -2960,7 +3114,7 @@ mod tests {
     fn apply_ops_moves_edits_over_the_seam() {
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             // Astral ink, then a replace described the way the shell
             // coalesces one: positions are UTF-16 code units, so the
             // rocket spans two.
@@ -2986,7 +3140,7 @@ mod tests {
     fn apply_ops_rejects_malformed_and_non_atomic_batches_whole() {
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             assert!(companion_sheet_apply_ops(
                 handle,
                 sheet,
@@ -3034,7 +3188,7 @@ mod tests {
     fn a_range_seal_replaces_the_selection_in_one_call() {
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             let ink = "[{\"ins\": {\"at\": 0, \"text\": \"a\u{1F600}SECRET b\"}}]";
             assert!(companion_sheet_apply_ops(
                 handle,
@@ -3074,7 +3228,7 @@ mod tests {
         let handle = handle();
         unsafe {
             // Promotion refuses before any network when unconfigured.
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             let chip = take_json(companion_sheet_seal_text(
                 handle,
                 sheet,
@@ -3130,7 +3284,7 @@ mod tests {
             // A gone chip refuses; an empty page refuses.
             let refusal = take_json(companion_chip_promote(handle, 424_242, ptr::null()));
             assert!(refusal.contains("gone"));
-            let empty = companion_sheet_new(handle);
+            let (_empty_tab, empty) = new_page(handle);
             let refusal = take_json(companion_sheet_promote(handle, empty, ptr::null()));
             assert!(refusal.contains("nothing to promote"));
 
@@ -3152,9 +3306,9 @@ mod tests {
         let handle = handle();
         unsafe {
             for _ in 0..9 {
-                assert_ne!(companion_sheet_new(handle), 0);
+                assert_ne!(companion_tab_new(handle), 0);
             }
-            assert_eq!(companion_sheet_new(handle), 0, "the keyboard wall");
+            assert_eq!(companion_tab_new(handle), 0, "the keyboard wall");
             companion_free(handle);
         }
     }
@@ -3168,7 +3322,7 @@ mod tests {
                 -1,
                 "empty store: nothing to arm"
             );
-            let sheet = companion_sheet_new(handle);
+            let (tab, sheet) = new_page(handle);
             assert_ne!(sheet, 0);
 
             // Default rung is 8h; the one armed timer is under that and
@@ -3179,13 +3333,13 @@ mod tests {
 
             // Pause: the next event becomes the hold lapse (1h), not
             // the expiry.
-            assert!(companion_sheet_pause_press(handle, sheet));
+            assert!(companion_tab_pause_press(handle, tab));
             let ms = companion_next_event_ms(handle);
             assert!(ms <= 60 * 60 * 1000, "hold lapse ms: {ms}");
             assert!(ms > 59 * 60 * 1000, "hold lapse ms: {ms}");
 
             // The summary says so, in a11y words too.
-            let sheets = take_json(companion_sheets_json(handle));
+            let sheets = take_json(companion_tabs_json(handle));
             assert!(sheets.contains("\"paused\":true"), "{sheets}");
             assert!(sheets.contains("spoken_remaining"), "{sheets}");
 
@@ -3198,17 +3352,135 @@ mod tests {
     fn rungs_pause_move_and_close_over_the_abi() {
         let handle = handle();
         unsafe {
-            let a = companion_sheet_new(handle);
-            let b = companion_sheet_new(handle);
-            assert!(companion_sheet_set_rung(handle, a, 5)); // 7d
-            assert_eq!(companion_sheet_cycle_rung(handle, a), 4); // -> 3d
-            assert!(companion_sheet_set_rung(handle, a, 0)); // 1h
-            assert_eq!(companion_sheet_cycle_rung(handle, a), 5); // wraps -> 7d
-            assert!(!companion_sheet_set_rung(handle, a, 99), "bad rung code");
-            assert!(companion_sheet_move(handle, b, 0));
-            assert!(companion_sheet_close(handle, a));
-            assert!(!companion_sheet_close(handle, a), "already gone");
-            assert_eq!(companion_sheet_cycle_rung(handle, a), -1, "gone");
+            let (a, _) = new_page(handle);
+            let (b, _) = new_page(handle);
+            assert!(companion_tab_set_rung(handle, a, 5)); // 7d
+            assert_eq!(companion_tab_cycle_rung(handle, a), 4); // -> 3d
+            assert!(companion_tab_set_rung(handle, a, 0)); // 1h
+            assert_eq!(companion_tab_cycle_rung(handle, a), 5); // wraps -> 7d
+            assert!(!companion_tab_set_rung(handle, a, 99), "bad rung code");
+            assert!(companion_tab_move(handle, b, 0));
+            assert!(companion_tab_close(handle, a));
+            assert!(!companion_tab_close(handle, a), "already gone");
+            assert_eq!(companion_tab_cycle_rung(handle, a), -1, "gone");
+            companion_free(handle);
+        }
+    }
+
+    /// The summary is the tab's, and it carries the two ids separately
+    /// because neither can do the other's job (ADR-0017): the slot is
+    /// what a keystroke lands on, and the page is what a storage map is
+    /// keyed by. An expiry is where the difference shows.
+    #[test]
+    fn a_tab_summary_carries_both_ids_and_says_whether_a_page_is_there() {
+        let handle = handle();
+        unsafe {
+            let (tab, page) = new_page(handle);
+            assert!(companion_tab_set_title(
+                handle,
+                tab,
+                cstring("payroll").as_ptr()
+            ));
+            assert!(companion_tab_set_rung(handle, tab, 0)); // 1h
+
+            let summaries: Vec<serde_json::Value> =
+                serde_json::from_str(&take_json(companion_tabs_json(handle))).unwrap();
+            assert_eq!(summaries.len(), 1);
+            assert_eq!(summaries[0]["id"].as_u64(), Some(tab));
+            assert_eq!(summaries[0]["page_id"].as_u64(), Some(page));
+            assert_eq!(summaries[0]["has_page"].as_bool(), Some(true));
+
+            // The expiry takes the page and leaves the slot: the strip
+            // keeps its width, the label survives, and the second id
+            // goes away because the thing it named did.
+            age_by(handle, 2 * 60 * 60 * 1_000);
+            assert_eq!(companion_expire_due(handle), 1);
+            let summaries = strip(handle);
+            assert_eq!(summaries.len(), 1, "the tab stayed on the strip");
+            let tab = summaries[0]["id"].as_u64().unwrap();
+            assert_eq!(summaries[0]["has_page"].as_bool(), Some(false));
+            assert!(summaries[0]["page_id"].is_null(), "{:?}", summaries[0]);
+            assert_eq!(summaries[0]["title"].as_str(), Some("payroll"));
+            assert_eq!(summaries[0]["rung_code"].as_i64(), Some(0), "the rung too");
+            assert_eq!(companion_next_event_ms(handle), -1, "nothing to arm");
+
+            // And the slot takes a new page at the rung it kept.
+            let replacement = companion_tab_open_page(handle, tab);
+            assert_ne!(replacement, 0);
+            assert_ne!(replacement, page, "a reused slot holds a new page");
+            assert_eq!(
+                companion_tab_open_page(handle, tab),
+                0,
+                "one page to a slot"
+            );
+            assert_eq!(companion_tab_open_page(handle, 424_242), 0, "no such tab");
+            assert_eq!(companion_tab_open_page(ptr::null_mut(), tab), 0);
+            companion_free(handle);
+        }
+    }
+
+    /// Both halves of the emptiness question, across the seam in one
+    /// call, and they answer differently in exactly the state the split
+    /// exists for: a strip of named slots holding nothing.
+    #[test]
+    fn the_two_emptiness_predicates_cross_together_and_disagree() {
+        let handle = handle();
+        unsafe {
+            let mut holds_no_page = true;
+            let mut has_no_tabs = true;
+            assert!(companion_store_emptiness(
+                handle,
+                &raw mut holds_no_page,
+                &raw mut has_no_tabs
+            ));
+            assert!(holds_no_page, "a store with no tabs holds no page");
+            assert!(has_no_tabs);
+
+            let (tab, _) = new_page(handle);
+            assert!(companion_tab_set_rung(handle, tab, 0)); // 1h
+            assert!(companion_store_emptiness(
+                handle,
+                &raw mut holds_no_page,
+                &raw mut has_no_tabs
+            ));
+            assert!(!holds_no_page);
+            assert!(!has_no_tabs);
+
+            age_by(handle, 2 * 60 * 60 * 1_000);
+            assert_eq!(companion_expire_due(handle), 1);
+            let tab = strip(handle)[0]["id"].as_u64().unwrap();
+            assert!(companion_store_emptiness(
+                handle,
+                &raw mut holds_no_page,
+                &raw mut has_no_tabs
+            ));
+            assert!(holds_no_page, "the pad holds no content: rotate and reseal");
+            assert!(!has_no_tabs, "but there is a named slot left to reseal");
+
+            assert!(companion_tab_close(handle, tab));
+            assert!(companion_store_emptiness(
+                handle,
+                &raw mut holds_no_page,
+                &raw mut has_no_tabs
+            ));
+            assert!(has_no_tabs, "now the file has nothing to hold");
+
+            // Fail closed: a refused call says so and leaves both
+            // answers at the reading that changes nothing.
+            holds_no_page = true;
+            has_no_tabs = true;
+            assert!(!companion_store_emptiness(
+                ptr::null_mut(),
+                &raw mut holds_no_page,
+                &raw mut has_no_tabs
+            ));
+            assert!(!holds_no_page, "no rotation on a refused answer");
+            assert!(!has_no_tabs, "and no drop either");
+            assert!(!companion_store_emptiness(
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut()
+            ));
             companion_free(handle);
         }
     }
@@ -3225,14 +3497,14 @@ mod tests {
         let token = "zzsentinelzz-second-line-of-ink";
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (tab, sheet) = new_page(handle);
             let doc = format!(r#"[{{"ink": "errands\n{token}"}}]"#);
             assert!(companion_sheet_sync_document(
                 handle,
                 sheet,
                 cstring(&doc).as_ptr()
             ));
-            assert!(companion_sheet_close(handle, sheet));
+            assert!(companion_tab_close(handle, tab));
             let ledger = take_json(companion_ledger_json(handle));
 
             assert!(
@@ -3280,21 +3552,21 @@ mod tests {
     fn set_title_sticks_until_cleared() {
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (tab, sheet) = new_page(handle);
             assert!(companion_sheet_sync_document(
                 handle,
                 sheet,
                 cstring(r#"[{"ink": "first line"}]"#).as_ptr()
             ));
-            let sheets = take_json(companion_sheets_json(handle));
+            let sheets = take_json(companion_tabs_json(handle));
             assert!(sheets.contains("\"title\":\"first line\""), "{sheets}");
 
-            assert!(companion_sheet_set_title(
+            assert!(companion_tab_set_title(
                 handle,
-                sheet,
+                tab,
                 cstring("  Payroll Q3  ").as_ptr()
             ));
-            let sheets = take_json(companion_sheets_json(handle));
+            let sheets = take_json(companion_tabs_json(handle));
             assert!(
                 sheets.contains("\"title\":\"Payroll Q3\""),
                 "trimmed: {sheets}"
@@ -3306,30 +3578,30 @@ mod tests {
                 sheet,
                 cstring(r#"[{"ink": "a different first line"}]"#).as_ptr()
             ));
-            let sheets = take_json(companion_sheets_json(handle));
+            let sheets = take_json(companion_tabs_json(handle));
             assert!(sheets.contains("\"title\":\"Payroll Q3\""), "{sheets}");
 
             // The empty submission clears the override and re-derives.
-            assert!(companion_sheet_set_title(
+            assert!(companion_tab_set_title(
                 handle,
-                sheet,
+                tab,
                 cstring("   ").as_ptr()
             ));
-            let sheets = take_json(companion_sheets_json(handle));
+            let sheets = take_json(companion_tabs_json(handle));
             assert!(
                 sheets.contains("\"title\":\"a different first line\""),
                 "{sheets}"
             );
 
-            assert!(!companion_sheet_set_title(
+            assert!(!companion_tab_set_title(
                 handle,
                 424_242,
                 cstring("nobody").as_ptr()
             ));
-            assert!(!companion_sheet_set_title(handle, sheet, ptr::null()));
-            assert!(!companion_sheet_set_title(
+            assert!(!companion_tab_set_title(handle, tab, ptr::null()));
+            assert!(!companion_tab_set_title(
                 ptr::null_mut(),
-                sheet,
+                tab,
                 cstring("x").as_ptr()
             ));
             companion_free(handle);
@@ -3344,7 +3616,7 @@ mod tests {
         let secret = format!("ghp_{}", "n0ts3cr3t".repeat(4));
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             let chip_json = take_json(companion_sheet_seal_text(
                 handle,
                 sheet,
@@ -3405,7 +3677,7 @@ mod tests {
         let secret = format!("ghp_{}", "n0ts3cr3t".repeat(4));
         let handle = handle();
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             let chip_json = take_json(companion_sheet_seal_text(
                 handle,
                 sheet,
@@ -3454,7 +3726,7 @@ mod tests {
             assert_eq!(sent[0]["item"], created["item"]);
 
             // The page is still live; a send is not a death.
-            let sheets = take_json(companion_sheets_json(handle));
+            let sheets = take_json(companion_tabs_json(handle));
             assert!(
                 sheets.contains("\"title\":\"rotate on friday\""),
                 "{sheets}"
@@ -3464,11 +3736,18 @@ mod tests {
     }
 
     /// The first staged page's remaining milliseconds, or `None` when
-    /// the store holds no page at all.
+    /// the first slot holds no page. A slot that lost its page still
+    /// stands in the strip and still answers with a summary, so the
+    /// question this asks is `has_page` and never the array's length
+    /// (ADR-0017).
     unsafe fn first_remaining_ms(handle: *mut CompanionHandle) -> Option<u64> {
         let sheets: Vec<serde_json::Value> =
-            serde_json::from_str(&unsafe { take_json(companion_sheets_json(handle)) }).unwrap();
-        sheets.first()?["remaining_ms"].as_u64()
+            serde_json::from_str(&unsafe { take_json(companion_tabs_json(handle)) }).unwrap();
+        let first = sheets.first()?;
+        if first["has_page"].as_bool() != Some(true) {
+            return None;
+        }
+        first["remaining_ms"].as_u64()
     }
 
     /// The away computation is pure arithmetic, so it is pinned here
@@ -3520,7 +3799,7 @@ mod tests {
         let five_minutes_ms = 5 * 60 * 1_000;
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
-            let sheet = companion_sheet_new(first);
+            let (_tab, sheet) = new_page(first);
             let remaining_before = first_remaining_ms(first).unwrap();
 
             // Sealed five minutes ago, by the only clock that can
@@ -3561,7 +3840,7 @@ mod tests {
         let c_path = cstring(path.to_str().unwrap());
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
-            let sheet = companion_sheet_new(first);
+            let (tab, sheet) = new_page(first);
             // The shortest rung on the ladder, and a gap of a full day.
             // The page carries ink, because an empty page dies without a
             // ledger record by design (nothing happened worth recording).
@@ -3570,7 +3849,7 @@ mod tests {
                 sheet,
                 cstring(r##"[{"ink": "# perishable\n"}]"##).as_ptr()
             ));
-            assert!(companion_sheet_set_rung(first, sheet, 0));
+            assert!(companion_tab_set_rung(first, tab, 0));
             let sealed_wall_ms = wall_now_ms().unwrap() - 24 * 60 * 60 * 1_000;
             let snapshot = {
                 let guard = (*first).inner.lock().unwrap();
@@ -3613,7 +3892,7 @@ mod tests {
         let c_path = cstring(path.to_str().unwrap());
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
-            let sheet = companion_sheet_new(first);
+            let (_tab, sheet) = new_page(first);
             let _ = take_json(companion_sheet_seal_text(
                 first,
                 sheet,
@@ -3674,7 +3953,7 @@ mod tests {
         let c_path = cstring(path.to_str().unwrap());
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
-            let sheet = companion_sheet_new(first);
+            let (_tab, sheet) = new_page(first);
             let _ = take_json(companion_sheet_seal_text(
                 first,
                 sheet,
@@ -3753,7 +4032,7 @@ mod tests {
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
             // A birth is a ledger record, so the file has something in it.
-            let _ = companion_sheet_new(first);
+            let _ = new_page(first);
             assert!(companion_ledger_save(first, c_path.as_ptr()));
             companion_free(first);
 
@@ -3792,7 +4071,7 @@ mod tests {
                 "the disposal rotated the ledger key; the arm's reasoning assumes it does not"
             );
             // And the session that follows records and reads its own.
-            let _ = companion_sheet_new(third);
+            let _ = new_page(third);
             assert!(companion_ledger_save(third, c_path.as_ptr()));
             let written = take_json(companion_ledger_json(third));
             companion_free(third);
@@ -3817,7 +4096,7 @@ mod tests {
         let c_path = cstring(path.to_str().unwrap());
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
-            companion_sheet_new(first);
+            new_page(first);
             assert!(companion_persist_save(first, c_path.as_ptr()));
             companion_free(first);
 
@@ -3849,7 +4128,7 @@ mod tests {
         let c_path = cstring(path.to_str().unwrap());
         let stranded = dir.join("state.sealed.0f1e2d3c4b5a6978.tmp");
         unsafe {
-            companion_sheet_new(handle);
+            new_page(handle);
             assert!(companion_persist_save(handle, c_path.as_ptr()));
             std::fs::write(&stranded, std::fs::read(&path).unwrap()).unwrap();
 
@@ -3883,7 +4162,7 @@ mod tests {
                 )
                 .as_ptr()
             ));
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             let _ = take_json(companion_sheet_seal_text(
                 handle,
                 sheet,
@@ -3929,8 +4208,8 @@ mod tests {
         let c_path = cstring(path.to_str().unwrap());
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
-            let sheet = companion_sheet_new(first);
-            assert!(companion_sheet_set_rung(first, sheet, 0));
+            let (tab, sheet) = new_page(first);
+            assert!(companion_tab_set_rung(first, tab, 0));
             let remaining_before = first_remaining_ms(first).unwrap();
             // A day ahead of the current wall clock.
             let ahead_ms = wall_now_ms().unwrap() + 24 * 60 * 60 * 1_000;
@@ -3973,7 +4252,7 @@ mod tests {
         // base), which is far outside the window by any real "now".
         let stale = {
             let mut aged = SheetStore::new(companion_core::ManualClock::new());
-            aged.new_sheet().unwrap();
+            aged.new_tab().unwrap();
             aged.ledger_snapshot()
         };
         let stale_wall_ms = 1_700_000_000_000;
@@ -4020,7 +4299,7 @@ mod tests {
         let path = dir.join("state.sealed");
         let c_path = cstring(path.to_str().unwrap());
         unsafe {
-            let sheet = companion_sheet_new(handle);
+            let (_tab, sheet) = new_page(handle);
             assert!(companion_persist_save(handle, c_path.as_ptr()));
             assert!(path.exists());
             assert!(companion_persist_erase(handle, c_path.as_ptr()));
@@ -4050,7 +4329,7 @@ mod tests {
         let c_path = cstring(path.to_str().unwrap());
         unsafe {
             let handle = handle_with(Arc::clone(&credentials));
-            companion_sheet_new(handle);
+            new_page(handle);
             assert!(companion_persist_save(handle, c_path.as_ptr()));
             let dropped_key = persist::load_state_key(&*credentials, &path)
                 .expect("a saved file has a key")
@@ -4091,7 +4370,7 @@ mod tests {
         let c_path = cstring(path.to_str().unwrap());
         unsafe {
             let handle = handle_with(Arc::clone(&credentials));
-            companion_sheet_new(handle);
+            new_page(handle);
             assert!(companion_persist_save(handle, c_path.as_ptr()));
             assert!(persist::load_state_key(&*credentials, &path).is_some());
 
@@ -4127,7 +4406,7 @@ mod tests {
         let c_path = cstring(path.to_str().unwrap());
         unsafe {
             let handle = handle_with(Arc::clone(&credentials));
-            companion_sheet_new(handle);
+            new_page(handle);
             assert!(companion_persist_save(handle, c_path.as_ptr()));
             assert!(persist::load_state_key(&*credentials, &path).is_some());
             let sealed_before = std::fs::read(&path).unwrap();
@@ -4186,7 +4465,7 @@ mod tests {
         let c_ledger = cstring(ledger_path.to_str().unwrap());
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
-            let sheet = companion_sheet_new(first);
+            let (_tab, sheet) = new_page(first);
             let _ = take_json(companion_sheet_seal_text(
                 first,
                 sheet,
@@ -4262,7 +4541,7 @@ mod tests {
         let secret = "hunter2-the-sealed-bytes";
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
-            let sheet = companion_sheet_new(first);
+            let (_tab, sheet) = new_page(first);
             let _ = take_json(companion_sheet_seal_text(
                 first,
                 sheet,
@@ -4315,8 +4594,8 @@ mod tests {
     #[test]
     fn null_handles_are_handled_gracefully() {
         unsafe {
-            assert_eq!(companion_sheet_new(ptr::null_mut()), 0);
-            assert!(companion_sheets_json(ptr::null_mut()).is_null());
+            assert_eq!(companion_tab_new(ptr::null_mut()), 0);
+            assert!(companion_tabs_json(ptr::null_mut()).is_null());
             assert!(companion_ledger_json(ptr::null_mut()).is_null());
             companion_ledger_clear(ptr::null_mut()); // no-op
             assert!(!companion_ledger_save(
@@ -4327,10 +4606,10 @@ mod tests {
                 ptr::null_mut(),
                 cstring("/nowhere").as_ptr()
             ));
-            assert!(!companion_sheet_close(ptr::null_mut(), 1));
+            assert!(!companion_tab_close(ptr::null_mut(), 1));
             assert!(!companion_chip_copy_out(ptr::null_mut(), 1));
             assert!(!companion_chip_delete(ptr::null_mut(), 1));
-            assert!(!companion_sheet_pause_press(ptr::null_mut(), 1));
+            assert!(!companion_tab_pause_press(ptr::null_mut(), 1));
             assert_eq!(companion_next_event_ms(ptr::null_mut()), -1);
             assert!(
                 companion_sheet_seal_text(ptr::null_mut(), 1, cstring("x").as_ptr(), 0, 0)

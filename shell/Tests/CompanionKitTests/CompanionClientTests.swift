@@ -7,10 +7,12 @@ import CompanionKit
 /// Behaviour that needs the FFI + VoiceOver is exercised in the
 /// on-device hardware sessions (docs/hardware-verification.md).
 final class CompanionClientTests: XCTestCase {
-    func testSheetSummaryDecoding() throws {
+    func testTabSummaryDecoding() throws {
         let json = """
         [{
             "id": 7,
+            "has_page": true,
+            "page_id": 12,
             "title": "deploy friday",
             "rung_code": 2,
             "rung_label": "8h",
@@ -25,10 +27,15 @@ final class CompanionClientTests: XCTestCase {
             "last_hour": false
         }]
         """
-        let sheets = try JSONDecoder().decode([SheetSummary].self, from: Data(json.utf8))
+        let sheets = try JSONDecoder().decode([TabSummary].self, from: Data(json.utf8))
         XCTAssertEqual(sheets.count, 1)
         let sheet = sheets[0]
+        // The two ids are separate counters and the summary carries
+        // both: the slot the keyboard lands on, and the page the
+        // document routes and the storage maps address (ADR-0017).
         XCTAssertEqual(sheet.id, 7)
+        XCTAssertTrue(sheet.hasPage)
+        XCTAssertEqual(sheet.pageID, 12)
         XCTAssertEqual(sheet.title, "deploy friday")
         XCTAssertEqual(sheet.rungLabel, "8h")
         XCTAssertEqual(sheet.spokenRemaining, "about 8 hours remaining")
@@ -42,6 +49,8 @@ final class CompanionClientTests: XCTestCase {
         let json = """
         [{
             "id": 3,
+            "has_page": true,
+            "page_id": 3,
             "title": "errands",
             "rung_code": 0,
             "rung_label": "1h",
@@ -56,7 +65,7 @@ final class CompanionClientTests: XCTestCase {
             "last_hour": true
         }]
         """
-        let sheets = try JSONDecoder().decode([SheetSummary].self, from: Data(json.utf8))
+        let sheets = try JSONDecoder().decode([TabSummary].self, from: Data(json.utf8))
         XCTAssertTrue(sheets[0].paused)
         XCTAssertFalse(sheets[0].holdToppedUp)
         XCTAssertEqual(sheets[0].holdRemainingMs, 3_600_000)
@@ -71,6 +80,8 @@ final class CompanionClientTests: XCTestCase {
         let json = """
         [{
             "id": 3,
+            "has_page": true,
+            "page_id": 3,
             "title": "errands",
             "rung_code": 0,
             "rung_label": "1h",
@@ -85,10 +96,41 @@ final class CompanionClientTests: XCTestCase {
             "last_hour": true
         }]
         """
-        let sheets = try JSONDecoder().decode([SheetSummary].self, from: Data(json.utf8))
+        let sheets = try JSONDecoder().decode([TabSummary].self, from: Data(json.utf8))
         XCTAssertTrue(sheets[0].paused)
         XCTAssertTrue(sheets[0].holdToppedUp)
         XCTAssertEqual(sheets[0].holdRemainingMs, 86_400_000)
+    }
+
+    /// The state the split exists for: a slot on the strip holding no
+    /// page. It still has a label and a rung, its page id is nothing at
+    /// all, and every clock field is meaningless rather than absent.
+    func testEmptyTabDecoding() throws {
+        let json = """
+        [{
+            "id": 4,
+            "has_page": false,
+            "page_id": null,
+            "title": "payroll",
+            "rung_code": 5,
+            "rung_label": "7d",
+            "remaining_ms": 0,
+            "remaining_label": "",
+            "spoken_remaining": "this tab holds no page",
+            "fraction_remaining": 0.0,
+            "paused": false,
+            "hold_topped_up": false,
+            "hold_remaining_ms": 0,
+            "chip_count": 0,
+            "last_hour": false
+        }]
+        """
+        let tabs = try JSONDecoder().decode([TabSummary].self, from: Data(json.utf8))
+        XCTAssertEqual(tabs[0].id, 4)
+        XCTAssertFalse(tabs[0].hasPage)
+        XCTAssertNil(tabs[0].pageID)
+        XCTAssertEqual(tabs[0].title, "payroll", "the name outlived the page")
+        XCTAssertEqual(tabs[0].rungLabel, "7d", "and so did the rung")
     }
 
     func testChipInfoDecoding() throws {
