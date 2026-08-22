@@ -1576,10 +1576,12 @@ public final class PageModel: ObservableObject {
     /// inside the interval the system calls a double-click. Pure, so
     /// the window is testable without a gesture recognizer.
     ///
-    /// The elapsed time comes from a monotonic reading, so sleep or a
-    /// clock step can only make it look longer, which is the direction
-    /// that lets a deliberate hold through rather than the one that
-    /// swallows one.
+    /// The elapsed time comes from `systemUptime`, which stops while
+    /// the machine sleeps, so a sleep inside the window can only make
+    /// the reading shorter. Shorter errs toward ignoring a hold, but
+    /// the window is the double-click interval: a hold that follows a
+    /// sleep taken inside a double-click is not a gesture anyone
+    /// performs. A wall clock step never moves the reading at all.
     public nonisolated static func holdWouldStrikeItsOwnMint(
         tab: UInt64, mintedTab: UInt64?, elapsed: TimeInterval, within window: TimeInterval
     ) -> Bool {
