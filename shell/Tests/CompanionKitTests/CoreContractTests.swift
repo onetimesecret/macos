@@ -248,7 +248,10 @@ final class CoreContractTests: XCTestCase {
         // Clearing it now falls the label to the tab's own stamp rather
         // than to a page that is no longer there.
         XCTAssertTrue(client.setTitle(tab: survivor.id, ""))
-        XCTAssertNotEqual(client.tabs().first?.title, "deploy friday")
+        let stamp = try XCTUnwrap(client.tabs().first?.title)
+        XCTAssertNotNil(
+            stamp.range(of: #"^\d{4}-\d{4}$"#, options: .regularExpression),
+            "a pageless, unnamed tab reads as its MMDD-HHmm stamp, not \(stamp)")
     }
 
     func testClearingTheLedgerEmptiesIt() {
