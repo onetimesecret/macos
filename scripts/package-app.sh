@@ -88,11 +88,17 @@ BIN="$(swift build --package-path shell -c "$CONFIG" --show-bin-path)/OnetimePad
 # build.
 if [[ "$CONFIG" == "release" ]]; then
   echo "==> Verifying no test seams in the release binary (ADR-0018)"
-  if nm -gU "$BIN" 2>/dev/null | grep -q '_companion_new_ephemeral$'; then
-    echo "release binary exports companion_new_ephemeral, a test-only seam" >&2
-    echo "(ADR-0018): bindings/ holds the dev xcframework. Rebuild the release" >&2
-    echo "shape with scripts/build-core.sh (no flags) and package again." >&2
-    exit 1
+  # One pattern per gated seam: the check is worth nothing if a seam
+  # added later is not named here, so add the symbol when you add the
+  # export.
+  if SEAM="$(nm -gU "$BIN" 2>/dev/null |
+      grep -o -E '_companion_(new_ephemeral|test_age_ms)$' | head -n 1)"; then
+    if [[ -n "$SEAM" ]]; then
+      echo "release binary exports ${SEAM#_}, a test-only seam" >&2
+      echo "(ADR-0018): bindings/ holds the dev xcframework. Rebuild the release" >&2
+      echo "shape with scripts/build-core.sh (no flags) and package again." >&2
+      exit 1
+    fi
   fi
 fi
 

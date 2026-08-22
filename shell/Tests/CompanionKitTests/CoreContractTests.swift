@@ -17,13 +17,17 @@ final class CoreContractTests: XCTestCase {
     func testSheetLifecycleRoundTripsThroughTheSeam() throws {
         let client = CompanionClient()
 
-        // A fresh page arrives with the contract's defaults.
-        let sheetID = client.newSheet()
-        XCTAssertNotEqual(sheetID, 0)
-        var sheets = client.sheets()
+        // A fresh tab arrives holding a page, with the contract's
+        // defaults. The two ids are separate from here on: the tab
+        // takes the strip's gestures, the page takes the document's.
+        let tabID = client.newTab()
+        XCTAssertNotEqual(tabID, 0)
+        var sheets = client.tabs()
         XCTAssertEqual(sheets.count, 1)
         var sheet = try XCTUnwrap(sheets.first)
-        XCTAssertEqual(sheet.id, sheetID)
+        XCTAssertEqual(sheet.id, tabID)
+        XCTAssertTrue(sheet.hasPage)
+        let sheetID = try XCTUnwrap(sheet.pageID)
         // No ink to derive from yet, so the title is the creation
         // stamp, "MMDD-HHmm" in local time. The exact string depends on
         // the host clock and zone, so assert the shape.
@@ -47,7 +51,7 @@ final class CoreContractTests: XCTestCase {
         [{"ink": "### deploy friday\\nin order —\\n"}, {"chip": \(chip.chipId)}]
         """
         XCTAssertTrue(client.syncDocument(sheet: sheetID, json: document))
-        sheets = client.sheets()
+        sheets = client.tabs()
         sheet = try XCTUnwrap(sheets.first)
         XCTAssertEqual(sheet.title, "deploy friday")
         XCTAssertEqual(sheet.chipCount, 1)
@@ -55,23 +59,23 @@ final class CoreContractTests: XCTestCase {
         // The clock: cycling tapers down the ladder; the pause cycles
         // hold → top up → release, and the summary says which press
         // comes next so the tab can label the gesture honestly.
-        XCTAssertEqual(client.cycleRung(sheet: sheetID), .threeHours)
-        XCTAssertTrue(client.pausePress(sheet: sheetID))
-        sheet = try XCTUnwrap(client.sheets().first)
+        XCTAssertEqual(client.cycleRung(tab: tabID), .threeHours)
+        XCTAssertTrue(client.pausePress(tab: tabID))
+        sheet = try XCTUnwrap(client.tabs().first)
         XCTAssertTrue(sheet.paused)
         XCTAssertFalse(sheet.holdToppedUp)
         let firstHoldMs = sheet.holdRemainingMs
         XCTAssertGreaterThan(firstHoldMs, 0)
         XCTAssertGreaterThanOrEqual(client.nextEventMs(), 0)
 
-        XCTAssertTrue(client.pausePress(sheet: sheetID)) // top up to 24h
-        sheet = try XCTUnwrap(client.sheets().first)
+        XCTAssertTrue(client.pausePress(tab: tabID)) // top up to 24h
+        sheet = try XCTUnwrap(client.tabs().first)
         XCTAssertTrue(sheet.paused)
         XCTAssertTrue(sheet.holdToppedUp)
         XCTAssertGreaterThan(sheet.holdRemainingMs, firstHoldMs)
 
-        XCTAssertTrue(client.pausePress(sheet: sheetID)) // release
-        sheet = try XCTUnwrap(client.sheets().first)
+        XCTAssertTrue(client.pausePress(tab: tabID)) // release
+        sheet = try XCTUnwrap(client.tabs().first)
         XCTAssertFalse(sheet.paused)
         XCTAssertFalse(sheet.holdToppedUp)
         XCTAssertEqual(sheet.holdRemainingMs, 0)
@@ -82,8 +86,8 @@ final class CoreContractTests: XCTestCase {
 
         // Death: the page leaves the store and the ledger keeps the
         // account of what happened to it. Metadata only, newest first.
-        XCTAssertTrue(client.closeSheet(id: sheetID))
-        XCTAssertTrue(client.sheets().isEmpty)
+        XCTAssertTrue(client.closeTab(id: tabID))
+        XCTAssertTrue(client.tabs().isEmpty, "closing the tab took the slot too")
         let ledger = client.ledger()
 
         // One record per lifecycle step: the page's creation, the seal,
@@ -152,7 +156,8 @@ final class CoreContractTests: XCTestCase {
 
     func testMetaAndBlocksCarryIdentitiesAndStampsOnly() throws {
         let client = CompanionClient()
-        let sheetID = client.newSheet()
+        XCTAssertNotEqual(client.newTab(), 0)
+        let sheetID = try XCTUnwrap(client.tabs().first?.pageID)
 
         // An untouched page: the creation stamp exists, the modified
         // stamp does not, and the empty body is one empty paragraph.
@@ -202,52 +207,73 @@ final class CoreContractTests: XCTestCase {
         XCTAssertTrue(client.blocks(sheet: 424_242).isEmpty)
     }
 
-    func testAUserSetTitleSticksAcrossASync() throws {
+    func testAUserSetNameSticksAcrossASyncAndOutlivesThePage() throws {
         let client = CompanionClient()
-        let sheetID = client.newSheet()
+        let tabID = client.newTab()
+        let sheetID = try XCTUnwrap(client.tabs().first?.pageID)
 
-        XCTAssertTrue(client.setTitle(sheet: sheetID, "  incident 4471  "))
-        XCTAssertEqual(client.sheets().first?.title, "incident 4471") // trimmed
+        XCTAssertTrue(client.setTitle(tab: tabID, "  incident 4471  "))
+        XCTAssertEqual(client.tabs().first?.title, "incident 4471") // trimmed
 
         // Editing the page no longer touches the name.
         let document = """
         [{"ink": "### deploy friday\\nin order\\n"}]
         """
         XCTAssertTrue(client.syncDocument(sheet: sheetID, json: document))
-        XCTAssertEqual(client.sheets().first?.title, "incident 4471")
+        XCTAssertEqual(client.tabs().first?.title, "incident 4471")
 
-        // Clearing the override hands the name back to the ink.
-        XCTAssertTrue(client.setTitle(sheet: sheetID, "   "))
-        XCTAssertEqual(client.sheets().first?.title, "deploy friday")
+        // Clearing the name hands the label back to the ink.
+        XCTAssertTrue(client.setTitle(tab: tabID, "   "))
+        XCTAssertEqual(client.tabs().first?.title, "deploy friday")
 
-        // A title is capped core-side, which is what bounds the one
-        // piece of page-owned text that reaches the ledger.
-        XCTAssertTrue(client.setTitle(sheet: sheetID, String(repeating: "x", count: 200)))
-        XCTAssertEqual(client.sheets().first?.title.count, 80)
+        // A name is capped core-side, which is what bounds the one
+        // piece of user-typed text that reaches the ledger.
+        XCTAssertTrue(client.setTitle(tab: tabID, String(repeating: "x", count: 200)))
+        XCTAssertEqual(client.tabs().first?.title.count, 80)
 
-        // A page that never existed refuses.
-        XCTAssertFalse(client.setTitle(sheet: 424_242, "nowhere"))
+        // A tab that never existed refuses.
+        XCTAssertFalse(client.setTitle(tab: 424_242, "nowhere"))
+
+        // And the half the name promises: the page dies and the name
+        // stays. Age past the longest rung and settle the clock through
+        // the call the shell's armed timer makes, which re-mints both id
+        // counters, so the tab is read back from the strip afterwards.
+        XCTAssertTrue(client.setTitle(tab: tabID, "incident 4471"))
+        XCTAssertTrue(client.ageForTests(byMs: 8 * 24 * 60 * 60 * 1_000))
+        XCTAssertEqual(client.expireDue(), 1)
+        let survivor = try XCTUnwrap(client.tabs().first)
+        XCTAssertFalse(survivor.hasPage, "the page expired")
+        XCTAssertNil(survivor.pageID)
+        XCTAssertEqual(survivor.title, "incident 4471", "the name outlived the page")
+        // Clearing it now falls the label to the tab's own stamp rather
+        // than to a page that is no longer there.
+        XCTAssertTrue(client.setTitle(tab: survivor.id, ""))
+        let stamp = try XCTUnwrap(client.tabs().first?.title)
+        XCTAssertNotNil(
+            stamp.range(of: #"^\d{4}-\d{4}$"#, options: .regularExpression),
+            "a pageless, unnamed tab reads as its MMDD-HHmm stamp, not \(stamp)")
     }
 
     func testClearingTheLedgerEmptiesIt() {
         let client = CompanionClient()
-        let sheetID = client.newSheet()
+        let sheetID = client.newTab()
         XCTAssertFalse(client.ledger().isEmpty) // the page's creation
         client.clearLedger()
         XCTAssertTrue(client.ledger().isEmpty)
         // The page itself is untouched: this throws away the account,
         // not the content.
-        XCTAssertEqual(client.sheets().first?.id, sheetID)
+        XCTAssertEqual(client.tabs().first?.id, sheetID)
     }
 
-    func testTheCapRefusesTheTenthPage() {
+    func testTheCapRefusesTheTenthTab() {
         let client = CompanionClient()
         for _ in 1...9 {
-            XCTAssertNotEqual(client.newSheet(), 0)
+            XCTAssertNotEqual(client.newTab(), 0)
         }
-        // Refuse-don't-evict: the wall is the keyboard map's.
-        XCTAssertEqual(client.newSheet(), 0)
-        XCTAssertEqual(client.sheets().count, 9)
+        // Refuse-don't-evict: the wall is the keyboard map's, and under
+        // the split it is the tab's lifetime bound as well.
+        XCTAssertEqual(client.newTab(), 0)
+        XCTAssertEqual(client.tabs().count, 9)
     }
 
     /// The connection half of the promotion contract — config only, no
@@ -281,12 +307,13 @@ final class CoreContractTests: XCTestCase {
         XCTAssertNotNil(outcome.error)
     }
 
-    func testSealTextRefusesInteriorNul() {
+    func testSealTextRefusesInteriorNul() throws {
         let client = CompanionClient()
-        let sheetID = client.newSheet()
+        XCTAssertNotEqual(client.newTab(), 0)
+        let sheetID = try XCTUnwrap(client.tabs().first?.pageID)
         // A C string truncates at an interior NUL; the wrapper refuses
         // rather than seal a silently truncated secret.
         XCTAssertNil(client.sealText(sheet: sheetID, "front\0back", at: 0, length: 0))
-        XCTAssertEqual(client.sheets().first?.chipCount, 0)
+        XCTAssertEqual(client.tabs().first?.chipCount, 0)
     }
 }

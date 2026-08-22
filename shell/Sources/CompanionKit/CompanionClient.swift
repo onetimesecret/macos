@@ -8,19 +8,42 @@ import CompanionCore
 // graduation. Everything here is a window onto the core, never logic.
 // Logic that would need adding twice belongs in the core once.
 
-/// A non-secret snapshot of a sheet — a page of ink and sealed chips —
+/// A non-secret snapshot of one tab, a durable slot on the strip,
+/// holding at most one perishable page of ink and sealed chips, 
 /// decoded from the core's JSON (see crates/ffi/include/companion_ffi.h
 /// for the field contract). There is deliberately no content field of
 /// any kind: sealed bytes have no display form at all (the boundary
 /// law, hard form), and the live ink belongs to the shell's editor, not
 /// the summary.
-public struct SheetSummary: Identifiable, Codable, Hashable, Sendable {
+///
+/// **Two ids, and neither can do the other's job** (ADR-0017). `id` is
+/// the tab's: it is what the selection holds, what the keyboard lands
+/// on, and what survives every page the slot ever held. `pageID` is the
+/// page's: it addresses the content, it is what the storage and undo
+/// maps are keyed by, and it is nil the moment the page expires. A slot
+/// whose page expired keeps its place on the strip with `hasPage`
+/// false, and every clock field below then describes nothing.
+public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
+    /// The tab's id: the slot, not the page.
     public let id: UInt64
-    /// The page's own name: the first non-empty line of its ink with
-    /// markdown markup stripped, capped at 80 characters; "MMDD-HHmm"
-    /// from the page's creation stamp in LOCAL time while there is no
-    /// ink to derive from; or whatever `setTitle(sheet:_:)` last set,
-    /// which then sticks and is never overwritten by editing.
+    /// Whether the slot holds a page at all. False after an expiry and
+    /// before the next deliberate gesture opens one; the tab draws the
+    /// dashed empty treatment rather than a gauge, and every clock
+    /// field on this summary is meaningless.
+    public let hasPage: Bool
+    /// The page's id, or nil when the slot holds none. The only id the
+    /// page-addressed routes accept, and the only key a shell-side
+    /// document map may use: a map keyed by the slot would hand a new
+    /// page the dead one's text storage and undo stack, which is the
+    /// resurrection ADR-0009 closed.
+    public let pageID: UInt64?
+    /// The tab's label, resolved three ways core-side: the name the
+    /// user typed; else the live page's derived title, its first
+    /// non-empty ink line with markdown markup stripped, capped at 80
+    /// characters; else "MMDD-HHmm" from the TAB's creation stamp in
+    /// LOCAL time. The middle term is the only derived one and it dies
+    /// with the page, so an expiry falls the label back one step rather
+    /// than leaving a string the app invented on a durable object.
     public let title: String
     public let rungCode: Int32
     public let rungLabel: String
@@ -39,6 +62,8 @@ public struct SheetSummary: Identifiable, Codable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, paused
+        case hasPage = "has_page"
+        case pageID = "page_id"
         case rungCode = "rung_code"
         case rungLabel = "rung_label"
         case remainingMs = "remaining_ms"
@@ -50,6 +75,23 @@ public struct SheetSummary: Identifiable, Codable, Hashable, Sendable {
         case chipCount = "chip_count"
         case lastHour = "last_hour"
     }
+}
+
+/// The two emptiness answers, taken together in one call because they
+/// are one question asked twice (ADR-0017) and the shell derives
+/// neither.
+///
+/// `holdsNoPage` is ADR-0016 section 6's key rotation trigger: the pad
+/// holds no content while the strip stands, which is a security
+/// decision and not a rendering convenience. `hasNoTabs` is the one
+/// condition under which the sealed file is dropped rather than
+/// resealed, because a strip of empty slots still has names, rungs and
+/// an order worth keeping. Wiring them backwards destroys the tabs an
+/// expiry was supposed to leave standing, or leaves the install on one
+/// content key for as long as any tab exists.
+public struct StoreEmptiness: Hashable, Sendable {
+    public let holdsNoPage: Bool
+    public let hasNoTabs: Bool
 }
 
 /// A freshly sealed chip's non-secret face, returned by the seal
@@ -254,44 +296,95 @@ public final class CompanionClient: @unchecked Sendable {
         self.handle = handle
     }
 
+    /// The raw handle, for the test target's gated seams alone
+    /// (ADR-0018), on the same terms as `init(adopting:)`: internal, so
+    /// only a `@testable` import reaches it, and used only where a seam
+    /// that exists in no release build has to be called. Nothing in
+    /// this module or above it may take a second reference to the
+    /// handle: its lifetime is this object's.
+    var rawHandleForTests: OpaquePointer { handle }
+
     deinit {
         companion_free(handle)
     }
 
-    // MARK: Sheets
+    // MARK: Tabs, the durable slots
 
-    /// A new page at the end of the tab strip; 0 means the store
-    /// refused at the cap of 9 (refuse-don't-evict — say so).
+    /// A new tab at the end of the strip, holding a new page; 0 means
+    /// the store refused at the cap of 9 (refuse-don't-evict, say so).
+    /// The id is the TAB's: it is what the selection keeps afterwards.
     @discardableResult
-    public func newSheet() -> UInt64 {
-        companion_sheet_new(handle)
+    public func newTab() -> UInt64 {
+        companion_tab_new(handle)
     }
 
-    /// Close a page; it rests in the ledger, sealed bytes zeroized.
+    /// Mint a page into a tab that holds none, at that tab's rung. 0
+    /// means an unknown tab or one that already holds a page. This is
+    /// the route every deliberate mint into an existing slot takes: a
+    /// click on the tab, ⌘1 to ⌘9, ⌥⌘←/→, and the Return grant. Nothing
+    /// else may call it, and expiry above all: a countdown that ran out
+    /// overnight must leave an empty tab rather than start a fresh one
+    /// on nothing.
     @discardableResult
-    public func closeSheet(id: UInt64) -> Bool {
-        companion_sheet_close(handle, id)
+    public func openPage(tab: UInt64) -> UInt64 {
+        companion_tab_open_page(handle, tab)
     }
 
-    /// Name a page explicitly (the rename gesture in the tab context
-    /// menu). Empty or all-whitespace clears the override and lets the
-    /// title derive from the page's own content again; anything else is
-    /// trimmed, capped at 80 characters, and sticks from then on.
-    /// Returns whether the page existed.
+    /// Close a tab; whatever page it held rests in the ledger, sealed
+    /// bytes zeroized. An empty slot closes as readily as a full one.
     @discardableResult
-    public func setTitle(sheet: UInt64, _ title: String) -> Bool {
-        title.withCString { companion_sheet_set_title(handle, sheet, $0) }
+    public func closeTab(id: UInt64) -> Bool {
+        companion_tab_close(handle, id)
     }
 
-    /// Move a page in the visible order (drag-to-reorder).
+    /// Discard the page a slot holds and leave the slot standing: its
+    /// sealed bytes are zeroized, the ledger keeps one discarded
+    /// record, and the tab keeps its name, its rung, its position and
+    /// its number key, the way an expiry leaves it. Returns whether a
+    /// page by that id was standing.
+    ///
+    /// Page addressed rather than tab addressed, which is the whole
+    /// difference from `closeTab`: the burn offered after a promotion
+    /// names the content that travelled, and spending the user's
+    /// arrangement on it would end a tab that only a close and the cap
+    /// may end (ADR-0017).
     @discardableResult
-    public func moveSheet(id: UInt64, to index: UInt64) -> Bool {
-        companion_sheet_move(handle, id, index)
+    public func discardPage(id: UInt64) -> Bool {
+        companion_page_discard(handle, id)
     }
 
-    /// Current pages, in visible (tab) order.
-    public func sheets() -> [SheetSummary] {
-        decodeJSON([SheetSummary].self, from: companion_sheets_json(handle)) ?? []
+    /// Name a tab explicitly (the rename gesture in the tab context
+    /// menu). Empty or all-whitespace clears the name and lets the
+    /// label fall back to the live page's derived title and then to the
+    /// tab's own creation stamp; anything else is trimmed, capped at 80
+    /// characters, and sticks from then on, through every edit, and
+    /// through the death of the page it was typed over. Returns whether
+    /// the tab existed.
+    @discardableResult
+    public func setTitle(tab: UInt64, _ title: String) -> Bool {
+        title.withCString { companion_tab_set_title(handle, tab, $0) }
+    }
+
+    /// Move a tab in the visible order (drag-to-reorder).
+    @discardableResult
+    public func moveTab(id: UInt64, to index: UInt64) -> Bool {
+        companion_tab_move(handle, id, index)
+    }
+
+    /// The strip, in visible order: one entry per slot, page or no page.
+    public func tabs() -> [TabSummary] {
+        decodeJSON([TabSummary].self, from: companion_tabs_json(handle)) ?? []
+    }
+
+    /// Both emptiness predicates, asked of the core rather than derived
+    /// from `tabs()`. Nil when the seam refused to answer, which the
+    /// caller reads as neither: no rotation and no drop is the reading
+    /// that changes nothing.
+    public func emptiness() -> StoreEmptiness? {
+        var holdsNoPage = false
+        var hasNoTabs = false
+        guard companion_store_emptiness(handle, &holdsNoPage, &hasNoTabs) else { return nil }
+        return StoreEmptiness(holdsNoPage: holdsNoPage, hasNoTabs: hasNoTabs)
     }
 
     /// A page's provenance (ADR-0013): creation stamp and derived
@@ -425,22 +518,25 @@ public final class CompanionClient: @unchecked Sendable {
         companion_expire_due(handle)
     }
 
-    /// Click the countdown label: one rung shorter, clock reset.
+    /// Click the countdown label: one rung shorter, clock reset. Tab
+    /// addressed, and a slot holding no page keeps the shorter rung for
+    /// the page it is opened with next.
     @discardableResult
-    public func cycleRung(sheet: UInt64) -> Rung? {
-        Rung(rawValue: companion_sheet_cycle_rung(handle, sheet))
+    public func cycleRung(tab: UInt64) -> Rung? {
+        Rung(rawValue: companion_tab_cycle_rung(handle, tab))
     }
 
     @discardableResult
-    public func setRung(sheet: UInt64, rung: Rung) -> Bool {
-        companion_sheet_set_rung(handle, sheet, rung.rawValue)
+    public func setRung(tab: UInt64, rung: Rung) -> Bool {
+        companion_tab_set_rung(handle, tab, rung.rawValue)
     }
 
     /// Double-click the tab: hold 1h, top up to 24h from now, then
-    /// release — the countdown resumes where it froze.
+    /// release, the countdown resumes where it froze. False for a slot
+    /// with no page in it, which has no clock to hold.
     @discardableResult
-    public func pausePress(sheet: UInt64) -> Bool {
-        companion_sheet_pause_press(handle, sheet)
+    public func pausePress(tab: UInt64) -> Bool {
+        companion_tab_pause_press(handle, tab)
     }
 
     // MARK: Promotion — the exit ramp, the app's only network action
@@ -585,6 +681,28 @@ public final class CompanionClient: @unchecked Sendable {
     @discardableResult
     public func persistSave(to path: String) -> Bool {
         path.withCString { companion_persist_save(handle, $0) }
+    }
+
+    /// Rotate both content key halves and reseal the store under the
+    /// new ones: the write for the moment no tab holds a page, which is
+    /// ADR-0016 section 6's first rotation trigger and the reason
+    /// `StoreEmptiness.holdsNoPage` is asked of the core rather than
+    /// derived here.
+    ///
+    /// The rotation is the forgetting: every ciphertext generation the
+    /// old halves ever sealed, including the ones an atomic rename
+    /// unlinked and nothing sweeps, stops being decryptable at once.
+    /// The reseal is what keeps the strip, since an empty pad still has
+    /// tab names, rungs and an order the user arranged, and there is no
+    /// page content left in the file to lose.
+    ///
+    /// False means the rotation refused and nothing was written, which
+    /// leaves the old generation where it was and arms the caller's
+    /// retry. Sealing a fresh generation under halves the rotation could
+    /// not replace would report a forgetting that did not happen.
+    @discardableResult
+    public func persistRotateAndSave(to path: String) -> Bool {
+        path.withCString { companion_persist_rotate_and_save(handle, $0) }
     }
 
     /// Restore the store from `path` at startup, before the first page

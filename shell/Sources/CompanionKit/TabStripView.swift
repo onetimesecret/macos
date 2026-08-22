@@ -2,9 +2,13 @@ import AppKit
 import SwiftUI
 
 /// The bottom-edge tab strip, Excel-anchored (docs/spec/04): one tab
-/// per page carrying its own gauge, a + for a new page, and the
+/// per durable slot carrying its own gauge, a + for a new tab, and the
 /// permanent dashed ◌ ledger tab at the right end. Click selects;
 /// double-click holds the clock; drag reorders; ✕ on hover closes.
+///
+/// A slot whose page expired keeps its place, its name and its rung,
+/// and draws the dashed empty treatment instead of a gauge (ADR-0017).
+/// The strip is the slots, so it stops being nine deadlines.
 public struct TabStripView: View {
     @ObservedObject var model: PageModel
 
@@ -20,7 +24,7 @@ public struct TabStripView: View {
 
     public var body: some View {
         HStack(spacing: 2) {
-            ForEach(model.sheets) { sheet in
+            ForEach(model.tabs) { sheet in
                 SheetTab(
                     sheet: sheet,
                     selected: model.selection == sheet.id && !model.showingLedger,
@@ -61,10 +65,10 @@ public struct TabStripView: View {
     /// whose midpoint the pointer has passed. Midpoints, not edges, keep
     /// the order stable while the strip re-lays-out mid-drag.
     private func reorder(dragged: UInt64, pointerX: CGFloat) {
-        let target = model.sheets
+        let target = model.tabs
             .filter { $0.id != dragged }
             .count { tabFrames[$0.id].map { $0.midX < pointerX } ?? false }
-        let current = model.sheets.firstIndex { $0.id == dragged }
+        let current = model.tabs.firstIndex { $0.id == dragged }
         if let current, target != current {
             model.move(dragged, to: target)
         }
@@ -87,7 +91,7 @@ public struct TabStripView: View {
     /// leaves until its one confirming click.
     private var promotePageTab: some View {
         Button {
-            if let sheet = model.selection { model.beginPromotion(.page(sheet)) }
+            if let page = model.selectedPageID { model.beginPromotion(.page(page)) }
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: "arrow.up.right")
@@ -100,7 +104,7 @@ public struct TabStripView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .disabled(model.selection == nil || model.showingLedger)
+        .disabled(model.selectedPageID == nil || model.showingLedger)
         .help("Promote this page to a one-time link")
         .accessibilityLabel(Text("Promote page to one-time link"))
     }
@@ -132,9 +136,15 @@ public struct TabStripView: View {
     }
 }
 
-/// One tab: live title, its own gauge, ⏸ while held, ✕ on hover.
-private struct SheetTab: View {
-    let sheet: SheetSummary
+/// One tab: live title, its own gauge, ⏸ while held, ✕ on hover. A
+/// slot holding no page draws a dashed rule where the gauge goes and
+/// says so out loud, because there is no clock to render and the tab
+/// is still the user's to select, rename, re-rung or close.
+///
+/// Internal rather than private so the two menu labels below, which are
+/// pure functions of the slot's state, can be tested without a menu.
+struct SheetTab: View {
+    let sheet: TabSummary
     let selected: Bool
     @ObservedObject var model: PageModel
 
@@ -163,18 +173,28 @@ private struct SheetTab: View {
                 .foregroundStyle(.secondary)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
-                .accessibilityLabel(Text("Close page"))
+                .accessibilityLabel(Text("Close tab"))
             }
             .padding(.horizontal, 8)
             .frame(height: 18)
-            GaugeBar(
-                fraction: sheet.fractionRemaining,
-                paused: sheet.paused,
-                toppedUp: sheet.holdToppedUp,
-                lastHour: sheet.lastHour
-            )
-            .frame(height: 3)
-            .padding(.horizontal, 3)
+            if sheet.hasPage {
+                GaugeBar(
+                    fraction: sheet.fractionRemaining,
+                    paused: sheet.paused,
+                    toppedUp: sheet.holdToppedUp,
+                    lastHour: sheet.lastHour
+                )
+                .frame(height: 3)
+                .padding(.horizontal, 3)
+            } else {
+                // The dashed treatment the ledger tab already uses: a
+                // slot with no clock draws no gauge, because a gauge at
+                // zero reads as a page about to die rather than as a
+                // slot waiting to be used (ADR-0017).
+                EmptyRule()
+                    .frame(height: 3)
+                    .padding(.horizontal, 3)
+            }
         }
         .frame(maxWidth: 140)
         .background(
@@ -184,8 +204,12 @@ private struct SheetTab: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         // Select on click; a double-click's second tap cycles the hold
-        // (1h → 24h → released). The first tap selecting is harmless —
-        // a page being paused is a page worth looking at.
+        // (1h → 24h → released). The first tap selecting is harmless on
+        // a slot that holds a page: a page being paused is a page worth
+        // looking at. On an empty slot the first tap mints one
+        // (ADR-0017), and the hold that would land on that fresh page is
+        // refused by the model, which is where the decision lives
+        // because these recognizers are re-made as the view re-renders.
         .gesture(TapGesture(count: 2).onEnded { model.pause(sheet.id) })
         .simultaneousGesture(TapGesture().onEnded { model.select(sheet.id) })
         .help(holdDescription)
@@ -194,24 +218,49 @@ private struct SheetTab: View {
         .accessibilityValue(Text(sheet.spokenRemaining))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
-            Button("Rename page…") { promptForRename() }
+            Button("Rename tab…") { promptForRename() }
+            // Disabled rather than hidden on an empty slot: the item
+            // keeps its place in a menu whose shape the user knows, and
+            // an item that says it will hold a clock there would be
+            // offering a gesture the core refuses, having no clock.
             Button(holdMenuTitle) { model.pause(sheet.id) }
-            Button("Shorten the countdown") { model.cycleRung(sheet.id) }
-            Button("Close page", role: .destructive) { model.close(sheet.id) }
+                .disabled(!sheet.hasPage)
+            Button(Self.rungMenuTitle(hasPage: sheet.hasPage)) { model.cycleRung(sheet.id) }
+            Button("Close tab", role: .destructive) { model.close(sheet.id) }
         }
     }
 
     /// What the next double-click does, named plainly — the gesture is
-    /// a cycle, so the menu has to say which turn of it is next.
+    /// a cycle, so the menu has to say which turn of it is next. On an
+    /// empty slot the item is disabled and this is the label it wears
+    /// while it is.
     private var holdMenuTitle: String {
-        if sheet.holdToppedUp { return "Release the hold" }
-        return sheet.paused ? "Top the hold up to 24h" : "Hold the clock for 1h"
+        Self.holdMenuTitle(paused: sheet.paused, toppedUp: sheet.holdToppedUp)
+    }
+
+    /// The hold item's label, given the clock's state. Pure, so what
+    /// the menu offers at each turn of the cycle is testable without a
+    /// menu.
+    static func holdMenuTitle(paused: Bool, toppedUp: Bool) -> String {
+        if toppedUp { return "Release the hold" }
+        return paused ? "Top the hold up to 24h" : "Hold the clock for 1h"
+    }
+
+    /// The rung item's label. On an empty slot the gesture sets the
+    /// rung the slot's next page is born at rather than shortening any
+    /// countdown, and there is no countdown to name, so the item says
+    /// what it will actually do (ADR-0017).
+    static func rungMenuTitle(hasPage: Bool) -> String {
+        hasPage ? "Shorten the countdown" : "Shorten the next page's countdown"
     }
 
     /// The tooltip: the tier in words, since the dash carries it only
     /// as a texture. `holdRemainingMs` is what is left of the hold, not
     /// of the page — the page's own time is the gauge and the header.
     private var holdDescription: String {
+        guard sheet.hasPage else {
+            return "This tab holds no page. Select it to open one at \(sheet.rungLabel)."
+        }
         guard sheet.paused else {
             return "Double-click to hold this page's clock for an hour"
         }
@@ -243,11 +292,13 @@ private struct SheetTab: View {
     private func promptForRename() {
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = "Rename this page"
+        alert.messageText = "Rename this tab"
         alert.informativeText =
             "The name shows on the tab and is frozen into each ledger record "
-            + "the page produces, so keep the secret itself out of it. Leave the "
-            + "field empty to let the title follow the page's own first line again."
+            + "the tab's pages produce, so keep the secret itself out of it. It "
+            + "outlives every page the tab holds, and only closing the tab ends "
+            + "it. Leave the field empty to let the label follow the page's own "
+            + "first line again."
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         field.stringValue = sheet.title
         field.placeholderString = "empty derives the title from the page"
@@ -259,10 +310,11 @@ private struct SheetTab: View {
         // is frontmost.
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        model.renameSheet(sheet.id, to: field.stringValue)
+        model.renameTab(sheet.id, to: field.stringValue)
     }
 
     private var accessibilityDescription: String {
+        guard sheet.hasPage else { return "tab, \(sheet.title), holding no page" }
         var description = "page, \(sheet.title)"
         if sheet.chipCount > 0 {
             description += ", \(sheet.chipCount) sealed chip\(sheet.chipCount == 1 ? "" : "s")"
@@ -317,6 +369,28 @@ struct HoldChip: View {
         .foregroundStyle(.secondary)
         .fixedSize() // never squeezed by a long title
         .accessibilityHidden(true) // the tab speaks the hold in words
+    }
+}
+
+/// What a slot with no page draws where its gauge would be: a dashed
+/// rule, the same language the ledger tab speaks. Not a gauge at zero,
+/// which would read as a page an instant from death rather than as a
+/// slot standing empty and ready, and not nothing at all, which would
+/// make the tab jump a few points taller than its neighbours every time
+/// a page expired.
+struct EmptyRule: View {
+    var body: some View {
+        GeometryReader { geometry in
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: geometry.size.height / 2))
+                path.addLine(to: CGPoint(x: geometry.size.width, y: geometry.size.height / 2))
+            }
+            .stroke(
+                Color.secondary.opacity(0.5),
+                style: StrokeStyle(lineWidth: geometry.size.height, dash: [2, 3])
+            )
+        }
+        .accessibilityHidden(true) // the tab says it holds no page in words
     }
 }
 

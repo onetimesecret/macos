@@ -9,6 +9,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A tab outlives every page it holds, so an expiry empties a slot
+  instead of closing it** (`companion-core` 0.12.0, `companion-ffi`
+  0.12.0, ADR-0017). The strip stopped being nine deadlines: when a
+  page's countdown reaches zero the page drops whole, sealed bytes
+  zeroized as before, and the tab stays exactly where the user dragged
+  it, keeping its name, its rung, its position and its place in the
+  ⌘-number map. Selecting an empty tab, by click, by ⌘1 through ⌘9, by
+  ⌥⌘←/→ or by Return, opens a fresh page into it at that tab's own
+  rung. Nothing else mints: a page that expires under the cursor leaves
+  an empty tab rather than a silent new countdown, and the morning
+  after an overnight expiry the app opens on the strip the user left
+  rather than on a page nobody asked for.
+
+  The C ABI changes shape with the object graph, which is what the
+  minor bump prices. The routes divide into tab addressed
+  (`companion_tab_new`, `_open_page`, `_close`, `_move`, `_set_title`,
+  `_set_rung`, `_cycle_rung`, `_pause_press`, `companion_tabs_json`)
+  and page addressed (the sealing, document, meta, blocks and promotion
+  routes, unchanged). The summaries move from
+  `companion_sheets_json` to `companion_tabs_json`, one entry per slot
+  rather than per live page, and each carries `has_page` and both ids:
+  the tab's `id`, which the keyboard and the selection address, and
+  `page_id`, which the document routes and the shell's per-page text
+  storage and undo stacks are keyed by, null when the slot is empty.
+  Neither id can do the other's job, and the shell's maps are keyed by
+  page identity so a reused tab cannot hand its next page a dead one's
+  undo stack, which is how a zeroized chip's glyph would come back
+  under ⌘Z (ADR-0009).
+
+  Emptying the pad became two questions and `companion_store_emptiness`
+  answers both in one call, because the shell may derive neither. No
+  tab holding a page is a key rotation trigger and therefore a security
+  decision (ADR-0016 section 6); no tabs remaining is the only
+  condition that drops `state.sealed`, which now carries tab names,
+  rungs and strip order. A strip of empty slots is resealed rather than
+  unlinked, so emptying the pad writes a file where it used to remove
+  one.
+
+  Each question has its own write. `companion_persist_rotate_and_save`
+  is the new one and it takes the first: when the last page expires and
+  tabs remain, both content key halves are rotated and the surviving
+  names, rungs and order are resealed under new ones, so every
+  ciphertext generation the pages lived in, the unlinked ones included,
+  stops being decryptable at that moment. `companion_persist_erase`
+  keeps the second and still drops the file when no tabs are left. A
+  rotation that finds a file half it cannot even zero cancels the write
+  and says so rather than sealing a fresh generation under a key that
+  may still open every old one; a half that was zeroed but whose unlink
+  was refused is already a forgetting, so the reseal proceeds and a
+  false from the call means only that the new write did not land. What this costs is a window between the
+  erase and the write in which the strip exists only in memory: a crash
+  inside it loses the tab names, rungs and order, and nothing else,
+  because there is no page content left in the file by then.
+
+  The strip's gestures follow the slot's state. A double-click on a slot
+  whose page expired mints a page with its first tap and does not hold
+  that page's clock with its second, so the user who double-clicks an
+  empty slot gets a page counting down rather than a page already
+  frozen. The tab menu's hold item is disabled where there is no clock
+  to hold, and its rung item says it shortens the next page's countdown
+  when the slot holds no page, which is what it does.
+
+  Burning the local copy after a promotion stopped taking the slot with
+  it. `companion_page_discard` is page addressed where close is tab
+  addressed: it entombs the page, records the same discard, and leaves
+  the slot standing, named and empty, the way an expiry leaves one. An
+  explicit close and the cap are still the only two things that end a
+  tab.
+
+  A name is the user's or the tab has none. `Tab.name` is set only by
+  the rename gesture, capped at 80 characters as before, and never
+  derived: the label resolves to the typed name, else the live page's
+  derived title, else `MMDD-HHmm` from the tab's own creation stamp, so
+  an expiry falls the label back a step instead of freezing a string
+  the app invented onto a durable object. The residual exposure is
+  unchanged in kind and longer in life: a secret typed into the rename
+  field now lives as long as the tab, and the prompt says so.
+
+- **A superseded ledger file is dropped on first launch instead of
+  refusing forever** (`companion-core` 0.11.0, `companion-ffi` 0.11.1,
+  ADR-0016 section 9, closes issue #61). The ledger's envelope and key
+  did not change at the break below, so an `OTSLEDR1` file opened like
+  a current one and was refused one layer down, inside the core, which
+  left it on disk withholding the ledger licence on every launch until
+  the user found Clear in Settings. The audit trail silently stopped
+  recording, on every install that had ever written one. The core now
+  names that refusal (`RestoreError::Superseded`, for the one entry of
+  `SUPERSEDED_LEDGER_MAGICS`) and the seam erases the file with the
+  same zero, truncate, sync, unlink discipline as a superseded
+  `state.sealed`, so the probe finds no file and the session records a
+  fresh trail. The ledger key is not rotated and nothing is written
+  about the records dropped. `OTSLEDR0` and every other unknown payload
+  are still refused and left where they lie.
+
 - **Staged content survives a restart, and the sealed envelope breaks
   once to make that true** (`companion-ffi` 0.11.0, ADR-0016, closes
   issue #51). Accepting a system update used to cost the user
@@ -429,12 +523,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would have come through the content break untouched, and framing its
   records is what takes it: `OTSLEDR1` goes to `OTSLEDR2` and the
   retained audit trail, the capped titles and the event records back to
-  the ninety day window, is destroyed here, once. Until the disposal
-  path ADR-0016 section 9 requires is built, the first launch after this
-  update finds a ledger file it cannot read, leaves it on disk rather
-  than overwriting it, and records nothing further until the ledger is
-  cleared from Settings. That clear is the one action this release asks
-  for; pages are not involved in it.
+  the ninety day window, is destroyed here, once. The first launch after
+  this update drops the old ledger file and starts a new trail; see the
+  `OTSLEDR1` entry above. Pages are not involved in it.
 
 - **A third double-click releases the hold, so the pause is reversible**
   (`companion-core` 0.9.0, docs/spec/04). The gesture held a page's

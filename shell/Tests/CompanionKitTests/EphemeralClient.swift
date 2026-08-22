@@ -24,4 +24,20 @@ extension CompanionClient {
         }
         return CompanionClient(adopting: created)
     }
+
+    /// Age every staged page by `ms` of wall time, the way a relaunch
+    /// after a night away ages them (`companion_test_age_ms`, gated
+    /// with the seam above). Nothing expires here: the caller follows
+    /// with `expireDue()`, which is the call the shell's armed timer
+    /// makes, so the path under test stays the shipping one. Both id
+    /// counters are re-minted densely as at any restore, so read ids
+    /// back from `tabs()` afterwards.
+    ///
+    /// It is here because the states ADR-0017 describes, a tab
+    /// standing empty, a slot reused by a second page, are on the far
+    /// side of a countdown, and the shortest rung is an hour.
+    @discardableResult
+    func ageForTests(byMs ms: UInt64) -> Bool {
+        companion_test_age_ms(rawHandleForTests, ms)
+    }
 }

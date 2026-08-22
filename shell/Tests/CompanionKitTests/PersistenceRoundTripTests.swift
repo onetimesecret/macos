@@ -70,8 +70,8 @@ final class PersistenceRoundTripTests: XCTestCase {
         // just the same truth table the shipping launch runs.
         let first = makeModel(in: tempDir, defaults: defaults, tag: tag)
         first.loadStateIfNeeded()
-        XCTAssertEqual(first.sheets.count, 1, "a fresh start conjures exactly one page")
-        let sheet = try XCTUnwrap(first.selection)
+        XCTAssertEqual(first.tabs.count, 1, "a fresh start conjures exactly one tab")
+        let sheet = try XCTUnwrap(first.selectedPageID)
 
         // The mutation travels the ordinary edit path, so it marks the
         // store dirty and arms the debounce the way a keystroke does.
@@ -99,8 +99,8 @@ final class PersistenceRoundTripTests: XCTestCase {
         // back with its ink, through the same replay the editor uses.
         let second = makeModel(in: tempDir, defaults: defaults, tag: tag)
         second.loadStateIfNeeded()
-        XCTAssertEqual(second.sheets.count, 1, "the restored session holds the saved page")
-        let restored = try XCTUnwrap(second.selection)
+        XCTAssertEqual(second.tabs.count, 1, "the restored session holds the saved tab")
+        let restored = try XCTUnwrap(second.selectedPageID)
         XCTAssertEqual(second.storage(for: restored).string, ink)
     }
 
@@ -116,7 +116,7 @@ final class PersistenceRoundTripTests: XCTestCase {
 
         let first = makeModel(in: tempDir, defaults: defaults, tag: tag)
         first.loadStateIfNeeded()
-        let sheet = try XCTUnwrap(first.selection)
+        let sheet = try XCTUnwrap(first.selectedPageID)
         let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "sealed elsewhere")]))
         first.applyOps(sheet: sheet, opsJSON: ops)
         spinRunLoop { FileManager.default.fileExists(atPath: stateFile.path) }
@@ -128,7 +128,7 @@ final class PersistenceRoundTripTests: XCTestCase {
         // nothing this session does may rewrite the file it could not
         // read, so the ciphertext on disk stays byte for byte what the
         // first session sealed.
-        let strangerSheet = try XCTUnwrap(stranger.selection)
+        let strangerSheet = try XCTUnwrap(stranger.selectedPageID)
         let strangerOps = try XCTUnwrap(
             DocumentEditOp.wireJSON([.ins(at: 0, text: "the consolation page")]))
         stranger.applyOps(sheet: strangerSheet, opsJSON: strangerOps)

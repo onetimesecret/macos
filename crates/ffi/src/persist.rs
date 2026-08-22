@@ -321,17 +321,41 @@ pub(crate) fn load_state_key(
     derive_content_key(&keychain_half, &file_half)
 }
 
+/// What an erasure left behind, ordered from best to worst so a sweep
+/// over several files keeps the worst answer with `max`.
+///
+/// The middle state is the one callers used to fold into failure: a
+/// file whose bytes were destroyed but whose unlink was refused. For
+/// key material that state already is the forgetting, since zeroed
+/// bytes derive nothing, and treating it as a refusal made the shell
+/// cancel a reseal after the forgetting had happened.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub(crate) enum Erasure {
+    /// Confirmed absent: nothing at the path, not even a dangling link.
+    Gone,
+    /// Still present under its name, but zeroed, truncated and synced.
+    /// The bytes are destroyed; only the unlink was refused.
+    Neutralized,
+    /// Present, and this call cannot vouch that a single byte of it
+    /// was destroyed.
+    Survived,
+}
+
 /// Kill the content key: erase every file half in the state directory,
 /// then delete the keychain half. Called when the content that key
 /// protects is being discarded, so it is discarded for good.
 ///
-/// **Returns whether the file halves are gone**, which is the whole of
-/// the question. Both halves are required to derive the key
-/// ([`derive_content_key`]), so erasing either one makes every
+/// **Returns what the erasure left of the file halves** ([`Erasure`]),
+/// and both [`Erasure::Gone`] and [`Erasure::Neutralized`] mean the
+/// forgetting happened. Both halves are required to derive the key
+/// ([`derive_content_key`]), so zeroing either one makes every
 /// ciphertext generation the pair ever sealed undecryptable, including
-/// the ones an atomic rename unlinked and nothing sweeps. The file half
-/// is the half this app can destroy with certainty and without asking
-/// anyone's permission, so it is the half the answer rests on.
+/// the ones an atomic rename unlinked and nothing sweeps, whether or
+/// not the zeroed file's name could also be unlinked. The file half is
+/// the half this app can destroy with certainty and without asking
+/// anyone's permission, so it is the half the answer rests on. Only
+/// [`Erasure::Survived`] means a half may still hold live bytes, and
+/// it is the one answer a caller must treat as not forgotten.
 ///
 /// **Nothing here reads the keychain**, and that is deliberate twice
 /// over. A read is the call that can raise the ACL prompt
@@ -352,9 +376,9 @@ pub(crate) fn load_state_key(
 /// The ledger key is **never** touched here. Discarding staged content
 /// must leave the audit record that describes it readable, which is the
 /// entire reason [`LEDGER_KEY_ACCOUNT`] sits outside this derivation.
-pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore, state_path: &Path) -> bool {
+pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore, state_path: &Path) -> Erasure {
     let Some(dir) = containing_dir(state_path) else {
-        return false;
+        return Erasure::Survived;
     };
     let erased = erase_file_halves(dir);
     // Announced, never decisive. Silent, a keychain that will not delete
@@ -362,10 +386,10 @@ pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore, state_path: &
     // trace is that it is still there.
     if let Err(error) = credentials.key_material_store().delete(STATE_KEY_ACCOUNT) {
         diag_fault!(
-            "companion-ffi: the rotation erased the file half but could not delete the \
-             {STATE_KEY_ACCOUNT} item ({error}). The content is unreadable either way, since \
-             its other half is gone; what is left behind is a keychain item nothing will use \
-             again."
+            "companion-ffi: the rotation could not delete the {STATE_KEY_ACCOUNT} item \
+             ({error}). The file half is the answer the caller acts on; once it is gone the \
+             content is unreadable either way, and what is left behind is a keychain item \
+             nothing will use again."
         );
     }
     erased
@@ -385,21 +409,23 @@ pub(crate) fn rotate_key_halves(credentials: &dyn CredentialStore, state_path: &
 /// scan cannot ask which store minted which without the read this
 /// function exists to avoid.
 ///
-/// A directory that is not there holds no halves and counts as erased.
-/// Any other refusal, a directory that will not open, an entry that
-/// will not stat, a half that will not unlink, counts as not erased:
-/// the caller's next step destroys the file that would have triggered
-/// the retry, so an unknown must not read as success.
-fn erase_file_halves(dir: &Path) -> bool {
+/// A directory that is not there holds no halves and counts as
+/// [`Erasure::Gone`]. A directory that will not open, or an entry that
+/// will not stat, counts as [`Erasure::Survived`]: the caller's next
+/// step destroys the file that would have triggered the retry, so an
+/// unknown must not read as success. A half that was zeroed but would
+/// not unlink is [`Erasure::Neutralized`], and the answer for the
+/// directory is the worst answer any half gave.
+fn erase_file_halves(dir: &Path) -> Erasure {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
-        Err(_) => return false,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Erasure::Gone,
+        Err(_) => return Erasure::Survived,
     };
-    let mut gone = true;
+    let mut worst = Erasure::Gone;
     for entry in entries {
         let Ok(entry) = entry else {
-            gone = false;
+            worst = Erasure::Survived;
             continue;
         };
         if entry
@@ -407,10 +433,10 @@ fn erase_file_halves(dir: &Path) -> bool {
             .to_str()
             .is_some_and(|name| name.starts_with(FILE_HALF_PREFIX))
         {
-            gone &= erase_state(&entry.path());
+            worst = worst.max(erase_state_outcome(&entry.path()));
         }
     }
-    gone
+    worst
 }
 
 /// `HKDF-SHA256`: salt from the file half, extract the keychain half,
@@ -788,31 +814,48 @@ pub(crate) fn open_ledger(key: &[u8], file: &[u8]) -> Option<Zeroizing<Vec<u8>>>
 /// itself: a dangling symlink still sitting at the path is something
 /// left there, not success.
 pub(crate) fn erase_state(path: &Path) -> bool {
+    erase_state_outcome(path) == Erasure::Gone
+}
+
+/// The tri-state behind [`erase_state`], for the caller that acts on
+/// the difference between a refused unlink and a surviving byte
+/// ([`erase_file_halves`]). [`Erasure::Neutralized`] is claimed only
+/// when every destructive step landed, the sync included: an unsynced
+/// zero can still lose to the old blocks in a crash, and a caller may
+/// treat the answer as the forgetting.
+pub(crate) fn erase_state_outcome(path: &Path) -> Erasure {
+    let mut zeroed = false;
     if let Ok(mut file) = open_for_erase(path)
         && let Ok(metadata) = file.metadata()
         && metadata.file_type().is_file()
     {
         let zeros = [0u8; ERASE_CHUNK];
         let mut remaining = metadata.len();
+        let mut wrote = true;
         while remaining > 0 {
             let chunk = usize::try_from(remaining)
                 .unwrap_or(ERASE_CHUNK)
                 .min(ERASE_CHUNK);
             if file.write_all(&zeros[..chunk]).is_err() {
+                wrote = false;
                 break;
             }
             remaining = remaining.saturating_sub(chunk as u64);
         }
-        let _ = file.set_len(0);
-        let _ = file.sync_all();
+        zeroed = wrote && file.set_len(0).is_ok() && file.sync_all().is_ok();
     }
     let _ = std::fs::remove_file(path);
-    // Only a confirmed absence counts. `is_err()` would fold "the path
-    // is gone" together with "the stat could not be answered", and the
-    // caller settles the sudden-termination hold on this answer, so a
-    // permissions failure would report success over ciphertext still on
-    // disk. Same standard as `rotate_key_halves`: an unknown is a no.
-    matches!(std::fs::symlink_metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+    // Only a confirmed absence counts as gone. `is_err()` would fold
+    // "the path is gone" together with "the stat could not be
+    // answered", and a caller settles the sudden-termination hold on
+    // this answer, so a permissions failure would report success over
+    // ciphertext still on disk. An unknown is a no; a fully zeroed
+    // carcass is its own middle answer.
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Erasure::Gone,
+        _ if zeroed => Erasure::Neutralized,
+        _ => Erasure::Survived,
+    }
 }
 
 /// Erase every stranded temp generation in `dir`, which is work for
@@ -1359,7 +1402,7 @@ mod tests {
         assert_eq!(&*load_ledger_key(&store).unwrap(), &*ledger);
 
         // And rotation deletes where the item actually is.
-        assert!(rotate_key_halves(&store, &state_path));
+        assert_eq!(rotate_key_halves(&store, &state_path), Erasure::Gone);
         assert!(
             !store.keys().exists(STATE_KEY_ACCOUNT).unwrap(),
             "rotation deleted nothing: the old keychain half survived"
@@ -1929,8 +1972,9 @@ mod tests {
         let key = ensure_state_key(&store, &path).unwrap();
         let sealed = seal(&key, b"staged content the user has discarded");
 
-        assert!(
+        assert_eq!(
             rotate_key_halves(&store, &path),
+            Erasure::Gone,
             "a rotation that removed both halves reported failure"
         );
         assert!(dir.halves().is_empty(), "the file half survived rotation");
@@ -1963,7 +2007,7 @@ mod tests {
         let ledger = ensure_ledger_key(&store).unwrap();
         let record = seal_ledger(&ledger, b"created 0001, sent clipboard").unwrap();
 
-        assert!(rotate_key_halves(&store, &path));
+        assert_eq!(rotate_key_halves(&store, &path), Erasure::Gone);
 
         assert_eq!(
             &*load_ledger_key(&store).unwrap(),
@@ -1986,8 +2030,8 @@ mod tests {
         let dir = StateDir::new();
         let path = dir.state_path();
         let store = InMemoryCredentialStore::default();
-        assert!(rotate_key_halves(&store, &path));
-        assert!(rotate_key_halves(&store, &path));
+        assert_eq!(rotate_key_halves(&store, &path), Erasure::Gone);
+        assert_eq!(rotate_key_halves(&store, &path), Erasure::Gone);
         assert!(dir.halves().is_empty());
         assert!(load_state_key(&store, &path).is_none());
     }
@@ -2007,8 +2051,9 @@ mod tests {
         let key = ensure_state_key(&store, &path).unwrap();
         let sealed = seal(&key, b"staged content the user has discarded");
 
-        assert!(
+        assert_eq!(
             rotate_key_halves(&store, &path),
+            Erasure::Gone,
             "a rotation that erased the file half reported failure"
         );
         assert!(dir.halves().is_empty(), "the file half survived rotation");
@@ -2053,8 +2098,9 @@ mod tests {
         assert!(write_private(&half_path, &keychain_half));
         assert_eq!(dir.halves().len(), 1);
 
-        assert!(
+        assert_eq!(
             rotate_key_halves(&store, &path),
+            Erasure::Gone,
             "a keychain that would not answer stopped the erase and reported it as a refusal"
         );
         assert!(
@@ -2095,7 +2141,7 @@ mod tests {
         std::fs::hard_link(&half_path, &witness).unwrap();
         assert_eq!(std::fs::read(&witness).unwrap().len(), KEY_LEN);
 
-        assert!(rotate_key_halves(&store, &path));
+        assert_eq!(rotate_key_halves(&store, &path), Erasure::Gone);
 
         assert!(dir.halves().is_empty());
         assert_eq!(
@@ -2105,33 +2151,81 @@ mod tests {
         );
     }
 
-    /// A file half that could **not** be erased must report failure, so
-    /// the caller keeps the ciphertext file rather than dropping it and
-    /// losing the only thing that will bring it back to try again.
+    /// A directory that refuses the unlink no longer refuses the
+    /// forgetting. The half can still be opened and zeroed, and zeroed
+    /// bytes derive nothing, so the answer is the middle one: the name
+    /// survived, the key did not.
     #[cfg(unix)]
     #[test]
-    fn a_half_that_will_not_erase_reports_failure() {
+    fn a_half_that_cannot_be_unlinked_is_still_zeroed_and_says_so() {
         use std::os::unix::fs::PermissionsExt;
         let dir = StateDir::new();
         let path = dir.state_path();
         let store = InMemoryCredentialStore::default();
         ensure_state_key(&store, &path).unwrap();
-        assert_eq!(dir.halves().len(), 1);
+        let half_path = file_half_path(
+            &load_key_for(&store, STATE_KEY_ACCOUNT).unwrap(),
+            containing_dir(&path).unwrap(),
+        )
+        .unwrap();
 
-        // Read and search but no write: the half can be read and cannot
-        // be unlinked, which is what a directory somebody else owns
-        // looks like.
+        // Read and search but no write on the directory: the half can
+        // be opened and zeroed, and cannot be unlinked.
         std::fs::set_permissions(&dir.0, std::fs::Permissions::from_mode(0o500)).unwrap();
-        let immovable = rotate_key_halves(&store, &path);
+        let outcome = rotate_key_halves(&store, &path);
         std::fs::set_permissions(&dir.0, std::fs::Permissions::from_mode(0o700)).unwrap();
 
-        // Running as root, or on a filesystem that ignores the mode, the
-        // branch under test is simply unreachable.
-        if !dir.halves().is_empty() {
-            assert!(
-                !immovable,
-                "a rotation that could not erase the half reported success, so the caller went \
-                 on to drop the ciphertext it still opens"
+        // Running as root, or on a filesystem that ignores the mode,
+        // the unlink simply lands and the branch under test is
+        // unreachable.
+        if dir.halves().is_empty() {
+            assert_eq!(outcome, Erasure::Gone);
+        } else {
+            assert_eq!(outcome, Erasure::Neutralized);
+            assert_eq!(
+                std::fs::metadata(&half_path).unwrap().len(),
+                0,
+                "the carcass still holds key bytes"
+            );
+        }
+    }
+
+    /// A half that cannot even be opened for writing, in a directory
+    /// that will not give its name up either, is the one case that must
+    /// still read as a refusal: nothing here can vouch that a single
+    /// byte of it was destroyed, and the caller keeps the ciphertext
+    /// file rather than dropping the only thing that brings it back to
+    /// try again.
+    #[cfg(unix)]
+    #[test]
+    fn a_half_that_cannot_even_be_zeroed_reports_survival() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = StateDir::new();
+        let path = dir.state_path();
+        let store = InMemoryCredentialStore::default();
+        ensure_state_key(&store, &path).unwrap();
+        let half_path = file_half_path(
+            &load_key_for(&store, STATE_KEY_ACCOUNT).unwrap(),
+            containing_dir(&path).unwrap(),
+        )
+        .unwrap();
+
+        std::fs::set_permissions(&half_path, std::fs::Permissions::from_mode(0o400)).unwrap();
+        std::fs::set_permissions(&dir.0, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let outcome = rotate_key_halves(&store, &path);
+        std::fs::set_permissions(&dir.0, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let _ = std::fs::set_permissions(&half_path, std::fs::Permissions::from_mode(0o600));
+
+        // Running as root, or on a filesystem that ignores the mode,
+        // the branch under test is unreachable.
+        if dir.halves().is_empty() {
+            assert_eq!(outcome, Erasure::Gone);
+        } else {
+            assert_eq!(outcome, Erasure::Survived);
+            assert_eq!(
+                std::fs::metadata(&half_path).unwrap().len(),
+                KEY_LEN as u64,
+                "survival was reported over a half that was actually destroyed"
             );
         }
     }
@@ -2141,7 +2235,10 @@ mod tests {
     /// answer this code did not get, and unknown is not gone.
     #[test]
     fn a_state_directory_that_is_not_there_counts_as_erased() {
-        assert!(erase_file_halves(Path::new("/nowhere/at/all")));
+        assert_eq!(
+            erase_file_halves(Path::new("/nowhere/at/all")),
+            Erasure::Gone
+        );
     }
 
     #[test]

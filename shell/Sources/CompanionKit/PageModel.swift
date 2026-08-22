@@ -208,10 +208,15 @@ public final class PageModel: ObservableObject {
     /// items and sealed file live, which rung a fresh page opens on.
     public let formFactor: FormFactor
 
-    @Published public private(set) var sheets: [SheetSummary] = []
+    /// The strip: one entry per durable tab, in visible order, whether
+    /// or not the tab holds a page (ADR-0017). A tab whose page expired
+    /// keeps its place here, named and empty.
+    @Published public private(set) var tabs: [TabSummary] = []
 
-    /// The visibly selected page — the one the editor shows and the
-    /// gestures act on. Nil only when no pages exist.
+    /// The visibly selected **tab**, the slot the editor shows a page
+    /// from and the gestures act on. It is the tab's id and never the
+    /// page's, because a slot the user is looking at may hold nothing.
+    /// Nil only when no tabs exist.
     @Published public var selection: UInt64?
 
     /// The ledger tab (⌘0) is showing instead of a page.
@@ -222,7 +227,7 @@ public final class PageModel: ObservableObject {
     @Published public private(set) var ledgerEntries: [LedgerEntry] = []
 
     /// A refusal or status line the surface shows briefly ("the window
-    /// holds 9 pages…"). Refuse-don't-evict means the app says so.
+    /// holds 9 tabs…"). Refuse-don't-evict means the app says so.
     @Published public var notice: String?
 
     /// Notices are transient by contract: each `flash` restarts the
@@ -347,18 +352,36 @@ public final class PageModel: ObservableObject {
     /// outside without a second handle.
     var coreClient: CompanionClient { client }
 
-    /// Each live page's document, shell-side: the ink is ordinary text
-    /// in an `NSTextStorage`; chips appear as attachment characters
-    /// carrying only ids and excerpts. Pruned when pages die.
+    /// Each live page's document, shell-side, **keyed by page identity
+    /// and never by tab** (ADR-0017): the ink is ordinary text in an
+    /// `NSTextStorage`; chips appear as attachment characters carrying
+    /// only ids and excerpts. Pruned when pages die.
+    ///
+    /// The key is the whole mitigation for the split's one real
+    /// correctness trap. A tab outlives every page it holds, so a map
+    /// keyed by the slot would hand a replacement page the dead one's
+    /// storage, and an attachment character for a zeroized chip would
+    /// sit there within reach of ⌘Z, the exact resurrection ADR-0009
+    /// closed.
     private var storages: [UInt64: NSTextStorage] = [:]
 
     /// Each live page's undo history. Undo is as document-scoped as
     /// the storage it rewrites (ADR-0006): one editor serves every
     /// page, so letting the window's single manager span pages would
-    /// let ⌘Z on one page replay edits against another. Pruned with
-    /// the storages; cleared for a page whose storage is changed
-    /// behind the editor's back.
+    /// let ⌘Z on one page replay edits against another. Keyed by page
+    /// identity for the reason `storages` is: undo carried across a
+    /// page replacement in a reused tab is how a dead chip's glyph
+    /// comes back. Pruned with the storages; cleared for a page whose
+    /// storage is changed behind the editor's back.
     private var undoManagers: [UInt64: UndoManager] = [:]
+
+    /// The slot a selection gesture last minted a page into, and the
+    /// monotonic reading at which it did. Read by `pause` alone, so a
+    /// double-click on an empty slot cannot mint a page with its first
+    /// tap and freeze that page's countdown with its second
+    /// (ADR-0017). Nil the rest of the time, which is every gesture
+    /// that landed on a slot already holding a page.
+    private var mintedBySelection: (tab: UInt64, at: TimeInterval)?
 
     // nonisolated(unsafe): deinit is always nonisolated, even on a
     // @MainActor class (Swift 6), and Timer isn't Sendable. Safe here —
@@ -516,7 +539,11 @@ public final class PageModel: ObservableObject {
     /// way back: the user clearing the ledger in Settings, which discards
     /// the file they were told could not be read and re-grants the licence
     /// (`licencesAfterLedgerClear`). Nothing auto-clears a refused ledger;
-    /// the recovery is always the user's instruction.
+    /// the recovery is always the user's instruction. The one exception
+    /// is not a refusal at all: a ledger payload from a version this app
+    /// itself once wrote and has replaced is disposed of by the seam
+    /// during the restore, before the probe below runs, so the file is
+    /// gone and the licence is granted fresh (ADR-0016 section 9).
     private var ledgerLicence = false
 
     /// The persistence trail in the unified log: restore refusals and
@@ -557,15 +584,12 @@ public final class PageModel: ObservableObject {
         // file it could not read.
         let ledgerPath = ledgerFileURL.path
         let ledgerRestored = client.ledgerRestore(from: ledgerPath)
-        // Probed after the restore for the same reason as above, though
-        // the restore itself never has cause to discard this file: the
-        // ledger's envelope has never been superseded, so it has no
-        // disposal arm at all.
-        // The one thing that unlinks it is the user's own Clear
+        // Probed after the restore for the same reason as above: the
+        // restore has one cause to discard this file, a payload version
+        // this app once wrote and has replaced, and that arm must have
+        // fired before the probe asks whether the file exists. Beyond
+        // that, the one thing that unlinks it is the user's own Clear
         // (`clearLedger`), which cannot race a probe that already ran.
-        // Asking both files the question the same way is what keeps the
-        // content file's ordering from looking like an accident someone
-        // may straighten out.
         ledgerLicence = Self.grantsSaveLicence(
             fileExists: FileManager.default.fileExists(atPath: ledgerPath),
             restored: ledgerRestored
@@ -587,11 +611,19 @@ public final class PageModel: ObservableObject {
                 """
             )
         }
-        if client.sheets().isEmpty {
-            newSheet()
+        // The restore path is the one that would make relaunch mint,
+        // and it takes the second predicate only (ADR-0017): a tab
+        // remains, so nothing is conjured, even when every tab came
+        // back empty after an overnight expiry. Minting on the first
+        // predicate would start a fresh countdown on nothing in a slot
+        // the user never selected. A seam that will not answer mints
+        // nothing either: Return still conjures a page, and that is a
+        // gesture rather than a guess.
+        if client.emptiness()?.hasNoTabs == true {
+            newTab()
         }
         refresh()
-        selection = sheets.first?.id
+        selection = tabs.first?.id
     }
 
     /// The licence's truth table. The core folds "no file yet" and
@@ -639,10 +671,20 @@ public final class PageModel: ObservableObject {
     }
 
     /// Whether this write should drop the state file rather than seal an
-    /// empty store over it. Nothing is staged, so the ciphertext on disk
-    /// describes nothing, and leaving the generation there for the rest
-    /// of the session buys the user nothing (ADR-0012: the last
+    /// empty store over it. Nothing is left at all, so the ciphertext on
+    /// disk describes nothing, and leaving the generation there for the
+    /// rest of the session buys the user nothing (ADR-0012: the last
     /// generation should not outlive what it held).
+    ///
+    /// **`storeEmpty` is "no tabs remain" and never "no tab holds a
+    /// page"** (ADR-0017). The two are different questions since the
+    /// sealed file started carrying tab names, rungs and strip order: a
+    /// pad whose pages have all expired still has a strip to reseal,
+    /// and dropping the file there would destroy exactly what the
+    /// expiry was supposed to leave standing. The other predicate has
+    /// its own job, ADR-0016 section 6's key rotation, and the core
+    /// answers both in one call so neither can be recomputed into
+    /// disagreement.
     ///
     /// All three conditions are the write's own preconditions, restated
     /// because deleting a file is the one thing that cannot be taken
@@ -657,9 +699,47 @@ public final class PageModel: ObservableObject {
     /// veto this would leave the erase permanently unreachable in the
     /// case it was written for.
     public nonisolated static func erasesContentFile(
-        loaded: Bool, contentLicence: Bool, storeEmpty: Bool
+        loaded: Bool, contentLicence: Bool, noTabsRemain: Bool
     ) -> Bool {
-        loaded && contentLicence && storeEmpty
+        loaded && contentLicence && noTabsRemain
+    }
+
+    /// Whether this write should rotate both content key halves and
+    /// reseal the strip under the new ones rather than seal over the old
+    /// ones: the other predicate's job, and the one that makes an
+    /// emptied pad a forgetting (ADR-0016 section 6's first rotation
+    /// trigger, ADR-0017).
+    ///
+    /// **`holdsNoPage` is "no tab holds a page" and never "no tabs
+    /// remain".** Taking the second here would leave the install on one
+    /// content key for as long as any tab exists, which is the whole
+    /// failure the split names: a user who keeps a slot around would
+    /// keep every ciphertext generation their pages ever lived in
+    /// decryptable, including the ones an atomic rename unlinked and
+    /// nothing sweeps.
+    ///
+    /// The drop takes precedence, which is why it is excluded here
+    /// rather than merely ordered after: a pad with no tabs also holds
+    /// no page, and there is nothing left to reseal, so the file goes
+    /// instead. The two are one decision with three outcomes, not two
+    /// independent tests.
+    ///
+    /// Rotating on the state rather than on the transition into it is
+    /// deliberate, and its price is per write, not per emptying: every
+    /// save that runs while the pad stays empty rotates again, so a
+    /// persistently failing ledger write that rearms the retry every
+    /// ten seconds spends a keychain write and a generation of tab
+    /// names on each attempt. Each of those is another forgetting
+    /// rather than a leak, which is why the price is paid; a latch
+    /// that remembered whether the last write had already rotated
+    /// would be a second source of truth about what is on disk, and it
+    /// would be wrong in exactly the case that matters, a write that
+    /// failed after the rotation landed. ADR-0016 section 6 records
+    /// the choice.
+    public nonisolated static func rotatesContentKey(
+        loaded: Bool, contentLicence: Bool, holdsNoPage: Bool, noTabsRemain: Bool
+    ) -> Bool {
+        loaded && contentLicence && holdsNoPage && !noTabsRemain
     }
 
     /// The pair of licences after the user clears the ledger, which is
@@ -764,9 +844,14 @@ public final class PageModel: ObservableObject {
     /// with its empty store; nor may one whose restore of that
     /// particular file was refused.
     ///
-    /// When nothing at all is staged, the content leg drops the file
-    /// instead of sealing an empty store over it
-    /// (`erasesContentFile`). No write ever drops the ledger's own file:
+    /// The content leg has three outcomes rather than two. When no tabs
+    /// remain it drops the file instead of sealing an empty store over
+    /// it (`erasesContentFile`); when tabs remain but none of them holds
+    /// a page it rotates both key halves and reseals the strip under the
+    /// new ones (`rotatesContentKey`), which is what makes an emptied
+    /// pad a forgetting rather than a fresh generation beside the old
+    /// readable ones; otherwise it seals as usual.
+    /// No write ever drops the ledger's own file:
     /// it is long-lived by design, and an emptied ledger is written as an
     /// empty ledger. The single thing that unlinks it is the user's own
     /// Clear, which does it from `clearLedger` rather than from here,
@@ -803,6 +888,13 @@ public final class PageModel: ObservableObject {
         // the core rather than of the published summaries, which a write
         // can reach before the refresh does, and a store with no pages
         // has no chips either: chips ride on pages.
+        // Both predicates, in one answer, from the core (ADR-0017). The
+        // shell derives neither: one of them decides a key rotation and
+        // a predicate recomputed from the summaries can drift from the
+        // one the rotation uses. A seam that will not answer reads as
+        // neither, which drops nothing and rotates nothing, and is the
+        // reading that loses nothing.
+        let emptiness = client.emptiness()
         let saved: Bool
         if !saveLicence {
             // Deliberately left alone, which is settled, not refused:
@@ -811,11 +903,36 @@ public final class PageModel: ObservableObject {
             // different key and is not held back by this.
             saved = true
         } else if Self.erasesContentFile(
-            loaded: stateLoaded, contentLicence: saveLicence, storeEmpty: client.sheets().isEmpty
+            loaded: stateLoaded,
+            contentLicence: saveLicence,
+            // The second predicate and only the second: the file is
+            // dropped when no tabs remain, never when the tabs merely
+            // hold no page. A strip of empty slots still carries names,
+            // rungs and an order, so it is resealed rather than
+            // unlinked, and feeding the other predicate here would
+            // destroy the tabs an expiry was supposed to leave standing.
+            noTabsRemain: emptiness?.hasNoTabs ?? false
         ) {
             saved = client.persistErase(at: url.path)
             if !saved {
                 logger.error("the emptied state file could not be dropped")
+            }
+        } else if Self.rotatesContentKey(
+            loaded: stateLoaded,
+            contentLicence: saveLicence,
+            // And the first predicate here, where it belongs: the pad
+            // holds no content while the strip stands, so both halves
+            // go and the names, rungs and order are resealed under new
+            // ones. This is the write that makes an overnight expiry a
+            // forgetting rather than a rename of the ciphertext on
+            // disk.
+            holdsNoPage: emptiness?.holdsNoPage ?? false,
+            noTabsRemain: emptiness?.hasNoTabs ?? false
+        ) {
+            saved = client.persistRotateAndSave(to: url.path)
+            if !saved {
+                logger.error(
+                    "the emptied pad's rotation or reseal did not land; the retry returns to it")
             }
         } else {
             saved = client.persistSave(to: url.path)
@@ -869,18 +986,38 @@ public final class PageModel: ObservableObject {
 
     // MARK: State
 
-    public var selectedSheet: SheetSummary? {
-        sheets.first { $0.id == selection }
+    /// The selected slot's summary, page or no page.
+    public var selectedTab: TabSummary? {
+        tabs.first { $0.id == selection }
+    }
+
+    /// The page the selected slot holds, or nil when it holds none.
+    /// Every page-addressed call goes through this rather than through
+    /// `selection`, which names a slot and may name an empty one.
+    public var selectedPageID: UInt64? {
+        selectedTab?.pageID
+    }
+
+    /// The pages the strip is holding right now, by identity. The
+    /// pruning set for the document maps, and the liveness set the
+    /// promotion drafts are checked against.
+    private var livePageIDs: Set<UInt64> {
+        Set(tabs.compactMap(\.pageID))
     }
 
     public func refresh() {
-        sheets = client.sheets()
-        let live = Set(sheets.map(\.id))
+        tabs = client.tabs()
+        let livePages = livePageIDs
         // A dead page's ink lives on only in the ledger; drop the
-        // editor-side document, and its undo history with it.
-        storages = storages.filter { live.contains($0.key) }
-        undoManagers = undoManagers.filter { live.contains($0.key) }
-        selection = Self.reconciledSelection(current: selection, live: sheets.map(\.id))
+        // editor-side document, and its undo history with it. The
+        // filter is on the live PAGE identities and never on the tabs,
+        // because a tab outlives its page: keyed by the slot, a reused
+        // tab would inherit the dead page's storage and undo stack, and
+        // a ⌘Z past the page boundary would re-insert a zeroized chip's
+        // attachment character (ADR-0009, ADR-0017 item 9).
+        storages = storages.filter { livePages.contains($0.key) }
+        undoManagers = undoManagers.filter { livePages.contains($0.key) }
+        selection = Self.reconciledSelection(current: selection, live: tabs.map(\.id))
         // A promotion whose subject died — expiry, mostly; `close`
         // clears its own — must not keep the confirmation standing:
         // ↩ lands on "Create link", and a stale draft would answer a
@@ -892,10 +1029,10 @@ public final class PageModel: ObservableObject {
         if let draft = promotion {
             var liveChips: Set<UInt64> = []
             if case .chip = draft.target {
-                liveChips = Set(sheets.flatMap { chipIds(onSheet: $0.id) })
+                liveChips = Set(livePages.flatMap { chipIds(onSheet: $0) })
             }
             if Self.isRefreshOrphan(
-                target: draft.target, liveSheets: live, liveChips: liveChips
+                target: draft.target, liveSheets: livePages, liveChips: liveChips
             ) {
                 promotion = nil
             }
@@ -909,16 +1046,24 @@ public final class PageModel: ObservableObject {
         // Esc remains the way to give the keyboard back.
     }
 
-    /// Which page holds the selection after the model reloads. A
-    /// selection that still names a live page keeps it: the reload
-    /// changed the world around the page, not the page itself. A
-    /// selection whose page is gone (expiry, a close, a reorder that
-    /// dropped it) falls to the first live page in tab order, the same
-    /// page a nil selection seats, so the "it died" path and the
-    /// "nothing was selected" path land together. An empty model
-    /// selects nothing: the keyed-empty state ADR-0005's grants are
-    /// built to hold. Pure, so the decision is testable without a
-    /// window; `live` is ordered, so "first" is the first visible tab.
+    /// Which **tab** holds the selection after the model reloads. A
+    /// selection that still names a tab on the strip keeps it, and an
+    /// expiry therefore changes nothing about the selection: the slot
+    /// is still there, holding nothing, and the surface renders its
+    /// empty state rather than jumping the user to another page. A
+    /// selection whose tab is gone (a close, a reorder that dropped it)
+    /// falls to the first tab in strip order, the same tab a nil
+    /// selection seats, so the "it went" path and the "nothing was
+    /// selected" path land together. A model with no tabs selects
+    /// nothing: the keyed-empty state ADR-0005's grants are built to
+    /// hold. Pure, so the decision is testable without a window; `live`
+    /// is ordered, so "first" is the first visible tab.
+    ///
+    /// This never mints. Minting on a reconciled selection would mint
+    /// whenever the selected tab's page expired under the user's
+    /// cursor, which is the silent countdown on nothing ADR-0017
+    /// refuses; only the three deliberate gestures and Return open a
+    /// page into a slot.
     public nonisolated static func reconciledSelection(current: UInt64?, live: [UInt64]) -> UInt64? {
         if let current, live.contains(current) { return current }
         return live.first
@@ -960,42 +1105,96 @@ public final class PageModel: ObservableObject {
 
     /// Discard every page's undo history. One editor serves all pages
     /// (ADR-0006), so every registered undo operation is bound to that
-    /// single NSTextView. When the view is torn down — a ledger round
-    /// trip, or the empty state after the last page dies — and a fresh
-    /// editor later mounts, those cached managers still hold operations
-    /// targeting the dead view: replaying one drives a zombie reference,
-    /// not the live editor (issue #23). A mount clears them so ⌘Z after
-    /// a remount is a clean no-op rather than a misfire. Page↔page
-    /// swaps keep the same view and are untouched.
+    /// single NSTextView. When the view is torn down and a fresh editor
+    /// later mounts, those cached managers still hold operations
+    /// targeting the dead view: replaying one drives a zombie
+    /// reference, not the live editor (issue #23). A mount clears them
+    /// so ⌘Z after a remount is a clean no-op rather than a misfire.
+    /// Page↔page swaps keep the same view and are untouched.
+    ///
+    /// **Every page's, and not the mounted one's, because every one of
+    /// them points at the same dead view.** There is no narrower
+    /// discard to make: an operation registered against the torn-down
+    /// editor is dead whether or not its page is still alive, so
+    /// keeping one would be keeping the zombie rather than keeping the
+    /// history.
+    ///
+    /// The teardown is more frequent since the split (ADR-0017), and
+    /// that cost is stated rather than hidden. The empty state used to
+    /// be reached only when the last page in the store died; now the
+    /// selected tab holding no page is enough, so a visit to a slot
+    /// whose page expired overnight unmounts the editor and the next
+    /// mount spends the undo history of every other live page with it.
+    /// Nothing on screen or on disk changes: what the user loses is
+    /// ⌘Z reaching back past that visit.
     public func discardUndoHistory() {
         undoManagers.values.forEach { $0.removeAllActions() }
     }
 
     // MARK: Navigation — the keyboard map
 
+    /// Select a tab, and open a page into it if it holds none.
+    ///
+    /// This is one of the three gestures that mint, and the mint is
+    /// deliberate on both counts (ADR-0017). It happens on selection
+    /// rather than lazily on the first keystroke, because the empty
+    /// branch renders no editor at all: a selected empty tab would
+    /// unmount the editor and re-mount it on the first character,
+    /// turning every expiry into an editor teardown and putting
+    /// ADR-0005's Return grant in competition with this path. And it
+    /// happens only here, on a user's gesture, never on the selection
+    /// `refresh()` reconciles, so a page that expires under the cursor
+    /// leaves an empty tab rather than a fresh countdown on nothing.
     public func select(_ id: UInt64) {
         let leavingLedger = showingLedger
         showingLedger = false
         selection = id
+        openPageIfSlotIsEmpty(id)
         if leavingLedger { refocusEditorIfKeyed() }
     }
 
-    /// ⌘1–⌘9: jump by visible tab order.
+    /// ⌘1 to ⌘9: jump by visible tab order. The index is into the strip,
+    /// so ⌘3 means the third slot whether or not it holds a page, and
+    /// it means the same slot next week.
     public func select(index: Int) {
-        guard sheets.indices.contains(index) else { return }
-        select(sheets[index].id)
+        guard tabs.indices.contains(index) else { return }
+        select(tabs[index].id)
     }
 
-    /// ⌥⌘← / ⌥⌘→.
+    /// ⌥⌘← / ⌥⌘→. Steps slots, not pages, and mints into the slot it
+    /// lands on when that slot is empty.
     public func step(_ delta: Int) {
-        guard !sheets.isEmpty else { return }
+        guard !tabs.isEmpty else { return }
         if showingLedger {
             showingLedger = false
             refocusEditorIfKeyed()
         }
-        let current = sheets.firstIndex { $0.id == selection } ?? 0
-        let next = Self.steppedIndex(from: current, by: delta, within: sheets.count)
-        selection = sheets[next].id
+        let current = tabs.firstIndex { $0.id == selection } ?? 0
+        let next = Self.steppedIndex(from: current, by: delta, within: tabs.count)
+        let landed = tabs[next].id
+        selection = landed
+        openPageIfSlotIsEmpty(landed)
+    }
+
+    /// The mint the three selection gestures share: a page into the
+    /// named slot at that slot's own rung, and nothing at all when the
+    /// slot already holds one or the tab is unknown. Refuses at the
+    /// seam rather than here, so the "one page to a slot" rule has a
+    /// single home.
+    private func openPageIfSlotIsEmpty(_ tab: UInt64) {
+        // Selecting some other slot retires the record of the last
+        // mint, so what stands is always the mint of a tap on this
+        // slot and never one from a gesture ago. Reaching the same
+        // slot again keeps it: with a simultaneous gesture the double
+        // click's second single tap re-enters here before the hold
+        // resolves, and clearing on that re-entry is what let the hold
+        // strike the page the first tap had just minted.
+        if mintedBySelection?.tab != tab { mintedBySelection = nil }
+        guard tabs.first(where: { $0.id == tab })?.hasPage == false else { return }
+        guard client.openPage(tab: tab) != 0 else { return }
+        mintedBySelection = (tab: tab, at: ProcessInfo.processInfo.systemUptime)
+        markDirty()
+        refresh()
     }
 
     /// The next tab index after a ⌥⌘←/→ step, clamped to the ends. A
@@ -1138,15 +1337,16 @@ public final class PageModel: ObservableObject {
 
     // MARK: Pages
 
-    /// A new page at this form factor's opening rung. 0 means the store
-    /// refused at the cap of 9.
+    /// A new tab at this form factor's opening rung, holding a new
+    /// page. 0 means the store refused at the cap of 9. Returns the
+    /// TAB's id, which is what the selection keeps.
     @discardableResult
-    private func newSheet() -> UInt64 {
-        let id = client.newSheet()
+    private func newTab() -> UInt64 {
+        let id = client.newTab()
         if id != 0, let rung = formFactor.defaultRung {
-            _ = client.setRung(sheet: id, rung: rung)
+            _ = client.setRung(tab: id, rung: rung)
         }
-        // A refusal at the cap changed nothing; only a real page is dirt.
+        // A refusal at the cap changed nothing; only a real tab is dirt.
         if id != 0 { markDirty() }
         return id
     }
@@ -1155,9 +1355,13 @@ public final class PageModel: ObservableObject {
     /// says so.
     public func newPage() {
         notice = nil
-        let created = newSheet()
+        let created = newTab()
         if created == 0 {
-            flash("the window holds 9 pages — let one expire, or close one")
+            // Not "let one expire" any more: an expiry empties a slot
+            // and never frees it, so closing is the only thing that
+            // moves the wall (ADR-0017). Saying otherwise would send
+            // the user off to wait for something that cannot happen.
+            flash("the window holds 9 tabs, close one to make room")
         }
         refresh()
         if created != 0 {
@@ -1197,25 +1401,55 @@ public final class PageModel: ObservableObject {
         // second Return (or another create path that won the race before
         // SwiftUI unmounted the catcher) finds the model already peopled,
         // so focus the page that exists rather than stack a blank one.
-        if sheets.isEmpty { newPage() }
+        // Three cases, in the order the strip can be in. No tabs at
+        // all: conjure one, which is the launch-into-emptiness case.
+        // A selected slot holding nothing: open a page into it, so
+        // Return lands on the slot the user was looking at rather than
+        // widening the strip (ADR-0017 item 11). A selected slot that
+        // already holds a page: the grant promises one page and not one
+        // per keystroke, so focus what exists.
+        if tabs.isEmpty {
+            newPage()
+        } else if let tab = selection, selectedTab?.hasPage == false {
+            openPageIfSlotIsEmpty(tab)
+        }
         focusEditorWhenMounted(in: window)
     }
 
     /// Whether the empty state's catcher should hold first responder,
     /// which is the whole of the fourth grant's availability: yes
-    /// exactly when the sheet list is empty while the window holds the
-    /// keys. The grant spends key status an earlier grant conferred,
-    /// never takes it; an unkeyed window still receives no keystrokes
-    /// at all, so it has nothing to offer Return. Pure, so the
-    /// decision is testable without a window.
+    /// exactly when the selected tab holds no page while the window
+    /// holds the keys. The grant spends key status an earlier grant
+    /// conferred, never takes it; an unkeyed window still receives no
+    /// keystrokes at all, so it has nothing to offer Return. Pure, so
+    /// the decision is testable without a window.
+    ///
+    /// It follows the selection and not the strip (ADR-0017 item 11): a
+    /// selected empty tab offers the create surface while another tab
+    /// holds a page, because that is the surface the user is actually
+    /// looking at. Neither store-wide predicate belongs here, both are
+    /// about the whole pad, and feeding either one in would hide the
+    /// create surface at exactly the moment a user is looking at an
+    /// empty tab. A strip with no tabs at all also holds no page in the
+    /// selected one, so the launch-into-emptiness case falls out of the
+    /// same sentence.
     public nonisolated static func shouldOfferEnterCreate(
-        sheetsEmpty: Bool, holdsKeys: Bool
+        selectedTabHoldsNoPage: Bool, holdsKeys: Bool
     ) -> Bool {
-        sheetsEmpty && holdsKeys
+        selectedTabHoldsNoPage && holdsKeys
     }
 
-    /// Close the page; it rests in the ledger. Closing also clears any
-    /// standing refusal — the cap condition it named may be resolved.
+    /// The fact the create grant reads, taken from the model: the
+    /// selected slot holds no page, which a strip with nothing selected
+    /// satisfies too.
+    public var selectedTabHoldsNoPage: Bool {
+        selectedPageID == nil
+    }
+
+    /// Close the tab; whatever page it held rests in the ledger.
+    /// Closing also clears any standing refusal, the cap condition it
+    /// named may be resolved. Explicit close is one of the two things
+    /// that end a tab (ADR-0017), and it takes the slot with the page.
     public func close(_ id: UInt64) {
         notice = nil
         // A draft aimed at this page — or at a chip riding on it —
@@ -1224,15 +1458,16 @@ public final class PageModel: ObservableObject {
         // network call over a page that no longer exists (issue #19).
         // The chips must be asked for *before* the close; a dead page
         // replays no runs.
-        if let draft = promotion,
+        let closingPage = tabs.first { $0.id == id }?.pageID
+        if let draft = promotion, let closingPage,
            Self.shouldClearPromotion(
                target: draft.target,
-               closingSheet: id,
-               chipsOnSheet: chipIds(onSheet: id)
+               closingSheet: closingPage,
+               chipsOnSheet: chipIds(onSheet: closingPage)
            ) {
             promotion = nil
         }
-        _ = client.closeSheet(id: id)
+        _ = client.closeTab(id: id)
         markDirty()
         refresh()
     }
@@ -1288,10 +1523,11 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// Drag-to-reorder: move `id` to `index` in visible order; the
-    /// ⌘-number map follows.
+    /// Drag-to-reorder: move the tab `id` to `index` in visible order;
+    /// the ⌘-number map follows. The arrangement is the slot's, so it
+    /// survives every page the slot holds.
     public func move(_ id: UInt64, to index: Int) {
-        _ = client.moveSheet(id: id, to: UInt64(max(0, index)))
+        _ = client.moveTab(id: id, to: UInt64(max(0, index)))
         markDirty()
         refresh()
     }
@@ -1299,7 +1535,7 @@ public final class PageModel: ObservableObject {
     /// Click the countdown label: one rung shorter, clock reset
     /// (docs/spec/04).
     public func cycleRung(_ id: UInt64) {
-        _ = client.cycleRung(sheet: id)
+        _ = client.cycleRung(tab: id)
         markDirty()
         refresh()
     }
@@ -1308,21 +1544,60 @@ public final class PageModel: ObservableObject {
     /// top up to 24h, then release it. The release is what keeps a
     /// stray double-click from ratcheting a page's life up by a day
     /// with no way back (docs/spec/04).
+    ///
+    /// A hold that would land on the page the tap before it minted is
+    /// refused (ADR-0017). Selecting an empty slot opens a page into it,
+    /// so on a slot whose page expired overnight the first tap of a
+    /// double-click makes a page and the second one would freeze its
+    /// countdown for an hour: the user double-clicked an empty slot and
+    /// got a held page they never asked to hold. The refusal is here
+    /// rather than in the strip because the gesture recognizers are
+    /// re-made as the view re-renders and the mint is what makes them
+    /// disagree; the model knows what it just minted.
+    ///
+    /// A press the core refuses changed nothing, so it marks nothing
+    /// dirty: a slot holding no page has no clock to hold, and arming a
+    /// write for a store that did not move is a ciphertext generation
+    /// bought with a gesture that did nothing.
     public func pause(_ id: UInt64) {
-        _ = client.pausePress(sheet: id)
+        guard !Self.holdWouldStrikeItsOwnMint(
+            tab: id,
+            mintedTab: mintedBySelection?.tab,
+            elapsed: ProcessInfo.processInfo.systemUptime - (mintedBySelection?.at ?? 0),
+            within: NSEvent.doubleClickInterval
+        ) else { return }
+        guard client.pausePress(tab: id) else { return }
         markDirty()
         refresh()
     }
 
+    /// Whether this hold is the second half of the double-click whose
+    /// first half minted the page it would land on: the same slot, and
+    /// inside the interval the system calls a double-click. Pure, so
+    /// the window is testable without a gesture recognizer.
+    ///
+    /// The elapsed time comes from `systemUptime`, which stops while
+    /// the machine sleeps, so a sleep inside the window can only make
+    /// the reading shorter. Shorter errs toward ignoring a hold, but
+    /// the window is the double-click interval: a hold that follows a
+    /// sleep taken inside a double-click is not a gesture anyone
+    /// performs. A wall clock step never moves the reading at all.
+    public nonisolated static func holdWouldStrikeItsOwnMint(
+        tab: UInt64, mintedTab: UInt64?, elapsed: TimeInterval, within window: TimeInterval
+    ) -> Bool {
+        mintedTab == tab && elapsed >= 0 && elapsed <= window
+    }
+
     /// The rename gesture, from the tab context menu (double-click is
     /// already the pause gesture, so the name is set through the menu).
-    /// An empty or all-whitespace submission clears the override and
-    /// lets the title derive from the page's own content again, which is
-    /// the core's contract. The title is persisted state and it is what
-    /// every future ledger record freezes, so a rename is a mutation
-    /// like any other.
-    public func renameSheet(_ id: UInt64, to title: String) {
-        guard client.setTitle(sheet: id, title) else { return }
+    /// An empty or all-whitespace submission clears the name and lets
+    /// the label fall back to the live page's derived title, which is
+    /// the core's contract. The name is durable state on the tab and it
+    /// is what every future ledger record freezes, for this page and
+    /// for every page the slot goes on to hold, so a rename is a
+    /// mutation like any other.
+    public func renameTab(_ id: UInt64, to title: String) {
+        guard client.setTitle(tab: id, title) else { return }
         markDirty()
         refresh()
     }
@@ -1340,7 +1615,7 @@ public final class PageModel: ObservableObject {
     /// the board is the failure this route exists to prevent.
     public func sealPasteboard(replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selection, let (at, length) = Self.wireRange(range) else { return nil }
+        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
         let (chip, cleared) = client.sealFromPasteboard(sheet: sheet, at: at, length: length)
         guard let chip else {
             flash("nothing to seal")
@@ -1390,7 +1665,7 @@ public final class PageModel: ObservableObject {
     /// point (zero length) or the selection the drop replaces.
     public func sealDrag(replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selection, let (at, length) = Self.wireRange(range) else { return nil }
+        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealFromDrag(sheet: sheet, at: at, length: length)
         if chip == nil { flash("nothing to seal") } else { markDirty() }
         return chip
@@ -1402,7 +1677,7 @@ public final class PageModel: ObservableObject {
     /// to match rather than performing an edit of its own.
     public func sealText(_ text: String, replacing range: NSRange) -> ChipInfo? {
         notice = nil
-        guard let sheet = selection, let (at, length) = Self.wireRange(range) else { return nil }
+        guard let sheet = selectedPageID, let (at, length) = Self.wireRange(range) else { return nil }
         let chip = client.sealText(sheet: sheet, text, at: at, length: length)
         if chip != nil { markDirty() }
         return chip
@@ -1542,11 +1817,13 @@ public final class PageModel: ObservableObject {
     /// network boundary is the one confirming click.
     public func beginPromotion(_ target: PromotionDraft.Target) {
         notice = nil
-        let sheetId: UInt64? = switch target {
+        // A page draft names a page; a chip draft borrows the selected
+        // slot's page, which is the page the chip is showing on.
+        let pageId: UInt64? = switch target {
         case .page(let id): id
-        case .chip: selection
+        case .chip: selectedPageID
         }
-        let remaining = sheets.first { $0.id == sheetId }?.remainingMs ?? 0
+        let remaining = tabs.first { $0.pageID == pageId }?.remainingMs ?? 0
         promotion = PromotionDraft(
             target: target,
             ttlSecs: PromotionDraft.snappedTtl(remainingMs: remaining)
@@ -1613,7 +1890,15 @@ public final class PageModel: ObservableObject {
         case .chip(let id):
             removeChipFromDocument(id)
         case .page(let id):
-            close(id)
+            // The draft names a page, so the burn does too. It leaves
+            // the slot standing, empty and named, the way an expiry
+            // leaves one: what the user asked to be rid of is the copy
+            // that travelled, and the name, the rung, the position and
+            // the number key are the arrangement they built, which only
+            // a close and the cap may end (ADR-0017).
+            _ = client.discardPage(id: id)
+            markDirty()
+            refresh()
         }
         promotion = nil
     }
@@ -1734,7 +2019,7 @@ public final class PageModel: ObservableObject {
     /// that re-arms timers and reconciles selection, work the clock
     /// tick has no business doing.
     private func refreshSummaries() {
-        sheets = client.sheets()
+        tabs = client.tabs()
     }
 
     /// Arm exactly one timer, at the core's next event — a page expiry

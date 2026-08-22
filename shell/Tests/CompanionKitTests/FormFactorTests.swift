@@ -148,8 +148,8 @@ final class FormFactorTests: XCTestCase {
 final class DocumentMirrorTests: XCTestCase {
     func testInkRoundTripsThroughTheDocumentMirror() throws {
         let client = CompanionClient()
-        let id = client.newSheet()
-        XCTAssertNotEqual(id, 0)
+        XCTAssertNotEqual(client.newTab(), 0)
+        let id = try XCTUnwrap(client.tabs().first?.pageID)
 
         let ink = "wifi guest pw rotates friday\nask ops for the new one"
         let json = try XCTUnwrap(Self.inkRunsJSON(ink))

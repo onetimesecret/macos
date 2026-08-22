@@ -16,7 +16,9 @@
 use std::io::{BufRead, Write as _};
 use std::time::Duration;
 
-use companion_core::{DestinationClass, ManualClock, Segment, Sheet, SheetId, SheetStore, Tab};
+use companion_core::{
+    DestinationClass, ManualClock, Segment, Sheet, SheetId, SheetStore, Tab, TabId,
+};
 use companion_credentials::default_credential_store;
 use companion_pasteboard::{ContentKind, MemoryPasteboard, Pasteboard, WriteOptions};
 use companion_transport::UreqTransport;
@@ -65,8 +67,8 @@ fn main() {
         match cmd {
             "" => {}
             "help" | "?" => help(),
-            "new" | "n" => match store.new_sheet() {
-                Ok(id) => {
+            "new" | "n" => match store.new_tab() {
+                Ok((_, id)) => {
                     current = Some(id);
                     println!("a new page, default rung. the countdown is running.");
                 }
@@ -120,8 +122,8 @@ fn main() {
                 }
             }
             "close" => {
-                if let Some(id) = current {
-                    store.close_sheet(id);
+                if let Some(tab) = current.and_then(|id| slot(&store, id)) {
+                    store.close_tab(tab);
                     current = store.sheets().next().map(Sheet::id);
                     println!("closed. the ledger keeps the fact, not the page.");
                 } else {
@@ -461,15 +463,33 @@ fn clear(pb: &mut MemoryPasteboard) {
     }
 }
 
+/// The slot a page stands in. The strip's gestures address the slot,
+/// the page's own gestures address the page, and this is the one place
+/// the demo turns one into the other.
+fn slot(store: &SheetStore<ManualClock>, page: SheetId) -> Option<TabId> {
+    store
+        .tabs()
+        .find(|tab| tab.page().map(Sheet::id) == Some(page))
+        .map(Tab::id)
+}
+
 fn cycle_rung(store: &mut SheetStore<ManualClock>, page: SheetId) {
-    match store.cycle_rung(page) {
+    let Some(tab) = slot(store, page) else {
+        println!("no such page");
+        return;
+    };
+    match store.cycle_rung(tab) {
         Some(rung) => println!("clock reset: {rung} from now"),
         None => println!("no such page"),
     }
 }
 
 fn pause(store: &mut SheetStore<ManualClock>, page: SheetId) {
-    if store.pause_press(page) {
+    let Some(tab) = slot(store, page) else {
+        println!("no such page");
+        return;
+    };
+    if store.pause_press(tab) {
         let now = store.now();
         let sheet = store.sheet(page).expect("just pressed");
         if sheet.is_held(now) {

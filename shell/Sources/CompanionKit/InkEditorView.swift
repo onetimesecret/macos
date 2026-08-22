@@ -36,11 +36,13 @@ public struct InkEditorView: NSViewRepresentable {
         // Explicit TextKit 1 stack: chips render through
         // NSTextAttachmentCell, and swapping pages swaps the storage
         // under one layout manager (`replaceTextStorage`).
-        // A fresh editor mount follows a teardown (a ledger round trip,
-        // or the empty state after the last page died). Every cached
-        // undo manager still holds operations bound to the torn-down
-        // view; shed them before this view registers its own, so ⌘Z
-        // rewrites live text instead of firing at a zombie (issue #23).
+        // A fresh editor mount follows a teardown: a ledger round trip,
+        // or the empty state, which since ADR-0017 is reached whenever
+        // the selected tab holds no page and not only when the last
+        // page died. Every cached undo manager still holds operations
+        // bound to the torn-down view; shed them before this view
+        // registers its own, so ⌘Z rewrites live text instead of firing
+        // at a zombie (issue #23).
         model.discardUndoHistory()
         let layoutManager = NSLayoutManager()
         let container = NSTextContainer(size: NSSize(
@@ -208,8 +210,11 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.observeClip(of: scroll)
         coordinator.applyWrap(model.wrapsLines)
         // Dead pages take their saved view state with them — the same
-        // pruning `refresh()` applies to the storage cache.
-        coordinator.pruneViewState(keeping: Set(model.sheets.map(\.id)))
+        // pruning `refresh()` applies to the storage cache, and keyed
+        // the same way, by page identity: a tab outlives its pages
+        // (ADR-0017), so a slot's id would keep a dead page's caret and
+        // scroll alive for whatever page came next.
+        coordinator.pruneViewState(keeping: Set(model.tabs.compactMap(\.pageID)))
         guard coordinator.currentSheet != sheetID else { return }
         // A page switch reaches this editor as data, not identity
         // (ADR-0006): the view — and with it first responder, and the

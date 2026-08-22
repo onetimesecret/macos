@@ -1,0 +1,179 @@
+# Re-signed bundle: refusal without erasure, and debug versus release separation
+
+**Applies to:** OnetimePad, installed release bundle and the dev debug
+bundle.
+**Required by:** [ADR-0016](../../adr/0016-content-persists-across-restart.md)
+section 10, case 4 (app update or dev rebuild), and section 7's
+unavailable key row. CI runs against an in memory credential store and
+cannot reach a real Keychain ACL.
+**Owner:** delano.
+**Status:** open. Not yet run on hardware.
+
+## Prerequisite: rebuild and reinstall first
+
+The envelope went `OTSSEAL2` to `OTSSEAL3`
+(`crates/ffi/src/persist.rs:154`, `:176`) and the ledger payload went
+`OTSLEDR1` to `OTSLEDR2` (`crates/core/src/persist.rs:111`, `:127`). An
+older installed copy cannot read what this build writes.
+
+```sh
+pgrep -fl "\.build/.*OnetimePad"
+scripts/install.sh
+```
+
+Pin `CODESIGN_IDENTITY` in `scripts/local.env` before this run, because
+this procedure is about what happens when that identity changes, and an
+install that was ad hoc signed to begin with has nothing to change from
+(`scripts/install.sh:43-47`).
+
+## Where to look
+
+```sh
+STATE=~/Library/Application\ Support/com.onetimesecret.companion.backdrop.noindex
+DEBUG_STATE=~/Library/Application\ Support/com.onetimesecret.companion.backdrop.debug.noindex
+log stream --style compact --predicate \
+  'subsystem BEGINSWITH "com.onetimesecret.companion.backdrop" && (category == "core" || category == "persistence")'
+```
+
+The state directory name is the running build's bundle id plus
+`.noindex` and the Keychain service is that same id
+(`shell/Sources/CompanionKit/FormFactor.swift:172-181`, `:205-213`), so
+a `.debug` suffix moves both. The content key is assembled from a
+keychain half under account `state-key`
+(`crates/ffi/src/persist.rs:186`) and a file half named
+`ots-companion-key-half-<32 hex>` in the state directory (`:232`,
+`:451`).
+
+## Case 1: a different signing identity refuses and erases nothing
+
+The Keychain ACL is derived from the signing identity and the bundle id
+(ADR-0012:90). A bundle signed by someone else is a different caller to
+the Keychain, so `load_key_for` gets an error or a denial and returns
+`None` (`crates/ffi/src/persist.rs:262-281`), the key closure fails, and
+`open_state` returns `Opened::Refused` without touching the file
+(`crates/ffi/src/persist.rs:679-687`). Refusal, not disposal: the
+superseded arm is the only destructive one and it fires on a byte string
+in `SUPERSEDED_MAGICS`, never on a key failure
+(`crates/ffi/src/lib.rs:1315-1316`).
+
+1. With the installed app, create two pages, one with a sealed chip.
+   Quit with ⌘Q.
+2. Record the evidence that must not change:
+
+   ```sh
+   codesign -dv --verbose=4 /Applications/OnetimePad.app 2>&1 | grep -E 'Identifier|Authority|TeamIdentifier'
+   ls -la "$STATE"
+   shasum -a 256 "$STATE/state.sealed"
+   ```
+
+3. Re sign the installed bundle with a different identity. Ad hoc is
+   the easiest different identity:
+
+   ```sh
+   codesign --force --deep --sign - /Applications/OnetimePad.app
+   codesign --verify --strict /Applications/OnetimePad.app
+   codesign -dv --verbose=4 /Applications/OnetimePad.app 2>&1 | grep Authority
+   ```
+
+   Signing with a second real certificate instead is equally valid and
+   closer to the field case; the observable is the same.
+4. Launch the app. macOS may present a Keychain prompt asking whether
+   the app may use the `state-key` item. **Deny it**, which is the case
+   under test; a user faced with an unrecognized app is expected to
+   deny.
+5. Type a line on the page that opens, wait past the debounce, and quit.
+6. Re read the evidence from step 2.
+
+**Pass, in this order:**
+
+- The pad opens with one empty page and none of the previous content.
+- The log carries a `companion-ffi:` fault naming the assembly failure:
+  "the state file carries this build's envelope, but its content key
+  could not be assembled. Either the keychain half would not load or the
+  file half is missing from the state directory; the file stays and this
+  session will not write one" (`crates/ffi/src/persist.rs:680-685`).
+  When the Keychain answers with an error rather than silence, the
+  preceding line is "companion-ffi: the state-key item would not load
+  (...)" (`crates/ffi/src/persist.rs:278`).
+- The shell then logs "restore failed over an existing state file;
+  withholding the save licence"
+  (`shell/Sources/CompanionKit/PageModel.swift:552`).
+- `state.sealed` is still present and its sha256 is **identical** to
+  step 2, including after the typing and the quit: a session without the
+  licence never rewrites the file
+  (`shell/Sources/CompanionKit/PageModel.swift:808-813`).
+- The `ots-companion-key-half-<32 hex>` file is still present and
+  unchanged, and the `state-key` keychain item still exists. Nothing
+  rotated: rotation has two triggers and a refusal is neither
+  (ADR-0016 section 6).
+- No quit alert appears, because the session owes no write.
+
+**Fail:** an erased or rewritten `state.sealed`, a changed sha256, a
+missing key half, a missing keychain item, or a log line from the
+superseded arm (`crates/ffi/src/lib.rs:1354`), which would mean a key
+failure was routed into the destructive path.
+
+7. Restore the original identity and confirm recovery is real:
+
+   ```sh
+   scripts/install.sh
+   ```
+
+   With `CODESIGN_IDENTITY` back to the pinned value, allow the
+   Keychain prompt if one appears.
+
+**Pass:** the two pages from step 1 come back, with their chips, drained
+by the elapsed wall clock. That is the whole point of refusing rather
+than erasing.
+
+## Case 2: `.debug` and release keep separate state
+
+`package-app.sh --debug` appends `.debug` to the bundle id
+(`scripts/package-app.sh:135-139`), and `resolvedBundleIdentifier`
+accepts exactly one dot free configuration suffix
+(`shell/Sources/CompanionKit/FormFactor.swift:172-181`), so the debug
+copy resolves its own state directory, its own Keychain service and its
+own log subsystem. Two copies that shared them would clobber one
+another's `state.sealed` on one debounce.
+
+1. Install and run the release copy. Create a page with recognizable
+   text, for example `RELEASE ONE`. Quit.
+2. Build and launch the debug copy:
+
+   ```sh
+   scripts/dev.sh
+   ```
+
+   It packages the debug bundle under the `.debug` id and launches it
+   from `dist/` (`scripts/dev.sh:1-11`).
+3. In the debug copy, create a page reading `DEBUG ONE`. Quit it.
+4. Inspect both directories:
+
+   ```sh
+   ls -la "$STATE" "$DEBUG_STATE"
+   security find-generic-password -s com.onetimesecret.companion.backdrop -a state-key -g 2>&1 | head -3
+   security find-generic-password -s com.onetimesecret.companion.backdrop.debug -a state-key -g 2>&1 | head -3
+   ```
+
+**Pass:** two directories exist, each with its own `state.sealed`, its
+own `ledger.sealed` and its own `ots-companion-key-half-<32 hex>` whose
+names differ from each other. Two distinct `state-key` items exist, one
+per service. Launching the release copy shows `RELEASE ONE` and never
+`DEBUG ONE`; launching the debug copy shows the reverse. Neither
+launch logs a refusal.
+
+**Fail:** one directory serving both, one page vector visible in both
+copies, or a refusal in either copy, which would mean one build opened
+the other's file and could not read it.
+
+5. Run both copies at the same time, type in each, quit each, and
+   relaunch both. Each must come back with only its own content.
+
+## Results
+
+Not yet run. This procedure has never been executed on hardware as of
+2026-08-22.
+
+| Date | Machine and macOS | Case | Signing identity used | Pass or fail | Notes |
+|---|---|---|---|---|---|
+| | | | | | |
