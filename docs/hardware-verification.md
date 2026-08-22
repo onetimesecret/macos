@@ -180,6 +180,33 @@ front` names it) and leave this window visible but not key.
       surfaces, and those are the lawful third and fourth grants of
       ADR-0005, not violations of this invariant).
 
+## Separate procedures, in their own documents
+
+The runbook above is one session. These are standalone procedures, each
+with its own owner and its own dated results, under
+`docs/qa/verification-procedures/`:
+
+- [`reboot.md`](qa/verification-procedures/reboot.md). Owner: delano.
+  A real reboot with a live pad; a reboot with the pad emptied first,
+  confirming key rotation ran; a reboot with a page held, confirming it
+  returns held. ADR-0016 section 10, case 3.
+- [`power-loss.md`](qa/verification-procedures/power-loss.md). Owner:
+  delano. A hard power cut mid session, then the stranded
+  `state.sealed.<hex>.tmp` artifacts and the sweep launch runs over
+  them. ADR-0016 section 1 and section 10.
+- [`re-signed-bundle.md`](qa/verification-procedures/re-signed-bundle.md).
+  Owner: delano. Re-signing with a different identity refuses without
+  erasing, and the `.debug` bundle id keeps its state directory separate
+  from the release one. ADR-0016 section 10, case 4.
+- [`locked-keychain.md`](qa/verification-procedures/locked-keychain.md).
+  Owner: delano. A locked keychain at load, and a denied ACL prompt,
+  each refusing with no erase and no overwrite. ADR-0016 section 10,
+  case 6. §C above covers the round trip; this covers the refusals.
+- [`raised-card-drag-tracking.md`](qa/verification-procedures/raised-card-drag-tracking.md).
+  No owner. Drag and resize tracking on the raised card.
+
+None of the four ADR-0016 procedures has been run yet.
+
 ## Recording results
 
 Append findings to this file under a dated `## Results — YYYY-MM-DD`

@@ -90,9 +90,19 @@ drained by the wall-clock gap between the last save and the next restore,
 recorded in a per-page `drained_ms` that no restore may reduce. Section 4
 states exactly what that is worth and what it is not.
 
-Everything below marked **Required work** is not implemented. Everything
-stated without that marker carries a file:line citation and is what the
-tree does today.
+Everything below marked **Required work** was not implemented when this
+decision was written. Everything stated without that marker carried a
+file:line citation and was what the tree did on 2026-08-20.
+
+**Amendment 2026-08-22.** The Required work landed in two pull requests:
+#60 took the envelope break, the key half move, the two clocks, the
+superseded envelope disposal and the rotation on drop; #62 took the
+superseded ledger disposal (issue #61), the ADR-0017 shell stage with
+the rotation on the no-page predicate (section 6), and the four hardware
+procedures of section 10, authored and not yet run. Citations below into
+the pre-ADR tree (`BootMismatch`, `monotonic_away_ms`, the boot-UUID
+salt and the boot-session tests) describe code that no longer exists and
+are left as written; they record what was replaced, not where to look.
 
 ### 1. The lifecycle table
 
@@ -720,8 +730,8 @@ authenticates, and an unknown envelope magic must keep failing closed
 
 Mapped to the seven cases in issue #48. Everything below is required
 work; the citations mark what exists today to build on or to delete.
-`docs/qa/verification-procedures/` currently holds one document, about
-drag tracking, and it has never been run.
+`docs/qa/verification-procedures/` holds the four procedures below plus
+one about drag tracking, and none of them has been run.
 
 | # | Case | CI | Hardware procedure |
 |---|---|---|---|
@@ -733,12 +743,17 @@ drag tracking, and it has never been run.
 | 6 | Unavailable encryption key | All automated coverage runs against `InMemoryCredentialStore` or a refuses-to-delete double (`crates/ffi/src/persist.rs:1794`, `:2003`; `crates/credentials/src/lib.rs:1151`); the one real-keychain test is `#[ignore]`d (`crates/credentials/src/lib.rs:1302`). CI cannot cover a locked keychain. | Locked keychain at load; denied ACL prompt; confirm no erase and no overwrite in both |
 | 7 | TTL expiry | Both legs covered (`crates/core/src/persist.rs:2284`, `:2300`, `:2321`, `:2378`; `crates/core/src/store.rs:1753`, `:2423`). Three of the seam tests go with `monotonic_away_ms`, because section 5 removes it from the restore path: `crates/ffi/src/lib.rs:3330`, `:3354` and `:3568` assert the monotonic stamp is what measures time away, which stops being true. Add: a system clock stepped back before a restore ages the page by zero rather than negatively, so a page with two days left still has two days left afterwards, which is the accepted freeze of section 4 and not a defect; a `sealed_wall_ms` ahead of the system clock leaves `drained_ms` unchanged; the ceiling holds at seven days on an untampered clock. | Step the machine clock back a day with a live pad |
 
-Four hardware procedures are therefore required under
-`docs/qa/verification-procedures/`: reboot, power loss, re-signed bundle,
-locked keychain. Each needs a named owner and a dated Results section.
-`docs/hardware-verification.md` states the Results convention once, at
-the end (`:183-189`), and names an owner on no procedure at all,
-including the keychain round trip at `:93-98`.
+The four hardware procedures this required now exist under
+`docs/qa/verification-procedures/`: `reboot.md`, `power-loss.md`,
+`re-signed-bundle.md` and `locked-keychain.md`. Each names delano as its
+owner and carries a dated Results section, and none of the four has been
+run yet. Every one of them starts from a rebuild and reinstall through
+`scripts/install.sh`, because both format breaks in section 9 landed and
+an older installed copy cannot read the files this build writes.
+`docs/hardware-verification.md` indexes all four (`:182-207`) and states
+the Results convention once, at the end (`:209-215`); the procedures it
+holds itself still name no owner, including the keychain round trip at
+`:92-97`.
 
 ## Consequences
 
