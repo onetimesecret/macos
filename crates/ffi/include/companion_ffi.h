@@ -178,6 +178,16 @@ uint64_t companion_tab_open_page(CompanionHandle *handle, uint64_t tab);
 bool companion_tab_close(CompanionHandle *handle, uint64_t tab);
 
 /*
+ * Discard the page a slot holds and leave the slot standing: sealed
+ * bytes zeroized, one discarded record in the ledger, and the tab keeps
+ * its name, its rung, its position and its number key. Returns whether
+ * a page by that id was standing. Page addressed because the burn
+ * offered after a promotion names the content that travelled and not
+ * the slot it travelled from.
+ */
+bool companion_page_discard(CompanionHandle *handle, uint64_t page);
+
+/*
  * Move a tab to `index` in visible order (drag-to-reorder; the
  * command-number map follows). Out-of-range clamps to the end.
  */

@@ -1755,11 +1755,15 @@ public final class PageModel: ObservableObject {
         case .chip(let id):
             removeChipFromDocument(id)
         case .page(let id):
-            // The draft names a page and closing is the slot's gesture,
-            // so the burn goes through the tab that holds it. Burning a
-            // page the user promoted takes its slot with it, exactly as
-            // it did before the split.
-            if let tab = tabs.first(where: { $0.pageID == id })?.id { close(tab) }
+            // The draft names a page, so the burn does too. It leaves
+            // the slot standing, empty and named, the way an expiry
+            // leaves one: what the user asked to be rid of is the copy
+            // that travelled, and the name, the rung, the position and
+            // the number key are the arrangement they built, which only
+            // a close and the cap may end (ADR-0017).
+            _ = client.discardPage(id: id)
+            markDirty()
+            refresh()
         }
         promotion = nil
     }

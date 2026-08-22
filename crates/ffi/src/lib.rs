@@ -475,6 +475,30 @@ pub unsafe extern "C" fn companion_tab_close(handle: *mut CompanionHandle, tab: 
     guard.store.close_tab(TabId::from_raw(tab))
 }
 
+/// Discard the page a slot holds and leave the slot standing: sealed
+/// bytes zeroized, one `Discarded` record in the ledger, and the tab
+/// keeps its name, its rung, its position and its number key. Returns
+/// whether a page by that id was standing.
+///
+/// Page addressed on purpose. The burn offered after a promotion names
+/// the content that travelled, not the slot it travelled from, and
+/// closing the tab there would spend an arrangement the gesture never
+/// asked about: only an explicit close and the cap end a tab
+/// (ADR-0017).
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_page_discard(handle: *mut CompanionHandle, page: u64) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.discard_page(SheetId::from_raw(page))
+}
+
 /// Move a tab to `index` in the visible order (drag-to-reorder; the
 /// ⌘-number map follows). Out-of-range indices clamp to the end.
 /// Returns whether the tab existed.
@@ -3458,6 +3482,45 @@ mod tests {
             );
             assert_eq!(companion_tab_open_page(handle, 424_242), 0, "no such tab");
             assert_eq!(companion_tab_open_page(ptr::null_mut(), tab), 0);
+            companion_free(handle);
+        }
+    }
+
+    /// The burn after a promotion, across the seam: it names the page
+    /// and leaves the slot, which is the whole difference between it
+    /// and a close (ADR-0017).
+    #[test]
+    fn discarding_a_page_over_the_abi_leaves_the_slot_on_the_strip() {
+        let handle = handle();
+        unsafe {
+            let (tab, page) = new_page(handle);
+            assert!(companion_tab_set_title(
+                handle,
+                tab,
+                cstring("payroll").as_ptr()
+            ));
+            assert!(companion_sheet_sync_document(
+                handle,
+                page,
+                cstring(r#"[{"ink": "the credentials"}]"#).as_ptr()
+            ));
+
+            assert!(companion_page_discard(handle, page));
+
+            let summaries = strip(handle);
+            assert_eq!(summaries.len(), 1, "the slot is still the user's");
+            assert_eq!(summaries[0]["id"].as_u64(), Some(tab));
+            assert_eq!(summaries[0]["has_page"].as_bool(), Some(false));
+            assert_eq!(summaries[0]["title"].as_str(), Some("payroll"));
+
+            let ledger = take_json(companion_ledger_json(handle));
+            assert!(ledger.contains("\"event\":\"discarded\""), "{ledger}");
+            assert!(!ledger.contains("credentials"), "page ink: {ledger}");
+
+            // Fail closed on everything that is not a standing page.
+            assert!(!companion_page_discard(handle, page), "already gone");
+            assert!(!companion_page_discard(handle, 424_242), "no such page");
+            assert!(!companion_page_discard(ptr::null_mut(), page));
             companion_free(handle);
         }
     }

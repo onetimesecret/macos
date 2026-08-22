@@ -337,6 +337,22 @@ public final class CompanionClient: @unchecked Sendable {
         companion_tab_close(handle, id)
     }
 
+    /// Discard the page a slot holds and leave the slot standing: its
+    /// sealed bytes are zeroized, the ledger keeps one discarded
+    /// record, and the tab keeps its name, its rung, its position and
+    /// its number key, the way an expiry leaves it. Returns whether a
+    /// page by that id was standing.
+    ///
+    /// Page addressed rather than tab addressed, which is the whole
+    /// difference from `closeTab`: the burn offered after a promotion
+    /// names the content that travelled, and spending the user's
+    /// arrangement on it would end a tab that only a close and the cap
+    /// may end (ADR-0017).
+    @discardableResult
+    public func discardPage(id: UInt64) -> Bool {
+        companion_page_discard(handle, id)
+    }
+
     /// Name a tab explicitly (the rename gesture in the tab context
     /// menu). Empty or all-whitespace clears the name and lets the
     /// label fall back to the live page's derived title and then to the
