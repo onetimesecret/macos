@@ -1900,7 +1900,11 @@ mod tests {
         let (original, _clock, ..) = populated();
         let (mut revived, survivor) = occupied();
         for magic in [
-            b"OTSSNAP1", b"OTSSNAP2", b"OTSSNAP3", b"OTSSNAP9", b"NOTSNAPS",
+            b"OTSSNAP1",
+            b"OTSSNAP2",
+            b"OTSSNAP3",
+            b"OTSSNAP9",
+            b"NOTSNAPS",
         ] {
             let mut relabeled = original.snapshot(0).to_vec();
             relabeled[..8].copy_from_slice(magic.as_slice());
