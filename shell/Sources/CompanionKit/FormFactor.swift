@@ -67,6 +67,14 @@ public struct FormFactor: Sendable {
     /// one a test injected: a test that spelled the name itself could
     /// drift from the name the app writes and pass against a file the
     /// app never reads.
+    ///
+    /// **The core knows this name too**, as `STATE_FILE_NAME` in
+    /// `crates/ffi/src/persist.rs`, where it decides whether dropping a
+    /// file should take the content key with it: only the state file
+    /// may, and a ledger Clear that did would destroy every staged page.
+    /// Renaming this does not break that decision, since the core falls
+    /// back to reading the envelope magic, but it does move the
+    /// unreadable-file case onto the fallback, so change both together.
     public static func stateFileURL(in directory: URL) -> URL {
         directory.appendingPathComponent("state.sealed")
     }
@@ -98,9 +106,13 @@ public struct FormFactor: Sendable {
     /// write renames a fresh sealed file over the old one, and a rename
     /// unlinks rather than erases, so a backup or a local snapshot that
     /// captured the directory would hold ciphertext generations the app
-    /// believes it has replaced. Crypto-erasure at the next boot session
-    /// still covers those generations, but there is no reason to hand
-    /// them out in the first place.
+    /// believes it has replaced. Nothing covers those generations on a
+    /// schedule any more: ADR-0016 retracted crypto-erasure at the next
+    /// boot session, and what replaces it fires when the pad empties,
+    /// which may be never. A generation captured before that moment,
+    /// together with a captured pair of key halves, stays readable
+    /// (ADR-0016 section 8), which is exactly why the copies are worth
+    /// keeping out of the backup in the first place.
     ///
     /// The ledger rests in this same directory, so it inherits both
     /// without a second preparation path.

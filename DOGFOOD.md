@@ -27,7 +27,36 @@ Re-run `scripts/install.sh` to update. `--no-launch` installs without
 opening the app afterward. For a debug build that runs beside the
 installed copy, use `scripts/dev.sh`.
 
-## One-time reset when you update to the ADR-0012 build
+## One-time reset when you update to the ADR-0016 build
+
+The sealed envelope takes another version byte, `OTSSEAL2` to
+`OTSSEAL3`: the boot session UUID and the monotonic stamp leave the
+header, and the whole header is what authenticates the file, so no
+existing `state.sealed` can be opened by this build. Whatever is staged
+when you install it is gone, once. Send or copy out anything you still
+need **before** you install.
+
+Unlike the previous break, the old file does not sit there withholding
+your save licence: a `state.sealed` carrying the superseded envelope is
+recognised, erased on the spot, and the session writes normally from
+there. You lose the pages, not the install.
+
+The second key half also moves, from the per-user temp directory into
+the state directory beside `state.sealed`, at mode 0600. That is what
+makes content survive a restart at all.
+
+One honest note about the half left behind in the temp directory. This
+build never reads it again, and macOS clears that directory at boot, so
+it is expected to be gone. Expected is the strongest word available:
+nothing here verifies it, and the Keychain half that was its partner is
+unchanged by this update and is still in your Keychain. So if someone
+took a copy of your old `state.sealed` *and* a copy of that temp half
+before you updated, the pair still opens it. Dropping the old file does
+not change that either way. If that matters to you, the fix is to
+restart the Mac, which clears the directory, before or soon after
+installing.
+
+## One-time reset when you updated to the ADR-0012 build
 
 Everything an existing install kept lands on the floor at once with
 this update. Nothing migrates, deliberately: the formats broke and old
@@ -54,13 +83,33 @@ What changes:
   and actively hurts: a restore that fails over a file that exists
   withholds this session's save licence, so that session cannot write
   either.
-- **Staged content no longer survives a reboot, by design.** The
-  content key is derived from two halves: one in the Keychain, one in
-  the per-user temp directory that macOS clears at boot. Without the
-  temp half there is no key, and the sealed record also carries the
-  boot session UUID, so a file from an earlier boot is discarded and
-  both halves are rotated. Restarting the Mac is now a clean slate for
-  staged pages. Quit and reopen inside one boot session still restores.
+- **Staged content is bounded by its TTL and by policy, not by the
+  boot session** (ADR-0016, whose own reset section is above).
+  This bullet used to read "staged content no longer survives a reboot,
+  by design", and that claim is withdrawn rather than quietly dropped.
+  The content key is still two halves, one in the Keychain and one in a
+  file, but the file half now lives in the state directory at mode 0600
+  rather than in the per-user temp directory macOS clears at boot.
+  Nothing outlives its TTL, whose ceiling is seven days: a page that
+  runs out leaves memory, is not written into the next sealed
+  generation, and its death goes in the ledger. Restarting the Mac is no
+  longer a clean slate, which is the whole point: accepting a system
+  update stops costing you your staged work.
+
+  Be precise about what the key rotation does and does not cover,
+  because "rotates" is the word that makes generations already on disk
+  unreadable, and it fires in one place only. **Emptying the pad**
+  rotates: the last page leaving is what drops the sealed file, and that
+  drop erases the file half and deletes the Keychain item, so every
+  ciphertext generation this install ever wrote, including the ones a
+  rename unlinked and nothing sweeps, stops being decryptable at that
+  moment. A page expiring **beside pages that remain** does not rotate,
+  and cannot: the file is re-sealed under the same live halves because
+  the surviving pages are in it. An explicit content-side Clear does not
+  exist yet at all; the ledger has one and content does not. And a
+  rotation the filesystem refuses is not silent and not skipped: the app
+  keeps the sealed file rather than dropping it, tells you the write
+  failed, and tries again.
 - **Signed builds carry a new entitlement.** `keychain-access-groups`
   is what the data protection keychain requires, and only a real
   signing identity can carry it. Ad-hoc builds skip it and log a single
@@ -111,7 +160,7 @@ the other two lose at most the last couple of seconds of edits.
 
 ## Trusting persistence across a quit and reopen
 
-Trust it within a boot session, including for a crash. Content is
+Trust it, including across a crash and across a restart. Content is
 sealed to disk (ChaCha20-Poly1305) on every mutation, debounced by
 about two seconds, and written atomically. The debounce is measured
 from the first edit of a burst rather than the last, so typing steadily
@@ -120,9 +169,13 @@ termination while the buffer is dirty. A crash, a force quit or a
 logout therefore costs you one debounce window, not the session.
 Restore runs once, on the first reveal after launch.
 
-Across a reboot, expect nothing back. That is the design, not a bug:
-half the content key lives in a temp directory the system clears at
-boot. See the one-time reset section above for the mechanism.
+Across a reboot, expect your unexpired pages back, with less time on
+them: the countdown is charged the wall-clock gap between the last save
+and the next launch, and a page that came due while you were away
+expires into the ledger at that first launch rather than reappearing.
+A page that was held keeps its hold, and the gap shortens the hold
+before it reaches the countdown. Nothing outlives its TTL, and the
+ceiling is seven days.
 
 If a save at quit fails (locked Keychain, full disk, a failed rename)
 you get an alert with the choice to quit anyway or stay and retry.
@@ -143,8 +196,9 @@ Two categories answer two different questions. `persistence` is the
 shell's: a restore failed, a save was refused, the licence was
 withheld. `core` is why: the step that refused, named. A key half that
 would not load, a file that would not authenticate under the key this
-session holds, a snapshot the core would not take back, or a key
-rotation the keychain refused. Metadata only, and deliberately not
+session holds, a snapshot the core would not take back, a key half that
+could not be erased so the sealed file was kept rather than dropped, or
+a Keychain item that outlived the rotation meant to remove it. Metadata only, and deliberately not
 redacted: no page content and no key material passes here, so there is
 nothing in these lines to hide from the person reading them.
 

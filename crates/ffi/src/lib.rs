@@ -78,7 +78,6 @@ use companion_transport::UreqTransport;
 use ots_client::Transport as _;
 use promotion::{Connection, PromoteOpts, Promoted, ladder_snapped_ttl, promote};
 
-use companion_core::clock::sleep_inclusive_ns;
 use companion_core::{
     ChipId, ChipMeta, DestinationClass, EditOp, LedgerEvent, Segment, Sheet, SheetId, SheetStore,
     SizeClass, SystemClock, TTL_LADDER, Tab, Ttl,
@@ -969,8 +968,8 @@ pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> 
 }
 
 /// Throw the whole ledger away: the user-facing "clear the ledger"
-/// affordance. The records outlive the boot session by design, so a way
-/// to end them on demand is part of that bargain. In-memory only: the
+/// affordance. The records outlive the pages they describe by design,
+/// so a way to end them on demand is part of that bargain. In-memory only: the
 /// shell must save afterwards for the empty ledger to reach the file.
 ///
 /// # Safety
@@ -1163,25 +1162,25 @@ pub unsafe extern "C" fn companion_expire_due(handle: *mut CompanionHandle) -> u
 }
 
 // ---------------------------------------------------------------------------
-// Persistence: the sealed state file, bound to this boot session
+// Persistence: the sealed state file, bounded by its TTL and by policy
 // ---------------------------------------------------------------------------
 
 /// Save the staged content (sheets, sealed chips, clocks) to `path`,
-/// encrypted with ChaCha20-Poly1305 under a key that exists only while
-/// this boot session does: `HKDF(keychain_half, boot_half)`. The
-/// keychain half rests in the data protection keychain (lock gated,
-/// this device only, ADR-0012); the boot half is a file in the per-user
-/// temp directory whose very *name* is derived from the current boot
-/// session, so a later session cannot find it whether or not the
-/// directory was cleared. Neither half alone unwraps anything, and no
-/// key byte crosses this seam.
+/// encrypted with ChaCha20-Poly1305 under `HKDF(keychain_half,
+/// file_half)`. The keychain half rests in the data protection keychain
+/// (lock gated, this device only, ADR-0012); the file half is a 0600
+/// file in the same directory as `path`, which is how the state
+/// directory the shell chose reaches the key derivation. Neither half
+/// alone unwraps anything, and no key byte crosses this seam.
 ///
-/// The envelope stamps itself with `kern.bootsessionuuid` and with both
-/// clocks at the save, all of it authenticated, so a file cannot be
-/// re-dated and cannot be opened by a later boot session. The ledger is
-/// **not** in this file; it has its own, under its own long-lived key
-/// ([`companion_ledger_save`]), because content is boot-session-bound
-/// and the audit record is not.
+/// The envelope stamps itself with the wall clock at the save, inside
+/// the authenticated header, so a file cannot be re-dated to buy the
+/// pages in it more life. That stamp measures one thing only: the gap
+/// until the next restore, which is the interval no process of this app
+/// was running to observe (ADR-0016 section 4). The ledger is **not** in
+/// this file; it has its own, under its own long-lived key
+/// ([`companion_ledger_save`]), because the two have different
+/// lifetimes and different keys.
 ///
 /// Only ciphertext touches disk; the plaintext snapshot is wiped before
 /// this returns. The write is atomic (temp file + rename) and
@@ -1209,31 +1208,38 @@ pub unsafe extern "C" fn companion_persist_save(
     let Some(wall_ms) = wall_now_ms() else {
         return false;
     };
-    let Some(key) = persist::ensure_state_key(guard.credentials.as_ref()) else {
+    let Some(key) = persist::ensure_state_key(guard.credentials.as_ref(), Path::new(path)) else {
         return false;
     };
     let snapshot = guard.store.snapshot(wall_ms);
-    // The same wall stamp the snapshot carries inside itself, plus the
-    // sleep-inclusive monotonic reading restore ages from.
-    let Some(sealed) = persist::seal_state(&key, &snapshot, wall_ms, sleep_inclusive_ns()) else {
+    // The same wall stamp the snapshot carries inside itself, repeated
+    // in the header where the AEAD authenticates it.
+    let Some(sealed) = persist::seal_state(&key, &snapshot, wall_ms) else {
         return false;
     };
     persist::write_private(Path::new(path), &sealed)
 }
 
-/// The milliseconds of monotonic time between a sealed stamp and now,
-/// as pure arithmetic over two readings of the same clock.
+/// The milliseconds of wall-clock time between the stamp a file was
+/// sealed with and now: the gap no process of this app was running to
+/// observe, and the only interval this app measures by the calendar
+/// (ADR-0016 section 4).
 ///
-/// Direction-safe, not just monotonic: a saved stamp that reads later
-/// than now cannot have come from this session's clock, so it is
-/// treated as suspect and charged the ceiling rather than credited
-/// zero. The error can only ever cost a page life. Granting life past
-/// a page's TTL is the one outcome that must be impossible.
-fn monotonic_away_ms(now_ns: u64, saved_mono_ns: u64) -> u64 {
-    match now_ns.checked_sub(saved_mono_ns) {
-        Some(elapsed_ns) => elapsed_ns / 1_000_000,
-        None => u64::MAX,
-    }
+/// Everything a running session observes stays on the sleep-inclusive
+/// monotonic clock, which is not settable. Two readings of that clock
+/// are comparable only inside one boot session, so it cannot measure
+/// this gap at all: after a restart the earlier reading is the larger
+/// one, and the subtraction that used to live here turned that into
+/// `u64::MAX` and drained every countdown the instant the app opened.
+///
+/// `saturating_sub` is what makes a stamp from the future read as zero
+/// rather than as a credit. A clock stepped backwards can therefore
+/// freeze a countdown across a restart, for exactly the length of the
+/// gap, and never rewind one. That is accepted rather than defended: a
+/// user who can set the machine's clock already has the plaintext on
+/// screen.
+fn wall_away_ms(now_ms: u64, sealed_wall_ms: u64) -> u64 {
+    now_ms.saturating_sub(sealed_wall_ms)
 }
 
 /// Restore the store from a state file [`companion_persist_save`]
@@ -1245,26 +1251,30 @@ fn monotonic_away_ms(now_ns: u64, saved_mono_ns: u64) -> u64 {
 /// into the ledger immediately. Meant for startup, before the first
 /// page is created.
 ///
-/// A file from another boot session is discarded before anything in it
-/// is decrypted: the halves are rotated first, and the file is dropped
-/// from disk only once that rotation actually removed one. A rotation
-/// the keychain refused leaves the file in place deliberately, because
-/// the file is the only thing that triggers the retry. The ledger key is
-/// not touched either way, so the audit record survives the restart that
-/// discards the content it describes.
+/// **A file this call cannot open is never destroyed by it.** A missing
+/// key, a failed authentication and a snapshot the core rejects all
+/// leave the file exactly where it is, which is what stops a restore
+/// from replacing prior persisted state with empty state: the file is
+/// still there when the shell probes, so the session withholds its own
+/// save licence rather than writing over content it could not read
+/// (ADR-0016 section 7). There is one exception and it is not a failure
+/// to open: a file carrying an envelope this build has **replaced** is
+/// disposed of and the licence granted, because nothing in it can ever
+/// be read again and an install that refused it forever would present
+/// as one that had permanently stopped saving (section 9).
 ///
-/// Time away is measured from the sealed file's monotonic stamp, not
-/// from the calendar, so stepping the system clock backwards buys a page
-/// no extra life. Comparing two readings of that clock is only
-/// meaningful inside one boot session, which is the only case that
-/// reaches this arm at all. A stamp that reads later than now is not
-/// such a reading: it is treated as suspect and charged the maximum
-/// time away rather than none, so no path through here can hand a page
-/// back with more life than it had.
+/// Launch is also where stranded `*.tmp` generations are swept, since
+/// nothing else ever clears the state directory.
+///
+/// Time away is the wall-clock gap between the file's sealed stamp and
+/// now, which is the one interval this app measures by the calendar; see
+/// [`wall_away_ms`] for why the monotonic clock cannot measure it and
+/// what a stepped clock can and cannot buy.
 ///
 /// Returns whether a state was restored. False covers "no file yet" (a
-/// fresh start, not an error) and a discarded foreign-session file, as
-/// well as a missing key, failed authentication, or a damaged snapshot.
+/// fresh start, not an error) and a superseded file just disposed of, as
+/// well as a missing key, failed authentication, an unreadable wall
+/// clock, or a damaged snapshot.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid NUL-terminated
@@ -1280,59 +1290,96 @@ pub unsafe extern "C" fn companion_persist_restore(
     let Some(path) = (unsafe { cstr(path) }) else {
         return false;
     };
-    let Ok(file) = std::fs::read(path) else {
-        return false;
-    };
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    // The key is loaded only for a file this boot session sealed, so a
-    // discarded one costs no keychain access.
+    // Launch is the only moment a sweep is safe and the only moment it
+    // is owed: a temp generation older than this process is one no
+    // rename is ever going to claim. It runs under the handle lock, so
+    // this app's own save cannot be mid-write beneath it, and it runs
+    // before the read so that a file whose absence ends this call early
+    // does not leave the litter behind.
+    if let Some(dir) = persist::containing_dir(Path::new(path)) {
+        persist::sweep_stranded_temps(dir);
+    }
+    let Ok(file) = std::fs::read(path) else {
+        return false;
+    };
+    // The key is loaded only for a file whose envelope this build reads,
+    // so a file it is about to refuse or dispose of costs no keychain
+    // access, which on macOS can mean a prompt (ADR-0004).
     let opened = persist::open_state(&file, || {
-        persist::load_state_key(guard.credentials.as_ref())
+        persist::load_state_key(guard.credentials.as_ref(), Path::new(path))
     });
     match opened {
         persist::Opened::Refused => false,
-        persist::Opened::BootMismatch => {
-            // Rotation is what actually forgets the content: the file's
-            // key cannot be re-derived once the keychain half is gone.
-            // The erase is a best-effort tidy on top of that, never the
-            // mechanism, and it goes second on purpose. This file is the
-            // only thing that triggers this arm, so dropping it after a
-            // rotation the keychain refused (locked at launch, an ACL
-            // dismissed) would consume the trigger and leave both halves
-            // alive with nothing left to retry against. A rotation that
-            // removed nothing leaves the file exactly where it is, and
-            // the next launch tries again.
-            if persist::rotate_key_halves(guard.credentials.as_ref())
-                && !persist::erase_state(Path::new(path))
-            {
-                // The rotation is what forgets, so the content is gone
-                // either way; but a file left behind is a file the next
-                // launch reads as "existed and would not open", which is
-                // the one combination that withholds the save licence.
+        persist::Opened::Superseded => {
+            // The one destructive arm, and it fires only on a byte
+            // string this app itself once shipped. Nothing is written to
+            // the ledger for what is being dropped: the file was never
+            // decrypted, so the identities inside it are unknowable.
+            //
+            // The halves are deliberately not rotated here, and the
+            // reason belongs to the entries in the superseded set rather
+            // than to this arm.
+            //
+            // State the residual exactly, because half of it survives.
+            // The keychain half does not change across this break: the
+            // account and the HKDF info string are the same strings they
+            // were, so an OTSSEAL2 file's keychain half is sitting in
+            // the keychain right now, durable, and this arm leaves it
+            // there. What is presumed gone is the other half, which
+            // lived in the per-boot temp directory macOS clears at boot
+            // and this build never reads again. Presumed, not
+            // guaranteed: ADR-0012:45 already conceded that those bytes
+            // may still be on disk if the directory was not cleared. So
+            // the honest residual is that a captured OTSSEAL2 ciphertext
+            // stays readable to anyone who also kept that temp half, and
+            // dropping the file here does not change that either way.
+            //
+            // What buys the decision is ADR-0004: a rotation is a
+            // keychain write, this runs at launch before the user has
+            // asked this app for anything, and a Keychain prompt there
+            // is precisely what that ADR exists to prevent.
+            //
+            // A later entry in the set changes the arithmetic without
+            // touching this code. Its file half will sit in the state
+            // directory, durable and reachable, beside that same live
+            // keychain half, so disposal without rotation would leave a
+            // working key rather than half of one.
+            // `the_superseded_set_predates_the_key_half_move` in
+            // persist.rs is what makes that decision arrive with the
+            // entry rather than years later.
+            if !persist::erase_state(Path::new(path)) {
                 diag_fault!(
-                    "companion-ffi: the halves rotated but the stale state file could not be \
-                     dropped. It will keep this app from writing state until it is removed."
+                    "companion-ffi: a state file from a superseded format could not be dropped. \
+                     It will keep this app from writing state until it is removed."
                 );
             }
             false
         }
         persist::Opened::Plaintext {
             plaintext,
-            saved_wall_ms,
-            saved_mono_ns,
+            sealed_wall_ms,
         } => {
-            // Time away, monotonic: the core drains by the difference
-            // between the snapshot's own wall stamp and the "now" passed
-            // here, so handing it the stamp plus the monotonic elapsed
-            // makes the drain immune to a stepped calendar clock. The
-            // suspect-stamp handling lives in [`monotonic_away_ms`]; the
-            // core clamps the span it acts on.
-            let away_ms = monotonic_away_ms(sleep_inclusive_ns(), saved_mono_ns);
+            // The two clocks, kept apart: the core drains by the
+            // difference between the snapshot's own wall stamp and the
+            // "now" handed to it, and the only honest measure of the gap
+            // this app was not running is the calendar. An unreadable
+            // wall clock is a refusal rather than a guess, and it leaves
+            // the file untouched like every other refusal here.
+            let Some(now_ms) = wall_now_ms() else {
+                diag_fault!(
+                    "companion-ffi: the state file opened but the wall clock would not answer, \
+                     so the time away cannot be measured. The file stays and this session will \
+                     not write one."
+                );
+                return false;
+            };
+            let away_ms = wall_away_ms(now_ms, sealed_wall_ms);
             if guard
                 .store
-                .restore(&plaintext, saved_wall_ms.saturating_add(away_ms))
+                .restore(&plaintext, sealed_wall_ms.saturating_add(away_ms))
                 .is_err()
             {
                 // The file opened and authenticated: this is the
@@ -1352,17 +1399,48 @@ pub unsafe extern "C" fn companion_persist_restore(
     }
 }
 
-/// Drop the state file at `path`: overwrite, truncate, sync, unlink.
-/// Returns whether nothing is left there, including when there was
-/// nothing to begin with.
+/// Drop the state file at `path`: rotate the content key halves, then
+/// overwrite, truncate, sync, unlink. Returns whether nothing is left at
+/// the path, including when there was nothing to begin with.
+///
+/// **The rotation is what forgets; the unlink is the tidy on top of
+/// it.** Erasing the file half makes every ciphertext generation this
+/// key ever sealed undecryptable, including the ones an atomic rename
+/// unlinked and nothing sweeps, and it is the finishing step of a
+/// deletion the user already asked for: emptying the pad, or clearing it
+/// (ADR-0016 section 6's two triggers, which both arrive here). It runs
+/// first, so the generation left behind is already undecryptable by the
+/// time its name goes away.
+///
+/// **A rotation that could not erase the half cancels the drop**, and
+/// this returns false with the file still on disk. Dropping it anyway
+/// would forget nothing, since the half that opens every generation
+/// would still be sitting there, and it would consume its own trigger:
+/// this call fires when the pad goes empty, and an empty pad with no
+/// file on disk is indistinguishable from an ordinary session with
+/// nothing to do. The false is what arms the shell's retry
+/// (`PageModel.saveState`), and the file it left behind is what the
+/// retry comes back to.
+///
+/// **Only a content file takes the halves with it.** The same entry
+/// point drops the ledger file when the user clears the ledger, and that
+/// gesture asked nothing about pages, so the rotation is decided from
+/// the path itself (`persist::drop_takes_the_content_key`): the state
+/// file's name, or failing that the envelope magic actually at the
+/// path, never the caller's intent. The name leads because it is
+/// knowable when the file is absent or unreadable, and those are exactly
+/// the cases where a magic-only gate skipped the rotation and dropped
+/// the ciphertext anyway. When ADR-0017
+/// splits the emptiness predicate in two, this call keeps the "no tabs
+/// remain" half and the "no tab holds a page" half needs a rotation of
+/// its own; wiring them the other way round destroys tabs an expiry was
+/// meant to leave standing.
 ///
 /// **Not erasure, and it must not be described as erasure anywhere.**
-/// The filesystem is copy on write and every previous generation the
-/// atomic rename unlinked is out of reach; what actually forgets staged
-/// content is crypto-erasure, the boot half dying with the boot session
-/// and the halves rotating on a session mismatch. Call this when the
-/// store empties, so the last ciphertext generation does not sit on disk
-/// for the rest of the session describing nothing.
+/// The filesystem is copy on write, so the zeros are as likely to land
+/// in fresh blocks as over the old ones. Call this when the store
+/// empties, so the last ciphertext generation does not sit on disk for
+/// the rest of the session describing nothing.
 ///
 /// The in-memory store is untouched: this deletes a file, not a page.
 ///
@@ -1392,20 +1470,39 @@ pub unsafe extern "C" fn companion_persist_erase(
     let Some(path) = (unsafe { cstr(path) }) else {
         return false;
     };
-    // Taken for its exclusion, not its contents: a save in flight owns
-    // the same path.
-    let Ok(_guard) = handle.inner.lock() else {
+    // Taken for its exclusion as much as for the credentials: a save in
+    // flight owns the same path and the same halves.
+    let Ok(guard) = handle.inner.lock() else {
         return false;
     };
-    persist::erase_state(Path::new(path))
+    let path = Path::new(path);
+    if persist::drop_takes_the_content_key(path)
+        && !persist::rotate_key_halves(guard.credentials.as_ref(), path)
+    {
+        // The file stays. Unlinking it here would leave every prior
+        // ciphertext generation on disk still decryptable, hand the
+        // shell a success, and destroy the one thing that brings this
+        // call back: the drop fires when the pad is empty, and an empty
+        // pad with no file on disk looks exactly like an ordinary
+        // session with nothing to do. Reporting failure instead is what
+        // arms the shell's retry, and every retry until the erase lands
+        // finds the file still there.
+        diag_fault!(
+            "companion-ffi: the content file was left alone because its file half could not be \
+             erased. Dropping the ciphertext while the half that opens it is still on disk \
+             would forget nothing and would consume the retry."
+        );
+        return false;
+    }
+    persist::erase_state(path)
 }
 
 /// Save the ledger to `path`, sealed with ChaCha20-Poly1305 under its
 /// **own** 32-byte key (`ledger-key` account, minted on first save) and
 /// its own envelope magic. That key is deliberately long-lived: it is
-/// not derived from the boot session, so the audit record survives the
-/// reboot that discards staged content, and a state-key rotation must
-/// never touch it. The write is atomic (temp file + rename) and
+/// not the two-half content key, so the audit record survives the
+/// emptying that forgets the content it describes, and a state-key
+/// rotation must never touch it. The write is atomic (temp file + rename) and
 /// owner-only. Call it beside [`companion_persist_save`], behind the
 /// same debounce.
 ///
@@ -2276,10 +2373,12 @@ mod tests {
     fn persist_round_trips_over_the_seam() {
         let credentials: Arc<dyn CredentialStore> =
             Arc::new(companion_credentials::InMemoryCredentialStore::default());
-        let path = std::env::temp_dir().join(format!(
-            "companion-persist-seam-{}.sealed",
-            std::process::id()
-        ));
+        // A directory of its own, because the sealed file is no longer
+        // the only thing this call writes: the file half of the content
+        // key is minted beside it (ADR-0016 section 3), and key material
+        // does not belong loose in the system temp directory.
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
         let c_path = cstring(path.to_str().unwrap());
         let secret = "hunter2-the-sealed-bytes";
         unsafe {
@@ -2324,7 +2423,7 @@ mod tests {
             assert!(!companion_persist_restore(stranger, c_path.as_ptr()));
             companion_free(stranger);
         }
-        let _ = std::fs::remove_file(&path);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// The ephemeral constructor's whole contract in one place: a tag
@@ -3334,193 +3433,316 @@ mod tests {
         sheets.first()?["remaining_ms"].as_u64()
     }
 
-    /// The away computation is pure arithmetic, so the arithmetic is
-    /// pinned here without any dependence on how long the test host
-    /// has been up. The seam test below cannot carry these cases: it
-    /// would need to stamp a file hours before the current monotonic
-    /// reading, and a freshly booted CI runner has no such hours to
-    /// subtract.
+    /// The away computation is pure arithmetic, so it is pinned here
+    /// rather than through a seam test whose numbers would depend on
+    /// what the host's clock happens to say.
     #[test]
-    fn hours_of_monotonic_time_away_drain_hours_of_life() {
-        let two_hours_ns: u64 = 2 * 60 * 60 * 1_000_000_000;
+    fn hours_of_wall_time_away_drain_hours_of_life() {
         let two_hours_ms = 2 * 60 * 60 * 1_000;
-        assert_eq!(monotonic_away_ms(two_hours_ns + 7, 7), two_hours_ms);
+        assert_eq!(
+            wall_away_ms(1_700_000_000_000 + two_hours_ms, 1_700_000_000_000),
+            two_hours_ms
+        );
     }
 
     #[test]
     fn no_time_away_drains_nothing() {
-        assert_eq!(monotonic_away_ms(42, 42), 0);
+        assert_eq!(wall_away_ms(42, 42), 0);
     }
 
+    /// A stamp later than the current wall clock is a clock that moved
+    /// backwards, and the answer is zero rather than a wrapped
+    /// subtraction: the gap freezes the countdown for its length and
+    /// never rewinds it (ADR-0016 section 4).
     #[test]
-    fn a_stamp_from_the_future_is_charged_the_ceiling_not_zero() {
-        assert_eq!(monotonic_away_ms(41, 42), u64::MAX);
+    fn a_stamp_from_the_future_reads_as_no_time_away() {
+        assert_eq!(wall_away_ms(41, 42), 0);
     }
 
-    /// Cross-restart aging is monotonic. The file's wall stamp is
-    /// hours in the past while its monotonic stamp says the app was
-    /// away for no time at all, which is what a system clock stepped
-    /// forward looks like: the page must keep its remaining time.
-    /// Stepping the clock the other way is the attack this closes,
-    /// and a monotonic stamp from the future is suspect enough to
-    /// drain the page outright.
+    /// Case 3 of ADR-0016 section 10, and the reason section 5 exists.
+    /// A restart takes the monotonic clock back to nearly zero while the
+    /// calendar keeps going, and the pages have to come back: the
+    /// subtraction that used to measure this ran between two monotonic
+    /// readings from different boot sessions, underflowed, charged
+    /// `u64::MAX` milliseconds away, and drained every countdown the
+    /// instant the surface opened. It presented as a success, since
+    /// restore returned true and the ledger filled with expiries.
+    ///
+    /// Nothing simulates a reboot here because nothing needs to: the
+    /// monotonic clock has left the file entirely, so a restart is
+    /// indistinguishable from a relaunch and the gap is the wall stamp's
+    /// to measure.
     #[test]
-    fn time_away_is_measured_by_the_monotonic_stamp_not_the_calendar() {
+    fn a_restart_leaves_the_pages_alive_and_drains_them_by_the_gap() {
         let credentials: Arc<dyn CredentialStore> =
             Arc::new(companion_credentials::InMemoryCredentialStore::default());
         let dir = scratch_dir();
         let path = dir.join("state.sealed");
         let c_path = cstring(path.to_str().unwrap());
+        let five_minutes_ms = 5 * 60 * 1_000;
         unsafe {
-            // A page with an hour on it, snapshotted under a wall stamp
-            // from 2023: an app that trusted the calendar would read
-            // that as years away and expire it on the spot.
             let first = handle_with(Arc::clone(&credentials));
             let sheet = companion_sheet_new(first);
-            assert!(companion_sheet_set_rung(first, sheet, 0));
-            let stale_wall_ms = 1_700_000_000_000;
             let remaining_before = first_remaining_ms(first).unwrap();
+
+            // Sealed five minutes ago, by the only clock that can
+            // measure an interval across a restart.
+            let sealed_wall_ms = wall_now_ms().unwrap() - five_minutes_ms;
             let snapshot = {
                 let guard = (*first).inner.lock().unwrap();
-                guard.store.snapshot(stale_wall_ms)
+                guard.store.snapshot(sealed_wall_ms)
             };
-            let key = persist::ensure_state_key(&*credentials).unwrap();
-            let mono_ns = sleep_inclusive_ns();
-            let sealed = persist::seal_state(&key, &snapshot, stale_wall_ms, mono_ns).unwrap();
+            let key = persist::ensure_state_key(&*credentials, &path).unwrap();
+            let sealed = persist::seal_state(&key, &snapshot, sealed_wall_ms).unwrap();
             assert!(persist::write_private(&path, &sealed));
             companion_free(first);
 
             let second = handle_with(Arc::clone(&credentials));
             assert!(companion_persist_restore(second, c_path.as_ptr()));
             let remaining_after =
-                first_remaining_ms(second).expect("the page expired by the calendar");
+                first_remaining_ms(second).expect("the restart drained the page outright");
+            let drained = remaining_before.saturating_sub(remaining_after);
             assert!(
-                remaining_before.abs_diff(remaining_after) < 60_000,
-                "the page aged by the calendar: {remaining_before} then {remaining_after}"
-            );
-            companion_free(second);
-
-            // The same file with a monotonic stamp in the future of the
-            // current reading takes the suspect arm: a reading later
-            // than now cannot have come from this session's clock, so
-            // restore charges the maximum time away and the page drains
-            // through the full path regardless of how long this host
-            // has been up. The ordinary hours-back arithmetic is pinned
-            // by the unit tests for [`monotonic_away_ms`], which a
-            // freshly booted CI runner cannot skew.
-            let two_hours_ns = 2 * 60 * 60 * 1_000_000_000;
-            let aged = persist::seal_state(
-                &key,
-                &snapshot,
-                stale_wall_ms,
-                mono_ns.saturating_add(two_hours_ns),
-            )
-            .unwrap();
-            assert!(persist::write_private(&path, &aged));
-            let third = handle_with(Arc::clone(&credentials));
-            assert!(companion_persist_restore(third, c_path.as_ptr()));
-            assert_eq!(
-                first_remaining_ms(third),
-                None,
-                "a page with a suspect future stamp survived restore"
+                drained.abs_diff(five_minutes_ms) < 60_000,
+                "the gap was not charged as five minutes: {remaining_before} then {remaining_after}"
             );
             let _ = sheet;
+            companion_free(second);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A gap longer than what the page had left still ends it, and the
+    /// death leaves the ledger residue any other death would.
+    #[test]
+    fn a_gap_past_the_rung_expires_the_page_into_the_ledger() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            let sheet = companion_sheet_new(first);
+            // The shortest rung on the ladder, and a gap of a full day.
+            // The page carries ink, because an empty page dies without a
+            // ledger record by design (nothing happened worth recording).
+            assert!(companion_sheet_sync_document(
+                first,
+                sheet,
+                cstring(r##"[{"ink": "# perishable\n"}]"##).as_ptr()
+            ));
+            assert!(companion_sheet_set_rung(first, sheet, 0));
+            let sealed_wall_ms = wall_now_ms().unwrap() - 24 * 60 * 60 * 1_000;
+            let snapshot = {
+                let guard = (*first).inner.lock().unwrap();
+                guard.store.snapshot(sealed_wall_ms)
+            };
+            let key = persist::ensure_state_key(&*credentials, &path).unwrap();
+            let sealed = persist::seal_state(&key, &snapshot, sealed_wall_ms).unwrap();
+            assert!(persist::write_private(&path, &sealed));
+            companion_free(first);
+
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(second, c_path.as_ptr()));
+            assert_eq!(
+                first_remaining_ms(second),
+                None,
+                "a page a day past its rung came back alive"
+            );
+            let ledger = take_json(companion_ledger_json(second));
+            assert!(ledger.contains("\"expired\""), "{ledger}");
+            companion_free(second);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The restore that cannot open a file must never be the thing that
+    /// destroys it. This is issue #51's shape rather than its exact
+    /// mechanism: "fail closed" had been implemented as "destroy the
+    /// input", so an edit anywhere in the old header, or one transient
+    /// `sysctl` failure, took the erase-and-rotate arm and the live
+    /// session's own staged content went with it. There is no such arm
+    /// now: every header edit fails authentication and the file is left
+    /// exactly where it is, which is what withholds the save licence
+    /// rather than overwriting content nobody could read.
+    #[test]
+    fn a_file_that_will_not_open_is_left_exactly_where_it_is() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            let sheet = companion_sheet_new(first);
+            let _ = take_json(companion_sheet_seal_text(
+                first,
+                sheet,
+                cstring("hunter2-the-sealed-bytes").as_ptr(),
+                0,
+                0,
+            ));
+            assert!(companion_persist_save(first, c_path.as_ptr()));
+            companion_free(first);
+
+            let key_before = persist::load_state_key(&*credentials, &path)
+                .unwrap()
+                .to_vec();
+            let sealed = std::fs::read(&path).unwrap();
+            // Every header byte but the version digit, which is one bit
+            // from a format this app has replaced and is therefore the
+            // one edit that disposes rather than refuses. It has a test
+            // of its own, and the persist module's header test states
+            // why it costs nothing.
+            for index in (0..persist::STATE_HEADER_LEN).filter(|index| *index != 7) {
+                let mut bent = sealed.clone();
+                bent[index] ^= 0x01;
+                std::fs::write(&path, &bent).unwrap();
+                let handle = handle_with(Arc::clone(&credentials));
+                assert!(
+                    !companion_persist_restore(handle, c_path.as_ptr()),
+                    "a bent header at {index} was restored"
+                );
+                companion_free(handle);
+                assert_eq!(
+                    std::fs::read(&path).unwrap(),
+                    bent,
+                    "the restore destroyed the file it could not open, at {index}"
+                );
+                assert_eq!(
+                    *persist::load_state_key(&*credentials, &path)
+                        .expect("the halves were rotated away by a failed restore"),
+                    key_before,
+                    "a failed restore rotated the key of content it never read"
+                );
+            }
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The one-time format break, from the user's side: the file the
+    /// previous build wrote cannot be read by any key this one can
+    /// assemble, so refusing it forever would present as an install that
+    /// had permanently stopped saving. It is dropped instead, and the
+    /// probe the shell takes afterwards therefore grants the licence
+    /// (ADR-0016 section 9).
+    #[test]
+    fn a_superseded_state_file_is_dropped_so_the_session_can_write() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            let sheet = companion_sheet_new(first);
+            let _ = take_json(companion_sheet_seal_text(
+                first,
+                sheet,
+                cstring("hunter2-the-sealed-bytes").as_ptr(),
+                0,
+                0,
+            ));
+            assert!(companion_persist_save(first, c_path.as_ptr()));
+            companion_free(first);
+
+            // The same file as the previous format shipped it.
+            let mut previous = std::fs::read(&path).unwrap();
+            previous[..8].copy_from_slice(b"OTSSEAL2");
+            std::fs::write(&path, &previous).unwrap();
+
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(
+                !companion_persist_restore(second, c_path.as_ptr()),
+                "a superseded file cannot be restored, only disposed of"
+            );
+            assert!(
+                !path.exists(),
+                "the superseded file is still there, so the probe withholds the licence and \
+                 this install never writes again"
+            );
+            // What the disposal does *not* do, pinned so the comment on
+            // that arm cannot drift away from it: the keychain half is
+            // untouched by the break and untouched by the disposal, so
+            // it is still there afterwards. This is the residual ADR-0016
+            // section 8 prices rather than a defect. The other half is
+            // what is presumed gone, and the arm's comment says why that
+            // is a presumption.
+            assert!(
+                credentials
+                    .key_material_store()
+                    .exists("state-key")
+                    .unwrap(),
+                "the disposal rotated the keychain half; the arm's reasoning and its ADR-0004 \
+                 justification both assume it does not"
+            );
+            // And the session that follows can write and read its own.
+            assert!(companion_persist_save(second, c_path.as_ptr()));
+            companion_free(second);
+            let third = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(third, c_path.as_ptr()));
             companion_free(third);
         }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// The deterministic backstop, over the seam. A restart discards the
-    /// content file and rotates the halves that could have opened it,
-    /// while the ledger, long-lived by design, comes back untouched.
+    /// An envelope from no version this app ever shipped is refused and
+    /// kept, not disposed of. Disposal is a promise about this app's own
+    /// past output; anything else at that path is somebody else's file
+    /// or a corrupted one, and destroying it is not this app's call.
     #[test]
-    fn a_reboot_discards_the_content_file_and_keeps_the_ledger() {
+    fn an_unknown_envelope_is_refused_and_kept() {
         let credentials: Arc<dyn CredentialStore> =
             Arc::new(companion_credentials::InMemoryCredentialStore::default());
         let dir = scratch_dir();
-        let state_path = dir.join("state.sealed");
-        let ledger_path = dir.join("ledger.sealed");
-        let c_state = cstring(state_path.to_str().unwrap());
-        let c_ledger = cstring(ledger_path.to_str().unwrap());
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
-            let sheet = companion_sheet_new(first);
-            let _ = take_json(companion_sheet_seal_text(
-                first,
-                sheet,
-                cstring("hunter2-the-sealed-bytes").as_ptr(),
-                0,
-                0,
-            ));
-            assert!(companion_persist_save(first, c_state.as_ptr()));
-            assert!(companion_ledger_save(first, c_ledger.as_ptr()));
-            let ledger_before = take_json(companion_ledger_json(first));
+            companion_sheet_new(first);
+            assert!(companion_persist_save(first, c_path.as_ptr()));
             companion_free(first);
 
-            // The machine restarts: a different boot session, and the
-            // boot half would be gone with the temp directory.
-            persist::boot_uuid_override::set([0x7E; 16]);
-            let second = handle_with(Arc::clone(&credentials));
-            assert!(
-                !companion_persist_restore(second, c_state.as_ptr()),
-                "content from a dead boot session was restored"
-            );
-            assert!(
-                !state_path.exists(),
-                "the discarded state file is still on disk"
-            );
-            assert!(
-                persist::load_state_key(&*credentials).is_none(),
-                "the content key halves survived the boot mismatch"
-            );
-
-            // The ledger is not boot-bound and must not have been
-            // rotated away with the content.
-            assert!(companion_ledger_restore(second, c_ledger.as_ptr()));
-            assert_eq!(take_json(companion_ledger_json(second)), ledger_before);
-            companion_free(second);
-            persist::boot_uuid_override::clear();
+            for magic in [b"OTSSEAL1", b"OTSSEAL9", b"NOTOURS0"] {
+                let mut stranger = std::fs::read(&path).unwrap();
+                stranger[..8].copy_from_slice(magic);
+                std::fs::write(&path, &stranger).unwrap();
+                let handle = handle_with(Arc::clone(&credentials));
+                assert!(!companion_persist_restore(handle, c_path.as_ptr()));
+                companion_free(handle);
+                assert!(
+                    path.exists(),
+                    "a file this app never wrote was destroyed by a restore"
+                );
+            }
         }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// A boot mismatch whose rotation the keychain refused must not
-    /// consume its own trigger. The state file is the only thing that
-    /// brings the app back to this arm, so erasing it after a rotation
-    /// that removed nothing would strand both halves alive with no
-    /// retry: the next launch would find no file, decide nothing is
-    /// wrong, and keep deriving the very key that opens the content it
-    /// meant to discard.
+    /// Launch sweeps the temp generations a death mid-write stranded.
+    /// They hold whole sealed generations and whole key halves, and
+    /// nothing else in the app ever clears this directory (ADR-0016
+    /// section 8).
     #[test]
-    fn a_refused_rotation_keeps_the_file_that_triggers_the_retry() {
-        let credentials: Arc<dyn CredentialStore> =
-            Arc::new(persist::test_stores::RefusesToDelete::default());
+    fn launch_sweeps_the_temp_generations_a_crash_stranded() {
+        let handle = handle();
         let dir = scratch_dir();
-        let state_path = dir.join("state.sealed");
-        let c_state = cstring(state_path.to_str().unwrap());
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        let stranded = dir.join("state.sealed.0f1e2d3c4b5a6978.tmp");
         unsafe {
-            let first = handle_with(Arc::clone(&credentials));
-            let sheet = companion_sheet_new(first);
-            let _ = take_json(companion_sheet_seal_text(
-                first,
-                sheet,
-                cstring("hunter2-the-sealed-bytes").as_ptr(),
-                0,
-                0,
-            ));
-            assert!(companion_persist_save(first, c_state.as_ptr()));
-            companion_free(first);
+            companion_sheet_new(handle);
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            std::fs::write(&stranded, std::fs::read(&path).unwrap()).unwrap();
 
-            // The machine restarts into a keychain that is still locked.
-            persist::boot_uuid_override::set([0x3C; 16]);
-            let second = handle_with(Arc::clone(&credentials));
-            assert!(!companion_persist_restore(second, c_state.as_ptr()));
+            assert!(companion_persist_restore(handle, c_path.as_ptr()));
             assert!(
-                state_path.exists(),
-                "the trigger was consumed by a rotation that removed nothing"
+                !stranded.exists(),
+                "a stranded ciphertext generation outlived the launch that found it"
             );
-            companion_free(second);
-            persist::boot_uuid_override::clear();
+            assert!(path.exists(), "the sweep took the state file itself");
+            companion_free(handle);
         }
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -3572,14 +3794,17 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// The aging math is direction-safe. A monotonic stamp that reads
-    /// later than now cannot be an honest reading from this session, so
-    /// it must cost the page its life rather than grant it: the
-    /// alternative, treating it as zero time away, restores every page
-    /// at its full pre-save TTL, which is precisely the outcome the
-    /// stamp exists to prevent.
+    /// A stamp ahead of the system clock is a clock that was stepped
+    /// back, and the answer is a freeze rather than a drain or a
+    /// credit: the page comes back holding exactly the life it held at
+    /// that save, nothing charged and nothing granted. That case is
+    /// accepted rather than defended (ADR-0016 section 4), because the
+    /// adversary who can set the machine's clock is the machine's own
+    /// operator, who already has the plaintext on screen. What must not
+    /// happen is the subtraction wrapping, which would have drained
+    /// every page on the spot.
     #[test]
-    fn a_monotonic_stamp_from_the_future_costs_life_rather_than_granting_it() {
+    fn a_stamp_from_the_future_freezes_the_countdown_rather_than_draining_it() {
         let credentials: Arc<dyn CredentialStore> =
             Arc::new(companion_credentials::InMemoryCredentialStore::default());
         let dir = scratch_dir();
@@ -3589,26 +3814,27 @@ mod tests {
             let first = handle_with(Arc::clone(&credentials));
             let sheet = companion_sheet_new(first);
             assert!(companion_sheet_set_rung(first, sheet, 0));
-            let wall_ms = 1_700_000_000_000;
+            let remaining_before = first_remaining_ms(first).unwrap();
+            // A day ahead of the current wall clock.
+            let ahead_ms = wall_now_ms().unwrap() + 24 * 60 * 60 * 1_000;
             let snapshot = {
                 let guard = (*first).inner.lock().unwrap();
-                guard.store.snapshot(wall_ms)
+                guard.store.snapshot(ahead_ms)
             };
-            let key = persist::ensure_state_key(&*credentials).unwrap();
-            // A day ahead of this session's clock: no reading taken in
-            // this boot session can be later than the one taken now.
-            let ahead_ns = sleep_inclusive_ns().saturating_add(24 * 60 * 60 * 1_000_000_000);
-            let sealed = persist::seal_state(&key, &snapshot, wall_ms, ahead_ns).unwrap();
+            let key = persist::ensure_state_key(&*credentials, &path).unwrap();
+            let sealed = persist::seal_state(&key, &snapshot, ahead_ms).unwrap();
             assert!(persist::write_private(&path, &sealed));
             companion_free(first);
 
             let second = handle_with(Arc::clone(&credentials));
             assert!(companion_persist_restore(second, c_path.as_ptr()));
-            assert_eq!(
-                first_remaining_ms(second),
-                None,
-                "a stamp from the future bought the page its whole TTL back"
+            let remaining_after = first_remaining_ms(second)
+                .expect("a stamp from the future drained the page outright");
+            assert!(
+                remaining_before.abs_diff(remaining_after) < 60_000,
+                "the frozen countdown moved: {remaining_before} then {remaining_after}"
             );
+            let _ = sheet;
             companion_free(second);
         }
         std::fs::remove_dir_all(&dir).unwrap();
@@ -3693,6 +3919,204 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Dropping the content file is the moment its key dies with it
+    /// (ADR-0016 section 6). Without the rotation both halves outlive
+    /// every ciphertext generation the atomic rename unlinked, and
+    /// nothing sweeps those, so an emptied pad would leave a decryptable
+    /// trail behind it.
+    #[test]
+    fn dropping_the_content_file_rotates_the_halves_with_it() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            companion_sheet_new(handle);
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            let dropped_key = persist::load_state_key(&*credentials, &path)
+                .expect("a saved file has a key")
+                .to_vec();
+
+            assert!(companion_persist_erase(handle, c_path.as_ptr()));
+            assert!(
+                persist::load_state_key(&*credentials, &path).is_none(),
+                "the halves outlived the content file they sealed"
+            );
+
+            // And what the pad writes next shares nothing with what it
+            // just dropped.
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            assert_ne!(
+                *persist::load_state_key(&*credentials, &path).unwrap(),
+                dropped_key,
+                "the pad came back on the very key it had just discarded"
+            );
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A content file the core cannot read is still a content file, and
+    /// dropping it still takes the key. The gate used to read the
+    /// envelope magic and nothing else, so a file truncated below eight
+    /// bytes, or mode 000, or absent, or with a FIFO planted at the
+    /// name, answered "not content" and the drop unlinked it with both
+    /// halves alive. Every unlinked generation before it stayed
+    /// decryptable, and the shell was told the write had succeeded.
+    #[test]
+    fn a_content_file_the_core_cannot_read_still_takes_the_key_with_it() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            companion_sheet_new(handle);
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            assert!(persist::load_state_key(&*credentials, &path).is_some());
+
+            // Truncated below the magic: unreadable as an envelope, and
+            // still the file the pad has just emptied.
+            std::fs::write(&path, b"OTS").unwrap();
+
+            assert!(companion_persist_erase(handle, c_path.as_ptr()));
+            assert!(
+                persist::load_state_key(&*credentials, &path).is_none(),
+                "the halves outlived the content file because its magic could not be read"
+            );
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A drop that could not erase the file half must not drop the
+    /// ciphertext. Before this, the refusal was logged and the erase ran
+    /// anyway: the content file was gone, both halves were alive, every
+    /// unlinked generation stayed decryptable, the shell was told the
+    /// write had succeeded, and nothing ever came back, because the drop
+    /// fires on an empty pad and an empty pad with no file on disk is an
+    /// ordinary session with nothing to do. The trigger consumed itself.
+    #[cfg(unix)]
+    #[test]
+    fn a_drop_that_could_not_erase_the_half_keeps_the_content_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            companion_sheet_new(handle);
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+            assert!(persist::load_state_key(&*credentials, &path).is_some());
+            let sealed_before = std::fs::read(&path).unwrap();
+
+            // Read and search but no write: nothing in the directory can
+            // be unlinked, the half included.
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+            let dropped = companion_persist_erase(handle, c_path.as_ptr());
+            let still_there = path.exists();
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+            // Running as root, or on a filesystem that ignores the mode,
+            // the branch under test is unreachable and the erase simply
+            // succeeded.
+            if still_there {
+                assert!(
+                    !dropped,
+                    "the drop reported success while leaving the ciphertext on disk"
+                );
+                assert_eq!(
+                    std::fs::read(&path).unwrap(),
+                    sealed_before,
+                    "the drop that refused still went and truncated the file it kept"
+                );
+                // The zeros went into the half even though the unlink
+                // could not, which is why this is a refusal and not a
+                // success: on a copy-on-write filesystem the overwrite
+                // is best effort and the unlink is the only observable
+                // fact, so an erase that cannot finish is unknown, and
+                // unknown is not gone.
+                //
+                // The retry the false arms finds the file where it was,
+                // and this time the drop lands.
+                assert!(companion_persist_erase(handle, c_path.as_ptr()));
+                assert!(!path.exists());
+                assert!(persist::load_state_key(&*credentials, &path).is_none());
+            }
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Clearing the ledger drops a file through this same call, and that
+    /// gesture asked nothing about pages. If the drop rotated on the
+    /// caller's intent rather than on the envelope actually at the path,
+    /// a user clearing their audit log would silently lose every staged
+    /// page along with it.
+    #[test]
+    fn clearing_the_ledger_file_leaves_the_content_halves_alone() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let state_path = dir.join("state.sealed");
+        let ledger_path = dir.join("ledger.sealed");
+        let c_state = cstring(state_path.to_str().unwrap());
+        let c_ledger = cstring(ledger_path.to_str().unwrap());
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            let sheet = companion_sheet_new(first);
+            let _ = take_json(companion_sheet_seal_text(
+                first,
+                sheet,
+                cstring("hunter2-the-sealed-bytes").as_ptr(),
+                0,
+                0,
+            ));
+            assert!(companion_persist_save(first, c_state.as_ptr()));
+            assert!(companion_ledger_save(first, c_ledger.as_ptr()));
+            let key_before = persist::load_state_key(&*credentials, &state_path)
+                .expect("a saved file has a key")
+                .to_vec();
+            companion_free(first);
+
+            let clearing = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_erase(clearing, c_ledger.as_ptr()));
+            companion_free(clearing);
+            assert_eq!(
+                *persist::load_state_key(&*credentials, &state_path).expect(
+                    "clearing the ledger destroyed the content key: every staged page is gone"
+                ),
+                key_before
+            );
+
+            // The staged content itself still comes back, which is the
+            // property the key comparison above is a proxy for.
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(second, c_state.as_ptr()));
+            assert!(first_remaining_ms(second).unwrap() > 0);
+            companion_free(second);
+
+            // And an *unreadable* ledger file is still not the content
+            // file. Neither half of the decision may be talked into it:
+            // the name is the ledger's and no magic can be read at all.
+            std::fs::write(&ledger_path, b"OTS").unwrap();
+            let clearing = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_erase(clearing, c_ledger.as_ptr()));
+            companion_free(clearing);
+            assert_eq!(
+                *persist::load_state_key(&*credentials, &state_path)
+                    .expect("a damaged ledger file took the content key with it"),
+                key_before
+            );
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// A fresh directory under the system temp dir, removed on success;
     /// a failure leaves it behind for inspection.
     fn scratch_dir() -> std::path::PathBuf {
@@ -3706,9 +4130,9 @@ mod tests {
         dir
     }
 
-    /// The ledger is its own file under its own long-lived key, so it
-    /// comes back across a relaunch even though the content file is
-    /// boot-session-bound. The two files are not interchangeable.
+    /// The ledger is its own file under its own long-lived key, and it
+    /// comes back across a relaunch on its own terms: neither file's
+    /// restore can stand in for the other's, in either direction.
     #[test]
     fn ledger_save_and_restore_round_trip_through_a_scratch_file() {
         let credentials: Arc<dyn CredentialStore> =

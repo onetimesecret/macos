@@ -75,16 +75,16 @@ final class StateLicenceTests: XCTestCase {
         XCTAssertTrue(granted.ledger)
     }
 
-    func testADiscardedForeignSessionFileEarnsTheLicence() {
+    func testADroppedSupersededFileEarnsTheLicence() {
         // The ordering `loadStateIfNeeded` depends on, stated as the two
-        // readings of one restore. A state file stamped with an earlier
-        // boot session is dropped from disk by the restore itself, which
-        // then answers false.
+        // readings of one restore. A state file sealed under an envelope
+        // the core has replaced is dropped from disk by the restore
+        // itself, which then answers false.
         //
         // Probed before the restore, the file was still there and the
         // restore said no, which is indistinguishable from a refusal and
-        // withholds the licence, for the whole session, on the first
-        // launch after every reboot, which is the ordinary case.
+        // withholds the licence, for every session after the update:
+        // an install that has quietly stopped saving.
         XCTAssertFalse(PageModel.grantsSaveLicence(fileExists: true, restored: false))
         // Probed after, the file is gone, because it was discarded. That
         // is a fresh start, and a fresh start is licensed.

@@ -559,7 +559,8 @@ public final class PageModel: ObservableObject {
         let ledgerRestored = client.ledgerRestore(from: ledgerPath)
         // Probed after the restore for the same reason as above, though
         // the restore itself never has cause to discard this file: the
-        // ledger is long-lived by design and is not boot-session bound.
+        // ledger's envelope has never been superseded, so it has no
+        // disposal arm at all.
         // The one thing that unlinks it is the user's own Clear
         // (`clearLedger`), which cannot race a probe that already ran.
         // Asking both files the question the same way is what keeps the
@@ -600,28 +601,24 @@ public final class PageModel: ObservableObject {
     /// only an existing file that would not open withholds it.
     ///
     /// **`fileExists` is the probe taken after the restore, never
-    /// before, and the order is part of the rule.** A state file stamped
-    /// with an earlier boot session is dropped from disk *by the restore
-    /// itself*, which then answers false. The core will not open a
-    /// session's content into another session, and it rotates both key
-    /// halves on the way past. Probed beforehand, that reads as "a file
+    /// before, and the order is part of the rule.** A state file sealed
+    /// under an envelope the core has since replaced is dropped from
+    /// disk *by the restore itself*, which then answers false. Nothing
+    /// in such a file can ever be decrypted again, so there is nothing
+    /// to preserve by keeping it. Probed beforehand, it reads as "a file
     /// was there and would not open", which is the one combination that
-    /// withholds the licence: the app would then refuse to write for the
-    /// whole session, and it would do it on the first launch after every
-    /// reboot. Probed afterwards, the discarded file reads as "no file",
-    /// which is what it now is, and the session starts clean with its
-    /// licence. A file that genuinely refused is still sitting there
-    /// when the probe runs, so that case still withholds. The table
-    /// below did not change; only what feeds it.
+    /// withholds the licence: the install would then refuse to write for
+    /// every session after the update, which is exactly the permanently
+    /// unwritable install ADR-0016 section 9 exists to prevent. Probed
+    /// afterwards, the dropped file reads as "no file", which is what it
+    /// now is, and the session starts clean with its licence.
     ///
-    /// The drop is conditional on that rotation succeeding, so there is
-    /// one more way to reach the probe with the file still present: a
-    /// keychain that refused to delete the state key. This session then
-    /// withholds the licence, which is the outcome to want. A keychain
-    /// that will not delete a key is one this session cannot trust to
-    /// hand back the halves a write would need, and the file it declined
-    /// to overwrite is the trigger that makes the next launch rotate
-    /// again.
+    /// Every other failure leaves the file exactly where it is, and each
+    /// one still withholds: a missing key, a failed authentication, a
+    /// snapshot the core rejects, an envelope from no version this app
+    /// ever shipped. That is the outcome to want, because a session that
+    /// could not read the file must not write over it. The table below
+    /// did not change; only what feeds it.
     public nonisolated static func grantsSaveLicence(fileExists: Bool, restored: Bool) -> Bool {
         restored || !fileExists
     }
@@ -654,8 +651,8 @@ public final class PageModel: ObservableObject {
     /// the file it would be deleting.
     ///
     /// The ledger deliberately has no say here. It is a second file
-    /// under a second key with a lifetime that outlives the boot
-    /// session, and an expiry that empties the store is precisely the
+    /// under a second key with a lifetime that outlives the pages it
+    /// describes, and an expiry that empties the store is precisely the
     /// moment the ledger gains records, so letting a non-empty ledger
     /// veto this would leave the erase permanently unreachable in the
     /// case it was written for.

@@ -16,6 +16,10 @@ final class FormFactorTests: XCTestCase {
         let panel = FormFactor.panel.stateFileURL
         let backdrop = FormFactor.backdrop.stateFileURL
 
+        // The core carries this same name (`STATE_FILE_NAME` in
+        // crates/ffi/src/persist.rs) to decide whether dropping a file
+        // takes the content key with it, so these two assertions are
+        // also the Swift half of that coupling.
         XCTAssertEqual(panel.lastPathComponent, "state.sealed")
         XCTAssertEqual(backdrop.lastPathComponent, "state.sealed")
 
