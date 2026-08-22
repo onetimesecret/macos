@@ -110,6 +110,22 @@ const MAGIC: &[u8; 8] = b"OTSSNAP4";
 /// that is announced with the content loss rather than under it.
 const LEDGER_MAGIC: &[u8; 8] = b"OTSLEDR2";
 
+/// Ledger payload magics this module once wrote and has since replaced.
+/// A file carrying one of these opens under the ledger envelope and the
+/// long-lived ledger key exactly as a current one does, and only then
+/// meets a reader that does not exist, so refusing it as unknown would
+/// leave the file on disk and the ledger licence withheld on every
+/// launch after the break (ADR-0016 section 9). [`restore_ledger`]
+/// names the case as [`RestoreError::Superseded`] instead, so the caller
+/// that owns the file can dispose of it. This set grows by one entry per
+/// ledger break, and `OTSLEDR0` is not in it: it is no version this
+/// module ever wrote. The content snapshot has no counterpart, because
+/// a superseded snapshot magic never reaches [`SheetStore::restore`]: its
+/// envelope is superseded with it and refuses first.
+///
+/// [`restore_ledger`]: SheetStore::restore_ledger
+const SUPERSEDED_LEDGER_MAGICS: [&[u8; 8]; 1] = [b"OTSLEDR1"];
+
 /// Ceiling on any span read back from a snapshot (30 days — well past
 /// the 7-day rung and the 24-hour hold). Keeps `Instant` arithmetic
 /// safely away from overflow no matter what the buffer claims.
@@ -126,6 +142,13 @@ const STAMP_SLACK_S: i64 = 2;
 pub enum RestoreError {
     /// Not a snapshot, or a version this build does not read.
     UnknownFormat,
+    /// A version this build once wrote and has since replaced. Nothing
+    /// in it can be read and the store is left exactly as it was, the
+    /// same as [`UnknownFormat`](Self::UnknownFormat); the difference is
+    /// that the caller holding the file is told it may dispose of it
+    /// (ADR-0016 section 9). Only the ledger reports this today, see
+    /// [`SUPERSEDED_LEDGER_MAGICS`].
+    Superseded,
     /// The layout is damaged: truncated, trailing bytes, invalid UTF-8,
     /// an off-ladder rung, a document blob that does not import, or a
     /// chip roster the document's marks do not match one to one. The
@@ -137,6 +160,9 @@ impl std::fmt::Display for RestoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RestoreError::UnknownFormat => f.write_str("not a snapshot this build can read"),
+            RestoreError::Superseded => {
+                f.write_str("a snapshot from a format this build has replaced")
+            }
             RestoreError::Malformed => f.write_str("snapshot is damaged"),
         }
     }
@@ -290,13 +316,25 @@ impl<C: Clock> SheetStore<C> {
     ///
     /// # Errors
     ///
-    /// [`RestoreError::UnknownFormat`] for a buffer that is not a ledger
-    /// snapshot this build reads; [`RestoreError::Malformed`] for one
-    /// that is damaged.
+    /// [`RestoreError::Superseded`] for a ledger snapshot in a version
+    /// this module once wrote and no longer reads
+    /// ([`SUPERSEDED_LEDGER_MAGICS`]); [`RestoreError::UnknownFormat`]
+    /// for any other buffer that is not a ledger snapshot this build
+    /// reads; [`RestoreError::Malformed`] for one that is damaged.
     pub fn restore_ledger(&mut self, bytes: &[u8], wall_ms: u64) -> Result<usize, RestoreError> {
         let mut reader = Reader { buf: bytes, pos: 0 };
-        if reader.raw(LEDGER_MAGIC.len()) != Some(LEDGER_MAGIC.as_slice()) {
-            return Err(RestoreError::UnknownFormat);
+        let magic = reader.raw(LEDGER_MAGIC.len());
+        if magic != Some(LEDGER_MAGIC.as_slice()) {
+            let superseded = magic.is_some_and(|magic| {
+                SUPERSEDED_LEDGER_MAGICS
+                    .iter()
+                    .any(|old| magic == old.as_slice())
+            });
+            return Err(if superseded {
+                RestoreError::Superseded
+            } else {
+                RestoreError::UnknownFormat
+            });
         }
         let record_count = count(&mut reader)?;
         let mut ledger = VecDeque::new();
@@ -2348,7 +2386,9 @@ mod tests {
         // every unknown one refuses the same way, with the store
         // untouched. The skip rule changes nothing here. It buys a
         // trailing field inside a record and buys nothing across a
-        // version byte.
+        // version byte. The ledger's own superseded version is the one
+        // exception, and it is a different name for the same refusal,
+        // see the test after this one.
         let (original, _clock, ..) = populated();
         let (mut revived, survivor) = occupied();
         for magic in [
@@ -2369,17 +2409,44 @@ mod tests {
             assert_eq!(ids, vec![survivor], "the refused restore touched the store");
         }
 
-        // The ledger takes the same rule, including for the version it
-        // just superseded: framing its records broke `OTSLEDR1`, and a
-        // v1 file refuses rather than being read positionally.
-        for magic in [b"OTSLEDR0", b"OTSLEDR1"] {
+        // The ledger takes the same rule for a version this module never
+        // wrote: `OTSLEDR0` refuses as unknown, store untouched.
+        let before: Vec<LedgerRecord> = revived.ledger().cloned().collect();
+        let mut relabeled = original.ledger_snapshot().to_vec();
+        relabeled[..8].copy_from_slice(b"OTSLEDR0");
+        assert_eq!(
+            revived.restore_ledger(&relabeled, 0),
+            Err(RestoreError::UnknownFormat),
+            "an unknown ledger magic did not refuse as unknown"
+        );
+        let after: Vec<LedgerRecord> = revived.ledger().cloned().collect();
+        assert_eq!(before, after, "the refused restore touched the ledger");
+    }
+
+    /// The one ledger version this module wrote and replaced is refused
+    /// too, there being no reader for it and no downgrade writer, but it
+    /// is refused by name, so the caller holding the file can dispose of
+    /// it instead of leaving it to withhold the ledger licence on every
+    /// launch after the break (ADR-0016 section 9). The store is as
+    /// untouched as for any other refusal.
+    #[test]
+    fn a_superseded_ledger_magic_refuses_as_superseded_with_the_ledger_untouched() {
+        let (original, _clock, ..) = populated();
+        let (mut revived, _survivor) = occupied();
+        assert_eq!(SUPERSEDED_LEDGER_MAGICS, [b"OTSLEDR1"]);
+        let before: Vec<LedgerRecord> = revived.ledger().cloned().collect();
+        for magic in SUPERSEDED_LEDGER_MAGICS {
             let mut relabeled = original.ledger_snapshot().to_vec();
             relabeled[..8].copy_from_slice(magic.as_slice());
             assert_eq!(
                 revived.restore_ledger(&relabeled, 0),
-                Err(RestoreError::UnknownFormat),
-                "ledger magic {magic:?} did not refuse as unknown"
+                Err(RestoreError::Superseded),
+                "ledger magic {magic:?} did not refuse as superseded"
             );
+            // Superseded is a name for a refusal, not a reader: the
+            // bytes are not taken positionally or any other way.
+            let after: Vec<LedgerRecord> = revived.ledger().cloned().collect();
+            assert_eq!(before, after, "the refused restore touched the ledger");
         }
     }
 
