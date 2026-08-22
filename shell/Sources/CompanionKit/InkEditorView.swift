@@ -36,11 +36,13 @@ public struct InkEditorView: NSViewRepresentable {
         // Explicit TextKit 1 stack: chips render through
         // NSTextAttachmentCell, and swapping pages swaps the storage
         // under one layout manager (`replaceTextStorage`).
-        // A fresh editor mount follows a teardown (a ledger round trip,
-        // or the empty state after the last page died). Every cached
-        // undo manager still holds operations bound to the torn-down
-        // view; shed them before this view registers its own, so ⌘Z
-        // rewrites live text instead of firing at a zombie (issue #23).
+        // A fresh editor mount follows a teardown: a ledger round trip,
+        // or the empty state, which since ADR-0017 is reached whenever
+        // the selected tab holds no page and not only when the last
+        // page died. Every cached undo manager still holds operations
+        // bound to the torn-down view; shed them before this view
+        // registers its own, so ⌘Z rewrites live text instead of firing
+        // at a zombie (issue #23).
         model.discardUndoHistory()
         let layoutManager = NSLayoutManager()
         let container = NSTextContainer(size: NSSize(

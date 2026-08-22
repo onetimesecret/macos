@@ -336,6 +336,38 @@ final class TabLifetimeTests: XCTestCase {
         )
     }
 
+    /// The editor's teardown is reached more often since the split: a
+    /// selected slot holding no page shows the empty state while other
+    /// slots still hold pages, and the next mount sheds every cached
+    /// undo manager. That is the intended scope rather than an
+    /// oversight, because each of those managers holds operations
+    /// registered against the one torn-down view (issue #23), so a
+    /// manager kept is a zombie kept. What it costs the user is ⌘Z
+    /// reaching back past a visit to an empty slot.
+    func testAMountShedsEveryPagesUndoHistoryAndNotOnlyTheMountedOne() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        let staying = try XCTUnwrap(model.selectedPageID)
+        model.newPage()
+        let doomed = try XCTUnwrap(model.selectedPageID)
+
+        let target = NSObject()
+        for page in [staying, doomed] {
+            let manager = model.undoManager(for: page)
+            manager.registerUndo(withTarget: target) { _ in }
+            XCTAssertTrue(manager.canUndo)
+        }
+
+        // What a fresh editor mount does on the way up.
+        model.discardUndoHistory()
+
+        XCTAssertFalse(
+            model.undoManager(for: staying).canUndo,
+            "a page that never left the model kept operations bound to a dead view"
+        )
+        XCTAssertFalse(model.undoManager(for: doomed).canUndo)
+    }
+
     /// Closing the last tab is what empties the strip, and only then is
     /// there nothing left to seal. The two predicates disagree in
     /// between, which is the whole reason they are separate.

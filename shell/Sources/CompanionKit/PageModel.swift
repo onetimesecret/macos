@@ -1100,13 +1100,28 @@ public final class PageModel: ObservableObject {
 
     /// Discard every page's undo history. One editor serves all pages
     /// (ADR-0006), so every registered undo operation is bound to that
-    /// single NSTextView. When the view is torn down — a ledger round
-    /// trip, or the empty state after the last page dies — and a fresh
-    /// editor later mounts, those cached managers still hold operations
-    /// targeting the dead view: replaying one drives a zombie reference,
-    /// not the live editor (issue #23). A mount clears them so ⌘Z after
-    /// a remount is a clean no-op rather than a misfire. Page↔page
-    /// swaps keep the same view and are untouched.
+    /// single NSTextView. When the view is torn down and a fresh editor
+    /// later mounts, those cached managers still hold operations
+    /// targeting the dead view: replaying one drives a zombie
+    /// reference, not the live editor (issue #23). A mount clears them
+    /// so ⌘Z after a remount is a clean no-op rather than a misfire.
+    /// Page↔page swaps keep the same view and are untouched.
+    ///
+    /// **Every page's, and not the mounted one's, because every one of
+    /// them points at the same dead view.** There is no narrower
+    /// discard to make: an operation registered against the torn-down
+    /// editor is dead whether or not its page is still alive, so
+    /// keeping one would be keeping the zombie rather than keeping the
+    /// history.
+    ///
+    /// The teardown is more frequent since the split (ADR-0017), and
+    /// that cost is stated rather than hidden. The empty state used to
+    /// be reached only when the last page in the store died; now the
+    /// selected tab holding no page is enough, so a visit to a slot
+    /// whose page expired overnight unmounts the editor and the next
+    /// mount spends the undo history of every other live page with it.
+    /// Nothing on screen or on disk changes: what the user loses is
+    /// ⌘Z reaching back past that visit.
     public func discardUndoHistory() {
         undoManagers.values.forEach { $0.removeAllActions() }
     }
