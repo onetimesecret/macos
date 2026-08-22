@@ -320,6 +320,49 @@ pub unsafe extern "C" fn companion_new_ephemeral(tag: *const c_char) -> *mut Com
     new_handle(credentials)
 }
 
+/// Age every staged page by `gap_ms` of wall time, the way a relaunch
+/// after a night away ages them: the store is snapshotted at one wall
+/// reading and restored at a later one, which is the same arithmetic
+/// [`companion_persist_restore`] does and the only one that moves a
+/// countdown without waiting for it. Returns whether the store read
+/// back its own snapshot.
+///
+/// It exists because the states ADR-0017 is about — a tab standing
+/// empty, a slot reused by a second page — are on the far side of a
+/// countdown, and a suite that cannot cross that boundary can only
+/// assert the code it can reach. Nothing is expired here: the caller
+/// follows with [`companion_expire_due`], exactly as the shell's armed
+/// timer does, so the path under test is the shipping one.
+///
+/// **The id counters are re-minted densely**, as they are at every
+/// restore, so a caller reads ids back from the summaries afterwards
+/// rather than keeping the ones it had.
+///
+/// Compiled only under the `test-util` feature (ADR-0018): the release
+/// artifact never exports this symbol, and the packaging path checks.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[cfg(feature = "test-util")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_test_age_ms(handle: *mut CompanionHandle, gap_ms: u64) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    // A fixed reading rather than the host's: the gap is what matters,
+    // and a store that has never been saved has no stamp of its own to
+    // measure from.
+    let sealed_wall_ms = 1_700_000_000_000;
+    let snapshot = guard.store.snapshot(sealed_wall_ms);
+    guard
+        .store
+        .restore(&snapshot, sealed_wall_ms.saturating_add(gap_ms))
+        .is_ok()
+}
+
 fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
     companion_core::harden_process();
     // The one place the backend is chosen: the real system clipboard on

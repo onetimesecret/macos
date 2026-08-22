@@ -296,6 +296,14 @@ public final class CompanionClient: @unchecked Sendable {
         self.handle = handle
     }
 
+    /// The raw handle, for the test target's gated seams alone
+    /// (ADR-0018), on the same terms as `init(adopting:)`: internal, so
+    /// only a `@testable` import reaches it, and used only where a seam
+    /// that exists in no release build has to be called. Nothing in
+    /// this module or above it may take a second reference to the
+    /// handle: its lifetime is this object's.
+    var rawHandleForTests: OpaquePointer { handle }
+
     deinit {
         companion_free(handle)
     }

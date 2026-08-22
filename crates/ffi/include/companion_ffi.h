@@ -116,6 +116,19 @@ CompanionHandle *companion_new_scoped(const char *service);
  * a C header carries no cargo features. */
 CompanionHandle *companion_new_ephemeral(const char *tag);
 
+/* Age every staged page by `gap_ms` of wall time, the way a relaunch
+ * after a night away ages them: the store is snapshotted at one wall
+ * reading and restored at a later one, which is the same arithmetic the
+ * restore does and the only one that moves a countdown without waiting
+ * for it. Nothing expires here — the caller follows with
+ * companion_expire_due(), as the shell's armed timer does — and both id
+ * counters are re-minted densely as at any restore, so the caller reads
+ * ids back from the summaries afterwards. A test seam for the states on
+ * the far side of a countdown: a tab standing empty, a slot reused by a
+ * second page. The symbol exists only in test-util builds of the core
+ * (ADR-0018), on the same terms as companion_new_ephemeral() above. */
+bool companion_test_age_ms(CompanionHandle *handle, uint64_t gap_ms);
+
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */
