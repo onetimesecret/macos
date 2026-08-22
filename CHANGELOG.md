@@ -61,6 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside it loses the tab names, rungs and order, and nothing else,
   because there is no page content left in the file by then.
 
+  Burning the local copy after a promotion stopped taking the slot with
+  it. `companion_page_discard` is page addressed where close is tab
+  addressed: it entombs the page, records the same discard, and leaves
+  the slot standing, named and empty, the way an expiry leaves one. An
+  explicit close and the cap are still the only two things that end a
+  tab.
+
   A name is the user's or the tab has none. `Tab.name` is set only by
   the rename gesture, capped at 80 characters as before, and never
   derived: the label resolves to the typed name, else the live page's
