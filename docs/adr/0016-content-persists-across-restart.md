@@ -99,7 +99,11 @@ file:line citation and was what the tree did on 2026-08-20.
 superseded envelope disposal and the rotation on drop; #62 took the
 superseded ledger disposal (issue #61), the ADR-0017 shell stage with
 the rotation on the no-page predicate (section 6), and the four hardware
-procedures of section 10, authored and not yet run. Citations below into
+procedures of section 10, authored and not yet run. Issue #49 landed
+after them, in the same cycle: the withheld licence and the write
+lifecycle are surfaced, the content-side discard exists, and the quit
+path warns on a settled flush over a withheld licence (sections 2 and
+7). Citations below into
 the pre-ADR tree (`BootMismatch`, `monotonic_away_ms`, the boot-UUID
 salt and the boot-session tests) describe code that no longer exists and
 are left as written; they record what was replaced, not where to look.
@@ -116,13 +120,13 @@ section 7 covers the cases where it is not.
 
 | Event | Unexpired content survives | What the user sees |
 |---|---|---|
-| Clean quit (⌘Q) | Yes, in full | `applicationShouldTerminate` calls `saveState()` and stands down whatever the debounce still holds (`shell/Sources/OnetimePad/BackdropApp.swift:121-133`, `shell/Sources/CompanionKit/PageModel.swift:868-965`). If that write is refused, an alert offers Quit Anyway or Cancel (BackdropApp.swift:123-132). On relaunch the pages are there with less time on them. |
+| Clean quit (⌘Q) | Yes, in full | `applicationShouldTerminate` calls `saveState()` and stands down whatever the debounce still holds (`shell/Sources/OnetimePad/BackdropApp.swift:121-151`, `shell/Sources/CompanionKit/PageModel.swift:962-1065`). If that write is refused, an alert offers Quit Anyway or Cancel; a settled flush over a withheld licence with work in the session warns the same way (BackdropApp.swift:122-150). On relaunch the pages are there with less time on them. |
 | Crash (process fault) | Yes, except the debounce window | The last burst of typing inside the window is gone. Everything sealed before it is intact, because each write lands whole or not at all (`crates/ffi/src/persist.rs:1139-1198`). Nothing tells the user which keystrokes were lost. Window quantified in section 2. |
 | Force termination (`kill -9`, Force Quit) | Yes, except the debounce window | Identical to crash. SIGKILL runs no handler, so the sudden-termination latch (`shell/Sources/CompanionKit/PageModel.swift:101-141`) buys nothing here; the atomic write is what saves the rest. |
 | macOS restart or shutdown | Yes. **Required work**; today the file is discarded at `crates/ffi/src/lib.rs:1289-1312` | An orderly restart delivers a terminate while a write is owed, because the latch holds sudden termination off a dirty buffer (PageModel.swift:101-141, `shell/OnetimePad-Info.plist:56`), so the quit flush runs and the loss window is zero. A mutation that never reached `markDirty()` is not covered, and neither is a kill before the flush lands. Today the user sees an empty pad, which is the defect this ADR exists to remove. |
 | App update (same bundle id, same signing identity) | Yes, when the sealed format version is unchanged. **Required work** for the version-change case; see section 9 | Replacing the bundle changes nothing the file depends on. A build whose `FILE_MAGIC` differs refuses the file (`crates/ffi/src/persist.rs:594-605`, `:664-678`), which is a one-time loss, announced the way the previous break was (the repo-root `DOGFOOD.md:50-56`). |
 | Development rebuild | Only while the bundle id and signing identity hold still | Keychain ACL identity is derived from the bundle id (ADR-0012:90), and a `.debug` suffix or a changed `CODESIGN_IDENTITY` strands the halves. That lands in section 7's unavailable-key case: no restore, no overwrite, no writes for the session. Separately, `swift build` re-signs the bundle in place and the running instance is SIGKILLed (observed in development; nothing in the tree enforces or prevents it), so a rebuild against a live app is a force termination carrying the section 2 window. |
-| Logout | Yes | The process dies by sudden termination unless a write is owed. The latch is real and refcounted (PageModel.swift:101-141) and the shipping bundle declares `NSSupportsSuddenTermination` (`shell/OnetimePad-Info.plist:56`), so a dirty buffer blocks the fast path and the terminate flush runs. A mutation that never called `markDirty()` is not covered: pasteboard copy-out is exactly that case today and is filed as issue #52 (PageModel.swift:1674-1681). |
+| Logout | Yes | The process dies by sudden termination unless a write is owed. The latch is real and refcounted (PageModel.swift:101-141) and the shipping bundle declares `NSSupportsSuddenTermination` (`shell/OnetimePad-Info.plist:56`), so a dirty buffer blocks the fast path and the terminate flush runs. A mutation that never called `markDirty()` is not covered: pasteboard copy-out is exactly that case today and is filed as issue #52 (PageModel.swift:1847-1854). |
 | Fast user switching | Yes | No process death, no window at all. The other account cannot read anything: the state directory sits under the user's own Application Support (`shell/Sources/CompanionKit/FormFactor.swift:59-64`), the key halves are written 0600 (`crates/ffi/src/persist.rs:1139-1153`), and the keychain half is `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` on an entitled build (`crates/credentials/src/lib.rs:637-646`). |
 | Power loss | Yes. **Required work**, on the same footing as the restart row: power loss ends the boot session, so today the file is discarded at `crates/ffi/src/lib.rs:1289-1312` | Same window as crash, plus one artifact: a death between `create_new` and `rename` strands a complete sealed generation as `state.sealed.<hex>.tmp`, and nothing sweeps it (`crates/ffi/src/persist.rs:1144-1163`). |
 
@@ -133,13 +137,13 @@ five times longer and open-ended under a modal, as section 2 sets out.
 ### 2. The loss window, stated as a tradeoff
 
 The nominal window is 2.0 seconds, measured from the **first** mutation
-of a burst, not the last (`shell/Sources/CompanionKit/PageModel.swift:418`,
+of a burst, not the last (`shell/Sources/CompanionKit/PageModel.swift:472`,
 `:174-192`). That anchoring is deliberate and correct: a trailing debounce
 restarted per keystroke makes the window unbounded for the one case
 persistence exists for.
 
 The window after a refused write is 10.0 seconds, not 2
-(PageModel.swift:436-438). It is worse than a longer retry interval
+(PageModel.swift:490-492). It is worse than a longer retry interval
 suggests, for two reasons recorded in `docs/plans/44-ground-truth.md`
 section 2:
 
@@ -148,18 +152,25 @@ section 2:
   is absorbed into the already-armed retry rather than arming a fresh
   2 second timer. One refusal silently changes the window for everything
   typed afterwards.
-- The retry runs in `.default` run-loop mode (PageModel.swift:955-963,
-  `:810-815`), deliberately, so it cannot fire underneath the quit
+- The retry runs in `.default` run-loop mode (PageModel.swift:1049-1063,
+  `:898-909`), deliberately, so it cannot fire underneath the quit
   alert's modal and make its text false. The cost is that the retry
   cannot fire while any tracked menu or modal is up, so the window is
   open-ended for as long as one is.
 
-The user is told none of this. `saveState()` sets `saved = true` on the
-withheld-licence leg (PageModel.swift:896-900), so `settled` is true,
-the quit alert never fires, and a withheld licence produces one
-`logger.error` line and nothing else. A refused write is silent only
-in-session: it sets `saved = false`, so the quit path does raise the
-alert (PageModel.swift:933-964, BackdropApp.swift:121-133).
+The user is now told all of this (issue #49). A withheld licence raises
+a standing banner on the surface with the one recovery action
+(`shell/Sources/CompanionKit/PageSurface.swift:94-119`,
+`contentRestoreRefused` at PageModel.swift:272-278), the header carries
+the write lifecycle as a word, saving, saved or save failed
+(`SaveStatus` at PageModel.swift:205-221, moved in `markDirty` and
+`saveState`), and the quit path warns on both loud outcomes: a refused
+write, and a settled flush over a withheld licence with work in the
+session (`quitOutcome` at PageModel.swift:1071-1085,
+BackdropApp.swift:121-151). `saveState()` still sets `saved = true` on
+the withheld-licence leg (PageModel.swift:990-994), so `settled` stays
+true there; the standing state is what carries the story, not the
+write's return value.
 
 The tradeoff is accepted as stated, and the number does not move.
 Shortening the debounce multiplies on-disk ciphertext generations, and
@@ -169,10 +180,11 @@ longer makes those generations undecryptable. The compensation is
 visibility, not a smaller number.
 
 **Required work.** Issue #49 (surface a withheld licence and a refused
-write) and issue #46 (⌘S force-save with a visible saved state) are
-preconditions of this ADR, not follow-ups. Under ADR-0012 a silently
-withheld save licence cost one boot session. Under this ADR it costs
-every page until the user notices.
+write) is done, as above. Issue #46 (⌘S force-save riding the same
+status surface) remains. Under ADR-0012 a silently withheld save
+licence cost one boot session; under this ADR it would have cost every
+page until the user noticed, which is why #49 was a precondition of
+this ADR rather than a follow-up.
 
 ### 3. Key availability across a restart
 
@@ -222,7 +234,7 @@ caller of `loadStateIfNeeded()` is `BackdropModel.start()`
 (`shell/Sources/OnetimePad/BackdropModel.swift:110`), and the key is
 loaded from inside that restore
 (`crates/ffi/src/lib.rs:1558-1562`,
-`shell/Sources/CompanionKit/PageModel.swift:566-572`). `start()` runs when
+`shell/Sources/CompanionKit/PageModel.swift:629-635`). `start()` runs when
 the app launches, and the app launches either because the user opened it
 or because `SMAppService.mainApp` started it as a login item
 (`shell/Sources/CompanionKit/SettingsSections.swift:27-40`). Both are
@@ -250,7 +262,7 @@ measure honestly.
    process observes is charged on the sleep-inclusive monotonic clock
    (`crates/core/src/clock.rs:88-123`), which the live timer already
    reads through `companion_next_event_ms`
-   (`shell/Sources/CompanionKit/PageModel.swift:2016-2044`). That clock
+   (`shell/Sources/CompanionKit/PageModel.swift:2189-2217`). That clock
    is not settable, so a clock step mid-session buys nothing. ADR-0012:63
    is therefore narrowed rather than replaced: monotonic stays
    authoritative for every interval the process observes.
@@ -374,13 +386,13 @@ Rotation therefore needs a new trigger or it leaves the design.
 
    The definition is load-bearing because ADR-0017 rides the same break.
    Today the condition is `client.sheets().isEmpty`
-   (`shell/Sources/CompanionKit/PageModel.swift:817`), which is the page
+   (`shell/Sources/CompanionKit/PageModel.swift:911`), which is the page
    vector's own emptiness, the same test the core's `is_empty` runs
    (`crates/core/src/store.rs:279-280`, which ADR-0017:425 lists among
    the readers that follow the split), and meeting it drops the content
    file rather than resealing it
-   (`shell/Sources/CompanionKit/PageModel.swift:701-705`, applied on the
-   `persistErase` leg at `:901-916`). Dropping it stops being available:
+   (`shell/Sources/CompanionKit/PageModel.swift:769-773`, applied on the
+   `persistErase` leg at `:995-1010`). Dropping it stops being available:
    the same sealed file will carry the durable tab names, rungs and strip
    order, and a tab survives its page (ADR-0017:73-74), so an expiry that
    empties the pages would destroy the tabs along with them.
@@ -431,11 +443,14 @@ Rotation therefore needs a new trigger or it leaves the design.
    complete before the reseal, so that the generation left behind is
    already undecryptable when it is unlinked.
 
-2. **Explicit Clear.** The content-side clear gesture does not exist
-   today; the ledger has one
-   (`shell/Sources/CompanionKit/PageModel.swift:1233-1252`, the licence
-   re-grant at `:1245-1249`) and content has none. Section 7 requires it
-   for a second reason, and it is the same gesture.
+2. **Explicit Clear.** The content side now has one, issue #49's
+   discard (`clearUnreadableStateFile`,
+   `shell/Sources/CompanionKit/PageModel.swift:1420-1434`, the licence
+   re-grant through `licencesAfterContentClear` at `:855-859`),
+   mirroring the ledger's
+   (`shell/Sources/CompanionKit/PageModel.swift:1364-1383`, the licence
+   re-grant at `:1376-1380`). Section 7 requires it for a second
+   reason, and it is the same gesture.
 
 `erase_state` must also unlink the file half. Today it zeroes, truncates
 and unlinks only the state file (`crates/ffi/src/persist.rs:790-816`),
@@ -464,16 +479,20 @@ what makes it unconditional.
 
 | Failure | What happens | Citation |
 |---|---|---|
-| Snapshot fails authentication (tampered, truncated, wrong key, superseded magic) | `Opened::Refused`, restore returns false. The file is still on disk when the probe runs, so `grantsSaveLicence(fileExists: true, restored: false)` is false and the session may not write over it. A working page opens; nothing is destroyed. | `crates/ffi/src/persist.rs:594-605`, `:660-699`, `crates/ffi/src/lib.rs:1562`, `shell/Sources/CompanionKit/PageModel.swift:566-578`, `:653-656` |
+| Snapshot fails authentication (tampered, truncated, wrong key, superseded magic) | `Opened::Refused`, restore returns false. The file is still on disk when the probe runs, so `grantsSaveLicence(fileExists: true, restored: false)` is false and the session may not write over it. A working page opens; nothing is destroyed. | `crates/ffi/src/persist.rs:594-605`, `:660-699`, `crates/ffi/src/lib.rs:1562`, `shell/Sources/CompanionKit/PageModel.swift:629-642`, `:721-724` |
 | Snapshot authenticates but the core rejects the payload | `diag_fault` names it as the one refusal that survives a fresh keychain, restore returns false, same licence outcome, file untouched. | `crates/ffi/src/lib.rs:1631-1641` |
 | Key unavailable (locked keychain, denied ACL, changed bundle id or signing identity) | `load_key_for` returns `None`, the file opens as refused, same licence outcome, file untouched. Rotation is not attempted, so nothing is deleted on the way past. Today this holds only for a file this boot session sealed: the boot check runs before the key closure (`crates/ffi/src/persist.rs:724-726`), so an earlier session's file is rotated and erased without the key ever being asked for. Deleting that arm is what makes the row true unconditionally. | `crates/ffi/src/persist.rs:262-282`, `:724-726`, `crates/ffi/src/lib.rs:1558-1562`, `:1289-1312` |
 | `sealed_wall_ms` missing or corrupt | Not separable from the first row: the stamp lives in the associated data. | section 4 |
 
 The cost of that rule is the session: a refusal withholds the content
-licence for the whole run, and nothing in the app clears it. Under
-ADR-0012 that cost ended at the next reboot, because the boot mismatch
-arm dropped the offending file. Under this ADR nothing ever drops it, so
-the withholding lasts until the user finds it.
+licence for the whole run, and the one thing that clears it is the
+user's own discard on the banner the refusal raises
+(`clearUnreadableStateFile`,
+`shell/Sources/CompanionKit/PageModel.swift:1420-1434`). Under ADR-0012
+that cost ended at the next reboot, because the boot mismatch arm
+dropped the offending file. Under this ADR nothing ever drops it
+unbidden, so the withholding lasts until the user acts, and issue #49's
+surfacing is what makes sure they can.
 
 **Decision on a last-known-good generation: not required, and not built.**
 The app cannot produce a torn state file; every write lands whole or not
@@ -486,15 +505,22 @@ copy under a key that is now durable, which is precisely the exposure
 section 8 is already conceding. Refusal is the guarantee; a second copy is
 not.
 
-**Required work,** in place of it:
+**Required work,** in place of it, all landed:
 
 - A content-side Clear that discards the unreadable file and re-grants
-  the licence, mirroring the ledger's Clear-based re-grant
-  (`shell/Sources/CompanionKit/PageModel.swift:1233-1252`, `:767-771`).
-  Without it the withholding is permanent by construction, since nothing
-  else removes the file.
-- Issue #49's surfacing, so the user learns the session is not writing at
-  the moment it stops writing rather than at the moment they lose a week.
+  the licence, mirroring the ledger's Clear-based re-grant: issue #49's
+  discard (`clearUnreadableStateFile`,
+  `shell/Sources/CompanionKit/PageModel.swift:1420-1434`,
+  `licencesAfterContentClear` at `:855-859`). Without it the
+  withholding was permanent by construction, since nothing else removes
+  the file.
+- Issue #49's surfacing, so the user learns the session is not writing
+  at the moment it stops writing rather than at the moment they lose a
+  week: the standing banner with the discard action
+  (`shell/Sources/CompanionKit/PageSurface.swift:94-119`), the header's
+  write-lifecycle word, and the quit warning over a withheld licence
+  with work in the session (`quitOutcome` at PageModel.swift:1071-1085,
+  `shell/Sources/OnetimePad/BackdropApp.swift:121-151`).
 - The superseded-magic disposal path from section 9, so the one-time
   format break does not present as a permanently unwritable install.
 
@@ -673,10 +699,10 @@ unchanged key, and is then refused inside `restore_ledger`
 (`crates/core/src/persist.rs:326-328`). The seam reports that as a failed
 restore (`crates/ffi/src/lib.rs:1858-1864`), the file is still on disk
 when the probe runs, so the ledger licence is withheld for the session
-(`shell/Sources/CompanionKit/PageModel.swift:593-596`), and it is
+(`shell/Sources/CompanionKit/PageModel.swift:657-660`), and it is
 withheld again on every later launch, because nothing removes that file
-except the user's own Clear (`:1233-1252`), which the log line at
-`:597-613` already names as the only way out. Every install carrying a
+except the user's own Clear (`:1364-1383`), which the log line at
+`:662-678` already names as the only way out. Every install carrying a
 ledger file meets this on first launch after the release. So a known
 superseded ledger payload magic is disposed of and the ledger licence
 granted, on the rule this section already sets for the envelope. The

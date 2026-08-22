@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A restore failure and a withheld save are now impossible to miss**
+  (issue #49, ADR-0016 sections 2 and 7). When an existing state file
+  refuses to open at launch, the session still gets its working page,
+  but the surface now says what the log alone used to: a standing
+  banner reports that nothing in this session is being saved, and
+  carries the one recovery action, a discard that deletes the
+  unreadable file, re-grants the save licence and reseals the current
+  session in its place. The unreadable ledger gets its own standing
+  line pointing at the Settings clear that already existed. The header
+  gained a small persistence word, saving, saved or save failed, driven
+  by the write lifecycle itself, and quit now warns in two shapes
+  rather than one: a refused write, as before, and a settled flush over
+  a withheld licence when the session accumulated work since launch,
+  so accepting the loss is always a choice made knowingly. A failed
+  restore still never overwrites the prior file; the discard is the
+  user's instruction, never the app's.
+
 ### Changed
 
 - **A tab outlives every page it holds, so an expiry empties a slot

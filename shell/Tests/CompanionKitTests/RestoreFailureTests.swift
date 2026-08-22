@@ -1,0 +1,218 @@
+import XCTest
+
+@testable import CompanionKit
+
+/// Issue #49 driven whole: a restore that fails over an existing file
+/// raises a standing state the surface can show, the user's discard is
+/// the one way back, and the write lifecycle reports itself. Built on
+/// the same three init seams as the round-trip tests: a temporary state
+/// directory, in-process credentials, a debounce short enough to let
+/// the real timer fire.
+@MainActor
+final class RestoreFailureTests: XCTestCase {
+    private func makeFixture() throws -> (tempDir: URL, defaults: UserDefaults, tag: String) {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("companion-restorefail-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let suiteName = "companion-restorefail-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock {
+            UserDefaults.standard.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+        return (tempDir, defaults, "restorefail-\(UUID().uuidString)")
+    }
+
+    private func makeModel(in tempDir: URL, defaults: UserDefaults, tag: String) -> PageModel {
+        PageModel(
+            formFactor: .panel,
+            defaults: defaults,
+            seams: .init(
+                stateDirectory: tempDir,
+                client: .ephemeral(tag: tag),
+                saveDebounce: 0.05
+            )
+        )
+    }
+
+    private func spinRunLoop(
+        until condition: () -> Bool, timeout: TimeInterval = 5
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+    }
+
+    /// Seal real files into the fixture directory under one credential
+    /// tag, so a model under a different tag meets files it cannot
+    /// open: the shipping shape of a lost or denied key.
+    private func sealFiles(
+        in tempDir: URL, defaults: UserDefaults, tag: String, ink: String
+    ) throws {
+        let stateFile = FormFactor.stateFileURL(in: tempDir)
+        let sealer = makeModel(in: tempDir, defaults: defaults, tag: tag)
+        sealer.loadStateIfNeeded()
+        let sheet = try XCTUnwrap(sealer.selectedPageID)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: ink)]))
+        sealer.applyOps(sheet: sheet, opsJSON: ops)
+        spinRunLoop { FileManager.default.fileExists(atPath: stateFile.path) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stateFile.path))
+    }
+
+    func testAFreshStartRaisesNoStandingState() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        let model = makeModel(in: tempDir, defaults: defaults, tag: tag)
+        model.loadStateIfNeeded()
+        XCTAssertFalse(model.contentRestoreRefused)
+        XCTAssertFalse(model.ledgerRestoreRefused)
+    }
+
+    func testARefusedRestoreRaisesTheStandingState() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")
+
+        // A different credential tag never held the keys, so both files
+        // exist and neither opens: both standing states go up, and they
+        // stay up, because nothing but the user's own gesture clears
+        // them.
+        let stranger = makeModel(
+            in: tempDir, defaults: defaults, tag: "stranger-\(UUID().uuidString)")
+        stranger.loadStateIfNeeded()
+        XCTAssertTrue(stranger.contentRestoreRefused)
+        XCTAssertTrue(stranger.ledgerRestoreRefused)
+    }
+
+    func testTheDiscardTakesTheStateDownAndTheNextSealLands() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        let stateFile = FormFactor.stateFileURL(in: tempDir)
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")
+        let refusedBytes = try Data(contentsOf: stateFile)
+
+        let strangerTag = "stranger-\(UUID().uuidString)"
+        let stranger = makeModel(in: tempDir, defaults: defaults, tag: strangerTag)
+        stranger.loadStateIfNeeded()
+        XCTAssertTrue(stranger.contentRestoreRefused)
+        let sheet = try XCTUnwrap(stranger.selectedPageID)
+        let ink = "the consolation page, kept"
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: ink)]))
+        stranger.applyOps(sheet: sheet, opsJSON: ops)
+
+        // The user's discard: the banner comes down at once, and the
+        // reseal it arms replaces the unreadable file with this
+        // session's own sealed generation inside one debounce.
+        stranger.clearUnreadableStateFile()
+        XCTAssertFalse(stranger.contentRestoreRefused)
+        spinRunLoop {
+            FileManager.default.fileExists(atPath: stateFile.path)
+                && (try? Data(contentsOf: stateFile)) != refusedBytes
+        }
+        XCTAssertNotEqual(
+            try Data(contentsOf: stateFile), refusedBytes,
+            "the discard must end with this session's seal in place of the unreadable file"
+        )
+
+        // The proof the re-granted licence is real: a relaunch under
+        // the discarding session's credentials restores what it typed.
+        let relaunch = makeModel(in: tempDir, defaults: defaults, tag: strangerTag)
+        relaunch.loadStateIfNeeded()
+        XCTAssertFalse(relaunch.contentRestoreRefused)
+        let restored = try XCTUnwrap(relaunch.selectedPageID)
+        XCTAssertEqual(relaunch.storage(for: restored).string, ink)
+    }
+
+    func testTheDiscardIsANoOpForALicensedSession() throws {
+        // The guard the erase hangs off: a session that holds its
+        // licence has no unreadable file to discard, and the gesture
+        // must not drop a file this session can and does write.
+        let (tempDir, defaults, tag) = try makeFixture()
+        let stateFile = FormFactor.stateFileURL(in: tempDir)
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "still mine")
+
+        let owner = makeModel(in: tempDir, defaults: defaults, tag: tag)
+        owner.loadStateIfNeeded()
+        XCTAssertFalse(owner.contentRestoreRefused)
+        owner.clearUnreadableStateFile()
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: stateFile.path),
+            "a licensed session's discard must leave the file alone"
+        )
+    }
+
+    func testClearingTheLedgerTakesItsStandingStateDown() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")
+
+        let stranger = makeModel(
+            in: tempDir, defaults: defaults, tag: "stranger-\(UUID().uuidString)")
+        stranger.loadStateIfNeeded()
+        XCTAssertTrue(stranger.ledgerRestoreRefused)
+        stranger.clearLedger()
+        XCTAssertFalse(stranger.ledgerRestoreRefused)
+        // The content side is untouched by the ledger's gesture.
+        XCTAssertTrue(stranger.contentRestoreRefused)
+    }
+
+    func testTheSaveStatusWalksSavingThenSaved() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        let model = makeModel(in: tempDir, defaults: defaults, tag: tag)
+        model.loadStateIfNeeded()
+        // A fresh start mints a tab, and the mint owes a real write, so
+        // the status is honest about it from launch: saving, then saved
+        // when the debounced write lands.
+        XCTAssertEqual(model.saveStatus, .saving)
+        spinRunLoop { model.saveStatus == .saved }
+        XCTAssertEqual(model.saveStatus, .saved)
+
+        let sheet = try XCTUnwrap(model.selectedPageID)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "a keystroke")]))
+        model.applyOps(sheet: sheet, opsJSON: ops)
+        XCTAssertEqual(
+            model.saveStatus, .saving,
+            "the buffer differs from the file from the mark, not from the timer's far end"
+        )
+
+        spinRunLoop { model.saveStatus == .saved }
+        XCTAssertEqual(model.saveStatus, .saved)
+    }
+
+    func testARestoredUntouchedSessionSaysNothing() throws {
+        // The one shape that genuinely has nothing to say: a restore
+        // that opened the file and a user who has not touched anything
+        // since. No write is owed, so no word shows.
+        let (tempDir, defaults, tag) = try makeFixture()
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "already sealed")
+        let second = makeModel(in: tempDir, defaults: defaults, tag: tag)
+        second.loadStateIfNeeded()
+        XCTAssertEqual(second.saveStatus, .idle)
+    }
+
+    func testTheQuitFlushOverAWithheldLicenceNamesTheLoss() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")
+
+        let stranger = makeModel(
+            in: tempDir, defaults: defaults, tag: "stranger-\(UUID().uuidString)")
+        stranger.loadStateIfNeeded()
+        let sheet = try XCTUnwrap(stranger.selectedPageID)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "typed into the void")]))
+        stranger.applyOps(sheet: sheet, opsJSON: ops)
+
+        // The flush settles, because the withheld legs owe nothing, but
+        // the session holds content that was never written: the quit
+        // path must repeat the banner's warning rather than quit
+        // silently.
+        XCTAssertEqual(stranger.saveStateForQuit(), .unsavableWithContent)
+    }
+
+    func testTheQuitFlushOverAnEmptyUnlicensedSessionQuitsSilently() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")
+
+        let stranger = makeModel(
+            in: tempDir, defaults: defaults, tag: "stranger-\(UUID().uuidString)")
+        stranger.loadStateIfNeeded()
+        // Nothing typed: nothing to lose, so no warning.
+        XCTAssertEqual(stranger.saveStateForQuit(), .settled)
+    }
+}

@@ -124,7 +124,8 @@ final class PersistenceRoundTripTests: XCTestCase {
 
         let stranger = makeModel(in: tempDir, defaults: defaults, tag: "stranger-\(UUID().uuidString)")
         stranger.loadStateIfNeeded()
-        // The refusal is quiet by design: a working page appears, but
+        // The refusal keeps the session usable: a working page appears
+        // (with the issue #49 standing state raised over it), but
         // nothing this session does may rewrite the file it could not
         // read, so the ciphertext on disk stays byte for byte what the
         // first session sealed.

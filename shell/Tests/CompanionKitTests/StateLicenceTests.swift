@@ -113,6 +113,87 @@ final class StateLicenceTests: XCTestCase {
     }
 }
 
+/// The content-side discard (ADR-0016 section 7, issue #49): the mirror
+/// of the ledger's Clear-based re-grant, and the one way back from a
+/// withheld content licence.
+final class ContentClearTests: XCTestCase {
+    func testTheDiscardRegrantsTheContentLicenceUnconditionally() {
+        // The whole point: withheld in, granted out. The user asked for
+        // the unreadable file to go, so the reason for withholding goes
+        // with it.
+        let after = PageModel.licencesAfterContentClear(content: false, ledger: true)
+        XCTAssertTrue(after.content)
+        XCTAssertTrue(after.ledger)
+    }
+
+    func testTheLedgerLicencePassesThroughUntouched() {
+        // A different file under a different key that the gesture did
+        // not ask about: a withheld ledger stays withheld through a
+        // content discard, in both directions.
+        XCTAssertFalse(PageModel.licencesAfterContentClear(content: false, ledger: false).ledger)
+        XCTAssertTrue(PageModel.licencesAfterContentClear(content: true, ledger: true).ledger)
+    }
+}
+
+/// The quit alert's truth table (issue #49): which flush outcomes warn,
+/// and with which story.
+final class QuitOutcomeTests: XCTestCase {
+    func testARefusedWriteIsTheLoudestOutcomeRegardlessOfLicence() {
+        // Pages that were supposed to land did not; the licence's state
+        // is beside the point.
+        XCTAssertEqual(
+            PageModel.quitOutcome(
+                settled: false, contentLicence: true, loaded: true, mutatedSinceLoad: true),
+            .refused
+        )
+        XCTAssertEqual(
+            PageModel.quitOutcome(
+                settled: false, contentLicence: false, loaded: true, mutatedSinceLoad: false),
+            .refused
+        )
+    }
+
+    func testAWithheldLicenceOverRealContentRepeatsTheWarning() {
+        // The flush settled because the withheld leg owes nothing, but
+        // the session holds content that was never written. This is the
+        // case the banner has been standing for, repeated at the last
+        // moment it can still change the outcome.
+        XCTAssertEqual(
+            PageModel.quitOutcome(
+                settled: true, contentLicence: false, loaded: true, mutatedSinceLoad: true),
+            .unsavableWithContent
+        )
+    }
+
+    func testAWithheldLicenceOverAnEmptySessionQuitsSilently() {
+        // Nothing typed, nothing lost: warning here would teach the
+        // user to click through the one alert that matters.
+        XCTAssertEqual(
+            PageModel.quitOutcome(
+                settled: true, contentLicence: false, loaded: true, mutatedSinceLoad: false),
+            .settled
+        )
+    }
+
+    func testALicensedSettledFlushQuitsSilently() {
+        XCTAssertEqual(
+            PageModel.quitOutcome(
+                settled: true, contentLicence: true, loaded: true, mutatedSinceLoad: true),
+            .settled
+        )
+    }
+
+    func testASessionThatNeverLoadedQuitsSilently() {
+        // No restore ran, so no licence was ever withheld; there is
+        // nothing the warning could be about.
+        XCTAssertEqual(
+            PageModel.quitOutcome(
+                settled: true, contentLicence: false, loaded: false, mutatedSinceLoad: true),
+            .settled
+        )
+    }
+}
+
 /// The two licences are independent, and the write path must treat them
 /// that way: the files are sealed under two keys, fail for two reasons
 /// and have two lifetimes, so neither one's refusal may silence the

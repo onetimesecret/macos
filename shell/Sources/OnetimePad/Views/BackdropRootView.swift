@@ -187,6 +187,14 @@ struct BackdropRootView: View {
                     .help("Capture exclusion is OFF: this surface shows up in screenshots and screen sharing")
                     .accessibilityLabel(Text("Screenshots allowed"))
             }
+            // Whether the session's edits are on disk (issue #49):
+            // quiet words in the header rather than a symbol, since the
+            // difference between saving, saved and failed is exactly
+            // what a glyph would blur. Nothing shows before the first
+            // owed write; a withheld licence shows its own standing
+            // state instead, because "saved" would then describe the
+            // ledger leg while the pages go nowhere.
+            saveIndicator
             // A countdown belongs to a page, so a slot holding none
             // shows no label: there is nothing counting down, and the
             // rung it keeps for its next page is not a deadline
@@ -210,6 +218,45 @@ struct BackdropRootView: View {
         .simultaneousGesture(
             TapGesture(count: 2).onEnded { if raised { model.toggleZoom() } }
         )
+    }
+
+    /// The header's persistence word. Ember for the two states that
+    /// need acting on, quiet secondary text for the two that do not,
+    /// and absent entirely until a write is owed, matching the
+    /// surface's rule that a line appears only when it has something
+    /// to say.
+    @ViewBuilder
+    private var saveIndicator: some View {
+        if pages.contentRestoreRefused {
+            Text("not saving")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(Color.ember)
+                .help("The existing state file would not open, so this session is not being saved. The page shows the recovery.")
+                .accessibilityLabel(Text("This session is not being saved"))
+        } else {
+            switch pages.saveStatus {
+            case .idle:
+                EmptyView()
+            case .saving:
+                Text("saving")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .help("Edits are waiting on the deferred write")
+                    .accessibilityLabel(Text("Saving"))
+            case .saved:
+                Text("saved")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .help("The sealed state file matches this session")
+                    .accessibilityLabel(Text("Saved"))
+            case .failed:
+                Text("save failed")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(Color.ember)
+                    .help("The last write was refused; the app keeps retrying. Quitting now will warn before any loss.")
+                    .accessibilityLabel(Text("Save failed, retrying"))
+            }
+        }
     }
 
     /// The resting altitude, as a real `Toggle` so VoiceOver announces

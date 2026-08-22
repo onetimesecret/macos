@@ -97,11 +97,11 @@ in `SUPERSEDED_MAGICS`, never on a key failure
   (...)" (`crates/ffi/src/persist.rs:278`).
 - The shell then logs "restore failed over an existing state file;
   withholding the save licence"
-  (`shell/Sources/CompanionKit/PageModel.swift:552`).
+  (`shell/Sources/CompanionKit/PageModel.swift:615`).
 - `state.sealed` is still present and its sha256 is **identical** to
   step 2, including after the typing and the quit: a session without the
   licence never rewrites the file
-  (`shell/Sources/CompanionKit/PageModel.swift:808-813`).
+  (`shell/Sources/CompanionKit/PageModel.swift:896-907`).
 - The `ots-companion-key-half-<32 hex>` file is still present and
   unchanged, and the `state-key` keychain item still exists. Nothing
   rotated: rotation has two triggers and a refusal is neither

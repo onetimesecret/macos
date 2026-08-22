@@ -48,8 +48,8 @@ named `STATE_FILE_NAME` in `crates/ffi/src/persist.rs:901`),
 The core's refusals reach the unified log through the shell's sink,
 subsystem equal to the bundle id, category `core`
 (`shell/Sources/CompanionKit/CoreDiagnostics.swift:57`,
-`shell/Sources/CompanionKit/PageModel.swift:457`); the shell's own
-persistence lines use category `persistence` (`PageModel.swift:466`).
+`shell/Sources/CompanionKit/PageModel.swift:511`); the shell's own
+persistence lines use category `persistence` (`PageModel.swift:520`).
 Watch both:
 
 ```sh
@@ -74,7 +74,7 @@ After the fact, the same predicate under
 **Pass:** all three pages are back with their chips. Each countdown is
 shorter by roughly the wall clock time the machine was away, and by no
 more than that. No line in the log says the restore failed
-(`PageModel.swift:552`, "restore failed over an existing state file;
+(`PageModel.swift:615`, "restore failed over an existing state file;
 withholding the save licence"), and no `companion-ffi:` fault appears.
 `state.sealed` and the same file half are still in the state directory,
 and the half's name is unchanged, because nothing rotated.
@@ -106,7 +106,7 @@ erases (`crates/ffi/src/lib.rs:1479-1480`, `crates/ffi/src/persist.rs:355-370`,
    the prompt is the ACL working, not a failure.
 3. Close every page so no tab holds a page.
 4. Quit with ⌘Q, so the quit flush runs
-   (`shell/Sources/OnetimePad/BackdropApp.swift:121-133`).
+   (`shell/Sources/OnetimePad/BackdropApp.swift:121-151`).
 5. `ls -la "$STATE"` again.
 
    **Pass at this point:** `state.sealed` is gone, no
@@ -143,7 +143,7 @@ hold reaches the countdown (ADR-0016 section 4).
 
 1. With a live pad, double click a tab to hold that page's clock at 1h
    (`shell/Sources/CompanionKit/TabStripView.swift:189`,
-   `shell/Sources/CompanionKit/PageModel.swift:1312`). The tab shows
+   `shell/Sources/CompanionKit/PageModel.swift:1485`). The tab shows
    the ⏸1h marking.
 2. Note the held page's frozen remaining time and a second, unheld
    page's remaining time.
