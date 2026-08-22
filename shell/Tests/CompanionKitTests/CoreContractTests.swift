@@ -233,6 +233,22 @@ final class CoreContractTests: XCTestCase {
 
         // A tab that never existed refuses.
         XCTAssertFalse(client.setTitle(tab: 424_242, "nowhere"))
+
+        // And the half the name promises: the page dies and the name
+        // stays. Age past the longest rung and settle the clock through
+        // the call the shell's armed timer makes, which re-mints both id
+        // counters, so the tab is read back from the strip afterwards.
+        XCTAssertTrue(client.setTitle(tab: tabID, "incident 4471"))
+        XCTAssertTrue(client.ageForTests(byMs: 8 * 24 * 60 * 60 * 1_000))
+        XCTAssertEqual(client.expireDue(), 1)
+        let survivor = try XCTUnwrap(client.tabs().first)
+        XCTAssertFalse(survivor.hasPage, "the page expired")
+        XCTAssertNil(survivor.pageID)
+        XCTAssertEqual(survivor.title, "incident 4471", "the name outlived the page")
+        // Clearing it now falls the label to the tab's own stamp rather
+        // than to a page that is no longer there.
+        XCTAssertTrue(client.setTitle(tab: survivor.id, ""))
+        XCTAssertNotEqual(client.tabs().first?.title, "deploy friday")
     }
 
     func testClearingTheLedgerEmptiesIt() {
