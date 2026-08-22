@@ -120,8 +120,8 @@ CompanionHandle *companion_new_ephemeral(const char *tag);
  * after a night away ages them: the store is snapshotted at one wall
  * reading and restored at a later one, which is the same arithmetic the
  * restore does and the only one that moves a countdown without waiting
- * for it. Nothing expires here — the caller follows with
- * companion_expire_due(), as the shell's armed timer does — and both id
+ * for it. Nothing expires here, the caller follows with
+ * companion_expire_due(), as the shell's armed timer does, and both id
  * counters are re-minted densely as at any restore, so the caller reads
  * ids back from the summaries afterwards. A test seam for the states on
  * the far side of a countdown: a tab standing empty, a slot reused by a
@@ -152,7 +152,7 @@ void companion_free(CompanionHandle *handle);
 /*
  * A new tab at the end of the strip, holding a new page on the default
  * rung with its countdown running. Returns the TAB's id, or 0 when the
- * store refused at the cap of 9 — the keyboard wall; the app declines
+ * store refused at the cap of 9, the keyboard wall; the app declines
  * the tenth and says so (0 is never a valid id).
  */
 uint64_t companion_tab_new(CompanionHandle *handle);
@@ -214,21 +214,21 @@ bool companion_tab_set_title(CompanionHandle *handle, uint64_t tab,
  * JSON array of non-secret tab summaries, in visible (strip) order: one
  * entry per slot, whether or not it holds a page. Free with
  * companion_string_free(). Fields per tab:
- *   id (the TAB's id — what the selection and the keyboard address),
- *   has_page (bool — false is a slot whose page expired or was never
+ *   id (the TAB's id, what the selection and the keyboard address),
+ *   has_page (bool, false is a slot whose page expired or was never
  *     opened; every clock field below is meaningless then, and the
  *     strip draws the dashed empty treatment instead of a gauge),
- *   page_id (the PAGE's id, or null when has_page is false — what the
+ *   page_id (the PAGE's id, or null when has_page is false, what the
  *     sealing and document routes address, and what a shell-side
  *     storage map is keyed by),
  *   title (the tab's label, resolved three ways: the name the user
  *     typed; else the live page's derived title, its first non-empty
  *     ink line with markdown stripped, capped at 80 characters; else
  *     "MMDD-HHmm" from the TAB's creation stamp in LOCAL time),
- *   rung_code (CompanionRung), rung_label ("8h") — both the tab's,
+ *   rung_code (CompanionRung), rung_label ("8h"), both the tab's,
  *   remaining_ms, remaining_label ("3h 40m"), spoken_remaining ("about
- *     3 hours remaining" — the VoiceOver value), fraction_remaining
- *     (0.0..1.0), paused (bool), hold_topped_up (bool — the hold is
+ *     3 hours remaining", the VoiceOver value), fraction_remaining
+ *     (0.0..1.0), paused (bool), hold_topped_up (bool, the hold is
  *     already at its 24 hour ceiling, so the next pause press releases
  *     it), hold_remaining_ms, chip_count, last_hour (bool).
  */
@@ -454,7 +454,7 @@ int64_t companion_next_event_ms(CompanionHandle *handle);
 uint64_t companion_expire_due(CompanionHandle *handle);
 
 /* Cycle a TAB's countdown one rung SHORTER (clock reset to the full
- * rung — each click resets the clock). The ladder tapers, 7d -> 3d ->
+ * rung, each click resets the clock). The ladder tapers, 7d -> 3d ->
  * 24h -> 8h -> 3h -> 1h, and wraps back to 7d at the bottom, so the
  * most precarious rung is five clicks away rather than one. Returns the
  * new code, or -1 if the tab is gone. A tab holding no page takes the

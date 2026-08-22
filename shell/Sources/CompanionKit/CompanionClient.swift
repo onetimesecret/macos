@@ -8,8 +8,8 @@ import CompanionCore
 // graduation. Everything here is a window onto the core, never logic.
 // Logic that would need adding twice belongs in the core once.
 
-/// A non-secret snapshot of one tab — a durable slot on the strip,
-/// holding at most one perishable page of ink and sealed chips —
+/// A non-secret snapshot of one tab, a durable slot on the strip,
+/// holding at most one perishable page of ink and sealed chips, 
 /// decoded from the core's JSON (see crates/ffi/include/companion_ffi.h
 /// for the field contract). There is deliberately no content field of
 /// any kind: sealed bytes have no display form at all (the boundary
@@ -308,10 +308,10 @@ public final class CompanionClient: @unchecked Sendable {
         companion_free(handle)
     }
 
-    // MARK: Tabs — the durable slots
+    // MARK: Tabs, the durable slots
 
     /// A new tab at the end of the strip, holding a new page; 0 means
-    /// the store refused at the cap of 9 (refuse-don't-evict — say so).
+    /// the store refused at the cap of 9 (refuse-don't-evict, say so).
     /// The id is the TAB's: it is what the selection keeps afterwards.
     @discardableResult
     public func newTab() -> UInt64 {
@@ -321,7 +321,7 @@ public final class CompanionClient: @unchecked Sendable {
     /// Mint a page into a tab that holds none, at that tab's rung. 0
     /// means an unknown tab or one that already holds a page. This is
     /// the route every deliberate mint into an existing slot takes: a
-    /// click on the tab, ⌘1–⌘9, ⌥⌘←/→, and the Return grant. Nothing
+    /// click on the tab, ⌘1 to ⌘9, ⌥⌘←/→, and the Return grant. Nothing
     /// else may call it, and expiry above all: a countdown that ran out
     /// overnight must leave an empty tab rather than start a fresh one
     /// on nothing.
@@ -357,7 +357,7 @@ public final class CompanionClient: @unchecked Sendable {
     /// menu). Empty or all-whitespace clears the name and lets the
     /// label fall back to the live page's derived title and then to the
     /// tab's own creation stamp; anything else is trimmed, capped at 80
-    /// characters, and sticks from then on — through every edit, and
+    /// characters, and sticks from then on, through every edit, and
     /// through the death of the page it was typed over. Returns whether
     /// the tab existed.
     @discardableResult
@@ -532,7 +532,7 @@ public final class CompanionClient: @unchecked Sendable {
     }
 
     /// Double-click the tab: hold 1h, top up to 24h from now, then
-    /// release — the countdown resumes where it froze. False for a slot
+    /// release, the countdown resumes where it froze. False for a slot
     /// with no page in it, which has no clock to hold.
     @discardableResult
     public func pausePress(tab: UInt64) -> Bool {

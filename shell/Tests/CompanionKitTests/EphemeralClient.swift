@@ -33,8 +33,8 @@ extension CompanionClient {
     /// counters are re-minted densely as at any restore, so read ids
     /// back from `tabs()` afterwards.
     ///
-    /// It is here because the states ADR-0017 describes — a tab
-    /// standing empty, a slot reused by a second page — are on the far
+    /// It is here because the states ADR-0017 describes, a tab
+    /// standing empty, a slot reused by a second page, are on the far
     /// side of a countdown, and the shortest rung is an hour.
     @discardableResult
     func ageForTests(byMs ms: UInt64) -> Bool {

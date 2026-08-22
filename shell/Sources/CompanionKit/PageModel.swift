@@ -213,7 +213,7 @@ public final class PageModel: ObservableObject {
     /// keeps its place here, named and empty.
     @Published public private(set) var tabs: [TabSummary] = []
 
-    /// The visibly selected **tab** — the slot the editor shows a page
+    /// The visibly selected **tab**, the slot the editor shows a page
     /// from and the gestures act on. It is the tab's id and never the
     /// page's, because a slot the user is looking at may hold nothing.
     /// Nil only when no tabs exist.
@@ -361,7 +361,7 @@ public final class PageModel: ObservableObject {
     /// correctness trap. A tab outlives every page it holds, so a map
     /// keyed by the slot would hand a replacement page the dead one's
     /// storage, and an attachment character for a zeroized chip would
-    /// sit there within reach of ⌘Z — the exact resurrection ADR-0009
+    /// sit there within reach of ⌘Z, the exact resurrection ADR-0009
     /// closed.
     private var storages: [UInt64: NSTextStorage] = [:]
 
@@ -1148,7 +1148,7 @@ public final class PageModel: ObservableObject {
         if leavingLedger { refocusEditorIfKeyed() }
     }
 
-    /// ⌘1–⌘9: jump by visible tab order. The index is into the strip,
+    /// ⌘1 to ⌘9: jump by visible tab order. The index is into the strip,
     /// so ⌘3 means the third slot whether or not it holds a page, and
     /// it means the same slot next week.
     public func select(index: Int) {
@@ -1351,7 +1351,7 @@ public final class PageModel: ObservableObject {
             // and never frees it, so closing is the only thing that
             // moves the wall (ADR-0017). Saying otherwise would send
             // the user off to wait for something that cannot happen.
-            flash("the window holds 9 tabs — close one to make room")
+            flash("the window holds 9 tabs, close one to make room")
         }
         refresh()
         if created != 0 {
@@ -1417,7 +1417,7 @@ public final class PageModel: ObservableObject {
     /// It follows the selection and not the strip (ADR-0017 item 11): a
     /// selected empty tab offers the create surface while another tab
     /// holds a page, because that is the surface the user is actually
-    /// looking at. Neither store-wide predicate belongs here — both are
+    /// looking at. Neither store-wide predicate belongs here, both are
     /// about the whole pad, and feeding either one in would hide the
     /// create surface at exactly the moment a user is looking at an
     /// empty tab. A strip with no tabs at all also holds no page in the
@@ -1437,7 +1437,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// Close the tab; whatever page it held rests in the ledger.
-    /// Closing also clears any standing refusal — the cap condition it
+    /// Closing also clears any standing refusal, the cap condition it
     /// named may be resolved. Explicit close is one of the two things
     /// that end a tab (ADR-0017), and it takes the slot with the page.
     public func close(_ id: UInt64) {
@@ -1581,8 +1581,8 @@ public final class PageModel: ObservableObject {
     /// An empty or all-whitespace submission clears the name and lets
     /// the label fall back to the live page's derived title, which is
     /// the core's contract. The name is durable state on the tab and it
-    /// is what every future ledger record freezes — for this page and
-    /// for every page the slot goes on to hold — so a rename is a
+    /// is what every future ledger record freezes, for this page and
+    /// for every page the slot goes on to hold, so a rename is a
     /// mutation like any other.
     public func renameTab(_ id: UInt64, to title: String) {
         guard client.setTitle(tab: id, title) else { return }

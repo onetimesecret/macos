@@ -327,8 +327,8 @@ pub unsafe extern "C" fn companion_new_ephemeral(tag: *const c_char) -> *mut Com
 /// countdown without waiting for it. Returns whether the store read
 /// back its own snapshot.
 ///
-/// It exists because the states ADR-0017 is about — a tab standing
-/// empty, a slot reused by a second page — are on the far side of a
+/// It exists because the states ADR-0017 is about, a tab standing
+/// empty, a slot reused by a second page, are on the far side of a
 /// countdown, and a suite that cannot cross that boundary can only
 /// assert the code it can reach. Nothing is expired here: the caller
 /// follows with [`companion_expire_due`], exactly as the shell's armed
@@ -406,7 +406,7 @@ pub unsafe extern "C" fn companion_free(handle: *mut CompanionHandle) {
 
 /// A new tab at the end of the strip, holding a new page on the
 /// default rung with its countdown started. Returns the **tab** id, or
-/// `0` when the store refused — the cap is 9, the keyboard wall, and at
+/// `0` when the store refused, the cap is 9, the keyboard wall, and at
 /// the wall the app declines the tenth and says so (refuse-don't-evict,
 /// doc 04). `0` is never a valid id.
 ///
@@ -433,7 +433,7 @@ pub unsafe extern "C" fn companion_tab_new(handle: *mut CompanionHandle) -> u64 
 
 /// Mint a page into a tab that holds none, at **that tab's** rung.
 /// Returns the new page's id, or `0` for an unknown tab and for one
-/// that already holds a page — a tab holds at most one page, and
+/// that already holds a page, a tab holds at most one page, and
 /// replacing a live one here would drop a page nobody closed.
 ///
 /// This is the route every deliberate mint into an existing slot takes:
