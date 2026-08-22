@@ -293,6 +293,35 @@ impl<C: Clock> SheetStore<C> {
         true
     }
 
+    /// Discard the page a slot holds and leave the slot standing: the
+    /// sealed bytes are zeroized on the way out, the ledger keeps one
+    /// `Discarded` record, and the tab keeps its name, its rung, its
+    /// position and its place in the ⌘-number map. Returns whether a
+    /// page by that id was standing.
+    ///
+    /// Page addressed, and that is the whole point of it. Closing is
+    /// the slot's gesture and it is one of the two things that end a
+    /// tab (ADR-0017); a gesture that names the content rather than
+    /// the slot must not spend the arrangement the user built. The
+    /// burn offered after a promotion is the caller this exists for:
+    /// the content travelled, so the local copy may go, and the tab it
+    /// travelled from is left the way an expiry leaves one.
+    pub fn discard_page(&mut self, id: SheetId) -> bool {
+        let offset = self.clock.local_offset_seconds();
+        // The label is taken while the page is still standing, so the
+        // record carries the name the strip was showing rather than the
+        // one it falls back to a line later, exactly as `expire_due`
+        // takes it.
+        let Some((page, label)) = self.tab_of_mut(id).and_then(|tab| {
+            let label = tab.label(offset);
+            tab.page.take().map(|page| (page, label))
+        }) else {
+            return false;
+        };
+        self.entomb(page, label, LedgerEvent::Discarded);
+        true
+    }
+
     /// Move a tab to `index` in the visible order (drag-to-reorder;
     /// the ⌘-number map follows). Out-of-range indices clamp to the
     /// end. Returns whether the tab existed.
@@ -1771,6 +1800,48 @@ mod tests {
         let record = store.ledger().next().unwrap();
         assert_eq!(record.event(), LedgerEvent::Expired);
         assert_eq!(record.title(), "payroll");
+    }
+
+    #[test]
+    fn discarding_a_page_leaves_its_tab_the_way_an_expiry_would() {
+        let (mut store, _) = store();
+        let first = store.new_tab().unwrap().1;
+        let promoted = store.new_tab().unwrap().1;
+        let tab = slot(&store, promoted);
+        assert!(store.set_title(tab, "payroll"));
+        store.set_rung(tab, Ttl::MIN).unwrap();
+        assert!(store.sync_document(promoted, vec![Segment::Ink("the link travelled".into())]));
+
+        assert!(store.discard_page(promoted));
+
+        // The slot survives the burn: this is the gesture that names
+        // content, and only a close and the cap end a tab.
+        let tabs: Vec<&Tab> = store.tabs().collect();
+        assert_eq!(tabs.len(), 2, "the strip kept its width");
+        assert_eq!(tabs[0].page().map(Sheet::id), Some(first), "and its order");
+        assert!(tabs[1].page().is_none(), "the page is gone");
+        assert_eq!(tabs[1].id(), tab, "the slot is the same slot");
+        assert_eq!(tabs[1].name(), Some("payroll"), "with its name");
+        assert_eq!(tabs[1].rung(), Ttl::MIN, "and its rung");
+        assert!(store.sheet(promoted).is_none());
+
+        // One death record, carrying the label the strip was showing.
+        let record = store.ledger().next().unwrap();
+        assert_eq!(record.event(), LedgerEvent::Discarded);
+        assert_eq!(record.title(), "payroll");
+
+        // A page that is no longer standing refuses, twice over: the
+        // one just discarded, and one that never existed.
+        assert!(!store.discard_page(promoted), "already gone");
+        assert!(!store.discard_page(SheetId::from_raw(999)), "no such page");
+
+        // The slot takes another page at the rung it kept.
+        let replacement = store.open_page(tab).expect("the slot is free");
+        let now = store.now();
+        assert_eq!(
+            store.sheet(replacement).unwrap().remaining(now),
+            Ttl::MIN.duration()
+        );
     }
 
     #[test]
