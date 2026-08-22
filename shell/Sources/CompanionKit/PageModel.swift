@@ -725,13 +725,17 @@ public final class PageModel: ObservableObject {
     /// independent tests.
     ///
     /// Rotating on the state rather than on the transition into it is
-    /// deliberate. A second rotation while the pad is still empty costs
-    /// a keychain item and another generation of tab names, and it is
-    /// another forgetting rather than a leak; a latch that remembered
-    /// whether the last write had already rotated would be a second
-    /// source of truth about what is on disk, and it would be wrong in
-    /// exactly the case that matters, a write that failed after the
-    /// rotation landed.
+    /// deliberate, and its price is per write, not per emptying: every
+    /// save that runs while the pad stays empty rotates again, so a
+    /// persistently failing ledger write that rearms the retry every
+    /// ten seconds spends a keychain write and a generation of tab
+    /// names on each attempt. Each of those is another forgetting
+    /// rather than a leak, which is why the price is paid; a latch
+    /// that remembered whether the last write had already rotated
+    /// would be a second source of truth about what is on disk, and it
+    /// would be wrong in exactly the case that matters, a write that
+    /// failed after the rotation landed. ADR-0016 section 6 records
+    /// the choice.
     public nonisolated static func rotatesContentKey(
         loaded: Bool, contentLicence: Bool, holdsNoPage: Bool, noTabsRemain: Bool
     ) -> Bool {

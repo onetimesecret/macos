@@ -385,20 +385,35 @@ Rotation therefore needs a new trigger or it leaves the design.
    order, and a tab survives its page (ADR-0017:73-74), so an expiry that
    empties the pages would destroy the tabs along with them.
 
-   So on the transition to no tab holding a page, both halves rotate and
-   the surviving tab metadata is resealed under the new halves. A rotate
-   plus a reseal, not a drop. That is what keeps the forgetting claim
-   true: every prior ciphertext generation, including the unlinked ones,
-   becomes undecryptable at the moment the pad holds no content. Rotation
-   deletes the keychain half, which is the sufficient deletion because
-   the file half's name and its use both derive from it
-   (`crates/ffi/src/persist.rs:451-464` for the name,
-   `:419-426` for the use; the delete itself is at `:363-371`). It does nothing to
-   a keychain half an attacker copied earlier, and it unlinks rather than
-   erases the file half's blocks. Dropping the file while leaving both
-   halves alive is what let the old design reuse a key across boots
-   (`crates/ffi/src/persist.rs:244-257`), which is why the rotation and
-   not the deletion is the mechanism.
+   So while no tab holds a page, the write of the sealed file rotates
+   both halves and reseals the surviving tab metadata under the new
+   ones. A rotate plus a reseal, not a drop. That is what keeps the
+   forgetting claim true: every prior ciphertext generation, including
+   the unlinked ones, becomes undecryptable at the moment the pad holds
+   no content. As built, the sufficient deletion is the file half's:
+   rotation erases every file half in the state directory with the same
+   zero, truncate, sync and unlink the ciphertext gets, without reading
+   the keychain, and the answer it reports rests on that erasure alone
+   (`rotate_key_halves` and `erase_file_halves` in
+   `crates/ffi/src/persist.rs`). The keychain half is then deleted for
+   hygiene, announced but never decisive. Neither step does anything to
+   a half an attacker copied earlier. Dropping the file while leaving
+   both halves alive is what let the old design reuse a key across
+   boots, which is why the rotation and not the deletion is the
+   mechanism.
+
+   **On the state, not the transition.** The shell asks "does the pad
+   hold no page right now" on every save, never "did it just become
+   so" (`PageModel.rotatesContentKey`). A latch that remembered whether
+   the last write had already rotated would be a second source of truth
+   about what is on disk, and it would be wrong in exactly the case
+   that matters, a write that failed after the rotation landed. The
+   price is per write rather than per emptying: every save that runs
+   while the pad stays empty rotates again, so a persistently failing
+   ledger write that rearms the ten second retry spends a keychain
+   write and a generation of tab names on each attempt. Each repeat is
+   another forgetting rather than a leak, which is why the price is
+   accepted.
 
    The file is dropped outright, as today, only when no tabs remain at
    all.
