@@ -79,8 +79,8 @@ use ots_client::Transport as _;
 use promotion::{Connection, PromoteOpts, Promoted, ladder_snapped_ttl, promote};
 
 use companion_core::{
-    ChipId, ChipMeta, DestinationClass, EditOp, LedgerEvent, Segment, Sheet, SheetId, SheetStore,
-    SizeClass, SystemClock, TTL_LADDER, Tab, Ttl,
+    ChipId, ChipMeta, DestinationClass, EditOp, LedgerEvent, RestoreError, Segment, Sheet, SheetId,
+    SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, Ttl,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -1559,7 +1559,31 @@ pub unsafe extern "C" fn companion_ledger_save(
 /// Meant for startup, beside [`companion_persist_restore`] and
 /// independent of it. Returns whether a ledger was restored. False
 /// covers "no file yet" (a fresh start, not an error) as well as a
-/// missing key, failed authentication, or a damaged snapshot.
+/// missing key, failed authentication, a damaged snapshot, and a
+/// superseded payload just disposed of.
+///
+/// **The one destructive arm here is the ledger's own superseded
+/// payload**, the sibling of [`companion_persist_restore`]'s
+/// `Superseded` arm one layer down (ADR-0016 section 9). The envelope
+/// and the ledger key did not change at the break, so an `OTSLEDR1`
+/// file authenticates and opens like a current one and is refused only
+/// inside the core, which names it [`RestoreError::Superseded`] for
+/// exactly this caller. Left on disk it would withhold the ledger
+/// licence on this launch and every later one, with the user's Clear
+/// the only way out. So it is erased with [`persist::erase_state`]'s
+/// discipline and this returns false; the shell's probe then finds no
+/// file and grants the licence. The ledger key is not rotated: the file
+/// was authentic under it, Clear does not rotate it either, and a
+/// rotation at launch is the Keychain prompt ADR-0004 forbids. Nothing
+/// is written to the ledger about the records dropped: there is no
+/// reader for them. Every other refusal leaves the file exactly where
+/// it is.
+///
+/// This arm is narrower than the envelope's, not wider. The payload
+/// magic sits inside the ciphertext, so there is no one-bit header flip
+/// that turns a refusal into a disposal here: a file reaches this arm
+/// only if it authenticates under the real ledger key, and anyone
+/// holding that key could have unlinked the file instead.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid NUL-terminated
@@ -1590,7 +1614,21 @@ pub unsafe extern "C" fn companion_ledger_restore(
     let Some(wall_ms) = wall_now_ms() else {
         return false;
     };
-    guard.store.restore_ledger(&plaintext, wall_ms).is_ok()
+    match guard.store.restore_ledger(&plaintext, wall_ms) {
+        Ok(_) => true,
+        Err(RestoreError::Superseded) => {
+            diag_fault!(
+                "companion-ffi: the ledger file opened but carries a payload version this build                  has replaced. Nothing in it can be read, so it is being dropped and this                  session will start a new trail. The retained history under it is gone."
+            );
+            if !persist::erase_state(Path::new(path)) {
+                diag_fault!(
+                    "companion-ffi: a ledger file from a superseded format could not be dropped.                      It will keep this app from recording to the audit trail until it is                      removed."
+                );
+            }
+            false
+        }
+        Err(_) => false,
+    }
 }
 
 /// Unix epoch milliseconds, for stamping and aging snapshots.
@@ -3683,6 +3721,85 @@ mod tests {
             let third = handle_with(Arc::clone(&credentials));
             assert!(companion_persist_restore(third, c_path.as_ptr()));
             companion_free(third);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The ledger's own superseded payload, one layer down from the
+    /// envelope: `OTSLEDR1` opens under the unchanged ledger envelope and
+    /// key and is refused only inside the core, so without this arm the
+    /// file would sit there withholding the ledger licence on every
+    /// launch (ADR-0016 section 9). It is disposed of, the key is left
+    /// alone, and the session that follows records a fresh trail. A
+    /// payload version this app never wrote is refused and left exactly
+    /// where it is.
+    #[test]
+    fn a_superseded_ledger_payload_is_dropped_so_the_session_can_record() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("ledger.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        // Re-seal the ledger this session wrote with its payload magic
+        // rewritten, under the real key, so the envelope authenticates
+        // and the refusal is the core's.
+        let resealed_with_payload_magic = |magic: &[u8; 8]| {
+            let key = persist::load_ledger_key(credentials.as_ref()).unwrap();
+            let file = std::fs::read(&path).unwrap();
+            let mut plaintext = persist::open_ledger(&key, &file).unwrap().to_vec();
+            plaintext[..8].copy_from_slice(magic);
+            std::fs::write(&path, persist::seal_ledger(&key, &plaintext).unwrap()).unwrap();
+        };
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            // A birth is a ledger record, so the file has something in it.
+            let _ = companion_sheet_new(first);
+            assert!(companion_ledger_save(first, c_path.as_ptr()));
+            companion_free(first);
+
+            // A payload version this app never wrote: refused, file kept.
+            resealed_with_payload_magic(b"OTSLEDR0");
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(!companion_ledger_restore(second, c_path.as_ptr()));
+            assert!(
+                path.exists(),
+                "an unknown ledger payload was dropped; only a superseded one may be"
+            );
+            assert_eq!(take_json(companion_ledger_json(second)), "[]");
+            companion_free(second);
+
+            // The version this app did write and has replaced: dropped.
+            resealed_with_payload_magic(b"OTSLEDR1");
+            let third = handle_with(Arc::clone(&credentials));
+            assert!(
+                !companion_ledger_restore(third, c_path.as_ptr()),
+                "a superseded ledger cannot be restored, only disposed of"
+            );
+            assert!(
+                !path.exists(),
+                "the superseded ledger file is still there, so the probe withholds the ledger                  licence and this install never records again"
+            );
+            assert_eq!(
+                take_json(companion_ledger_json(third)),
+                "[]",
+                "a superseded payload was read"
+            );
+            assert!(
+                credentials
+                    .key_material_store()
+                    .exists("ledger-key")
+                    .unwrap(),
+                "the disposal rotated the ledger key; the arm's reasoning assumes it does not"
+            );
+            // And the session that follows records and reads its own.
+            let _ = companion_sheet_new(third);
+            assert!(companion_ledger_save(third, c_path.as_ptr()));
+            let written = take_json(companion_ledger_json(third));
+            companion_free(third);
+            let fourth = handle_with(Arc::clone(&credentials));
+            assert!(companion_ledger_restore(fourth, c_path.as_ptr()));
+            assert_eq!(take_json(companion_ledger_json(fourth)), written);
+            companion_free(fourth);
         }
         std::fs::remove_dir_all(&dir).unwrap();
     }
