@@ -41,20 +41,20 @@ What the tree does today, verified at file:line in
 
 - The sealed state envelope is
   `OTSSEAL2 ‖ boot_uuid[16] ‖ wall_ms[8] ‖ mono_ns[8]`, and all 40 bytes
-  are the AEAD associated data (`crates/ffi/src/persist.rs:155`, `:206-211`,
-  `:636-643`, `:713-748`).
+  are the AEAD associated data (`crates/ffi/src/persist.rs:154`, `:234-236`,
+  `:582-587`, `:660-699`).
 - The content key is `HKDF-SHA256` with a temp-directory half as salt and
-  a keychain half as input keying material (`crates/ffi/src/persist.rs:374-381`).
+  a keychain half as input keying material (`crates/ffi/src/persist.rs:419-426`).
   The temp half's filename folds `kern.bootsessionuuid`
-  (`crates/ffi/src/persist.rs:415-431`) and the file lives in
+  (`crates/ffi/src/persist.rs:451-464`) and the file lives in
   `_CS_DARWIN_USER_TEMP_DIR` at mode 0600
-  (`crates/ffi/src/persist.rs:461-466`, `:483-490`, `:1152-1166`).
+  (`crates/ffi/src/persist.rs:461-466`, `:483-490`, `:1139-1153`).
 - A file carrying another session's boot UUID opens as
   `Opened::BootMismatch`, which rotates both halves and erases the file
   (`crates/ffi/src/lib.rs:1289-1312`).
 - Writes are `create_new` temp, `sync_all` (F_FULLFSYNC on Darwin),
   `rename(2)`, parent directory fsync
-  (`crates/ffi/src/persist.rs:1152-1210`).
+  (`crates/ffi/src/persist.rs:1139-1198`).
 
 Two facts decide this ADR against keeping the boot bound.
 
@@ -63,7 +63,7 @@ First, the boot bound does not deliver what ADR-0012 sells.
 `crates/ffi/src/lib.rs:1300`, reachable only when a parseable state file
 exists. A user who empties the pad before shutdown erases that file and
 the next boot session reuses the previous keychain half verbatim
-(`crates/ffi/src/persist.rs:231-244`). ADR-0012:45 already concedes the
+(`crates/ffi/src/persist.rs:244-257`). ADR-0012:45 already concedes the
 previous temp half's bytes may still be on disk if the directory was not
 cleared. Combine the two and an extracted keychain item plus an uncleared
 temp directory yields a live content key across reboots. So ADR-0012:38's
@@ -106,15 +106,15 @@ section 7 covers the cases where it is not.
 
 | Event | Unexpired content survives | What the user sees |
 |---|---|---|
-| Clean quit (⌘Q) | Yes, in full | `applicationShouldTerminate` calls `saveState()` and stands down whatever the debounce still holds (`shell/Sources/OnetimePad/BackdropApp.swift:121-133`, `shell/Sources/CompanionKit/PageModel.swift:790-856`). If that write is refused, an alert offers Quit Anyway or Cancel (BackdropApp.swift:123-132). On relaunch the pages are there with less time on them. |
-| Crash (process fault) | Yes, except the debounce window | The last burst of typing inside the window is gone. Everything sealed before it is intact, because each write lands whole or not at all (`crates/ffi/src/persist.rs:1152-1210`). Nothing tells the user which keystrokes were lost. Window quantified in section 2. |
+| Clean quit (⌘Q) | Yes, in full | `applicationShouldTerminate` calls `saveState()` and stands down whatever the debounce still holds (`shell/Sources/OnetimePad/BackdropApp.swift:121-133`, `shell/Sources/CompanionKit/PageModel.swift:868-965`). If that write is refused, an alert offers Quit Anyway or Cancel (BackdropApp.swift:123-132). On relaunch the pages are there with less time on them. |
+| Crash (process fault) | Yes, except the debounce window | The last burst of typing inside the window is gone. Everything sealed before it is intact, because each write lands whole or not at all (`crates/ffi/src/persist.rs:1139-1198`). Nothing tells the user which keystrokes were lost. Window quantified in section 2. |
 | Force termination (`kill -9`, Force Quit) | Yes, except the debounce window | Identical to crash. SIGKILL runs no handler, so the sudden-termination latch (`shell/Sources/CompanionKit/PageModel.swift:101-141`) buys nothing here; the atomic write is what saves the rest. |
 | macOS restart or shutdown | Yes. **Required work**; today the file is discarded at `crates/ffi/src/lib.rs:1289-1312` | An orderly restart delivers a terminate while a write is owed, because the latch holds sudden termination off a dirty buffer (PageModel.swift:101-141, `shell/OnetimePad-Info.plist:56`), so the quit flush runs and the loss window is zero. A mutation that never reached `markDirty()` is not covered, and neither is a kill before the flush lands. Today the user sees an empty pad, which is the defect this ADR exists to remove. |
-| App update (same bundle id, same signing identity) | Yes, when the sealed format version is unchanged. **Required work** for the version-change case; see section 9 | Replacing the bundle changes nothing the file depends on. A build whose `FILE_MAGIC` differs refuses the file (`crates/ffi/src/persist.rs:649-662`, `:717-723`), which is a one-time loss, announced the way the previous break was (the repo-root `DOGFOOD.md:50-56`). |
+| App update (same bundle id, same signing identity) | Yes, when the sealed format version is unchanged. **Required work** for the version-change case; see section 9 | Replacing the bundle changes nothing the file depends on. A build whose `FILE_MAGIC` differs refuses the file (`crates/ffi/src/persist.rs:594-605`, `:664-678`), which is a one-time loss, announced the way the previous break was (the repo-root `DOGFOOD.md:50-56`). |
 | Development rebuild | Only while the bundle id and signing identity hold still | Keychain ACL identity is derived from the bundle id (ADR-0012:90), and a `.debug` suffix or a changed `CODESIGN_IDENTITY` strands the halves. That lands in section 7's unavailable-key case: no restore, no overwrite, no writes for the session. Separately, `swift build` re-signs the bundle in place and the running instance is SIGKILLed (observed in development; nothing in the tree enforces or prevents it), so a rebuild against a live app is a force termination carrying the section 2 window. |
-| Logout | Yes | The process dies by sudden termination unless a write is owed. The latch is real and refcounted (PageModel.swift:101-141) and the shipping bundle declares `NSSupportsSuddenTermination` (`shell/OnetimePad-Info.plist:56`), so a dirty buffer blocks the fast path and the terminate flush runs. A mutation that never called `markDirty()` is not covered: pasteboard copy-out is exactly that case today and is filed as issue #52 (PageModel.swift:1414-1421). |
-| Fast user switching | Yes | No process death, no window at all. The other account cannot read anything: the state directory sits under the user's own Application Support (`shell/Sources/CompanionKit/FormFactor.swift:59-64`), the key halves are written 0600 (`crates/ffi/src/persist.rs:1152-1166`), and the keychain half is `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` on an entitled build (`crates/credentials/src/lib.rs:637-646`). |
-| Power loss | Yes. **Required work**, on the same footing as the restart row: power loss ends the boot session, so today the file is discarded at `crates/ffi/src/lib.rs:1289-1312` | Same window as crash, plus one artifact: a death between `create_new` and `rename` strands a complete sealed generation as `state.sealed.<hex>.tmp`, and nothing sweeps it (`crates/ffi/src/persist.rs:1157-1176`). |
+| Logout | Yes | The process dies by sudden termination unless a write is owed. The latch is real and refcounted (PageModel.swift:101-141) and the shipping bundle declares `NSSupportsSuddenTermination` (`shell/OnetimePad-Info.plist:56`), so a dirty buffer blocks the fast path and the terminate flush runs. A mutation that never called `markDirty()` is not covered: pasteboard copy-out is exactly that case today and is filed as issue #52 (PageModel.swift:1674-1681). |
+| Fast user switching | Yes | No process death, no window at all. The other account cannot read anything: the state directory sits under the user's own Application Support (`shell/Sources/CompanionKit/FormFactor.swift:59-64`), the key halves are written 0600 (`crates/ffi/src/persist.rs:1139-1153`), and the keychain half is `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` on an entitled build (`crates/credentials/src/lib.rs:637-646`). |
+| Power loss | Yes. **Required work**, on the same footing as the restart row: power loss ends the boot session, so today the file is discarded at `crates/ffi/src/lib.rs:1289-1312` | Same window as crash, plus one artifact: a death between `create_new` and `rename` strands a complete sealed generation as `state.sealed.<hex>.tmp`, and nothing sweeps it (`crates/ffi/src/persist.rs:1144-1163`). |
 
 Content survives everything except the debounce window. That window is
 not the debounce interval ADR-0012:99 names; after a refused write it is
@@ -123,13 +123,13 @@ five times longer and open-ended under a modal, as section 2 sets out.
 ### 2. The loss window, stated as a tradeoff
 
 The nominal window is 2.0 seconds, measured from the **first** mutation
-of a burst, not the last (`shell/Sources/CompanionKit/PageModel.swift:395`,
+of a burst, not the last (`shell/Sources/CompanionKit/PageModel.swift:418`,
 `:174-192`). That anchoring is deliberate and correct: a trailing debounce
 restarted per keystroke makes the window unbounded for the one case
 persistence exists for.
 
 The window after a refused write is 10.0 seconds, not 2
-(PageModel.swift:413-415). It is worse than a longer retry interval
+(PageModel.swift:436-438). It is worse than a longer retry interval
 suggests, for two reasons recorded in `docs/plans/44-ground-truth.md`
 section 2:
 
@@ -138,18 +138,18 @@ section 2:
   is absorbed into the already-armed retry rather than arming a fresh
   2 second timer. One refusal silently changes the window for everything
   typed afterwards.
-- The retry runs in `.default` run-loop mode (PageModel.swift:846-854,
-  `:737-742`), deliberately, so it cannot fire underneath the quit
+- The retry runs in `.default` run-loop mode (PageModel.swift:955-963,
+  `:810-815`), deliberately, so it cannot fire underneath the quit
   alert's modal and make its text false. The cost is that the retry
   cannot fire while any tracked menu or modal is up, so the window is
   open-ended for as long as one is.
 
 The user is told none of this. `saveState()` sets `saved = true` on the
-withheld-licence leg (PageModel.swift:811-815), so `settled` is true,
+withheld-licence leg (PageModel.swift:896-900), so `settled` is true,
 the quit alert never fires, and a withheld licence produces one
 `logger.error` line and nothing else. A refused write is silent only
 in-session: it sets `saved = false`, so the quit path does raise the
-alert (PageModel.swift:824-855, BackdropApp.swift:121-133).
+alert (PageModel.swift:933-964, BackdropApp.swift:121-133).
 
 The tradeoff is accepted as stated, and the number does not move.
 Shortening the debounce multiplies on-disk ciphertext generations, and
@@ -167,22 +167,22 @@ every page until the user notices.
 ### 3. Key availability across a restart
 
 **Required work.** The second half stops folding `current_boot_uuid()`
-into its filename (`crates/ffi/src/persist.rs:415-431`) and moves out of
+into its filename (`crates/ffi/src/persist.rs:451-464`) and moves out of
 `_CS_DARWIN_USER_TEMP_DIR` (`crates/ffi/src/persist.rs:461-466`,
 `:483-490`) into the app support state directory beside `state.sealed`. That threads the state
 path into `persist`, which derives its own directory today. Call it the
 file half, not the boot half; nothing about it is per-boot any more. The
 name stays an HKDF output under the keychain half, keyed by
-`BOOT_HALF_NAME_INFO` (`crates/ffi/src/persist.rs:188`) with
-`BOOT_HALF_NAME_SALT` (`:195`) as the salt. Only the appended
+`FILE_HALF_NAME_INFO` (`crates/ffi/src/persist.rs:214`) with
+`FILE_HALF_NAME_SALT` (`:222`) as the salt. Only the appended
 `current_boot_uuid()` leaves that salt (`:416-418`); the info string and
 the salt constant are unchanged, because that derivation is also what
 keeps two form factors out of each other's half
-(`crates/ffi/src/persist.rs:405-431`). In its new home it inherits the
+(`crates/ffi/src/persist.rs:449-464`). In its new home it inherits the
 directory's `.noindex` naming and `isExcludedFromBackup`
 (`shell/Sources/CompanionKit/FormFactor.swift:95-122`) and
 `write_private`'s 0600 mode and atomic replace
-(`crates/ffi/src/persist.rs:1152-1166`).
+(`crates/ffi/src/persist.rs:1139-1153`).
 
 **The keychain half's protection class does not change, and nothing in
 `crates/credentials` changes.** What the half buys does change, and
@@ -211,8 +211,8 @@ The reason `WhenUnlocked` is enough is where the read happens. The only
 caller of `loadStateIfNeeded()` is `BackdropModel.start()`
 (`shell/Sources/OnetimePad/BackdropModel.swift:110`), and the key is
 loaded from inside that restore
-(`crates/ffi/src/lib.rs:1284-1288`,
-`shell/Sources/CompanionKit/PageModel.swift:539-545`). `start()` runs when
+(`crates/ffi/src/lib.rs:1558-1562`,
+`shell/Sources/CompanionKit/PageModel.swift:566-572`). `start()` runs when
 the app launches, and the app launches either because the user opened it
 or because `SMAppService.mainApp` started it as a login item
 (`shell/Sources/CompanionKit/SettingsSections.swift:27-40`). Both are
@@ -240,7 +240,7 @@ measure honestly.
    process observes is charged on the sleep-inclusive monotonic clock
    (`crates/core/src/clock.rs:88-123`), which the live timer already
    reads through `companion_next_event_ms`
-   (`shell/Sources/CompanionKit/PageModel.swift:1746-1774`). That clock
+   (`shell/Sources/CompanionKit/PageModel.swift:2016-2044`). That clock
    is not settable, so a clock step mid-session buys nothing. ADR-0012:63
    is therefore narrowed rather than replaced: monotonic stays
    authoritative for every interval the process observes.
@@ -249,21 +249,21 @@ measure honestly.
    `away = wall_now.saturating_sub(sealed_wall_ms)`. Nothing else in the
    lifetime math reads the calendar clock. The content path holds two
    other wall-clock readers and neither ages a page: `created_wall_ms` at
-   page birth (`crates/core/src/store.rs:196`), which names a page, and
+   page birth (`crates/core/src/store.rs:232`), which names a page, and
    the block stamps written into the same sealed file as wall seconds
-   (`crates/core/src/persist.rs:492-493`), from which nothing derives a
+   (`crates/core/src/persist.rs:597-598`), from which nothing derives a
    deadline. `saturating_sub` is what makes a backward gap read as zero
-   rather than as a credit (`crates/core/src/persist.rs:201`).
+   rather than as a credit (`crates/core/src/persist.rs:244`).
 3. **Each page carries a persisted `drained_ms`,** written on every save
    and nondecreasing across every save and every restore. At save it
    holds the life already spent on the in-session monotonic clock,
    `rung.duration()` minus `remaining(now)`, and it **replaces** the
    running span the page record writes today
-   (`crates/core/src/persist.rs:383-387`) rather than joining it; the
-   hold tags and `frozen_remaining` (`:388-402`) stay, because a held
+   (`crates/core/src/persist.rs:488-492`) rather than joining it; the
+   hold tags and `frozen_remaining` (`:493-507`) stay, because a held
    clock is a suspended drain and not a drained one. Restore charges the
    gap against a live hold first, exactly as the read path does today
-   (`crates/core/src/persist.rs:662-691`): a gap shorter than the
+   (`crates/core/src/persist.rs:826-855`): a gap shorter than the
    remaining hold shortens the hold and leaves `drained` alone, and only
    the part of the gap beyond the hold reaches it. So restore sets
    `drained = drained_saved + away.saturating_sub(hold_remaining)`,
@@ -280,7 +280,7 @@ measure honestly.
 Where `sealed_wall_ms` is persisted: in the authenticated header of
 `state.sealed`, in the field the header carries today as `wall_ms` and
 hands back as `Opened::Plaintext { saved_wall_ms }`
-(`crates/ffi/src/persist.rs:627`, `:670`, `:746`), renamed
+(`crates/ffi/src/persist.rs:576`, `:612`, `:699`), renamed
 `sealed_wall_ms` in the new envelope, and therefore inside the AEAD
 associated data. It is not in `UserDefaults` and not in a third file: it
 decides how long a secret lives, so it must be as hard to edit as the
@@ -294,7 +294,7 @@ There is no missing-or-corrupt case that also authenticates.
 `sealed_wall_ms` is a fixed-width field inside the associated data, so a
 file with a damaged or absent stamp fails `StateHeader::parse` or fails
 the AEAD and opens as `Opened::Refused`
-(`crates/ffi/src/persist.rs:649-662`, `:713-748`), which is section 7's
+(`crates/ffi/src/persist.rs:594-605`, `:660-699`), which is section 7's
 damaged snapshot: no restore, no overwrite. A stamp that authenticates
 and sits far in the past, whether because the file is genuinely old or
 because the clock read early at the save, drains everything, which costs
@@ -331,7 +331,7 @@ State this separately so nobody reimplements it.
 Removing the boot check is not sufficient. Restore currently hands the
 core `saved_wall_ms.saturating_add(away_ms)` where
 `away_ms = monotonic_away_ms(sleep_inclusive_ns(), saved_mono_ns)`
-(`crates/ffi/src/lib.rs:1325-1329`). Both readings come from a clock that
+(`crates/ffi/src/lib.rs:1618-1630`). Both readings come from a clock that
 restarts at reboot. After a restart, `sleep_inclusive_ns()` is small and
 `saved_mono_ns` is large, `checked_sub` returns `None`, `away_ms` becomes
 `u64::MAX` (`crates/ffi/src/lib.rs:1225-1230`), and the core drains every
@@ -369,8 +369,8 @@ Rotation therefore needs a new trigger or it leaves the design.
    (`crates/core/src/store.rs:279-280`, which ADR-0017:425 lists among
    the readers that follow the split), and meeting it drops the content
    file rather than resealing it
-   (`shell/Sources/CompanionKit/PageModel.swift:662-666`, applied on the
-   `persistErase` leg at `:816-822`). Dropping it stops being available:
+   (`shell/Sources/CompanionKit/PageModel.swift:701-705`, applied on the
+   `persistErase` leg at `:901-916`). Dropping it stops being available:
    the same sealed file will carry the durable tab names, rungs and strip
    order, and a tab survives its page (ADR-0017:73-74), so an expiry that
    empties the pages would destroy the tabs along with them.
@@ -382,12 +382,12 @@ Rotation therefore needs a new trigger or it leaves the design.
    becomes undecryptable at the moment the pad holds no content. Rotation
    deletes the keychain half, which is the sufficient deletion because
    the file half's name and its use both derive from it
-   (`crates/ffi/src/persist.rs:324-329` for the name,
-   `:374-381` for the use; the delete itself is at `:342-352`). It does nothing to
+   (`crates/ffi/src/persist.rs:451-464` for the name,
+   `:419-426` for the use; the delete itself is at `:363-371`). It does nothing to
    a keychain half an attacker copied earlier, and it unlinks rather than
    erases the file half's blocks. Dropping the file while leaving both
    halves alive is what let the old design reuse a key across boots
-   (`crates/ffi/src/persist.rs:231-244`), which is why the rotation and
+   (`crates/ffi/src/persist.rs:244-257`), which is why the rotation and
    not the deletion is the mechanism.
 
    The file is dropped outright, as today, only when no tabs remain at
@@ -408,12 +408,12 @@ Rotation therefore needs a new trigger or it leaves the design.
 
 2. **Explicit Clear.** The content-side clear gesture does not exist
    today; the ledger has one
-   (`shell/Sources/CompanionKit/PageModel.swift:1047-1066`, the licence
-   re-grant at `:1059-1063`) and content has none. Section 7 requires it
+   (`shell/Sources/CompanionKit/PageModel.swift:1233-1252`, the licence
+   re-grant at `:1245-1249`) and content has none. Section 7 requires it
    for a second reason, and it is the same gesture.
 
 `erase_state` must also unlink the file half. Today it zeroes, truncates
-and unlinks only the state file (`crates/ffi/src/persist.rs:821-847`),
+and unlinks only the state file (`crates/ffi/src/persist.rs:790-816`),
 which was sufficient when the other half died with the boot session and
 is not sufficient now.
 
@@ -439,9 +439,9 @@ what makes it unconditional.
 
 | Failure | What happens | Citation |
 |---|---|---|
-| Snapshot fails authentication (tampered, truncated, wrong key, superseded magic) | `Opened::Refused`, restore returns false. The file is still on disk when the probe runs, so `grantsSaveLicence(fileExists: true, restored: false)` is false and the session may not write over it. A working page opens; nothing is destroyed. | `crates/ffi/src/persist.rs:649-662`, `:713-748`, `crates/ffi/src/lib.rs:1288`, `shell/Sources/CompanionKit/PageModel.swift:539-551`, `:622-627` |
-| Snapshot authenticates but the core rejects the payload | `diag_fault` names it as the one refusal that survives a fresh keychain, restore returns false, same licence outcome, file untouched. | `crates/ffi/src/lib.rs:1330-1340` |
-| Key unavailable (locked keychain, denied ACL, changed bundle id or signing identity) | `load_key_for` returns `None`, the file opens as refused, same licence outcome, file untouched. Rotation is not attempted, so nothing is deleted on the way past. Today this holds only for a file this boot session sealed: the boot check runs before the key closure (`crates/ffi/src/persist.rs:724-726`), so an earlier session's file is rotated and erased without the key ever being asked for. Deleting that arm is what makes the row true unconditionally. | `crates/ffi/src/persist.rs:249-269`, `:724-726`, `crates/ffi/src/lib.rs:1284-1288`, `:1289-1312` |
+| Snapshot fails authentication (tampered, truncated, wrong key, superseded magic) | `Opened::Refused`, restore returns false. The file is still on disk when the probe runs, so `grantsSaveLicence(fileExists: true, restored: false)` is false and the session may not write over it. A working page opens; nothing is destroyed. | `crates/ffi/src/persist.rs:594-605`, `:660-699`, `crates/ffi/src/lib.rs:1562`, `shell/Sources/CompanionKit/PageModel.swift:566-578`, `:653-656` |
+| Snapshot authenticates but the core rejects the payload | `diag_fault` names it as the one refusal that survives a fresh keychain, restore returns false, same licence outcome, file untouched. | `crates/ffi/src/lib.rs:1631-1641` |
+| Key unavailable (locked keychain, denied ACL, changed bundle id or signing identity) | `load_key_for` returns `None`, the file opens as refused, same licence outcome, file untouched. Rotation is not attempted, so nothing is deleted on the way past. Today this holds only for a file this boot session sealed: the boot check runs before the key closure (`crates/ffi/src/persist.rs:724-726`), so an earlier session's file is rotated and erased without the key ever being asked for. Deleting that arm is what makes the row true unconditionally. | `crates/ffi/src/persist.rs:262-282`, `:724-726`, `crates/ffi/src/lib.rs:1558-1562`, `:1289-1312` |
 | `sealed_wall_ms` missing or corrupt | Not separable from the first row: the stamp lives in the associated data. | section 4 |
 
 The cost of that rule is the session: a refusal withholds the content
@@ -452,7 +452,7 @@ the withholding lasts until the user finds it.
 
 **Decision on a last-known-good generation: not required, and not built.**
 The app cannot produce a torn state file; every write lands whole or not
-at all (`crates/ffi/src/persist.rs:1152-1210`). The realistic failures
+at all (`crates/ffi/src/persist.rs:1139-1198`). The realistic failures
 above are key-shaped or format-shaped, and a retained previous generation
 is sealed under the same key and the same format, so it fails identically.
 A `.prev` copy would buy recovery only for external corruption of the
@@ -465,7 +465,7 @@ not.
 
 - A content-side Clear that discards the unreadable file and re-grants
   the licence, mirroring the ledger's Clear-based re-grant
-  (`shell/Sources/CompanionKit/PageModel.swift:1047-1066`, `:694-698`).
+  (`shell/Sources/CompanionKit/PageModel.swift:1233-1252`, `:767-771`).
   Without it the withholding is permanent by construction, since nothing
   else removes the file.
 - Issue #49's surfacing, so the user learns the session is not writing at
@@ -501,11 +501,11 @@ fresh generation holding tab names and no page content, and every
 generation that ever held content is undecryptable from that moment.
 Alongside it are unlinked prior generations until APFS reclaims them,
 plus any stranded `.tmp` generation from a death mid-write
-(`crates/ffi/src/persist.rs:1157-1176`), and, now that the file half is
+(`crates/ffi/src/persist.rs:1144-1163`), and, now that the file half is
 written through the same function into the same directory, any stranded
 `.tmp` copy of a key half. `erase_state` removes neither, because it
 unlinks only the exact path it is given
-(`crates/ffi/src/persist.rs:821-847`), and unlike the temp directory this
+(`crates/ffi/src/persist.rs:790-816`), and unlike the temp directory this
 one is never cleared at boot. Required work: sweep `*.tmp` in the state
 directory at launch. Both key halves are durable across boot sessions:
 one in the keychain under the app's ACL, one at 0600 in the state
@@ -558,7 +558,7 @@ file. This is accepted, but not on the clock case's argument, which does
 not apply here. The replay adversary is any process running as the
 user, which is this paragraph's own phrasing above. Such a process can
 swap the 0600 `state.sealed`
-(`crates/ffi/src/persist.rs:1152-1166`), and it cannot read the
+(`crates/ffi/src/persist.rs:1139-1153`), and it cannot read the
 plaintext out of the running app for the asking: `task_for_pid` is gated
 and screen capture is permissioned. It does not learn the key either,
 which needs the keychain half from behind the ACL. What it gets is the
@@ -586,25 +586,25 @@ ships.
 ### 9. Migration: one format break, taken deliberately
 
 `FILE_MAGIC` bumps from `OTSSEAL2` to `OTSSEAL3`
-(`crates/ffi/src/persist.rs:155`). The header loses `boot_uuid[16]` (section 3) and `mono_ns[8]` (section 5),
+(`crates/ffi/src/persist.rs:154`). The header loses `boot_uuid[16]` (section 3) and `mono_ns[8]` (section 5),
 leaving `magic[8] ‖ sealed_wall_ms[8]`. `STATE_HEADER_LEN` therefore
-changes (`crates/ffi/src/persist.rs:206-211`), and since the whole header
-is the AEAD associated data (`crates/ffi/src/persist.rs:636-643`, `:736-743`), every
+changes (`crates/ffi/src/persist.rs:234-236`), and since the whole header
+is the AEAD associated data (`crates/ffi/src/persist.rs:582-587`, `:688-695`), every
 existing `state.sealed` fails authentication. The snapshot's own `MAGIC`
-bumps from `OTSSNAP3` to `OTSSNAP4` (`crates/core/src/persist.rs:91`) in
+bumps from `OTSSNAP3` to `OTSSNAP4` (`crates/core/src/persist.rs:102`) in
 the same break, and it carries two causes rather than one. Each page's
 record replaces its running span with `drained_ms` (section 4), and
 issue #54 gives every repeated record its own length prefix
-(`crates/core/src/persist.rs:340-356`). #54 landed first and took the
+(`crates/core/src/persist.rs:405-421`). #54 landed first and took the
 bump; this decision rides it rather than spending a second one.
 
 **The ledger payload magic breaks in the same release, and it did not
 have to.** `LEDGER_MAGIC` goes `OTSLEDR1` to `OTSLEDR2`
-(`crates/core/src/persist.rs:100`), because the ledger record is framed
-under the same rule as the content records (`:515-519`). Nothing else
+(`crates/core/src/persist.rs:111`), because the ledger record is framed
+under the same rule as the content records (`:620-624`). Nothing else
 about the ledger changes: `LedgerRecord` is unchanged, the file keeps its
-own envelope magic (`crates/ffi/src/persist.rs:160`) and its own
-long-lived key (`crates/ffi/src/persist.rs:175`), and the `OTSSEAL3`
+own envelope magic (`crates/ffi/src/persist.rs:181`) and its own
+long-lived key (`crates/ffi/src/persist.rs:196`), and the `OTSSEAL3`
 bump reaches neither. The ledger file would have sat out this break;
 framing its records is what breaks it. The cost is the retained history:
 the capped titles and the event records, back to the ninety day retention
@@ -612,7 +612,7 @@ window, destroyed once, in this release, alongside the staged content. It
 is accepted so the module carries one encoding rule rather than two, and
 so a later per-record field costs the ledger nothing. A superseded ledger
 magic refuses as unknown format, tested alongside the content magics
-(`crates/core/src/persist.rs:1892`, `:1919`).
+(`crates/core/src/persist.rs:2391`, `:2442`).
 
 **There is no migration path and none is possible.** An `OTSSEAL2` file's
 key derives from a half in the temp directory that the restart already
@@ -627,31 +627,31 @@ announced the same way.
 erased and the licence is granted, rather than left as a refusal. The
 known superseded set at this break is exactly one entry, `OTSSEAL2`, and
 it grows by one entry per future break. `OTSSEAL1` stays out of it: it is
-refused outright today (`crates/ffi/src/persist.rs:1439-1453`) and this
+refused outright today (`crates/ffi/src/persist.rs:1414-1428`) and this
 break does not change that. "Erased" here is `erase_state`'s discipline,
 zero the bytes, truncate, unlink, and confirm the absence
-(`crates/ffi/src/persist.rs:821-847`), not a plain unlink, because the
+(`crates/ffi/src/persist.rs:790-816`), not a plain unlink, because the
 file being discarded is a full ciphertext generation of staged content.
 Without this, the first launch after the update presents as an install
 that has permanently stopped saving, which is the exact failure Amendment
 2026-08-10 was written about (ADR-0012:49). Nothing is written to the
 ledger for the discarded pages: a superseded magic fails
 `StateHeader::parse`, so the file is never decrypted and the UUIDs inside
-it are unknowable (`crates/ffi/src/persist.rs:717-723`,
-`crates/ffi/src/lib.rs:1288`).
+it are unknowable (`crates/ffi/src/persist.rs:664-678`,
+`crates/ffi/src/lib.rs:1562`).
 
 **Required work.** The same question exists one layer down, for a known
 superseded *ledger payload* magic, and the paragraph above does not
 answer it. The envelope's superseded magic never decrypts. An `OTSLEDR1`
 file authenticates and opens under the unchanged envelope and the
 unchanged key, and is then refused inside `restore_ledger`
-(`crates/core/src/persist.rs:271-273`). The seam reports that as a failed
-restore (`crates/ffi/src/lib.rs:1483-1489`), the file is still on disk
+(`crates/core/src/persist.rs:326-328`). The seam reports that as a failed
+restore (`crates/ffi/src/lib.rs:1858-1864`), the file is still on disk
 when the probe runs, so the ledger licence is withheld for the session
-(`shell/Sources/CompanionKit/PageModel.swift:568-571`), and it is
+(`shell/Sources/CompanionKit/PageModel.swift:593-596`), and it is
 withheld again on every later launch, because nothing removes that file
-except the user's own Clear (`:1047-1066`), which the log line at
-`:572-588` already names as the only way out. Every install carrying a
+except the user's own Clear (`:1233-1252`), which the log line at
+`:597-613` already names as the only way out. Every install carrying a
 ledger file meets this on first launch after the release. So a known
 superseded ledger payload magic is disposed of and the ledger licence
 granted, on the rule this section already sets for the envelope. The
@@ -661,14 +661,14 @@ owns the magic, so it names the refusal, `RestoreError::Superseded` for
 an entry of `SUPERSEDED_LEDGER_MAGICS` (`crates/core/src/persist.rs:127`,
 `:151`, `:324`), and the seam owns the file, so it erases it with
 `erase_state`'s discipline and reports the restore as failed
-(`crates/ffi/src/lib.rs:1613`); the probe then finds no file and grants
+(`crates/ffi/src/lib.rs:1860`); the probe then finds no file and grants
 the licence, exactly as after the envelope's `Superseded`. The ledger
 key is not rotated: the file was authentic under it, the user's Clear
 does not rotate it either, and a rotation at launch is the Keychain
 prompt ADR-0004 forbids. Nothing is written to the ledger about the
 records dropped. Salvage is not on the table: there is no reader for a
 superseded version and no downgrade writer
-(`crates/core/src/persist.rs:2433`).
+(`crates/core/src/persist.rs:2442`).
 
 **[ADR-0017](0017-durable-tabs-expiring-pages.md), "Durable tabs,
 expiring pages", rides this same break, deliberately.** The split
@@ -680,7 +680,7 @@ next one.
 
 ADR-0013's interaction count is the other pending obligation on this
 format, declared not derivable from the op log and implemented nowhere
-today (`crates/core/src/persist.rs:484-501` writes `created_s`,
+today (`crates/core/src/persist.rs:589-606` writes `created_s`,
 `modified_s` and `origin` and no count; recorded at
 `docs/plans/44-ground-truth.md:100`). It is a trailing field, so the rule
 immediately below releases it from this break: it can land whenever
@@ -690,16 +690,16 @@ ADR-0013 is implemented, at no cost to anyone's staged content.
 were positional, and
 [issue #54](https://github.com/onetimesecret/macos/issues/54) gave each
 repeated record its own byte length in front of its fields
-(`crates/core/src/persist.rs:340-356`): the page record (`:370`), the chip
-records inside it (`:411`), the materialized block record (`:484`) and the
-ledger record (`:519`). Four kinds, not the three #54 named. The chips
+(`crates/core/src/persist.rs:405-421`): the page record (`:472`), the chip
+records inside it (`:516`), the materialized block record (`:589`) and the
+ledger record (`:624`). Four kinds, not the three #54 named. The chips
 were taken in deliberately, so the rule has no exception inside the
 module and a later per-chip field costs no break either. A reader
 consumes the fields it knows and then reaches the next record by that
 record's length rather than by where its own field walk stopped
-(`:604-609`), so a file written by a build that added a trailing field
+(`:709-714`), so a file written by a build that added a trailing field
 still reads here, minus the field this build has never heard of. One test
-per record kind holds the rule (`:1506`, `:1532`, `:1555`, `:1595`). Full
+per record kind holds the rule (`:1995`, `:2021`, `:2044`, `:2084`). Full
 tag-length-value encoding is rejected in #54, because it puts a parser
 inside the one module ADR-0012:30 stakes the audit story on.
 
@@ -709,12 +709,12 @@ so does anything outside a record: the magics, the counts, and the
 sections that trail a record list. A new magic still refuses every
 existing file, and a tail after the last record is still damage, because
 it sits outside every frame and nothing states how long it is
-(`crates/core/src/persist.rs:219-225`).
+(`crates/core/src/persist.rs:271-277`).
 
 The envelope does not follow. Its header is associated data in full
-(`crates/ffi/src/persist.rs:208-211`), so anything added there changes what
+(`crates/ffi/src/persist.rs:234-236`), so anything added there changes what
 authenticates, and an unknown envelope magic must keep failing closed
-(`:717-723`). Extensibility belongs in the payload.
+(`:664-678`). Extensibility belongs in the payload.
 
 ### 10. Required test coverage
 
@@ -725,13 +725,13 @@ drag tracking, and it has never been run.
 
 | # | Case | CI | Hardware procedure |
 |---|---|---|---|
-| 1 | Clean quit | Rust round trip exists (`crates/ffi/src/lib.rs:2262`, `crates/core/src/persist.rs:950`). Add a Swift test that drives `saveState()` and `applicationShouldTerminate`; today a regression removing the quit flush passes CI green. Blocked on issue #53 (no injectable state directory or credential store). | None |
-| 2 | Crash or force termination | Debounce arithmetic and the latch are covered as value types (`shell/Tests/CompanionKitTests/StateLicenceTests.swift:320`, `:388`) and atomic replace under concurrency is genuinely covered (`crates/ffi/src/persist.rs:2039`, `:2145`). Add: every mutation site reaches `markDirty()`; the shipped plist still declares `NSSupportsSuddenTermination` (`shell/OnetimePad-Info.plist:56`); the post-refusal window is 10 s and absorbs subsequent mutations (section 2). | `kill -9` mid-burst, then relaunch and confirm what survived |
-| 3 | macOS restart | The existing boot-session tests are **invalidated by this ADR**: the discard and refusal assertions at `crates/ffi/src/persist.rs:1810` and `:1850`, the boot-UUID plumbing they rest on at `:1683`, `:1705` and `:1728`, and at the seam `crates/ffi/src/lib.rs:3423` and `:3481`, which turns on the deleted `BootMismatch` retry. The rotation tests at `crates/ffi/src/persist.rs:1903`, `:1939`, `:1965`, `:1979` survive and gain the two triggers of section 6. Add: a monotonic clock that restarts while wall time advances leaves pages alive (section 5, mandatory); a running page's save-to-restore gap drains by wall clock and by that gap only; a page held across a restart charges the gap against the hold first, so a gap shorter than the remaining hold comes back still held with `frozen_remaining` intact and `drained_ms` unmoved, and a longer gap drains only the excess, which is `crates/core/src/persist.rs:1822`'s property carried onto the new restore path; `drained_ms` is persisted and no restore reduces it. | A real reboot with a live pad, plus a reboot with the pad emptied first, confirming rotation ran; a reboot with a page paused, confirming it returns paused |
-| 4 | App update or dev rebuild | Format-version refusal is covered (`crates/ffi/src/persist.rs:1444`). A superseded magic is erased and the licence granted, for the envelope (`crates/ffi/src/lib.rs:3631`) and for the ledger payload (`:3731`), section 9. | Re-sign with a different identity and confirm the unavailable-key path refuses without erasing; `.debug` versus release bundle id separation |
-| 5 | Damaged snapshot | Rust coverage is strong (`crates/core/src/persist.rs:1165`, `:1615`, `:1931`, `:1957`, `:1985`; `crates/ffi/src/persist.rs:1331`, `:1463`). Add the Swift half: a refusal withholds the licence, does not overwrite the file, and the new content-side Clear re-grants it. Blocked on issue #53. | None |
-| 6 | Unavailable encryption key | All automated coverage runs against `InMemoryCredentialStore` or a refuses-to-delete double (`crates/ffi/src/persist.rs:1739`, `:1979`; `crates/credentials/src/lib.rs:1151`); the one real-keychain test is `#[ignore]`d (`crates/credentials/src/lib.rs:1302`). CI cannot cover a locked keychain. | Locked keychain at load; denied ACL prompt; confirm no erase and no overwrite in both |
-| 7 | TTL expiry | Both legs covered (`crates/core/src/persist.rs:1788`, `:1804`, `:1822`, `:1879`; `crates/core/src/store.rs:1481`, `:1941`). Three of the seam tests go with `monotonic_away_ms`, because section 5 removes it from the restore path: `crates/ffi/src/lib.rs:3330`, `:3354` and `:3568` assert the monotonic stamp is what measures time away, which stops being true. Add: a system clock stepped back before a restore ages the page by zero rather than negatively, so a page with two days left still has two days left afterwards, which is the accepted freeze of section 4 and not a defect; a `sealed_wall_ms` ahead of the system clock leaves `drained_ms` unchanged; the ceiling holds at seven days on an untampered clock. | Step the machine clock back a day with a live pad |
+| 1 | Clean quit | Rust round trip exists (`crates/ffi/src/lib.rs:2726`, `crates/core/src/persist.rs:1134`). Add a Swift test that drives `saveState()` and `applicationShouldTerminate`; today a regression removing the quit flush passes CI green. Blocked on issue #53 (no injectable state directory or credential store). | None |
+| 2 | Crash or force termination | Debounce arithmetic and the latch are covered as value types (`shell/Tests/CompanionKitTests/StateLicenceTests.swift:320`, `:388`) and atomic replace under concurrency is genuinely covered (`crates/ffi/src/persist.rs:2184`, `:2290`). Add: every mutation site reaches `markDirty()`; the shipped plist still declares `NSSupportsSuddenTermination` (`shell/OnetimePad-Info.plist:56`); the post-refusal window is 10 s and absorbs subsequent mutations (section 2). | `kill -9` mid-burst, then relaunch and confirm what survived |
+| 3 | macOS restart | The existing boot-session tests are **invalidated by this ADR**: the discard and refusal assertions at `crates/ffi/src/persist.rs:1868` and `:1850`, the boot-UUID plumbing they rest on at `:1683`, `:1705` and `:1728`, and at the seam `crates/ffi/src/lib.rs:3423` and `:3481`, which turns on the deleted `BootMismatch` retry. The rotation tests at `crates/ffi/src/persist.rs:1925`, `:1958`, `:1985`, `:2003` survive and gain the two triggers of section 6. Add: a monotonic clock that restarts while wall time advances leaves pages alive (section 5, mandatory); a running page's save-to-restore gap drains by wall clock and by that gap only; a page held across a restart charges the gap against the hold first, so a gap shorter than the remaining hold comes back still held with `frozen_remaining` intact and `drained_ms` unmoved, and a longer gap drains only the excess, which is `crates/core/src/persist.rs:2321`'s property carried onto the new restore path; `drained_ms` is persisted and no restore reduces it. | A real reboot with a live pad, plus a reboot with the pad emptied first, confirming rotation ran; a reboot with a page paused, confirming it returns paused |
+| 4 | App update or dev rebuild | Format-version refusal is covered (`crates/ffi/src/persist.rs:1419`). A superseded magic is erased and the licence granted, for the envelope (`crates/ffi/src/lib.rs:4110`) and for the ledger payload (`:4210`), section 9. | Re-sign with a different identity and confirm the unavailable-key path refuses without erasing; `.debug` versus release bundle id separation |
+| 5 | Damaged snapshot | Rust coverage is strong (`crates/core/src/persist.rs:1364`, `:2104`, `:2463`, `:2489`, `:2520`; `crates/ffi/src/persist.rs:1305`, `:1511`). Add the Swift half: a refusal withholds the licence, does not overwrite the file, and the new content-side Clear re-grants it. Blocked on issue #53. | None |
+| 6 | Unavailable encryption key | All automated coverage runs against `InMemoryCredentialStore` or a refuses-to-delete double (`crates/ffi/src/persist.rs:1794`, `:2003`; `crates/credentials/src/lib.rs:1151`); the one real-keychain test is `#[ignore]`d (`crates/credentials/src/lib.rs:1302`). CI cannot cover a locked keychain. | Locked keychain at load; denied ACL prompt; confirm no erase and no overwrite in both |
+| 7 | TTL expiry | Both legs covered (`crates/core/src/persist.rs:2284`, `:2300`, `:2321`, `:2378`; `crates/core/src/store.rs:1753`, `:2423`). Three of the seam tests go with `monotonic_away_ms`, because section 5 removes it from the restore path: `crates/ffi/src/lib.rs:3330`, `:3354` and `:3568` assert the monotonic stamp is what measures time away, which stops being true. Add: a system clock stepped back before a restore ages the page by zero rather than negatively, so a page with two days left still has two days left afterwards, which is the accepted freeze of section 4 and not a defect; a `sealed_wall_ms` ahead of the system clock leaves `drained_ms` unchanged; the ceiling holds at seven days on an untampered clock. | Step the machine clock back a day with a live pad |
 
 Four hardware procedures are therefore required under
 `docs/qa/verification-procedures/`: reboot, power loss, re-signed bundle,
@@ -792,7 +792,7 @@ including the keychain round trip at `:93-98`.
   requirement without one; if a real one arrives, durability follows the
   TTL rung rather than applying uniformly.
 - A state file is observed in dogfood or in the field that authenticates
-  and is then rejected by the core (`crates/ffi/src/lib.rs:1330-1340`).
+  and is then rejected by the core (`crates/ffi/src/lib.rs:1702-1712`).
   That is the one failure a last-known-good generation would have caught,
   and section 7's decision against it gets revisited on the first
   occurrence.
