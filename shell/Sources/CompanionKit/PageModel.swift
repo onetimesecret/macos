@@ -375,6 +375,14 @@ public final class PageModel: ObservableObject {
     /// storage is changed behind the editor's back.
     private var undoManagers: [UInt64: UndoManager] = [:]
 
+    /// The slot a selection gesture last minted a page into, and the
+    /// monotonic reading at which it did. Read by `pause` alone, so a
+    /// double-click on an empty slot cannot mint a page with its first
+    /// tap and freeze that page's countdown with its second
+    /// (ADR-0017). Nil the rest of the time, which is every gesture
+    /// that landed on a slot already holding a page.
+    private var mintedBySelection: (tab: UInt64, at: TimeInterval)?
+
     // nonisolated(unsafe): deinit is always nonisolated, even on a
     // @MainActor class (Swift 6), and Timer isn't Sendable. Safe here —
     // Timer.invalidate() is documented thread-safe, and every other
@@ -1154,8 +1162,12 @@ public final class PageModel: ObservableObject {
     /// seam rather than here, so the "one page to a slot" rule has a
     /// single home.
     private func openPageIfSlotIsEmpty(_ tab: UInt64) {
+        // Cleared first, so what this records is the mint of the tap
+        // that just happened and never one from a gesture ago.
+        mintedBySelection = nil
         guard tabs.first(where: { $0.id == tab })?.hasPage == false else { return }
         guard client.openPage(tab: tab) != 0 else { return }
+        mintedBySelection = (tab: tab, at: ProcessInfo.processInfo.systemUptime)
         markDirty()
         refresh()
     }
@@ -1507,10 +1519,46 @@ public final class PageModel: ObservableObject {
     /// top up to 24h, then release it. The release is what keeps a
     /// stray double-click from ratcheting a page's life up by a day
     /// with no way back (docs/spec/04).
+    ///
+    /// A hold that would land on the page the tap before it minted is
+    /// refused (ADR-0017). Selecting an empty slot opens a page into it,
+    /// so on a slot whose page expired overnight the first tap of a
+    /// double-click makes a page and the second one would freeze its
+    /// countdown for an hour: the user double-clicked an empty slot and
+    /// got a held page they never asked to hold. The refusal is here
+    /// rather than in the strip because the gesture recognizers are
+    /// re-made as the view re-renders and the mint is what makes them
+    /// disagree; the model knows what it just minted.
+    ///
+    /// A press the core refuses changed nothing, so it marks nothing
+    /// dirty: a slot holding no page has no clock to hold, and arming a
+    /// write for a store that did not move is a ciphertext generation
+    /// bought with a gesture that did nothing.
     public func pause(_ id: UInt64) {
-        _ = client.pausePress(tab: id)
+        guard !Self.holdWouldStrikeItsOwnMint(
+            tab: id,
+            mintedTab: mintedBySelection?.tab,
+            elapsed: ProcessInfo.processInfo.systemUptime - (mintedBySelection?.at ?? 0),
+            within: NSEvent.doubleClickInterval
+        ) else { return }
+        guard client.pausePress(tab: id) else { return }
         markDirty()
         refresh()
+    }
+
+    /// Whether this hold is the second half of the double-click whose
+    /// first half minted the page it would land on: the same slot, and
+    /// inside the interval the system calls a double-click. Pure, so
+    /// the window is testable without a gesture recognizer.
+    ///
+    /// The elapsed time comes from a monotonic reading, so sleep or a
+    /// clock step can only make it look longer, which is the direction
+    /// that lets a deliberate hold through rather than the one that
+    /// swallows one.
+    public nonisolated static func holdWouldStrikeItsOwnMint(
+        tab: UInt64, mintedTab: UInt64?, elapsed: TimeInterval, within window: TimeInterval
+    ) -> Bool {
+        mintedTab == tab && elapsed >= 0 && elapsed <= window
     }
 
     /// The rename gesture, from the tab context menu (double-click is

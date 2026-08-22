@@ -309,6 +309,33 @@ final class TabLifetimeTests: XCTestCase {
         )
     }
 
+    /// Double-clicking a slot whose page expired overnight: the first
+    /// tap mints a page and the second must not freeze the countdown of
+    /// the page it just made. Selecting mints (ADR-0017), so the tap
+    /// that used to be harmless now creates the thing the next tap
+    /// would hold.
+    func testADoubleClickOnAnEmptySlotLeavesTheFreshPageRunning() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        let tab = try XCTUnwrap(model.selection)
+
+        // The control: a hold on a page the gesture did not mint lands.
+        model.pause(tab)
+        XCTAssertTrue(try XCTUnwrap(model.tabs.first).paused)
+        model.pause(tab)
+        model.pause(tab) // topped up, then released
+        XCTAssertFalse(try XCTUnwrap(model.tabs.first).paused)
+
+        expireEverything(in: model)
+        model.select(tab) // the first tap
+        model.pause(tab) // the second tap, on a page a moment old
+        XCTAssertNotNil(model.selectedPageID, "the first tap opened a page")
+        XCTAssertFalse(
+            try XCTUnwrap(model.tabs.first).paused,
+            "a double-click on an empty slot held the page it had just minted"
+        )
+    }
+
     /// Closing the last tab is what empties the strip, and only then is
     /// there nothing left to seal. The two predicates disagree in
     /// between, which is the whole reason they are separate.
@@ -348,5 +375,48 @@ final class TabLifetimeTests: XCTestCase {
                 noTabsRemain: afterClose.hasNoTabs),
             "with no strip left to reseal the file goes instead"
         )
+    }
+}
+
+/// What an empty slot offers, and what it must not. A tab whose page
+/// expired keeps every gesture that belongs to the slot (select,
+/// rename, re-rung, close) and none that belongs to a clock it no
+/// longer has (ADR-0017).
+@MainActor
+final class EmptySlotGestureTests: XCTestCase {
+    func testTheHoldItemNamesTheTurnOfTheCycleItWillTake() {
+        XCTAssertEqual(
+            SheetTab.holdMenuTitle(paused: false, toppedUp: false), "Hold the clock for 1h")
+        XCTAssertEqual(
+            SheetTab.holdMenuTitle(paused: true, toppedUp: false), "Top the hold up to 24h")
+        XCTAssertEqual(SheetTab.holdMenuTitle(paused: true, toppedUp: true), "Release the hold")
+    }
+
+    /// On an empty slot the gesture sets the rung the next page is born
+    /// at, which is not a countdown being shortened.
+    func testTheRungItemSaysWhichClockItShortens() {
+        XCTAssertEqual(SheetTab.rungMenuTitle(hasPage: true), "Shorten the countdown")
+        XCTAssertEqual(
+            SheetTab.rungMenuTitle(hasPage: false), "Shorten the next page's countdown")
+    }
+
+    /// The double-click on an empty slot, in the model where the
+    /// refusal lives: the first tap mints, and the hold the second tap
+    /// would put on that fresh page is not the user's intent.
+    func testAHoldIsRefusedOnThePageTheTapBeforeItMinted() {
+        XCTAssertTrue(
+            PageModel.holdWouldStrikeItsOwnMint(
+                tab: 7, mintedTab: 7, elapsed: 0.1, within: 0.5))
+        // A different slot, a deliberate hold seconds later, and a
+        // gesture that minted nothing all go through.
+        XCTAssertFalse(
+            PageModel.holdWouldStrikeItsOwnMint(
+                tab: 7, mintedTab: 8, elapsed: 0.1, within: 0.5))
+        XCTAssertFalse(
+            PageModel.holdWouldStrikeItsOwnMint(
+                tab: 7, mintedTab: 7, elapsed: 4.0, within: 0.5))
+        XCTAssertFalse(
+            PageModel.holdWouldStrikeItsOwnMint(
+                tab: 7, mintedTab: nil, elapsed: 0.1, within: 0.5))
     }
 }

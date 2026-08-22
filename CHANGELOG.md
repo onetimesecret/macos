@@ -61,6 +61,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside it loses the tab names, rungs and order, and nothing else,
   because there is no page content left in the file by then.
 
+  The strip's gestures follow the slot's state. A double-click on a slot
+  whose page expired mints a page with its first tap and does not hold
+  that page's clock with its second, so the user who double-clicks an
+  empty slot gets a page counting down rather than a page already
+  frozen. The tab menu's hold item is disabled where there is no clock
+  to hold, and its rung item says it shortens the next page's countdown
+  when the slot holds no page, which is what it does.
+
   Burning the local copy after a promotion stopped taking the slot with
   it. `companion_page_discard` is page addressed where close is tab
   addressed: it entombs the page, records the same discard, and leaves

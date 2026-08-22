@@ -140,7 +140,10 @@ public struct TabStripView: View {
 /// slot holding no page draws a dashed rule where the gauge goes and
 /// says so out loud, because there is no clock to render and the tab
 /// is still the user's to select, rename, re-rung or close.
-private struct SheetTab: View {
+///
+/// Internal rather than private so the two menu labels below, which are
+/// pure functions of the slot's state, can be tested without a menu.
+struct SheetTab: View {
     let sheet: TabSummary
     let selected: Bool
     @ObservedObject var model: PageModel
@@ -201,8 +204,12 @@ private struct SheetTab: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         // Select on click; a double-click's second tap cycles the hold
-        // (1h → 24h → released). The first tap selecting is harmless —
-        // a page being paused is a page worth looking at.
+        // (1h → 24h → released). The first tap selecting is harmless on
+        // a slot that holds a page: a page being paused is a page worth
+        // looking at. On an empty slot the first tap mints one
+        // (ADR-0017), and the hold that would land on that fresh page is
+        // refused by the model, which is where the decision lives
+        // because these recognizers are re-made as the view re-renders.
         .gesture(TapGesture(count: 2).onEnded { model.pause(sheet.id) })
         .simultaneousGesture(TapGesture().onEnded { model.select(sheet.id) })
         .help(holdDescription)
@@ -212,18 +219,39 @@ private struct SheetTab: View {
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
             Button("Rename tab…") { promptForRename() }
+            // Disabled rather than hidden on an empty slot: the item
+            // keeps its place in a menu whose shape the user knows, and
+            // an item that says it will hold a clock there would be
+            // offering a gesture the core refuses, having no clock.
             Button(holdMenuTitle) { model.pause(sheet.id) }
-            Button("Shorten the countdown") { model.cycleRung(sheet.id) }
+                .disabled(!sheet.hasPage)
+            Button(Self.rungMenuTitle(hasPage: sheet.hasPage)) { model.cycleRung(sheet.id) }
             Button("Close tab", role: .destructive) { model.close(sheet.id) }
         }
     }
 
     /// What the next double-click does, named plainly — the gesture is
-    /// a cycle, so the menu has to say which turn of it is next.
+    /// a cycle, so the menu has to say which turn of it is next. On an
+    /// empty slot the item is disabled and this is the label it wears
+    /// while it is.
     private var holdMenuTitle: String {
-        if !sheet.hasPage { return "Hold the clock for 1h" }
-        if sheet.holdToppedUp { return "Release the hold" }
-        return sheet.paused ? "Top the hold up to 24h" : "Hold the clock for 1h"
+        Self.holdMenuTitle(paused: sheet.paused, toppedUp: sheet.holdToppedUp)
+    }
+
+    /// The hold item's label, given the clock's state. Pure, so what
+    /// the menu offers at each turn of the cycle is testable without a
+    /// menu.
+    static func holdMenuTitle(paused: Bool, toppedUp: Bool) -> String {
+        if toppedUp { return "Release the hold" }
+        return paused ? "Top the hold up to 24h" : "Hold the clock for 1h"
+    }
+
+    /// The rung item's label. On an empty slot the gesture sets the
+    /// rung the slot's next page is born at rather than shortening any
+    /// countdown, and there is no countdown to name, so the item says
+    /// what it will actually do (ADR-0017).
+    static func rungMenuTitle(hasPage: Bool) -> String {
+        hasPage ? "Shorten the countdown" : "Shorten the next page's countdown"
     }
 
     /// The tooltip: the tier in words, since the dash carries it only
