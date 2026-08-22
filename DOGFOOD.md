@@ -41,6 +41,13 @@ your save licence: a `state.sealed` carrying the superseded envelope is
 recognised, erased on the spot, and the session writes normally from
 there. You lose the pages, not the install.
 
+The ledger file takes the same break, because its records gained a
+length prefix (`OTSLEDR1` to `OTSLEDR2`), and the same treatment: the
+old `ledger.sealed` is recognised on first launch, erased, and a new
+trail starts from there. You lose the retained history, the capped
+titles and event records back to the ninety day window, once. Nothing
+to clear in Settings.
+
 The second key half also moves, from the per-user temp directory into
 the state directory beside `state.sealed`, at mode 0600. That is what
 makes content survive a restart at all.

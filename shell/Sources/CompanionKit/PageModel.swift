@@ -516,7 +516,11 @@ public final class PageModel: ObservableObject {
     /// way back: the user clearing the ledger in Settings, which discards
     /// the file they were told could not be read and re-grants the licence
     /// (`licencesAfterLedgerClear`). Nothing auto-clears a refused ledger;
-    /// the recovery is always the user's instruction.
+    /// the recovery is always the user's instruction. The one exception
+    /// is not a refusal at all: a ledger payload from a version this app
+    /// itself once wrote and has replaced is disposed of by the seam
+    /// during the restore, before the probe below runs, so the file is
+    /// gone and the licence is granted fresh (ADR-0016 section 9).
     private var ledgerLicence = false
 
     /// The persistence trail in the unified log: restore refusals and
@@ -557,15 +561,12 @@ public final class PageModel: ObservableObject {
         // file it could not read.
         let ledgerPath = ledgerFileURL.path
         let ledgerRestored = client.ledgerRestore(from: ledgerPath)
-        // Probed after the restore for the same reason as above, though
-        // the restore itself never has cause to discard this file: the
-        // ledger's envelope has never been superseded, so it has no
-        // disposal arm at all.
-        // The one thing that unlinks it is the user's own Clear
+        // Probed after the restore for the same reason as above: the
+        // restore has one cause to discard this file, a payload version
+        // this app once wrote and has replaced, and that arm must have
+        // fired before the probe asks whether the file exists. Beyond
+        // that, the one thing that unlinks it is the user's own Clear
         // (`clearLedger`), which cannot race a probe that already ran.
-        // Asking both files the question the same way is what keeps the
-        // content file's ordering from looking like an accident someone
-        // may straighten out.
         ledgerLicence = Self.grantsSaveLicence(
             fileExists: FileManager.default.fileExists(atPath: ledgerPath),
             restored: ledgerRestored

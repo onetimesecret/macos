@@ -655,13 +655,20 @@ except the user's own Clear (`:1047-1066`), which the log line at
 ledger file meets this on first launch after the release. So a known
 superseded ledger payload magic is disposed of and the ledger licence
 granted, on the rule this section already sets for the envelope. The
-known superseded set is exactly one entry, `OTSLEDR1`. Where that
-disposal belongs is open: the refusal is the core's, one layer below the
-seam that owns the file and the licence, so neither path that exists
-today, the envelope's erase and the user's Clear, is the answer as it
-stands. Salvage is not on the table: there is no reader for a superseded
-version and no downgrade writer
-(`crates/core/src/persist.rs:1892`).
+known superseded set is exactly one entry, `OTSLEDR1`. The disposal is
+layered the way the envelope's is, one level down (issue #61): the core
+owns the magic, so it names the refusal, `RestoreError::Superseded` for
+an entry of `SUPERSEDED_LEDGER_MAGICS` (`crates/core/src/persist.rs:127`,
+`:151`, `:324`), and the seam owns the file, so it erases it with
+`erase_state`'s discipline and reports the restore as failed
+(`crates/ffi/src/lib.rs:1613`); the probe then finds no file and grants
+the licence, exactly as after the envelope's `Superseded`. The ledger
+key is not rotated: the file was authentic under it, the user's Clear
+does not rotate it either, and a rotation at launch is the Keychain
+prompt ADR-0004 forbids. Nothing is written to the ledger about the
+records dropped. Salvage is not on the table: there is no reader for a
+superseded version and no downgrade writer
+(`crates/core/src/persist.rs:2433`).
 
 **[ADR-0017](0017-durable-tabs-expiring-pages.md), "Durable tabs,
 expiring pages", rides this same break, deliberately.** The split
@@ -721,7 +728,7 @@ drag tracking, and it has never been run.
 | 1 | Clean quit | Rust round trip exists (`crates/ffi/src/lib.rs:2262`, `crates/core/src/persist.rs:950`). Add a Swift test that drives `saveState()` and `applicationShouldTerminate`; today a regression removing the quit flush passes CI green. Blocked on issue #53 (no injectable state directory or credential store). | None |
 | 2 | Crash or force termination | Debounce arithmetic and the latch are covered as value types (`shell/Tests/CompanionKitTests/StateLicenceTests.swift:320`, `:388`) and atomic replace under concurrency is genuinely covered (`crates/ffi/src/persist.rs:2039`, `:2145`). Add: every mutation site reaches `markDirty()`; the shipped plist still declares `NSSupportsSuddenTermination` (`shell/OnetimePad-Info.plist:56`); the post-refusal window is 10 s and absorbs subsequent mutations (section 2). | `kill -9` mid-burst, then relaunch and confirm what survived |
 | 3 | macOS restart | The existing boot-session tests are **invalidated by this ADR**: the discard and refusal assertions at `crates/ffi/src/persist.rs:1810` and `:1850`, the boot-UUID plumbing they rest on at `:1683`, `:1705` and `:1728`, and at the seam `crates/ffi/src/lib.rs:3423` and `:3481`, which turns on the deleted `BootMismatch` retry. The rotation tests at `crates/ffi/src/persist.rs:1903`, `:1939`, `:1965`, `:1979` survive and gain the two triggers of section 6. Add: a monotonic clock that restarts while wall time advances leaves pages alive (section 5, mandatory); a running page's save-to-restore gap drains by wall clock and by that gap only; a page held across a restart charges the gap against the hold first, so a gap shorter than the remaining hold comes back still held with `frozen_remaining` intact and `drained_ms` unmoved, and a longer gap drains only the excess, which is `crates/core/src/persist.rs:1822`'s property carried onto the new restore path; `drained_ms` is persisted and no restore reduces it. | A real reboot with a live pad, plus a reboot with the pad emptied first, confirming rotation ran; a reboot with a page paused, confirming it returns paused |
-| 4 | App update or dev rebuild | Format-version refusal is covered (`crates/ffi/src/persist.rs:1444`). Add: a superseded magic is erased and the licence granted (section 9). | Re-sign with a different identity and confirm the unavailable-key path refuses without erasing; `.debug` versus release bundle id separation |
+| 4 | App update or dev rebuild | Format-version refusal is covered (`crates/ffi/src/persist.rs:1444`). A superseded magic is erased and the licence granted, for the envelope (`crates/ffi/src/lib.rs:3631`) and for the ledger payload (`:3731`), section 9. | Re-sign with a different identity and confirm the unavailable-key path refuses without erasing; `.debug` versus release bundle id separation |
 | 5 | Damaged snapshot | Rust coverage is strong (`crates/core/src/persist.rs:1165`, `:1615`, `:1931`, `:1957`, `:1985`; `crates/ffi/src/persist.rs:1331`, `:1463`). Add the Swift half: a refusal withholds the licence, does not overwrite the file, and the new content-side Clear re-grants it. Blocked on issue #53. | None |
 | 6 | Unavailable encryption key | All automated coverage runs against `InMemoryCredentialStore` or a refuses-to-delete double (`crates/ffi/src/persist.rs:1739`, `:1979`; `crates/credentials/src/lib.rs:1151`); the one real-keychain test is `#[ignore]`d (`crates/credentials/src/lib.rs:1302`). CI cannot cover a locked keychain. | Locked keychain at load; denied ACL prompt; confirm no erase and no overwrite in both |
 | 7 | TTL expiry | Both legs covered (`crates/core/src/persist.rs:1788`, `:1804`, `:1822`, `:1879`; `crates/core/src/store.rs:1481`, `:1941`). Three of the seam tests go with `monotonic_away_ms`, because section 5 removes it from the restore path: `crates/ffi/src/lib.rs:3330`, `:3354` and `:3568` assert the monotonic stamp is what measures time away, which stops being true. Add: a system clock stepped back before a restore ages the page by zero rather than negatively, so a page with two days left still has two days left afterwards, which is the accepted freeze of section 4 and not a defect; a `sealed_wall_ms` ahead of the system clock leaves `drained_ms` unchanged; the ceiling holds at seven days on an untampered clock. | Step the machine clock back a day with a live pad |
