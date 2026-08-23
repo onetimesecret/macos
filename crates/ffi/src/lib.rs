@@ -4734,6 +4734,97 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Rotation is on the state, not the transition (ADR-0016 section
+    /// 6): the question asked at every write is whether the pad holds
+    /// no page right now, never whether it has just become so, so a
+    /// second write over a pad that is still empty rotates again rather
+    /// than resealing under the halves the first one minted.
+    ///
+    /// A latch remembering that the last write had already rotated
+    /// would be a second source of truth about what is on disk, and it
+    /// would be wrong in exactly the case that matters, a write that
+    /// failed after the rotation landed. The price is paid per write
+    /// instead: a rearming retry spends a keychain write and a
+    /// generation of tab names on every attempt. Each repeat is another
+    /// forgetting rather than a leak, which is why the price is
+    /// accepted, and this is the test that keeps the repeat honest.
+    #[test]
+    fn a_second_write_over_a_pad_that_is_still_empty_rotates_again() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            let (tab, _page) = new_page(handle);
+            assert!(companion_tab_set_title(
+                handle,
+                tab,
+                cstring("payroll").as_ptr()
+            ));
+            assert!(companion_tab_set_rung(handle, tab, 0)); // 1h
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+
+            // The page dies overnight and the tab stays: the state the
+            // rotation fires on, and it stays that way across both
+            // writes below. Nothing transitions between them.
+            age_by(handle, 2 * 60 * 60 * 1_000);
+            assert_eq!(companion_expire_due(handle), 1);
+            let empty_pad = |handle: *mut CompanionHandle| {
+                let mut holds_no_page = false;
+                let mut has_no_tabs = true;
+                assert!(companion_store_emptiness(
+                    handle,
+                    &raw mut holds_no_page,
+                    &raw mut has_no_tabs
+                ));
+                holds_no_page && !has_no_tabs
+            };
+            assert!(empty_pad(handle), "the trigger's own state");
+
+            assert!(companion_persist_rotate_and_save(handle, c_path.as_ptr()));
+            let key_of_the_first_strip = persist::load_state_key(&*credentials, &path)
+                .expect("the reseal minted fresh halves")
+                .to_vec();
+            let first_strip = std::fs::read(&path).unwrap();
+
+            assert!(empty_pad(handle), "the pad filled itself between writes");
+            assert!(companion_persist_rotate_and_save(handle, c_path.as_ptr()));
+            let key_of_the_second_strip = persist::load_state_key(&*credentials, &path)
+                .expect("the second reseal minted fresh halves")
+                .to_vec();
+            let second_strip = std::fs::read(&path).unwrap();
+            assert_ne!(
+                key_of_the_first_strip, key_of_the_second_strip,
+                "the second write over an empty pad kept the first one's halves"
+            );
+
+            // Which makes the repeat a forgetting: the generation the
+            // first write left behind cannot be opened either.
+            std::fs::write(&path, &first_strip).unwrap();
+            let ghost = handle_with(Arc::clone(&credentials));
+            assert!(
+                !companion_persist_restore(ghost, c_path.as_ptr()),
+                "the generation the first reseal wrote opened after the second"
+            );
+            companion_free(ghost);
+
+            // And the strip survives being rewritten twice.
+            std::fs::write(&path, &second_strip).unwrap();
+            let morning = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(morning, c_path.as_ptr()));
+            let summaries = strip(morning);
+            assert_eq!(summaries.len(), 1, "the tab came back");
+            assert_eq!(summaries[0]["title"].as_str(), Some("payroll"));
+            assert_eq!(summaries[0]["has_page"].as_bool(), Some(false));
+            assert_eq!(summaries[0]["rung_code"].as_i64(), Some(0));
+            companion_free(morning);
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// Fail closed at the seam: a refused handle or path rotates
     /// nothing, and a path that is not the content file is refused
     /// outright rather than rotated. The ledger is the caller that
