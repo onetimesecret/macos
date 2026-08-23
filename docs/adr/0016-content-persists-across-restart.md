@@ -282,28 +282,49 @@ measure honestly.
    (`crates/core/src/persist.rs:597-598`), from which nothing derives a
    deadline. `saturating_sub` is what makes a backward gap read as zero
    rather than as a credit (`crates/core/src/persist.rs:244`).
-3. **Each page carries a persisted `drained_ms`,** written on every save
-   and nondecreasing across every save and every restore. At save it
-   holds the life already spent on the in-session monotonic clock,
-   `rung.duration()` minus `remaining(now)`, and it **replaces** the
-   running span the page record writes today
-   (`crates/core/src/persist.rs:488-492`) rather than joining it; the
-   hold tags and `frozen_remaining` (`:493-507`) stay, because a held
-   clock is a suspended drain and not a drained one. Restore charges the
-   gap against a live hold first, exactly as the read path does today
-   (`crates/core/src/persist.rs:826-855`): a gap shorter than the
-   remaining hold shortens the hold and leaves `drained` alone, and only
-   the part of the gap beyond the hold reaches it. So restore sets
-   `drained = drained_saved + away.saturating_sub(hold_remaining)`,
-   rebuilds the deadline from
-   `rung.duration().saturating_sub(drained)`, and may not reduce
-   `drained`, so elapsed life crosses the file as one number and not two.
-   Remaining life is derived as `ttl.saturating_sub(drained)` rather than
-   stored, so `drained_ms` is the only number a stale file can move, and
-   section 8 prices what moving it buys. The single exception is not a
-   clock effect: a deliberate TTL rung click resets `drained` to zero,
-   which is the user's own instruction and is already what a rung click
-   does to the clock today (`crates/core/src/ttl.rs:4-6`).
+3. **Elapsed life crosses the file as the life that is left, plus the
+   stamp that ages it.** *(Amended 2026-08-23, from a specified
+   `drained_ms` field to the encoding that shipped; the paragraph after
+   this one records why.)* Each page record writes the span it has left,
+   the running one (`crates/core/src/persist.rs:489-491`) or, for a held
+   clock, the hold's own span and the frozen remaining (`:493-506`),
+   because a held clock is a suspended drain and not a drained one. The
+   file carries `sealed_wall_ms` in its authenticated header. Restore
+   charges the gap against a live hold first: a gap shorter than the
+   remaining hold shortens the hold and leaves the frozen life alone, and
+   only the part beyond the hold reaches the countdown
+   (`crates/core/src/persist.rs:844-873`). What reaches it is subtracted
+   and never added: `deadline = now + remaining.saturating_sub(away)`,
+   with `away` already floored at zero, so no restore hands life back and
+   the never-rewind invariant this section opens with is a property of
+   the arithmetic rather than of a rule about a field. The span read back
+   is bounded by the rung of the tab that holds the page (`:846`, `:852`,
+   the rung threaded in at `:790`), so a file cannot claim more life
+   than the ladder allows however it was edited. The one exception is not
+   a clock effect: a deliberate TTL rung click sets the deadline to the
+   rung's full duration, which is the user's own instruction
+   (`crates/core/src/ttl.rs:4-6`).
+
+   **The `drained_ms` field this bullet used to specify is not built.**
+   The two encodings are the same number read from opposite ends,
+   `drained = rung - remaining`, and every guarantee section 10 asks for
+   follows from either: the gap drains by the gap and by nothing else
+   (`crates/core/src/persist.rs`, `time_away_drains_the_countdown`), a
+   hold absorbs it first and only the excess is charged
+   (`a_hold_absorbs_time_away_before_the_countdown_drains`), a backward
+   clock neither drains nor credits
+   (`a_backwards_wall_clock_grants_no_extra_life`), and the ladder's
+   ceiling holds (`no_restored_page_comes_back_holding_more_life_than_its_rung`,
+   `no_restored_hold_freezes_more_life_than_its_rung`). What the field
+   would have cost is a third content format break on top of the two
+   section 9 already spends, and every one of those breaks is a user
+   losing staged pages. The single thing it bought that the stored span
+   does not get for free is the rung ceiling as a structural property;
+   that is bought instead by clamping the span against the rung on the
+   way in, at the same cost as one `min`. Section 8's residual is priced
+   against the span accordingly: the span is the number a replayed or
+   hand-edited generation can move, and the rung is what bounds the
+   move.
 
 Where `sealed_wall_ms` is persisted: in the authenticated header of
 `state.sealed`, in the field the header carries today as `wall_ms` and
@@ -328,8 +349,8 @@ and sits far in the past, whether because the file is genuinely old or
 because the clock read early at the save, drains everything, which costs
 life and is therefore allowed to happen silently. A stamp ahead of the
 current wall clock produces a zero gap under `saturating_sub`, so
-`drained_ms` is unchanged and the page comes back holding exactly the
-life it held at that save. Nothing is credited and nothing is charged.
+nothing is taken off the span the page carries and it comes back holding
+exactly the life it held at that save. Nothing is credited and nothing is charged.
 That is the same accepted freeze the next paragraph prices, not a
 separate failure, and it is allowed to happen silently for the same
 reason.
@@ -347,8 +368,8 @@ The tree's existing direction is kept in half and dropped in half.
 `monotonic_away_ms` charges the ceiling for a stamp that reads later than
 now (`crates/ffi/src/lib.rs:1218-1230`); wall-clock aging charges zero for
 that same case, because `saturating_sub` floors at zero. What survives is
-the never-credit half: no restore reduces `drained_ms`, so no restore
-hands life back. What is dropped is that
+the never-credit half: a restore only ever subtracts from the span a
+page carries, so no restore hands life back. What is dropped is that
 function's stated absolute, "Granting life past a page's TTL is the
 one outcome that must be impossible", which the paragraph above prices.
 
