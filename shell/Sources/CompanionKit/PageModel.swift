@@ -2208,23 +2208,35 @@ public final class PageModel: ObservableObject {
             repeats: false
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
-                // Expiry is a mutation nobody typed: pages and chips
-                // left the store on their own, and the sealed file is
-                // stale until this is written. The timer is armed at the
-                // core's next event and only fires on one, and both
-                // kinds move persisted state: an expiry entombs pages,
-                // and a hold lapse rewrites the page's clock and adds to
-                // its held total inside `expire_due`'s normalize pass,
-                // which reports no expired ids. So mark on the fire, not
-                // on the count, because a lapse that returns zero ids has
-                // changed the store.
-                _ = self.client.expireDue()
-                self.markDirty()
-                self.refresh() // re-arms for the next event
+                self?.settleCoreEvent()
             }
         }
         RunLoop.main.add(timer, forMode: .common)
         eventTimer = timer
+    }
+
+    /// What the fired timer does, which is the whole of what an event
+    /// means to this model: settle the clock, arm a write, re-arm.
+    ///
+    /// Expiry is a mutation nobody typed: pages and chips left the
+    /// store on their own, and the sealed file is stale until this is
+    /// written. The timer is armed at the core's next event and only
+    /// fires on one, and both kinds move persisted state: an expiry
+    /// entombs pages, and a hold lapse rewrites the page's clock and
+    /// adds to its held total inside `expire_due`'s normalize pass,
+    /// which reports no expired ids. So mark on the fire, not on the
+    /// count, because a lapse that returns zero ids has changed the
+    /// store.
+    ///
+    /// A named method rather than the closure it used to be, so the
+    /// arming invariant can be asserted on it (`MutationArmingTests`).
+    /// The shortest rung is an hour, so no test can wait for this timer
+    /// to fire on its own, and this is the one mutation site whose mark
+    /// nothing else in the app would ever make good: a lapse the user
+    /// never saw, over a file that would stay stale until they typed.
+    func settleCoreEvent() {
+        _ = client.expireDue()
+        markDirty()
+        refresh() // re-arms for the next event
     }
 }
