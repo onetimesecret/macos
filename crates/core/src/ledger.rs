@@ -192,9 +192,12 @@ impl LedgerRecord {
 /// `now_wall_ms`.
 ///
 /// **Why wall-clock time here, when every expiry path in this crate is
-/// forbidden from touching it.** The rule elsewhere is absolute: a
-/// secret's lifetime is measured on the monotonic clock, so no clock
-/// step can extend it. Ledger records are the one deliberate exception,
+/// forbidden from touching it.** The rule elsewhere is nearly
+/// absolute: a secret's lifetime is measured on the monotonic clock, so
+/// no clock step can extend it while a session is running. The one
+/// interval that clock cannot measure is the gap between a save and the
+/// next launch, and ADR-0016 section 4 moved that, and only that, onto
+/// the calendar. Ledger records are the older deliberate exception,
 /// documented in ADR-0012. They are meant to survive reboots, and an
 /// `Instant` cannot: it is meaningless across a restart. So a record
 /// must carry wall-clock time anyway, and retention has nothing else to
