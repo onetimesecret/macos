@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so accepting the loss is always a choice made knowingly. A failed
   restore still never overwrites the prior file; the discard is the
   user's instruction, never the app's.
+- **⌘S force-saves, on the same status surface** (issue #46, ADR-0016
+  section 2). It calls the same synchronous write the debounce timer
+  and the quit path already made, so a press asks for nothing the write
+  lifecycle does not already do on its own, only for it now rather than
+  at the debounce's far end. A press with nothing owed still lands on
+  "saved", which is the reassurance the shortcut exists to give; a
+  press over a withheld save licence leaves that banner in place rather
+  than showing a contradictory "saved".
 
 ### Changed
 

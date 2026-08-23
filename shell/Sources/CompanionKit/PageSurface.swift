@@ -258,6 +258,16 @@ public struct PageKeyboardMap: View {
             // surface holds the keys.
             Button("") { model.onOpenSettings?() }
                 .keyboardShortcut(",", modifiers: .command)
+            // ⌘S: force-save now, riding the debounced write's own
+            // status surface (issue #46). `saveState()` is main-actor
+            // and synchronous, the same call the debounce timer and the
+            // quit path make, so this asks for nothing the write
+            // lifecycle does not already do on its own; it only asks
+            // for it now rather than at the debounce's far end. A press
+            // with nothing owed still lands on `.saved`, which is the
+            // reassurance the shortcut exists to give.
+            Button("") { model.saveState() }
+                .keyboardShortcut("s", modifiers: .command)
             // Esc outside the editor (the ledger, chrome): hand back.
             Button("") { model.escape() }
                 .keyboardShortcut(.cancelAction)
