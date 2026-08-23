@@ -32,7 +32,7 @@ Decided and documented:
 - Recovery behavior for unavailable keys and damaged snapshots.
 - The conditions under which expiration or deliberate discard destroys content.
 
-## Pass 2: make data loss impossible to miss
+## Pass 2: make data loss impossible to miss (complete)
 
 **Tracking:** [#49](https://github.com/onetimesecret/macos/issues/49), [#46](https://github.com/onetimesecret/macos/issues/46)
 

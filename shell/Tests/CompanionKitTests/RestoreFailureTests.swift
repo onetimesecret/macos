@@ -187,6 +187,37 @@ final class RestoreFailureTests: XCTestCase {
         XCTAssertEqual(second.saveStatus, .idle)
     }
 
+    /// Issue #46: ⌘S calls `saveState()` directly, the same call the
+    /// debounce timer and the quit path make. A press with nothing
+    /// owed is the shortcut's whole point: the reassurance that the
+    /// idle silence means "saved", not "unproven".
+    func testForceSaveOnAnUntouchedRestoredSessionShowsSaved() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "already sealed")
+        let second = makeModel(in: tempDir, defaults: defaults, tag: tag)
+        second.loadStateIfNeeded()
+        XCTAssertEqual(second.saveStatus, .idle)
+
+        XCTAssertTrue(second.saveState())
+        XCTAssertEqual(second.saveStatus, .saved)
+    }
+
+    /// A withheld content licence still shows its own standing state
+    /// ahead of `saveStatus` (issue #49); ⌘S does not create a second,
+    /// contradictory "saved" reading over that banner.
+    func testForceSaveOverAWithheldLicenceLeavesTheStandingStateInPlace() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")
+
+        let stranger = makeModel(
+            in: tempDir, defaults: defaults, tag: "stranger-\(UUID().uuidString)")
+        stranger.loadStateIfNeeded()
+        XCTAssertTrue(stranger.contentRestoreRefused)
+
+        XCTAssertTrue(stranger.saveState())
+        XCTAssertTrue(stranger.contentRestoreRefused)
+    }
+
     func testTheQuitFlushOverAWithheldLicenceNamesTheLoss() throws {
         let (tempDir, defaults, tag) = try makeFixture()
         try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")

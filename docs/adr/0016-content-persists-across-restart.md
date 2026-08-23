@@ -103,7 +103,9 @@ procedures of section 10, authored and not yet run. Issue #49 landed
 after them, in the same cycle: the withheld licence and the write
 lifecycle are surfaced, the content-side discard exists, and the quit
 path warns on a settled flush over a withheld licence (sections 2 and
-7). Citations below into
+7). Issue #46 landed next: ⌘S calls the same `saveState()` the debounce
+timer and the quit path already called, so the status surface issue #49
+built now answers a user gesture too (section 2). Citations below into
 the pre-ADR tree (`BootMismatch`, `monotonic_away_ms`, the boot-UUID
 salt and the boot-session tests) describe code that no longer exists and
 are left as written; they record what was replaced, not where to look.
@@ -179,12 +181,16 @@ matters more under this ADR than it did under ADR-0012 because reboot no
 longer makes those generations undecryptable. The compensation is
 visibility, not a smaller number.
 
-**Required work.** Issue #49 (surface a withheld licence and a refused
-write) is done, as above. Issue #46 (⌘S force-save riding the same
-status surface) remains. Under ADR-0012 a silently withheld save
-licence cost one boot session; under this ADR it would have cost every
-page until the user noticed, which is why #49 was a precondition of
-this ADR rather than a follow-up.
+**Required work, done.** Issue #49 (surface a withheld licence and a
+refused write) landed first, as above. Issue #46 (⌘S force-save riding
+the same status surface) rides `saveState()` directly
+(`shell/Sources/CompanionKit/PageSurface.swift:270-271`), the same call
+the debounce timer and the quit path make, so a press asks for nothing
+the write lifecycle does not already do on its own, only for it now.
+Under ADR-0012 a silently withheld save licence cost one boot session;
+under this ADR it would have cost every page until the user noticed,
+which is why #49 was a precondition of this ADR rather than a
+follow-up.
 
 ### 3. Key availability across a restart
 
@@ -828,10 +834,11 @@ holds itself still name no owner, including the keychain round trip at
 - The keychain half stops bounding anything in time. With both halves
   durable it buys an ACL gate and separation of backup domains, and
   nothing more (section 3).
-- Three preconditions are load-bearing and must ship with or before this:
-  issue #49 (visible refusals), issue #46 (force save with status), and
-  the content-side Clear from section 7. A silent withholding that cost
-  one boot session under ADR-0012 costs seven days of work under this ADR.
+- Three preconditions were load-bearing and shipped with or before this,
+  all now done: issue #49 (visible refusals), issue #46 (force save with
+  status), and the content-side Clear from section 7. A silent withholding
+  that cost one boot session under ADR-0012 costs seven days of work
+  under this ADR.
 - Issues #51, #52 and #53 are filed and are deliberately not fixed in this
   branch.
 - The single-module audit story survives and gets shorter by one check
