@@ -4155,6 +4155,86 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A key that will not answer is a refusal and nothing more
+    /// (ADR-0016 section 7, the "key unavailable" row; section 10, case
+    /// 6). The keychain served the save and was locked by the time the
+    /// next launch asked for the key back, which is the locked keychain
+    /// and the dismissed ACL prompt both. Under ADR-0012 an earlier
+    /// session's file was rotated and erased before the key was ever
+    /// asked for; the whole point of removing that arm is that a session
+    /// which cannot read the file also does not get to destroy it, so
+    /// the assertion is on the state directory as a whole: the same
+    /// files, byte for byte, with no half unlinked and no generation
+    /// written over the one nobody could open.
+    ///
+    /// Nothing else in the tree drives this end to end. The persist
+    /// module proves `load_state_key` answers `None` with a half gone
+    /// and stops there, never touching a state file.
+    #[test]
+    fn a_locked_keychain_refuses_the_restore_and_leaves_the_directory_alone() {
+        let credentials = Arc::new(persist::test_stores::GoesSilent::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        // Every file in the state directory with its bytes: the sealed
+        // generation, and beside it the file half that keys it.
+        let state_directory = || {
+            let mut files: Vec<(std::ffi::OsString, Vec<u8>)> = std::fs::read_dir(&dir)
+                .unwrap()
+                .map(|entry| {
+                    let entry = entry.unwrap();
+                    (entry.file_name(), std::fs::read(entry.path()).unwrap())
+                })
+                .collect();
+            files.sort();
+            files
+        };
+        unsafe {
+            let evening = handle_with(Arc::clone(&credentials) as Arc<dyn CredentialStore>);
+            let (_tab, sheet) = new_page(evening);
+            let _ = take_json(companion_sheet_seal_text(
+                evening,
+                sheet,
+                cstring("hunter2-the-sealed-bytes").as_ptr(),
+                0,
+                0,
+            ));
+            assert!(companion_persist_save(evening, c_path.as_ptr()));
+            companion_free(evening);
+            let sealed = state_directory();
+            assert!(sealed.len() >= 2, "a sealed file and a file half");
+
+            credentials.lock();
+            let morning = handle_with(Arc::clone(&credentials) as Arc<dyn CredentialStore>);
+            assert!(
+                !companion_persist_restore(morning, c_path.as_ptr()),
+                "a locked keychain restored a file it could not have keyed"
+            );
+            companion_free(morning);
+            assert_eq!(
+                state_directory(),
+                sealed,
+                "the restore that could not read the state directory wrote to it anyway"
+            );
+            assert!(
+                credentials.behind_the_lock().exists("state-key").unwrap(),
+                "a restore that never read the keychain half deleted it"
+            );
+
+            // And the refusal cost the content nothing: the same file
+            // opens once the keychain answers again.
+            credentials.unlock();
+            let after = handle_with(Arc::clone(&credentials) as Arc<dyn CredentialStore>);
+            assert!(
+                companion_persist_restore(after, c_path.as_ptr()),
+                "the locked session left the file unreadable"
+            );
+            assert!(first_remaining_ms(after).is_some(), "the page came back");
+            companion_free(after);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// The one-time format break, from the user's side: the file the
     /// previous build wrote cannot be read by any key this one can
     /// assemble, so refusing it forever would present as an install that
