@@ -86,7 +86,7 @@ use crate::sheet::{
     ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId,
     TITLE_CAP, Tab, TabId, derive_title,
 };
-use crate::store::SheetStore;
+use crate::store::{HOLD_FIRST, HOLD_TOPUP, SheetStore};
 use crate::ttl::Ttl;
 
 /// Magic + version prefix of a plaintext content snapshot. A format
@@ -812,7 +812,9 @@ fn read_tab(
 /// read at, and it bounds every life span this record can claim: seven
 /// days is the top of the ladder, so seven days is the most life a
 /// restored page may come back holding, whatever the bytes say
-/// (ADR-0016 section 10, case 7). On the honest write path the bound
+/// (ADR-0016 section 10, case 7). A hold is bounded too, but by the
+/// ceiling the pause gesture sets rather than by the rung, since a
+/// suspension is not life the ladder measures. On the honest write path the bound
 /// holds by construction, since a rung click sets the deadline to the
 /// rung's own duration and restore only ever subtracts. It is a file
 /// nobody in this process wrote that the clamp is for: a stale or
@@ -837,10 +839,14 @@ fn read_page(
     // hour ceiling; the two carry the same payload and differ only in
     // what the next pause press does.
     //
-    // The hold's own span is left as it is written. A hold is a
-    // suspension rather than life, it has its own ceiling one rung of
-    // the ladder does not describe, and clamping it to the rung would
-    // shorten an honest 24 hour hold on the 1h rung.
+    // The hold's own span is not the rung's to bound: a hold is a
+    // suspension rather than life, and clamping it to the rung would
+    // shorten an honest 24 hour hold on the 1h rung. It is bounded all
+    // the same, against the ceiling the pause gesture itself would have
+    // set, because a hold read at face value is a way past the rung
+    // that costs nothing to write. A held page's countdown does not
+    // run, so a file claiming a month of hold keeps its plaintext for a
+    // month on the one hour rung.
     let (clock, held_while_away) = match reader.u8().ok_or(Malformed)? {
         0 => {
             let remaining = span(reader.u64().ok_or(Malformed)?).min(ceiling);
@@ -848,7 +854,8 @@ fn read_page(
             (SheetClock::Running { deadline }, Duration::ZERO)
         }
         tag @ (1 | 2) => {
-            let hold = span(reader.u64().ok_or(Malformed)?);
+            let hold_ceiling = if tag == 2 { HOLD_TOPUP } else { HOLD_FIRST };
+            let hold = span(reader.u64().ok_or(Malformed)?).min(hold_ceiling);
             let frozen = span(reader.u64().ok_or(Malformed)?).min(ceiling);
             if away < hold {
                 (
@@ -2520,6 +2527,94 @@ mod tests {
             sheet.remaining(now),
             HOUR,
             "a hold froze more life than the rung ever held"
+        );
+    }
+
+    /// A hold suspends the countdown, so a hold read at face value is
+    /// the cheapest way past the ladder there is: the frozen span can
+    /// be clamped to the rung and the plaintext still survives for as
+    /// long as the hold claims, because a held page is never due
+    /// (ADR-0016 section 8). The pause gesture is the only thing that
+    /// sets a hold, so a hold out of a file is read against the same
+    /// ceiling the gesture would have applied: one hour for a first
+    /// hold, 24 for one already topped up.
+    #[test]
+    fn no_restored_hold_outlasts_the_ceiling_the_pause_gesture_sets() {
+        let doc = SheetDocument::new();
+        doc.insert(0, "paused for a month").unwrap();
+        doc.commit(None);
+        let blob = doc.export_snapshot();
+        let a_month_ms = 30 * 24 * 60 * 60 * 1000u64;
+
+        let held = |tag: u8, hold_ms: u64, frozen_ms: u64| {
+            let mut clock = vec![tag];
+            clock.extend_from_slice(&hold_ms.to_le_bytes());
+            clock.extend_from_slice(&frozen_ms.to_le_bytes());
+            one_tab_snapshot(&tab_record_with_rung(
+                None,
+                60 * 60,
+                Some(&page_record(&clock, &blob)),
+            ))
+        };
+
+        // A first hold claiming a month, on the one hour rung: the hold
+        // comes back an hour long, and an hour after that the frozen
+        // span (itself bounded by the rung) runs out and the page is
+        // reaped rather than sitting on its plaintext for a month.
+        let (mut first_hold, clock) = store();
+        first_hold
+            .restore(&held(1, a_month_ms, a_month_ms), 0)
+            .unwrap();
+        assert_eq!(
+            first_hold
+                .sheets()
+                .next()
+                .unwrap()
+                .hold_remaining(first_hold.now()),
+            HOLD_FIRST,
+            "a file claiming a month of hold was believed"
+        );
+        clock.advance(HOLD_FIRST);
+        assert!(
+            !first_hold
+                .sheets()
+                .next()
+                .unwrap()
+                .is_held(first_hold.now()),
+            "the hold outlasted the ceiling the pause gesture sets"
+        );
+        assert!(
+            first_hold.expire_due().is_empty(),
+            "the frozen hour was skipped"
+        );
+        clock.advance(HOUR);
+        assert_eq!(
+            first_hold.expire_due().len(),
+            1,
+            "a page held out of a file never became due"
+        );
+        assert_eq!(
+            first_hold.sheets().count(),
+            0,
+            "the plaintext outlived the rung"
+        );
+
+        // Tag 2 is a hold already topped up, and its ceiling is the
+        // top-up's 24 hours: the clamp must not shorten it to the first
+        // hold's hour, which is the honest 24 hour hold the rung has no
+        // business describing.
+        let (mut topped_up, _clock) = store();
+        topped_up
+            .restore(&held(2, a_month_ms, a_month_ms), 0)
+            .unwrap();
+        assert_eq!(
+            topped_up
+                .sheets()
+                .next()
+                .unwrap()
+                .hold_remaining(topped_up.now()),
+            HOLD_TOPUP,
+            "a topped-up hold was not read against the top-up ceiling"
         );
     }
 

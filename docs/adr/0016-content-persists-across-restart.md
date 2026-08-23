@@ -293,14 +293,19 @@ measure honestly.
    charges the gap against a live hold first: a gap shorter than the
    remaining hold shortens the hold and leaves the frozen life alone, and
    only the part beyond the hold reaches the countdown
-   (`crates/core/src/persist.rs:844-873`). What reaches it is subtracted
+   (`crates/core/src/persist.rs:850-880`). What reaches it is subtracted
    and never added: `deadline = now + remaining.saturating_sub(away)`,
    with `away` already floored at zero, so no restore hands life back and
    the never-rewind invariant this section opens with is a property of
-   the arithmetic rather than of a rule about a field. The span read back
-   is bounded by the rung of the tab that holds the page (`:846`, `:852`,
-   the rung threaded in at `:790`), so a file cannot claim more life
-   than the ladder allows however it was edited. The one exception is not
+   the arithmetic rather than of a rule about a field. Every span read
+   back is bounded. Life is bounded by the rung of the tab that holds the
+   page (`:852`, `:859`, the rung threaded in at `:790`), so a file
+   cannot claim more life than the ladder allows however it was edited.
+   A hold is bounded by the ceiling the pause gesture itself sets, one
+   hour for a first hold and 24 for one already topped up (`:858`,
+   against `crates/core/src/store.rs:39` and `:43`), because a held
+   countdown does not run: a hold believed at face value would keep a
+   page's plaintext for as long as the file cared to claim, on any rung. The one exception is not
    a clock effect: a deliberate TTL rung click sets the deadline to the
    rung's full duration, which is the user's own instruction
    (`crates/core/src/ttl.rs:4-6`).
