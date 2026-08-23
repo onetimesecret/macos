@@ -87,8 +87,10 @@ bound is removed: the second key half moves out of the per-boot temp
 directory into the app support state directory, the boot field leaves the
 sealed header, and the countdown a running process cannot observe is
 drained by the wall-clock gap between the last save and the next restore,
-recorded in a per-page `drained_ms` that no restore may reduce. Section 4
-states exactly what that is worth and what it is not.
+recorded per page as the span of life that is left, which no restore may
+lengthen. Section 4 states exactly what that is worth and what it is not,
+and records (amended 2026-08-23) why the `drained_ms` field this decision
+first specified was not the encoding that shipped.
 
 Everything below marked **Required work** was not implemented when this
 decision was written. Everything stated without that marker carried a
@@ -605,8 +607,8 @@ halves.
 **Redraft of ADR-0012:100.** The audit story is one small module that
 writes secret ciphertext, one derivation of two key halves, and **one**
 mechanical check rather than two: the TTL, measured against a per-page
-`drained_ms` that no restore reduces and a wall stamp inside the
-authenticated header. The boot session UUID check is gone. The ledger is
+span that no restore lengthens, bounded by the ceilings of section 4, and
+a wall stamp inside the authenticated header. The boot session UUID check is gone. The ledger is
 content-free by construction except the capped, user-visible title field,
 unchanged.
 
@@ -675,11 +677,15 @@ changes (`crates/ffi/src/persist.rs:234-236`), and since the whole header
 is the AEAD associated data (`crates/ffi/src/persist.rs:582-587`, `:688-695`), every
 existing `state.sealed` fails authentication. The snapshot's own `MAGIC`
 bumps from `OTSSNAP3` to `OTSSNAP4` (`crates/core/src/persist.rs:102`) in
-the same break, and it carries two causes rather than one. Each page's
-record replaces its running span with `drained_ms` (section 4), and
-issue #54 gives every repeated record its own length prefix
-(`crates/core/src/persist.rs:405-421`). #54 landed first and took the
-bump; this decision rides it rather than spending a second one.
+the same break, and it carries one cause where this decision expected
+two. Issue #54 gives every repeated record its own length prefix
+(`crates/core/src/persist.rs:405-421`), and #54 landed first and took the
+bump. The page record's clock was to have been the second cause, but the
+`drained_ms` field section 4 specified was not built: the record still
+writes the span that is left, running (`crates/core/src/persist.rs:489-491`)
+or frozen behind a hold (`:493-506`), so the clock encoding asked for no
+version of its own. This decision rides #54's bump rather than spending a
+second one.
 
 **The ledger payload magic breaks in the same release, and it did not
 have to.** `LEDGER_MAGIC` goes `OTSLEDR1` to `OTSLEDR2`
@@ -810,11 +816,11 @@ one about drag tracking, and none of them has been run.
 |---|---|---|---|
 | 1 | Clean quit | Rust round trip exists (`crates/ffi/src/lib.rs:2726`, `crates/core/src/persist.rs:1134`). Add a Swift test that drives `saveState()` and `applicationShouldTerminate`; today a regression removing the quit flush passes CI green. Blocked on issue #53 (no injectable state directory or credential store). | None |
 | 2 | Crash or force termination | Debounce arithmetic and the latch are covered as value types (`shell/Tests/CompanionKitTests/StateLicenceTests.swift:320`, `:388`) and atomic replace under concurrency is genuinely covered (`crates/ffi/src/persist.rs:2184`, `:2290`). Add: every mutation site reaches `markDirty()`; the shipped plist still declares `NSSupportsSuddenTermination` (`shell/OnetimePad-Info.plist:56`); the post-refusal window is 10 s and absorbs subsequent mutations (section 2). | `kill -9` mid-burst, then relaunch and confirm what survived |
-| 3 | macOS restart | The existing boot-session tests are **invalidated by this ADR**: the discard and refusal assertions at `crates/ffi/src/persist.rs:1868` and `:1850`, the boot-UUID plumbing they rest on at `:1683`, `:1705` and `:1728`, and at the seam `crates/ffi/src/lib.rs:3423` and `:3481`, which turns on the deleted `BootMismatch` retry. The rotation tests at `crates/ffi/src/persist.rs:1925`, `:1958`, `:1985`, `:2003` survive and gain the two triggers of section 6. Add: a monotonic clock that restarts while wall time advances leaves pages alive (section 5, mandatory); a running page's save-to-restore gap drains by wall clock and by that gap only; a page held across a restart charges the gap against the hold first, so a gap shorter than the remaining hold comes back still held with `frozen_remaining` intact and `drained_ms` unmoved, and a longer gap drains only the excess, which is `crates/core/src/persist.rs:2321`'s property carried onto the new restore path; `drained_ms` is persisted and no restore reduces it. | A real reboot with a live pad, plus a reboot with the pad emptied first, confirming rotation ran; a reboot with a page paused, confirming it returns paused |
+| 3 | macOS restart | The existing boot-session tests are **invalidated by this ADR**: the discard and refusal assertions at `crates/ffi/src/persist.rs:1868` and `:1850`, the boot-UUID plumbing they rest on at `:1683`, `:1705` and `:1728`, and at the seam `crates/ffi/src/lib.rs:3423` and `:3481`, which turns on the deleted `BootMismatch` retry. The rotation tests at `crates/ffi/src/persist.rs:1925`, `:1958`, `:1985`, `:2003` survive and gain the two triggers of section 6. Add: a monotonic clock that restarts while wall time advances leaves pages alive (section 5, mandatory); a running page's save-to-restore gap drains by wall clock and by that gap only; a page held across a restart charges the gap against the hold first, so a gap shorter than the remaining hold comes back still held with `frozen_remaining` intact and the frozen countdown unmoved, and a longer gap drains only the excess, which is `crates/core/src/persist.rs:2321`'s property carried onto the new restore path; the span that is left is what persists, no restore lengthens it, and no restored span passes its ceiling, life against the tab's rung and a hold against the ceiling the pause gesture sets (section 4). | A real reboot with a live pad, plus a reboot with the pad emptied first, confirming rotation ran; a reboot with a page paused, confirming it returns paused |
 | 4 | App update or dev rebuild | Format-version refusal is covered (`crates/ffi/src/persist.rs:1419`). A superseded magic is erased and the licence granted, for the envelope (`crates/ffi/src/lib.rs:4110`) and for the ledger payload (`:4210`), section 9. | Re-sign with a different identity and confirm the unavailable-key path refuses without erasing; `.debug` versus release bundle id separation |
 | 5 | Damaged snapshot | Rust coverage is strong (`crates/core/src/persist.rs:1364`, `:2104`, `:2463`, `:2489`, `:2520`; `crates/ffi/src/persist.rs:1305`, `:1511`). Add the Swift half: a refusal withholds the licence, does not overwrite the file, and the new content-side Clear re-grants it. Blocked on issue #53. | None |
 | 6 | Unavailable encryption key | All automated coverage runs against `InMemoryCredentialStore` or a refuses-to-delete double (`crates/ffi/src/persist.rs:1794`, `:2003`; `crates/credentials/src/lib.rs:1151`); the one real-keychain test is `#[ignore]`d (`crates/credentials/src/lib.rs:1302`). CI cannot cover a locked keychain. | Locked keychain at load; denied ACL prompt; confirm no erase and no overwrite in both |
-| 7 | TTL expiry | Both legs covered (`crates/core/src/persist.rs:2284`, `:2300`, `:2321`, `:2378`; `crates/core/src/store.rs:1753`, `:2423`). Three of the seam tests go with `monotonic_away_ms`, because section 5 removes it from the restore path: `crates/ffi/src/lib.rs:3330`, `:3354` and `:3568` assert the monotonic stamp is what measures time away, which stops being true. Add: a system clock stepped back before a restore ages the page by zero rather than negatively, so a page with two days left still has two days left afterwards, which is the accepted freeze of section 4 and not a defect; a `sealed_wall_ms` ahead of the system clock leaves `drained_ms` unchanged; the ceiling holds at seven days on an untampered clock. | Step the machine clock back a day with a live pad |
+| 7 | TTL expiry | Both legs covered (`crates/core/src/persist.rs:2284`, `:2300`, `:2321`, `:2378`; `crates/core/src/store.rs:1753`, `:2423`). Three of the seam tests go with `monotonic_away_ms`, because section 5 removes it from the restore path: `crates/ffi/src/lib.rs:3330`, `:3354` and `:3568` assert the monotonic stamp is what measures time away, which stops being true. Add: a system clock stepped back before a restore ages the page by zero rather than negatively, so a page with two days left still has two days left afterwards, which is the accepted freeze of section 4 and not a defect; a `sealed_wall_ms` ahead of the system clock leaves the span unchanged; the ceiling holds at seven days on an untampered clock. | Step the machine clock back a day with a live pad |
 
 The four hardware procedures this required now exist under
 `docs/qa/verification-procedures/`: `reboot.md`, `power-loss.md`,
