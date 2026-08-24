@@ -66,7 +66,37 @@ final class MenuTrackingTests: XCTestCase {
         // Judged while the menu is still up, which is what a submenu or
         // a slow choice looks like.
         let sessions = [MenuTracking.Session(began: t, ended: nil)]
-        XCTAssertTrue(MenuTracking.claims(press: t + 30, sessions: sessions))
+        XCTAssertTrue(MenuTracking.claims(press: t + 5, sessions: sessions))
+    }
+
+    // MARK: The end that never came
+
+    func testAnOpenSessionStopsClaimingOnceItIsOlderThanTheLimit() {
+        // One begin without its end would otherwise claim every press
+        // for the life of the process, and the outside click rule would
+        // be dead with no symptom but a card that never rests again.
+        let sessions = [MenuTracking.Session(began: t, ended: nil)]
+        XCTAssertFalse(
+            MenuTracking.claims(press: t + MenuTracking.openLimit + 0.01, sessions: sessions)
+        )
+    }
+
+    func testAMenuHeldOpenNearlyToTheLimitStillClaimsItsPress() {
+        // The limit must not cost a real menu its exception: a person
+        // reading a long menu, or leaving one standing while they think,
+        // is inside the cap for the whole of it.
+        let sessions = [MenuTracking.Session(began: t, ended: nil)]
+        XCTAssertTrue(
+            MenuTracking.claims(press: t + MenuTracking.openLimit - 0.01, sessions: sessions)
+        )
+    }
+
+    func testAnUnbalancedSessionLetsAPlainOutsideClickRestTheSurfaceAgain() {
+        // The shape of the fault, end to end: a begin whose end never
+        // posted, and then, much later, the user clicking into another
+        // app. That press must rest the card.
+        let stranded = [MenuTracking.Session(began: t, ended: nil)]
+        XCTAssertFalse(MenuTracking.claims(press: t + 600, sessions: stranded))
     }
 
     func testAPressBetweenTwoSessionsRestsTheSurface() {
@@ -132,11 +162,19 @@ final class MenuTrackingTests: XCTestCase {
         XCTAssertEqual(MenuTracking.closing(settled, at: t + 2), settled)
     }
 
-    func testPruningKeepsOpenSessionsHoweverOldTheyAre() {
+    func testPruningKeepsAnOpenSessionThatCanStillClaimAPress() {
         // A menu the user has left standing is still the reason the
-        // next press must be ignored.
-        let sessions = [MenuTracking.Session(began: t - 600, ended: nil)]
+        // next press must be ignored, so it survives the sweep for as
+        // long as it is entitled to claim anything.
+        let sessions = [MenuTracking.Session(began: t - 1, ended: nil)]
         XCTAssertEqual(MenuTracking.pruned(sessions, now: t), sessions)
+    }
+
+    func testPruningDropsAnOpenSessionThatOutlivedItsLimit() {
+        // It can no longer claim a press, and left on the books it would
+        // only give the next `closing` the wrong session to end.
+        let sessions = [MenuTracking.Session(began: t - 600, ended: nil)]
+        XCTAssertTrue(MenuTracking.pruned(sessions, now: t).isEmpty)
     }
 
     func testPruningDropsSessionsClosedBeyondRetention() {
