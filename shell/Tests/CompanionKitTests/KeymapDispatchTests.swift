@@ -110,6 +110,32 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertEqual(TabStripView.newPageHelp(chord: nil), "New page")
     }
 
+    /// The ledger tab is the case that actually happened: the bundled
+    /// keymap withdrew ⌘0 (issue #78) and the tooltip went on offering
+    /// it. With nothing bound, it says only what the tab does.
+    func testTheLedgerTooltipDropsTheChordTheDefaultWithdrew() throws {
+        let model = try makeModel()
+        XCTAssertNil(model.keymap.hintKeystroke(for: .ledgerShow))
+        XCTAssertFalse(
+            TabStripView.ledgerHelp(chord: model.keymap.hintKeystroke(for: .ledgerShow))
+                .contains("("))
+    }
+
+    /// And an override that puts the ledger back on a chord gets a
+    /// tooltip that names it.
+    func testTheLedgerTooltipNamesAChordAnOverrideRestored() throws {
+        let override = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymap-\(UUID().uuidString).json")
+        try #"[{ "context": "Editor", "bindings": { "cmd-0": "ledger::Show" } }]"#
+            .write(to: override, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: override) }
+
+        let model = try makeModel(keymapOverride: override)
+        XCTAssertTrue(
+            TabStripView.ledgerHelp(chord: model.keymap.hintKeystroke(for: .ledgerShow))
+                .hasSuffix("(⌘0)"))
+    }
+
     /// The hint is not the menu equivalent: a section that declined key
     /// equivalents still bound the chord, and the tooltip still says so.
     func testAHintIsOfferedEvenWithoutKeyEquivalents() throws {

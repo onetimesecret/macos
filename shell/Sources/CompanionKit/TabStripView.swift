@@ -6,6 +6,10 @@ import SwiftUI
 /// permanent dashed ◌ ledger tab at the right end. Click selects;
 /// double-click holds the clock; drag reorders; ✕ on hover closes.
 ///
+/// The ledger tab and the ↗ page button are built here and not shown
+/// (issue #78, `HiddenUI`), so what a user sees today is the slots and
+/// the +.
+///
 /// A slot whose page expired keeps its place, its name and its rung,
 /// and draws the dashed empty treatment instead of a gauge (ADR-0017).
 /// The strip is the slots, so it stops being nine deadlines.
@@ -48,8 +52,17 @@ public struct TabStripView: View {
             }
             newPageTab
             Spacer(minLength: 8)
-            promotePageTab
-            ledgerTab
+            // Also built and not drawn (issue #78): promotion still
+            // works everywhere else it worked, and the strip stops
+            // carrying a button for it.
+            if HiddenUI.showsPromoteButton {
+                promotePageTab
+            }
+            // Built and not drawn (issue #78): the ledger keeps
+            // recording, and the strip stops offering the way in.
+            if HiddenUI.showsLedgerEntryPoints {
+                ledgerTab
+            }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
@@ -96,6 +109,17 @@ public struct TabStripView: View {
         return "New page (\(chord.displaySymbol))"
     }
 
+    /// The ledger tab's tooltip, on the same terms. It named ⌘0 until
+    /// the bundled keymap withdrew that binding (issue #78), which left
+    /// a button advertising a chord that no longer did anything. Now the
+    /// chord appears only when something bound it, which for the tab's
+    /// own build is a keymap the user wrote.
+    static func ledgerHelp(chord: Keystroke?) -> String {
+        let what = "The ledger: what the app did with each page and chip"
+        guard let chord else { return what }
+        return "\(what) (\(chord.displaySymbol))"
+    }
+
     /// ↗ page (docs/spec/04, promotion flow): promote the visible page
     /// into a one-time link. Opens the inline confirmation — nothing
     /// leaves until its one confirming click.
@@ -119,8 +143,9 @@ public struct TabStripView: View {
         .accessibilityLabel(Text("Promote page to one-time link"))
     }
 
-    /// The dashed residue tab: the audit trail, one line per event
-    /// (⌘0). A toggle, so a second click returns to the page.
+    /// The dashed residue tab: the audit trail, one line per event. A
+    /// toggle, so a second click returns to the page. Built and not
+    /// drawn today (issue #78).
     private var ledgerTab: some View {
         Button(action: model.toggleLedger) {
             HStack(spacing: 4) {
@@ -141,7 +166,7 @@ public struct TabStripView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .help("The ledger: what the app did with each page and chip (⌘0)")
+        .help(Self.ledgerHelp(chord: model.keymap.hintKeystroke(for: .ledgerShow)))
         .accessibilityLabel(Text("Ledger, \(model.ledgerEntries.count) records"))
     }
 }

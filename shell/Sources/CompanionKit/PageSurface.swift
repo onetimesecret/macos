@@ -228,12 +228,16 @@ public struct CountdownButton: View {
 /// Which chord runs which command is no longer written here. It is
 /// read out of the keymap (issue #76,
 /// `docs/development/about-the-keymap.md`): the bundled default file
-/// says ⌘1 through ⌘9 jump by visible tab order, ⌘0 opens the ledger,
-/// ⌘W closes, ⌘S forces the debounced write to happen now, ⌘, opens
-/// Settings and Esc hands the keyboard back, and a user's own keymap
-/// may say otherwise. What is left here is the installation: one
-/// hidden button per chord the surface carries, mounted only while the
-/// surface is raised.
+/// says ⌘1 through ⌘9 jump by visible tab order, ⌘W closes, ⌘S forces
+/// the debounced write to happen now, ⌘, opens Settings and Esc hands
+/// the keyboard back, and a user's own keymap may say otherwise. What
+/// is left here is the installation: one hidden button per chord the
+/// surface carries, mounted only while the surface is raised.
+///
+/// ⌘0 used to sit at the end of that run and open the ledger. It is
+/// withdrawn from the default file while the ledger's entry points are
+/// hidden (issue #78); the command still dispatches, so an override
+/// keymap can name it.
 ///
 /// The seal gestures (⇧⌘V, ⌘↩) and the wrap toggle are in the same
 /// file and are not installed here. They are dispatched by the page's

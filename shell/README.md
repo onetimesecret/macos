@@ -50,10 +50,16 @@ the seam.
 - **These are the rev C surfaces** (issue #12, docs/spec/04), shared
   through CompanionKit: one page of ink and sealed chips in an
   `NSTextView`-backed editor; bottom-edge tabs with per-tab gauges,
-  pause on double-click, drag-to-reorder, ✕ to close; the ledger on the
-  dashed ◌ tab; the full keyboard map (⌃⌥Space, ⌘1–9, ⌘0, ⌥⌘←/→, ⌥⌘N,
-  ⇧⌘V, ⌘↩, Esc). Markdown headings render styled with their markup
-  kept visible; the bytes of the page never change.
+  pause on double-click, drag-to-reorder, ✕ to close; the keyboard map
+  (⌃⌥Space, ⌘1–9, ⌘N, ⌥⌘←/→, ⇧⌘V, ⌘↩, Esc). Which chord does what is
+  the keymap file's business and not this file's, so read
+  `docs/development/about-the-keymap.md` for the list that is actually
+  installed. Markdown headings render styled with their markup kept
+  visible; the bytes of the page never change.
+- The ledger still records every event and is still readable by an
+  override keymap, but its dashed ◌ tab, its ⌘0 and its Settings entry
+  are hidden (issue #78) while the audit story is settled. Nothing was
+  deleted, so nothing has to be rebuilt to bring it back.
 - Every gesture route is boundary-lawful: sealed paste reads
   `NSPasteboard.general` core-side; **drop-to-seal reads the drag
   pasteboard core-side** (`companion_sheet_seal_from_drag`) — no

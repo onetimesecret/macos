@@ -111,7 +111,7 @@ public struct ChipInfo: Codable, Hashable, Sendable {
     }
 }
 
-/// One line of the audit trail (⌘0): what the app did with one item,
+/// One line of the audit trail: what the app did with one item,
 /// and when. The ledger outlives the pages it describes, so this type
 /// carries a guarantee, not a convention: **no field on it can hold
 /// content**.
@@ -620,7 +620,7 @@ public final class CompanionClient: @unchecked Sendable {
 
     // MARK: The ledger
 
-    /// The audit trail, newest first (⌘0): metadata only, held to a
+    /// The audit trail, newest first: metadata only, held to a
     /// rolling 90-day window on the records' own wall-clock stamps.
     /// Records accumulate on ordinary use, not only on death, so a
     /// session in which pages were merely opened still has records.

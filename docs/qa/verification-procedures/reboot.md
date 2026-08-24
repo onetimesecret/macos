@@ -74,7 +74,7 @@ After the fact, the same predicate under
 **Pass:** all three pages are back with their chips. Each countdown is
 shorter by roughly the wall clock time the machine was away, and by no
 more than that. No line in the log says the restore failed
-(`PageModel.swift:615`, "restore failed over an existing state file;
+(`PageModel.swift:635`, "restore failed over an existing state file;
 withholding the save licence"), and no `companion-ffi:` fault appears.
 `state.sealed` and the same file half are still in the state directory,
 and the half's name is unchanged, because nothing rotated.
@@ -143,7 +143,7 @@ hold reaches the countdown (ADR-0016 section 4).
 
 1. With a live pad, double click a tab to hold that page's clock at 1h
    (`shell/Sources/CompanionKit/TabStripView.swift:189`,
-   `shell/Sources/CompanionKit/PageModel.swift:1485`). The tab shows
+   `shell/Sources/CompanionKit/PageModel.swift:1507`). The tab shows
    the ⏸1h marking.
 2. Note the held page's frozen remaining time and a second, unheld
    page's remaining time.

@@ -160,6 +160,31 @@ final class RestoreFailureTests: XCTestCase {
         XCTAssertTrue(stranger.contentRestoreRefused)
     }
 
+    /// The standing line names the Settings clear as the one way out of
+    /// a ledger that will not open, and issue #78 hid that control. So
+    /// it comes back for exactly as long as the line stands, and goes
+    /// again when the clear lands: the section's disappearance is the
+    /// receipt for the gesture (`HiddenUI.showsLedgerClear`).
+    func testTheRefusedLedgerSurfacesTheControlItsBannerNames() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")
+
+        XCTAssertFalse(
+            HiddenUI.showsLedgerClear(ledgerRestoreRefused: false),
+            "the section is hidden in the ordinary case, or this proves nothing")
+
+        let stranger = makeModel(
+            in: tempDir, defaults: defaults, tag: "stranger-\(UUID().uuidString)")
+        stranger.loadStateIfNeeded()
+        XCTAssertTrue(
+            HiddenUI.showsLedgerClear(ledgerRestoreRefused: stranger.ledgerRestoreRefused),
+            "the banner tells the user to clear the ledger in Settings and the section is not there")
+
+        stranger.clearLedger()
+        XCTAssertFalse(
+            HiddenUI.showsLedgerClear(ledgerRestoreRefused: stranger.ledgerRestoreRefused))
+    }
+
     func testTheSaveStatusWalksSavingThenSaved() throws {
         let (tempDir, defaults, tag) = try makeFixture()
         let model = makeModel(in: tempDir, defaults: defaults, tag: tag)

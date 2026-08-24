@@ -84,7 +84,7 @@ the wall clock time the machine was off. Any temp file recorded in step
 3 is gone from the directory after launch. No refusal line appears
 (`crates/ffi/src/persist.rs:666`, `:673`, `:680`, `:690`) and no
 "restore failed over an existing state file" line appears
-(`shell/Sources/CompanionKit/PageModel.swift:615`).
+(`shell/Sources/CompanionKit/PageModel.swift:635`).
 
 **Fail:** an empty pad; or a temp file that is still there after a
 launch; or a refusal, which would mean the rename landed a file the

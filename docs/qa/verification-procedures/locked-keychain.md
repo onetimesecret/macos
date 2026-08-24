@@ -54,8 +54,8 @@ could not be assembled" and returns `Opened::Refused` (`:679-687`). The
 seam maps that to a failed restore and leaves the file exactly where it
 is (`crates/ffi/src/lib.rs:1315`). The shell probes the file after the
 restore, finds it present, and withholds the save licence
-(`shell/Sources/CompanionKit/PageModel.swift:606-616`), so nothing is
-written over it for the whole session (`:896-907`).
+(`shell/Sources/CompanionKit/PageModel.swift:718-723`), so nothing is
+written over it for the whole session (`:1075-1081`).
 
 ## Case 1: the keychain is locked when the app loads
 
@@ -95,8 +95,8 @@ written over it for the whole session (`:896-907`).
   stays and this session will not write one".
 - The shell logs "restore failed over an existing state file;
   withholding the save licence"
-  (`shell/Sources/CompanionKit/PageModel.swift:615`), and the ledger's
-  own line about not recording to the audit trail (`:645-652`) if the
+  (`shell/Sources/CompanionKit/PageModel.swift:724-728`), and the ledger's
+  own line about not recording to the audit trail (`:750-763`) if the
   ledger key was refused too.
 - Both sha256 values are **identical** to step 2, after the typing and
   after the quit. No overwrite.

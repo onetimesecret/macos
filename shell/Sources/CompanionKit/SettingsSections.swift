@@ -131,22 +131,34 @@ public struct ConnectionSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section {
-                Button("Clear the ledger", role: .destructive) { confirmingLedgerClear = true }
-                    .confirmationDialog(
-                        "Clear the ledger?",
-                        isPresented: $confirmingLedgerClear,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Clear the ledger", role: .destructive) { clearLedger() }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("Every record goes, and there is no undo. Pages and sealed chips are untouched.")
-                    }
-            } header: {
-                Text("The ledger records what the app did with each item: never the content, but page names, and those are often the secret's label. It survives restarts and keeps 90 days.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            // Hidden with the rest of the ledger's entry points (issue
+            // #78), except while the surface is standing there telling
+            // the user to come here and clear the ledger. That banner
+            // names this button as the one way out of a ledger that
+            // will not open, and hiding the button it names would make
+            // the instruction a dead end.
+            //
+            // The flag is `@Published`, so the section arrives with the
+            // banner and leaves the moment the clear lands: the
+            // disappearance is the receipt.
+            if HiddenUI.showsLedgerClear(ledgerRestoreRefused: model.ledgerRestoreRefused) {
+                Section {
+                    Button("Clear the ledger", role: .destructive) { confirmingLedgerClear = true }
+                        .confirmationDialog(
+                            "Clear the ledger?",
+                            isPresented: $confirmingLedgerClear,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Clear the ledger", role: .destructive) { clearLedger() }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("Every record goes, and there is no undo. Pages and sealed chips are untouched.")
+                        }
+                } header: {
+                    Text("The ledger records what the app did with each item: never the content, but page names, and those are often the secret's label. It survives restarts and keeps 90 days.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             if offersCaptureToggle, PageModel.captureOptOutOffered {
                 Section {
@@ -253,7 +265,8 @@ public struct ConnectionSettingsView: View {
 
     /// The clear is in memory core-side, so the model marks the store
     /// dirty and the debounced write is what puts an empty ledger over
-    /// the file. Nothing is reported back: an empty ⌘0 is the receipt.
+    /// the file. Nothing is reported back: an empty ledger is the
+    /// receipt.
     private func clearLedger() {
         model.clearLedger()
     }

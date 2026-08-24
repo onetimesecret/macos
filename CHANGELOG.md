@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Four things stopped showing up** (issue #78). Dogfooding turned up
+  affordances that were on the card without earning their place, and
+  they are now hidden: the ledger's every way in (the dashed tab at the
+  end of the strip, the ⌘0 binding in the bundled keymap, and the clear
+  button in Settings), the ↗ page button that promoted the visible page
+  to a link, the resize glyph drawn in the bottom corner, and the
+  coloured dot beside the app's name in the header. This is a hide and
+  not a removal. Nothing was deleted: the ledger still records and still
+  survives restarts, promotion still works from everywhere else it
+  worked, and the card still resizes from all eight of its edges and
+  corners, which never needed the glyph to be draggable. Each suppressed
+  site is one flag in `HiddenUI`, so a build that wants any of them back
+  gets it back in one line while the decision to keep them or drop them
+  is still being made. `ledger::Show` remains a legal command id, so a
+  keymap of your own can still put the ledger on a chord. The clear
+  button has one deliberate exception, because a hide must not end a
+  recovery route: when the audit trail will not open, the surface puts
+  up a standing line telling you to clear the ledger in Settings, and
+  for as long as that line stands the Settings section it names is
+  there. Clearing takes the line down and the section with it.
+
 - **⌘N makes a new page** (issue #77). It was ⌥⌘N, which existed
   because ⌘N looked spoken for, and it is not: the pad has no document
   model, so AppKit never installs the stock New item that would have

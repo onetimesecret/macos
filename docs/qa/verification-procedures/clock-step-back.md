@@ -117,7 +117,7 @@ zero. No countdown grew, no page came back with more life than its rung
 allows, and nothing was revived out of the ledger. No refusal line
 appears (`crates/ffi/src/persist.rs:693`, `:700`, `:707`, `:717`) and no
 "restore failed over an existing state file; withholding the save
-licence" line appears (`shell/Sources/CompanionKit/PageModel.swift:654`).
+licence" line appears (`shell/Sources/CompanionKit/PageModel.swift:674`).
 
 **Fail:** any page whose remaining time went **up**, which is the
 never-rewind invariant of ADR-0016 section 4 broken and the reason this

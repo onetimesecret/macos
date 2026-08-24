@@ -6,6 +6,16 @@ sheets of ink and sealed chips, gesture-only sealing, the pausable
 countdown, bottom tabs, the ledger. Do it on the Mac you'll ship
 against.
 
+**Suspended while issue #78 stands.** Four affordances are built and
+deliberately not drawn: the ledger's entry points (its tab, ⌘0, and the
+Settings clear), the ↗ page button, the resize glyph in the bottom
+corner, and the ember dot in the header. Every check below that reaches
+the ledger through the UI, and the one that presses ⌘0, cannot be run as
+written; bind `ledger::Show` in your own keymap if you need to reach the
+ledger for a check, or skip it and say so in the session notes. What the
+resize glyph advertised is still true, so the resize checks stand as
+they are.
+
 Two prior results stand and are not re-run here:
 
 - **Headless ingest proof (rev A, 2026-07-09):** the core bound to the

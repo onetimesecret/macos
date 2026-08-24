@@ -50,7 +50,7 @@ strand one just as a power cut can, so the same observable applies here;
 
 What decides the loss is the debounce. A keystroke marks the model
 dirty, which takes a sudden-termination hold and arms a two second
-timer (`shell/Sources/CompanionKit/PageModel.swift:472`, `:912`, `:919`);
+timer (`shell/Sources/CompanionKit/PageModel.swift:472`, `:932`, `:939`);
 the write happens at the timer's far end, and the hold is released only
 once the write settles. The hold is real rather than decorative because
 the bundle declares `NSSupportsSuddenTermination`
@@ -103,7 +103,7 @@ documented cost of the debounce rather than a failure. Any temp file
 recorded in step 3 is gone after launch. No refusal line appears
 (`crates/ffi/src/persist.rs:693`, `:700`, `:707`, `:717`) and no
 "restore failed over an existing state file; withholding the save
-licence" line appears (`shell/Sources/CompanionKit/PageModel.swift:654`).
+licence" line appears (`shell/Sources/CompanionKit/PageModel.swift:674`).
 
 **Fail:** an empty pad; content older than the last settled write coming
 back, which would mean a generation was lost rather than a burst; a temp
