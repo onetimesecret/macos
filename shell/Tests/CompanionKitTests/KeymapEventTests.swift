@@ -72,8 +72,14 @@ final class KeymapEventTests: XCTestCase {
         return (model, textView)
     }
 
+    /// `unmodified` is the event's `charactersIgnoringModifiers`, which
+    /// is the string matching reads. It defaults to the same text
+    /// because for most chords the board reports both alike; the
+    /// shifted glyphs are where the two part company, and there the
+    /// caller has to say so.
     private func press(
         _ characters: String,
+        unmodified: String? = nil,
         flags: NSEvent.ModifierFlags,
         keyCode: UInt16
     ) throws -> NSEvent {
@@ -86,11 +92,20 @@ final class KeymapEventTests: XCTestCase {
                 windowNumber: 0,
                 context: nil,
                 characters: characters,
-                charactersIgnoringModifiers: characters,
+                charactersIgnoringModifiers: unmodified ?? characters,
                 isARepeat: false,
                 keyCode: keyCode
             ),
             "AppKit refused to build the event this test presses")
+    }
+
+    /// ⇧⌘1 as the board really reports it: `characters` is the
+    /// unshifted `1`, because ⌘ suppresses the shift there, and
+    /// `charactersIgnoringModifiers` is the shifted `!`, because that
+    /// one honours shift. Matching reads the second of the two, which
+    /// is why the file writes the glyph.
+    private func pressShiftedOne() throws -> NSEvent {
+        try press("1", unmodified: "!", flags: [.command, .shift], keyCode: 18)
     }
 
     /// A command-bearing chord travels the key-equivalent route, which
@@ -133,6 +148,39 @@ final class KeymapEventTests: XCTestCase {
 
         textView.keyDown(with: event)
         XCTAssertNotEqual(model.wrapsLines, wrapped)
+    }
+
+    /// The spelling the parser sends an author to when it refuses
+    /// `cmd-shift-1`, pressed as the board sends it. The event carries
+    /// a shift flag the binding cannot name, so this fires only
+    /// because matching leaves shift out of the comparison for a glyph
+    /// that already carries it.
+    func testAShiftedGlyphFiresFromTheGlyphSpelling() throws {
+        let (model, textView) = try makeStack(
+            overrideText: """
+                [{ "context": "Editor", "bindings": { "cmd-!": "editor::ToggleWrap" } }]
+                """)
+        let wrapped = model.wrapsLines
+
+        XCTAssertTrue(
+            textView.performKeyEquivalent(with: try pressShiftedOne()),
+            "the page did not claim the glyph spelling of a shifted chord")
+        XCTAssertNotEqual(model.wrapsLines, wrapped)
+    }
+
+    /// And the spelling that is refused, pressed the same way, to show
+    /// what the refusal is about: the file wrote `1` and the press says
+    /// `!`, so this binding would have been dead on the page while the
+    /// surface's hidden buttons fired it.
+    func testTheUnshiftedSpellingWouldNotHaveFired() throws {
+        let (_, textView) = try makeStack(
+            overrideText: """
+                [{ "context": "Editor", "bindings": { "cmd-1": "editor::ToggleWrap" } }]
+                """)
+
+        XCTAssertFalse(
+            textView.performKeyEquivalent(with: try pressShiftedOne()),
+            "a chord bound to the unshifted glyph answered a shifted press")
     }
 
     /// The chord that is not bound stays the page's own business: a

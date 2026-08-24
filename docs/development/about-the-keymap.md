@@ -40,7 +40,12 @@ array of sections:
 - **`use_key_equivalents`** lets a chord in that section be advertised
   as a macOS menu key equivalent. Only `app::Settings` takes one up
   today. A menu equivalent is an app-wide claim, live even while a
-  Settings field holds the keyboard, so it has to be asked for.
+  Settings field holds the keyboard, so it has to be asked for. Once
+  granted, it stays with that chord and command: a later section that
+  restates the same line without asking for equivalents leaves the
+  equivalent standing, because a file repeating a default line to keep
+  it in sight must not quietly take something away. To withdraw one,
+  set the chord to `null` and bind it again in a later section.
 - **`bindings`** maps a keystroke to a command id, or to `null` to take
   the chord away.
 
@@ -57,8 +62,12 @@ Shift is refused over anything but a letter, for that same reason.
 event reports its unmodified characters with shift already applied, so
 the page would see `!` where the file wrote `1` and never match, while
 the surface's hidden buttons would install the chord and fire it: one
-spelling, two surfaces, two answers. Shift over a named key (`cmd-shift-left`)
-is fine, because named keys are matched by their place on the board.
+spelling, two surfaces, two answers. The chord is still bindable, by the
+glyph the shift produces: `cmd-!` is ⇧⌘1, and `cmd-<` is the shifted
+comma. Both fire on both routes, because the glyph carries the shift and
+the file does not have to name it twice. Shift over a named key
+(`cmd-shift-left`) is fine,
+because named keys are matched by their place on the board.
 
 Command ids are the enum in `Keymap/CommandID.swift`. Only commands
 this build implements are bindable; an id nothing implements is
