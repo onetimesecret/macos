@@ -34,6 +34,14 @@ final class BackdropSettingsWindowController {
             // Vertical resize only: the form is built for one width.
             window.contentMinSize = NSSize(width: 420, height: 320)
             window.contentMaxSize = NSSize(width: 420, height: CGFloat.greatestFiniteMagnitude)
+            // The window is built once and shown many times, so without
+            // this it would keep the Space it was first opened on and
+            // every later ⌘, would carry the user there instead of
+            // opening here. It is also the app's one ordinary window,
+            // which makes it the only thing left that can pull an
+            // activation onto another desktop now that the surface
+            // itself claims all of them (issue #74).
+            window.collectionBehavior.insert(.moveToActiveSpace)
             window.center()
             self.window = window
         }

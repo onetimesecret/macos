@@ -47,7 +47,7 @@ final class BackdropStanceTests: XCTestCase {
     func testRestingIsDesktopFurnitureAcrossSpaces() {
         XCTAssertEqual(
             BackdropStance.resting.collectionBehavior(pinned: false),
-            [.stationary, .ignoresCycle, .fullScreenNone]
+            [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
         )
     }
 
@@ -104,10 +104,12 @@ final class BackdropStanceTests: XCTestCase {
 
     func testRaisedFollowsTheUserToTheActiveSpace() {
         // A surface that holds the keyboard must be visible where the
-        // user is looking — full-screen Spaces included.
+        // user is looking, full-screen Spaces included. It gets there by
+        // being on every Space already rather than by being moved onto
+        // this one, so that no summon costs a reassignment (issue #74).
         XCTAssertEqual(
             BackdropStance.raised.collectionBehavior(pinned: false),
-            [.moveToActiveSpace, .fullScreenAuxiliary]
+            [.canJoinAllSpaces, .fullScreenAuxiliary]
         )
     }
 
@@ -163,7 +165,86 @@ final class BackdropStanceTests: XCTestCase {
         XCTAssertEqual(BackdropStance.raised.level(pinned: true), .floating)
         XCTAssertEqual(
             BackdropStance.raised.collectionBehavior(pinned: true),
-            [.moveToActiveSpace, .fullScreenAuxiliary]
+            [.canJoinAllSpaces, .fullScreenAuxiliary]
+        )
+    }
+
+    // MARK: Spaces — one membership, held through every posture
+
+    func testEveryPostureClaimsEverySpace() {
+        // The fix for the ⌘Tab return landing on Desktop 1 (issue #74,
+        // ADR-0019): a window bound to the Space it was created on drags
+        // the user back there whenever the app is activated, because the
+        // window server switches Spaces to reveal the app's windows.
+        for stance in [BackdropStance.resting, .raised] {
+            for pinned in [false, true] {
+                XCTAssertTrue(
+                    stance.collectionBehavior(pinned: pinned).contains(.canJoinAllSpaces),
+                    "a posture bound to one Space pulls the user back to it on activation"
+                )
+            }
+        }
+    }
+
+    func testNoPostureChangeAsksForAReassignment() {
+        // The flicker half of the same issue: the membership bits are
+        // what the window server reads to decide which Space a window
+        // lives on, and writing different ones on a stance flip is a
+        // move between Spaces, seen as a blink. Every posture must name
+        // the same membership, so no summon, rest or pin can ask for
+        // one.
+        let memberships = Set(
+            [BackdropStance.resting, .raised].flatMap { stance in
+                [false, true].map { stance.spaceMembership(pinned: $0).rawValue }
+            }
+        )
+        XCTAssertEqual(memberships, [NSWindow.CollectionBehavior.canJoinAllSpaces.rawValue])
+    }
+
+    func testOnlyFullScreenParticipationVariesByPosture() {
+        // The one deliberate exception: a desktop-level card in another
+        // app's full-screen room could only ever be an invisible one, so
+        // the unpinned rest declines those Spaces while the pin and the
+        // raise accept them. This decides whether such a Space is joined
+        // at all, not which desktop the window sits on.
+        XCTAssertTrue(
+            BackdropStance.resting.collectionBehavior(pinned: false).contains(.fullScreenNone)
+        )
+        XCTAssertTrue(
+            BackdropStance.resting.collectionBehavior(pinned: true).contains(.fullScreenAuxiliary)
+        )
+        XCTAssertTrue(
+            BackdropStance.raised.collectionBehavior(pinned: false).contains(.fullScreenAuxiliary)
+        )
+    }
+
+    // MARK: The summon's round trip, the safety net that used to blink
+
+    func testASurfaceStrandedOnAnotherSpaceIsRoundTripped() {
+        // The one case the net exists for: a window up on a Space the
+        // user has left would take the keyboard out of sight.
+        XCTAssertTrue(
+            BackdropStance.requiresSpaceRoundTrip(visible: true, onActiveSpace: false)
+        )
+    }
+
+    func testASurfaceAlreadyHereIsNeverRoundTripped() {
+        // Which is now every case, since a window on all Spaces is on
+        // the active one by definition. The blink this used to cost on
+        // each ⌘Tab back is the flicker of issue #74.
+        XCTAssertFalse(
+            BackdropStance.requiresSpaceRoundTrip(visible: true, onActiveSpace: true)
+        )
+    }
+
+    func testAnUnshownSurfaceIsNeverRoundTripped() {
+        // Nothing to order out, and ordering out a window that is not up
+        // would be a second way to lose the summon.
+        XCTAssertFalse(
+            BackdropStance.requiresSpaceRoundTrip(visible: false, onActiveSpace: false)
+        )
+        XCTAssertFalse(
+            BackdropStance.requiresSpaceRoundTrip(visible: false, onActiveSpace: true)
         )
     }
 
