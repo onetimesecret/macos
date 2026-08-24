@@ -144,4 +144,27 @@ final class KeystrokeParsingTests: XCTestCase {
             keystroke.matches(
                 charactersIgnoringModifiers: nil, virtualKeyCode: 0x35, modifiers: [.command]))
     }
+
+    // MARK: Handing the chord to the frameworks
+
+    /// Bare Escape goes up as the cancel action, which is the shortcut
+    /// this surface has always installed for it.
+    func testBareEscapeInstallsAsTheCancelAction() throws {
+        XCTAssertEqual(try parsed("escape").keyboardShortcut, .cancelAction)
+    }
+
+    func testEveryBindableChordCanBeInstalled() throws {
+        for named in NamedKey.allCases {
+            XCTAssertNotNil(
+                try parsed("cmd-\(named.rawValue)").keyboardShortcut,
+                "cmd-\(named.rawValue) parsed but could not be installed")
+        }
+        XCTAssertNotNil(try parsed("cmd-alt-left").keyboardShortcut)
+    }
+
+    func testAMenuEquivalentCarriesTheCharacterAndTheMask() throws {
+        let keystroke = try parsed("cmd-,")
+        XCTAssertEqual(keystroke.menuKeyEquivalent, ",")
+        XCTAssertEqual(keystroke.menuModifierMask, .command)
+    }
 }
