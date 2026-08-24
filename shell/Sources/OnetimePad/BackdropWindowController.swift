@@ -348,9 +348,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// press at all.
     ///
     /// Which turn is asking matters, and `SurfaceExposure.writes(gate:
-    /// from:isKey:)` is where that is decided: the turn after a stance
-    /// is applied may open the gate but may not close it on a keyed
-    /// window, whose occlusion reading can still be a frame behind the
+    /// from:raised:)` is where that is decided: the turn after a stance
+    /// is applied may open the gate but may not close it on a raised
+    /// surface, whose occlusion reading can still be a frame behind the
     /// raise that has just happened.
     private func applyMouseGate(
         stance: BackdropStance, pinned: Bool, from turn: SurfaceExposure.Turn
@@ -358,9 +358,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         let exposure = SurfaceExposure(window: panel)
         let ignores = stance.ignoresMouse(pinned: pinned, exposure: exposure)
         guard panel.ignoresMouseEvents != ignores else { return }
-        guard SurfaceExposure.writes(gate: ignores, from: turn, isKey: panel.isKeyWindow) else {
+        guard SurfaceExposure.writes(gate: ignores, from: turn, raised: stance == .raised) else {
             Self.logger.info(
-                "mouse gate=held open (settling over a keyed window) onActiveSpace=\(exposure.onActiveSpace, privacy: .public) unoccluded=\(exposure.unoccluded, privacy: .public)"
+                "mouse gate=held open (settling over a raised surface) onActiveSpace=\(exposure.onActiveSpace, privacy: .public) unoccluded=\(exposure.unoccluded, privacy: .public)"
             )
             return
         }

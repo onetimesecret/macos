@@ -113,7 +113,7 @@ Space.
       be the pre-raise one; a gate closed there would pass the click to
       the app underneath, and the outside click rule would then rest the
       card the raise had just put up. The line to look for if it goes
-      wrong is `mouse gate=held open (settling over a keyed window)`,
+      wrong is `mouse gate=held open (settling over a raised surface)`,
       which is the guard doing its job.
 - [ ] **The raise's own second reading.** Same setup, but wait about two
       seconds after the raise before clicking, and keep watching the

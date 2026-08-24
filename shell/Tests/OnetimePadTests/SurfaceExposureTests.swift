@@ -65,7 +65,7 @@ final class SurfaceExposureTests: XCTestCase {
     }
 
     func testAnInvisibleRaisedEditorRefusesTheMouse() {
-        // A keyed window that cannot be seen taking clicks is the worse
+        // A raised window that cannot be seen taking clicks is the worse
         // fault, so the raise gets no exemption from the gate.
         XCTAssertTrue(
             BackdropStance.raised.ignoresMouse(
@@ -106,37 +106,37 @@ final class SurfaceExposureTests: XCTestCase {
         // worst failure this feature can have, so no turn is ever
         // refused the opening.
         for turn in [SurfaceExposure.Turn.edge, .settling] {
-            for isKey in [false, true] {
+            for raised in [false, true] {
                 XCTAssertTrue(
-                    SurfaceExposure.writes(gate: false, from: turn, isKey: isKey),
+                    SurfaceExposure.writes(gate: false, from: turn, raised: raised),
                     "opening the gate must never be refused"
                 )
             }
         }
     }
 
-    func testTheSettlingTurnMayNotCloseTheGateOnAKeyedWindow() {
+    func testTheSettlingTurnMayNotCloseTheGateOnARaisedSurface() {
         // The raise's own gap: the card is ordered up over whatever was
         // covering it, and for a frame `occlusionState` still answers
         // with the pre-raise reading. Closing on that would pass the
         // user's next click to the app underneath, whereupon the
         // outside click monitor rests the card and the raise has undone
         // itself.
-        XCTAssertFalse(SurfaceExposure.writes(gate: true, from: .settling, isKey: true))
+        XCTAssertFalse(SurfaceExposure.writes(gate: true, from: .settling, raised: true))
     }
 
-    func testTheSettlingTurnMayCloseTheGateOnAWindowThatIsNotKeyed() {
-        // A pinned rest never takes the keyboard, and the settling read
-        // is the only exposure judgment the pin gets.
-        XCTAssertTrue(SurfaceExposure.writes(gate: true, from: .settling, isKey: false))
+    func testTheSettlingTurnMayCloseTheGateOnASurfaceThatIsNotRaised() {
+        // A pinned rest is never in front by its own stance, and the
+        // settling read is the only exposure judgment the pin gets.
+        XCTAssertTrue(SurfaceExposure.writes(gate: true, from: .settling, raised: false))
     }
 
-    func testAnEdgeMayCloseTheGateOnAKeyedWindow() {
+    func testAnEdgeMayCloseTheGateOnARaisedSurface() {
         // The window server volunteered the news this time, so the
         // reading is its own account of the present rather than a guess
-        // taken a turn after an ordering. A keyed window really out of
+        // taken a turn after an ordering. A raised card really out of
         // sight is the worse fault of the two and earns no exemption.
-        XCTAssertTrue(SurfaceExposure.writes(gate: true, from: .edge, isKey: true))
+        XCTAssertTrue(SurfaceExposure.writes(gate: true, from: .edge, raised: true))
     }
 
     // MARK: A transition's re-readings
@@ -162,7 +162,7 @@ final class SurfaceExposureTests: XCTestCase {
         )
     }
 
-    func testThePromptReadingOfATransitionCannotCloseTheGateOnAKeyedWindow() {
+    func testThePromptReadingOfATransitionCannotCloseTheGateOnARaisedSurface() {
         // The prompt reading lands mid-transition, where the server
         // describes the state being left. On a freshly raised card that
         // answer can say "not here" about a card the user is looking at,
@@ -172,19 +172,19 @@ final class SurfaceExposureTests: XCTestCase {
         let prompt = SurfaceExposure.settleReads.first
         XCTAssertEqual(prompt?.turn, .settling)
         XCTAssertFalse(
-            SurfaceExposure.writes(gate: true, from: prompt?.turn ?? .edge, isKey: true),
-            "a mid-transition answer must not take the clicks off a card holding the keyboard"
+            SurfaceExposure.writes(gate: true, from: prompt?.turn ?? .edge, raised: true),
+            "a mid-transition answer must not take the clicks off a card the stance puts in front"
         )
     }
 
-    func testTheSettledReadingOfATransitionDecidesEvenOverAKeyedWindow() {
+    func testTheSettledReadingOfATransitionDecidesEvenOverARaisedSurface() {
         // The counterweight: once the transition is certainly over the
-        // server is describing where it arrived, and a keyed card that
+        // server is describing where it arrived, and a raised card that
         // is genuinely out of sight has to stop taking clicks.
         let settled = SurfaceExposure.settleReads.last
         XCTAssertEqual(settled?.turn, .edge)
         XCTAssertTrue(
-            SurfaceExposure.writes(gate: true, from: settled?.turn ?? .settling, isKey: true)
+            SurfaceExposure.writes(gate: true, from: settled?.turn ?? .settling, raised: true)
         )
     }
 
@@ -210,7 +210,7 @@ final class SurfaceExposureTests: XCTestCase {
         // A card raised while it was already wholly covered reads
         // occluded before the raise and occluded after it, so no
         // occlusion change is posted and no edge arrives. The settling
-        // turn the raise takes may not close the gate on a keyed window,
+        // turn the raise takes may not close the gate on a raised surface,
         // which leaves this reading as the only thing that ever can.
         let read = SurfaceExposure.raiseSettleRead
         XCTAssertGreaterThanOrEqual(
@@ -218,8 +218,8 @@ final class SurfaceExposureTests: XCTestCase {
         )
         XCTAssertEqual(read.turn, .edge)
         XCTAssertTrue(
-            SurfaceExposure.writes(gate: true, from: read.turn, isKey: true),
-            "an occluded keyed card must end up refusing the mouse, not merely start out doing so"
+            SurfaceExposure.writes(gate: true, from: read.turn, raised: true),
+            "an occluded raised card must end up refusing the mouse, not merely start out doing so"
         )
     }
 

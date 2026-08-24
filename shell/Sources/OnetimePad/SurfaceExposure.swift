@@ -95,24 +95,37 @@ struct SurfaceExposure: Equatable {
     /// answer clicks, and a gate stuck shut is the worst failure this
     /// feature can have.
     ///
-    /// Closing from the settling turn is refused while the window is
-    /// key, because that reading can be a frame stale. A raise orders
+    /// Closing from the settling turn is refused while the surface is
+    /// raised, because that reading can be a frame stale. A raise orders
     /// the card up over whatever was covering it, and for a moment
     /// `occlusionState` still holds the pre-raise answer: occluded. A
     /// gate closed on that answer passes the user's next click through
     /// to the application underneath, whereupon the outside click
     /// monitor rests the card and the raise has undone itself. The
-    /// window being key is what says the card is meant to be in front,
-    /// and `raiseSettleRead` is what closes the gate a moment later if
-    /// it truly is not. Waiting for a notification edge instead would
-    /// not do: a card raised while it was already buried reads as
-    /// occluded before the raise and occluded after it, and a state that
-    /// never changes posts no change.
+    /// stance is what says the card is meant to be in front, and it is
+    /// asked in place of `isKeyWindow`: this app raises without the
+    /// keyboard as a matter of course (⌘, hands key status to Settings,
+    /// a menu takes it for as long as it is open), and a raise that has
+    /// lost the keys is still a raise, still on screen, and still owed
+    /// its clicks. `raiseSettleRead` is what closes the gate a moment
+    /// later if the card truly is not in front. Waiting for a
+    /// notification edge instead would not do: a card raised while it
+    /// was already buried reads as occluded before the raise and
+    /// occluded after it, and a state that never changes posts no
+    /// change.
+    ///
+    /// The refusal is not free, and what it costs is the fault this type
+    /// ranks as the worse one: until the settled reading lands, a raised
+    /// card the server is not showing goes on taking presses aimed past
+    /// it. The trade is taken because the two errors are not bounded
+    /// alike. This one lasts `settledDelay` and then ends of its own
+    /// accord, while a gate wrongly shut can last as long as the app
+    /// runs, since nothing need change afterwards to reopen it.
     static func writes(
-        gate ignores: Bool, from turn: Turn, isKey: Bool
+        gate ignores: Bool, from turn: Turn, raised: Bool
     ) -> Bool {
         guard ignores, turn == .settling else { return true }
-        return !isKey
+        return !raised
     }
 
     /// A re-reading of exposure to be taken later: when to take it, and
@@ -146,8 +159,8 @@ struct SurfaceExposure: Equatable {
     /// The first reading is prompt, so a card that really has gone out
     /// of sight stops taking clicks at once, and it is taken as a
     /// settling turn: mid-transition is where the server's answer is
-    /// least trustworthy, and a card that holds the keyboard must not
-    /// lose its clicks to a guess. The last falls after the transition
+    /// least trustworthy, and a card the stance says is in front must
+    /// not lose its clicks to a guess. The last falls after the transition
     /// is certainly over, carries an edge's authority, and is the one
     /// that decides.
     static let settleReads: [SettleRead] = [
@@ -175,11 +188,11 @@ struct SurfaceExposure: Equatable {
     /// The reading a raise schedules for itself.
     ///
     /// The settling turn a raise already takes may open the gate but not
-    /// close it on a keyed window, and for a card raised while it was
+    /// close it on a raised window, and for a card raised while it was
     /// already wholly covered that is the end of the matter: occlusion
     /// read occluded before the raise and reads occluded after it, so no
     /// change is posted and no edge ever arrives to correct the gate
-    /// held open. A keyed surface the user cannot see would go on taking
+    /// held open. A surface the user cannot see would go on taking
     /// clicks for as long as the raise lasted. This reading is late
     /// enough to speak for the raise itself and carries the authority
     /// the settling turn lacks.
