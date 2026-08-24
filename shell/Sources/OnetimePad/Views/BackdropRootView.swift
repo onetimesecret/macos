@@ -169,7 +169,14 @@ struct BackdropRootView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Circle().fill(Color.ember).frame(width: 6, height: 6)
+            // The ember dot is hidden (issue #78): the name alone says
+            // whose card this is, and the dot spent its colour on
+            // nothing in particular. The header's drag and its
+            // double-click zoom are untouched, since both ride the
+            // HStack rather than the dot.
+            if HiddenUI.showsHeaderDot {
+                Circle().fill(Color.ember).frame(width: 6, height: 6)
+            }
             Text(pages.showingLedger ? "the ledger" : BackdropAppDelegate.productName)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
