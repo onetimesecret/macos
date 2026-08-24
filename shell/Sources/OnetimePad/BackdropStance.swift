@@ -81,16 +81,31 @@ enum BackdropStance: Equatable {
         }
     }
 
-    /// How the surface relates to Spaces. Resting is furniture on the
-    /// desktop: unaffected by Mission Control transitions, skipped by
-    /// the window cycle, absent from full-screen Spaces (Plash's
-    /// recipe). Raised follows the user instead: it moves to the
-    /// active Space — full-screen ones included — because a surface
-    /// that holds the keyboard must be visible where the user is
-    /// looking; keys landing on an off-Space window would silently
-    /// swallow ink.
+    /// How the surface relates to Spaces. Every posture claims every
+    /// desktop Space, and that constancy is the point (issue #74, ADR-
+    /// 0019). A window bound to the Space it was created on drags the
+    /// user back to that Space whenever the app is activated, which is
+    /// how ⌘Tab kept landing on Desktop 1; and changing the membership
+    /// bits on a stance flip asks the window server to reassign the
+    /// window between Spaces, which is a recomposition the user sees.
+    /// Claiming all of them costs nothing here, since the surface is
+    /// wallpaper-adjacent furniture in the resting stance and follows
+    /// the user by construction in the raised one, where a keyed window
+    /// left behind on another Space would silently swallow ink.
     ///
-    /// A pinned rest joins every Space instead, full-screen ones
+    /// What still varies is what the surface does once it is there:
+    /// `.stationary` and `.ignoresCycle` while resting, because desktop
+    /// furniture rides no Mission Control sweep and the window cycle
+    /// must never land on a mouse-transparent pane, and neither while
+    /// raised, which is an ordinary editor for as long as it is up.
+    ///
+    /// Full-screen Spaces are the one deliberate exception to the
+    /// constancy: an unpinned rest declines them (Plash's recipe; a
+    /// desktop-level card in another app's full-screen room could only
+    /// ever be an invisible one), while a raise and a pinned rest both
+    /// accept them.
+    ///
+    /// A pinned rest joins every Space, full-screen ones
     /// included: the pin exists to keep the card readable beside
     /// whatever the user is writing, and a pin that vanished on a
     /// Space switch would fail its one purpose. `.ignoresCycle` stays;
@@ -113,9 +128,50 @@ enum BackdropStance: Equatable {
         case .resting:
             pinned
                 ? [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
-                : [.stationary, .ignoresCycle, .fullScreenNone]
-        case .raised: [.moveToActiveSpace, .fullScreenAuxiliary]
+                : [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
+        case .raised: [.canJoinAllSpaces, .fullScreenAuxiliary]
         }
+    }
+
+    /// Which Spaces the window belongs to, separated from what it does
+    /// once it is on one. These are the bits the window server reads as
+    /// membership, and the only ones whose change makes it move a window
+    /// from one Space to another.
+    ///
+    /// Kept apart so the invariant can be stated and tested on its own:
+    /// membership is the same in every posture, so no stance change, pin
+    /// or summon ever asks for a reassignment. Full-screen participation
+    /// is not counted here, since it decides whether a Space of that
+    /// kind is joined at all rather than which desktop the window sits
+    /// on.
+    func spaceMembership(pinned: Bool) -> NSWindow.CollectionBehavior {
+        collectionBehavior(pinned: pinned)
+            .intersection([.canJoinAllSpaces, .moveToActiveSpace, .transient])
+    }
+
+    /// Whether a summon has to order the window out before ordering it
+    /// back, to be sure it lands on the Space the user is looking at.
+    ///
+    /// The round trip is a blink: the card leaves the screen and returns
+    /// within the same gesture, and on every ⌘Tab back from another
+    /// Space that blink was the flicker (issue #74). It is kept as a
+    /// safety net rather than deleted, because a window that is up on a
+    /// Space the user has left is exactly the fault the summon exists to
+    /// undo, and being wrong about that would silently swallow ink.
+    ///
+    /// With membership constant at "every Space" the condition can no
+    /// longer arise between desktops, which is where the flicker was
+    /// seen: a window on all of them is on whichever desktop the user is
+    /// looking at. It is not unreachable. An unpinned rest declines
+    /// full-screen Spaces (`.fullScreenNone`), so while another app is
+    /// full screen the card is visible on its desktops and yet not on
+    /// the Space in front of the user, and a summon from there is the
+    /// stranded case exactly; a raise taken while a Space transition is
+    /// still in flight can read the same way for a moment. The blink
+    /// those cost is the card arriving where the user is, which is the
+    /// summon keeping its promise rather than a defect.
+    static func requiresSpaceRoundTrip(visible: Bool, onActiveSpace: Bool) -> Bool {
+        visible && !onActiveSpace
     }
 
     /// The countdown redraw cadence. The backdrop is always on screen,

@@ -233,6 +233,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **⌘Tab back lands where the user is, not on Desktop 1** (issue #74,
+  ADR-0019). The resting surface claimed no place on Spaces other than
+  the one it was created on, and the window server switches desktops to
+  reveal an app's windows when the app is activated, so every activation
+  carried the user home to Desktop 1. Every posture now claims every
+  desktop, and holds that membership through raises, rests and the pin,
+  which is also half of the flicker: changing the membership bits is
+  what asks the window server to move a window between Spaces, and they
+  changed on every raise, including the raise over an already raised
+  surface that a ⌘Tab back performs. The composite collection behaviour
+  is still rewritten when a stance changes, since what the window does
+  once it is on a Space does vary by posture; it is the membership
+  subset that is now constant, which is why the rewrite no longer asks
+  for anything. The other half was the summon's order-out round
+  trip, a literal blink, which a window present on every desktop no
+  longer reaches on a return between desktops; it stays as a tested
+  safety net, since being wrong about a window stranded off-Space would
+  cost keystrokes, and it still fires from another app's full-screen
+  Space, which an unpinned rest declines to join, where the blink is the
+  card arriving where the user is. Settings and the About panel, the
+  app's two ordinary windows, take `.moveToActiveSpace` for the same
+  reason from the other side: each is built once and shown many times,
+  so either used to anchor the app to the desktop it was first opened
+  on. The app menu's About item is repointed at the same route the tray
+  uses, since the one SwiftUI synthesizes goes straight to AppKit and
+  the panel it puts up would carry no such bit. What is *not*
+  fixed is dragging the card to another desktop by the screen edge, and
+  ADR-0019 says why it will not be: the card's place is the app's own
+  state clamped to the primary screen, the window server never sees a
+  window drag, and a surface present on every desktop has nowhere else
+  to be moved to. Whether any flicker survives, and of what shape, is
+  for `docs/qa/verification-procedures/spaces-and-cmd-tab.md`, which
+  names the remaining candidate and the change it would take.
+
 - **A pinned card that cannot be seen no longer takes the click**
   (issue #73, ADR-0015). Pinned, with another app full screen on the
   active Space, the card was invisible and yet presses meant for that

@@ -54,14 +54,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                 guard let self else { return }
                 // In the order `apply(_:)` uses, and for the same
                 // reason. The stance's own ungated rule goes first,
-                // because the level and frame below are about to change
-                // what is on screen and the window server's present
-                // reading still describes the posture being left: a pin
-                // judged from that reading is a pin judged from where
-                // the card was a moment ago.
+                // because the altitude and frame below are about to
+                // change what is on screen and the window server's
+                // present reading still describes the posture being
+                // left: a pin judged from that reading is a pin judged
+                // from where the card was a moment ago.
                 panel.ignoresMouseEvents = model.stance.ignoresMouse(pinned: pinned)
-                panel.level = model.stance.level(pinned: pinned)
-                panel.collectionBehavior = model.stance.collectionBehavior(pinned: pinned)
+                applyAltitude(stance: model.stance, pinned: pinned)
                 applyFrame(
                     stance: model.stance, pinned: pinned,
                     geometry: model.displayedGeometry
@@ -266,8 +265,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // life mouse-transparent for no reason. The settled reading is
         // taken a turn later, once the ordering has happened.
         panel.ignoresMouseEvents = stance.ignoresMouse(pinned: model.pinned)
-        panel.level = stance.level(pinned: model.pinned)
-        panel.collectionBehavior = stance.collectionBehavior(pinned: model.pinned)
+        applyAltitude(stance: stance, pinned: model.pinned)
         // Extent before ordering: a card-hugging window must already
         // hug when it orders front, or the frame change would be
         // visible as a snap after the fact.
@@ -275,13 +273,28 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         switch stance {
         case .raised:
             watchForOutsideClicks()
-            // A summon means *here*: if the surface is up on some other
-            // Space, order it out first so ordering front lands it on
-            // this one — `.moveToActiveSpace` covers the well-behaved
-            // cases; the explicit round trip makes it a guarantee (the
-            // panel's summon does the same). A keyed surface the user
-            // cannot see would silently swallow ink.
-            if panel.isVisible && !panel.isOnActiveSpace {
+            // A summon means *here*: a surface up on some Space the user
+            // has left would take the keyboard where they cannot see it
+            // and silently swallow ink, so it is ordered out first and
+            // ordering front lands it on this Space instead. The round
+            // trip is a blink, and on a ⌘Tab back from another Space
+            // that blink was the flicker (issue #74); now that every
+            // posture claims every desktop, a visible window is already
+            // on the desktop the user is looking at and the net does not
+            // fire there. It still can from another app's full-screen
+            // Space, which an unpinned rest declines to join, and
+            // transiently mid-transition, where the blink is the card
+            // landing here rather than a defect.
+            if BackdropStance.requiresSpaceRoundTrip(
+                visible: panel.isVisible, onActiveSpace: panel.isOnActiveSpace
+            ) {
+                // Logged because the blink is the whole symptom of issue
+                // #74 and the net is the one order-out left that can
+                // cause it: without a line here, a net that fired and a
+                // net that stayed idle look the same in the stream, and
+                // the hardware procedure asks the runner to tell them
+                // apart.
+                Self.logger.info("summon=round trip (surface was off-Space)")
                 panel.orderOut(nil)
             }
             // `.nonactivatingPanel` (set at init — the style-mask bit is
@@ -332,6 +345,49 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         Self.logger.info(
             "stance=\(stance == .raised ? "raised" : "resting", privacy: .public) level=\(self.panel.level.rawValue, privacy: .public) visible=\(self.panel.isVisible, privacy: .public) frame=\(NSStringFromRect(self.panel.frame), privacy: .public)"
         )
+    }
+
+    // MARK: Altitude and Spaces
+
+    /// Where the surface sits in the stacking order and which Spaces it
+    /// belongs to, both stance-owned and both written only when they
+    /// actually move.
+    ///
+    /// The guards are not thrift. An assignment to `collectionBehavior`
+    /// is a request to the window server, and a request naming different
+    /// membership bits makes it move the window between Spaces; the
+    /// stance sinks fire on every raise, including a raise over an
+    /// already-raised surface, which is what ⌘Tab back does. Writing the
+    /// same value each time asked for that work on every activation
+    /// (issue #74). Level is guarded for company, since a level written
+    /// is a restack even when the number is unchanged.
+    ///
+    /// The guard compares the whole value, so a stance change does still
+    /// rewrite `collectionBehavior`: what a window does once it is on a
+    /// Space differs by posture, and `.stationary`, `.ignoresCycle` and
+    /// full-screen participation are all in there. What no longer
+    /// differs is the membership subset the rewrite names
+    /// (`BackdropStance.spaceMembership(pinned:)`), which is the part a
+    /// reassignment would turn on.
+    private func applyAltitude(stance: BackdropStance, pinned: Bool) {
+        let level = stance.level(pinned: pinned)
+        if panel.level != level {
+            panel.level = level
+        }
+        let behavior = stance.collectionBehavior(pinned: pinned)
+        if panel.collectionBehavior != behavior {
+            // Debug rather than info: a genuine stance change writes
+            // this every time and would crowd out the gate's own lines.
+            // It exists because the guard cannot be tested from here
+            // (reading `collectionBehavior` back gives our own last
+            // assignment, not what the window server did with it), so
+            // the hardware run judges it by counting these against the
+            // raises that should have produced none.
+            Self.logger.debug(
+                "collectionBehavior write=\(behavior.rawValue, privacy: .public) was=\(self.panel.collectionBehavior.rawValue, privacy: .public)"
+            )
+            panel.collectionBehavior = behavior
+        }
     }
 
     // MARK: The mouse gate
@@ -586,9 +642,12 @@ private final class BackdropKeyRelayPanel: NSPanel {
 /// The window itself. Plash's desktop-window recipe, adapted: a
 /// borderless, transparent, shadowless pane that is `.stationary` (does
 /// not ride Mission Control transitions), `.ignoresCycle` (⌘` never
-/// lands on it), and `.fullScreenNone` (a full-screen Space is another
-/// app's room; the backdrop does not follow it there). Key status is
-/// stance-gated the way Plash gates interactivity.
+/// lands on it), `.canJoinAllSpaces` (furniture belongs on every
+/// desktop, and a window bound to one drags the user back to it on
+/// every activation, issue #74) and `.fullScreenNone` (a full-screen
+/// Space is another app's room; the unpinned backdrop does not follow
+/// it there). Key status is stance-gated the way Plash gates
+/// interactivity.
 final class BackdropPanel: NSPanel {
     /// Set by the controller from the stance, before ordering changes.
     var isInteractive = false
