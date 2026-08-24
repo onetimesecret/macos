@@ -95,11 +95,24 @@ enum BackdropStance: Equatable {
     /// whatever the user is writing, and a pin that vanished on a
     /// Space switch would fail its one purpose. `.ignoresCycle` stays;
     /// the window cycle must never land on a mouse-transparent pane.
+    ///
+    /// What the pinned rest does *not* keep is `.stationary`. That flag
+    /// belongs to the wallpaper recipe the unpinned rest is built from,
+    /// where it holds the pane still through a Mission Control sweep at
+    /// desktop level. A pinned card is not furniture on the desktop but
+    /// an overlay above other applications' windows, and
+    /// `.canJoinAllSpaces` with `.fullScreenAuxiliary` is the whole of
+    /// the recipe AppKit documents for that. Carrying the third flag
+    /// along asked the window server for a combination nothing defines,
+    /// and over another app's full-screen Space it answered by keeping
+    /// the card in the hit-test path without ever drawing it (issue
+    /// #73). The mouse gate makes those invisible presses harmless; this
+    /// is the half that tries to make the card visible instead.
     func collectionBehavior(pinned: Bool) -> NSWindow.CollectionBehavior {
         switch self {
         case .resting:
             pinned
-                ? [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+                ? [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
                 : [.stationary, .ignoresCycle, .fullScreenNone]
         case .raised: [.moveToActiveSpace, .fullScreenAuxiliary]
         }

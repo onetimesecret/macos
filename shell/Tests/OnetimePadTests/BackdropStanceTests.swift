@@ -141,7 +141,21 @@ final class BackdropStanceTests: XCTestCase {
         // vanished on a Space switch would fail its one purpose.
         XCTAssertEqual(
             BackdropStance.resting.collectionBehavior(pinned: true),
-            [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+            [.canJoinAllSpaces, .ignoresCycle, .fullScreenAuxiliary]
+        )
+    }
+
+    func testAPinnedRestIsAnOverlayRatherThanFurniture() {
+        // `.stationary` belongs to the wallpaper recipe the unpinned
+        // rest is built from. Carried into the pin it asked the window
+        // server for a combination nothing documents, and over another
+        // app's full-screen Space the answer was a card kept in the
+        // hit-test path but never drawn (issue #73).
+        XCTAssertFalse(
+            BackdropStance.resting.collectionBehavior(pinned: true).contains(.stationary)
+        )
+        XCTAssertTrue(
+            BackdropStance.resting.collectionBehavior(pinned: false).contains(.stationary)
         )
     }
 
