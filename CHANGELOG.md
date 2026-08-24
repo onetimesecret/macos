@@ -297,6 +297,148 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   headings already followed. An unterminated fence holds its lines to
   the end of the page rather than guessing, an inline code span opens
   nothing, and the first line below the closing rule is prose again.
+- **⌘Tab back lands where the user is, not on Desktop 1** (issue #74,
+  ADR-0019). The resting surface claimed no place on Spaces other than
+  the one it was created on, and the window server switches desktops to
+  reveal an app's windows when the app is activated, so every activation
+  carried the user home to Desktop 1. Every posture now claims every
+  desktop, and holds that membership through raises, rests and the pin,
+  which is also half of the flicker: changing the membership bits is
+  what asks the window server to move a window between Spaces, and they
+  changed on every raise, including the raise over an already raised
+  surface that a ⌘Tab back performs. The composite collection behaviour
+  is still rewritten when a stance changes, since what the window does
+  once it is on a Space does vary by posture; it is the membership
+  subset that is now constant, which is why the rewrite no longer asks
+  for anything. The other half was the summon's order-out round
+  trip, a literal blink, which a window present on every desktop no
+  longer reaches on a return between desktops; it stays as a tested
+  safety net, since being wrong about a window stranded off-Space would
+  cost keystrokes, and it still fires from another app's full-screen
+  Space, which an unpinned rest declines to join, where the blink is the
+  card arriving where the user is. Settings and the About panel, the
+  app's two ordinary windows, take `.moveToActiveSpace` for the same
+  reason from the other side: each is built once and shown many times,
+  so either used to anchor the app to the desktop it was first opened
+  on. The app menu's About item is repointed at the same route the tray
+  uses, since the one SwiftUI synthesizes goes straight to AppKit and
+  the panel it puts up would carry no such bit. What is *not*
+  fixed is dragging the card to another desktop by the screen edge, and
+  ADR-0019 says why it will not be: the card's place is the app's own
+  state clamped to the primary screen, the window server never sees a
+  window drag, and a surface present on every desktop has nowhere else
+  to be moved to. Whether any flicker survives, and of what shape, is
+  for `docs/qa/verification-procedures/spaces-and-cmd-tab.md`, which
+  names the remaining candidate and the change it would take.
+
+- **A pinned card that cannot be seen no longer takes the click**
+  (issue #73, ADR-0015). Pinned, with another app full screen on the
+  active Space, the card was invisible and yet presses meant for that
+  app landed in the pad and were acted on: the window server had kept
+  the surface in the hit-test path without ever compositing it. The
+  surface now follows the exposure the server reports, Space membership
+  and occlusion, and refuses the mouse whenever either says it is out of
+  sight, in every posture and either pin state. Whether that report is
+  honest for a window held in the hit-test path without being composited
+  is the question the hardware procedure exists to settle, and it is the
+  same question as the one below. The rule is a one-way valve, so
+  nothing here hands a click to the unpinned rest, which stays
+  transparent by ADR-0015; and the reading is taken a turn after a
+  stance is applied, where it may open the gate but not close it on a
+  card the stance puts in front, since a raise outruns the occlusion
+  state by a frame and a gate closed in that gap would pass the user's
+  next click to the application underneath. A Space switch is read twice
+  for the mirror-image reason: the answer given mid-transition describes
+  the desktop being left, and a card present on every Space has no later
+  edge to reopen a gate wrongly closed on it, so the prompt reading is
+  taken as the guess it is and only the settled one may take the clicks
+  off a raised card. That refusal has a price of its own: for the
+  second or so before the settled reading lands, a raised card the
+  server is not showing goes on taking presses aimed past it, which is
+  the worse of the two faults by this code's own ranking. It is
+  accepted because it ends of its own accord, while a gate wrongly shut
+  has nothing that would ever reopen it. Every posture change, a stance
+  applied and the pin toggled alike, takes a late reading of its own,
+  because a card put in front while it was already wholly covered reads
+  occluded before the change and occluded after it: no change is posted,
+  no edge arrives, and without that reading the gate held open over a
+  surface nobody can see would stay open for the life of the raise. A
+  scheduled reading is asked again, when it fires, whether it still
+  deserves the authority it was scheduled with: a desktop change while
+  it waited puts it back inside a transition, where every reading is a
+  guess and only the transition's own settled one decides. Waking the
+  displays, returning from another user, and clearing the lock screen
+  are read the same way a Space switch is, so a card does not come back
+  from any of them refusing every click. The unlock comes off the
+  distributed centre, because an ordinary lock switches no session and
+  need not sleep the displays, so nothing the workspace publishes
+  mentions it. The pinned rest also stopped carrying `.stationary`, a flag it had
+  inherited from the wallpaper recipe the unpinned rest is built from,
+  leaving the overlay recipe AppKit actually documents. Whether that
+  second change makes the card visible over a full-screen Space is a
+  question only hardware can answer, and
+  `docs/qa/verification-procedures/pinned-over-fullscreen.md` is where
+  it gets asked; the refusal to act on invisible presses holds either
+  way.
+
+- **A fast ledger round trip no longer strands the keyboard** (issue
+  #23, ADR-0005, ADR-0006). Returning from the ledger rebuilds the
+  editor the ledger stood in for, and the model hands the rebuilt
+  editor the keys once it appears. It holds that editor weakly, and
+  weak says whether the view still exists rather than whether it is
+  still mounted: the editor torn out of the window on the way to the
+  ledger keeps answering for as long as it takes the runtime to let go
+  of it, which is at least the rest of the turn. A hand-off landing
+  there settled on a view with no window, focused nothing, and stopped
+  waiting for the editor that was genuinely on its way, so the surface
+  came back from the ledger with the ember lit and the first keystroke
+  beeping. The hand-off now accepts only an editor inside a window, and
+  the teardown retires the model's handle on the way out, so a severed
+  editor is never offered at all.
+
+- **A page opened by selecting an empty slot now takes the keyboard**
+  (issue #22, ADR-0005, ADR-0017). Clicking a slot whose page had
+  expired, jumping to one with ⌘1 through ⌘9, or walking onto one with
+  ⌥⌘←/→ opens a page into that slot, and the page arrived with nothing
+  focused: the surface kept the keys, the ember stayed lit to promise
+  that keystrokes would land, and every keystroke beeped against the
+  window instead. These paths mint, and a mint rebuilds the mount
+  rather than swapping a storage under the one persistent editor, since
+  the empty state's catcher is a different view from the editor that
+  replaces it and first responder leaves with the catcher. ⌥⌘N and the
+  + tab already handed the keys on; the two paths the tab and page
+  split added did not, and now do. A plain page to page switch still
+  asks for nothing, because it keeps its editor and never lost focus,
+  and an unkeyed surface still opens its page and still leaves the
+  keyboard where the user put it: the law accepts keys an earlier
+  deliberate act conferred and never seizes them.
+
+- **The app's own menus no longer put the card away** (issue #41). A
+  raised surface rests on any press the global mouse monitor sees, on
+  the reasoning that a press the card's window never received belongs
+  to somebody else. Menus broke that reasoning: they track in windows
+  the window server owns, so clicking our own menu bar looked exactly
+  like clicking into another application. The card fell to the desktop,
+  the app deactivated, and the menu was torn down before an item could
+  be chosen, which is why Edit then Find could never fire although ⌘F
+  always did. Menu tracking sessions are now recorded as intervals on
+  the same clock the press is stamped on
+  (`NSEvent.timestamp` and `ProcessInfo.systemUptime` share a base) and
+  each press is judged by its own moment, so the answer no longer
+  depends on whether the menu happens to still be up when the deferred
+  handler runs, which for a nested tracking loop it usually is not. The
+  press that opens a menu arrives fractionally before the session it
+  causes, so a short grace counts it as the opening press rather than as
+  a dismissal. The observation covers every menu in the process, the
+  main menu bar, the status item's menu and the chip context menu
+  alike. A session whose end never posts expires after thirty seconds
+  rather than claiming presses forever, since the record is fed by
+  notifications that are assumed to come in pairs and an exception that
+  never lapsed would silently retire the outside click rule for the rest
+  of the session. Nothing else about the rule moves: a press in another
+  application still rests the surface without being consumed, Esc still
+  rests, the status item's left click still puts a keyed surface away,
+  and Settings and About are still outside by this rule.
 
 ### Added
 
