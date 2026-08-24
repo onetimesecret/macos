@@ -286,6 +286,40 @@ final class DocumentOpsWiringTests: XCTestCase {
         assertParity()
     }
 
+    /// A page switch arriving mid-composition, which ⌘2 is: a key
+    /// equivalent the input method does not swallow. One editor serves
+    /// every page and the switch swaps the storage underneath it
+    /// (ADR-0006), so the composition has to end on the page it was
+    /// typed on, before the page under it changes. Nothing may still be
+    /// marked afterwards, and nothing may be left in flight for the
+    /// incoming page to inherit (issue #23).
+    func testASwitchMidCompositionEndsItOnThePageItWasTypedOn() {
+        makeEditor()
+        textView.insertText("ab", replacementRange: NSRange(location: NSNotFound, length: 0))
+        batches = []
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
+        textView.setMarkedText(
+            "ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(textView.hasMarkedText(), "nothing was composed, so nothing is at stake")
+        XCTAssertEqual(batches.count, 0, "marked text leaked ops")
+
+        InkEditorView.discardComposition(in: textView)
+
+        XCTAssertFalse(
+            textView.hasMarkedText(),
+            "the composition would have crossed the swap into another page's offsets"
+        )
+        XCTAssertNil(
+            coordinator.imeComposition,
+            "the composition settled on its own page rather than staying in flight"
+        )
+        // Whatever the input method had provisionally placed belongs to
+        // this page and stays here, in the storage and in the core
+        // alike. What must not happen is a divergence between them.
+        assertParity()
+    }
+
     func testSealSelectionReplacesTheSelectionCoreSide() {
         makeEditor()
         textView.insertText(

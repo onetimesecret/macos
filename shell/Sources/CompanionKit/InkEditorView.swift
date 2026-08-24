@@ -156,6 +156,31 @@ public struct InkEditorView: NSViewRepresentable {
         return scroll
     }
 
+    /// End an in-progress IME composition on the page that is leaving,
+    /// before the page underneath the editor changes.
+    ///
+    /// Marked text is anchored to offsets in the outgoing page's
+    /// storage, and the input method holds a conversion session pointing
+    /// at them. The identity change this editor used to take on every
+    /// switch discarded both by tearing the view down; the persistent
+    /// view has to do it by hand, or the pending composition commits
+    /// into the incoming page or leaves the input context aimed at a
+    /// range that has since been replaced (ADR-0006's third eject
+    /// trigger, issue #23).
+    ///
+    /// Both halves are needed and in this order: the input context is
+    /// told to abandon its session, and the view is then unmarked, which
+    /// is what settles the composition through the coordinator's own gate
+    /// while `currentSheet` and the storage still name the page it was
+    /// typed on. What was provisionally composed stays on that page, in
+    /// the storage and in the core alike, and nothing crosses the
+    /// boundary. A view with nothing marked is left alone.
+    static func discardComposition(in textView: InkTextView) {
+        guard textView.hasMarkedText() else { return }
+        textView.inputContext?.discardMarkedText()
+        textView.unmarkText()
+    }
+
     /// ⌘F and its neighbours, switched on.
     ///
     /// The bar, not the floating panel: it docks under the card's top
@@ -253,10 +278,7 @@ public struct InkEditorView: NSViewRepresentable {
         // page's storage — the wrong page — or leaves the input context
         // pointing at a stale range (ADR-0006 eject-trigger #3, issue
         // #23). Discard before the swap so nothing crosses the boundary.
-        if textView.hasMarkedText() {
-            textView.inputContext?.discardMarkedText()
-            textView.unmarkText()
-        }
+        Self.discardComposition(in: textView)
         coordinator.saveViewState(textView: textView, scrollView: scroll)
         let incoming = model.storage(for: sheetID)
         // The one-layout-manager-per-storage invariant rests on this
