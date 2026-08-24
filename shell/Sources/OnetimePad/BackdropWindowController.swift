@@ -26,9 +26,11 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
 
     // The exposure watch, for the same reason and with the same care:
     // one token from the default centre for the window's own occlusion,
-    // and one from the workspace centre per settle trigger.
+    // one from the workspace centre per settle trigger, and one from the
+    // distributed centre per trigger only it carries.
     private nonisolated(unsafe) var occlusionObserver: NSObjectProtocol?
     private nonisolated(unsafe) var workspaceObservers: [NSObjectProtocol] = []
+    private nonisolated(unsafe) var distributedObservers: [NSObjectProtocol] = []
 
     init(model: BackdropModel) {
         self.model = model
@@ -153,6 +155,18 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                 Task { @MainActor in self?.refreshMouseGateAcrossTransition() }
             }
         }
+        // The unlock, which the workspace centre does not carry: an
+        // ordinary lock switches no session and need not sleep the
+        // displays, so it is the distributed centre or nothing.
+        distributedObservers = SurfaceExposure.distributedSettleTriggers.map { name in
+            DistributedNotificationCenter.default().addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.refreshMouseGateAcrossTransition() }
+            }
+        }
     }
 
     deinit {
@@ -164,6 +178,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         }
         for observer in workspaceObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        for observer in distributedObservers {
+            DistributedNotificationCenter.default().removeObserver(observer)
         }
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)

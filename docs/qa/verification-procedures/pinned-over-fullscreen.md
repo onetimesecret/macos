@@ -135,11 +135,22 @@ Space.
       forward, where the gate must end up closed even though no
       occlusion change is ever posted.
 - [ ] **Waking and unlocking.** Pinned, on an ordinary desktop. Lock the
-      screen (or let the displays sleep), come back, and click the card.
-      It raises. The stream carries a `mouse gate=` line only if the
-      gate actually moved, so silence here with a working click is the
-      pass; a visible card that stops answering after a wake is the
+      screen with ⌃⌘Q, unlock a few seconds later (before the displays
+      sleep, so the wake notification cannot be what answers), and click
+      the card. It raises. The stream carries a `mouse gate=` line only
+      if the gate actually moved, so silence here with a working click is
+      the pass; a visible card that stops answering after a wake is the
       failure this check is for.
+
+      Note what this check does not prove. A gate that was never wrongly
+      shut answers the click either way, so a pass here is consistent
+      with the unlock going unheard. What it would take to see the
+      reading itself is a card whose gate is already shut, which is a
+      state nothing can be asked to produce on purpose. Treat the pass
+      as the absence of the symptom, and if a card is ever found deaf
+      after an unlock, the first thing to establish is whether
+      `com.apple.screenIsUnlocked` is still posted under this macOS,
+      since it is the only signal an ordinary lock gives.
 
 ## If the gate stays open over an invisible card
 

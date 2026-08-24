@@ -269,10 +269,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deserves the authority it was scheduled with: a desktop change while
   it waited puts it back inside a transition, where every reading is a
   guess and only the transition's own settled one decides. Waking the
-  displays and returning from the lock screen or
-  another user are read the same way a Space switch is, so a card does
-  not come back from either one refusing every click. The
-  pinned rest also stopped carrying `.stationary`, a flag it had
+  displays, returning from another user, and clearing the lock screen
+  are read the same way a Space switch is, so a card does not come back
+  from any of them refusing every click. The unlock comes off the
+  distributed centre, because an ordinary lock switches no session and
+  need not sleep the displays, so nothing the workspace publishes
+  mentions it. The pinned rest also stopped carrying `.stationary`, a flag it had
   inherited from the wallpaper recipe the unpinned rest is built from,
   leaving the overlay recipe AppKit actually documents. Whether that
   second change makes the card visible over a full-screen Space is a

@@ -189,10 +189,10 @@ final class SurfaceExposureTests: XCTestCase {
     }
 
     func testWakeAndSessionReturnAreReadTheSameWayASpaceSwitchIs() {
-        // A card that came back from sleep or from the lock screen
-        // refusing clicks would go on refusing them until the user
-        // happened to change desktop, since neither wake nor a session
-        // hand-back tells the window anything about itself.
+        // A card that came back from sleep or from another user's
+        // session refusing clicks would go on refusing them until the
+        // user happened to change desktop, since neither wake nor a
+        // session hand-back tells the window anything about itself.
         XCTAssertTrue(
             SurfaceExposure.settleTriggers.contains(NSWorkspace.activeSpaceDidChangeNotification)
         )
@@ -201,6 +201,26 @@ final class SurfaceExposureTests: XCTestCase {
         )
         XCTAssertTrue(
             SurfaceExposure.settleTriggers.contains(NSWorkspace.sessionDidBecomeActiveNotification)
+        )
+    }
+
+    func testTheUnlockIsWatchedTooAndOnTheOnlyCentreThatCarriesIt() {
+        // An ordinary lock switches no session and need not sleep the
+        // displays, so `sessionDidBecomeActive` (fast user switching)
+        // and `screensDidWake` both stay silent through one. Locking and
+        // unlocking a few seconds later would otherwise leave a card
+        // whose gate had been wrongly shut still refusing every click,
+        // and nothing would be scheduled to try again.
+        XCTAssertTrue(
+            SurfaceExposure.distributedSettleTriggers.contains(
+                Notification.Name("com.apple.screenIsUnlocked")
+            )
+        )
+        // The workspace centre never carries it, so a trigger listed in
+        // both places would be observed on a centre that stays quiet.
+        XCTAssertTrue(
+            Set(SurfaceExposure.settleTriggers)
+                .isDisjoint(with: SurfaceExposure.distributedSettleTriggers)
         )
     }
 

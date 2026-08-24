@@ -204,18 +204,39 @@ struct SurfaceExposure: Equatable {
     /// The system edges after which what the user can see of the surface
     /// may have changed while the stance did not, and about which the
     /// window itself publishes nothing: the active Space changed, the
-    /// displays woke, or the session came back from the lock screen or
-    /// another user. A card that returned from any of them refusing
-    /// clicks would go on refusing them until the user happened to
-    /// change desktop.
+    /// displays woke, or the session came back from another user. A card
+    /// that returned from any of them refusing clicks would go on
+    /// refusing them until the user happened to change desktop.
     ///
     /// Occlusion is not in the list because AppKit posts that one per
     /// window and it needs no settling: a change it reports is the
     /// server's own account of the present.
+    ///
+    /// These arrive on the workspace's own centre.
+    /// `distributedSettleTriggers` is the rest of the list.
     static let settleTriggers: [Notification.Name] = [
         NSWorkspace.activeSpaceDidChangeNotification,
         NSWorkspace.screensDidWakeNotification,
         NSWorkspace.sessionDidBecomeActiveNotification,
+    ]
+
+    /// The same kind of edge, from the distributed centre because macOS
+    /// publishes it nowhere else: the screen was unlocked.
+    ///
+    /// An ordinary lock is not a session change and need not put the
+    /// displays to sleep, so neither `sessionDidBecomeActive` (which is
+    /// fast user switching) nor `screensDidWake` fires for a lock the
+    /// user clears in a few seconds. Without this a card whose gate had
+    /// been wrongly shut would come back from the lock screen still
+    /// refusing every click, which is the symptom the whole schedule
+    /// exists to rule out.
+    ///
+    /// The name is not in any header, which is why the list is a
+    /// separate one: a macOS that stopped posting it would leave the
+    /// observer idle rather than break anything, and the other triggers
+    /// would go on working.
+    static let distributedSettleTriggers: [Notification.Name] = [
+        Notification.Name("com.apple.screenIsUnlocked")
     ]
 
     /// The reading a change of posture schedules for itself, on top of
