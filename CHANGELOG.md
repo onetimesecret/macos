@@ -160,7 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `companion_page_discard` and `companion_persist_rotate_and_save` are
   the two new routes. The entry below narrates them as part of the tab
   and page split they belong to, and they landed after the bump that
-  entry names, so this is where they are priced. The core's restore
+  entry names, so the bump for them belongs here. The core's restore
   side moved with them. A page that comes back from a sealed file has
   its remaining life read against its tab's rung, a restored hold is
   read against the ceiling the pause gesture itself imposes so a file
