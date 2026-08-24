@@ -201,8 +201,11 @@ final class BackdropStanceTests: XCTestCase {
         XCTAssertEqual(memberships, [NSWindow.CollectionBehavior.canJoinAllSpaces.rawValue])
     }
 
-    func testOnlyFullScreenParticipationVariesByPosture() {
-        // The one deliberate exception: a desktop-level card in another
+    func testFullScreenParticipationVariesWhileMembershipDoesNot() {
+        // Not the only bit that varies by posture: `.stationary` and
+        // `.ignoresCycle` do too. It is the only one that decides which
+        // Spaces are joined, and membership, the invariant above, is
+        // what stays put either way. A desktop-level card in another
         // app's full-screen room could only ever be an invisible one, so
         // the unpinned rest declines those Spaces while the pin and the
         // raise accept them. This decides whether such a Space is joined
