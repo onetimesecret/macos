@@ -184,7 +184,8 @@ final class KeymapValidationTests: XCTestCase {
         XCTAssertEqual(
             keymap.faults.first?.summary,
             "the bundled default keymap binds \"cmd-shift-1\", which is not a keystroke: "
-                + "shift can only be held over a letter, and \"1\" is not one")
+                + "shift can only be held over a letter, and \"1\" is not one (name the glyph "
+                + "shift produces, the way \"cmd-!\" names ⇧⌘1)")
     }
 
     func testACommandThisBuildCannotRunIsRefused() {
@@ -304,6 +305,25 @@ final class KeymapValidationTests: XCTestCase {
                    "bindings": { "cmd-,": "app::Settings" } }]
                 """)
         XCTAssertEqual(keymap.menuKeystroke(for: .appSettings)?.canonical, "cmd-,")
+    }
+
+    /// Since a restatement cannot withdraw one, the way back is to
+    /// take the chord away and bind it again. It takes two sections:
+    /// both lines in one would settle the chord on the null and drop
+    /// the rebind as a duplicate.
+    func testUnbindingAndRebindingWithdrawsAMenuEquivalent() throws {
+        let keymap = Keymap.resolve(
+            defaultText: """
+                [{ "context": "Editor", "use_key_equivalents": true,
+                   "bindings": { "cmd-,": "app::Settings" } }]
+                """,
+            overrideText: """
+                [{ "context": "Editor", "bindings": { "cmd-,": null } },
+                 { "context": "Editor", "bindings": { "cmd-,": "app::Settings" } }]
+                """)
+        XCTAssertEqual(keymap.faults, [])
+        XCTAssertEqual(keymap.command(for: try parse("cmd-,"), in: .editor), .appSettings)
+        XCTAssertNil(keymap.menuKeystroke(for: .appSettings))
     }
 
     /// Null is Zed's unbinding, and it has to work, or a user cannot

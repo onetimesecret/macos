@@ -156,9 +156,12 @@ public struct Keystroke: Hashable, Sendable {
     /// unmodified characters honour shift on this platform, so
     /// `cmd-shift-1` arrives at the page as `!` and never matches the
     /// `1` the file wrote, while the surface's hidden buttons install
-    /// the same spelling and fire. Shift over a letter is exactly the
-    /// case lower-casing rescues, and shift over a named key is matched
-    /// by position, so both stay bindable.
+    /// the same spelling and fire. What is refused is the spelling and
+    /// not the chord: `cmd-!` is the same press, and it matches on both
+    /// routes, because the glyph is the one the board reports and the
+    /// shift that produced it needs no naming. Shift over a letter is
+    /// exactly the case lower-casing rescues, and shift over a named
+    /// key is matched by position, so both stay bindable.
     public static func parse(_ text: String) -> Result<Keystroke, ParseFailure> {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return .failure(.empty) }
@@ -278,20 +281,33 @@ extension Keystroke {
     /// is the only reading under which shift is a modifier rather than
     /// a different key. Folding rescues letters and nothing else, which
     /// is why the parser refuses shift over anything but a letter.
+    ///
+    /// Over a key that is not a letter, shift is left out of the
+    /// modifier comparison, because the glyph has already spoken for
+    /// it. A board reports `!` only with shift held, so demanding the
+    /// flag on top of the glyph counts the same shift twice and leaves
+    /// `cmd-!` bound to a press nobody can perform. Leaving it out
+    /// costs nothing: a chord that needs shift and a chord that does
+    /// not are already two different glyphs, so a binding on `cmd-,`
+    /// still declines a shifted press, which the board reports as `<`.
+    ///
     /// Named keys are matched by position, since a layout may put
-    /// anything under the character a named key emits.
+    /// anything under the character a named key emits, and shift over
+    /// one is an ordinary modifier: Shift-Tab is not Tab.
     public func matches(
         charactersIgnoringModifiers: String?,
         virtualKeyCode: UInt16,
         modifiers eventModifiers: KeyModifiers
     ) -> Bool {
-        guard eventModifiers == modifiers else { return false }
         switch key {
         case .named(let named):
+            guard eventModifiers == modifiers else { return false }
             return virtualKeyCode == named.virtualKeyCode
         case .character(let character):
             guard let typed = charactersIgnoringModifiers?.lowercased() else { return false }
-            return typed == String(character)
+            guard typed == String(character) else { return false }
+            guard !character.isLetter else { return eventModifiers == modifiers }
+            return eventModifiers.subtracting(.shift) == modifiers.subtracting(.shift)
         }
     }
 }
