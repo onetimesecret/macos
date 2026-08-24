@@ -254,6 +254,78 @@ final class RestoreFailureTests: XCTestCase {
         XCTAssertEqual(stranger.saveStateForQuit(), .settled)
     }
 
+    /// A damaged snapshot, which is the cause every other refusal test
+    /// here stands in for without ever producing: they all withhold the
+    /// licence by presenting a foreign credential tag, so the key is
+    /// what is wrong. Here the key is right and the file is wrong, and
+    /// the two are worth telling apart, because the restore has a
+    /// branch that DROPS a file it cannot use, the superseded envelope
+    /// (ADR-0016 section 9), and that branch hands the licence back. A
+    /// file that is merely corrupt must take the other branch: the
+    /// damage might be one flipped bit over pages the user still wants,
+    /// and dropping it would spend the only copy.
+    ///
+    /// The damage is a bit flipped at the very end of the file, inside
+    /// the AEAD tag, so the envelope's magic and header are exactly
+    /// what this build wrote and no magic rule can be what fires.
+    func testADamagedSnapshotWithholdsTheLicenceWithoutDroppingTheFile() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        let stateFile = FormFactor.stateFileURL(in: tempDir)
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "yesterday's pages")
+
+        var damaged = try Data(contentsOf: stateFile)
+        damaged[damaged.count - 1] ^= 0xFF
+        try damaged.write(to: stateFile)
+
+        // The same credential tag the file was sealed under: this
+        // session holds the right key and still cannot open the file.
+        let model = makeModel(in: tempDir, defaults: defaults, tag: tag)
+        model.loadStateIfNeeded()
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: stateFile.path),
+            "the restore dropped a file it could only not open, taking the pages with it"
+        )
+        XCTAssertTrue(
+            model.contentRestoreRefused,
+            "a damaged snapshot read as a fresh start, so this session may write over it"
+        )
+        // The ledger is a second file under a second key and was not
+        // touched, so its own licence is untouched: the two refuse
+        // independently or the pairing means nothing.
+        XCTAssertFalse(model.ledgerRestoreRefused)
+
+        // And the withholding is a real one: the consolation page this
+        // session types on goes nowhere near the damaged bytes, which
+        // are still all that remains of yesterday and might yet be
+        // recovered by hand.
+        let sheet = try XCTUnwrap(model.selectedPageID)
+        let ink = "the consolation page"
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: ink)]))
+        model.applyOps(sheet: sheet, opsJSON: ops)
+        spinRunLoop(until: { false }, timeout: 0.3)
+        XCTAssertEqual(
+            try Data(contentsOf: stateFile), damaged,
+            "a session that could not read the file wrote over it anyway"
+        )
+
+        // The way out is the same one gesture as for an unreadable key:
+        // the user discards what cannot be read, and this session starts
+        // saving from there.
+        model.clearUnreadableStateFile()
+        XCTAssertFalse(model.contentRestoreRefused)
+        spinRunLoop {
+            FileManager.default.fileExists(atPath: stateFile.path)
+                && (try? Data(contentsOf: stateFile)) != damaged
+        }
+        XCTAssertNotEqual(try Data(contentsOf: stateFile), damaged)
+
+        let relaunch = makeModel(in: tempDir, defaults: defaults, tag: tag)
+        relaunch.loadStateIfNeeded()
+        XCTAssertFalse(relaunch.contentRestoreRefused)
+        let restored = try XCTUnwrap(relaunch.selectedPageID)
+        XCTAssertEqual(relaunch.storage(for: restored).string, ink)
+    }
+
     /// The one refusal lever a test has, and it is enough: make the
     /// directory unwritable. `CompanionClient` is final, so there is no
     /// double that could make `persistSave` say no, and `saveState`
