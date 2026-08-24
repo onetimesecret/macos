@@ -43,7 +43,7 @@ final class CaptureOptOutTests: XCTestCase {
         )
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "capture-opt-out-tests"))
         defer { UserDefaults.standard.removePersistentDomain(forName: "capture-opt-out-tests") }
-        let model = PageModel(formFactor: .backdrop, defaults: defaults)
+        let model = isolatedModel(defaults: defaults)
         XCTAssertFalse(model.allowCapture)
     }
 }

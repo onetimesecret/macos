@@ -150,7 +150,7 @@ final class WrapTests: XCTestCase {
         let suite = "wrap-tests-mount"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
-        let model = PageModel(formFactor: .backdrop, defaults: defaults)
+        let model = isolatedModel(defaults: defaults)
 
         let layoutManager = NSLayoutManager()
         let container = NSTextContainer(size: NSSize(
@@ -258,7 +258,7 @@ final class WrapTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
 
-        XCTAssertTrue(PageModel(formFactor: .backdrop, defaults: defaults).wrapsLines)
+        XCTAssertTrue(isolatedModel(defaults: defaults).wrapsLines)
     }
 
     /// ⌥Z and the Settings toggle are the same value, and it outlives the
@@ -268,14 +268,14 @@ final class WrapTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
 
-        let model = PageModel(formFactor: .backdrop, defaults: defaults)
+        let model = isolatedModel(defaults: defaults)
         model.toggleWrap()
         XCTAssertFalse(model.wrapsLines)
-        XCTAssertFalse(PageModel(formFactor: .backdrop, defaults: defaults).wrapsLines)
+        XCTAssertFalse(isolatedModel(defaults: defaults).wrapsLines)
 
         model.toggleWrap()
         XCTAssertTrue(model.wrapsLines)
-        XCTAssertTrue(PageModel(formFactor: .backdrop, defaults: defaults).wrapsLines)
+        XCTAssertTrue(isolatedModel(defaults: defaults).wrapsLines)
     }
 
     /// The keystroke is invisible on a page whose lines all fit, so it
@@ -285,7 +285,7 @@ final class WrapTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
 
-        let model = PageModel(formFactor: .backdrop, defaults: defaults)
+        let model = isolatedModel(defaults: defaults)
         model.toggleWrap()
         XCTAssertEqual(model.notice, "long lines run on")
         model.toggleWrap()
