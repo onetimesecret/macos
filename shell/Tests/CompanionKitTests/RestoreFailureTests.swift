@@ -23,14 +23,21 @@ final class RestoreFailureTests: XCTestCase {
         return (tempDir, defaults, "restorefail-\(UUID().uuidString)")
     }
 
-    private func makeModel(in tempDir: URL, defaults: UserDefaults, tag: String) -> PageModel {
+    /// The retry window is defaulted rather than shortened: only the
+    /// refusal tests at the foot of this file wait on one, and every
+    /// other test here would rather the retry stayed out of the way.
+    private func makeModel(
+        in tempDir: URL, defaults: UserDefaults, tag: String,
+        saveRetryDebounce: TimeInterval? = nil
+    ) -> PageModel {
         PageModel(
             formFactor: .panel,
             defaults: defaults,
             seams: .init(
                 stateDirectory: tempDir,
                 client: .ephemeral(tag: tag),
-                saveDebounce: 0.05
+                saveDebounce: 0.05,
+                saveRetryDebounce: saveRetryDebounce
             )
         )
     }
@@ -245,5 +252,114 @@ final class RestoreFailureTests: XCTestCase {
         stranger.loadStateIfNeeded()
         // Nothing typed: nothing to lose, so no warning.
         XCTAssertEqual(stranger.saveStateForQuit(), .settled)
+    }
+
+    /// The one refusal lever a test has, and it is enough: make the
+    /// directory unwritable. `CompanionClient` is final, so there is no
+    /// double that could make `persistSave` say no, and `saveState`
+    /// swallowing `prepareStateDirectory`'s throw is what lets the
+    /// refusal land in the write itself rather than ahead of it.
+    private func setWritable(_ writable: Bool, _ directory: URL) throws {
+        try FileManager.default.setAttributes(
+            [.posixPermissions: writable ? 0o700 : 0o500], ofItemAtPath: directory.path)
+    }
+
+    /// The window a refused write opens (ADR-0016 section 2), driven
+    /// against a write that genuinely failed rather than against the
+    /// arithmetic. Three claims, and the shipping ten seconds is not
+    /// one of them: the status goes and stays `failed`, everything
+    /// typed inside the window rides it instead of arming a shorter
+    /// one, and the retry at its far end writes with no further gesture
+    /// from anybody.
+    ///
+    /// The middle claim is the one worth the wall clock. The debounce
+    /// here is 0.05 s and the retry 1.0 s, and the volume is made
+    /// writable again immediately after the refusal: if a mutation
+    /// re-armed the debounce, a write would land within a fifth of a
+    /// second, and the file would move while the test is asserting that
+    /// it does not.
+    func testARefusedWriteOpensAWindowThatAbsorbsWhatFollows() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        let stateFile = FormFactor.stateFileURL(in: tempDir)
+        addTeardownBlock { try? self.setWritable(true, tempDir) }
+
+        let model = makeModel(in: tempDir, defaults: defaults, tag: tag, saveRetryDebounce: 1.0)
+        model.loadStateIfNeeded()
+        spinRunLoop { model.saveStatus == .saved }
+        XCTAssertEqual(model.saveStatus, .saved)
+        let settledBytes = try Data(contentsOf: stateFile)
+
+        // The volume goes read-only under a session that holds both its
+        // licences: nothing about permission is a licence question, so
+        // this session may write and simply cannot.
+        try setWritable(false, tempDir)
+        let sheet = try XCTUnwrap(model.selectedPageID)
+        let ink = "typed onto a full disk"
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: ink)]))
+        model.applyOps(sheet: sheet, opsJSON: ops)
+        spinRunLoop { model.saveStatus == .failed }
+        XCTAssertEqual(
+            model.saveStatus, .failed,
+            "a refused write must say so; silence here reads as saved"
+        )
+        XCTAssertEqual(
+            try Data(contentsOf: stateFile), settledBytes,
+            "the refused write left something behind on disk"
+        )
+
+        // The refusal is sticky by design: a keystroke on top of it
+        // does not make it old news, and the surface must not walk back
+        // to a hopeful "saving" while the pages are still nowhere.
+        try setWritable(true, tempDir)
+        let more = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "and more")]))
+        model.applyOps(sheet: sheet, opsJSON: more)
+        XCTAssertEqual(model.saveStatus, .failed)
+
+        // Well past the debounce, well inside the retry: the mutation
+        // above was absorbed by the window the refusal opened, so
+        // nothing has been written even though the volume now takes
+        // writes again.
+        spinRunLoop(until: { false }, timeout: 0.4)
+        XCTAssertEqual(model.saveStatus, .failed)
+        XCTAssertEqual(
+            try Data(contentsOf: stateFile), settledBytes,
+            "a mutation inside the retry window armed a window of its own"
+        )
+
+        // And the far end of the window, which no gesture reaches: the
+        // retry comes back on its own and writes what the session has
+        // been holding since the refusal.
+        spinRunLoop { model.saveStatus == .saved }
+        XCTAssertEqual(
+            model.saveStatus, .saved,
+            "the retry never fired, so a session that fails one write keeps its pages in memory"
+        )
+        XCTAssertNotEqual(try Data(contentsOf: stateFile), settledBytes)
+
+        // The proof it is a real generation and not a status change: a
+        // relaunch opens it and finds both edits.
+        let relaunch = makeModel(in: tempDir, defaults: defaults, tag: tag)
+        relaunch.loadStateIfNeeded()
+        let restored = try XCTUnwrap(relaunch.selectedPageID)
+        XCTAssertEqual(relaunch.storage(for: restored).string, "and more" + ink)
+    }
+
+    /// The loudest arm of the quit truth table (issue #49), which until
+    /// now had never met a write that actually failed: the flush is
+    /// refused, so the alert must say so whatever the licences read.
+    func testTheQuitFlushOverARefusedWriteSaysRefused() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        addTeardownBlock { try? self.setWritable(true, tempDir) }
+
+        let model = makeModel(in: tempDir, defaults: defaults, tag: tag, saveRetryDebounce: 1.0)
+        model.loadStateIfNeeded()
+        spinRunLoop { model.saveStatus == .saved }
+
+        try setWritable(false, tempDir)
+        let sheet = try XCTUnwrap(model.selectedPageID)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "lost at logout")]))
+        model.applyOps(sheet: sheet, opsJSON: ops)
+
+        XCTAssertEqual(model.saveStateForQuit(), .refused)
     }
 }

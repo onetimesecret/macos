@@ -516,6 +516,24 @@ final class SaveScheduleTests: XCTestCase {
         XCTAssertFalse(schedule.isCurrent(original))
         XCTAssertTrue(schedule.isCurrent(retry))
     }
+
+    func testTheRetryWindowAbsorbsEverythingTypedInsideIt() {
+        // The two rules above, composed, which is the shape ADR-0016
+        // section 2 describes and neither of them says alone: a refusal
+        // silently changes the window for everything typed afterwards.
+        // The retry is armed on a window of its own, longer than the
+        // debounce, and every later mutation rides it rather than
+        // arming a shorter one, so a user typing steadily after a
+        // failed write waits out the retry and not the debounce.
+        var schedule = SaveSchedule()
+        _ = schedule.arm()
+        schedule.begin() // the write that was refused
+        let retry = schedule.arm()!
+        for _ in 0..<400 {
+            XCTAssertNil(schedule.arm())
+        }
+        XCTAssertTrue(schedule.isCurrent(retry))
+    }
 }
 
 /// The sudden-termination hold (ADR-0012): while the store differs from

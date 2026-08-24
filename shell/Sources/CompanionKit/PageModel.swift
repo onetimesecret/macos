@@ -491,6 +491,15 @@ public final class PageModel: ObservableObject {
     /// session hammering a path that keeps saying no.
     private static let saveRetryDebounce: TimeInterval = 10.0
 
+    /// The retry window this instance actually runs, on the same terms
+    /// as `saveDebounce`: the shipping value unless a test injected a
+    /// shorter one. A test that waits out the real one spends ten
+    /// seconds of wall clock proving something about a window whose
+    /// length is not the claim; what is the claim is that the window
+    /// exists, that it absorbs what is typed inside it, and that the
+    /// retry at its far end needs no further gesture.
+    private let saveRetryDebounce: TimeInterval
+
     /// The init's test seams, gathered into one struct so the shipping
     /// signature stays narrow however many seams the tests grow. Each
     /// member is optional and nil means the shipping value: a
@@ -500,22 +509,26 @@ public final class PageModel: ObservableObject {
     /// reach the Keychain (the test target's
     /// `CompanionClient.ephemeral(tag:)` extension, ADR-0018), and a
     /// `saveDebounce` shortens the window so the real timer can fire
-    /// inside a test's patience. The default instance leaves all three
-    /// alone, which is exactly the construction every shipping call
-    /// site performs.
+    /// inside a test's patience, and a `saveRetryDebounce` does the
+    /// same for the longer window a refused write opens. The default
+    /// instance leaves all four alone, which is exactly the
+    /// construction every shipping call site performs.
     public struct Seams {
         let stateDirectory: URL?
         let client: CompanionClient?
         let saveDebounce: TimeInterval?
+        let saveRetryDebounce: TimeInterval?
 
         public init(
             stateDirectory: URL? = nil,
             client: CompanionClient? = nil,
-            saveDebounce: TimeInterval? = nil
+            saveDebounce: TimeInterval? = nil,
+            saveRetryDebounce: TimeInterval? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
             self.saveDebounce = saveDebounce
+            self.saveRetryDebounce = saveRetryDebounce
         }
     }
 
@@ -540,6 +553,7 @@ public final class PageModel: ObservableObject {
         ledgerFileURL = seams.stateDirectory.map(FormFactor.ledgerFileURL(in:))
             ?? formFactor.ledgerFileURL
         saveDebounce = seams.saveDebounce ?? Self.saveDebounce
+        saveRetryDebounce = seams.saveRetryDebounce ?? Self.saveRetryDebounce
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         // Unset → float on top, matching the original behavior.
         floatsOnTop = defaults.object(forKey: Self.floatsKey) as? Bool ?? true
@@ -1063,7 +1077,7 @@ public final class PageModel: ObservableObject {
             // that fails one write and then goes quiet would keep its
             // pages nowhere but in memory. Arm the retry here. The hold
             // stays taken either way: holding is not writing.
-            scheduleSave(after: Self.saveRetryDebounce, mode: .default)
+            scheduleSave(after: saveRetryDebounce, mode: .default)
         }
         terminationLatch.settle(saved: settled)
         return settled
