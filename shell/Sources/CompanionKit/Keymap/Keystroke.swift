@@ -135,19 +135,27 @@ public struct Keystroke: Hashable, Sendable {
     ///
     /// The last segment is the key and everything before it is a
     /// modifier, with one wrinkle worth stating: the key may itself be
-    /// a hyphen, as in `cmd--`, which splits into an empty final
-    /// segment. An empty tail is therefore read as the hyphen key
-    /// rather than rejected.
+    /// a hyphen, as in `cmd--`, which splits into two empty final
+    /// segments, one for the separator and one for the key.
+    ///
+    /// It is the pair that says so, and only the pair. A single empty
+    /// tail is `cmd-`, a spelling that names a modifier and then stops,
+    /// and reading that as the hyphen key would be worse than useless:
+    /// it would eat the modifier the author did write and bind bare
+    /// minus, so a typo in an override would put a command under an
+    /// ordinary character someone types into a page. A lone empty tail
+    /// falls through to the unknown-key refusal instead, which costs the
+    /// author one line and tells them which.
     public static func parse(_ text: String) -> Result<Keystroke, ParseFailure> {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return .failure(.empty) }
 
         var segments = trimmed.split(separator: "-", omittingEmptySubsequences: false)
             .map(String.init)
-        // A trailing empty segment is the hyphen key wearing a
+        // Two empty segments in a row are the hyphen key wearing a
         // separator's clothes: `cmd--` is command plus minus.
         var keyToken = segments.removeLast()
-        if keyToken.isEmpty, !segments.isEmpty {
+        if keyToken.isEmpty, segments.last?.isEmpty == true {
             keyToken = "-"
             segments.removeLast()
         }

@@ -125,6 +125,41 @@ final class BundledKeymapTests: XCTestCase {
             "scripts/package-app.sh no longer copies the bundled keymap into the app")
     }
 
+    /// Under the test runner `Bundle.main` is xctest, which carries no
+    /// keymap, so the file is only found at all because the hand-rolled
+    /// search below it works. That makes this suite the proof that the
+    /// second rung is real rather than decorative.
+    func testTheFileIsFoundWithoutBundleMain() throws {
+        XCTAssertNil(
+            Bundle.main.url(
+                forResource: Keymap.defaultResourceName,
+                withExtension: Keymap.defaultResourceExtension),
+            "the test runner unexpectedly carries a keymap, so this suite proves nothing")
+        XCTAssertNotNil(Keymap.defaultURL)
+    }
+
+    /// `Bundle.module` must never come back here. SwiftPM's generated
+    /// accessor calls `fatalError` when it cannot find its bundle, and
+    /// the case where it cannot find it is exactly the packaging fault
+    /// `defaultKeymapMissing` exists to survive: an app assembled
+    /// without `Contents/Resources/default-keymap.json`. Using the
+    /// accessor would turn that diagnostic into a crash inside
+    /// `PageModel`'s initialiser. `LogoMark` refuses it for the same
+    /// reason and says so in its own comment.
+    func testTheLoaderNeverReachesForBundleModule() throws {
+        let source = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/CompanionKit/Keymap/Keymap.swift")
+        let text = try String(contentsOf: source, encoding: .utf8)
+        for line in text.split(separator: "\n") where line.contains("Bundle.module") {
+            XCTAssertTrue(
+                line.trimmingCharacters(in: .whitespaces).hasPrefix("///"),
+                "Keymap.swift calls Bundle.module, which fatalErrors on a miss: \(line)")
+        }
+    }
+
     private func parse(_ text: String) throws -> Keystroke {
         switch Keystroke.parse(text) {
         case .success(let keystroke): return keystroke
