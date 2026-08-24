@@ -374,6 +374,16 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         }
         let behavior = stance.collectionBehavior(pinned: pinned)
         if panel.collectionBehavior != behavior {
+            // Debug rather than info: a genuine stance change writes
+            // this every time and would crowd out the gate's own lines.
+            // It exists because the guard cannot be tested from here —
+            // reading `collectionBehavior` back gives our own last
+            // assignment, not what the window server did with it — so
+            // the hardware run judges it by counting these against the
+            // raises that should have produced none.
+            Self.logger.debug(
+                "collectionBehavior write=\(behavior.rawValue, privacy: .public) was=\(self.panel.collectionBehavior.rawValue, privacy: .public)"
+            )
             panel.collectionBehavior = behavior
         }
     }

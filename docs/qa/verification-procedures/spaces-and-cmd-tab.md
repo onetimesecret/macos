@@ -116,6 +116,15 @@ log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
 - [ ] **Pinned, same ten returns.** The pinned rest neither resizes nor
       changes level on a raise, so if the flicker survives here it is
       not the resize.
+- [ ] **The write guard, counted.** Restart the stream with `--level
+      debug` added, so the altitude lines appear. Leave the card raised,
+      then ⌘Tab away and back ten times: each return applies the raised
+      stance over an already-raised surface, so `collectionBehavior
+      write=` must appear no times at all. One per return means the
+      guard is not holding and every activation is asking the window
+      server to place the window again, which is the cause the ten
+      returns above are looking for. A line on a genuine raise or rest,
+      where the posture really changed, is expected.
 
 ### The drag, which is a decision rather than a fix
 
@@ -141,4 +150,5 @@ stay: a re-run adds a row rather than replacing one.
 | | | summon from a full-screen Space lands and takes keys | | One blink there is the landing, not the flicker. |
 | | | ten ⌘Tab returns, unpinned | | Record the shape of any flicker. |
 | | | ten ⌘Tab returns, pinned | | |
+| | | no collectionBehavior write on a re-raise | | Needs `log stream --level debug`. |
 | | | edge drag stays on this desktop | | The documented decision, ADR-0019. |
