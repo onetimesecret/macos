@@ -48,7 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from an unavailable key, every mutation site is asserted to arm a
   write, and the bundle-identifier guards that keep a dev rebuild off
   the installed copy's state are reachable by a test for the first
-  time. CI gained the packaged plist's sudden-termination key, the
+  time. Building a model without those seams is now refused outright
+  under the test runner, since the unseamed construction resolves to the
+  installed app's own pages, ledger and Keychain items. CI gained the
+  packaged plist's sudden-termination key, the
   test-util seams on macOS, and a release packaging job, so the checks
   that used to run only when a human packaged a release run on every
   change. Two procedures that ADR-0016 named but nobody had written,

@@ -73,6 +73,13 @@ holds: a refused write leaves the last good generation in place.
 - When a case gains a guarantee, cite the ADR-0016 section that decides
   it rather than restating the reasoning. If no section decides it, the
   ADR needs amending before the row does.
+- Every Swift test that builds a `PageModel` passes
+  `PageModel.Seams(stateDirectory:client:)`, a directory the test owns
+  and `CompanionClient.ephemeral(tag:)`, so no row here is ever asserted
+  against the installed app's own sealed files or Keychain items. The
+  model's init enforces this: under the test runner an unseamed
+  construction ends the process rather than resolving to the shipped
+  paths, which is how a suite once erased a real ledger.
 - ADR-0016 section 10 states what coverage each case owes. This file
   states what it has. If the two disagree, one of them is out of date,
   and the fastest way to tell which is to run the `grep` in the first
