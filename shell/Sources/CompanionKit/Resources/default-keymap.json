@@ -51,8 +51,15 @@
       "cmd-0": "ledger::Show",
 
       // Pages: a new one at the default rung, the neighbours, and the
-      // close verb every macOS app has.
-      "cmd-alt-n": "page::New",
+      // close verb every macOS app has. New is plain cmd-n, the same
+      // key every other app puts a new thing on: the pad has no
+      // document model, so nothing in AppKit was ever holding it
+      // (issue #77). It was cmd-alt-n until then, and if that is what
+      // your hands know, put it back in your own keymap:
+      //
+      //     [{ "context": "Editor", "bindings": { "cmd-alt-n": "page::New" } }]
+      //
+      "cmd-n": "page::New",
       "cmd-alt-left": "page::Previous",
       "cmd-alt-right": "page::Next",
       "cmd-w": "page::Close",

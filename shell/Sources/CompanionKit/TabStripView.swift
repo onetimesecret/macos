@@ -82,7 +82,7 @@ public struct TabStripView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .help("New page (⌥⌘N)")
+        .help("New page (⌘N)")
         .accessibilityLabel(Text("New page"))
     }
 
