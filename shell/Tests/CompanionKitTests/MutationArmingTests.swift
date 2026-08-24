@@ -38,11 +38,32 @@ final class MutationArmingTests: XCTestCase {
     func testEveryMutationSiteArmsAWrite() throws {
         let suite = "companion-kit-mutation-arming-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-        // No state file is ever loaded or written: `loadStateIfNeeded`
-        // is never called, and the counter this reads is incremented
-        // ahead of the licence guard for exactly that reason.
-        let model = PageModel(formFactor: .backdrop, defaults: defaults)
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("companion-mutation-arming-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        addTeardownBlock {
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: tempDir)
+        }
+        // The seams are not a nicety here. No state file is loaded or
+        // written by this suite (`loadStateIfNeeded` is never called,
+        // and the counter read below is incremented ahead of the
+        // licence guard for exactly that reason), but the clearLedger
+        // step erases a file by path, unconditionally and with no
+        // licence in the way, and a model built on the shipping
+        // defaults resolves that path to the installed backdrop's own
+        // ledger, the one file ADR-0012 says only the user may end. So
+        // the sealed files live in a directory this test owns and dies
+        // with, and the core handle keeps its credentials in process
+        // memory rather than the login Keychain (ADR-0018).
+        let model = PageModel(
+            formFactor: .backdrop,
+            defaults: defaults,
+            seams: .init(
+                stateDirectory: tempDir,
+                client: .ephemeral(tag: "mutation-arming-\(UUID().uuidString)")
+            )
+        )
 
         // Two seal routes below write real pasteboards. The general
         // board belongs to whoever is at the keyboard, so hold what
