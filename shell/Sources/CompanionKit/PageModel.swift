@@ -1666,7 +1666,7 @@ public final class PageModel: ObservableObject {
         return id
     }
 
-    /// A new page (⌥⌘N or the + tab). At the cap the app declines and
+    /// A new page (⌘N or the + tab). At the cap the app declines and
     /// says so.
     public func newPage() {
         notice = nil

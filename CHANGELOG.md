@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **⌘N makes a new page** (issue #77). It was ⌥⌘N, which existed
+  because ⌘N looked spoken for, and it is not: the pad has no document
+  model, so AppKit never installs the stock New item that would have
+  claimed it. The pad now puts a new thing on the same key every other
+  app does. **⌥⌘N is retired**, deliberately: one command with two
+  default chords is how a keymap turns into a pile of accommodations,
+  and the point of the file is that it reads as a list of decisions.
+  If ⌥⌘N is what your hands know, it is one line in your own keymap at
+  `~/Library/Application Support/com.onetimesecret.companion.backdrop/keymap.json`,
+  and the bundled default carries the line to copy:
+
+  ```json5
+  [{ "context": "Editor", "bindings": { "cmd-alt-n": "page::New" } }]
+  ```
+
+  This is the first binding to move through the keymap rather than
+  through Swift, which is what the keymap was for.
+
 ### Added
 
 - **The keyboard is a file now** (issue #76,

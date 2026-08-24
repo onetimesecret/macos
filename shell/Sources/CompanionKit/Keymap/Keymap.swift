@@ -182,6 +182,23 @@ public struct ResolvedKeymap: Sendable {
         bindings.first { $0.command == command && $0.useKeyEquivalents }?.keystroke
     }
 
+    /// The chord a tooltip may name for a command, whatever section it
+    /// came from.
+    ///
+    /// Deliberately not `menuKeystroke`. That one is gated on
+    /// `use_key_equivalents` because taking a menu equivalent is an
+    /// app-wide claim on a chord; saying "and you can also press this"
+    /// in a help string claims nothing and installs nothing. A file that
+    /// declined key equivalents still bound the chord, and a tooltip
+    /// that went quiet about it would be hiding something true.
+    ///
+    /// Nil means nothing is bound, and then the caller says only what
+    /// the button does. A button whose chord was unbound must not keep
+    /// advertising it.
+    public func hintKeystroke(for command: CommandID) -> Keystroke? {
+        bindings.first { $0.command == command }?.keystroke
+    }
+
     /// The faults worth telling someone about.
     public var faults: [KeymapDiagnostic] { diagnostics.filter(\.isFault) }
 }

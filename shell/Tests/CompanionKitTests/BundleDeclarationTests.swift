@@ -66,4 +66,27 @@ final class BundleDeclarationTests: XCTestCase {
             "a second bundle identity appeared beside the one this suite pins"
         )
     }
+
+    /// ⌘N belongs to the pad because nothing in AppKit is holding it
+    /// (issue #77).
+    ///
+    /// The stock New item is a document-based app's, and this app has
+    /// no document model: no declared document types here, and no
+    /// window or document scene in `BackdropApp`, whose only scene is
+    /// the Settings placeholder. Declaring a document type would hand
+    /// AppKit a File menu with its own ⌘N in it, and a main-menu key
+    /// equivalent wins over the surface's hidden buttons, so the chord
+    /// the keymap installs would quietly stop reaching the pad. That is
+    /// a subtle enough failure to be worth a test that names it.
+    func testTheBundleClaimsNoDocumentTypesSoTheNewChordIsTheKeymaps() throws {
+        let plist = Self.shellDirectory.appendingPathComponent("OnetimePad-Info.plist")
+        let data = try Data(contentsOf: plist)
+        let parsed = try PropertyListSerialization.propertyList(
+            from: data, options: [], format: nil)
+        let keys = try XCTUnwrap(parsed as? [String: Any])
+
+        XCTAssertNil(
+            keys["CFBundleDocumentTypes"],
+            "a declared document type gives AppKit its own ⌘N, which would shadow page::New")
+    }
 }

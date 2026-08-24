@@ -19,7 +19,7 @@ array of sections:
     "context": "Editor",
     "use_key_equivalents": true,
     "bindings": {
-      "cmd-alt-n": "page::New",
+      "cmd-n": "page::New",
       "cmd-shift-v": "clipboard::Seal",
     },
   },

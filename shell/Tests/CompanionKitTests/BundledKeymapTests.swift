@@ -26,7 +26,7 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-8": .pageSelect8,
         "cmd-9": .pageSelect9,
         "cmd-0": .ledgerShow,
-        "cmd-alt-n": .pageNew,
+        "cmd-n": .pageNew,
         "cmd-alt-left": .pagePrevious,
         "cmd-alt-right": .pageNext,
         "cmd-w": .pageClose,
