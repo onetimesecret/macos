@@ -350,16 +350,23 @@ struct BackdropRootView: View {
             // other seven grips are invisible margins, as a window's
             // are, and one drawn affordance is what tells a first-time
             // user the card is resizable at all.
-            VStack {
-                Spacer()
-                HStack {
+            //
+            // Hidden for now (issue #78). Only the drawing goes: the
+            // glyph never took a click (`allowsHitTesting(false)`), so
+            // all eight grips and the corner under this one still
+            // resize the card exactly as before.
+            if HiddenUI.showsResizeGlyph {
+                VStack {
                     Spacer()
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                        .padding(6)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+                    HStack {
+                        Spacer()
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                            .padding(6)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
                 }
             }
         }
