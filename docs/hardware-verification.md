@@ -253,6 +253,11 @@ is indexed in [`qa/recovery-matrix.md`](qa/recovery-matrix.md):
 - [`raised-card-drag-tracking.md`](qa/verification-procedures/raised-card-drag-tracking.md).
   Owner: delano. Drag and resize tracking on the raised card. Not an
   ADR-0016 case.
+- [`pinned-over-fullscreen.md`](qa/verification-procedures/pinned-over-fullscreen.md).
+  Owner: delano. A pinned card and another app's full-screen Space:
+  whether the card is visible there, and, either way, that clicks reach
+  the full-screen app rather than the pad (issue #73). Not an ADR-0016
+  case.
 
 Whether any of them has been run is recorded in each file's own Status
 line and Results table, which is the one place a run belongs. A tally

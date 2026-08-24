@@ -24,6 +24,14 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     // and every other touch runs on the main actor.
     private nonisolated(unsafe) var screenObserver: NSObjectProtocol?
 
+    // The exposure watch, for the same reason and with the same care:
+    // one token from the default centre for the window's own occlusion,
+    // one from the workspace centre per settle trigger, and one from the
+    // distributed centre per trigger only it carries.
+    private nonisolated(unsafe) var occlusionObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var workspaceObservers: [NSObjectProtocol] = []
+    private nonisolated(unsafe) var distributedObservers: [NSObjectProtocol] = []
+
     init(model: BackdropModel) {
         self.model = model
         panel = BackdropPanel()
@@ -44,6 +52,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             .dropFirst()
             .sink { [weak self] pinned in
                 guard let self else { return }
+                // In the order `apply(_:)` uses, and for the same
+                // reason. The stance's own ungated rule goes first,
+                // because the level and frame below are about to change
+                // what is on screen and the window server's present
+                // reading still describes the posture being left: a pin
+                // judged from that reading is a pin judged from where
+                // the card was a moment ago.
                 panel.ignoresMouseEvents = model.stance.ignoresMouse(pinned: pinned)
                 panel.level = model.stance.level(pinned: pinned)
                 panel.collectionBehavior = model.stance.collectionBehavior(pinned: pinned)
@@ -51,6 +66,11 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                     stance: model.stance, pinned: pinned,
                     geometry: model.displayedGeometry
                 )
+                // And the readings a turn later, once the window server
+                // has made of all that what it will. Without them the
+                // pin has no exposure gate at all, since neither an
+                // occlusion change nor a Space switch need follow it.
+                refreshMouseGateAfterPostureChange()
             }
             .store(in: &observers)
         // Wherever the window hugs the card (a pinned rest, and every
@@ -102,11 +122,65 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.fitToScreen() }
         }
+        // The two edges at which what the user can see of the surface
+        // changes without the stance changing at all (issue #73). The
+        // occlusion notification is the authoritative one: AppKit posts
+        // it so that an app can stop drawing what nobody will see, and
+        // the mouse gate wants the same fact for the opposite reason.
+        occlusionObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: panel,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshMouseGate(from: .edge) }
+        }
+        // The workspace's transitions are the others
+        // (`SurfaceExposure.settleTriggers`), and they are watched as
+        // well as occlusion because a window that claims every Space
+        // keeps its membership across a switch and need not change
+        // occlusion state for the card to stop being composited, while a
+        // wake or a session hand-back changes what is on screen without
+        // telling the window anything about itself. Each is read a turn
+        // later, and then once more when the transition is certainly
+        // over: the switch is still settling at the moment the
+        // notification arrives, the window server's answer during it
+        // describes the state being left, and a gate closed on that
+        // answer would have no later edge to reopen it.
+        workspaceObservers = SurfaceExposure.settleTriggers.map { name in
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.refreshMouseGateAcrossTransition() }
+            }
+        }
+        // The unlock, which the workspace centre does not carry: an
+        // ordinary lock switches no session and need not sleep the
+        // displays, so it is the distributed centre or nothing.
+        distributedObservers = SurfaceExposure.distributedSettleTriggers.map { name in
+            DistributedNotificationCenter.default().addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.refreshMouseGateAcrossTransition() }
+            }
+        }
     }
 
     deinit {
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
+        }
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+        }
+        for observer in workspaceObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        for observer in distributedObservers {
+            DistributedNotificationCenter.default().removeObserver(observer)
         }
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
@@ -185,6 +259,12 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // by the time it is ordered back, and already accept it by the
         // time it is made key.
         panel.isInteractive = stance.acceptsKey
+        // The posture's own rule, ungated, because the ordering below is
+        // about to change what is on screen: the window server's present
+        // reading describes the posture being left, and a raise arriving
+        // over a card that was buried under someone's window would start
+        // life mouse-transparent for no reason. The settled reading is
+        // taken a turn later, once the ordering has happened.
         panel.ignoresMouseEvents = stance.ignoresMouse(pinned: model.pinned)
         panel.level = stance.level(pinned: model.pinned)
         panel.collectionBehavior = stance.collectionBehavior(pinned: model.pinned)
@@ -245,9 +325,136 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // the wallpaper's own window and vanish on a bare desktop.
             panel.orderFrontRegardless()
         }
+        // Now that the ordering has happened, ask the window server what
+        // it made of it. A turn later rather than here: occlusion and
+        // Space membership settle after the order, not during it.
+        refreshMouseGateAfterPostureChange()
         Self.logger.info(
             "stance=\(stance == .raised ? "raised" : "resting", privacy: .public) level=\(self.panel.level.rawValue, privacy: .public) visible=\(self.panel.isVisible, privacy: .public) frame=\(NSStringFromRect(self.panel.frame), privacy: .public)"
         )
+    }
+
+    // MARK: The mouse gate
+
+    /// Whether the surface takes the mouse right now, judged by the
+    /// stance and by what the window server is actually showing of it
+    /// (issue #73). The decision is `BackdropStance.ignoresMouse(pinned:
+    /// exposure:)`; all this does is read the window and apply it.
+    ///
+    /// Written only on a change, since the gate is consulted from every
+    /// edge that can move it and an unchanged assignment is a message to
+    /// the window server for nothing. The change is logged because the
+    /// gate closing is invisible by definition: the symptom of a gate
+    /// stuck shut is a pinned card that stops answering clicks, and this
+    /// line is the only way to tell that from a card that never got the
+    /// press at all.
+    ///
+    /// Which turn is asking matters, and `SurfaceExposure.writes(gate:
+    /// from:raised:)` is where that is decided: the turn after a stance
+    /// is applied may open the gate but may not close it on a raised
+    /// surface, whose occlusion reading can still be a frame behind the
+    /// raise that has just happened.
+    private func applyMouseGate(
+        stance: BackdropStance, pinned: Bool, from turn: SurfaceExposure.Turn
+    ) {
+        let exposure = SurfaceExposure(window: panel)
+        let ignores = stance.ignoresMouse(pinned: pinned, exposure: exposure)
+        guard panel.ignoresMouseEvents != ignores else { return }
+        guard SurfaceExposure.writes(gate: ignores, from: turn, raised: stance == .raised) else {
+            Self.logger.info(
+                "mouse gate=held open (settling over a raised surface) onActiveSpace=\(exposure.onActiveSpace, privacy: .public) unoccluded=\(exposure.unoccluded, privacy: .public)"
+            )
+            return
+        }
+        panel.ignoresMouseEvents = ignores
+        Self.logger.info(
+            "mouse gate=\(ignores ? "closed" : "open", privacy: .public) onActiveSpace=\(exposure.onActiveSpace, privacy: .public) unoccluded=\(exposure.unoccluded, privacy: .public)"
+        )
+    }
+
+    /// The gate re-judged against the model as it stands, for the edges
+    /// that carry no posture of their own: an occlusion change, a Space
+    /// switch, and the settling turn after a stance or the pin is
+    /// applied.
+    ///
+    /// The turn a reading was scheduled with is what it deserved when it
+    /// was scheduled; `SurfaceExposure.authority(of:sinceTransition:)`
+    /// is what it deserves now, which is less whenever a transition
+    /// began while the reading was waiting.
+    private func refreshMouseGate(from turn: SurfaceExposure.Turn) {
+        applyMouseGate(
+            stance: model.stance,
+            pinned: model.pinned,
+            from: SurfaceExposure.authority(of: turn, sinceTransition: sinceTransition)
+        )
+    }
+
+    /// When the workspace last told us a transition was starting, on the
+    /// clock `NSEvent` timestamps share, and how long ago that was. A
+    /// transition that never happened is infinitely long over.
+    private var transitionBeganAt: TimeInterval?
+
+    private var sinceTransition: TimeInterval {
+        guard let transitionBeganAt else { return .infinity }
+        return ProcessInfo.processInfo.systemUptime - transitionBeganAt
+    }
+
+    /// The pair of readings every posture change takes for itself: a
+    /// stance applied, or the pin toggled under a stance that stays put.
+    ///
+    /// The prompt one is a turn later rather than immediate, since
+    /// occlusion and Space membership settle after the ordering rather
+    /// than during it, and it reads the model rather than the caller's
+    /// arguments because by then both have landed and a stance that
+    /// changed in between should win. It may open the gate but not close
+    /// it over a raise, for the reason `applyMouseGate` gives, which is
+    /// what makes the second reading necessary rather than tidy: a card
+    /// put in front while it was already wholly covered posts no
+    /// occlusion change afterwards, so without a scheduled reading
+    /// nothing would ever shut the gate on a surface the user cannot
+    /// see.
+    private func refreshMouseGateAfterPostureChange() {
+        Task { @MainActor [weak self] in self?.refreshMouseGate(from: .settling) }
+        scheduleMouseGateRead(SurfaceExposure.postureSettleRead)
+    }
+
+    /// A workspace transition read twice, promptly and then once it has
+    /// settled (`SurfaceExposure.settleReads`).
+    ///
+    /// A single reading taken from the notification lands
+    /// mid-transition, where the server is still describing the desktop
+    /// the user has left, and it can close the gate on a card that is
+    /// perfectly visible. Nothing would reopen it. The window claims
+    /// every Space, so its occlusion need not change when the desktop
+    /// does, and the gate would stay shut for as long as the app runs:
+    /// a card the user can see, refusing every click, with no way to
+    /// tell that from the pin having quietly failed. The schedule is
+    /// what guarantees a settled answer always follows the transient
+    /// one, and the settled answer is the last word. Each reading is
+    /// written with the authority the schedule gives it: the prompt one
+    /// is a guess taken mid-transition and may not close the gate on a
+    /// card that holds the keyboard, while the settled one may.
+    private func refreshMouseGateAcrossTransition() {
+        // Stamped before the readings are scheduled, and read by every
+        // reading that fires from anywhere: a raise's settled reading
+        // waiting out its second has no other way to learn that the
+        // desktop changed underneath it.
+        transitionBeganAt = ProcessInfo.processInfo.systemUptime
+        for read in SurfaceExposure.settleReads {
+            scheduleMouseGateRead(read)
+        }
+    }
+
+    /// One scheduled reading, taken now if it has no delay.
+    private func scheduleMouseGateRead(_ read: SurfaceExposure.SettleRead) {
+        guard read.delay > 0 else {
+            refreshMouseGate(from: read.turn)
+            return
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(read.delay))
+            self?.refreshMouseGate(from: read.turn)
+        }
     }
 
     // MARK: Resting on an outside click
