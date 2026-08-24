@@ -233,6 +233,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A pinned card that cannot be seen no longer takes the click**
+  (issue #73, ADR-0015). Pinned, with another app full screen on the
+  active Space, the card was invisible and yet presses meant for that
+  app landed in the pad and were acted on: the window server had kept
+  the surface in the hit-test path without ever compositing it. The
+  surface now reads back the two signals the server does answer
+  honestly, Space membership and occlusion, and refuses the mouse
+  whenever either says it is out of sight, in every posture and either
+  pin state. The rule is a one-way valve, so nothing here hands a click
+  to the unpinned rest, which stays transparent by ADR-0015; and the
+  reading is taken a turn after a stance is applied, so a raise arriving
+  over a buried card does not start life unable to be clicked. The
+  pinned rest also stopped carrying `.stationary`, a flag it had
+  inherited from the wallpaper recipe the unpinned rest is built from,
+  leaving the overlay recipe AppKit actually documents. Whether that
+  second change makes the card visible over a full-screen Space is a
+  question only hardware can answer, and
+  `docs/qa/verification-procedures/pinned-over-fullscreen.md` is where
+  it gets asked; the refusal to act on invisible presses holds either
+  way.
+
 - **A fast ledger round trip no longer strands the keyboard** (issue
   #23, ADR-0005, ADR-0006). Returning from the ledger rebuilds the
   editor the ledger stood in for, and the model hands the rebuilt

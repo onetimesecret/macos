@@ -1,0 +1,115 @@
+# Pinned pad over another app's full-screen Space
+
+**Applies to:** OnetimePad, resting stance with the pin on.
+**Raised by:** issue #73, from the dogfood aberrations log of
+2026-08-19.
+**Owner:** delano.
+**Status:** open. Not yet run on hardware.
+
+## What was seen, and what the code did about it
+
+Pinned, with Zed full screen on the active Space, the card was not
+visible and yet clicks meant for Zed landed in the pad and were acted
+on. A window can be in the window server's hit-test path without being
+composited, and that is the only shape the report fits.
+
+Two changes answer it, and they are deliberately independent, because
+only one of them can be judged without a person at the machine:
+
+1. **The mouse gate** (`SurfaceExposure`,
+   `BackdropStance.ignoresMouse(pinned:exposure:)`). The surface reads
+   back the window server's two honest signals, `isOnActiveSpace` and
+   `occlusionState`, and refuses the mouse whenever either says it is
+   out of sight. This is fail-closed and unit tested. It cannot make the
+   card visible; it can only stop an invisible card from acting.
+2. **The collection behavior** (`BackdropStance.collectionBehavior`).
+   The pinned rest no longer carries `.stationary`, which belonged to
+   the wallpaper recipe the unpinned rest is built from. What is left,
+   `.canJoinAllSpaces` with `.fullScreenAuxiliary`, is the overlay
+   recipe AppKit documents. If the invisibility came from asking for an
+   undefined combination, this is what fixes it.
+
+Change 2 is a hypothesis. Change 1 is the guarantee that holds whether
+or not the hypothesis is right. This procedure is what tells the two
+apart.
+
+## Setting up
+
+Quit any running copy first (`scripts/quit-app.sh`; only the graceful
+path saves state), then `scripts/package-app.sh && open
+dist/OnetimePad.app`.
+
+In a second terminal, watch the surface's own log, which now carries the
+gate:
+
+```
+log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
+```
+
+The line to look for is `mouse gate=closed onActiveSpace=… unoccluded=…`
+or its `open` counterpart. It is printed only when the gate moves.
+
+Then: pin the card (Settings, or the pin control on the card), put Zed
+(or any app) into full screen on its own Space, and switch to that
+Space.
+
+## The checks
+
+- [ ] **The card over the full-screen Space.** Is it visible?
+      **Visible** means change 2 worked and the pin now keeps its
+      promise. **Not visible** means it did not, and the pin's promise
+      over full-screen Spaces is still unkept; that is a separate defect
+      to file, not a failure of this procedure.
+- [ ] **The acceptance criterion.** Click where the card is, or would
+      be. The click must reach the full-screen app and do there what it
+      would have done with the pad quit: place a cursor in Zed, hit a
+      button, select a line. Nothing may happen in the pad. This is the
+      line issue #73 asked for and it must hold in both outcomes of the
+      check above.
+- [ ] **The log agrees.** If the card is invisible there, the stream
+      must carry `mouse gate=closed` with `unoccluded=0` (or
+      `onActiveSpace=0`) around the moment of the Space switch. A closed
+      gate with an invisible card is the fix working. **An invisible
+      card with the gate still open is the important failure**, and see
+      below.
+- [ ] **Coming back.** Leave the full-screen Space for an ordinary
+      desktop. The card is visible again, the stream carries `mouse
+      gate=open`, and a click on the card raises it as it always did.
+      A card that stays visible but stops answering clicks is a gate
+      stuck shut, which is the one regression this change can cause.
+- [ ] **The unpinned rest is untouched.** Turn the pin off, click over
+      the card on a bare desktop: the click still passes through to the
+      Finder desktop (ADR-0015). Nothing in this change may hand the
+      unpinned rest a click.
+- [ ] **The raise still takes its first click.** Pinned, on an ordinary
+      desktop, with another app's window covering most of the screen:
+      ⌃⌥Space to raise, then click straight into the card's text. The
+      keystroke lands. This is the timing the gate could plausibly get
+      wrong, since the reading is taken a turn after the ordering.
+
+## If the gate stays open over an invisible card
+
+Then macOS is reporting the surface as on the active Space and
+unoccluded while declining to draw it, and neither AppKit signal can see
+the difference. The next signal to try is the window server's own list:
+`CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)` and
+whether `panel.windowNumber` appears in it, which answers "is this
+window on screen right now" without going through the window's own
+opinion of itself. It would slot into `SurfaceExposure` as a third
+signal with no change to the decision, which already takes the strictest
+reading of everything it is given. Record the log lines here before
+making that change, since they are the evidence for it.
+
+## Results
+
+Not yet run. One row per check when a session runs it, and the rows
+stay: a re-run adds a row rather than replacing one.
+
+| Date | Machine and macOS | Check | Pass or fail | Notes |
+|---|---|---|---|---|
+| | | card visible over full screen | | The hypothesis, change 2. |
+| | | clicks reach the full-screen app | | The acceptance criterion. |
+| | | log shows the gate closing | | |
+| | | gate reopens off the full-screen Space | | |
+| | | unpinned rest still passes clicks through | | |
+| | | first click after a raise lands | | |
