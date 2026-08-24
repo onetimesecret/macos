@@ -307,6 +307,25 @@ final class KeymapValidationTests: XCTestCase {
         XCTAssertEqual(keymap.menuKeystroke(for: .appSettings)?.canonical, "cmd-,")
     }
 
+    /// Since a restatement cannot withdraw one, the way back is to
+    /// take the chord away and bind it again. It takes two sections:
+    /// both lines in one would settle the chord on the null and drop
+    /// the rebind as a duplicate.
+    func testUnbindingAndRebindingWithdrawsAMenuEquivalent() throws {
+        let keymap = Keymap.resolve(
+            defaultText: """
+                [{ "context": "Editor", "use_key_equivalents": true,
+                   "bindings": { "cmd-,": "app::Settings" } }]
+                """,
+            overrideText: """
+                [{ "context": "Editor", "bindings": { "cmd-,": null } },
+                 { "context": "Editor", "bindings": { "cmd-,": "app::Settings" } }]
+                """)
+        XCTAssertEqual(keymap.faults, [])
+        XCTAssertEqual(keymap.command(for: try parse("cmd-,"), in: .editor), .appSettings)
+        XCTAssertNil(keymap.menuKeystroke(for: .appSettings))
+    }
+
     /// Null is Zed's unbinding, and it has to work, or a user cannot
     /// take back a chord the app claimed.
     func testNullTakesAChordAway() {

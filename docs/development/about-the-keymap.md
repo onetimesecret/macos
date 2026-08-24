@@ -40,7 +40,12 @@ array of sections:
 - **`use_key_equivalents`** lets a chord in that section be advertised
   as a macOS menu key equivalent. Only `app::Settings` takes one up
   today. A menu equivalent is an app-wide claim, live even while a
-  Settings field holds the keyboard, so it has to be asked for.
+  Settings field holds the keyboard, so it has to be asked for. Once
+  granted, it stays with that chord and command: a later section that
+  restates the same line without asking for equivalents leaves the
+  equivalent standing, because a file repeating a default line to keep
+  it in sight must not quietly take something away. To withdraw one,
+  set the chord to `null` and bind it again in a later section.
 - **`bindings`** maps a keystroke to a command id, or to `null` to take
   the chord away.
 
