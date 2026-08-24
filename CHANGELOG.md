@@ -247,12 +247,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   once it is on a Space does vary by posture; it is the membership
   subset that is now constant, which is why the rewrite no longer asks
   for anything. The other half was the summon's order-out round
-  trip, a literal blink, which a window present on every Space can no
-  longer reach; it stays as a tested safety net, since being wrong about
-  a window stranded off-Space would cost keystrokes. Settings takes
-  `.moveToActiveSpace` for the same reason from the other side: the
-  app's one ordinary window, built once and shown many times, used to
-  anchor the app to the desktop it was first opened on. What is *not*
+  trip, a literal blink, which a window present on every desktop no
+  longer reaches on a return between desktops; it stays as a tested
+  safety net, since being wrong about a window stranded off-Space would
+  cost keystrokes, and it still fires from another app's full-screen
+  Space, which an unpinned rest declines to join, where the blink is the
+  card arriving where the user is. Settings and the About panel, the
+  app's two ordinary windows, take `.moveToActiveSpace` for the same
+  reason from the other side: each is built once and shown many times,
+  so either used to anchor the app to the desktop it was first opened
+  on. What is *not*
   fixed is dragging the card to another desktop by the screen edge, and
   ADR-0019 says why it will not be: the card's place is the app's own
   state clamped to the primary screen, the window server never sees a
