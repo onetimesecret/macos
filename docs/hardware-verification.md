@@ -184,6 +184,11 @@ with the catcher.
       back.)
 - [ ] ⌘0 to the ledger, then ⌘0 again back to the page: focused, type
       at once.
+- [ ] The same round trip several times in quick succession, ⌘0 ⌘0 ⌘0
+      ⌘0: every return lands focused. Speed is the point, not
+      thoroughness. The outgoing editor's teardown and the incoming
+      one's mount overlap here, and telling those two apart is what the
+      hand-off has to get right (issue #23).
 - [ ] Plain switch ⌘1 through ⌘9 across several pages: each lands
       focused; type at once.
 - [ ] ⌥⌘←/→ walk across the pages: each lands focused; type at once.

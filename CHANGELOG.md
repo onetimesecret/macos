@@ -233,6 +233,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A fast ledger round trip no longer strands the keyboard** (issue
+  #23, ADR-0005, ADR-0006). Returning from the ledger rebuilds the
+  editor the ledger stood in for, and the model hands the rebuilt
+  editor the keys once it appears. It holds that editor weakly, and
+  weak says whether the view still exists rather than whether it is
+  still mounted: the editor torn out of the window on the way to the
+  ledger keeps answering for as long as it takes the runtime to let go
+  of it, which is at least the rest of the turn. A hand-off landing
+  there settled on a view with no window, focused nothing, and stopped
+  waiting for the editor that was genuinely on its way, so the surface
+  came back from the ledger with the ember lit and the first keystroke
+  beeping. The hand-off now accepts only an editor inside a window, and
+  the teardown retires the model's handle on the way out, so a severed
+  editor is never offered at all.
+
 - **A page opened by selecting an empty slot now takes the keyboard**
   (issue #22, ADR-0005, ADR-0017). Clicking a slot whose page had
   expired, jumping to one with ⌘1 through ⌘9, or walking onto one with

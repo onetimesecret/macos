@@ -1550,13 +1550,34 @@ public final class PageModel: ObservableObject {
             for _ in 0..<10 {
                 guard let self else { return }
                 if requireKeys, !self.holdsKeys { return }
-                if let editor = self.activeEditor {
+                if let editor = Self.mountedEditor(self.activeEditor) {
                     (window ?? editor.window)?.makeFirstResponder(editor)
                     return
                 }
                 try? await Task.sleep(nanoseconds: 16_000_000)
             }
         }
+    }
+
+    /// The editor to hand the keys to, or nil when the one the model is
+    /// holding has already left the window.
+    ///
+    /// `activeEditor` is weak, which answers the question of whether the
+    /// view still exists and not the question the hand-off is actually
+    /// asking, which is whether it is still mounted. A ledger round trip
+    /// or a visit to an empty slot tears the editor out of the window,
+    /// and the torn-out view answers the weak handle for as long as it
+    /// takes ARC and the autorelease pool to let go of it, which is at
+    /// least the rest of the turn. Accepting it there ends the wait
+    /// twice over: there is no window to make it first responder in, so
+    /// nothing is focused, and the poll returns rather than waiting for
+    /// the editor that is genuinely on its way. The window is key, the
+    /// ember is lit, and the keystroke beeps, which is the fault the
+    /// poll exists to prevent, on the ledger's own return path (issue
+    /// #23). A view inside a window is mounted; that is the whole test.
+    static func mountedEditor(_ editor: NSTextView?) -> NSTextView? {
+        guard let editor, editor.window != nil else { return nil }
+        return editor
     }
 
     /// Show `message` for a few seconds, then clear it — unless a newer
