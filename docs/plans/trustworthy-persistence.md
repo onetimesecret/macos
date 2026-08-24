@@ -47,7 +47,7 @@ Decided and documented:
 
 - Keep the mutation-driven write schedule and make every mutation site reach it. ADR-0016 section 2 settles the debounce window at 2 seconds from the first mutation of a burst and does not move the number; the work is the sites that never arm a write.
 - A failed restore never replaces prior persisted state with empty state, through the withheld save licence. ADR-0016 section 7 decides against a last-known-good generation and requires the content-side Clear instead.
-- Age pages on two clocks per ADR-0016 section 4: monotonic within a session, the wall-clock gap between the last save and the next restore across one, carried in a `drained_ms` that no restore reduces.
+- Age pages on two clocks per ADR-0016 section 4: monotonic within a session, the wall-clock gap between the last save and the next restore across one. The `drained_ms` field that section first specified was not built, and section 4's 2026-08-23 amendment records why: the page record still carries the span of life that is left, which no restore lengthens, bounded on the way in by the tab's rung and by the ceiling the pause gesture sets.
 - Keep secret content out of status messages, logs, and long-lived metadata. ADR-0017 extends that to the durable Tab, which carries a name the user typed or no name at all.
 - Take the format break once. ADR-0016 section 9 bumps the envelope magic and ADR-0017 bumps the snapshot magic in the same break, and a known superseded magic is erased with the licence granted rather than left as a permanent refusal.
 - Close #54 in the same break: the persisted records are positional, so a trailing field forces a version bump that refuses every existing file (`crates/core/src/persist.rs:311-383`, `:172`). Length-prefix all three repeated records, the page record, the per-block materialized record and the ledger record, and define a skip-unknown-tail rule, so the next added field costs no break. This is what releases ADR-0013's interaction count from the break entirely. The envelope stays strict.
@@ -58,7 +58,7 @@ Decided and documented:
 
 **Tracking:** [#48](https://github.com/onetimesecret/macos/issues/48), [#53](https://github.com/onetimesecret/macos/issues/53)
 
-#53 is a precondition: `PageModel` persistence has no injectable state directory or credential store, so cases 1 and 5 below cannot be covered automatically until it lands. ADR-0016 section 10 maps every case to the coverage that exists and the coverage still owed.
+#53 landed, so cases 1 and 5 are reachable from a test: `PageModel.Seams` injects the state directory, the client and the save debounce (`shell/Sources/CompanionKit/PageModel.swift`), and `CompanionClient.ephemeral(tag:)` gives the suite an in-process credential store instead of the login Keychain. ADR-0016 section 10 maps every case to the coverage it owes; [`docs/qa/recovery-matrix.md`](../qa/recovery-matrix.md) records the coverage each one has, the procedure that covers what CI cannot reach, and when that procedure last ran.
 
 Verify the contract for:
 
@@ -70,9 +70,9 @@ Verify the contract for:
 6. Unavailable encryption key.
 7. TTL expiration.
 
-Each supported case needs an automated regression test where practical. Otherwise, record a repeatable manual procedure, rationale, and owner in its GitHub issue.
+Each supported case needs an automated regression test where practical. Otherwise, record a repeatable manual procedure, its rationale and its owner in `docs/qa/verification-procedures/`, and index it from the [recovery matrix](../qa/recovery-matrix.md). The GitHub issue tracks the work; the procedure and the matrix are where it is written down.
 
-Some paths cannot be reached from CI at all. ADR-0016 section 10 requires hardware procedures under `docs/qa/verification-procedures/` for reboot, power loss, a re-signed bundle, and a locked keychain, each with a named owner and a dated Results section.
+Some paths cannot be reached from CI at all. ADR-0016 section 10 requires hardware procedures under `docs/qa/verification-procedures/`, and all six exist: force termination, reboot, power loss, a re-signed bundle, a locked keychain, and the clock stepped back. Each names an owner and carries a dated Results table. Only `reboot.md` has a recorded run so far.
 
 ## Dogfood loop
 
