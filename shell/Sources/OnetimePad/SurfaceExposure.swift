@@ -13,8 +13,12 @@ import AppKit
 /// never compositing it (issue #73): clicks aimed at the full-screen app
 /// landed in a card nobody could see. Whatever the server's reasons, a
 /// surface that is not on screen has no business acting on a press, so
-/// the two signals it does answer honestly are read back and the mouse
-/// is refused whenever either says the surface is out of sight.
+/// the two signals it does publish about the window are read back and
+/// the mouse is refused whenever either says the surface is out of
+/// sight. Whether those signals tell the truth about a window held in
+/// the hit-test path without being composited is not knowable from here;
+/// `docs/qa/verification-procedures/pinned-over-fullscreen.md` is where
+/// it gets asked, and the gate follows what it is told either way.
 ///
 /// Fail-closed by construction: `isDisplayed` requires both signals to
 /// agree, so an unknown or half-answered state refuses the mouse rather
