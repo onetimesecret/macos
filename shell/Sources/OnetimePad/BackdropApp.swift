@@ -117,37 +117,20 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// `applicationWillTerminate` so a refused save reaches the user
     /// while there is still a choice to make: accept the loss, or stay
     /// and try again. Never a retry loop; cancelling simply returns to
-    /// the surface.
+    /// the surface. Which outcome warns, with which story, and what the
+    /// system is answered with belongs to `QuitPrompt`; what stays here
+    /// is the alert itself.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let alert: NSAlert
-        switch model.saveStateForQuit() {
-        case .settled:
-            return .terminateNow
-        case .refused:
-            alert = NSAlert()
-            alert.messageText = "This page could not be saved"
-            alert.informativeText =
-                "The sealed state file was not written, so this session's page "
-                + "will not survive the quit. The previous file, if any, is untouched."
-        case .unsavableWithContent:
-            // The banner's warning, repeated at the last moment it can
-            // still change the outcome (issue #49): the session never
-            // held the licence, so unlike the refused case there is no
-            // write to retry, only the choice to accept the loss or go
-            // back and discard the unreadable file first.
-            alert = NSAlert()
-            alert.messageText = "This session was never being saved"
-            alert.informativeText =
-                "The existing sealed state file could not be read at launch, so "
-                + "nothing written this session is on disk, and it will not survive "
-                + "the quit. That file is untouched. Cancel and use \"discard it and "
-                + "start saving\" on the page to keep this session's content instead."
+        QuitPrompt.terminateReply(flushing: model) { warning in
+            let alert = NSAlert()
+            alert.messageText = warning.messageText
+            alert.informativeText = warning.informativeText
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Quit Anyway")
+            alert.addButton(withTitle: "Cancel")
+            NSApp.activate(ignoringOtherApps: true)
+            return alert.runModal() == .alertFirstButtonReturn
         }
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Quit Anyway")
-        alert.addButton(withTitle: "Cancel")
-        NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
     /// ⌘Tab (or the Dock icon) landing on this app is a summon: the
