@@ -52,6 +52,17 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test (full workspace)
         run: cargo test --workspace
+      # The shape above enables no features (cargo issue 2911), so a
+      # test gated on `feature = "test-util"` never runs in it. The
+      # ubuntu lane covers the seams for the crates that build there,
+      # but it cannot reach anything also gated on macOS, and nothing
+      # stops the next seam test from being both. Running the same
+      # workspace once more with the feature on is what keeps that test
+      # from silently existing nowhere. `--features test-util` resolves
+      # against the virtual manifest because companion-ffi is the one
+      # member that declares it (crates/ffi/Cargo.toml).
+      - name: Test (full workspace, test-util seams)
+        run: cargo test --workspace --features test-util
 
   # The Swift/AppKit shell (ADR-0002): build the C-ABI seam as a
   # universal xcframework, then build and test the Swift package against
@@ -88,8 +99,65 @@ jobs:
             *.debug) echo "bundle id: $id" ;;
             *) echo "expected a .debug bundle id, got: $id" >&2; exit 1 ;;
           esac
+          # ADR-0016 case 2: the assembled plist must declare
+          # NSSupportsSuddenTermination. Opting in is what makes
+          # PageModel's SuddenTerminationLatch the real gate on the
+          # logout kill rather than a clause satisfied by the accident
+          # of never having opted in, so dropping the key would quietly
+          # turn the latch into decoration and no Swift test would
+          # notice. The claim is about the bundle that ships, so it is
+          # checked on the assembled Info.plist rather than in the
+          # source tree.
+          sudden="$(plutil -extract NSSupportsSuddenTermination raw dist/OnetimePad.app/Contents/Info.plist)"
+          test "$sudden" = "true" \
+            || { echo "expected NSSupportsSuddenTermination true, got: $sudden" >&2; exit 1; }
           # The pre-signature digest is the published artifact; an
           # empty file means the hash pipeline broke silently.
+          test -s dist/OnetimePad.presig.sha256 \
+            || { echo "dist/OnetimePad.presig.sha256 is missing or empty" >&2; exit 1; }
+          cat dist/OnetimePad.presig.sha256
+
+  # The release lane, which exists for the checks that only the release
+  # configuration reaches. package-app.sh refuses to ship a binary
+  # exporting a test seam (ADR-0018), and that nm check is guarded on
+  # `CONFIG == release`, so before this job it ran only when a human
+  # packaged a release. It is its own job rather than another step on
+  # the shell job because the two need opposite cores: the shell job
+  # builds bindings/ with --test-util so swift test can link the seams,
+  # and a release package must be built from a core without them.
+  # Sharing a job would mean rebuilding the xcframework twice in one
+  # workspace and trusting the order. Signing stays out of scope: no
+  # CODESIGN_IDENTITY is set, so package-app.sh signs ad-hoc, which is
+  # enough for every assertion here.
+  package-release:
+    name: release packaging (macos)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Build CompanionCore.xcframework (release shape, no seams)
+        run: ./scripts/build-core.sh
+      # The seam check lives inside this script and fails it, so the
+      # step passing is the check passing.
+      - name: Package the release bundle
+        run: ./scripts/package-app.sh
+      - name: Check the shipped bundle
+        run: |
+          # The mirror of the debug job's assertion: the release bundle
+          # keeps the plain identifier, so the two form factors cannot
+          # collide on defaults, keychain items, or the state directory
+          # they derive from it (ADR-0012, and ADR-0016 case 4).
+          id="$(plutil -extract CFBundleIdentifier raw dist/OnetimePad.app/Contents/Info.plist)"
+          case "$id" in
+            *.debug) echo "release bundle carries a debug id: $id" >&2; exit 1 ;;
+            *) echo "bundle id: $id" ;;
+          esac
+          # ADR-0016 case 2, on the plist that actually ships.
+          sudden="$(plutil -extract NSSupportsSuddenTermination raw dist/OnetimePad.app/Contents/Info.plist)"
+          test "$sudden" = "true" \
+            || { echo "expected NSSupportsSuddenTermination true, got: $sudden" >&2; exit 1; }
           test -s dist/OnetimePad.presig.sha256 \
             || { echo "dist/OnetimePad.presig.sha256 is missing or empty" >&2; exit 1; }
           cat dist/OnetimePad.presig.sha256
