@@ -34,7 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in your keymap costs you your customisation, never your app. Shift is
   bindable over a letter (`cmd-shift-v`) and over a named key, and
   refused over anything else: `cmd-shift-1` would fire on one surface
-  and be dead on the other, so it is refused out loud instead.
+  and be dead on the other, so it is refused out loud instead. The chord
+  itself is not lost, only that spelling of it: write `cmd-!`, the glyph
+  the shift produces, and it works on both.
 
 - **A restore failure and a withheld save are now impossible to miss**
   (issue #49, ADR-0016 sections 2 and 7). When an existing state file

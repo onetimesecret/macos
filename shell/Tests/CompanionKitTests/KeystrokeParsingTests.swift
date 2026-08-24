@@ -164,6 +164,59 @@ final class KeystrokeParsingTests: XCTestCase {
                 charactersIgnoringModifiers: "v", virtualKeyCode: 9, modifiers: [.command]))
     }
 
+    /// ⇧⌘1 reports `!` and a shift flag, and the chord that binds it
+    /// names the glyph and not the shift. This is the spelling the
+    /// parser sends an author to when it refuses `cmd-shift-1`, so it
+    /// has to be the one that fires.
+    func testAShiftedGlyphIsRecognisedWithoutNamingTheShift() throws {
+        let keystroke = try parsed("cmd-!")
+        XCTAssertTrue(
+            keystroke.matches(
+                charactersIgnoringModifiers: "!", virtualKeyCode: 18,
+                modifiers: [.command, .shift]))
+    }
+
+    /// The same binding on a layout that puts the glyph under no shift
+    /// at all, which is the reason the flag is not required rather than
+    /// merely tolerated.
+    func testAShiftedGlyphAlsoMatchesABoardThatNeedsNoShiftForIt() throws {
+        let keystroke = try parsed("cmd-!")
+        XCTAssertTrue(
+            keystroke.matches(
+                charactersIgnoringModifiers: "!", virtualKeyCode: 18, modifiers: [.command]))
+    }
+
+    /// Dropping shift from the comparison gives nothing away, because
+    /// the shifted and unshifted presses are two different glyphs. This
+    /// is the event `cmd-shift-1` would have had to match, and the
+    /// reason that spelling is refused at the parser.
+    func testAGlyphDoesNotAnswerForItsUnshiftedTwin() throws {
+        XCTAssertFalse(
+            try parsed("cmd-1").matches(
+                charactersIgnoringModifiers: "!", virtualKeyCode: 18,
+                modifiers: [.command, .shift]))
+        XCTAssertFalse(
+            try parsed("cmd-,").matches(
+                charactersIgnoringModifiers: "<", virtualKeyCode: 43,
+                modifiers: [.command, .shift]))
+        XCTAssertTrue(
+            try parsed("cmd-1").matches(
+                charactersIgnoringModifiers: "1", virtualKeyCode: 18, modifiers: [.command]))
+    }
+
+    /// A named key has no glyph to carry the shift, so shift over one
+    /// is an ordinary modifier and is compared like the rest.
+    func testShiftOverANamedKeyIsStillPartOfTheChord() throws {
+        let keystroke = try parsed("cmd-shift-left")
+        XCTAssertTrue(
+            keystroke.matches(
+                charactersIgnoringModifiers: nil, virtualKeyCode: 0x7B,
+                modifiers: [.command, .shift]))
+        XCTAssertFalse(
+            keystroke.matches(
+                charactersIgnoringModifiers: nil, virtualKeyCode: 0x7B, modifiers: [.command]))
+    }
+
     /// Named keys are matched by their place on the board, because the
     /// character Return reports is not something a layout guarantees.
     func testANamedKeyIsRecognisedByItsPosition() throws {

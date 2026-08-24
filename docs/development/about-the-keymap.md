@@ -57,8 +57,12 @@ Shift is refused over anything but a letter, for that same reason.
 event reports its unmodified characters with shift already applied, so
 the page would see `!` where the file wrote `1` and never match, while
 the surface's hidden buttons would install the chord and fire it: one
-spelling, two surfaces, two answers. Shift over a named key (`cmd-shift-left`)
-is fine, because named keys are matched by their place on the board.
+spelling, two surfaces, two answers. The chord is still bindable, by the
+glyph the shift produces: `cmd-!` is ⇧⌘1, and `cmd-<` is the shifted
+comma. Both fire on both routes, because the glyph carries the shift and
+the file does not have to name it twice. Shift over a named key
+(`cmd-shift-left`) is fine,
+because named keys are matched by their place on the board.
 
 Command ids are the enum in `Keymap/CommandID.swift`. Only commands
 this build implements are bindable; an id nothing implements is

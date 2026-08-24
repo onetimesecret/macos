@@ -184,7 +184,8 @@ final class KeymapValidationTests: XCTestCase {
         XCTAssertEqual(
             keymap.faults.first?.summary,
             "the bundled default keymap binds \"cmd-shift-1\", which is not a keystroke: "
-                + "shift can only be held over a letter, and \"1\" is not one")
+                + "shift can only be held over a letter, and \"1\" is not one (name the glyph "
+                + "shift produces, the way \"cmd-!\" names ⇧⌘1)")
     }
 
     func testACommandThisBuildCannotRunIsRefused() {
