@@ -101,6 +101,29 @@ public struct InkEditorView: NSViewRepresentable {
         return scroll
     }
 
+    /// The editor is going away: a ledger round trip, or the empty
+    /// state that the selected tab holding no page puts on screen
+    /// (ADR-0017 made that a frequent event rather than a rare one).
+    ///
+    /// The model keeps a weak handle on the mounted editor so a summon
+    /// or a grant can hand it the keyboard, and weak is not the same as
+    /// mounted: a view torn out of the window answers that handle until
+    /// ARC lets go, and a hand-off arriving in the meantime would settle
+    /// on a view with no window rather than wait for the editor coming
+    /// to replace it. `PageModel.mountedEditor` refuses such a view on
+    /// the way in; retiring the handle here means it is never offered
+    /// one (issue #23).
+    ///
+    /// Only when the handle is still this view's. SwiftUI may build a
+    /// replacement before dismantling what it replaces, and clearing
+    /// unconditionally would then drop the live editor a moment after it
+    /// arrived.
+    public static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+        guard let textView = scroll.documentView as? InkTextView,
+              coordinator.model.activeEditor === textView else { return }
+        coordinator.model.activeEditor = nil
+    }
+
     /// The page inside its scroller: a text view free to grow as tall as
     /// its text, clipped by a card-sized window onto it.
     ///
