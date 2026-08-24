@@ -26,11 +26,13 @@ import XCTest
 @MainActor
 final class LedgerAppendArmingTests: XCTestCase {
     func testEveryLedgerAppendingMutationArmsAWrite() {
-        // A throwaway defaults domain; no state file is ever loaded or
-        // written (loadStateIfNeeded is never called).
+        // A throwaway defaults domain, and a model whose sealed files
+        // and credentials are this test's own: no state file is loaded
+        // or written here (loadStateIfNeeded is never called), and the
+        // steps below still drive routes that write by path.
         let defaults = UserDefaults(suiteName: "companion-kit-arming-tests")!
         defaults.removePersistentDomain(forName: "companion-kit-arming-tests")
-        let model = PageModel(formFactor: .backdrop, defaults: defaults)
+        let model = isolatedModel(defaults: defaults)
         let client = model.coreClient
 
         // The copy-out step writes the real clipboard (concealed and

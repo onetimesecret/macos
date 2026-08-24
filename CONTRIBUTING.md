@@ -16,7 +16,26 @@ Short version: this is a spec-first project.
   hardening), `companion-ffi` (the C seam), and `companion-pasteboard`
   adapters — each occurrence with a SAFETY note. New dependencies arrive
   with the code that needs them and must pass `cargo deny check`.
-- **Local gate** before pushing:
-  `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+- **Local gate** before pushing. `.github/workflows/ci.yml` is the
+  source of truth; this is the same set, in one line, on a Mac:
+
+  ```sh
+  cargo fmt --all --check \
+    && cargo clippy --workspace --all-targets -- -D warnings \
+    && cargo test --workspace \
+    && cargo test --workspace --features test-util \
+    && ./scripts/build-core.sh --test-util \
+    && swift build --package-path shell \
+    && swift test --package-path shell
+  ```
+
+  The last three are not optional extras. `cargo test` enables no
+  features of its own (cargo issue 2911), so the run without
+  `--features test-util` never touches the gated seams (ADR-0018); and
+  `swift test` links `companion_new_ephemeral`, which only a
+  `--test-util` core exports, so it fails at link rather than skipping
+  if the xcframework is the release shape. Without those steps a
+  contributor who changes `PageModel`'s persistence can pass the gate
+  having run none of the tests that cover it.
 
 By contributing you agree your work is licensed under the MIT license.

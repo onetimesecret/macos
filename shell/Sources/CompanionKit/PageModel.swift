@@ -542,6 +542,31 @@ public final class PageModel: ObservableObject {
         defaults: UserDefaults = FormFactor.settingsDefaults,
         seams: Seams = Seams()
     ) {
+        // Ahead of everything, including the diagnostics route, because
+        // this is the one narrow place where a test run can be pointed
+        // at the installed app's own data. The four lines below resolve
+        // the sealed files and the Keychain service, and with no seams
+        // they resolve to the shipped ones, which under the runner is
+        // never what the author meant: a model built that way reads the
+        // user's pages, writes over their sealed file on the debounce,
+        // and can erase their ledger outright. Under a shipping bundle
+        // the answer is a bundle-identifier prefix test that says no, so
+        // the launch path is exactly what it was.
+        if FormFactor.refusesProductionStateUnderTests(
+            seamsInjected: seams.stateDirectory != nil && seams.client != nil
+        ) {
+            preconditionFailure(
+                """
+                a test built a PageModel on the shipping state directory and Keychain \
+                service, which belong to the installed app and to the person running it. \
+                Pass PageModel.Seams(stateDirectory:client:) with a directory the test \
+                owns and CompanionClient.ephemeral(tag:), whose credentials stay in \
+                process memory. Both seams are required: a directory alone still mints \
+                keys in the login Keychain, and a client alone still writes the \
+                installed app's files.
+                """
+            )
+        }
         // Before the first call into the core, so nothing it refuses on
         // the way up is written to a stderr this process may not have.
         CoreDiagnostics.route(subsystem: formFactor.loggerSubsystem)

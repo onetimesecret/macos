@@ -143,12 +143,14 @@ final class DocumentOpsWiringTests: XCTestCase {
     // Not a setUp override: those are nonisolated, and this fixture is
     // main-actor state. Every test calls it first.
     private func makeEditor() {
-        // A throwaway defaults domain; no state file is ever loaded or
-        // written (loadStateIfNeeded is never called, and markDirty
-        // stands down for an unloaded session).
+        // A throwaway defaults domain, and a model that rests entirely
+        // in temporary space: no state file is loaded or written here
+        // (loadStateIfNeeded is never called, and markDirty stands down
+        // for an unloaded session), but nothing about this suite is
+        // worth the installed app's own files being within reach.
         let defaults = UserDefaults(suiteName: "companion-kit-ops-tests")!
         defaults.removePersistentDomain(forName: "companion-kit-ops-tests")
-        model = PageModel(formFactor: .backdrop, defaults: defaults)
+        model = isolatedModel(defaults: defaults)
         model.newPage()
         sheet = model.selection!
 
