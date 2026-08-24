@@ -4155,6 +4155,86 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A key that will not answer is a refusal and nothing more
+    /// (ADR-0016 section 7, the "key unavailable" row; section 10, case
+    /// 6). The keychain served the save and was locked by the time the
+    /// next launch asked for the key back, which is the locked keychain
+    /// and the dismissed ACL prompt both. Under ADR-0012 an earlier
+    /// session's file was rotated and erased before the key was ever
+    /// asked for; the whole point of removing that arm is that a session
+    /// which cannot read the file also does not get to destroy it, so
+    /// the assertion is on the state directory as a whole: the same
+    /// files, byte for byte, with no half unlinked and no generation
+    /// written over the one nobody could open.
+    ///
+    /// Nothing else in the tree drives this end to end. The persist
+    /// module proves `load_state_key` answers `None` with a half gone
+    /// and stops there, never touching a state file.
+    #[test]
+    fn a_locked_keychain_refuses_the_restore_and_leaves_the_directory_alone() {
+        let credentials = Arc::new(persist::test_stores::GoesSilent::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        // Every file in the state directory with its bytes: the sealed
+        // generation, and beside it the file half that keys it.
+        let state_directory = || {
+            let mut files: Vec<(std::ffi::OsString, Vec<u8>)> = std::fs::read_dir(&dir)
+                .unwrap()
+                .map(|entry| {
+                    let entry = entry.unwrap();
+                    (entry.file_name(), std::fs::read(entry.path()).unwrap())
+                })
+                .collect();
+            files.sort();
+            files
+        };
+        unsafe {
+            let evening = handle_with(Arc::clone(&credentials) as Arc<dyn CredentialStore>);
+            let (_tab, sheet) = new_page(evening);
+            let _ = take_json(companion_sheet_seal_text(
+                evening,
+                sheet,
+                cstring("hunter2-the-sealed-bytes").as_ptr(),
+                0,
+                0,
+            ));
+            assert!(companion_persist_save(evening, c_path.as_ptr()));
+            companion_free(evening);
+            let sealed = state_directory();
+            assert!(sealed.len() >= 2, "a sealed file and a file half");
+
+            credentials.lock();
+            let morning = handle_with(Arc::clone(&credentials) as Arc<dyn CredentialStore>);
+            assert!(
+                !companion_persist_restore(morning, c_path.as_ptr()),
+                "a locked keychain restored a file it could not have keyed"
+            );
+            companion_free(morning);
+            assert_eq!(
+                state_directory(),
+                sealed,
+                "the restore that could not read the state directory wrote to it anyway"
+            );
+            assert!(
+                credentials.behind_the_lock().exists("state-key").unwrap(),
+                "a restore that never read the keychain half deleted it"
+            );
+
+            // And the refusal cost the content nothing: the same file
+            // opens once the keychain answers again.
+            credentials.unlock();
+            let after = handle_with(Arc::clone(&credentials) as Arc<dyn CredentialStore>);
+            assert!(
+                companion_persist_restore(after, c_path.as_ptr()),
+                "the locked session left the file unreadable"
+            );
+            assert!(first_remaining_ms(after).is_some(), "the page came back");
+            companion_free(after);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// The one-time format break, from the user's side: the file the
     /// previous build wrote cannot be read by any key this one can
     /// assemble, so refusing it forever would present as an install that
@@ -4641,6 +4721,97 @@ mod tests {
             // And what the reseal did write comes back whole: the slot,
             // its name and its rung, holding nothing.
             std::fs::write(&path, &generation_holding_the_strip).unwrap();
+            let morning = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(morning, c_path.as_ptr()));
+            let summaries = strip(morning);
+            assert_eq!(summaries.len(), 1, "the tab came back");
+            assert_eq!(summaries[0]["title"].as_str(), Some("payroll"));
+            assert_eq!(summaries[0]["has_page"].as_bool(), Some(false));
+            assert_eq!(summaries[0]["rung_code"].as_i64(), Some(0));
+            companion_free(morning);
+            companion_free(handle);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Rotation is on the state, not the transition (ADR-0016 section
+    /// 6): the question asked at every write is whether the pad holds
+    /// no page right now, never whether it has just become so, so a
+    /// second write over a pad that is still empty rotates again rather
+    /// than resealing under the halves the first one minted.
+    ///
+    /// A latch remembering that the last write had already rotated
+    /// would be a second source of truth about what is on disk, and it
+    /// would be wrong in exactly the case that matters, a write that
+    /// failed after the rotation landed. The price is paid per write
+    /// instead: a rearming retry spends a keychain write and a
+    /// generation of tab names on every attempt. Each repeat is another
+    /// forgetting rather than a leak, which is why the price is
+    /// accepted, and this is the test that keeps the repeat honest.
+    #[test]
+    fn a_second_write_over_a_pad_that_is_still_empty_rotates_again() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let path = dir.join("state.sealed");
+        let c_path = cstring(path.to_str().unwrap());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            let (tab, _page) = new_page(handle);
+            assert!(companion_tab_set_title(
+                handle,
+                tab,
+                cstring("payroll").as_ptr()
+            ));
+            assert!(companion_tab_set_rung(handle, tab, 0)); // 1h
+            assert!(companion_persist_save(handle, c_path.as_ptr()));
+
+            // The page dies overnight and the tab stays: the state the
+            // rotation fires on, and it stays that way across both
+            // writes below. Nothing transitions between them.
+            age_by(handle, 2 * 60 * 60 * 1_000);
+            assert_eq!(companion_expire_due(handle), 1);
+            let empty_pad = |handle: *mut CompanionHandle| {
+                let mut holds_no_page = false;
+                let mut has_no_tabs = true;
+                assert!(companion_store_emptiness(
+                    handle,
+                    &raw mut holds_no_page,
+                    &raw mut has_no_tabs
+                ));
+                holds_no_page && !has_no_tabs
+            };
+            assert!(empty_pad(handle), "the trigger's own state");
+
+            assert!(companion_persist_rotate_and_save(handle, c_path.as_ptr()));
+            let key_of_the_first_strip = persist::load_state_key(&*credentials, &path)
+                .expect("the reseal minted fresh halves")
+                .to_vec();
+            let first_strip = std::fs::read(&path).unwrap();
+
+            assert!(empty_pad(handle), "the pad filled itself between writes");
+            assert!(companion_persist_rotate_and_save(handle, c_path.as_ptr()));
+            let key_of_the_second_strip = persist::load_state_key(&*credentials, &path)
+                .expect("the second reseal minted fresh halves")
+                .to_vec();
+            let second_strip = std::fs::read(&path).unwrap();
+            assert_ne!(
+                key_of_the_first_strip, key_of_the_second_strip,
+                "the second write over an empty pad kept the first one's halves"
+            );
+
+            // Which makes the repeat a forgetting: the generation the
+            // first write left behind cannot be opened either.
+            std::fs::write(&path, &first_strip).unwrap();
+            let ghost = handle_with(Arc::clone(&credentials));
+            assert!(
+                !companion_persist_restore(ghost, c_path.as_ptr()),
+                "the generation the first reseal wrote opened after the second"
+            );
+            companion_free(ghost);
+
+            // And the strip survives being rewritten twice.
+            std::fs::write(&path, &second_strip).unwrap();
             let morning = handle_with(Arc::clone(&credentials));
             assert!(companion_persist_restore(morning, c_path.as_ptr()));
             let summaries = strip(morning);

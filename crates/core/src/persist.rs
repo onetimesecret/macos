@@ -86,7 +86,7 @@ use crate::sheet::{
     ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId,
     TITLE_CAP, Tab, TabId, derive_title,
 };
-use crate::store::SheetStore;
+use crate::store::{HOLD_FIRST, HOLD_TOPUP, SheetStore};
 use crate::ttl::Ttl;
 
 /// Magic + version prefix of a plaintext content snapshot. A format
@@ -787,6 +787,7 @@ fn read_tab(
                 now,
                 away,
                 wall_ms,
+                rung.duration(),
                 next_sheet_id,
                 next_chip_id,
             )?)
@@ -807,11 +808,25 @@ fn read_tab(
     })
 }
 
+/// One page record. `ceiling` is the duration of the rung its tab was
+/// read at, and it bounds every life span this record can claim: seven
+/// days is the top of the ladder, so seven days is the most life a
+/// restored page may come back holding, whatever the bytes say
+/// (ADR-0016 section 10, case 7). A hold is bounded too, but by the
+/// ceiling the pause gesture sets rather than by the rung, since a
+/// suspension is not life the ladder measures. On the honest write path the bound
+/// holds by construction, since a rung click sets the deadline to the
+/// rung's own duration and restore only ever subtracts. It is a file
+/// nobody in this process wrote that the clamp is for: a stale or
+/// hand-edited span is the one number a replayed generation can move
+/// (ADR-0016 section 8), and the ladder's ceiling is what it must not
+/// move past.
 fn read_page(
     reader: &mut Reader<'_>,
     now: Instant,
     away: Duration,
     wall_ms: u64,
+    ceiling: Duration,
     next_sheet_id: &mut u64,
     next_chip_id: &mut u64,
 ) -> Result<Sheet, RestoreError> {
@@ -823,15 +838,25 @@ fn read_page(
     // Tag 1 is a first hold, tag 2 a hold already topped up to its 24
     // hour ceiling; the two carry the same payload and differ only in
     // what the next pause press does.
+    //
+    // The hold's own span is not the rung's to bound: a hold is a
+    // suspension rather than life, and clamping it to the rung would
+    // shorten an honest 24 hour hold on the 1h rung. It is bounded all
+    // the same, against the ceiling the pause gesture itself would have
+    // set, because a hold read at face value is a way past the rung
+    // that costs nothing to write. A held page's countdown does not
+    // run, so a file claiming a month of hold keeps its plaintext for a
+    // month on the one hour rung.
     let (clock, held_while_away) = match reader.u8().ok_or(Malformed)? {
         0 => {
-            let remaining = span(reader.u64().ok_or(Malformed)?);
+            let remaining = span(reader.u64().ok_or(Malformed)?).min(ceiling);
             let deadline = now + remaining.saturating_sub(away);
             (SheetClock::Running { deadline }, Duration::ZERO)
         }
         tag @ (1 | 2) => {
-            let hold = span(reader.u64().ok_or(Malformed)?);
-            let frozen = span(reader.u64().ok_or(Malformed)?);
+            let hold_ceiling = if tag == 2 { HOLD_TOPUP } else { HOLD_FIRST };
+            let hold = span(reader.u64().ok_or(Malformed)?).min(hold_ceiling);
+            let frozen = span(reader.u64().ok_or(Malformed)?).min(ceiling);
             if away < hold {
                 (
                     SheetClock::Held {
@@ -1857,6 +1882,13 @@ mod tests {
     /// this stage) a slot holding nothing, so the trust-boundary tests
     /// build their bytes by hand.
     fn tab_record(name: Option<&str>, page: Option<&[u8]>) -> Vec<u8> {
+        tab_record_with_rung(name, 8 * 60 * 60, page)
+    }
+
+    /// The same, on a rung the test chooses: the rung is what bounds
+    /// the life the page inside it may claim, so a test about that
+    /// bound has to be able to write a short one.
+    fn tab_record_with_rung(name: Option<&str>, rung_secs: u64, page: Option<&[u8]>) -> Vec<u8> {
         let mut tab = Vec::new();
         tab.extend_from_slice(ItemId::random().as_bytes());
         tab.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
@@ -1868,7 +1900,7 @@ mod tests {
                 tab.extend_from_slice(name.as_bytes());
             }
         }
-        tab.extend_from_slice(&(8 * 60 * 60u64).to_le_bytes()); // 8h rung
+        tab.extend_from_slice(&rung_secs.to_le_bytes());
         match page {
             None => tab.push(0),
             Some(page) => {
@@ -1892,6 +1924,23 @@ mod tests {
     /// A snapshot holding one tab that holds no page.
     fn empty_tab_snapshot(name: Option<&str>) -> Vec<u8> {
         one_tab_snapshot(&tab_record(name, None))
+    }
+
+    /// One hand-assembled page record carrying the clock bytes the test
+    /// wrote: no chips, the given document blob, an empty metadata slot.
+    /// The writer can only ever emit a clock it computed itself, so a
+    /// test about a clock nobody in this process wrote builds its own.
+    fn page_record(clock: &[u8], blob: &[u8]) -> Vec<u8> {
+        let mut page = Vec::new();
+        page.extend_from_slice(ItemId::random().as_bytes());
+        page.extend_from_slice(&0u64.to_le_bytes()); // created_wall_ms
+        page.extend_from_slice(clock);
+        page.extend_from_slice(&0u64.to_le_bytes()); // total_held
+        page.extend_from_slice(&0u64.to_le_bytes()); // no chips
+        page.extend_from_slice(&(blob.len() as u64).to_le_bytes());
+        page.extend_from_slice(blob);
+        page.extend_from_slice(&0u64.to_le_bytes()); // empty metadata slot
+        page
     }
 
     /// A hand-assembled v4 snapshot holding one unnamed tab and, inside
@@ -2385,6 +2434,188 @@ mod tests {
         revived.restore(&snapshot, 5).unwrap(); // wall clock moved back
         let remaining = revived.sheet(id).unwrap().remaining(revived.now());
         assert_eq!(remaining, 6 * HOUR);
+    }
+
+    /// Seven days is the top of the ladder, so seven days is the most
+    /// life any restored page may hold, and a page on a shorter rung may
+    /// hold no more than that rung (ADR-0016 section 10, case 7). The
+    /// honest write path satisfies this by construction: every rung
+    /// click sets the deadline to the rung's own duration and restore
+    /// only ever subtracts. The file is where it can stop being true,
+    /// because the span is the one number a stale or hand-edited
+    /// generation can move (ADR-0016 section 8), so the span is read
+    /// against the rung rather than at face value.
+    #[test]
+    fn no_restored_page_comes_back_holding_more_life_than_its_rung() {
+        let doc = SheetDocument::new();
+        doc.insert(0, "staged overnight").unwrap();
+        doc.commit(None);
+        let blob = doc.export_snapshot();
+        let thirty_days_ms = 30 * 24 * 60 * 60 * 1000u64;
+
+        let running = |remaining_ms: u64| {
+            let mut clock = vec![0u8]; // running
+            clock.extend_from_slice(&remaining_ms.to_le_bytes());
+            clock
+        };
+        let on_rung = |rung_secs: u64, clock: &[u8]| {
+            one_tab_snapshot(&tab_record_with_rung(
+                None,
+                rung_secs,
+                Some(&page_record(clock, &blob)),
+            ))
+        };
+
+        // The ladder's own ceiling, asked for by a file claiming a month.
+        let (mut at_the_ceiling, _clock) = store();
+        at_the_ceiling
+            .restore(&on_rung(7 * 24 * 60 * 60, &running(thirty_days_ms)), 0)
+            .unwrap();
+        assert_eq!(
+            at_the_ceiling
+                .sheets()
+                .next()
+                .unwrap()
+                .remaining(at_the_ceiling.now()),
+            Duration::from_secs(7 * 24 * 60 * 60),
+            "a file claiming a month of life was believed"
+        );
+
+        // And the same page on the 1h rung is bounded by the rung it
+        // was actually written on, not merely by the top of the ladder.
+        let (mut on_the_hour, _clock) = store();
+        on_the_hour
+            .restore(&on_rung(60 * 60, &running(thirty_days_ms)), 0)
+            .unwrap();
+        assert_eq!(
+            on_the_hour
+                .sheets()
+                .next()
+                .unwrap()
+                .remaining(on_the_hour.now()),
+            HOUR,
+            "an hour's page came back with more than an hour"
+        );
+    }
+
+    /// The same ceiling on the held arm, which is the way past it that
+    /// costs nothing to write: a hold freezes a remaining span, and a
+    /// frozen span read at face value would hand a paused page a month
+    /// of life the moment its hold lapsed.
+    #[test]
+    fn no_restored_hold_freezes_more_life_than_its_rung() {
+        let doc = SheetDocument::new();
+        doc.insert(0, "paused overnight").unwrap();
+        doc.commit(None);
+        let blob = doc.export_snapshot();
+
+        let mut clock = vec![1u8]; // a first hold
+        clock.extend_from_slice(&(10 * 60 * 1000u64).to_le_bytes()); // 10m of hold
+        clock.extend_from_slice(&(30 * 24 * 60 * 60 * 1000u64).to_le_bytes()); // frozen: a month
+        let snapshot = one_tab_snapshot(&tab_record_with_rung(
+            None,
+            60 * 60,
+            Some(&page_record(&clock, &blob)),
+        ));
+
+        let (mut store, _clock) = store();
+        store.restore(&snapshot, 0).unwrap();
+        let now = store.now();
+        let sheet = store.sheets().next().unwrap();
+        assert!(sheet.is_held(now), "the hold itself did not survive");
+        assert_eq!(
+            sheet.remaining(now),
+            HOUR,
+            "a hold froze more life than the rung ever held"
+        );
+    }
+
+    /// A hold suspends the countdown, so a hold read at face value is
+    /// the cheapest way past the ladder there is: the frozen span can
+    /// be clamped to the rung and the plaintext still survives for as
+    /// long as the hold claims, because a held page is never due
+    /// (ADR-0016 section 8). The pause gesture is the only thing that
+    /// sets a hold, so a hold out of a file is read against the same
+    /// ceiling the gesture would have applied: one hour for a first
+    /// hold, 24 for one already topped up.
+    #[test]
+    fn no_restored_hold_outlasts_the_ceiling_the_pause_gesture_sets() {
+        let doc = SheetDocument::new();
+        doc.insert(0, "paused for a month").unwrap();
+        doc.commit(None);
+        let blob = doc.export_snapshot();
+        let a_month_ms = 30 * 24 * 60 * 60 * 1000u64;
+
+        let held = |tag: u8, hold_ms: u64, frozen_ms: u64| {
+            let mut clock = vec![tag];
+            clock.extend_from_slice(&hold_ms.to_le_bytes());
+            clock.extend_from_slice(&frozen_ms.to_le_bytes());
+            one_tab_snapshot(&tab_record_with_rung(
+                None,
+                60 * 60,
+                Some(&page_record(&clock, &blob)),
+            ))
+        };
+
+        // A first hold claiming a month, on the one hour rung: the hold
+        // comes back an hour long, and an hour after that the frozen
+        // span (itself bounded by the rung) runs out and the page is
+        // reaped rather than sitting on its plaintext for a month.
+        let (mut first_hold, clock) = store();
+        first_hold
+            .restore(&held(1, a_month_ms, a_month_ms), 0)
+            .unwrap();
+        assert_eq!(
+            first_hold
+                .sheets()
+                .next()
+                .unwrap()
+                .hold_remaining(first_hold.now()),
+            HOLD_FIRST,
+            "a file claiming a month of hold was believed"
+        );
+        clock.advance(HOLD_FIRST);
+        assert!(
+            !first_hold
+                .sheets()
+                .next()
+                .unwrap()
+                .is_held(first_hold.now()),
+            "the hold outlasted the ceiling the pause gesture sets"
+        );
+        assert!(
+            first_hold.expire_due().is_empty(),
+            "the frozen hour was skipped"
+        );
+        clock.advance(HOUR);
+        assert_eq!(
+            first_hold.expire_due().len(),
+            1,
+            "a page held out of a file never became due"
+        );
+        assert_eq!(
+            first_hold.sheets().count(),
+            0,
+            "the plaintext outlived the rung"
+        );
+
+        // Tag 2 is a hold already topped up, and its ceiling is the
+        // top-up's 24 hours: the clamp must not shorten it to the first
+        // hold's hour, which is the honest 24 hour hold the rung has no
+        // business describing.
+        let (mut topped_up, _clock) = store();
+        topped_up
+            .restore(&held(2, a_month_ms, a_month_ms), 0)
+            .unwrap();
+        assert_eq!(
+            topped_up
+                .sheets()
+                .next()
+                .unwrap()
+                .hold_remaining(topped_up.now()),
+            HOLD_TOPUP,
+            "a topped-up hold was not read against the top-up ceiling"
+        );
     }
 
     #[test]

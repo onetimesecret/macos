@@ -1027,6 +1027,7 @@ const O_NONBLOCK: i32 = 0x0000_0800;
 #[cfg(test)]
 pub(crate) mod test_stores {
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use companion_credentials::{CredentialError, CredentialStore, InMemoryCredentialStore};
     use zeroize::Zeroizing;
@@ -1114,6 +1115,74 @@ pub(crate) mod test_stores {
             Err(CredentialError::Backend(
                 "the keychain is locked; it will not say".to_string(),
             ))
+        }
+
+        fn key_material_store(&self) -> Arc<dyn CredentialStore> {
+            Arc::new(self.clone())
+        }
+    }
+
+    /// A store that answers until it is locked and answers nothing
+    /// afterwards: the keychain that served a save at 17:00 and was
+    /// locked again by the time the next launch asked for the key back.
+    ///
+    /// [`AnswersNothing`] cannot stand in for that, because a session
+    /// that could never read its halves also never wrote a file, and the
+    /// case worth asserting is a refusal over content that is really
+    /// there. The lock is shared across clones, so the handle's own
+    /// store and the key material store it hands back lock together, the
+    /// way one keychain locks.
+    #[derive(Clone, Default)]
+    pub(crate) struct GoesSilent {
+        inner: Arc<InMemoryCredentialStore>,
+        locked: Arc<AtomicBool>,
+    }
+
+    impl GoesSilent {
+        /// Lock the keychain: every read, write, delete and existence
+        /// check errors from here on, which is what the backend does
+        /// while the keychain is locked or an ACL prompt is dismissed.
+        pub(crate) fn lock(&self) {
+            self.locked.store(true, Ordering::SeqCst);
+        }
+
+        /// Unlock it again, for the leg that shows what the refusal
+        /// cost: nothing.
+        pub(crate) fn unlock(&self) {
+            self.locked.store(false, Ordering::SeqCst);
+        }
+
+        /// What the store holds, asked from the test rather than through
+        /// the locked surface, which is not allowed to say.
+        pub(crate) fn behind_the_lock(&self) -> &InMemoryCredentialStore {
+            &self.inner
+        }
+
+        fn refusal<T>(&self) -> Option<Result<T, CredentialError>> {
+            self.locked.load(Ordering::SeqCst).then(|| {
+                Err(CredentialError::Backend(
+                    "the keychain is locked; it will not answer".to_string(),
+                ))
+            })
+        }
+    }
+
+    impl CredentialStore for GoesSilent {
+        fn store(&self, account: &str, secret: &[u8]) -> Result<(), CredentialError> {
+            self.refusal()
+                .unwrap_or_else(|| self.inner.store(account, secret))
+        }
+
+        fn load(&self, account: &str) -> Result<Zeroizing<Vec<u8>>, CredentialError> {
+            self.refusal().unwrap_or_else(|| self.inner.load(account))
+        }
+
+        fn delete(&self, account: &str) -> Result<(), CredentialError> {
+            self.refusal().unwrap_or_else(|| self.inner.delete(account))
+        }
+
+        fn exists(&self, account: &str) -> Result<bool, CredentialError> {
+            self.refusal().unwrap_or_else(|| self.inner.exists(account))
         }
 
         fn key_material_store(&self) -> Arc<dyn CredentialStore> {

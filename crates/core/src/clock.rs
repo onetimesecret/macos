@@ -96,15 +96,18 @@ fn continuous_now() -> Instant {
 /// asleep (the frozen one is `CLOCK_UPTIME_RAW`, which `Instant` uses);
 /// on Linux that role belongs to `CLOCK_BOOTTIME`.
 ///
-/// Public because the persistence seam stamps sealed files with this
-/// exact reading and ages them by the difference on restore: the file
-/// and the store must be measuring the same clock, or a page would
-/// drain by one clock and be checked against another. The reading is
-/// only comparable within a boot session, which is the same bound the
-/// sealed file already carries.
+/// It was public because the persistence seam stamped sealed files
+/// with this exact reading and aged them by the difference on restore.
+/// It no longer does: two readings of this clock are comparable only
+/// within one boot session, so it cannot measure the gap between a save
+/// and the next launch at all, and ADR-0016 section 4 moved that one
+/// interval onto the wall clock. Nothing outside this module reads it
+/// now, and the visibility says so. What the seam kept is the half that
+/// was always true: every interval a running session observes is still
+/// charged on this clock, through the `Instant`s the store holds.
 #[must_use]
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-pub fn sleep_inclusive_ns() -> u64 {
+pub(crate) fn sleep_inclusive_ns() -> u64 {
     #[cfg(target_os = "macos")]
     const SLEEP_INCLUSIVE: libc::clockid_t = libc::CLOCK_MONOTONIC;
     #[cfg(target_os = "linux")]
@@ -124,10 +127,10 @@ pub fn sleep_inclusive_ns() -> u64 {
 
 /// Elsewhere: no portable sleep-inclusive clock — fall back to the
 /// process-monotonic one (the pre-existing behaviour, status quo).
-/// Public for the same reason as its Darwin and Linux siblings.
+/// Scoped like its Darwin and Linux siblings.
 #[must_use]
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-pub fn sleep_inclusive_ns() -> u64 {
+pub(crate) fn sleep_inclusive_ns() -> u64 {
     static FALLBACK_BASE: OnceLock<Instant> = OnceLock::new();
     let base = *FALLBACK_BASE.get_or_init(Instant::now);
     u64::try_from(base.elapsed().as_nanos()).unwrap_or(u64::MAX)
