@@ -811,8 +811,9 @@ authenticates, and an unknown envelope magic must keep failing closed
 
 Mapped to the seven cases in issue #48. Everything below is required
 work; the citations mark what exists today to build on or to delete.
-`docs/qa/verification-procedures/` holds the four procedures below plus
-one about drag tracking, and none of them has been run.
+`docs/qa/verification-procedures/` holds the six procedures below plus
+one about drag tracking; whether any of them has been run is recorded in
+that file's own Status line and Results table.
 
 | # | Case | CI | Hardware procedure |
 |---|---|---|---|
@@ -824,17 +825,20 @@ one about drag tracking, and none of them has been run.
 | 6 | Unavailable encryption key | All automated coverage runs against `InMemoryCredentialStore` or a refuses-to-delete double (`crates/ffi/src/persist.rs:1794`, `:2003`; `crates/credentials/src/lib.rs:1151`); the one real-keychain test is `#[ignore]`d (`crates/credentials/src/lib.rs:1302`). CI cannot cover a locked keychain. | Locked keychain at load; denied ACL prompt; confirm no erase and no overwrite in both |
 | 7 | TTL expiry | Both legs covered (`crates/core/src/persist.rs:2284`, `:2300`, `:2321`, `:2378`; `crates/core/src/store.rs:1753`, `:2423`). Three of the seam tests go with `monotonic_away_ms`, because section 5 removes it from the restore path: `crates/ffi/src/lib.rs:3330`, `:3354` and `:3568` assert the monotonic stamp is what measures time away, which stops being true. Add: a system clock stepped back before a restore ages the page by zero rather than negatively, so a page with two days left still has two days left afterwards, which is the accepted freeze of section 4 and not a defect; a `sealed_wall_ms` ahead of the system clock leaves the span unchanged; the ceiling holds at seven days on an untampered clock. | Step the machine clock back a day with a live pad |
 
-The four hardware procedures this required now exist under
-`docs/qa/verification-procedures/`: `reboot.md`, `power-loss.md`,
-`re-signed-bundle.md` and `locked-keychain.md`. Each names delano as its
-owner and carries a dated Results section, and none of the four has been
-run yet. Every one of them starts from a rebuild and reinstall through
-`scripts/install.sh`, because both format breaks in section 9 landed and
-an older installed copy cannot read the files this build writes.
-`docs/hardware-verification.md` indexes all four (`:182-207`) and states
-the Results convention once, at the end (`:209-215`); the procedures it
-holds itself still name no owner, including the keychain round trip at
-`:92-97`.
+The hardware procedures this required now exist under
+`docs/qa/verification-procedures/`, one for every hardware column of the
+table above: `force-termination.md` (case 2), `reboot.md` (case 3),
+`re-signed-bundle.md` (case 4), `locked-keychain.md` (case 6) and
+`clock-step-back.md` (case 7), joined by `power-loss.md` for the
+stranded temporary files of section 1. Each names delano as its owner
+and carries a dated Results table; `reboot.md` records the only run so
+far, of its first case. Every one of them starts from a rebuild and
+reinstall through `scripts/install.sh`, because both format breaks in
+section 9 landed and an older installed copy cannot read the files this
+build writes. `docs/hardware-verification.md` indexes all six
+(`:197-235`), names an owner on each of its own sections, and carries a
+Results table of its own (`:237-255`), so a run is written down once, in
+the document that holds the check it belongs to.
 
 ## Consequences
 
