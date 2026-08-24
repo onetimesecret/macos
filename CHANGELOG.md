@@ -233,6 +233,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A page opened by selecting an empty slot now takes the keyboard**
+  (issue #22, ADR-0005, ADR-0017). Clicking a slot whose page had
+  expired, jumping to one with ⌘1 through ⌘9, or walking onto one with
+  ⌥⌘←/→ opens a page into that slot, and the page arrived with nothing
+  focused: the surface kept the keys, the ember stayed lit to promise
+  that keystrokes would land, and every keystroke beeped against the
+  window instead. These paths mint, and a mint rebuilds the mount
+  rather than swapping a storage under the one persistent editor, since
+  the empty state's catcher is a different view from the editor that
+  replaces it and first responder leaves with the catcher. ⌥⌘N and the
+  + tab already handed the keys on; the two paths the tab and page
+  split added did not, and now do. A plain page to page switch still
+  asks for nothing, because it keeps its editor and never lost focus,
+  and an unkeyed surface still opens its page and still leaves the
+  keyboard where the user put it: the law accepts keys an earlier
+  deliberate act conferred and never seizes them.
+
 - **The app's own menus no longer put the card away** (issue #41). A
   raised surface rests on any press the global mouse monitor sees, on
   the reasoning that a press the card's window never received belongs

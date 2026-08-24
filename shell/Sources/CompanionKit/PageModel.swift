@@ -909,6 +909,15 @@ public final class PageModel: ObservableObject {
     /// in `markDirty` rightly stands down there; the call itself is the
     /// fact the invariant is about.
     private(set) var dirtyMarks = 0
+
+    /// How many times a path asked the editor to take the keyboard,
+    /// counted where the asking happens rather than where it lands. The
+    /// landing needs a key window with a mounted editor in it, and the
+    /// runner has neither, so the ask is the part of the hand-off a
+    /// test can see: every path that rebuilds the mount must make it,
+    /// and an unkeyed window must make none of them, because the law
+    /// accepts keys and never takes them (issue #22).
+    private(set) var keyboardHandoffs = 0
     #endif
 
     /// A mutation landed: the store now differs from the sealed file.
@@ -1319,8 +1328,17 @@ public final class PageModel: ObservableObject {
         let leavingLedger = showingLedger
         showingLedger = false
         selection = id
-        openPageIfSlotIsEmpty(id)
-        if leavingLedger { refocusEditorIfKeyed() }
+        let minted = openPageIfSlotIsEmpty(id)
+        // Both arms change what is *mounted*, rather than what the one
+        // persistent editor is showing, and a mount nobody focuses is
+        // the lit ember over a keystroke that beeps (issue #22).
+        // Leaving the ledger rebuilds the editor the ledger stood in
+        // for; minting rebuilds the editor the empty state's catcher
+        // stood in for, and the catcher takes first responder with it
+        // when it unmounts. A plain switch between two pages takes
+        // neither arm: it keeps its editor, keeps its focus, and asks
+        // for nothing.
+        if leavingLedger || minted { refocusEditorIfKeyed() }
     }
 
     /// ⌘1 to ⌘9: jump by visible tab order. The index is into the strip,
@@ -1335,15 +1353,20 @@ public final class PageModel: ObservableObject {
     /// lands on when that slot is empty.
     public func step(_ delta: Int) {
         guard !tabs.isEmpty else { return }
-        if showingLedger {
-            showingLedger = false
-            refocusEditorIfKeyed()
-        }
+        let leavingLedger = showingLedger
+        if leavingLedger { showingLedger = false }
         let current = tabs.firstIndex { $0.id == selection } ?? 0
         let next = Self.steppedIndex(from: current, by: delta, within: tabs.count)
         let landed = tabs[next].id
         selection = landed
-        openPageIfSlotIsEmpty(landed)
+        let minted = openPageIfSlotIsEmpty(landed)
+        // The walk lands on slots, and the slot it lands on may be
+        // empty, so it carries `select`'s hand-off for `select`'s
+        // reasons. One call rather than two: a walk that both leaves
+        // the ledger and mints has one editor to focus, and the focus
+        // is asked for after the mint rather than before it, so the
+        // wait is for the editor that is actually coming.
+        if leavingLedger || minted { refocusEditorIfKeyed() }
     }
 
     /// The mint the three selection gestures share: a page into the
@@ -1351,7 +1374,15 @@ public final class PageModel: ObservableObject {
     /// slot already holds one or the tab is unknown. Refuses at the
     /// seam rather than here, so the "one page to a slot" rule has a
     /// single home.
-    private func openPageIfSlotIsEmpty(_ tab: UInt64) {
+    ///
+    /// Answers whether it minted, which is what tells the gesture
+    /// above it that the surface it was looking at has been rebuilt:
+    /// the empty state gives way to a freshly built editor, and the
+    /// keys have to be handed on to it (issue #22). A slot that
+    /// already held a page answers false, and the gesture stays the
+    /// quiet switch it always was.
+    @discardableResult
+    private func openPageIfSlotIsEmpty(_ tab: UInt64) -> Bool {
         // Selecting some other slot retires the record of the last
         // mint, so what stands is always the mint of a tap on this
         // slot and never one from a gesture ago. Reaching the same
@@ -1360,11 +1391,12 @@ public final class PageModel: ObservableObject {
         // resolves, and clearing on that re-entry is what let the hold
         // strike the page the first tap had just minted.
         if mintedBySelection?.tab != tab { mintedBySelection = nil }
-        guard tabs.first(where: { $0.id == tab })?.hasPage == false else { return }
-        guard client.openPage(tab: tab) != 0 else { return }
+        guard tabs.first(where: { $0.id == tab })?.hasPage == false else { return false }
+        guard client.openPage(tab: tab) != 0 else { return false }
         mintedBySelection = (tab: tab, at: ProcessInfo.processInfo.systemUptime)
         markDirty()
         refresh()
+        return true
     }
 
     /// The next tab index after a ⌥⌘←/→ step, clamped to the ends. A
@@ -1511,6 +1543,9 @@ public final class PageModel: ObservableObject {
     /// the editor's own window. The first turn checks before waiting, so
     /// an already-mounted editor is focused with no delay.
     public func focusEditorWhenMounted(in window: NSWindow?, requireKeys: Bool = false) {
+        #if DEBUG
+        keyboardHandoffs += 1
+        #endif
         Task { @MainActor [weak self] in
             for _ in 0..<10 {
                 guard let self else { return }
