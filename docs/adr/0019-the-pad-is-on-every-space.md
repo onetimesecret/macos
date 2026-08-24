@@ -63,11 +63,18 @@ first opened on and undo the fix from outside the surface. Settings
 takes the bit when it is created; About is AppKit's own window, so it
 takes the bit each time it is put up.
 
-The summon's order-out round trip becomes unreachable, since a window on
-every Space is on the active one by definition. It is kept as a safety
-net, expressed as `BackdropStance.requiresSpaceRoundTrip(visible:
-onActiveSpace:)`, because being wrong about a window stranded off-Space
-costs the user's keystrokes, and a net that never fires costs nothing.
+The summon's order-out round trip becomes unreachable from any desktop
+Space, which is where the flicker was seen: a window on every desktop is
+on the one the user is looking at. It is not unreachable outright. The
+unpinned rest declines full-screen Spaces, so while another app is full
+screen the card is visible on the desktops and absent from the Space in
+front of the user, and a summon from there is the stranded case the net
+is for; a raise taken mid-transition can read the same way for a moment.
+The net is kept and expressed as
+`BackdropStance.requiresSpaceRoundTrip(visible: onActiveSpace:)`,
+because being wrong about a window stranded off-Space costs the user's
+keystrokes. Where it does fire, the blink is the card arriving where the
+user is.
 
 The resting card is now visible on every desktop rather than on the one
 it launched under. For an ambient surface this is the intended reading:

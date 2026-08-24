@@ -157,10 +157,19 @@ enum BackdropStance: Equatable {
     /// Space that blink was the flicker (issue #74). It is kept as a
     /// safety net rather than deleted, because a window that is up on a
     /// Space the user has left is exactly the fault the summon exists to
-    /// undo, and being wrong about that would silently swallow ink. With
-    /// membership constant at "every Space" the condition can no longer
-    /// arise: a window on all of them is on the active one by
-    /// definition, so the net hangs unused and the blink is gone.
+    /// undo, and being wrong about that would silently swallow ink.
+    ///
+    /// With membership constant at "every Space" the condition can no
+    /// longer arise between desktops, which is where the flicker was
+    /// seen: a window on all of them is on whichever desktop the user is
+    /// looking at. It is not unreachable. An unpinned rest declines
+    /// full-screen Spaces (`.fullScreenNone`), so while another app is
+    /// full screen the card is visible on its desktops and yet not on
+    /// the Space in front of the user, and a summon from there is the
+    /// stranded case exactly; a raise taken while a Space transition is
+    /// still in flight can read the same way for a moment. The blink
+    /// those cost is the card arriving where the user is, which is the
+    /// summon keeping its promise rather than a defect.
     static func requiresSpaceRoundTrip(visible: Bool, onActiveSpace: Bool) -> Bool {
         visible && !onActiveSpace
     }

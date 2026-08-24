@@ -221,17 +221,22 @@ final class BackdropStanceTests: XCTestCase {
     // MARK: The summon's round trip, the safety net that used to blink
 
     func testASurfaceStrandedOnAnotherSpaceIsRoundTripped() {
-        // The one case the net exists for: a window up on a Space the
-        // user has left would take the keyboard out of sight.
+        // The case the net exists for: a window up on a Space the user
+        // has left would take the keyboard out of sight. It is still
+        // reachable, all-Spaces membership notwithstanding, because the
+        // unpinned rest declines full-screen Spaces: summoned from
+        // another app's full-screen room, the card is visible on the
+        // desktops and not on the Space in front of the user.
         XCTAssertTrue(
             BackdropStance.requiresSpaceRoundTrip(visible: true, onActiveSpace: false)
         )
     }
 
     func testASurfaceAlreadyHereIsNeverRoundTripped() {
-        // Which is now every case, since a window on all Spaces is on
-        // the active one by definition. The blink this used to cost on
-        // each ⌘Tab back is the flicker of issue #74.
+        // Which is every summon between desktops, since a window on all
+        // of them is on whichever one the user is looking at. The blink
+        // this used to cost on each ⌘Tab back is the flicker of issue
+        // #74.
         XCTAssertFalse(
             BackdropStance.requiresSpaceRoundTrip(visible: true, onActiveSpace: true)
         )

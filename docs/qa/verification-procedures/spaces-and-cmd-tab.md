@@ -33,9 +33,12 @@ does not.
    the membership subset, `BackdropStance.spaceMembership(pinned:)`, and
    the guard in `applyAltitude` skips the write only when the whole
    value matches.) The second candidate was the summon's order-out round
-   trip, a literal blink, which can no longer fire. A third remains and
-   this procedure is how we find out whether it is the one that
-   mattered: see below.
+   trip, a literal blink, which can no longer fire on a summon between
+   desktops. It is not dead code: the unpinned rest declines full-screen
+   Spaces, so a summon from another app's full-screen room still finds
+   the card off-Space and still round trips it. A third candidate
+   remains and this procedure is how we find out whether it is the one
+   that mattered: see below.
 
 ## Setting up
 
@@ -70,6 +73,14 @@ log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
       visible.
 - [ ] **The Dock icon.** From Desktop 3, click the Dock tile. The card
       raises on Desktop 3.
+- [ ] **Summoned from another app's full-screen Space.** Unpinned, put
+      an app full screen, and from inside it press ⌃⌥Space. The card
+      arrives on the full-screen Space, keyed, and takes what you type.
+      A single blink as it arrives is correct here and not the flicker:
+      an unpinned rest declines full-screen Spaces, so the card really
+      was elsewhere and the summon's round trip is what brings it. The
+      log carries `summon=round trip (surface was off-Space)` for it.
+      **Fail:** the card does not appear, or appears and takes no keys.
 - [ ] **Settings does not drag the app back.** Open Settings on Desktop
       1, close it, go to Desktop 3, press ⌘, again. It opens on Desktop
       3.
@@ -87,8 +98,10 @@ log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
       **Pass:** the card appears in place. **Fail, and the shape of the
       failure is the diagnosis:**
       - The card *vanishes and returns*: an order-out is still
-        happening. The round trip is the only one left in the code, so
-        capture the log lines around it.
+        happening. The round trip is the only one left in the code, and
+        between desktops it should not fire at all, so capture the log
+        lines around it and note whether `summon=round trip` is among
+        them.
       - The card *changes size or jumps* for a frame: this is the
         remaining candidate. The unpinned resting window spans the whole
         screen and the raised window is the card's own rect (ADR-0015),
@@ -125,6 +138,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | Dock icon from another desktop | | |
 | | | Settings opens where the user is | | |
 | | | About opens where the user is, and follows a ⌘Tab | | |
+| | | summon from a full-screen Space lands and takes keys | | One blink there is the landing, not the flicker. |
 | | | ten ⌘Tab returns, unpinned | | Record the shape of any flicker. |
 | | | ten ⌘Tab returns, pinned | | |
 | | | edge drag stays on this desktop | | The documented decision, ADR-0019. |

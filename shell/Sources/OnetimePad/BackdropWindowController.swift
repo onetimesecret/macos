@@ -266,10 +266,12 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // ordering front lands it on this Space instead. The round
             // trip is a blink, and on a ⌘Tab back from another Space
             // that blink was the flicker (issue #74); now that every
-            // posture claims every Space, a visible window is on the
-            // active one by definition and the net hangs unused. It is
-            // kept rather than deleted because being wrong about this
-            // costs the user's keystrokes.
+            // posture claims every desktop, a visible window is already
+            // on the desktop the user is looking at and the net does not
+            // fire there. It still can from another app's full-screen
+            // Space, which an unpinned rest declines to join, and
+            // transiently mid-transition, where the blink is the card
+            // landing here rather than a defect.
             if BackdropStance.requiresSpaceRoundTrip(
                 visible: panel.isVisible, onActiveSpace: panel.isOnActiveSpace
             ) {
