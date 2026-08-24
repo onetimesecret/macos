@@ -264,8 +264,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because a card put in front while it was already wholly covered reads
   occluded before the change and occluded after it: no change is posted,
   no edge arrives, and without that reading the gate held open over a
-  surface nobody can see would stay open for the life of the raise.
-  Waking the displays and returning from the lock screen or
+  surface nobody can see would stay open for the life of the raise. A
+  scheduled reading is asked again, when it fires, whether it still
+  deserves the authority it was scheduled with: a desktop change while
+  it waited puts it back inside a transition, where every reading is a
+  guess and only the transition's own settled one decides. Waking the
+  displays and returning from the lock screen or
   another user are read the same way a Space switch is, so a card does
   not come back from either one refusing every click. The
   pinned rest also stopped carrying `.stationary`, a flag it had

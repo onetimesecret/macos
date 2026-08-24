@@ -75,9 +75,16 @@ struct SurfaceExposure: Equatable {
     /// Which turn is asking for the gate to be written, because they are
     /// not equally trustworthy.
     enum Turn {
-        /// The window server volunteered the news: an occlusion change,
-        /// or a Space switch that has had time to settle. What it
-        /// reports now is what it is doing now.
+        /// The reading is being taken at a moment when the window
+        /// server's account of itself can be believed: an occlusion
+        /// change it volunteered, or a scheduled reading far enough
+        /// past the change that provoked it. What it reports now is
+        /// what it is doing now.
+        ///
+        /// The schedule grants this, so the schedule cannot be the
+        /// whole of it: a reading owed to one change can land inside
+        /// another, and `authority(of:sinceTransition:)` is where that
+        /// is taken back.
         case edge
 
         /// The turn immediately after a stance was applied, which asks
@@ -126,6 +133,32 @@ struct SurfaceExposure: Equatable {
     ) -> Bool {
         guard ignores, turn == .settling else { return true }
         return !raised
+    }
+
+    /// The authority a reading may actually speak with, given how long
+    /// ago the last workspace transition began.
+    ///
+    /// A reading is scheduled with the authority its own occasion earns
+    /// it, and then waits. What it cannot know from the schedule is what
+    /// happened while it waited. A raise schedules its settled reading
+    /// for `settledDelay` later; the user swipes to another desktop half
+    /// a second in; the raise's reading now fires mid-switch, where by
+    /// this file's repeated account the server is still describing the
+    /// desktop being left, and it fires carrying the authority to take
+    /// the clicks off a card in front of the user. The switch's own
+    /// settled reading would reopen the gate, but only after the click
+    /// the user made in between had fallen through to the app underneath
+    /// and rested the card.
+    ///
+    /// So an edge's authority is confirmed at the moment of use rather
+    /// than granted once at scheduling: inside a transition every
+    /// reading is a guess, whatever occasioned it, and the transition's
+    /// own settled reading is the one that decides. Nothing is dropped,
+    /// only demoted, so a demoted reading may still open the gate, which
+    /// is the direction that is never refused.
+    static func authority(of turn: Turn, sinceTransition elapsed: TimeInterval) -> Turn {
+        guard turn == .edge, elapsed < settledDelay else { return turn }
+        return .settling
     }
 
     /// A re-reading of exposure to be taken later: when to take it, and

@@ -204,6 +204,65 @@ final class SurfaceExposureTests: XCTestCase {
         )
     }
 
+    // MARK: What a transition does to a reading already in flight
+
+    func testAReadingThatLandsInsideATransitionLosesItsEdgeAuthority() {
+        // The raise schedules its settled reading a second out; the user
+        // changes desktop half a second in. The reading now fires
+        // mid-switch, where the server is still describing the desktop
+        // being left, and without this it would fire with the authority
+        // to take the clicks off a card in front of the user.
+        XCTAssertEqual(
+            SurfaceExposure.authority(of: .edge, sinceTransition: 0.4), .settling
+        )
+        XCTAssertFalse(
+            SurfaceExposure.writes(
+                gate: true,
+                from: SurfaceExposure.authority(of: .edge, sinceTransition: 0.4),
+                raised: true
+            ),
+            "a reading taken mid-switch must not take the clicks off a raised card"
+        )
+    }
+
+    func testATransitionsOwnSettledReadingKeepsItsAuthority() {
+        // The counterweight, and the reason the demotion cannot simply
+        // be a longer wait: the reading a transition schedules for
+        // itself falls exactly `settledDelay` after it, and it is the
+        // one that has to be able to decide.
+        XCTAssertEqual(
+            SurfaceExposure.authority(
+                of: .edge, sinceTransition: SurfaceExposure.settledDelay
+            ),
+            .edge
+        )
+        XCTAssertEqual(SurfaceExposure.authority(of: .edge, sinceTransition: .infinity), .edge)
+    }
+
+    func testTheDemotionNeverStandsInTheWayOfOpeningTheGate() {
+        // Demoted, not dropped. A gate stuck shut is the worst failure
+        // this feature can have, so a reading taken mid-transition may
+        // still open one.
+        for elapsed in [0.0, 0.4, SurfaceExposure.settledDelay, .infinity] {
+            for turn in [SurfaceExposure.Turn.edge, .settling] {
+                XCTAssertTrue(
+                    SurfaceExposure.writes(
+                        gate: false,
+                        from: SurfaceExposure.authority(of: turn, sinceTransition: elapsed),
+                        raised: true
+                    )
+                )
+            }
+        }
+    }
+
+    func testTheSettlingTurnIsNotPromotedByAQuietSpell() {
+        // The demotion runs one way. A prompt reading is a guess because
+        // of where it sits in its own transition, and no amount of time
+        // since some earlier one makes it otherwise.
+        XCTAssertEqual(SurfaceExposure.authority(of: .settling, sinceTransition: .infinity), .settling)
+    }
+
     // MARK: A posture change's own re-reading
 
     func testAPostureChangeSchedulesAReadingThatCanCloseTheGateOnItself() {

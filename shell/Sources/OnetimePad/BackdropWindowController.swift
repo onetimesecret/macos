@@ -359,8 +359,27 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// that carry no posture of their own: an occlusion change, a Space
     /// switch, and the settling turn after a stance or the pin is
     /// applied.
+    ///
+    /// The turn a reading was scheduled with is what it deserved when it
+    /// was scheduled; `SurfaceExposure.authority(of:sinceTransition:)`
+    /// is what it deserves now, which is less whenever a transition
+    /// began while the reading was waiting.
     private func refreshMouseGate(from turn: SurfaceExposure.Turn) {
-        applyMouseGate(stance: model.stance, pinned: model.pinned, from: turn)
+        applyMouseGate(
+            stance: model.stance,
+            pinned: model.pinned,
+            from: SurfaceExposure.authority(of: turn, sinceTransition: sinceTransition)
+        )
+    }
+
+    /// When the workspace last told us a transition was starting, on the
+    /// clock `NSEvent` timestamps share, and how long ago that was. A
+    /// transition that never happened is infinitely long over.
+    private var transitionBeganAt: TimeInterval?
+
+    private var sinceTransition: TimeInterval {
+        guard let transitionBeganAt else { return .infinity }
+        return ProcessInfo.processInfo.systemUptime - transitionBeganAt
     }
 
     /// The pair of readings every posture change takes for itself: a
@@ -399,6 +418,11 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// is a guess taken mid-transition and may not close the gate on a
     /// card that holds the keyboard, while the settled one may.
     private func refreshMouseGateAcrossTransition() {
+        // Stamped before the readings are scheduled, and read by every
+        // reading that fires from anywhere: a raise's settled reading
+        // waiting out its second has no other way to learn that the
+        // desktop changed underneath it.
+        transitionBeganAt = ProcessInfo.processInfo.systemUptime
         for read in SurfaceExposure.settleReads {
             scheduleMouseGateRead(read)
         }
