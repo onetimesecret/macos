@@ -98,6 +98,47 @@ final class SurfaceExposureTests: XCTestCase {
         }
     }
 
+    // MARK: Which turn may write the gate
+
+    func testAnyTurnMayOpenTheGate() {
+        // The invariant everything else here is subordinate to: a card
+        // the user can see answers clicks. A gate stuck shut is the
+        // worst failure this feature can have, so no turn is ever
+        // refused the opening.
+        for turn in [SurfaceExposure.Turn.edge, .settling] {
+            for isKey in [false, true] {
+                XCTAssertTrue(
+                    SurfaceExposure.writes(gate: false, from: turn, isKey: isKey),
+                    "opening the gate must never be refused"
+                )
+            }
+        }
+    }
+
+    func testTheSettlingTurnMayNotCloseTheGateOnAKeyedWindow() {
+        // The raise's own gap: the card is ordered up over whatever was
+        // covering it, and for a frame `occlusionState` still answers
+        // with the pre-raise reading. Closing on that would pass the
+        // user's next click to the app underneath, whereupon the
+        // outside click monitor rests the card and the raise has undone
+        // itself.
+        XCTAssertFalse(SurfaceExposure.writes(gate: true, from: .settling, isKey: true))
+    }
+
+    func testTheSettlingTurnMayCloseTheGateOnAWindowThatIsNotKeyed() {
+        // A pinned rest never takes the keyboard, and the settling read
+        // is the only exposure judgment the pin gets.
+        XCTAssertTrue(SurfaceExposure.writes(gate: true, from: .settling, isKey: false))
+    }
+
+    func testAnEdgeMayCloseTheGateOnAKeyedWindow() {
+        // The window server volunteered the news this time, so the
+        // reading is its own account of the present rather than a guess
+        // taken a turn after an ordering. A keyed window really out of
+        // sight is the worse fault of the two and earns no exemption.
+        XCTAssertTrue(SurfaceExposure.writes(gate: true, from: .edge, isKey: true))
+    }
+
     func testAStanceOutOfSightIsAlwaysTransparent() {
         // The invariant the cases above are instances of: out of sight
         // is transparent, in every posture and either pin state.
