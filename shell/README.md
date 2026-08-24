@@ -33,9 +33,15 @@ needs to be a citizen of the permission system, use the entry points:
 ```
 
 The bundle id is `com.onetimesecret.companion.backdrop`; the version
-is stamped from `crates/ffi`'s `CARGO_PKG_VERSION`, the source the
-About panel's string is baked from (rebuild the core to keep them in
-step). Ad-hoc signing changes the code identity on every rebuild, so
+users see is `CFBundleShortVersionString` in `OnetimePad-Info.plist`,
+which is the product's own number, edited there by hand when work a
+user can touch lands. The packaging script reads it and stamps
+`CFBundleVersion` from it plus the short commit, so About and the tray
+name the exact build. The core's version is a separate fact about a
+separate artifact and `companion_version()` still speaks for it; the
+tray menu prints both, and the two differing means the app and the seam
+moved for their own reasons rather than that anything is wrong. Ad-hoc
+signing changes the code identity on every rebuild, so
 TCC grants reset and the Keychain re-confirms access to stored items
 (the API token, the state key); set `CODESIGN_IDENTITY` to a real
 certificate for an identity that persists.

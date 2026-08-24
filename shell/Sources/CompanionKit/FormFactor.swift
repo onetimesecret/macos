@@ -374,15 +374,62 @@ extension FormFactor {
 /// build am I on" answered at a glance.
 public enum BuildVersion {
     /// A bare `swift run` has no bundle version, so the core speaks for
-    /// itself; a bundled build shows the stamped version (the build
-    /// scripts append the git SHA), and a bundle whose version does not
-    /// extend the core's own reveals a stale xcframework instead of
-    /// hiding it.
+    /// itself; a bundled build names both numbers, always.
+    ///
+    /// The line used to drop the core whenever the bundle version began
+    /// with it, and to name both only when it did not. That rule made
+    /// sense while the two strings came from one source: an extension of
+    /// the core's version was the build script's own stamp, and anything
+    /// else could only mean the binary had linked a stale xcframework,
+    /// which was worth saying out loud. Issue #89 gave the app its own
+    /// marketing version, so the numbers now move for their own reasons
+    /// and a difference between them is the ordinary case rather than a
+    /// warning. Naming both is what stays honest: "build" answers which
+    /// build am I on, "core" answers which seam it linked, and neither
+    /// answer can be inferred from the other any more.
     public static func trayTitle(core: String, bundleVersion: String?) -> String {
         guard let bundleVersion else { return "core \(core)" }
-        if bundleVersion.hasPrefix(core) {
-            return "build \(bundleVersion)"
-        }
         return "build \(bundleVersion), core \(core)"
+    }
+}
+
+/// What the standard About panel shows for a version, which is two
+/// questions AppKit gives two keys for: `.applicationVersion` is the
+/// product's own number and `.version` is the build behind it, rendered
+/// as "Version 0.13.0 (0.13.0+ab12cd3)".
+///
+/// Pure so the resolution can be tested without an AppKit panel or a
+/// bundle to read; `showAbout` does the reading and hands the strings
+/// here.
+public enum AboutVersion {
+    /// The two strings the panel wants, with `build` absent when there
+    /// is nothing to put in the parentheses.
+    public struct Fields: Equatable {
+        public let applicationVersion: String
+        public let build: String?
+
+        public init(applicationVersion: String, build: String?) {
+            self.applicationVersion = applicationVersion
+            self.build = build
+        }
+    }
+
+    /// A bundled app shows its own marketing version with the stamped
+    /// bundle version beside it; a bare `swift run` has no Info.plist to
+    /// read either from, and there the core is the only version the
+    /// process can honestly claim, so it stands alone as it always has.
+    public static func fields(
+        core: String, shortVersion: String?, bundleVersion: String?
+    ) -> Fields {
+        guard let shortVersion, !shortVersion.isEmpty else {
+            return Fields(applicationVersion: core, build: nil)
+        }
+        // A bundle without CFBundleVersion is not a shape the build
+        // scripts produce, but the key is read rather than guaranteed,
+        // so an absent one costs the parentheses and nothing else.
+        guard let bundleVersion, !bundleVersion.isEmpty else {
+            return Fields(applicationVersion: shortVersion, build: nil)
+        }
+        return Fields(applicationVersion: shortVersion, build: bundleVersion)
     }
 }

@@ -9,4 +9,5 @@
 - [Keymap #76/#77](project_keymap_76_77.md): TabStrip/Ledger contexts are declared but unconsulted, ⌥⌘N retired not aliased, override sits outside the .noindex dir
 - [Issue #78 hidden UI](project_issue78_hidden_ui.md): four elements parked behind HiddenUI flags, not deleted; ledger::Show stays bindable by an override
 - [Window behaviour stack 41/22/23/73/74](project_window_behaviour_stack.md): merge-only propagation in dogfood-a; the mouse gate must converge open
+- [Two version numbers](project_two_version_numbers.md): app version lives in the shell plist (#89), crate version in crates/ffi; bump the plist for user visible work
 - [Stacked review findings](feedback_stacked_review_findings.md): verify each finding on the branch that owns the code; a claim false on 77 can be true on 78

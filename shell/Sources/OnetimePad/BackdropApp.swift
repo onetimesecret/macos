@@ -272,18 +272,36 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         settings.show()
     }
 
-    /// The standard About panel; the version comes from the core (the
-    /// same source the bundle's plist is stamped from), because a bare
-    /// `swift run` binary has no Info.plist to read it from.
+    /// The standard About panel. The version it leads with is the app's
+    /// own, `CFBundleShortVersionString`, which since issue #89 is the
+    /// product's number rather than the Rust seam's, with the stamped
+    /// `CFBundleVersion` behind it in the panel's build slot: "Version
+    /// 0.13.0 (0.13.0+ab12cd3)". A bare `swift run` binary has no
+    /// Info.plist to read either key from, and there the core is the only
+    /// version the process can honestly claim, so it stands alone as it
+    /// did before. `AboutVersion.fields` holds that resolution, tested
+    /// without a bundle or a panel.
     ///
     /// Every route to the panel goes through here, the tray menu and the
     /// app menu's own item alike, because what happens after the panel
     /// is up is load-bearing and AppKit's synthesized item skips it.
     @objc func showAbout() {
+        let versions = AboutVersion.fields(
+            core: CompanionClient.version,
+            shortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
+                as? String,
+            bundleVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        )
         var aboutOptions: [NSApplication.AboutPanelOptionKey: Any] = [
             .applicationName: Self.productName,
-            .applicationVersion: CompanionClient.version,
+            .applicationVersion: versions.applicationVersion,
         ]
+        // The build in parentheses, when there is one to show. Absent
+        // rather than empty: an empty string would print bare
+        // parentheses, which reads as a build the app failed to name.
+        if let build = versions.build {
+            aboutOptions[.version] = build
+        }
         // A bare `swift run` has no bundle icon to fall back on; the
         // bundled app shows its AppIcon.icns without help.
         if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil {

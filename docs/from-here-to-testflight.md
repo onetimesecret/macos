@@ -32,7 +32,9 @@ The steps, in order:
 
    You already parameterized `CODESIGN_IDENTITY`, so this is a small change plus the two new flags.
 
-7. **Add the App Store Info.plist keys.** Set `ITSAppUsesNonExemptEncryption` (false if you use only standard crypto and HTTPS, which you do; declaring it skips the per-build prompt). Ensure `CFBundleVersion` increments on every upload; it's stamped from the Cargo version today, so a resubmit without a version bump will be rejected as a duplicate build number.
+7. **Add the App Store Info.plist keys.** Set `ITSAppUsesNonExemptEncryption` (false if you use only standard crypto and HTTPS, which you do; declaring it skips the per-build prompt). Ensure `CFBundleVersion` increments on every upload; it's stamped from `CFBundleShortVersionString` plus the short commit, so a resubmit from the same commit without a version bump will be rejected as a duplicate build number.
+
+   **Where the version lives.** `CFBundleShortVersionString` in `shell/OnetimePad-Info.plist` is the app's marketing version and its own source of truth (issue #89). Bump it there, by hand, when work a user can touch lands, the same way `crates/ffi/Cargo.toml` gets bumped when the seam changes. The two numbers are separate facts about separate artifacts: the app's says what the product does now, the core's says what the FFI seam offers, and `package-app.sh` prints both when it assembles the bundle. The packaging script refuses the `0.0.0` placeholder, so a bundle that ships has a real number in it.
 
 8. **Build the installer package:**
 

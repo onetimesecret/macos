@@ -14,9 +14,18 @@
   target was named for its posture. Ids are infrastructure; names are
   paint.
 
-  CFBundleVersion / CFBundleShortVersionString hold a placeholder; the
-  build script stamps both from crates/ffi's CARGO_PKG_VERSION, the
-  same source companion_version() is baked from.
+  CFBundleShortVersionString is the product's own number and this file
+  is where it lives: edit it here, by hand, when work a user can touch
+  lands. It used to be stamped from crates/ffi's CARGO_PKG_VERSION,
+  which made the number users see a fact about the Rust seam, so a
+  release that changed every keystroke and no crate did not move it
+  while two invisible seam changes did (issue #89). The core keeps its
+  crate version and still speaks for itself through companion_version();
+  the two numbers now move for their own reasons.
+
+  CFBundleVersion holds a placeholder. The build script stamps it from
+  the short version above plus the commit the bundle was built from, so
+  "which build am I on" has a one-glance answer.
 -->
 <plist version="1.0">
 <dict>
@@ -37,7 +46,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.0.0</string>
+	<string>0.13.0</string>
 	<key>CFBundleVersion</key>
 	<string>0.0.0</string>
 	<key>LSApplicationCategoryType</key>
