@@ -107,7 +107,7 @@ struct SurfaceExposure: Equatable {
     /// keyboard as a matter of course (⌘, hands key status to Settings,
     /// a menu takes it for as long as it is open), and a raise that has
     /// lost the keys is still a raise, still on screen, and still owed
-    /// its clicks. `raiseSettleRead` is what closes the gate a moment
+    /// its clicks. `postureSettleRead` is what closes the gate a moment
     /// later if the card truly is not in front. Waiting for a
     /// notification edge instead would not do: a card raised while it
     /// was already buried reads as occluded before the raise and
@@ -185,18 +185,28 @@ struct SurfaceExposure: Equatable {
         NSWorkspace.sessionDidBecomeActiveNotification,
     ]
 
-    /// The reading a raise schedules for itself.
+    /// The reading a change of posture schedules for itself, on top of
+    /// the prompt settling one: a stance applied, or the pin toggled
+    /// under a stance that stays put.
     ///
-    /// The settling turn a raise already takes may open the gate but not
-    /// close it on a raised window, and for a card raised while it was
-    /// already wholly covered that is the end of the matter: occlusion
-    /// read occluded before the raise and reads occluded after it, so no
-    /// change is posted and no edge ever arrives to correct the gate
-    /// held open. A surface the user cannot see would go on taking
-    /// clicks for as long as the raise lasted. This reading is late
-    /// enough to speak for the raise itself and carries the authority
-    /// the settling turn lacks.
-    static let raiseSettleRead = SettleRead(delay: settledDelay, turn: .edge)
+    /// The settling turn may open the gate but not close it on a raised
+    /// window, and for a card raised while it was already wholly covered
+    /// that is the end of the matter: occlusion read occluded before the
+    /// raise and reads occluded after it, so no change is posted and no
+    /// edge ever arrives to correct the gate held open. A surface the
+    /// user cannot see would go on taking clicks for as long as the
+    /// raise lasted. This reading is late enough to speak for the change
+    /// itself and carries the authority the settling turn lacks.
+    ///
+    /// The pin needs it for the same reason and not only the raise. A
+    /// pin toggled from the app's own menu leaves the card raised (menus
+    /// are exempt from the outside click rule), rewrites the gate from
+    /// the stance's ungated rule, and posts nothing afterwards: no
+    /// occlusion change, since nothing about what is on screen changed,
+    /// and no Space switch. Without this reading the pin's own settling
+    /// turn would be refused over the raise and the gate would stay open
+    /// on a card nobody can see.
+    static let postureSettleRead = SettleRead(delay: settledDelay, turn: .edge)
 }
 
 extension BackdropStance {

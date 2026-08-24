@@ -64,15 +64,11 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
                     stance: model.stance, pinned: pinned,
                     geometry: model.displayedGeometry
                 )
-                // And the settled reading a turn later, once the window
-                // server has made of all that what it will. Without it
-                // the pin has no exposure gate at all, since neither an
+                // And the readings a turn later, once the window server
+                // has made of all that what it will. Without them the
+                // pin has no exposure gate at all, since neither an
                 // occlusion change nor a Space switch need follow it.
-                Task { @MainActor in
-                    self.applyMouseGate(
-                        stance: self.model.stance, pinned: self.model.pinned, from: .settling
-                    )
-                }
+                refreshMouseGateAfterPostureChange()
             }
             .store(in: &observers)
         // Wherever the window hugs the card (a pinned rest, and every
@@ -277,13 +273,6 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // one route that activates first; the raise is then its
             // consequence, not its cause.)
             panel.makeKeyAndOrderFront(nil)
-            // And a reading late enough to speak for the raise. The
-            // settling turn scheduled below may open the gate but never
-            // close it over a keyed window, and a card raised while it
-            // was already wholly covered posts no occlusion change
-            // afterwards, so without this one nothing would ever shut
-            // the gate on a keyed surface the user cannot see.
-            scheduleMouseGateRead(SurfaceExposure.raiseSettleRead)
         case .resting:
             stopWatchingForOutsideClicks()
             panel.makeFirstResponder(nil)
@@ -321,12 +310,8 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         }
         // Now that the ordering has happened, ask the window server what
         // it made of it. A turn later rather than here: occlusion and
-        // Space membership settle after the order, not during it, and
-        // the closure reads the model rather than this call's arguments
-        // because by then both have landed and a stance that changed in
-        // between should win. That turn may open the gate but not close
-        // it over a keyed window, for the reason `applyMouseGate` gives.
-        Task { @MainActor in self.refreshMouseGate(from: .settling) }
+        // Space membership settle after the order, not during it.
+        refreshMouseGateAfterPostureChange()
         Self.logger.info(
             "stance=\(stance == .raised ? "raised" : "resting", privacy: .public) level=\(self.panel.level.rawValue, privacy: .public) visible=\(self.panel.isVisible, privacy: .public) frame=\(NSStringFromRect(self.panel.frame), privacy: .public)"
         )
@@ -376,6 +361,25 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// applied.
     private func refreshMouseGate(from turn: SurfaceExposure.Turn) {
         applyMouseGate(stance: model.stance, pinned: model.pinned, from: turn)
+    }
+
+    /// The pair of readings every posture change takes for itself: a
+    /// stance applied, or the pin toggled under a stance that stays put.
+    ///
+    /// The prompt one is a turn later rather than immediate, since
+    /// occlusion and Space membership settle after the ordering rather
+    /// than during it, and it reads the model rather than the caller's
+    /// arguments because by then both have landed and a stance that
+    /// changed in between should win. It may open the gate but not close
+    /// it over a raise, for the reason `applyMouseGate` gives, which is
+    /// what makes the second reading necessary rather than tidy: a card
+    /// put in front while it was already wholly covered posts no
+    /// occlusion change afterwards, so without a scheduled reading
+    /// nothing would ever shut the gate on a surface the user cannot
+    /// see.
+    private func refreshMouseGateAfterPostureChange() {
+        Task { @MainActor [weak self] in self?.refreshMouseGate(from: .settling) }
+        scheduleMouseGateRead(SurfaceExposure.postureSettleRead)
     }
 
     /// A workspace transition read twice, promptly and then once it has

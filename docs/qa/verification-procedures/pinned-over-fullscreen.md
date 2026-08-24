@@ -97,6 +97,15 @@ Space.
       settled reading taken after the level and frame have moved, so a
       pin judged from the posture it was leaving would show up here as a
       card that never comes back.
+- [ ] **The pin, toggled while raised.** Same full cover, but raise the
+      card first with ⌃⌥Space, then toggle the pin from the tray menu
+      (a menu, so the raise survives the click). Roughly a second later
+      the stream carries `mouse gate=closed`. The pin rewrites the gate
+      from the stance's own ungated rule, which for a raise is open, and
+      the settling reading that follows may not close it over a raise;
+      the scheduled reading is the only thing that will. Silence here
+      means an invisible card left holding the mouse for as long as the
+      raise lasts.
 - [ ] **The unpinned rest is untouched.** Turn the pin off, click over
       the card on a bare desktop: the click still passes through to the
       Finder desktop (ADR-0015). Nothing in this change may hand the
@@ -157,6 +166,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | log shows the gate closing | | |
 | | | gate reopens off the full-screen Space | | Every switch, not only the first. |
 | | | pin toggled under a full cover | | |
+| | | pin toggled while raised under a full cover | | |
 | | | unpinned rest still passes clicks through | | |
 | | | first click after a raise lands | | |
 | | | the raise's second reading leaves a visible card clickable | | |

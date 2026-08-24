@@ -204,23 +204,38 @@ final class SurfaceExposureTests: XCTestCase {
         )
     }
 
-    // MARK: The raise's own re-reading
+    // MARK: A posture change's own re-reading
 
-    func testTheRaiseSchedulesAReadingThatCanCloseTheGateOnItself() {
-        // A card raised while it was already wholly covered reads
-        // occluded before the raise and occluded after it, so no
+    func testAPostureChangeSchedulesAReadingThatCanCloseTheGateOnItself() {
+        // A card put in front while it was already wholly covered reads
+        // occluded before the change and occluded after it, so no
         // occlusion change is posted and no edge arrives. The settling
-        // turn the raise takes may not close the gate on a raised surface,
-        // which leaves this reading as the only thing that ever can.
-        let read = SurfaceExposure.raiseSettleRead
+        // turn the change takes may not close the gate on a raised
+        // surface, which leaves this reading as the only thing that ever
+        // can.
+        let read = SurfaceExposure.postureSettleRead
         XCTAssertGreaterThanOrEqual(
-            read.delay, 0.5, "the reading has to fall after the raise has landed"
+            read.delay, 0.5, "the reading has to fall after the change has landed"
         )
         XCTAssertEqual(read.turn, .edge)
         XCTAssertTrue(
             SurfaceExposure.writes(gate: true, from: read.turn, raised: true),
             "an occluded raised card must end up refusing the mouse, not merely start out doing so"
         )
+    }
+
+    func testAPostureChangeIsReadNoLaterThanATransitionIs() {
+        // The pin is the path that needs this said out loud. A pin
+        // toggled from the app's own menu leaves the card raised, posts
+        // no occlusion change and crosses no Space, so the settled
+        // reading it schedules for itself is the only one it will ever
+        // get, and it may not lag the reading a Space switch would have
+        // taken.
+        XCTAssertLessThanOrEqual(
+            SurfaceExposure.postureSettleRead.delay,
+            SurfaceExposure.settleReads.last?.delay ?? 0
+        )
+        XCTAssertEqual(SurfaceExposure.postureSettleRead.turn, SurfaceExposure.settleReads.last?.turn)
     }
 
     func testAStanceOutOfSightIsAlwaysTransparent() {

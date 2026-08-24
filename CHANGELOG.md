@@ -259,12 +259,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server is not showing goes on taking presses aimed past it, which is
   the worse of the two faults by this code's own ranking. It is
   accepted because it ends of its own accord, while a gate wrongly shut
-  has nothing that would ever reopen it. A raise takes a late reading of
-  its own, because a card raised while it was already wholly covered
-  reads occluded before the raise and occluded after it: no change is
-  posted, no edge arrives, and without that reading the gate held open
-  over a surface nobody can see would stay open for the life of
-  the raise. Waking the displays and returning from the lock screen or
+  has nothing that would ever reopen it. Every posture change, a stance
+  applied and the pin toggled alike, takes a late reading of its own,
+  because a card put in front while it was already wholly covered reads
+  occluded before the change and occluded after it: no change is posted,
+  no edge arrives, and without that reading the gate held open over a
+  surface nobody can see would stay open for the life of the raise.
+  Waking the displays and returning from the lock screen or
   another user are read the same way a Space switch is, so a card does
   not come back from either one refusing every click. The
   pinned rest also stopped carrying `.stationary`, a flag it had
