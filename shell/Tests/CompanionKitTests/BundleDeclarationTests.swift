@@ -17,8 +17,12 @@ import XCTest
 /// `scripts/package-app.sh` copies into the bundle, and not the bundle
 /// itself: SwiftPM never builds the .app, so `Bundle.main` under xctest
 /// is the test runner and carries none of these keys. Pinning what the
-/// packaging script actually produced belongs to CI, in a later layer
-/// of this effort.
+/// packaging script actually produced belongs to CI, which now extracts
+/// the key from the assembled `dist/OnetimePad.app/Contents/Info.plist`
+/// in both the debug and the release packaging jobs
+/// (`.github/workflows/ci.yml`). The two are complements, not copies:
+/// this test catches the key leaving the source tree, and CI catches
+/// the bundle losing it on the way in.
 final class BundleDeclarationTests: XCTestCase {
     /// The shell package's own directory, from this file's location:
     /// Tests/CompanionKitTests/<this file> is three levels down.

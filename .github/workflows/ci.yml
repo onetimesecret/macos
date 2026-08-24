@@ -104,10 +104,15 @@ jobs:
           # PageModel's SuddenTerminationLatch the real gate on the
           # logout kill rather than a clause satisfied by the accident
           # of never having opted in, so dropping the key would quietly
-          # turn the latch into decoration and no Swift test would
-          # notice. The claim is about the bundle that ships, so it is
-          # checked on the assembled Info.plist rather than in the
-          # source tree.
+          # turn the latch into decoration. The source plist is already
+          # pinned by CompanionKitTests' BundleDeclarationTests, which
+          # deliberately stops there: SwiftPM never builds the .app, so
+          # Bundle.main under xctest is the test runner and carries none
+          # of these keys. The reach no Swift test has is the packaging
+          # script itself dropping or overriding the key on the way into
+          # dist/OnetimePad.app, and that is the regression this step
+          # exists for. Both halves are wanted; neither replaces the
+          # other.
           sudden="$(plutil -extract NSSupportsSuddenTermination raw dist/OnetimePad.app/Contents/Info.plist)"
           test "$sudden" = "true" \
             || { echo "expected NSSupportsSuddenTermination true, got: $sudden" >&2; exit 1; }
@@ -154,7 +159,9 @@ jobs:
             *.debug) echo "release bundle carries a debug id: $id" >&2; exit 1 ;;
             *) echo "bundle id: $id" ;;
           esac
-          # ADR-0016 case 2, on the plist that actually ships.
+          # ADR-0016 case 2, on the plist that actually ships. The
+          # debug job carries the note on why the packaged bundle, and
+          # not only the source plist, is worth asserting.
           sudden="$(plutil -extract NSSupportsSuddenTermination raw dist/OnetimePad.app/Contents/Info.plist)"
           test "$sudden" = "true" \
             || { echo "expected NSSupportsSuddenTermination true, got: $sudden" >&2; exit 1; }
