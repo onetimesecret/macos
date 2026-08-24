@@ -33,6 +33,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "saved", which is the reassurance the shortcut exists to give; a
   press over a withheld save licence leaves that banner in place rather
   than showing a contradictory "saved".
+- **Every recovery case now has something that asserts it, and a
+  document that says which** (issue #48, on the seams from issue #53,
+  ADR-0016 section 10). `docs/qa/recovery-matrix.md` is the index: one
+  row per lifecycle case, the guarantee with the ADR section that
+  decides it, the Rust and Swift tests that assert it, the hardware
+  procedure for what no test can reach, its owner, and when it last
+  ran. Filling it in took the coverage with it. `PageModel` gained
+  injectable seams for its state directory, its client and its save
+  debounce (#53), which is what let the Swift suite drive a real sealed
+  file at last: the quit flush is now pinned to a write the debounce
+  still holds, a genuinely refused write and the window it opens are
+  exercised rather than assumed, a damaged snapshot is distinguished
+  from an unavailable key, every mutation site is asserted to arm a
+  write, and the bundle-identifier guards that keep a dev rebuild off
+  the installed copy's state are reachable by a test for the first
+  time. CI gained the packaged plist's sudden-termination key, the
+  test-util seams on macOS, and a release packaging job, so the checks
+  that used to run only when a human packaged a release run on every
+  change. Two procedures that ADR-0016 named but nobody had written,
+  force termination and the clock stepped back, now exist with owners
+  and dated Results tables, and the runbook they sit beside gained an
+  owner per section and somewhere to record a result.
 
 ### Changed
 
