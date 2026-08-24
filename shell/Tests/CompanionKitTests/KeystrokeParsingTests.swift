@@ -71,6 +71,23 @@ final class KeystrokeParsingTests: XCTestCase {
         XCTAssertEqual(keystroke.canonical, "cmd--")
     }
 
+    /// The bare hyphen, with nothing in front of it, is still a chord a
+    /// file may name.
+    func testTheHyphenKeyCanBeBoundOnItsOwn() throws {
+        XCTAssertEqual(try parsed("-").key, .character("-"))
+        XCTAssertEqual(try parsed("-").modifiers, [])
+    }
+
+    /// A spelling that names a modifier and then stops is a typo, and
+    /// the one reading that must never be given to it is the hyphen
+    /// key: that would drop the modifier the author did write and leave
+    /// a command sitting under a character people type into pages.
+    func testAModifierWithNoKeyIsRefusedRatherThanReadAsAHyphen() throws {
+        XCTAssertEqual(try failure("cmd-"), .unknownKey(""))
+        XCTAssertEqual(try failure("shift-"), .unknownKey(""))
+        XCTAssertEqual(try failure("cmd-alt-"), .unknownKey(""))
+    }
+
     func testACommaIsAnOrdinaryKey() throws {
         XCTAssertEqual(try parsed("cmd-,").key, .character(","))
     }
@@ -160,6 +177,26 @@ final class KeystrokeParsingTests: XCTestCase {
                 "cmd-\(named.rawValue) parsed but could not be installed")
         }
         XCTAssertNotNil(try parsed("cmd-alt-left").keyboardShortcut)
+    }
+
+    // MARK: Saying the chord out loud
+
+    /// The symbols go up in Apple's order, which is not the order the
+    /// file was written in.
+    func testTheDisplaySymbolReadsTheWayAMenuReads() throws {
+        XCTAssertEqual(try parsed("cmd-n").displaySymbol, "⌘N")
+        XCTAssertEqual(try parsed("cmd-shift-v").displaySymbol, "⇧⌘V")
+        XCTAssertEqual(try parsed("cmd-alt-left").displaySymbol, "⌥⌘←")
+        XCTAssertEqual(try parsed("ctrl-alt-shift-cmd-a").displaySymbol, "⌃⌥⇧⌘A")
+    }
+
+    func testEveryNamedKeyHasSomethingToShow() throws {
+        for named in NamedKey.allCases {
+            XCTAssertFalse(
+                try parsed(named.rawValue).displaySymbol.isEmpty,
+                "\(named.rawValue) would render as nothing at all")
+        }
+        XCTAssertEqual(try parsed("escape").displaySymbol, "⎋")
     }
 
     func testAMenuEquivalentCarriesTheCharacterAndTheMask() throws {

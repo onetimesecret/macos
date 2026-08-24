@@ -168,11 +168,34 @@ public struct ResolvedKeymap: Sendable {
         bindings.first { $0.command == command && $0.useKeyEquivalents }?.keystroke
     }
 
+    /// The chord a tooltip may name for a command, whatever section it
+    /// came from.
+    ///
+    /// Deliberately not `menuKeystroke`. That one is gated on
+    /// `use_key_equivalents` because taking a menu equivalent is an
+    /// app-wide claim on a chord; saying "and you can also press this"
+    /// in a help string claims nothing and installs nothing. A file that
+    /// declined key equivalents still bound the chord, and a tooltip
+    /// that went quiet about it would be hiding something true.
+    ///
+    /// Nil means nothing is bound, and then the caller says only what
+    /// the button does. A button whose chord was unbound must not keep
+    /// advertising it.
+    public func hintKeystroke(for command: CommandID) -> Keystroke? {
+        bindings.first { $0.command == command }?.keystroke
+    }
+
     /// The faults worth telling someone about.
     public var faults: [KeymapDiagnostic] { diagnostics.filter(\.isFault) }
 }
 
 // MARK: - Reading, checking, merging
+
+/// Only here to name a class in this module for `Bundle(for:)`, which is
+/// how the module finds the bundle it was linked into. `LogoMark` keeps
+/// its own for the same job; neither is worth sharing, and a token that
+/// travels between files is a token someone moves by accident.
+private final class KeymapBundleToken {}
 
 public enum Keymap {
     /// The bundled default's name in the resources. The packaging
@@ -184,20 +207,45 @@ public enum Keymap {
     /// The schema version this build reads and writes.
     public static var schemaVersion: Int { KeymapFileReader.schemaVersion }
 
-    /// The bundled default's text, or nil if this build lost it.
+    /// Where the bundled default actually is, which differs by how the
+    /// code is running. Searched exactly the way `LogoMark` searches for
+    /// the logo, and for the same reason: `Bundle.module` is not used
+    /// here on purpose. SwiftPM's generated accessor looks for its
+    /// resource bundle beside `Bundle.main`, which for an assembled app
+    /// is the directory holding OnetimePad.app rather than anywhere
+    /// inside it, and when the lookup misses it calls `fatalError`.
     ///
-    /// `Bundle.main` first and `Bundle.module` second, the same order
-    /// and for the same reason as `LogoMark`: SwiftPM's generated
-    /// accessor looks for its resource bundle beside the executable,
-    /// which is right for `swift run` and for the test runner and wrong
-    /// for the assembled .app, where the packaging script has already
-    /// put the file in `Contents/Resources`.
-    public static func bundledDefaultText() -> String? {
-        let url = Bundle.main.url(
+    /// That matters more here than it does for an icon. The whole point
+    /// of `defaultKeymapMissing` is to survive a packaging script that
+    /// forgot to copy this file; reaching for `Bundle.module` to find
+    /// out would turn the diagnostic into a crash inside `PageModel`'s
+    /// initialiser, on the launch that most needs to keep going. A miss
+    /// returns nil, and the ladder above falls to the empty map.
+    static let defaultURL: URL? = {
+        // The shipped app, where scripts/package-app.sh puts the file.
+        if let url = Bundle.main.url(
             forResource: defaultResourceName, withExtension: defaultResourceExtension)
-            ?? Bundle.module.url(
+        {
+            return url
+        }
+        // `swift run` and `swift test`, where SwiftPM leaves the
+        // resource bundle beside the binary or beside the test bundle
+        // this module is linked into.
+        let home = Bundle(for: KeymapBundleToken.self).bundleURL
+        for directory in [home, home.deletingLastPathComponent()] {
+            let path = directory.appendingPathComponent("OnetimePad_CompanionKit.bundle").path
+            if let url = Bundle(path: path)?.url(
                 forResource: defaultResourceName, withExtension: defaultResourceExtension)
-        guard let url else { return nil }
+            {
+                return url
+            }
+        }
+        return nil
+    }()
+
+    /// The bundled default's text, or nil if this build lost it.
+    public static func bundledDefaultText() -> String? {
+        guard let url = defaultURL else { return nil }
         return try? String(contentsOf: url, encoding: .utf8)
     }
 
@@ -209,6 +257,16 @@ public enum Keymap {
     /// read as a file is reported and ignored, leaving the default in
     /// force, because a user whose keymap has a typo in it should lose
     /// their customisation and not their app.
+    ///
+    /// `previous` is the map that last resolved cleanly, and today no
+    /// shipping call site passes one: the map is resolved once, in
+    /// `PageModel`'s initialiser, and nothing reloads it afterwards, so
+    /// at launch there is nothing to fall back to and the fallback is
+    /// the empty map. The parameter is kept because the day the file is
+    /// watched and re-read is the day a bad save must not cost the user
+    /// the keyboard they had a second ago, and the rule is easier to
+    /// keep true from the start than to retrofit. Only the tests
+    /// exercise the rung.
     public static func load(
         userOverride: URL?,
         previous: ResolvedKeymap? = nil
@@ -249,6 +307,9 @@ public enum Keymap {
     /// - The override is refused whole: the default stands alone.
     /// - Either file is merely wrong in places: the good bindings are
     ///   kept and each bad one is reported.
+    ///
+    /// The first rule is the one with no live caller behind it yet: see
+    /// `load` for why `previous` is here and why only tests reach it.
     public static func resolve(
         defaultText: String?,
         overrideText: String?,
@@ -279,6 +340,10 @@ public enum Keymap {
         return validate(sources: sources, carrying: diagnostics)
     }
 
+    /// The last map that resolved cleanly, carrying the new complaint in
+    /// front of the old ones. With no previous map, which is every
+    /// shipping launch today, this is the empty map plus the reason it
+    /// is empty.
     private static func fallback(
         to previous: ResolvedKeymap?, with diagnostics: [KeymapDiagnostic]
     ) -> ResolvedKeymap {

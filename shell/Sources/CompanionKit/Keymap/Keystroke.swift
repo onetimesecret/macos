@@ -135,19 +135,27 @@ public struct Keystroke: Hashable, Sendable {
     ///
     /// The last segment is the key and everything before it is a
     /// modifier, with one wrinkle worth stating: the key may itself be
-    /// a hyphen, as in `cmd--`, which splits into an empty final
-    /// segment. An empty tail is therefore read as the hyphen key
-    /// rather than rejected.
+    /// a hyphen, as in `cmd--`, which splits into two empty final
+    /// segments, one for the separator and one for the key.
+    ///
+    /// It is the pair that says so, and only the pair. A single empty
+    /// tail is `cmd-`, a spelling that names a modifier and then stops,
+    /// and reading that as the hyphen key would be worse than useless:
+    /// it would eat the modifier the author did write and bind bare
+    /// minus, so a typo in an override would put a command under an
+    /// ordinary character someone types into a page. A lone empty tail
+    /// falls through to the unknown-key refusal instead, which costs the
+    /// author one line and tells them which.
     public static func parse(_ text: String) -> Result<Keystroke, ParseFailure> {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return .failure(.empty) }
 
         var segments = trimmed.split(separator: "-", omittingEmptySubsequences: false)
             .map(String.init)
-        // A trailing empty segment is the hyphen key wearing a
+        // Two empty segments in a row are the hyphen key wearing a
         // separator's clothes: `cmd--` is command plus minus.
         var keyToken = segments.removeLast()
-        if keyToken.isEmpty, !segments.isEmpty {
+        if keyToken.isEmpty, segments.last?.isEmpty == true {
             keyToken = "-"
             segments.removeLast()
         }
@@ -184,6 +192,57 @@ public struct Keystroke: Hashable, Sendable {
         case .named(let named): words.append(named.rawValue)
         }
         return words.joined(separator: "-")
+    }
+
+    /// The chord as a person reads it: ⌘N, ⇧⌘V, ⌥⌘←.
+    ///
+    /// For tooltips and button labels, which is the one place the app
+    /// tells someone what to press without the frameworks doing the
+    /// telling. A menu item gets its chord from AppKit and never needs
+    /// this; a `help` string has no such machinery behind it, and the
+    /// alternative to rendering the resolved chord is spelling one into
+    /// the view, which is how a tooltip comes to advertise a key that
+    /// the keymap moved.
+    ///
+    /// The modifier order is Apple's own, which is not the canonical
+    /// order: a keymap file reads left to right in the order the words
+    /// were typed, and a chord on screen reads in the order the symbols
+    /// have sat in every macOS menu for thirty years.
+    public var displaySymbol: String {
+        var symbols = ""
+        if modifiers.contains(.control) { symbols += "⌃" }
+        if modifiers.contains(.option) { symbols += "⌥" }
+        if modifiers.contains(.shift) { symbols += "⇧" }
+        if modifiers.contains(.command) { symbols += "⌘" }
+        switch key {
+        case .character(let character): symbols += String(character).uppercased()
+        case .named(let named): symbols += named.displaySymbol
+        }
+        return symbols
+    }
+}
+
+extension NamedKey {
+    /// The glyph a menu would show for this key. The four that have no
+    /// settled glyph are spelled out, because a made-up symbol teaches
+    /// nobody anything.
+    var displaySymbol: String {
+        switch self {
+        case .escape: return "⎋"
+        case .enter: return "↩"
+        case .tab: return "⇥"
+        case .space: return "␣"
+        case .backspace: return "⌫"
+        case .delete: return "⌦"
+        case .up: return "↑"
+        case .down: return "↓"
+        case .left: return "←"
+        case .right: return "→"
+        case .home: return "↖"
+        case .end: return "↘"
+        case .pageup: return "⇞"
+        case .pagedown: return "⇟"
+        }
     }
 }
 
