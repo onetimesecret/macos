@@ -140,15 +140,17 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // occlusion because a window that claims every Space keeps its
         // membership across the switch and need not change occlusion
         // state for the card to stop being composited. The reading is
-        // taken a turn later: the switch is still settling at the moment
-        // the notification arrives, and the window server's answer
-        // during the transition describes the Space being left.
+        // taken a turn later, and then once more when the transition is
+        // certainly over: the switch is still settling at the moment the
+        // notification arrives, the window server's answer during it
+        // describes the Space being left, and a gate closed on that
+        // answer would have no later edge to reopen it.
         spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refreshMouseGate(from: .edge) }
+            Task { @MainActor in self?.refreshMouseGateAcrossSpaceSwitch() }
         }
     }
 
@@ -362,6 +364,32 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// applied.
     private func refreshMouseGate(from turn: SurfaceExposure.Turn) {
         applyMouseGate(stance: model.stance, pinned: model.pinned, from: turn)
+    }
+
+    /// The Space switch read twice, promptly and then once it has
+    /// settled (`SurfaceExposure.spaceSettleReads`).
+    ///
+    /// A single reading taken from the notification lands
+    /// mid-transition, where the server is still describing the desktop
+    /// the user has left, and it can close the gate on a card that is
+    /// perfectly visible. Nothing would reopen it. The window claims
+    /// every Space, so its occlusion need not change when the desktop
+    /// does, and the gate would stay shut for as long as the app runs:
+    /// a card the user can see, refusing every click, with no way to
+    /// tell that from the pin having quietly failed. The schedule is
+    /// what guarantees a settled answer always follows the transient
+    /// one, and the settled answer is the last word.
+    private func refreshMouseGateAcrossSpaceSwitch() {
+        for delay in SurfaceExposure.spaceSettleReads {
+            guard delay > 0 else {
+                refreshMouseGate(from: .edge)
+                continue
+            }
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                self?.refreshMouseGate(from: .edge)
+            }
+        }
     }
 
     // MARK: Resting on an outside click

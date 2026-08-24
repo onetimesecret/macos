@@ -139,6 +139,24 @@ final class SurfaceExposureTests: XCTestCase {
         XCTAssertTrue(SurfaceExposure.writes(gate: true, from: .edge, isKey: true))
     }
 
+    // MARK: The Space switch's re-readings
+
+    func testTheSpaceSwitchIsReadPromptlyAndThenAgainOnceSettled() {
+        // One reading is not enough. The notification arrives
+        // mid-transition, where the server's answer describes the Space
+        // being left, and a gate closed on that answer has no later edge
+        // to reopen it: a window on every Space need not change its
+        // occlusion because the user changed desktop.
+        let reads = SurfaceExposure.spaceSettleReads
+        XCTAssertEqual(reads.first, 0, "the prompt reading takes clicks off an absent card at once")
+        XCTAssertGreaterThan(reads.count, 1, "a settled reading must follow the transient one")
+        XCTAssertGreaterThanOrEqual(
+            reads.last ?? 0, 0.5,
+            "the last reading has to fall after the transition, animation included"
+        )
+        XCTAssertEqual(reads, reads.sorted(), "the settled reading is the last word")
+    }
+
     func testAStanceOutOfSightIsAlwaysTransparent() {
         // The invariant the cases above are instances of: out of sight
         // is transparent, in every posture and either pin state.

@@ -102,6 +102,25 @@ struct SurfaceExposure: Equatable {
         guard ignores, turn == .settling else { return true }
         return !isKey
     }
+
+    /// When to re-read exposure after the active Space changes, as
+    /// offsets in seconds from the notification.
+    ///
+    /// The notification arrives while the switch is still in flight, and
+    /// the answer the window server gives during a transition describes
+    /// the Space being left. One reading is therefore not enough. If the
+    /// transient answer closes the gate on a card that is in fact
+    /// present, nothing afterwards has to change for it to stay shut: a
+    /// window that claims every Space keeps its membership across the
+    /// switch and need not alter its occlusion because the user changed
+    /// desktop, so no later edge arrives. The reopening has to be
+    /// scheduled rather than waited for.
+    ///
+    /// The first reading is prompt, so a card that really has gone out
+    /// of sight stops taking clicks at once. The last falls after the
+    /// transition, animation included, is certainly over, and it is the
+    /// one that decides.
+    static let spaceSettleReads: [TimeInterval] = [0, 0.9]
 }
 
 extension BackdropStance {
