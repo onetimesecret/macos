@@ -265,7 +265,8 @@ public struct ConnectionSettingsView: View {
 
     /// The clear is in memory core-side, so the model marks the store
     /// dirty and the debounced write is what puts an empty ledger over
-    /// the file. Nothing is reported back: an empty ⌘0 is the receipt.
+    /// the file. Nothing is reported back: an empty ledger is the
+    /// receipt.
     private func clearLedger() {
         model.clearLedger()
     }

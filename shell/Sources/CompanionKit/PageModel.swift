@@ -254,7 +254,7 @@ public final class PageModel: ObservableObject {
     /// Nil only when no tabs exist.
     @Published public var selection: UInt64?
 
-    /// The ledger tab (⌘0) is showing instead of a page.
+    /// The ledger tab is showing instead of a page.
     @Published public var showingLedger = false
 
     /// The audit trail, newest first: refreshed on every `refresh()` and
@@ -1426,7 +1426,9 @@ public final class PageModel: ObservableObject {
         return min(max(current + delta, 0), count - 1)
     }
 
-    /// ⌘0: the ledger.
+    /// `ledger::Show`: open the ledger. Which chord reaches it, if
+    /// any, is the keymap's business; the bundled default names none
+    /// while the ledger's entry points are hidden (issue #78).
     public func showLedger() {
         ledgerEntries = client.ledger()
         showingLedger = true

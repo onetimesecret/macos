@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The ledger (⌘0): the audit trail, one line per event. Every record is
+/// The ledger: the audit trail, one line per event. Every record is
 /// metadata and nothing else: what happened, to which item, under which
 /// page title, how big it was, and where it went. There is no ink here,
 /// no excerpt and no tombstone, so this view has no path that could
