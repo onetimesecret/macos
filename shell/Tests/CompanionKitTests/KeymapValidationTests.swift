@@ -96,6 +96,44 @@ final class KeymapValidationTests: XCTestCase {
             keymap.diagnostics, [.fileRejected(.bundledDefault, .unsupportedSchemaVersion(99))])
     }
 
+    /// A version that is not a number is refused as what it is. The old
+    /// reading reported it as version -1, which is a version no file has
+    /// ever declared and no author could act on.
+    func testAVersionWrittenAsTextIsRefusedForBeingText() {
+        let keymap = resolve(
+            """
+            [
+              { "schema_version": "1" },
+              { "context": "Editor", "bindings": { "cmd-alt-n": "page::New" } }
+            ]
+            """)
+        XCTAssertTrue(keymap.bindings.isEmpty)
+        XCTAssertEqual(
+            keymap.diagnostics,
+            [.fileRejected(.bundledDefault, .schemaVersionNotAWholeNumber("text"))])
+        XCTAssertEqual(
+            keymap.diagnostics.first?.summary,
+            "the bundled default keymap was refused whole: its schema version is text rather "
+                + "than a whole number, and this build reads version 1")
+    }
+
+    /// JSON's `true` arrives as an `NSNumber` that bridges to 1, so a
+    /// bare `as? Int` read this file as declaring version 1 and accepted
+    /// it.
+    func testAVersionWrittenAsABooleanIsNotReadAsVersionOne() {
+        let keymap = resolve(
+            """
+            [
+              { "schema_version": true },
+              { "context": "Editor", "bindings": { "cmd-alt-n": "page::New" } }
+            ]
+            """)
+        XCTAssertTrue(keymap.bindings.isEmpty)
+        XCTAssertEqual(
+            keymap.diagnostics,
+            [.fileRejected(.bundledDefault, .schemaVersionNotAWholeNumber("true or false"))])
+    }
+
     func testTwoVersionsInOneFileAreRefused() {
         let keymap = resolve("[{ \"schema_version\": 1 }, { \"schema_version\": 1 }]")
         XCTAssertEqual(
@@ -123,6 +161,30 @@ final class KeymapValidationTests: XCTestCase {
             keymap.faults,
             [.malformedKeystroke(.bundledDefault, keystroke: "cmd-nope", failure: .unknownKey("nope"))]
         )
+    }
+
+    /// A chord that would fire on one surface and not the other is
+    /// refused where every other unhonourable spelling is, and the line
+    /// beside it survives.
+    func testAShiftedNonLetterCostsOnlyItself() {
+        let keymap = resolve(
+            """
+            [{ "context": "Editor", "bindings": {
+              "cmd-shift-1": "page::New",
+              "cmd-w": "page::Close"
+            } }]
+            """)
+        XCTAssertEqual(keymap.bindings.map(\.command), [.pageClose])
+        XCTAssertEqual(
+            keymap.faults,
+            [
+                .malformedKeystroke(
+                    .bundledDefault, keystroke: "cmd-shift-1", failure: .shiftedNonLetter("1"))
+            ])
+        XCTAssertEqual(
+            keymap.faults.first?.summary,
+            "the bundled default keymap binds \"cmd-shift-1\", which is not a keystroke: "
+                + "shift can only be held over a letter, and \"1\" is not one")
     }
 
     func testACommandThisBuildCannotRunIsRefused() {
@@ -213,6 +275,37 @@ final class KeymapValidationTests: XCTestCase {
         XCTAssertEqual(keymap.command(for: try parse("ctrl-n"), in: .editor), .pageNew)
     }
 
+    /// A section may advertise its chords in a menu, and a later
+    /// section that says the same thing about the same chord is not a
+    /// withdrawal. Restating a default line to keep it in sight beside
+    /// your own edits must not cost Settings its menu equivalent.
+    func testRestatingAChordDoesNotWithdrawItsMenuEquivalent() {
+        let keymap = Keymap.resolve(
+            defaultText: """
+                [{ "context": "Editor", "use_key_equivalents": true,
+                   "bindings": { "cmd-,": "app::Settings" } }]
+                """,
+            overrideText: """
+                [{ "context": "Editor", "bindings": { "cmd-,": "app::Settings" } }]
+                """)
+        XCTAssertEqual(keymap.faults, [])
+        XCTAssertEqual(keymap.menuKeystroke(for: .appSettings)?.canonical, "cmd-,")
+    }
+
+    /// The other direction: a section that does ask for equivalents
+    /// grants one to a chord that had none.
+    func testAnOverrideCanGrantAMenuEquivalentToAChordThatHadNone() {
+        let keymap = Keymap.resolve(
+            defaultText: """
+                [{ "context": "Editor", "bindings": { "cmd-,": "app::Settings" } }]
+                """,
+            overrideText: """
+                [{ "context": "Editor", "use_key_equivalents": true,
+                   "bindings": { "cmd-,": "app::Settings" } }]
+                """)
+        XCTAssertEqual(keymap.menuKeystroke(for: .appSettings)?.canonical, "cmd-,")
+    }
+
     /// Null is Zed's unbinding, and it has to work, or a user cannot
     /// take back a chord the app claimed.
     func testNullTakesAChordAway() {
@@ -223,6 +316,31 @@ final class KeymapValidationTests: XCTestCase {
                 """)
         XCTAssertTrue(keymap.bindings.isEmpty)
         XCTAssertEqual(keymap.faults, [])
+    }
+
+    /// An unbinding settles the chord as surely as a command does, so a
+    /// second spelling of it in the same section is the same mistake as
+    /// any other duplicate. Reported rather than resolved in silence by
+    /// whichever spelling sorted first.
+    func testAnUnbindingAndABindingOfOneChordInOneSectionAreADuplicate() {
+        let keymap = Keymap.resolve(
+            defaultText: simpleDefault,
+            overrideText: """
+                [{ "context": "Editor", "bindings": {
+                  "alt-cmd-n": null,
+                  "cmd-alt-n": "page::New"
+                } }]
+                """)
+        XCTAssertTrue(keymap.bindings.isEmpty)
+        XCTAssertEqual(
+            keymap.faults,
+            [
+                .duplicateBinding(
+                    .userOverride, keystroke: "cmd-alt-n", kept: nil, dropped: .pageNew)
+            ])
+        XCTAssertEqual(
+            keymap.faults.first?.summary,
+            "your keymap settles \"cmd-alt-n\" twice; kept the unbinding, dropped page::New")
     }
 
     func testAnUnbindingThatHitsNothingIsReported() {

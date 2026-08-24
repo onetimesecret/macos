@@ -29,7 +29,8 @@ array of sections:
 - **`schema_version`** is optional and belongs to the first entry. A
   file that says nothing is read as version 1. A version this build
   does not know gets the file refused whole, which is what the field is
-  for.
+  for. It has to be a whole number: `"1"` and `true` are refused as text
+  and as a boolean rather than coerced into a version.
 - **`context`** is the surface: `Editor`, `TabStrip` or `Ledger`. Only
   `Editor` is consulted today; a binding in either of the others is
   read, reported as inert, and does nothing until some surface starts
@@ -50,6 +51,14 @@ order, then one key: a single character, or one of `escape`, `enter`,
 capital letter. Function keys and `fn` are refused, because SwiftUI has
 no way to install them and a binding that validates and then never
 fires is the failure this layer exists to prevent.
+
+Shift is refused over anything but a letter, for that same reason.
+`cmd-shift-v` is fine; `cmd-shift-1` and `cmd-shift-,` are not. A key
+event reports its unmodified characters with shift already applied, so
+the page would see `!` where the file wrote `1` and never match, while
+the surface's hidden buttons would install the chord and fire it: one
+spelling, two surfaces, two answers. Shift over a named key (`cmd-shift-left`)
+is fine, because named keys are matched by their place on the board.
 
 Command ids are the enum in `Keymap/CommandID.swift`. Only commands
 this build implements are bindable; an id nothing implements is
@@ -80,7 +89,8 @@ Two levels, and the difference matters:
 
 - **Wrong about one line**: an unparseable keystroke, an unknown
   command id, a context that does not exist, or two spellings of one
-  chord in a single section. That line is dropped, the rest of the file
+  chord in a single section, whether the second one binds it or is a
+  `null` taking it away. That line is dropped, the rest of the file
   stands, and the complaint goes to the unified log under the `keymap`
   category.
 - **Wrong about the file**: not JSON, not an array, a section that is

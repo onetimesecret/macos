@@ -44,8 +44,10 @@ public enum KeymapDiagnostic: Equatable, Sendable {
     case unknownContext(KeymapSource, context: String)
     /// Two spellings of the same chord in one section. The first by
     /// sorted order is kept so the outcome does not depend on the order
-    /// a dictionary happened to hash into.
-    case duplicateBinding(KeymapSource, keystroke: String, kept: CommandID, dropped: CommandID)
+    /// a dictionary happened to hash into. A nil is that section's
+    /// unbinding of the chord, which settles it as surely as a command
+    /// does.
+    case duplicateBinding(KeymapSource, keystroke: String, kept: CommandID?, dropped: CommandID?)
     /// A later section took a chord an earlier one had. Expected when
     /// an override reassigns a default binding, which is the whole
     /// point of overrides, and suspicious within one file.
@@ -70,7 +72,7 @@ public enum KeymapDiagnostic: Equatable, Sendable {
         case .unknownContext(let source, let context):
             return "\(source.rawValue) names the surface \"\(context)\", which does not exist"
         case .duplicateBinding(let source, let keystroke, let kept, let dropped):
-            return "\(source.rawValue) binds \"\(keystroke)\" twice; kept \(kept.rawValue), dropped \(dropped.rawValue)"
+            return "\(source.rawValue) settles \"\(keystroke)\" twice; kept \(Self.name(kept)), dropped \(Self.name(dropped))"
         case .reboundKeystroke(let source, let keystroke, let from, let to):
             return "\(source.rawValue) moves \"\(keystroke)\" from \(from.rawValue) to \(to.rawValue)"
         case .unbindsNothing(let source, let keystroke):
@@ -78,6 +80,12 @@ public enum KeymapDiagnostic: Equatable, Sendable {
         case .contextNotConsulted(let source, let context, let keystroke):
             return "\(source.rawValue) binds \"\(keystroke)\" in \(context.rawValue), which no surface consults yet, so it will not fire"
         }
+    }
+
+    /// What one side of a duplicate is called in a line someone reads:
+    /// a command id, or the unbinding a null spells.
+    private static func name(_ command: CommandID?) -> String {
+        command?.rawValue ?? "the unbinding"
     }
 
     /// Whether this one cost the user a binding they asked for. The
@@ -102,6 +110,8 @@ extension KeymapFileFailure {
         case .contextNotAString(let index): return "the context of entry \(index) is not a string"
         case .unsupportedSchemaVersion(let version):
             return "it declares schema version \(version), and this build reads version \(KeymapFileReader.schemaVersion)"
+        case .schemaVersionNotAWholeNumber(let found):
+            return "its schema version is \(found) rather than a whole number, and this build reads version \(KeymapFileReader.schemaVersion)"
         case .repeatedSchemaVersion: return "it declares a schema version more than once"
         }
     }
@@ -114,6 +124,8 @@ extension Keystroke.ParseFailure {
         case .unknownModifier(let word): return "\"\(word)\" is not a modifier"
         case .repeatedModifier(let word): return "\"\(word)\" is named twice"
         case .unknownKey(let key): return "\"\(key)\" is not a key this build can bind"
+        case .shiftedNonLetter(let key):
+            return "shift can only be held over a letter, and \"\(key)\" is not one"
         }
     }
 }
@@ -379,8 +391,10 @@ public enum Keymap {
                 // Within one section a chord is settled once, and by
                 // whichever spelling sorts first, so two spellings of
                 // the same chord cannot each win in a different context
-                // and leave the surfaces disagreeing.
-                var settledInSection: [Keystroke: CommandID] = [:]
+                // and leave the surfaces disagreeing. A null settles a
+                // chord too: nil here is an unbinding this section
+                // already performed, not an absence.
+                var settledInSection: [Keystroke: CommandID?] = [:]
 
                 for binding in section.bindings {
                     let keystroke: Keystroke
@@ -394,24 +408,18 @@ public enum Keymap {
                         continue
                     }
 
-                    guard let commandText = binding.command else {
-                        var unbound = false
-                        for context in contexts where table[context]?[keystroke] != nil {
-                            table[context]?[keystroke] = nil
-                            unbound = true
-                        }
-                        if !unbound {
+                    // Read before the chord is settled, so an id nothing
+                    // implements is reported as the one thing wrong with
+                    // the line rather than as half of a duplicate.
+                    var command: CommandID?
+                    if let commandText = binding.command {
+                        guard let known = CommandID(rawValue: commandText) else {
                             diagnostics.append(
-                                .unbindsNothing(source, keystroke: binding.keystroke))
+                                .unknownCommand(
+                                    source, keystroke: binding.keystroke, command: commandText))
+                            continue
                         }
-                        continue
-                    }
-
-                    guard let command = CommandID(rawValue: commandText) else {
-                        diagnostics.append(
-                            .unknownCommand(
-                                source, keystroke: binding.keystroke, command: commandText))
-                        continue
+                        command = known
                     }
 
                     if let kept = settledInSection[keystroke] {
@@ -426,15 +434,41 @@ public enum Keymap {
                     }
                     settledInSection[keystroke] = command
 
-                    for context in contexts {
-                        if let existing = table[context]?[keystroke], existing.command != command {
+                    guard let command else {
+                        var unbound = false
+                        for context in contexts where table[context]?[keystroke] != nil {
+                            table[context]?[keystroke] = nil
+                            unbound = true
+                        }
+                        if !unbound {
                             diagnostics.append(
-                                .reboundKeystroke(
-                                    source,
-                                    keystroke: keystroke.canonical,
-                                    from: existing.command,
-                                    to: command
-                                ))
+                                .unbindsNothing(source, keystroke: binding.keystroke))
+                        }
+                        continue
+                    }
+
+                    for context in contexts {
+                        // A section that restates a chord already
+                        // pointed at this command changes nothing, and
+                        // must take nothing away either: an override
+                        // repeating a default line, to keep it in sight
+                        // beside its own edits, cannot be read as
+                        // withdrawing the menu equivalent the default
+                        // granted. A section that asks for equivalents
+                        // can still add one to a chord that had none.
+                        var useKeyEquivalents = section.useKeyEquivalents
+                        if let existing = table[context]?[keystroke] {
+                            if existing.command == command {
+                                useKeyEquivalents = useKeyEquivalents || existing.useKeyEquivalents
+                            } else {
+                                diagnostics.append(
+                                    .reboundKeystroke(
+                                        source,
+                                        keystroke: keystroke.canonical,
+                                        from: existing.command,
+                                        to: command
+                                    ))
+                            }
                         }
                         if !context.isConsulted {
                             diagnostics.append(
@@ -445,7 +479,7 @@ public enum Keymap {
                             context: context,
                             keystroke: keystroke,
                             command: command,
-                            useKeyEquivalents: section.useKeyEquivalents
+                            useKeyEquivalents: useKeyEquivalents
                         )
                     }
                 }

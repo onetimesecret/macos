@@ -189,9 +189,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             let settingsItem = menu.addItem(
                 withTitle: "Settings…",
                 action: #selector(openSettings),
-                keyEquivalent: settingsKeystroke?.menuKeyEquivalent ?? ","
+                keyEquivalent: settingsKeystroke?.menuKeyEquivalent ?? ""
             )
-            settingsItem.keyEquivalentModifierMask = settingsKeystroke?.menuModifierMask ?? .command
+            settingsItem.keyEquivalentModifierMask = settingsKeystroke?.menuModifierMask ?? []
             settingsItem.target = self
             menu.addItem(.separator())
             menu.addItem(
@@ -228,13 +228,21 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         model.pages.keymap.menuKeystroke(for: .appSettings)
     }
 
-    /// The same chord for the SwiftUI command group, falling back to
-    /// the macOS convention when the keymap has nothing to say: the
-    /// menu bar's Settings item is how a person reaches Settings when
-    /// the card is not up, so it keeps a chord even if the keymap could
-    /// not be read at all.
-    var settingsShortcut: KeyboardShortcut {
-        settingsKeystroke?.keyboardShortcut ?? KeyboardShortcut(",", modifiers: .command)
+    /// The same chord for the SwiftUI command group, and nil for the
+    /// same reason: a main-menu shortcut is the app-wide half of the
+    /// claim, so restoring ⌘, here would hand back most of what the
+    /// unbinding took away. Both menu items stay, and stay clickable;
+    /// what a nil costs is the chord, which is what was asked for.
+    ///
+    /// The keymap has nothing to say only when the file took the
+    /// binding away or moved it into a section that does not advertise
+    /// chords. An override that cannot be read leaves the bundled
+    /// default standing, and the bundled default binds ⌘, in a section
+    /// that does; a bundled default this build lost binds nothing at
+    /// all, and quietly keeping one chord out of the twenty would be
+    /// the surprise, not the honesty.
+    var settingsShortcut: KeyboardShortcut? {
+        settingsKeystroke?.keyboardShortcut
     }
 
     /// The Settings window, from the menu bar's ⌘, or either of the

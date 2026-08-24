@@ -121,6 +121,30 @@ final class KeystrokeParsingTests: XCTestCase {
         XCTAssertEqual(try failure("f5"), .unknownKey("f5"))
     }
 
+    /// Shift over a non-letter would fire on the surface and never on
+    /// the page, because an event reports its unmodified characters
+    /// with shift already applied: the page sees `!` where the file
+    /// wrote `1`. One spelling that means two things is the failure
+    /// this parser exists to refuse, so it does.
+    func testShiftOverANonLetterIsRefused() throws {
+        XCTAssertEqual(try failure("cmd-shift-1"), .shiftedNonLetter("1"))
+        XCTAssertEqual(try failure("cmd-shift-,"), .shiftedNonLetter(","))
+        XCTAssertEqual(try failure("shift--"), .shiftedNonLetter("-"))
+    }
+
+    /// The case lower-casing does rescue, and the one the bundled
+    /// default ships.
+    func testShiftOverALetterStillParses() throws {
+        XCTAssertEqual(try parsed("cmd-shift-a").key, .character("a"))
+        XCTAssertEqual(try parsed("cmd-shift-a").modifiers, [.command, .shift])
+    }
+
+    /// Named keys are matched by position, which shift does not move,
+    /// so they stay bindable with it.
+    func testShiftOverANamedKeyStillParses() throws {
+        XCTAssertEqual(try parsed("cmd-shift-left").key, .named(.left))
+    }
+
     // MARK: Recognising a real keystroke
 
     /// A shifted letter arrives as a capital, and the chord that bound
