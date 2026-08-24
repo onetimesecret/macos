@@ -66,11 +66,33 @@ if [[ ! -d bindings/CompanionCore.xcframework ]]; then
   exit 1
 fi
 
-# The bundle version is stamped from the same source companion_version()
-# is baked from. Same source, not same build: a stale xcframework keeps
-# the old string until build-core.sh reruns.
-VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/ffi/Cargo.toml | head -n1)"
+# The app's marketing version is the product's own number and it lives
+# in shell/OnetimePad-Info.plist, edited by hand when user visible work
+# lands (issue #89). It used to be read from crates/ffi/Cargo.toml,
+# which told the user about the Rust seam rather than about the app.
+# The core's version is still worth printing here, because it is the
+# other half of what a packager is shipping, so both are read and both
+# are echoed at the assembly line below. The plist is copied into the
+# bundle whole, so CFBundleShortVersionString needs no stamping; only
+# CFBundleVersion does.
+VERSION="$(plutil -extract CFBundleShortVersionString raw shell/OnetimePad-Info.plist 2>/dev/null || true)"
 if [[ -z "$VERSION" ]]; then
+  echo "could not read CFBundleShortVersionString from shell/OnetimePad-Info.plist" >&2
+  exit 1
+fi
+# The placeholder is the shape the file had before it held a real
+# number, and shipping it would put 0.0.0 in About and in the tray.
+if [[ "$VERSION" == "0.0.0" ]]; then
+  echo "shell/OnetimePad-Info.plist still holds the 0.0.0 placeholder." >&2
+  echo "Set CFBundleShortVersionString there to the version this build ships." >&2
+  exit 1
+fi
+# Read, not stamped: the core answers for itself at runtime through
+# companion_version(), and a stale xcframework keeps the old string
+# until build-core.sh reruns, so this is what Cargo says today rather
+# than what the linked library will say.
+CORE_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/ffi/Cargo.toml | head -n1)"
+if [[ -z "$CORE_VERSION" ]]; then
   echo "could not read version from crates/ffi/Cargo.toml" >&2
   exit 1
 fi
@@ -103,7 +125,7 @@ if [[ "$CONFIG" == "release" ]]; then
 fi
 
 APP=dist/OnetimePad.app
-echo "==> Assembling $APP ($VERSION, $CONFIG)"
+echo "==> Assembling $APP (app $VERSION, core $CORE_VERSION, $CONFIG)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/OnetimePad"
@@ -132,7 +154,6 @@ if [[ -z "$ICON" ]]; then
 fi
 echo "==> App icon: $ICON"
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
-plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
 
 # Dogfood builds carry the commit in CFBundleVersion so "which build am
