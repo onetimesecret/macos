@@ -255,6 +255,18 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// Watch for a click landing anywhere that is not this app, and
     /// rest the surface when one does.
     ///
+    /// "Outside" means outside everything this app puts on screen, and
+    /// the card's own window is only part of that. Menus are the rest:
+    /// they track in windows the window server owns, so a press on our
+    /// menu bar, on the status item's menu, or on a chip's context menu
+    /// reaches this monitor indistinguishable from a click into another
+    /// application. Those presses are not outside anything, and resting
+    /// on them tore down the menu the user had just opened (issue #41),
+    /// so they are excluded here by the intervals `MenuTracking` keeps.
+    /// Our ordinary windows, Settings and About, are outside by this
+    /// rule and rest the card, which is the older behaviour left
+    /// standing.
+    ///
     /// A *global* monitor deliberately: it observes the press and
     /// consumes nothing, so the click goes on to the window it was
     /// aimed at and macOS activates that app in the ordinary way. The
@@ -272,7 +284,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         guard outsideClickMonitor == nil else { return }
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        ) { [weak self] _ in
+        ) { [weak self] event in
+            // The moment of the press, carried out of the closure on
+            // its own: NSEvent is not Sendable, and the timestamp is
+            // the only thing the decision needs. It shares its base
+            // with `ProcessInfo.processInfo.systemUptime`, which is how
+            // it can be compared against the menu tracking intervals.
+            let pressedAt = event.timestamp
             // Hopped to a later turn deliberately, not merely to reach
             // the main actor: the clicked app's activation and our own
             // resign-key are still in flight when this fires, and
@@ -281,7 +299,15 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // stale key status and pull the keyboard back out of the
             // app the user just chose, which is the very fault this
             // whole change exists to remove.
-            Task { @MainActor in self?.model.rest() }
+            Task { @MainActor in
+                guard let self else { return }
+                // A menu of ours had the press, so nothing to dismiss.
+                // Judged by the press's own timestamp rather than by
+                // whether a menu is up now, because this turn may well
+                // be the one the menu's nested loop finally released.
+                guard !self.menuTracking.claims(press: pressedAt) else { return }
+                self.model.rest()
+            }
         }
     }
 
@@ -295,6 +321,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     // is nonisolated even on a @MainActor class, and the monitor token
     // is not Sendable. Every other touch is on the main actor.
     private nonisolated(unsafe) var outsideClickMonitor: Any?
+
+    /// What the app's own menus were doing, and when. It watches for
+    /// the life of the controller rather than only while raised: two
+    /// notifications cost nothing, and a session that began before the
+    /// raise is exactly the kind of thing a press then has to be
+    /// judged against.
+    private let menuTracking = MenuTrackingWatch()
 
     /// The surface's mechanics in the unified log — stance, level,
     /// visibility, frame; never content. Watch with:
