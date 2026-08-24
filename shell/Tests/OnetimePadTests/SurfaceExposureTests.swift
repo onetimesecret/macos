@@ -188,6 +188,25 @@ final class SurfaceExposureTests: XCTestCase {
         )
     }
 
+    // MARK: The raise's own re-reading
+
+    func testTheRaiseSchedulesAReadingThatCanCloseTheGateOnItself() {
+        // A card raised while it was already wholly covered reads
+        // occluded before the raise and occluded after it, so no
+        // occlusion change is posted and no edge arrives. The settling
+        // turn the raise takes may not close the gate on a keyed window,
+        // which leaves this reading as the only thing that ever can.
+        let read = SurfaceExposure.raiseSettleRead
+        XCTAssertGreaterThanOrEqual(
+            read.delay, 0.5, "the reading has to fall after the raise has landed"
+        )
+        XCTAssertEqual(read.turn, .edge)
+        XCTAssertTrue(
+            SurfaceExposure.writes(gate: true, from: read.turn, isKey: true),
+            "an occluded keyed card must end up refusing the mouse, not merely start out doing so"
+        )
+    }
+
     func testAStanceOutOfSightIsAlwaysTransparent() {
         // The invariant the cases above are instances of: out of sight
         // is transparent, in every posture and either pin state.

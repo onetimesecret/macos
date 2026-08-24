@@ -272,6 +272,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // one route that activates first; the raise is then its
             // consequence, not its cause.)
             panel.makeKeyAndOrderFront(nil)
+            // And a reading late enough to speak for the raise. The
+            // settling turn scheduled below may open the gate but never
+            // close it over a keyed window, and a card raised while it
+            // was already wholly covered posts no occlusion change
+            // afterwards, so without this one nothing would ever shut
+            // the gate on a keyed surface the user cannot see.
+            scheduleMouseGateRead(SurfaceExposure.raiseSettleRead)
         case .resting:
             stopWatchingForOutsideClicks()
             panel.makeFirstResponder(nil)

@@ -103,8 +103,11 @@ struct SurfaceExposure: Equatable {
     /// to the application underneath, whereupon the outside click
     /// monitor rests the card and the raise has undone itself. The
     /// window being key is what says the card is meant to be in front,
-    /// and the notification edges will close the gate a moment later if
-    /// it truly is not.
+    /// and `raiseSettleRead` is what closes the gate a moment later if
+    /// it truly is not. Waiting for a notification edge instead would
+    /// not do: a card raised while it was already buried reads as
+    /// occluded before the raise and occluded after it, and a state that
+    /// never changes posts no change.
     static func writes(
         gate ignores: Bool, from turn: Turn, isKey: Bool
     ) -> Bool {
@@ -151,6 +154,19 @@ struct SurfaceExposure: Equatable {
         SettleRead(delay: 0, turn: .settling),
         SettleRead(delay: settledDelay, turn: .edge),
     ]
+
+    /// The reading a raise schedules for itself.
+    ///
+    /// The settling turn a raise already takes may open the gate but not
+    /// close it on a keyed window, and for a card raised while it was
+    /// already wholly covered that is the end of the matter: occlusion
+    /// read occluded before the raise and reads occluded after it, so no
+    /// change is posted and no edge ever arrives to correct the gate
+    /// held open. A keyed surface the user cannot see would go on taking
+    /// clicks for as long as the raise lasted. This reading is late
+    /// enough to speak for the raise itself and carries the authority
+    /// the settling turn lacks.
+    static let raiseSettleRead = SettleRead(delay: settledDelay, turn: .edge)
 }
 
 extension BackdropStance {
