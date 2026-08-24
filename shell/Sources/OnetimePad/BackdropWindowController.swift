@@ -338,6 +338,14 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// same value each time asked for that work on every activation
     /// (issue #74). Level is guarded for company, since a level written
     /// is a restack even when the number is unchanged.
+    ///
+    /// The guard compares the whole value, so a stance change does still
+    /// rewrite `collectionBehavior`: what a window does once it is on a
+    /// Space differs by posture, and `.stationary`, `.ignoresCycle` and
+    /// full-screen participation are all in there. What no longer
+    /// differs is the membership subset the rewrite names
+    /// (`BackdropStance.spaceMembership(pinned:)`), which is the part a
+    /// reassignment would turn on.
     private func applyAltitude(stance: BackdropStance, pinned: Bool) {
         let level = stance.level(pinned: pinned)
         if panel.level != level {

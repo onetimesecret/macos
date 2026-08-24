@@ -24,11 +24,18 @@ does not.
    has no other desktop to be moved to. ADR-0019 records this as a
    decision.
 3. **A flicker on every ⌘Tab return.** Two candidates were removed. The
-   membership bits, whose rewrite on each raise is a request to move the
-   window between Spaces, are now written only when they change, which
-   is never; and the summon's order-out round trip, a literal blink, can
-   no longer fire. A third candidate remains and this procedure is how
-   we find out whether it is the one that mattered: see below.
+   membership bits, whose change is what asks the window server to move
+   a window between Spaces, are the same in every posture and either pin
+   state, so no raise, rest or pin asks for a reassignment any more.
+   (The composite `collectionBehavior` value is still rewritten when a
+   stance changes, because the rest of it does differ: `.stationary`,
+   `.ignoresCycle` and full-screen participation. What is constant is
+   the membership subset, `BackdropStance.spaceMembership(pinned:)`, and
+   the guard in `applyAltitude` skips the write only when the whole
+   value matches.) The second candidate was the summon's order-out round
+   trip, a literal blink, which can no longer fire. A third remains and
+   this procedure is how we find out whether it is the one that
+   mattered: see below.
 
 ## Setting up
 

@@ -40,7 +40,11 @@ raise accept.
 
 `BackdropStance.spaceMembership(pinned:)` names the membership bits
 apart from the rest, so the constancy is one unit-tested invariant
-rather than four literals that have to agree.
+rather than four literals that have to agree. The constancy is of that
+subset, not of the whole `collectionBehavior` value: the controller
+still writes the composite when a stance changes, because the rest of it
+genuinely differs by posture. What no longer changes is the part a Space
+reassignment would turn on.
 
 The pad does not travel between desktops, and the screen-edge drag is
 not implemented. This is a consequence of the decision above rather than

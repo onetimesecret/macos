@@ -239,10 +239,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reveal an app's windows when the app is activated, so every activation
   carried the user home to Desktop 1. Every posture now claims every
   desktop, and holds that membership through raises, rests and the pin,
-  which is also half of the flicker: rewriting the membership bits is a
-  request to move the window between Spaces, and they were rewritten on
-  every raise, including the raise over an already raised surface that a
-  ⌘Tab back performs. The other half was the summon's order-out round
+  which is also half of the flicker: changing the membership bits is
+  what asks the window server to move a window between Spaces, and they
+  changed on every raise, including the raise over an already raised
+  surface that a ⌘Tab back performs. The composite collection behaviour
+  is still rewritten when a stance changes, since what the window does
+  once it is on a Space does vary by posture; it is the membership
+  subset that is now constant, which is why the rewrite no longer asks
+  for anything. The other half was the summon's order-out round
   trip, a literal blink, which a window present on every Space can no
   longer reach; it stays as a tested safety net, since being wrong about
   a window stranded off-Space would cost keystrokes. Settings takes
