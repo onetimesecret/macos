@@ -398,6 +398,15 @@ public final class PageModel: ObservableObject {
     /// Settings window, the surface merely asks for it).
     public var onOpenSettings: (() -> Void)?
 
+    /// What the keyboard does, resolved once at launch from the bundled
+    /// default keymap and whatever override the user wrote
+    /// (`Keymap.load(userOverride:)`). Read by the surface, which
+    /// installs the chords it carries, and by the page's own text view,
+    /// which answers the rest. Held here because both of them already
+    /// hold the model, and because one resolution shared is the only
+    /// way the two routes can be guaranteed to agree.
+    public private(set) var keymap: ResolvedKeymap
+
     private let client: CompanionClient
     private let defaults: UserDefaults
 
@@ -518,17 +527,27 @@ public final class PageModel: ObservableObject {
         let client: CompanionClient?
         let saveDebounce: TimeInterval?
         let saveRetryDebounce: TimeInterval?
+        /// The user keymap a test wants read, if any. This one reads
+        /// differently from its neighbours: nil under injected seams
+        /// means *no override at all*, rather than the shipping path.
+        /// A suite that fell back to the shipping path would resolve
+        /// the installed app's own configuration directory and start
+        /// passing or failing on whatever the person running the tests
+        /// happens to have bound, which is not a test.
+        let keymapOverride: URL?
 
         public init(
             stateDirectory: URL? = nil,
             client: CompanionClient? = nil,
             saveDebounce: TimeInterval? = nil,
-            saveRetryDebounce: TimeInterval? = nil
+            saveRetryDebounce: TimeInterval? = nil,
+            keymapOverride: URL? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
             self.saveDebounce = saveDebounce
             self.saveRetryDebounce = saveRetryDebounce
+            self.keymapOverride = keymapOverride
         }
     }
 
@@ -580,6 +599,14 @@ public final class PageModel: ObservableObject {
         saveDebounce = seams.saveDebounce ?? Self.saveDebounce
         saveRetryDebounce = seams.saveRetryDebounce ?? Self.saveRetryDebounce
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
+        // Resolved once, here, so the surface and the page's text view
+        // are answering out of one map. A seamed model reads only the
+        // override its test named, which for most of them is none.
+        keymap = Keymap.load(
+            userOverride: seams.stateDirectory == nil
+                ? formFactor.userKeymapFileURL : seams.keymapOverride
+        )
+        keymap.report(subsystem: formFactor.loggerSubsystem)
         // Unset → float on top, matching the original behavior.
         floatsOnTop = defaults.object(forKey: Self.floatsKey) as? Bool ?? true
         // Unset → wrap, which is how every plain-text editor opens and

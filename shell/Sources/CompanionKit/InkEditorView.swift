@@ -1153,23 +1153,31 @@ final class InkTextView: NSTextView {
         coordinator?.repositionBlockLabels()
     }
 
+    /// The page's own chords, which the keymap names and this view
+    /// answers: the sealed paste and the seal of a selection or a line
+    /// (⇧⌘V and ⌘↩ by default, `clipboard::Seal` and
+    /// `clipboard::SealSelection` by id).
+    ///
+    /// A key equivalent reaches the view chain before the surface's
+    /// hidden buttons get a look, which is why these two live here and
+    /// not in `PageKeyboardMap`: what they act on is the caret and the
+    /// selection, and both belong to this text view.
+    ///
+    /// Only command-bearing chords are taken on this route. A chord
+    /// without ⌘ is an ordinary character to every other text field on
+    /// screen, and claiming one here would claim it app-wide; those go
+    /// through `keyDown` below, which fires only while this page holds
+    /// the keyboard.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        // ⇧⌘V — the sealed paste.
-        if modifiers == [.command, .shift],
-           event.charactersIgnoringModifiers?.lowercased() == "v" {
-            coordinator?.sealedPaste()
-            return true
-        }
-        // ⌘↩ — seal the selection or the current line.
-        if modifiers == .command, event.keyCode == 36 {
-            coordinator?.sealSelectionOrLine()
+        if let command = editorCommand(for: event), command.modifiers.contains(.command),
+           dispatch(command.id) {
             return true
         }
         return super.performKeyEquivalent(with: event)
     }
 
-    /// ⌥Z — wrap long lines, or let them run.
+    /// The page's chords that carry no ⌘ (⌥Z, the wrap toggle, by
+    /// default).
     ///
     /// Handled as a key press on the page rather than as a menu item's
     /// key equivalent, and deliberately: a main-menu equivalent is an
@@ -1178,12 +1186,41 @@ final class InkTextView: NSTextView {
     /// receive as this view has to steal it. Scoped here, it only fires
     /// while the page itself holds the keyboard.
     override func keyDown(with event: NSEvent) {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if modifiers == .option, event.charactersIgnoringModifiers?.lowercased() == "z" {
-            coordinator?.model.toggleWrap()
+        if let command = editorCommand(for: event), !command.modifiers.contains(.command),
+           dispatch(command.id) {
             return
         }
         super.keyDown(with: event)
+    }
+
+    /// What the keymap says this event means on the Editor surface,
+    /// with the modifiers it was bound with, so the two routes above
+    /// can each take the half that is theirs. Nil when nothing is bound
+    /// or when the command belongs to the surface rather than to the
+    /// page.
+    private func editorCommand(for event: NSEvent) -> (id: CommandID, modifiers: KeyModifiers)? {
+        guard let keymap = coordinator?.model.keymap else { return nil }
+        guard
+            let binding = keymap.bindings(in: .editor, dispatch: .editor)
+                .first(where: { $0.keystroke.matches(event: event) })
+        else { return nil }
+        return (binding.command, binding.keystroke.modifiers)
+    }
+
+    /// Runs an editor command, and says whether it ran. The two seal
+    /// gestures are this view's; everything else the keymap can put on
+    /// the editor route is the model's.
+    private func dispatch(_ command: CommandID) -> Bool {
+        guard let coordinator else { return false }
+        switch command {
+        case .clipboardSeal:
+            coordinator.sealedPaste()
+        case .clipboardSealSelection:
+            coordinator.sealSelectionOrLine()
+        default:
+            return coordinator.model.perform(command)
+        }
+        return true
     }
 
     /// ⌘V behaves like every text editor on the machine — plain text,

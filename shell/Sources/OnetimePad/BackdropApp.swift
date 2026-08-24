@@ -33,7 +33,7 @@ struct BackdropApp: App {
                 // window the delegate owns.
                 CommandGroup(replacing: .appSettings) {
                     Button("Settings…") { appDelegate.openSettings() }
-                        .keyboardShortcut(",", modifiers: .command)
+                        .keyboardShortcut(appDelegate.settingsShortcut)
                 }
             }
     }
@@ -186,11 +186,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 action: #selector(showAbout),
                 keyEquivalent: ""
             ).target = self
-            menu.addItem(
+            let settingsItem = menu.addItem(
                 withTitle: "Settings…",
                 action: #selector(openSettings),
-                keyEquivalent: ","
-            ).target = self
+                keyEquivalent: settingsKeystroke?.menuKeyEquivalent ?? ","
+            )
+            settingsItem.keyEquivalentModifierMask = settingsKeystroke?.menuModifierMask ?? .command
+            settingsItem.target = self
             menu.addItem(.separator())
             menu.addItem(
                 withTitle: "Quit",
@@ -210,6 +212,29 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         } else {
             model.summon()
         }
+    }
+
+    /// The chord Settings advertises, taken from the keymap
+    /// (`app::Settings`) rather than spelled here.
+    ///
+    /// A menu key equivalent is an app-wide claim, live even while a
+    /// Settings text field holds the keyboard, so only a keymap section
+    /// that opted into `use_key_equivalents` can hand one out; the
+    /// bundled default does. Nil means the file took the binding away,
+    /// and then the menu shows the item without a chord, which is the
+    /// right answer to "unbind Settings" and not a reason to put the
+    /// old chord back.
+    var settingsKeystroke: Keystroke? {
+        model.pages.keymap.menuKeystroke(for: .appSettings)
+    }
+
+    /// The same chord for the SwiftUI command group, falling back to
+    /// the macOS convention when the keymap has nothing to say: the
+    /// menu bar's Settings item is how a person reaches Settings when
+    /// the card is not up, so it keeps a chord even if the keymap could
+    /// not be read at all.
+    var settingsShortcut: KeyboardShortcut {
+        settingsKeystroke?.keyboardShortcut ?? KeyboardShortcut(",", modifiers: .command)
     }
 
     /// The Settings window, from the menu bar's ⌘, or either of the
