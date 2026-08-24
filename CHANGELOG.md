@@ -238,13 +238,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   active Space, the card was invisible and yet presses meant for that
   app landed in the pad and were acted on: the window server had kept
   the surface in the hit-test path without ever compositing it. The
-  surface now reads back the two signals the server does answer
-  honestly, Space membership and occlusion, and refuses the mouse
-  whenever either says it is out of sight, in every posture and either
-  pin state. The rule is a one-way valve, so nothing here hands a click
-  to the unpinned rest, which stays transparent by ADR-0015; and the
-  reading is taken a turn after a stance is applied, so a raise arriving
-  over a buried card does not start life unable to be clicked. The
+  surface now follows the exposure the server reports, Space membership
+  and occlusion, and refuses the mouse whenever either says it is out of
+  sight, in every posture and either pin state. Whether that report is
+  honest for a window held in the hit-test path without being composited
+  is the question the hardware procedure exists to settle, and it is the
+  same question as the one below. The rule is a one-way valve, so
+  nothing here hands a click to the unpinned rest, which stays
+  transparent by ADR-0015; and the reading is taken a turn after a
+  stance is applied, where it may open the gate but not close it on a
+  card that holds the keyboard, since a raise outruns the occlusion
+  state by a frame and a gate closed in that gap would pass the user's
+  next click to the application underneath. A Space switch is read twice
+  for the mirror-image reason: the answer given mid-transition describes
+  the desktop being left, and a card present on every Space has no later
+  edge to reopen a gate wrongly closed on it. The
   pinned rest also stopped carrying `.stationary`, a flag it had
   inherited from the wallpaper recipe the unpinned rest is built from,
   leaving the overlay recipe AppKit actually documents. Whether that
