@@ -280,6 +280,31 @@ final class KeymapValidationTests: XCTestCase {
         XCTAssertEqual(keymap.faults, [])
     }
 
+    /// An unbinding settles the chord as surely as a command does, so a
+    /// second spelling of it in the same section is the same mistake as
+    /// any other duplicate. Reported rather than resolved in silence by
+    /// whichever spelling sorted first.
+    func testAnUnbindingAndABindingOfOneChordInOneSectionAreADuplicate() {
+        let keymap = Keymap.resolve(
+            defaultText: simpleDefault,
+            overrideText: """
+                [{ "context": "Editor", "bindings": {
+                  "alt-cmd-n": null,
+                  "cmd-alt-n": "page::New"
+                } }]
+                """)
+        XCTAssertTrue(keymap.bindings.isEmpty)
+        XCTAssertEqual(
+            keymap.faults,
+            [
+                .duplicateBinding(
+                    .userOverride, keystroke: "cmd-alt-n", kept: nil, dropped: .pageNew)
+            ])
+        XCTAssertEqual(
+            keymap.faults.first?.summary,
+            "your keymap settles \"cmd-alt-n\" twice; kept the unbinding, dropped page::New")
+    }
+
     func testAnUnbindingThatHitsNothingIsReported() {
         let keymap = Keymap.resolve(
             defaultText: simpleDefault,

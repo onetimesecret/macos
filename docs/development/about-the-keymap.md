@@ -88,7 +88,8 @@ Two levels, and the difference matters:
 
 - **Wrong about one line**: an unparseable keystroke, an unknown
   command id, a context that does not exist, or two spellings of one
-  chord in a single section. That line is dropped, the rest of the file
+  chord in a single section, whether the second one binds it or is a
+  `null` taking it away. That line is dropped, the rest of the file
   stands, and the complaint goes to the unified log under the `keymap`
   category.
 - **Wrong about the file**: not JSON, not an array, a section that is
