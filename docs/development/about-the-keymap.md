@@ -91,9 +91,25 @@ A refused override leaves the bundled default standing, so a typo in
 your keymap costs you your customisation and not your app. A refused or
 missing bundled default falls back to the last map that resolved
 cleanly, and at launch there is none, so it falls back to no bindings
-at all. That is deliberate: every gesture the map carries also has a
-button or a menu item, so the app stays usable, and no chord ends up
-pointed somewhere unintended.
+at all. That is deliberate: no chord ends up pointed somewhere
+unintended, and almost every gesture the map carries also has a button
+or a menu item, so the app stays usable with no keymap whatsoever.
+
+Two are worth naming, because they are the exceptions:
+
+- `surface::HandBackKeys` has no control. Esc still hands the keyboard
+  back from inside a page, because the text view answers AppKit's own
+  cancel action and that is installed by the framework rather than by
+  the map, and it still works in the pageless empty state, which has its
+  own catcher. What an empty map costs is Esc while the focus sits on
+  the surface chrome rather than in a page.
+- `state::SaveNow` has no control either. The save indicator is a label,
+  not a button. With no keymap there is no way to force the write, and
+  the debounced save that runs on its own is what carries the session.
+
+Both are shortcomings of the empty map rather than of the file format,
+and both are cheap to live with next to the alternative, which is
+guessing at bindings the file did not give.
 
 To read the complaints:
 
