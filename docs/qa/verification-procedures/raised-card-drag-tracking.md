@@ -4,6 +4,7 @@
 **Raised by:** review of `966ba3c` "Measure the drag and the resize
 grips against the screen", on
 `feature/reopen-and-backdrop-persistence`, 2026-08-06.
+**Owner:** delano.
 **Status:** open. Not yet run on hardware.
 
 Everything below is captured verbatim from the review exchange, in the
@@ -66,8 +67,16 @@ delivered to the app regardless of what coordinate space thinks it
 changed, so window-follows-pointer cannot starve it. `DragGesture`
 stays only as the mouse-down detector and minimum-distance filter.
 
-## Result
+## Results
 
-Record the outcome here when the session is run: date, machine, macOS
-version, pass or fail per bullet, and whether the local-monitor fix was
-applied.
+Not yet run. This procedure has never been executed on hardware as of
+2026-08-23. One row per check below when a session runs it, and the
+rows stay: a re-run after the local monitor fix adds a row rather than
+replacing the one that failed.
+
+| Date | Machine and macOS | Check | Pass or fail | Local monitor fix applied | Notes |
+|---|---|---|---|---|---|
+| | | slow drag from the header | | | |
+| | | drag on a resize grip | | | |
+| | | fast flicks | | | |
+| | | Esc mid drag, and a click into another app | | | |

@@ -28,6 +28,8 @@ Two prior results stand and are not re-run here:
 
 ## §0 — The prototype walk
 
+**Owner:** delano.
+
 Open `docs/Airlock Prototype/Airlock Prototype.dc.html` in a browser
 beside the app. The
 prototype is the script; the app is under test. Walk every gesture in
@@ -52,6 +54,8 @@ both and note any divergence in feel, not just function:
 
 ## §A — Boundary-lawful ingest, live
 
+**Owner:** delano.
+
 - [ ] **Cross-app text drag** (the one open drag verification): drag
       selected text from another app onto the page. It seals; the
       *general clipboard is untouched* (`pbpaste` before/after
@@ -67,6 +71,8 @@ both and note any divergence in feel, not just function:
       mechanical (head…tail) — never enough to reconstruct the value.
 
 ## §B — VoiceOver operability (THE go/no-go)
+
+**Owner:** delano.
 
 The premise under test: native AppKit gives first-class VoiceOver for
 free. Failure that native APIs cannot reach is an ADR-0002 **eject
@@ -92,12 +98,16 @@ trigger**. VoiceOver on (⌘F5); keyboard only.
 
 ## §C — Keychain round-trip (`companion-credentials`)
 
+**Owner:** delano.
+
 - [ ] Store a credential via the Keychain path, read it back, delete
       it — on a real login keychain, confirming prompt/ACL behaviour.
       (CI uses the in-memory fallback; this is the only place the real
       path runs.)
 
 ## §D — Rev C time, felt
+
+**Owner:** delano.
 
 - [ ] **The pause:** double-click a tab's gauge — holds 1h; again —
       tops up to 24h; a third — releases, and the countdown resumes
@@ -120,6 +130,8 @@ trigger**. VoiceOver on (⌘F5); keyboard only.
 
 ## §E — Frugality, re-measured
 
+**Owner:** delano.
+
 The budget is < 25 MB resident idle **with pages loaded**, near-zero
 idle CPU; 22 MB at 0 cells (rev A panel) is the baseline. Materially
 over and unrecoverable is an ADR-0002 eject trigger.
@@ -131,6 +143,8 @@ over and unrecoverable is an ADR-0002 eject trigger.
       run while not visible).
 
 ## §F: Focus law for the #22 regressions and the invariants
+
+**Owner:** delano.
 
 Issue #22 was a freshly conjured page that mounted with nothing
 focused: the window held the keys, yet the first keystroke beeped
@@ -190,6 +204,11 @@ with its own owner and its own dated results, under
   A real reboot with a live pad; a reboot with the pad emptied first,
   confirming key rotation ran; a reboot with a page held, confirming it
   returns held. ADR-0016 section 10, case 3.
+- [`force-termination.md`](qa/verification-procedures/force-termination.md).
+  Owner: delano. A `kill -9` inside the debounce window and a second one
+  after a settled write, then the Force Quit dialog and a rebuild over a
+  live instance as the same death by other routes. ADR-0016 section 10,
+  case 2.
 - [`power-loss.md`](qa/verification-procedures/power-loss.md). Owner:
   delano. A hard power cut mid session, then the stranded
   `state.sealed.<hex>.tmp` artifacts and the sweep launch runs over
@@ -202,15 +221,35 @@ with its own owner and its own dated results, under
   Owner: delano. A locked keychain at load, and a denied ACL prompt,
   each refusing with no erase and no overwrite. ADR-0016 section 10,
   case 6. §C above covers the round trip; this covers the refusals.
+- [`clock-step-back.md`](qa/verification-procedures/clock-step-back.md).
+  Owner: delano. The machine clock stepped back a day with a live pad,
+  across a relaunch and again mid session, confirming a page ages by
+  zero rather than gaining life. ADR-0016 section 4 and section 10,
+  case 7.
 - [`raised-card-drag-tracking.md`](qa/verification-procedures/raised-card-drag-tracking.md).
-  No owner. Drag and resize tracking on the raised card.
+  Owner: delano. Drag and resize tracking on the raised card. Not an
+  ADR-0016 case.
 
-None of the four ADR-0016 procedures has been run yet.
+Whether any of them has been run is recorded in each file's own Status
+line and Results table, which is the one place a run belongs. A tally
+kept here as well would only be a second copy to go stale.
 
-## Recording results
+## Results
 
-Append findings to this file under a dated `## Results — YYYY-MM-DD`
-heading: pass/fail per section, felt-default notes for §D verbatim,
-and the §E numbers. §B outcomes (either way) get recorded in
-ADR-0002 — it accepted the shell with §B open as verification, and
-its eject triggers name the failure modes.
+One row per section of the runbook above, filled in as a session
+reaches it. The rows stay; a re-run adds a row rather than replacing
+one. Record §D's felt-default answers verbatim in the notes and §E's
+numbers as measured, since both are inputs to open spec questions
+rather than pass or fail. §B outcomes, either way, are also recorded in
+ADR-0002, which accepted the shell with §B open as verification and
+whose eject triggers name the failure modes.
+
+| Date | Machine and macOS | Section | Pass or fail | Notes |
+|---|---|---|---|---|
+| | | §0 | not yet run | |
+| | | §A | not yet run | |
+| | | §B | not yet run | The ADR-0002 go/no-go. |
+| | | §C | not yet run | The only place the real login keychain runs; CI uses the in-memory store. |
+| | | §D | not yet run | |
+| | | §E | not yet run | |
+| | | §F | not yet run | |
