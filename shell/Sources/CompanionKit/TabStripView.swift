@@ -6,6 +6,9 @@ import SwiftUI
 /// permanent dashed ◌ ledger tab at the right end. Click selects;
 /// double-click holds the clock; drag reorders; ✕ on hover closes.
 ///
+/// The ledger tab is built here and not shown (issue #78, `HiddenUI`),
+/// so the run of tabs ends where the slots do.
+///
 /// A slot whose page expired keeps its place, its name and its rung,
 /// and draws the dashed empty treatment instead of a gauge (ADR-0017).
 /// The strip is the slots, so it stops being nine deadlines.
@@ -49,7 +52,11 @@ public struct TabStripView: View {
             newPageTab
             Spacer(minLength: 8)
             promotePageTab
-            ledgerTab
+            // Built and not drawn (issue #78): the ledger keeps
+            // recording, and the strip stops offering the way in.
+            if HiddenUI.showsLedgerEntryPoints {
+                ledgerTab
+            }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)

@@ -47,8 +47,14 @@
       "cmd-8": "page::Select8",
       "cmd-9": "page::Select9",
 
-      // The ledger, at the far end of the same run of keys.
-      "cmd-0": "ledger::Show",
+      // The ledger sat at the far end of the same run of keys, and the
+      // binding is withdrawn while the ledger's entry points are hidden
+      // (issue #78). The command id is still legal, so your own keymap
+      // can put the ledger back on any chord you like:
+      //
+      //     [{ "context": "Editor", "bindings": { "cmd-0": "ledger::Show" } }]
+      //
+      // "cmd-0": "ledger::Show",
 
       // Pages: a new one at the default rung, the neighbours, and the
       // close verb every macOS app has. New is plain cmd-n, the same

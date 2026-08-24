@@ -131,22 +131,28 @@ public struct ConnectionSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Section {
-                Button("Clear the ledger", role: .destructive) { confirmingLedgerClear = true }
-                    .confirmationDialog(
-                        "Clear the ledger?",
-                        isPresented: $confirmingLedgerClear,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Clear the ledger", role: .destructive) { clearLedger() }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("Every record goes, and there is no undo. Pages and sealed chips are untouched.")
-                    }
-            } header: {
-                Text("The ledger records what the app did with each item: never the content, but page names, and those are often the secret's label. It survives restarts and keeps 90 days.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            // Hidden with the rest of the ledger's entry points (issue
+            // #78). `clearLedger()` below stays wired: the section is
+            // what is suppressed, not the verb, and a build that flips
+            // the flag gets its button back with its confirmation.
+            if HiddenUI.showsLedgerEntryPoints {
+                Section {
+                    Button("Clear the ledger", role: .destructive) { confirmingLedgerClear = true }
+                        .confirmationDialog(
+                            "Clear the ledger?",
+                            isPresented: $confirmingLedgerClear,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Clear the ledger", role: .destructive) { clearLedger() }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("Every record goes, and there is no undo. Pages and sealed chips are untouched.")
+                        }
+                } header: {
+                    Text("The ledger records what the app did with each item: never the content, but page names, and those are often the secret's label. It survives restarts and keeps 90 days.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             if offersCaptureToggle, PageModel.captureOptOutOffered {
                 Section {
