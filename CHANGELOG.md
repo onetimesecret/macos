@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The version moves when the app moves** (issue #89). About and the
+  tray menu now say 0.13.0, which is this app after milestone 2: ⌘N
+  makes a page, the keyboard is a file you can edit, four affordances
+  that had not earned their place are hidden, and the pad follows you
+  between Spaces. None of that touched a crate, and the version users
+  see was the `companion-ffi` crate's, so under the old rule the number
+  would have sat at 0.12.0 through all of it while two invisible changes
+  to the seam in August had moved it twice. The app's version was a fact
+  about the Rust library rather than about the product. It is now the
+  product's own number, held in `shell/OnetimePad-Info.plist` as
+  `CFBundleShortVersionString` and edited by hand when work a user can
+  touch lands, the same way `crates/ffi/Cargo.toml` is edited when the
+  seam changes. The packaging script reads it from there, refuses the
+  placeholder rather than shipping 0.0.0, and still stamps
+  `CFBundleVersion` as that version plus the short commit, so About
+  reads "Version 0.13.0 (0.13.0+ab12cd3)": the product first, the exact
+  build behind it. The core keeps its own version and keeps speaking for
+  itself through `companion_version()`. The tray line names both from
+  here on, where it used to hide the core whenever the two strings
+  matched: with one source a difference could only mean a stale
+  xcframework, and with two sources it usually means the app shipped
+  something and the seam did not.
+
 - **Four things stopped showing up** (issue #78). Dogfooding turned up
   affordances that were on the card without earning their place, and
   they are now hidden: the ledger's every way in (the dashed tab at the
