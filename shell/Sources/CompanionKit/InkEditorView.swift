@@ -916,6 +916,11 @@ public struct InkEditorView: NSViewRepresentable {
             storage.beginEditing()
             var location = 0
             var block = 0
+            // One scanner for the whole page, since a fence opened in
+            // one block goes on holding the lines of the blocks after
+            // it: what a line means depends on everything above it
+            // (issue #75).
+            var scanner = InkStyle.FenceScanner()
             while location < text.length {
                 let meta = block < metas.count ? metas[block] : nil
                 // A block is usually one paragraph and sometimes several
@@ -944,7 +949,8 @@ public struct InkEditorView: NSViewRepresentable {
                     let leads = paragraphStart == location
                     if leads { head = paragraph }
                     styleParagraph(
-                        paragraph, of: storage, text: text,
+                        paragraph, of: storage,
+                        kind: scanner.classify(text.substring(with: paragraph)),
                         labeled: createdS != nil && leads
                     )
                     if paragraph.length == 0 { break }
@@ -1000,7 +1006,8 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         private func styleParagraph(
-            _ range: NSRange, of storage: NSTextStorage, text: NSString, labeled: Bool
+            _ range: NSRange, of storage: NSTextStorage,
+            kind: InkStyle.LineKind, labeled: Bool
         ) {
             guard range.length > 0 else { return }
             let paragraphStyle = NSMutableParagraphStyle()
@@ -1008,27 +1015,55 @@ public struct InkEditorView: NSViewRepresentable {
             // one will actually render: an untouched block carries no
             // stamp and gets no gap.
             paragraphStyle.paragraphSpacingBefore = labeled ? Self.blockLabelReserve : 0
+            // Every line is laid back down to plain ink first, the wash
+            // included, because a line that was code a keystroke ago
+            // has to be able to stop being code when the fence above it
+            // closes or is deleted.
             storage.addAttributes(
                 [
                     .font: InkStyle.baseFont,
                     .foregroundColor: NSColor.labelColor,
+                    .backgroundColor: NSColor.clear,
                     .paragraphStyle: paragraphStyle,
                 ],
                 range: range
             )
-            let line = text.substring(with: range)
-            guard let marker = InkStyle.headingMarker(of: line) else { return }
-            storage.addAttribute(
-                .font,
-                value: InkStyle.headingFont(level: marker.level),
-                range: range
-            )
-            // The `### ` stays on screen, dimmed, exactly where typed.
-            storage.addAttribute(
-                .foregroundColor,
-                value: NSColor.tertiaryLabelColor,
-                range: NSRange(location: range.location, length: marker.length)
-            )
+            switch kind {
+            case .body:
+                break
+            case .heading(let level, let markerLength):
+                storage.addAttribute(
+                    .font,
+                    value: InkStyle.headingFont(level: level),
+                    range: range
+                )
+                // The `### ` stays on screen, dimmed, exactly where typed.
+                storage.addAttribute(
+                    .foregroundColor,
+                    value: NSColor.tertiaryLabelColor,
+                    range: NSRange(location: range.location, length: markerLength)
+                )
+            case .fenceRule:
+                // The fence's own line is markup, dimmed the way a
+                // heading's hashes are, and washed like the lines it
+                // brackets so the block reads as one slab.
+                storage.addAttributes(
+                    [
+                        .foregroundColor: NSColor.tertiaryLabelColor,
+                        .backgroundColor: InkStyle.codeBackground,
+                    ],
+                    range: range
+                )
+            case .code:
+                // Literally what was typed: the markup a code line
+                // carries is part of the code, so nothing here is read
+                // as a heading and nothing is dimmed.
+                storage.addAttribute(
+                    .backgroundColor,
+                    value: InkStyle.codeBackground,
+                    range: range
+                )
+            }
         }
 
         // MARK: Block labels (ADR-0013: created/modified above each block)
@@ -1422,7 +1457,7 @@ public enum InkStyle {
 
     /// `### deploy friday` → (level 3, markerLength 4). Scope for rev C
     /// is headings only; inline emphasis is deliberately deferred.
-    public static func headingMarker(of line: String) -> (level: Int, length: Int)? {
+    public nonisolated static func headingMarker(of line: String) -> (level: Int, length: Int)? {
         var level = 0
         var index = line.startIndex
         while index < line.endIndex, line[index] == "#" {
@@ -1431,5 +1466,98 @@ public enum InkStyle {
         }
         guard level >= 1, index < line.endIndex, line[index] == " " else { return nil }
         return (level, level + 1)
+    }
+
+    /// The wash behind a fenced block: a shade off the page, enough
+    /// that a slab of code reads as one thing without turning the page
+    /// into a document of boxes.
+    public static let codeBackground = NSColor.quaternaryLabelColor
+
+    /// What a line is, once the lines above it have been read.
+    ///
+    /// A heading is local: a line either opens with hashes and a space
+    /// or it does not, and nothing above it can change the answer. A
+    /// fence is the exception, and the reason this is an enum rather
+    /// than a pair of predicates. After a fence opens, the page stops
+    /// being prose until the fence closes, and the only way to know
+    /// which side of that boundary a line falls on is to have read the
+    /// page down to it.
+    public enum LineKind: Equatable {
+        /// Ordinary ink.
+        case body
+        /// A heading line: its level, and how many leading characters
+        /// are markup rather than name.
+        case heading(level: Int, markerLength: Int)
+        /// The fence line itself, opening or closing.
+        case fenceRule
+        /// A line held inside a fence, whatever it happens to look
+        /// like. `# comment` here is a comment, not a heading, and `- x`
+        /// is a flag, not a bullet (issue #75).
+        case code
+    }
+
+    /// Reads a page's lines in document order and says what each one
+    /// is. Carried across the whole walk rather than asked line by
+    /// line, because a fence is markup whose meaning is not local: the
+    /// same `# comment` is a heading above the fence and a comment
+    /// below it.
+    public struct FenceScanner {
+        /// The fence currently open, if one is: its character and how
+        /// long its opening run was, since a closing fence has to be at
+        /// least as long as the fence it answers.
+        private var open: (marker: Character, length: Int)?
+
+        public init() {}
+
+        /// True while the lines being handed over fall inside a fence.
+        /// This is also what an unterminated fence leaves behind: the
+        /// rest of the page is code, and stays code to the last line,
+        /// which is the reading a writer mid-paste would expect.
+        public var insideFence: Bool { open != nil }
+
+        public mutating func classify(_ line: String) -> LineKind {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let run = Self.fenceRun(of: trimmed) {
+                guard let open else {
+                    self.open = (run.marker, run.length)
+                    return .fenceRule
+                }
+                // A closing fence answers its opener: the same
+                // character, at least as long, and carrying nothing
+                // after it. Anything else met inside a fence is content
+                // — a ``` line inside a ~~~ block is text about code,
+                // not the end of the block.
+                guard run.marker == open.marker, run.length >= open.length, run.info.isEmpty else {
+                    return .code
+                }
+                self.open = nil
+                return .fenceRule
+            }
+            if open != nil { return .code }
+            guard let marker = headingMarker(of: line) else { return .body }
+            return .heading(level: marker.level, markerLength: marker.length)
+        }
+
+        /// The delimiter run a line opens with, if it opens with one:
+        /// three or more backticks or tildes, plus whatever the rest of
+        /// the line says (the info string, `swift` in "```swift").
+        nonisolated static func fenceRun(of trimmed: String) -> (marker: Character, length: Int, info: String)? {
+            guard let marker = trimmed.first, marker == "`" || marker == "~" else { return nil }
+            let run = trimmed.prefix { $0 == marker }
+            guard run.count >= 3 else { return nil }
+            let info = trimmed.dropFirst(run.count).trimmingCharacters(in: .whitespaces)
+            // A backtick fence cannot carry a backtick in its info
+            // string, which is the rule that keeps an inline ```span```
+            // from opening a block that swallows the rest of the page.
+            if marker == "`", info.contains("`") { return nil }
+            return (marker, run.count, info)
+        }
+    }
+
+    /// A whole page's lines, read in order. The scanner is the working
+    /// form; this is the one a reader (and a test) can hold in view.
+    public nonisolated static func classify(lines: [String]) -> [LineKind] {
+        var scanner = FenceScanner()
+        return lines.map { scanner.classify($0) }
     }
 }

@@ -233,6 +233,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Markdown inside a fenced code block is inert** (issue #75). The page
+  read every line on its own, so a `# comment` pasted inside a fence
+  rendered at heading weight with its hashes dimmed, which reads as the
+  app misunderstanding the code rather than styling the page. The
+  restyle pass now carries a fence scanner down the whole page, because
+  a fence is the one piece of markup whose meaning is not local: after
+  an opening rule every line is literally what was typed, hashes,
+  dashes and stars included, until a rule of the same character and at
+  least the same length closes the block. The fence's own lines are
+  dimmed the way a heading's hashes are and the block takes a faint
+  wash, so code reads as code while the bytes of the page still never
+  change, which is the display only, markup preserving rule the
+  headings already followed. An unterminated fence holds its lines to
+  the end of the page rather than guessing, an inline code span opens
+  nothing, and the first line below the closing rule is prose again.
 - **⌘Tab back lands where the user is, not on Desktop 1** (issue #74,
   ADR-0019). The resting surface claimed no place on Spaces other than
   the one it was created on, and the window server switches desktops to

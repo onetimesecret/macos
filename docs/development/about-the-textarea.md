@@ -38,6 +38,7 @@ Where the editing surface actually lives
 │  ├─────────────────────────────────────────────────────────────────────┤  │
 │  │ restyle():736   display-only markdown                               │  │
 │  │   headings by weight, markers dimmed in place (:1194)               │  │
+│  │   fenced blocks read literally, markup inert (issue #75)            │  │
 │  │   block provenance labels laid out as NSTextField subviews          │  │
 │  └────────────────────────┬────────────────────────────────────────────┘  │
 │                           │                                               │
