@@ -55,21 +55,50 @@ enum MenuTracking {
     /// long as the app does.
     static let retention: TimeInterval = 5
 
+    /// How long a session that never closed may go on claiming presses.
+    ///
+    /// The record is fed by two notifications and assumes they come in
+    /// pairs. Nothing guarantees that: a menu torn down by a crashing
+    /// panel, a tracking loop unwound by the window server, or simply an
+    /// AppKit path that posts one and not the other leaves a session
+    /// open with no end ever to arrive. An open session claims every
+    /// press after its start, so one missing end would kill the outside
+    /// click rule for the life of the process, and the symptom is a card
+    /// that never rests again: the worst kind of bug, because the user
+    /// cannot tell it from the feature being absent.
+    ///
+    /// Thirty seconds is chosen to be longer than any menu a person
+    /// actually holds open and far shorter than a session of work. A
+    /// menu genuinely left standing past the cap loses its exception and
+    /// the next press rests the card, which is the same wrong the
+    /// exception exists to prevent, but bounded to one press instead of
+    /// forever.
+    static let openLimit: TimeInterval = 30
+
     /// Whether a menu owns this press, and the monitor should therefore
     /// leave the surface raised.
     ///
     /// A press belongs to a session when it falls inside it, when it
     /// falls within `grace` of its start (it is the click that opened
     /// the menu), or when it falls after the start of a session that has
-    /// not yet closed. Everything else is genuinely elsewhere: another
-    /// application, the desktop, one of our own ordinary windows.
+    /// not yet closed and is not yet older than `limit`. Everything else
+    /// is genuinely elsewhere: another application, the desktop, one of
+    /// our own ordinary windows.
+    ///
+    /// The limit is what keeps a session whose end never arrived from
+    /// claiming the rest of the process's presses. An open session is
+    /// read as running until `limit` past its start rather than until
+    /// the end of time, so the exception expires on the same clock it
+    /// was written on and the rule remains a judgment about intervals.
     static func claims(
         press timestamp: TimeInterval,
         sessions: [Session],
-        grace: TimeInterval = openingGrace
+        grace: TimeInterval = openingGrace,
+        limit: TimeInterval = openLimit
     ) -> Bool {
         sessions.contains { session in
-            timestamp >= session.began - grace && timestamp <= (session.ended ?? .infinity)
+            let until = session.ended ?? session.began + limit
+            return timestamp >= session.began - grace && timestamp <= until
         }
     }
 
@@ -92,13 +121,22 @@ enum MenuTracking {
         return closed
     }
 
-    /// Sessions still worth keeping: everything still open, and
-    /// everything that closed within `retention` of now.
+    /// Sessions still worth keeping: everything that closed within
+    /// `retention` of now, and everything still open that could still
+    /// claim a press, which is to say everything open and younger than
+    /// `limit`.
+    ///
+    /// An open session past the limit is dropped rather than carried,
+    /// since `claims` has already stopped honouring it and leaving it on
+    /// the books would only let a later `closing` end the wrong session.
     static func pruned(
-        _ sessions: [Session], now: TimeInterval, retention: TimeInterval = retention
+        _ sessions: [Session],
+        now: TimeInterval,
+        retention: TimeInterval = retention,
+        limit: TimeInterval = openLimit
     ) -> [Session] {
         sessions.filter { session in
-            guard let ended = session.ended else { return true }
+            guard let ended = session.ended else { return now - session.began <= limit }
             return now - ended <= retention
         }
     }
@@ -119,6 +157,15 @@ final class MenuTrackingWatch {
     // runs on the main actor.
     private nonisolated(unsafe) var tokens: [NSObjectProtocol] = []
 
+    /// The centre the observations were made on, kept so that deinit can
+    /// undo exactly what init did. Removing from `.default` when a
+    /// different centre was injected takes back nothing and leaves the
+    /// real observations standing, which under test is a watch that goes
+    /// on recording after the case that made it has finished.
+    /// nonisolated(unsafe) for the same reason as the tokens: deinit is
+    /// nonisolated, and NotificationCenter's removal is thread-safe.
+    private nonisolated(unsafe) let center: NotificationCenter
+
     /// Object nil on both observations, so every menu in the process is
     /// covered: the main menu bar, the status item's menu, and the chip
     /// context menu in the editor, without any of them having to know
@@ -130,6 +177,7 @@ final class MenuTrackingWatch {
     /// before the nested loop can hand the main queue back to a deferred
     /// monitor handler.
     init(center: NotificationCenter = .default) {
+        self.center = center
         tokens = [
             center.addObserver(
                 forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil
@@ -150,7 +198,7 @@ final class MenuTrackingWatch {
 
     deinit {
         for token in tokens {
-            NotificationCenter.default.removeObserver(token)
+            center.removeObserver(token)
         }
     }
 
