@@ -392,3 +392,44 @@ public enum BuildVersion {
         return "build \(bundleVersion), core \(core)"
     }
 }
+
+/// What the standard About panel shows for a version, which is two
+/// questions AppKit gives two keys for: `.applicationVersion` is the
+/// product's own number and `.version` is the build behind it, rendered
+/// as "Version 0.13.0 (0.13.0+ab12cd3)".
+///
+/// Pure so the resolution can be tested without an AppKit panel or a
+/// bundle to read; `showAbout` does the reading and hands the strings
+/// here.
+public enum AboutVersion {
+    /// The two strings the panel wants, with `build` absent when there
+    /// is nothing to put in the parentheses.
+    public struct Fields: Equatable {
+        public let applicationVersion: String
+        public let build: String?
+
+        public init(applicationVersion: String, build: String?) {
+            self.applicationVersion = applicationVersion
+            self.build = build
+        }
+    }
+
+    /// A bundled app shows its own marketing version with the stamped
+    /// bundle version beside it; a bare `swift run` has no Info.plist to
+    /// read either from, and there the core is the only version the
+    /// process can honestly claim, so it stands alone as it always has.
+    public static func fields(
+        core: String, shortVersion: String?, bundleVersion: String?
+    ) -> Fields {
+        guard let shortVersion, !shortVersion.isEmpty else {
+            return Fields(applicationVersion: core, build: nil)
+        }
+        // A bundle without CFBundleVersion is not a shape the build
+        // scripts produce, but the key is read rather than guaranteed,
+        // so an absent one costs the parentheses and nothing else.
+        guard let bundleVersion, !bundleVersion.isEmpty else {
+            return Fields(applicationVersion: shortVersion, build: nil)
+        }
+        return Fields(applicationVersion: shortVersion, build: bundleVersion)
+    }
+}
