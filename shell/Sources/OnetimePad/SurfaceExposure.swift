@@ -62,6 +62,65 @@ struct SurfaceExposure: Equatable {
         self.onActiveSpace = onActiveSpace
         self.unoccluded = unoccluded
     }
+
+    /// Which turn is asking for the gate to be written, because they are
+    /// not equally trustworthy.
+    enum Turn {
+        /// The window server volunteered the news: an occlusion change,
+        /// or a Space switch that has had time to settle. What it
+        /// reports now is what it is doing now.
+        case edge
+
+        /// The turn immediately after a stance was applied, which asks
+        /// rather than is told. Ordering, levelling and framing have all
+        /// just happened and the server's published state has not
+        /// necessarily caught up with them.
+        case settling
+    }
+
+    /// Whether a gate decision taken on this turn may be written to the
+    /// window.
+    ///
+    /// Opening is always allowed, from any turn: the invariant the whole
+    /// gate is subordinate to is that a card the user can see must
+    /// answer clicks, and a gate stuck shut is the worst failure this
+    /// feature can have.
+    ///
+    /// Closing from the settling turn is refused while the window is
+    /// key, because that reading can be a frame stale. A raise orders
+    /// the card up over whatever was covering it, and for a moment
+    /// `occlusionState` still holds the pre-raise answer: occluded. A
+    /// gate closed on that answer passes the user's next click through
+    /// to the application underneath, whereupon the outside click
+    /// monitor rests the card and the raise has undone itself. The
+    /// window being key is what says the card is meant to be in front,
+    /// and the notification edges will close the gate a moment later if
+    /// it truly is not.
+    static func writes(
+        gate ignores: Bool, from turn: Turn, isKey: Bool
+    ) -> Bool {
+        guard ignores, turn == .settling else { return true }
+        return !isKey
+    }
+
+    /// When to re-read exposure after the active Space changes, as
+    /// offsets in seconds from the notification.
+    ///
+    /// The notification arrives while the switch is still in flight, and
+    /// the answer the window server gives during a transition describes
+    /// the Space being left. One reading is therefore not enough. If the
+    /// transient answer closes the gate on a card that is in fact
+    /// present, nothing afterwards has to change for it to stay shut: a
+    /// window that claims every Space keeps its membership across the
+    /// switch and need not alter its occlusion because the user changed
+    /// desktop, so no later edge arrives. The reopening has to be
+    /// scheduled rather than waited for.
+    ///
+    /// The first reading is prompt, so a card that really has gone out
+    /// of sight stops taking clicks at once. The last falls after the
+    /// transition, animation included, is certainly over, and it is the
+    /// one that decides.
+    static let spaceSettleReads: [TimeInterval] = [0, 0.9]
 }
 
 extension BackdropStance {

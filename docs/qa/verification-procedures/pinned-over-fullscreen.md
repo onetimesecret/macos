@@ -18,10 +18,15 @@ only one of them can be judged without a person at the machine:
 
 1. **The mouse gate** (`SurfaceExposure`,
    `BackdropStance.ignoresMouse(pinned:exposure:)`). The surface reads
-   back the window server's two honest signals, `isOnActiveSpace` and
-   `occlusionState`, and refuses the mouse whenever either says it is
-   out of sight. This is fail-closed and unit tested. It cannot make the
-   card visible; it can only stop an invisible card from acting.
+   back the two signals the window server publishes about itself,
+   `isOnActiveSpace` and `occlusionState`, and refuses the mouse
+   whenever either says it is out of sight. That the gate follows the
+   reported exposure is fail-closed and unit tested. Whether the report
+   is truthful for a window kept in the hit-test path without being
+   composited is exactly what nobody can establish from the code, and
+   the third check below is where it gets asked. The gate cannot make
+   the card visible in any case; it can only stop a card the server
+   admits it is not showing from acting.
 2. **The collection behavior** (`BackdropStance.collectionBehavior`).
    The pinned rest no longer carries `.stationary`, which belonged to
    the wallpaper recipe the unpinned rest is built from. What is left,
@@ -29,9 +34,13 @@ only one of them can be judged without a person at the machine:
    recipe AppKit documents. If the invisibility came from asking for an
    undefined combination, this is what fixes it.
 
-Change 2 is a hypothesis. Change 1 is the guarantee that holds whether
-or not the hypothesis is right. This procedure is what tells the two
-apart.
+Both changes rest on something only hardware can decide. Change 2 is a
+hypothesis about why the card was invisible. Change 1 holds whether or
+not that hypothesis is right, but only so far as the server's own report
+is honest: if it says a card it never composited is unoccluded, the gate
+believes it and the invisible clicks come back. That is the failure
+called out below, and the section after the checks says what to try
+next. This procedure is what tells the three outcomes apart.
 
 ## Setting up
 
@@ -74,18 +83,38 @@ Space.
       below.
 - [ ] **Coming back.** Leave the full-screen Space for an ordinary
       desktop. The card is visible again, the stream carries `mouse
-      gate=open`, and a click on the card raises it as it always did.
-      A card that stays visible but stops answering clicks is a gate
-      stuck shut, which is the one regression this change can cause.
+      gate=open` within about a second (the Space switch is read once
+      promptly and once when the transition has settled, and the settled
+      reading is the one that decides), and a click on the card raises it
+      as it always did. A card that stays visible but stops answering
+      clicks is a gate stuck shut, which is the one regression this
+      change can cause. Switch back and forth half a dozen times: the
+      gate must come back open every time, not merely the first.
+- [ ] **The pin, toggled under a cover.** On an ordinary desktop with
+      another app's window covering the card completely, turn the pin on
+      and off from Settings a few times, then move the covering window
+      aside. The card answers a click. The pin writes the gate from a
+      settled reading taken after the level and frame have moved, so a
+      pin judged from the posture it was leaving would show up here as a
+      card that never comes back.
 - [ ] **The unpinned rest is untouched.** Turn the pin off, click over
       the card on a bare desktop: the click still passes through to the
       Finder desktop (ADR-0015). Nothing in this change may hand the
       unpinned rest a click.
 - [ ] **The raise still takes its first click.** Pinned, on an ordinary
-      desktop, with another app's window covering most of the screen:
-      ⌃⌥Space to raise, then click straight into the card's text. The
-      keystroke lands. This is the timing the gate could plausibly get
-      wrong, since the reading is taken a turn after the ordering.
+      desktop, with another app's window covering the card **completely**
+      (not merely most of the screen: `occlusionState` reports visible
+      while any sliver of the window shows, so a partial cover never
+      produces the reading this check is about). ⌃⌥Space to raise, then
+      click straight into the card's text. The keystroke lands, and the
+      stream carries no `mouse gate=closed` in that moment. This is the
+      timing the gate could plausibly get wrong, since the reading is
+      taken a turn after the ordering and the occlusion state can still
+      be the pre-raise one; a gate closed there would pass the click to
+      the app underneath, and the outside click rule would then rest the
+      card the raise had just put up. The line to look for if it goes
+      wrong is `mouse gate=held open (settling over a keyed window)`,
+      which is the guard doing its job.
 
 ## If the gate stays open over an invisible card
 
@@ -110,6 +139,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | card visible over full screen | | The hypothesis, change 2. |
 | | | clicks reach the full-screen app | | The acceptance criterion. |
 | | | log shows the gate closing | | |
-| | | gate reopens off the full-screen Space | | |
+| | | gate reopens off the full-screen Space | | Every switch, not only the first. |
+| | | pin toggled under a full cover | | |
 | | | unpinned rest still passes clicks through | | |
 | | | first click after a raise lands | | |
