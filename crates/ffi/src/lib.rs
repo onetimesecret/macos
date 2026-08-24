@@ -4006,6 +4006,13 @@ mod tests {
     /// monotonic clock has left the file entirely, so a restart is
     /// indistinguishable from a relaunch and the gap is the wall stamp's
     /// to measure.
+    ///
+    /// The page types before it is sealed, and the ink is read back off
+    /// the second handle, because half of what this case owes is the
+    /// content itself (ADR-0016 section 10, case 3). A restart that
+    /// returns live pages with correct countdowns and empty documents
+    /// is the failure issue #44 opened on, and it satisfies every
+    /// assertion made on the countdown alone.
     #[test]
     fn a_restart_leaves_the_pages_alive_and_drains_them_by_the_gap() {
         let credentials: Arc<dyn CredentialStore> =
@@ -4017,6 +4024,8 @@ mod tests {
         unsafe {
             let first = handle_with(Arc::clone(&credentials));
             let (_tab, sheet) = new_page(first);
+            let doc = cstring(r##"[{"ink": "# the ink that outlives the boot\n"}]"##);
+            assert!(companion_sheet_sync_document(first, sheet, doc.as_ptr()));
             let remaining_before = first_remaining_ms(first).unwrap();
 
             // Sealed five minutes ago, by the only clock that can
@@ -4040,7 +4049,11 @@ mod tests {
                 drained.abs_diff(five_minutes_ms) < 60_000,
                 "the gap was not charged as five minutes: {remaining_before} then {remaining_after}"
             );
-            let _ = sheet;
+            let document = take_json(companion_sheet_document_json(second, sheet));
+            assert!(
+                document.contains("the ink that outlives the boot"),
+                "the restart brought the page back empty: {document}"
+            );
             companion_free(second);
         }
         std::fs::remove_dir_all(&dir).unwrap();
