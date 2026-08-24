@@ -101,6 +101,33 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertTrue(model.keymap.bindings.contains { $0.command == .pageClose })
     }
 
+    /// Which file a model reads is the keymap seam's business and no
+    /// other seam's. The gate used to be the state directory's, so a
+    /// model seamed for its files but not for its keymap read the
+    /// installed user's keymap, and the suite's answer depended on
+    /// what the person running it had bound.
+    func testTheKeymapSeamAnswersOnItsOwn() {
+        let named = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymap-\(UUID().uuidString).json")
+        XCTAssertEqual(
+            PageModel.userKeymapURL(formFactor: .backdrop, seam: named, underTests: true), named)
+        XCTAssertEqual(
+            PageModel.userKeymapURL(formFactor: .backdrop, seam: named, underTests: false), named)
+        XCTAssertEqual(
+            PageModel.userKeymapURL(formFactor: .backdrop, seam: nil, underTests: false),
+            FormFactor.backdrop.userKeymapFileURL)
+    }
+
+    /// And under the runner the shipping path is refused rather than
+    /// merely unused, so a model built without the seam reads nobody's
+    /// keymap at all. This process is a runner, which is what makes the
+    /// default argument the one every suite here actually gets.
+    func testNoTestEverReachesTheInstalledUsersKeymap() {
+        XCTAssertTrue(FormFactor.runningUnderTests)
+        XCTAssertNil(PageModel.userKeymapURL(formFactor: .backdrop, seam: nil))
+        XCTAssertNil(PageModel.userKeymapURL(formFactor: .backdrop, seam: nil, underTests: true))
+    }
+
     /// Absence is the ordinary case and must be silent.
     func testAMissingOverrideIsNotAComplaint() throws {
         let model = try makeModel(

@@ -291,6 +291,19 @@ extension FormFactor {
             seamsInjected: false
         )
     }
+
+    /// Whether a runner is what is running, on those same two signals
+    /// and with no seam in the question.
+    ///
+    /// The refusal above asks whether a construction may touch the
+    /// shipping state. This asks the plainer thing, for the files a
+    /// seam is not required to reach: is any of this machine's owner's
+    /// own configuration in reach at all. A suite that reads what they
+    /// wrote gives a different answer on their machine than on anyone
+    /// else's, which is not a suite.
+    static var runningUnderTests: Bool {
+        refusesProductionStateUnderTests(seamsInjected: false)
+    }
 }
 
 // MARK: - Where settings rest
