@@ -243,8 +243,19 @@ size — and the `### ` itself stays on screen, dimmed, exactly where it
 was typed. **Display-only, markup-preserving:** the bytes of the page
 never change; select-all-copy returns exactly what was typed; sealing a
 heading line seals the markup too. Scope for rev C is headings (#, ##,
-### and deeper); inline emphasis is deliberately deferred (doc 06). Tab
-titles strip the markup because a title is a name, not a document.
+### and deeper) and fenced code blocks; inline emphasis is deliberately
+deferred (doc 06). Tab titles strip the markup because a title is a
+name, not a document.
+
+**Inside a fence, markup is inert** (issue #75). A line of three or more
+backticks or tildes opens a block that runs until a rule of the same
+character, at least as long, closes it, and everything between the two
+is read literally: a `#` line there is a comment, a `-` line is a flag,
+and neither is styled as a heading or a list. The fence's own lines
+carry the dimming a heading's hashes do and the block takes a faint
+wash, so it reads as one slab of code. An unterminated fence holds to
+the last line of the page, which is the reading a writer mid-paste
+would expect.
 
 ## The keyboard map, complete
 
