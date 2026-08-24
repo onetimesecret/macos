@@ -165,14 +165,31 @@ public struct FormFactor: Sendable {
     ///
     /// Accepted: `fallback` itself, or `fallback` plus one dot-free
     /// configuration suffix, which is exactly what the build lane
-    /// produces (`package-app.sh --debug` appends `.debug`). That second
-    /// clause is what keeps the panel from resolving to the backdrop's
-    /// identifier inside the backdrop process, since the backdrop's id
-    /// does carry the panel's id as a prefix.
+    /// produces (`package-app.sh --debug` appends `.debug`). Counting
+    /// dots is all the second clause does, so it cannot tell a
+    /// configuration suffix from a sibling form factor's own id: asked
+    /// with the panel's fallback inside the backdrop process, it
+    /// answers with the backdrop's identifier, because `.backdrop` is
+    /// one dot-free suffix exactly as `.debug` is. Inert as things
+    /// stand, the panel having been archived (ADR-0014) and nothing
+    /// shipping asking for `FormFactor.panel`, and pinned as it stands
+    /// by `FormFactorTests`, but a second form factor returning would
+    /// need a rule that names its siblings rather than one that counts
+    /// dots.
     public static func resolvedBundleIdentifier(fallback: String) -> String {
-        guard let running = Bundle.main.bundleIdentifier,
-              running.hasPrefix(panelBundleIdentifier)
-        else { return fallback }
+        resolvedBundleIdentifier(running: Bundle.main.bundleIdentifier, fallback: fallback)
+    }
+
+    /// The rule itself, over the identifier the process is running
+    /// under rather than over `Bundle.main`. Same visibility as the
+    /// suite that drives it and no wider: under xctest `Bundle.main` is
+    /// the test runner, which takes the early return above, so every
+    /// guard that follows it is unreachable through the shipping entry
+    /// point. Those guards are what keeps a `.debug` rebuild off the
+    /// installed release copy's `state.sealed` and Keychain items, so
+    /// they are worth reaching (`FormFactorTests`).
+    static func resolvedBundleIdentifier(running: String?, fallback: String) -> String {
+        guard let running, running.hasPrefix(panelBundleIdentifier) else { return fallback }
 
         if running == fallback { return running }
 
