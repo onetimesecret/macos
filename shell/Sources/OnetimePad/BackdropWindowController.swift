@@ -24,6 +24,12 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     // and every other touch runs on the main actor.
     private nonisolated(unsafe) var screenObserver: NSObjectProtocol?
 
+    // The exposure watch, for the same reason and with the same care:
+    // one token from the default centre for the window's own occlusion,
+    // one from the workspace centre for Space switches.
+    private nonisolated(unsafe) var occlusionObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var spaceObserver: NSObjectProtocol?
+
     init(model: BackdropModel) {
         self.model = model
         panel = BackdropPanel()
@@ -44,7 +50,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             .dropFirst()
             .sink { [weak self] pinned in
                 guard let self else { return }
-                panel.ignoresMouseEvents = model.stance.ignoresMouse(pinned: pinned)
+                applyMouseGate(stance: model.stance, pinned: pinned)
                 panel.level = model.stance.level(pinned: pinned)
                 panel.collectionBehavior = model.stance.collectionBehavior(pinned: pinned)
                 applyFrame(
@@ -102,11 +108,43 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.fitToScreen() }
         }
+        // The two edges at which what the user can see of the surface
+        // changes without the stance changing at all (issue #73). The
+        // occlusion notification is the authoritative one: AppKit posts
+        // it so that an app can stop drawing what nobody will see, and
+        // the mouse gate wants the same fact for the opposite reason.
+        occlusionObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: panel,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshMouseGate() }
+        }
+        // A Space switch is the other, and it is watched as well as
+        // occlusion because a window that claims every Space keeps its
+        // membership across the switch and need not change occlusion
+        // state for the card to stop being composited. The reading is
+        // taken a turn later: the switch is still settling at the moment
+        // the notification arrives, and the window server's answer
+        // during the transition describes the Space being left.
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshMouseGate() }
+        }
     }
 
     deinit {
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
+        }
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+        }
+        if let spaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver)
         }
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
@@ -185,6 +223,12 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // by the time it is ordered back, and already accept it by the
         // time it is made key.
         panel.isInteractive = stance.acceptsKey
+        // The posture's own rule, ungated, because the ordering below is
+        // about to change what is on screen: the window server's present
+        // reading describes the posture being left, and a raise arriving
+        // over a card that was buried under someone's window would start
+        // life mouse-transparent for no reason. The settled reading is
+        // taken a turn later, once the ordering has happened.
         panel.ignoresMouseEvents = stance.ignoresMouse(pinned: model.pinned)
         panel.level = stance.level(pinned: model.pinned)
         panel.collectionBehavior = stance.collectionBehavior(pinned: model.pinned)
@@ -245,9 +289,47 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // the wallpaper's own window and vanish on a bare desktop.
             panel.orderFrontRegardless()
         }
+        // Now that the ordering has happened, ask the window server what
+        // it made of it. A turn later rather than here: occlusion and
+        // Space membership settle after the order, not during it, and
+        // the closure reads the model rather than this call's arguments
+        // because by then both have landed and a stance that changed in
+        // between should win.
+        Task { @MainActor in self.refreshMouseGate() }
         Self.logger.info(
             "stance=\(stance == .raised ? "raised" : "resting", privacy: .public) level=\(self.panel.level.rawValue, privacy: .public) visible=\(self.panel.isVisible, privacy: .public) frame=\(NSStringFromRect(self.panel.frame), privacy: .public)"
         )
+    }
+
+    // MARK: The mouse gate
+
+    /// Whether the surface takes the mouse right now, judged by the
+    /// stance and by what the window server is actually showing of it
+    /// (issue #73). The decision is `BackdropStance.ignoresMouse(pinned:
+    /// exposure:)`; all this does is read the window and apply it.
+    ///
+    /// Written only on a change, since the gate is consulted from every
+    /// edge that can move it and an unchanged assignment is a message to
+    /// the window server for nothing. The change is logged because the
+    /// gate closing is invisible by definition: the symptom of a gate
+    /// stuck shut is a pinned card that stops answering clicks, and this
+    /// line is the only way to tell that from a card that never got the
+    /// press at all.
+    private func applyMouseGate(stance: BackdropStance, pinned: Bool) {
+        let exposure = SurfaceExposure(window: panel)
+        let ignores = stance.ignoresMouse(pinned: pinned, exposure: exposure)
+        guard panel.ignoresMouseEvents != ignores else { return }
+        panel.ignoresMouseEvents = ignores
+        Self.logger.info(
+            "mouse gate=\(ignores ? "closed" : "open", privacy: .public) onActiveSpace=\(exposure.onActiveSpace, privacy: .public) unoccluded=\(exposure.unoccluded, privacy: .public)"
+        )
+    }
+
+    /// The gate re-judged against the model as it stands, for the edges
+    /// that carry no posture of their own: an occlusion change, a Space
+    /// switch, and the settling turn after a stance is applied.
+    private func refreshMouseGate() {
+        applyMouseGate(stance: model.stance, pinned: model.pinned)
     }
 
     // MARK: Resting on an outside click
