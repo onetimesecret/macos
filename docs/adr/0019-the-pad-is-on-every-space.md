@@ -76,6 +76,10 @@ because being wrong about a window stranded off-Space costs the user's
 keystrokes. Where it does fire, the blink is the card arriving where the
 user is.
 
+One hazard goes away without being aimed at: a window belonging to a
+single Space dies with it when that desktop is closed or two displays
+are merged, and a window on all of them has no such Space to lose.
+
 The resting card is now visible on every desktop rather than on the one
 it launched under. For an ambient surface this is the intended reading:
 the wallpaper is on every desktop too. It also means the pad cannot be
