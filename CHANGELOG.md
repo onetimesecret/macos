@@ -279,22 +279,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing here hands a click to the unpinned rest, which stays
   transparent by ADR-0015; and the reading is taken a turn after a
   stance is applied, where it may open the gate but not close it on a
-  card that holds the keyboard, since a raise outruns the occlusion
+  card the stance puts in front, since a raise outruns the occlusion
   state by a frame and a gate closed in that gap would pass the user's
   next click to the application underneath. A Space switch is read twice
   for the mirror-image reason: the answer given mid-transition describes
   the desktop being left, and a card present on every Space has no later
   edge to reopen a gate wrongly closed on it, so the prompt reading is
   taken as the guess it is and only the settled one may take the clicks
-  off a card that holds the keyboard. A raise takes a late reading of
-  its own, because a card raised while it was already wholly covered
-  reads occluded before the raise and occluded after it: no change is
-  posted, no edge arrives, and without that reading the gate held open
-  over a keyed surface nobody can see would stay open for the life of
-  the raise. Waking the displays and returning from the lock screen or
-  another user are read the same way a Space switch is, so a card does
-  not come back from either one refusing every click. The
-  pinned rest also stopped carrying `.stationary`, a flag it had
+  off a raised card. That refusal has a price of its own: for the
+  second or so before the settled reading lands, a raised card the
+  server is not showing goes on taking presses aimed past it, which is
+  the worse of the two faults by this code's own ranking. It is
+  accepted because it ends of its own accord, while a gate wrongly shut
+  has nothing that would ever reopen it. Every posture change, a stance
+  applied and the pin toggled alike, takes a late reading of its own,
+  because a card put in front while it was already wholly covered reads
+  occluded before the change and occluded after it: no change is posted,
+  no edge arrives, and without that reading the gate held open over a
+  surface nobody can see would stay open for the life of the raise. A
+  scheduled reading is asked again, when it fires, whether it still
+  deserves the authority it was scheduled with: a desktop change while
+  it waited puts it back inside a transition, where every reading is a
+  guess and only the transition's own settled one decides. Waking the
+  displays, returning from another user, and clearing the lock screen
+  are read the same way a Space switch is, so a card does not come back
+  from any of them refusing every click. The unlock comes off the
+  distributed centre, because an ordinary lock switches no session and
+  need not sleep the displays, so nothing the workspace publishes
+  mentions it. The pinned rest also stopped carrying `.stationary`, a flag it had
   inherited from the wallpaper recipe the unpinned rest is built from,
   leaving the overlay recipe AppKit actually documents. Whether that
   second change makes the card visible over a full-screen Space is a

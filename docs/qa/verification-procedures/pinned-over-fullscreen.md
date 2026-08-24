@@ -97,6 +97,15 @@ Space.
       settled reading taken after the level and frame have moved, so a
       pin judged from the posture it was leaving would show up here as a
       card that never comes back.
+- [ ] **The pin, toggled while raised.** Same full cover, but raise the
+      card first with ⌃⌥Space, then toggle the pin from the tray menu
+      (a menu, so the raise survives the click). Roughly a second later
+      the stream carries `mouse gate=closed`. The pin rewrites the gate
+      from the stance's own ungated rule, which for a raise is open, and
+      the settling reading that follows may not close it over a raise;
+      the scheduled reading is the only thing that will. Silence here
+      means an invisible card left holding the mouse for as long as the
+      raise lasts.
 - [ ] **The unpinned rest is untouched.** Turn the pin off, click over
       the card on a bare desktop: the click still passes through to the
       Finder desktop (ADR-0015). Nothing in this change may hand the
@@ -113,7 +122,7 @@ Space.
       be the pre-raise one; a gate closed there would pass the click to
       the app underneath, and the outside click rule would then rest the
       card the raise had just put up. The line to look for if it goes
-      wrong is `mouse gate=held open (settling over a keyed window)`,
+      wrong is `mouse gate=held open (settling over a raised surface)`,
       which is the guard doing its job.
 - [ ] **The raise's own second reading.** Same setup, but wait about two
       seconds after the raise before clicking, and keep watching the
@@ -126,11 +135,22 @@ Space.
       forward, where the gate must end up closed even though no
       occlusion change is ever posted.
 - [ ] **Waking and unlocking.** Pinned, on an ordinary desktop. Lock the
-      screen (or let the displays sleep), come back, and click the card.
-      It raises. The stream carries a `mouse gate=` line only if the
-      gate actually moved, so silence here with a working click is the
-      pass; a visible card that stops answering after a wake is the
+      screen with ⌃⌘Q, unlock a few seconds later (before the displays
+      sleep, so the wake notification cannot be what answers), and click
+      the card. It raises. The stream carries a `mouse gate=` line only
+      if the gate actually moved, so silence here with a working click is
+      the pass; a visible card that stops answering after a wake is the
       failure this check is for.
+
+      Note what this check does not prove. A gate that was never wrongly
+      shut answers the click either way, so a pass here is consistent
+      with the unlock going unheard. What it would take to see the
+      reading itself is a card whose gate is already shut, which is a
+      state nothing can be asked to produce on purpose. Treat the pass
+      as the absence of the symptom, and if a card is ever found deaf
+      after an unlock, the first thing to establish is whether
+      `com.apple.screenIsUnlocked` is still posted under this macOS,
+      since it is the only signal an ordinary lock gives.
 
 ## If the gate stays open over an invisible card
 
@@ -157,6 +177,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | log shows the gate closing | | |
 | | | gate reopens off the full-screen Space | | Every switch, not only the first. |
 | | | pin toggled under a full cover | | |
+| | | pin toggled while raised under a full cover | | |
 | | | unpinned rest still passes clicks through | | |
 | | | first click after a raise lands | | |
 | | | the raise's second reading leaves a visible card clickable | | |
