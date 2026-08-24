@@ -157,6 +157,15 @@ final class MenuTrackingWatch {
     // runs on the main actor.
     private nonisolated(unsafe) var tokens: [NSObjectProtocol] = []
 
+    /// The centre the observations were made on, kept so that deinit can
+    /// undo exactly what init did. Removing from `.default` when a
+    /// different centre was injected takes back nothing and leaves the
+    /// real observations standing, which under test is a watch that goes
+    /// on recording after the case that made it has finished.
+    /// nonisolated(unsafe) for the same reason as the tokens: deinit is
+    /// nonisolated, and NotificationCenter's removal is thread-safe.
+    private nonisolated(unsafe) let center: NotificationCenter
+
     /// Object nil on both observations, so every menu in the process is
     /// covered: the main menu bar, the status item's menu, and the chip
     /// context menu in the editor, without any of them having to know
@@ -168,6 +177,7 @@ final class MenuTrackingWatch {
     /// before the nested loop can hand the main queue back to a deferred
     /// monitor handler.
     init(center: NotificationCenter = .default) {
+        self.center = center
         tokens = [
             center.addObserver(
                 forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil
@@ -188,7 +198,7 @@ final class MenuTrackingWatch {
 
     deinit {
         for token in tokens {
-            NotificationCenter.default.removeObserver(token)
+            center.removeObserver(token)
         }
     }
 

@@ -219,6 +219,22 @@ final class MenuTrackingTests: XCTestCase {
     }
 
     @MainActor
+    func testTheWatchStopsObservingTheCentreItWasGiven() {
+        // Undoing the observations on `.default` regardless of what was
+        // injected takes back nothing at all: the real observations
+        // outlive the watch, holding it up by its own closures, and a
+        // test's centre keeps feeding a watch its case has finished
+        // with. The tokens must go back to the centre they came from.
+        let center = RecordingCenter()
+        do {
+            let watch = MenuTrackingWatch(center: center)
+            XCTAssertEqual(center.removed, 0)
+            withExtendedLifetime(watch) {}
+        }
+        XCTAssertEqual(center.removed, 2, "both observations belong to the injected centre")
+    }
+
+    @MainActor
     func testTheWatchStampsSessionsOnTheClockEventsCarry() {
         // NSEvent.timestamp and systemUptime share a base; if the watch
         // stamped anything else, every comparison above would be
@@ -232,5 +248,21 @@ final class MenuTrackingTests: XCTestCase {
         let began = watch.sessions.first?.began ?? -1
         XCTAssertGreaterThanOrEqual(began, before)
         XCTAssertLessThanOrEqual(began, after)
+    }
+}
+
+/// A notification centre that counts the observations taken back from
+/// it. Nothing else about it differs from the real thing, which is the
+/// point: the watch cannot tell it apart, and deinit either returns the
+/// tokens here or quietly loses them somewhere else.
+private final class RecordingCenter: NotificationCenter {
+    // nonisolated(unsafe) because the watch's deinit is nonisolated, as
+    // every deinit is; the only writes come from there and from the test
+    // that owns this instance, both on the main thread.
+    nonisolated(unsafe) var removed = 0
+
+    override func removeObserver(_ observer: Any) {
+        removed += 1
+        super.removeObserver(observer)
     }
 }
