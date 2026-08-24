@@ -35,6 +35,22 @@ struct BackdropApp: App {
                     Button("Settings…") { appDelegate.openSettings() }
                         .keyboardShortcut(",", modifiers: .command)
                 }
+                // Repointed for the same reason and with more at stake.
+                // The synthesized item calls AppKit's own
+                // `orderFrontStandardAboutPanel:`, which builds the
+                // panel with default collection behavior; the delegate's
+                // route is what puts `.moveToActiveSpace` on it
+                // (ADR-0019), and a panel left open on the desktop it
+                // was first shown on carries the user back there on the
+                // next ⌘Tab. The app is `.regular`, so this menu is on
+                // screen whenever the app is active and the route is not
+                // hypothetical. It also carries the version the core
+                // reports, which the standard item cannot know.
+                CommandGroup(replacing: .appInfo) {
+                    Button("About \(BackdropAppDelegate.productName)") {
+                        appDelegate.showAbout()
+                    }
+                }
             }
     }
 }
@@ -226,7 +242,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// The standard About panel; the version comes from the core (the
     /// same source the bundle's plist is stamped from), because a bare
     /// `swift run` binary has no Info.plist to read it from.
-    @objc private func showAbout() {
+    ///
+    /// Every route to the panel goes through here, the tray menu and the
+    /// app menu's own item alike, because what happens after the panel
+    /// is up is load-bearing and AppKit's synthesized item skips it.
+    @objc func showAbout() {
         var aboutOptions: [NSApplication.AboutPanelOptionKey: Any] = [
             .applicationName: Self.productName,
             .applicationVersion: CompanionClient.version,

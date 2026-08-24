@@ -61,7 +61,11 @@ same reason from the other side: each is built once and shown many
 times, so either would otherwise anchor the app to the desktop it was
 first opened on and undo the fix from outside the surface. Settings
 takes the bit when it is created; About is AppKit's own window, so it
-takes the bit each time it is put up.
+takes the bit each time it is put up. That last is why the app menu's
+About item is repointed at the delegate rather than left to SwiftUI: the
+synthesized item calls `orderFrontStandardAboutPanel:` directly, and a
+panel built by that route never gets the bit at all. A guarantee that
+holds only for the tray's route is not one.
 
 The summon's order-out round trip becomes unreachable from any desktop
 Space, which is where the flicker was seen: a window on every desktop is

@@ -256,7 +256,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app's two ordinary windows, take `.moveToActiveSpace` for the same
   reason from the other side: each is built once and shown many times,
   so either used to anchor the app to the desktop it was first opened
-  on. What is *not*
+  on. The app menu's About item is repointed at the same route the tray
+  uses, since the one SwiftUI synthesizes goes straight to AppKit and
+  the panel it puts up would carry no such bit. What is *not*
   fixed is dragging the card to another desktop by the screen edge, and
   ADR-0019 says why it will not be: the card's place is the app's own
   state clamped to the primary screen, the window server never sees a

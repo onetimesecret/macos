@@ -90,6 +90,12 @@ log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
       OnetimePad: the desktop must not change, and the panel comes here
       rather than staying behind. Then choose About again from the tray
       on Desktop 3 and confirm it appears on Desktop 3.
+- [ ] **The same, from the app menu.** Repeat the check above, but open
+      About from the menu bar's OnetimePad menu rather than the tray.
+      This is the route that used to bypass the fix entirely, since
+      SwiftUI synthesizes that item against AppKit's own panel call; a
+      pass on the tray route says nothing about it. ⌘Tab to the app
+      first, which is what puts the menu on screen.
 
 ### The flicker
 
@@ -147,6 +153,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | Dock icon from another desktop | | |
 | | | Settings opens where the user is | | |
 | | | About opens where the user is, and follows a ⌘Tab | | |
+| | | the same for About opened from the app menu | | |
 | | | summon from a full-screen Space lands and takes keys | | One blink there is the landing, not the flicker. |
 | | | ten ⌘Tab returns, unpinned | | Record the shape of any flicker. |
 | | | ten ⌘Tab returns, pinned | | |
