@@ -96,7 +96,9 @@ final class QuitPromptTests: XCTestCase {
     func testARefusedWriteKeepsTheAppRunningWhenTheUserCancels() {
         let model = FlushSpy(.refused)
         var seen: QuitPrompt.Warning?
+        var presented = 0
         let reply = QuitPrompt.terminateReply(flushing: model) { warning in
+            presented += 1
             seen = warning
             return false
         }
@@ -104,11 +106,16 @@ final class QuitPromptTests: XCTestCase {
         // second chance at the disk.
         XCTAssertEqual(reply, .terminateCancel)
         XCTAssertEqual(seen?.messageText, "This page could not be saved")
+        // Never a retry loop (ADR-0016 §1, the clean-quit row): the
+        // alert offers Quit Anyway or Cancel once, and Cancel is
+        // answered by returning to the surface, not by asking again.
+        // A decision that re-presented on Cancel would trap the user in
+        // the dialogue with no way out but quitting.
+        XCTAssertEqual(presented, 1)
     }
 
     func testARefusedWriteStillQuitsWhenTheUserInsists() {
-        // Never a retry loop (ADR-0016 §2): Quit Anyway means the loss
-        // is accepted and the app goes.
+        // Quit Anyway means the loss is accepted and the app goes.
         let model = FlushSpy(.refused)
         let reply = QuitPrompt.terminateReply(flushing: model) { _ in true }
         XCTAssertEqual(reply, .terminateNow)
@@ -117,14 +124,20 @@ final class QuitPromptTests: XCTestCase {
     func testAnUnsavableSessionCancelsBackToTheSurface() {
         let model = FlushSpy(.unsavableWithContent)
         var seen: QuitPrompt.Warning?
+        var presented = 0
         let reply = QuitPrompt.terminateReply(flushing: model) { warning in
+            presented += 1
             seen = warning
             return false
         }
         // Cancelling here buys the user the discard, which is the only
-        // way this session's content ever reaches disk.
+        // way this session's content ever reaches disk. It has to buy it
+        // immediately: asking a second time would put the alert between
+        // the user and the very page they cancelled to reach
+        // (ADR-0016 §1, the clean-quit row).
         XCTAssertEqual(reply, .terminateCancel)
         XCTAssertEqual(seen?.messageText, "This session was never being saved")
+        XCTAssertEqual(presented, 1)
     }
 
     func testAnUnsavableSessionQuitsWhenTheUserInsists() {
