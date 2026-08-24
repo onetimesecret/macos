@@ -1,0 +1,198 @@
+import AppKit
+import XCTest
+
+@testable import OnetimePad
+
+/// The menu exception to the outside click rule, tested as the pure
+/// decision it is (issue #41). Nothing here mocks AppKit: the intervals
+/// are written by hand on the same uptime clock the real events carry,
+/// which is the whole reason the rule was given this shape. That the
+/// window server delivers our menu presses to a global monitor at all is
+/// hardware knowledge and stays in the manual matrix.
+final class MenuTrackingTests: XCTestCase {
+    /// A stand-in for "some moment on the uptime clock". Values below
+    /// are offsets from it, in seconds.
+    private let t: TimeInterval = 1_000
+
+    // MARK: The four cases the rule exists for
+
+    func testAPressJustBeforeASessionOpensIsTheOneThatOpenedIt() {
+        // The click comes first and the notification follows from it, so
+        // the opening press always lands fractionally outside its own
+        // session. Reading it as an outside click is precisely the bug:
+        // clicking Edit rested the card and dismissed the menu.
+        let sessions = [MenuTracking.Session(began: t, ended: t + 2)]
+        XCTAssertTrue(MenuTracking.claims(press: t - 0.01, sessions: sessions))
+    }
+
+    func testAPressDuringASessionBelongsToTheMenu() {
+        // Choosing Find, halfway through the menu being up.
+        let sessions = [MenuTracking.Session(began: t, ended: t + 2)]
+        XCTAssertTrue(MenuTracking.claims(press: t + 1, sessions: sessions))
+    }
+
+    func testAPressJustAfterASessionClosesRestsTheSurface() {
+        // The menu is gone; the next press is the user going elsewhere,
+        // and the rule that dismisses the card must still fire.
+        let sessions = [MenuTracking.Session(began: t, ended: t + 2)]
+        XCTAssertFalse(MenuTracking.claims(press: t + 2.01, sessions: sessions))
+    }
+
+    func testAPlainOutsidePressWithNoMenusAtAllRestsTheSurface() {
+        XCTAssertFalse(MenuTracking.claims(press: t, sessions: []))
+    }
+
+    // MARK: The boundaries either side
+
+    func testAPressLongBeforeASessionIsNotClaimedByIt() {
+        // A click into another app, and only then a menu of ours: the
+        // grace covers the gap between a press and its notification,
+        // never a whole gesture.
+        let sessions = [MenuTracking.Session(began: t, ended: t + 2)]
+        XCTAssertFalse(
+            MenuTracking.claims(press: t - MenuTracking.openingGrace - 0.01, sessions: sessions)
+        )
+    }
+
+    func testThePressThatChoosesTheLastItemIsStillInside() {
+        // The end of tracking and the press that caused it share a
+        // moment; the boundary is inclusive so the choice is not read as
+        // a dismissal.
+        let sessions = [MenuTracking.Session(began: t, ended: t + 2)]
+        XCTAssertTrue(MenuTracking.claims(press: t + 2, sessions: sessions))
+    }
+
+    func testAnOpenSessionClaimsEveryPressAfterItsStart() {
+        // Judged while the menu is still up, which is what a submenu or
+        // a slow choice looks like.
+        let sessions = [MenuTracking.Session(began: t, ended: nil)]
+        XCTAssertTrue(MenuTracking.claims(press: t + 30, sessions: sessions))
+    }
+
+    func testAPressBetweenTwoSessionsRestsTheSurface() {
+        // Two menus in a row, and a click elsewhere in between: the
+        // record is a set of intervals, not a single high water mark.
+        let sessions = [
+            MenuTracking.Session(began: t, ended: t + 1),
+            MenuTracking.Session(began: t + 10, ended: t + 11),
+        ]
+        XCTAssertFalse(MenuTracking.claims(press: t + 5, sessions: sessions))
+    }
+
+    // MARK: Delivery order, which is what the interval form buys
+
+    func testAPressIsJudgedTheSameWhetherOrNotTheMenuHasClosedYet() {
+        // The monitor's handler is deferred, and a menu runs a nested
+        // loop, so the handler routinely runs after the session it must
+        // judge has ended. A boolean "is a menu up" would answer
+        // differently in these two states; the interval cannot.
+        let open = [MenuTracking.Session(began: t, ended: nil)]
+        let closed = [MenuTracking.Session(began: t, ended: t + 2)]
+        XCTAssertEqual(
+            MenuTracking.claims(press: t + 1, sessions: open),
+            MenuTracking.claims(press: t + 1, sessions: closed)
+        )
+    }
+
+    // MARK: Keeping the record short
+
+    func testOpeningASessionRecordsItAndSweepsTheStaleOnes() {
+        let existing = [
+            MenuTracking.Session(began: t - 100, ended: t - 99),
+            MenuTracking.Session(began: t - 1, ended: t - 0.5),
+        ]
+        let opened = MenuTracking.opening(existing, at: t)
+        XCTAssertEqual(
+            opened,
+            [
+                MenuTracking.Session(began: t - 1, ended: t - 0.5),
+                MenuTracking.Session(began: t, ended: nil),
+            ]
+        )
+    }
+
+    func testClosingEndsTheInnermostOpenSession() {
+        // A submenu opens and closes inside its parent's session, and
+        // posts its own pair of notifications.
+        let nested = [
+            MenuTracking.Session(began: t, ended: nil),
+            MenuTracking.Session(began: t + 1, ended: nil),
+        ]
+        XCTAssertEqual(
+            MenuTracking.closing(nested, at: t + 2),
+            [
+                MenuTracking.Session(began: t, ended: nil),
+                MenuTracking.Session(began: t + 1, ended: t + 2),
+            ]
+        )
+    }
+
+    func testClosingWithNothingOpenInventsNothing() {
+        let settled = [MenuTracking.Session(began: t, ended: t + 1)]
+        XCTAssertEqual(MenuTracking.closing(settled, at: t + 2), settled)
+    }
+
+    func testPruningKeepsOpenSessionsHoweverOldTheyAre() {
+        // A menu the user has left standing is still the reason the
+        // next press must be ignored.
+        let sessions = [MenuTracking.Session(began: t - 600, ended: nil)]
+        XCTAssertEqual(MenuTracking.pruned(sessions, now: t), sessions)
+    }
+
+    func testPruningDropsSessionsClosedBeyondRetention() {
+        let sessions = [
+            MenuTracking.Session(began: t - 60, ended: t - 59),
+            MenuTracking.Session(began: t - 2, ended: t - 1),
+        ]
+        XCTAssertEqual(
+            MenuTracking.pruned(sessions, now: t),
+            [MenuTracking.Session(began: t - 2, ended: t - 1)]
+        )
+    }
+
+    // MARK: The watch, which holds the record and no policy
+
+    @MainActor
+    func testTheWatchFollowsTheNotificationsOfEveryMenuInTheProcess() {
+        // Object nil on both observations, so the main menu bar, the
+        // status item's menu and the chip context menu are covered
+        // without any of them knowing this rule exists. A bare NSMenu
+        // stands in for all three, since the notification is the only
+        // thing the watch ever sees of them.
+        let center = NotificationCenter()
+        let watch = MenuTrackingWatch(center: center)
+        let menu = NSMenu()
+
+        XCTAssertTrue(watch.sessions.isEmpty)
+        center.post(name: NSMenu.didBeginTrackingNotification, object: menu)
+        XCTAssertEqual(watch.sessions.count, 1)
+        // Open, so a press arriving now is claimed; the press that
+        // opened it, a moment earlier, is claimed too.
+        let began = watch.sessions.first?.began ?? 0
+        XCTAssertNil(watch.sessions.first?.ended)
+        XCTAssertTrue(watch.claims(press: began - 0.01))
+
+        center.post(name: NSMenu.didEndTrackingNotification, object: menu)
+        XCTAssertNotNil(watch.sessions.first?.ended)
+        // And the record still answers for that press once the session
+        // has closed, which is the order the deferred monitor handler
+        // actually runs in: the menu is down by the time it asks.
+        XCTAssertTrue(watch.claims(press: began - 0.01))
+    }
+
+    @MainActor
+    func testTheWatchStampsSessionsOnTheClockEventsCarry() {
+        // NSEvent.timestamp and systemUptime share a base; if the watch
+        // stamped anything else, every comparison above would be
+        // meaningless.
+        let center = NotificationCenter()
+        let watch = MenuTrackingWatch(center: center)
+        let before = ProcessInfo.processInfo.systemUptime
+        center.post(name: NSMenu.didBeginTrackingNotification, object: NSMenu())
+        let after = ProcessInfo.processInfo.systemUptime
+
+        let began = watch.sessions.first?.began ?? -1
+        XCTAssertGreaterThanOrEqual(began, before)
+        XCTAssertLessThanOrEqual(began, after)
+    }
+}
