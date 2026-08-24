@@ -231,6 +231,68 @@ public struct FormFactor: Sendable {
     }
 }
 
+// MARK: - The installed app's data is not a test fixture
+
+extension FormFactor {
+    /// The identifier prefix every process running an XCTest bundle
+    /// carries, whether `swift test` spawned it or Xcode did.
+    static let testRunnerBundlePrefix = "com.apple.dt.xctest"
+
+    /// Whether a construction that would land on a form factor's own
+    /// shipping state directory and Keychain service has to be refused
+    /// rather than performed.
+    ///
+    /// The hazard is a consequence of `resolvedBundleIdentifier` doing
+    /// its job. Under the runner `Bundle.main` is not ours, so both form
+    /// factors take their fallbacks, and the fallbacks are the shipped
+    /// identifiers: a test that constructs a model without seams gets
+    /// the installed app's `state.sealed`, its `ledger.sealed`, and its
+    /// Keychain items, and any route that erases a file by path erases
+    /// the user's. That is not hypothetical. A suite added for issue #48
+    /// cleared the ledger as one of its steps and took the installed
+    /// backdrop's audit record with it.
+    ///
+    /// Two signals, because neither alone covers both ways a suite
+    /// starts. `XCTestConfigurationFilePath` is what Xcode sets and is
+    /// the usual published check, but SwiftPM's own runner does not set
+    /// it: verified on this machine, where a `swift test` process shows
+    /// no such variable and reports `com.apple.dt.xctest.tool` as its
+    /// bundle identifier. So the identifier prefix is the signal that
+    /// actually fires for `swift test`, and the variable is kept beside
+    /// it for the Xcode-hosted case, where the runner may wear a host
+    /// app's identity instead.
+    ///
+    /// Pure, and taking both signals as arguments, because the refusal
+    /// itself is a `preconditionFailure`: a test cannot drive the real
+    /// thing without ending the process that runs it, so the decision
+    /// is what gets pinned (`FormFactorTests`).
+    static func refusesProductionStateUnderTests(
+        environment: [String: String],
+        bundleIdentifier: String?,
+        seamsInjected: Bool
+    ) -> Bool {
+        if seamsInjected { return false }
+        if bundleIdentifier?.hasPrefix(testRunnerBundlePrefix) == true { return true }
+        return environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    /// The same decision about the running process. Short-circuits on
+    /// the identifier so a shipping launch, whose identifier is its own
+    /// and whose seams are absent by design, never builds the
+    /// environment dictionary at all; and it is asked once, at a
+    /// model's init, so what it costs there is nothing a shipping build
+    /// can feel.
+    static func refusesProductionStateUnderTests(seamsInjected: Bool) -> Bool {
+        if seamsInjected { return false }
+        if Bundle.main.bundleIdentifier?.hasPrefix(testRunnerBundlePrefix) == true { return true }
+        return refusesProductionStateUnderTests(
+            environment: ProcessInfo.processInfo.environment,
+            bundleIdentifier: Bundle.main.bundleIdentifier,
+            seamsInjected: false
+        )
+    }
+}
+
 // MARK: - Where settings rest
 
 extension FormFactor {

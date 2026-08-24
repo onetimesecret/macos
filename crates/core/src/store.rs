@@ -38,7 +38,7 @@ pub const DEFAULT_SHEET_CAP: usize = 9;
 /// (ADR-0016 section 8).
 pub(crate) const HOLD_FIRST: Duration = Duration::from_secs(60 * 60);
 /// …and every further double-click tops the hold up to 24 hours from
-/// now — never cumulative (doc 04). This is the ceiling the restore
+/// now, never cumulative (doc 04). This is the ceiling the restore
 /// path reads a topped-up hold against.
 pub(crate) const HOLD_TOPUP: Duration = Duration::from_secs(24 * 60 * 60);
 

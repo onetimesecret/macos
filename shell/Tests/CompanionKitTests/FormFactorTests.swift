@@ -206,6 +206,87 @@ final class FormFactorTests: XCTestCase {
         XCTAssertEqual(FormFactor.backdrop.defaultRung, .sevenDays)
         XCTAssertNil(FormFactor.panel.defaultRung)
     }
+
+    // MARK: The refusal that keeps a test off the installed app's data
+
+    private static let xctestRunner = "com.apple.dt.xctest.tool"
+    private static let shippingApp = FormFactor.backdropBundleIdentifier
+
+    /// A suite that names no seams gets the shipped identifiers back
+    /// from `resolvedBundleIdentifier`, so its model would read the
+    /// user's pages and could erase their ledger. That construction is
+    /// a programmer error and the model's init ends the process over
+    /// it; here is the decision it ends the process on.
+    func testAnUnseamedConstructionIsRefusedUnderTheRunner() {
+        XCTAssertTrue(
+            FormFactor.refusesProductionStateUnderTests(
+                environment: [:],
+                bundleIdentifier: Self.xctestRunner,
+                seamsInjected: false
+            )
+        )
+
+        // The Xcode-hosted shape of the same run: the identifier may be
+        // a host app's, and the variable is what gives the runner away.
+        XCTAssertTrue(
+            FormFactor.refusesProductionStateUnderTests(
+                environment: ["XCTestConfigurationFilePath": "/tmp/Session.xctestconfiguration"],
+                bundleIdentifier: "com.example.host",
+                seamsInjected: false
+            )
+        )
+    }
+
+    /// And the running process is one of those shapes, whichever way
+    /// this suite was started. Without this the guard could be silently
+    /// inert here and no other assertion would notice.
+    func testTheRunningProcessIsRecognisedAsARunner() {
+        XCTAssertTrue(FormFactor.refusesProductionStateUnderTests(seamsInjected: false))
+    }
+
+    /// The shipping launch, which is the whole population the guard
+    /// must not touch: its own identifier, no runner variable, and no
+    /// seams, because the app is the thing the seams stand in for.
+    func testAShippingLaunchIsNeverRefused() {
+        XCTAssertFalse(
+            FormFactor.refusesProductionStateUnderTests(
+                environment: [:],
+                bundleIdentifier: Self.shippingApp,
+                seamsInjected: false
+            )
+        )
+        XCTAssertFalse(
+            FormFactor.refusesProductionStateUnderTests(
+                environment: [:],
+                bundleIdentifier: Self.shippingApp + ".debug",
+                seamsInjected: false
+            )
+        )
+        // A bare `swift run` has no identifier at all, and is still not
+        // a test run.
+        XCTAssertFalse(
+            FormFactor.refusesProductionStateUnderTests(
+                environment: [:],
+                bundleIdentifier: nil,
+                seamsInjected: false
+            )
+        )
+    }
+
+    /// A seamed construction is the answer to the refusal, so it is
+    /// waved through under the runner exactly as a launch is. Checked
+    /// both ways round, because a guard that ignored its injection
+    /// argument would still pass every assertion above.
+    func testSeamsInjectedEndsTheRefusal() {
+        XCTAssertFalse(
+            FormFactor.refusesProductionStateUnderTests(
+                environment: ["XCTestConfigurationFilePath": "/tmp/Session.xctestconfiguration"],
+                bundleIdentifier: Self.xctestRunner,
+                seamsInjected: true
+            )
+        )
+        XCTAssertFalse(FormFactor.refusesProductionStateUnderTests(seamsInjected: true))
+    }
 }
 
 /// The restore's last mile, against the live core: what a surface

@@ -198,7 +198,9 @@ front` names it) and leave this window visible but not key.
 
 The runbook above is one session. These are standalone procedures, each
 with its own owner and its own dated results, under
-`docs/qa/verification-procedures/`:
+`docs/qa/verification-procedures/`. Which ADR-0016 lifecycle case each
+one closes, and what the automated tests already cover for that case,
+is indexed in [`qa/recovery-matrix.md`](qa/recovery-matrix.md):
 
 - [`reboot.md`](qa/verification-procedures/reboot.md). Owner: delano.
   A real reboot with a live pad; a reboot with the pad emptied first,
