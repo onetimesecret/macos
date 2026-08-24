@@ -147,14 +147,45 @@ final class SurfaceExposureTests: XCTestCase {
         // being left, and a gate closed on that answer has no later edge
         // to reopen it: a window on every Space need not change its
         // occlusion because the user changed desktop.
-        let reads = SurfaceExposure.spaceSettleReads
-        XCTAssertEqual(reads.first, 0, "the prompt reading takes clicks off an absent card at once")
+        let reads = SurfaceExposure.settleReads
+        XCTAssertEqual(
+            reads.first?.delay, 0, "the prompt reading takes clicks off an absent card at once"
+        )
         XCTAssertGreaterThan(reads.count, 1, "a settled reading must follow the transient one")
         XCTAssertGreaterThanOrEqual(
-            reads.last ?? 0, 0.5,
+            reads.last?.delay ?? 0, 0.5,
             "the last reading has to fall after the transition, animation included"
         )
-        XCTAssertEqual(reads, reads.sorted(), "the settled reading is the last word")
+        XCTAssertEqual(
+            reads.map(\.delay), reads.map(\.delay).sorted(),
+            "the settled reading is the last word"
+        )
+    }
+
+    func testThePromptReadingOfASwitchCannotCloseTheGateOnAKeyedWindow() {
+        // The prompt reading lands mid-transition, where the server
+        // describes the state being left. On a freshly raised card that
+        // answer can say "not here" about a card the user is looking at,
+        // and a gate closed there passes the next click underneath,
+        // whereupon the outside click monitor rests the card. It is
+        // taken as a settling turn for exactly that reason.
+        let prompt = SurfaceExposure.settleReads.first
+        XCTAssertEqual(prompt?.turn, .settling)
+        XCTAssertFalse(
+            SurfaceExposure.writes(gate: true, from: prompt?.turn ?? .edge, isKey: true),
+            "a mid-transition answer must not take the clicks off a card holding the keyboard"
+        )
+    }
+
+    func testTheSettledReadingOfASwitchDecidesEvenOverAKeyedWindow() {
+        // The counterweight: once the transition is certainly over the
+        // server is describing where it arrived, and a keyed card that
+        // is genuinely out of sight has to stop taking clicks.
+        let settled = SurfaceExposure.settleReads.last
+        XCTAssertEqual(settled?.turn, .edge)
+        XCTAssertTrue(
+            SurfaceExposure.writes(gate: true, from: settled?.turn ?? .settling, isKey: true)
+        )
     }
 
     func testAStanceOutOfSightIsAlwaysTransparent() {

@@ -112,8 +112,23 @@ struct SurfaceExposure: Equatable {
         return !isKey
     }
 
-    /// When to re-read exposure after the active Space changes, as
-    /// offsets in seconds from the notification.
+    /// A re-reading of exposure to be taken later: when to take it, and
+    /// what authority it carries when it is written.
+    struct SettleRead: Equatable {
+        /// Offset in seconds from the edge that scheduled the reading.
+        let delay: TimeInterval
+
+        /// The turn the reading counts as, which decides whether it may
+        /// close the gate on a window holding the keyboard.
+        let turn: Turn
+    }
+
+    /// How long a transition takes to be certainly over, animation
+    /// included, after which the window server is describing the state
+    /// it arrived at rather than the one it left.
+    static let settledDelay: TimeInterval = 0.9
+
+    /// When to re-read exposure after the active Space changes.
     ///
     /// The notification arrives while the switch is still in flight, and
     /// the answer the window server gives during a transition describes
@@ -126,10 +141,16 @@ struct SurfaceExposure: Equatable {
     /// scheduled rather than waited for.
     ///
     /// The first reading is prompt, so a card that really has gone out
-    /// of sight stops taking clicks at once. The last falls after the
-    /// transition, animation included, is certainly over, and it is the
-    /// one that decides.
-    static let spaceSettleReads: [TimeInterval] = [0, 0.9]
+    /// of sight stops taking clicks at once, and it is taken as a
+    /// settling turn: mid-transition is where the server's answer is
+    /// least trustworthy, and a card that holds the keyboard must not
+    /// lose its clicks to a guess. The last falls after the transition
+    /// is certainly over, carries an edge's authority, and is the one
+    /// that decides.
+    static let settleReads: [SettleRead] = [
+        SettleRead(delay: 0, turn: .settling),
+        SettleRead(delay: settledDelay, turn: .edge),
+    ]
 }
 
 extension BackdropStance {

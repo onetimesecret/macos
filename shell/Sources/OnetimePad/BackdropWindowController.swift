@@ -367,7 +367,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     }
 
     /// The Space switch read twice, promptly and then once it has
-    /// settled (`SurfaceExposure.spaceSettleReads`).
+    /// settled (`SurfaceExposure.settleReads`).
     ///
     /// A single reading taken from the notification lands
     /// mid-transition, where the server is still describing the desktop
@@ -378,17 +378,25 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// a card the user can see, refusing every click, with no way to
     /// tell that from the pin having quietly failed. The schedule is
     /// what guarantees a settled answer always follows the transient
-    /// one, and the settled answer is the last word.
+    /// one, and the settled answer is the last word. Each reading is
+    /// written with the authority the schedule gives it: the prompt one
+    /// is a guess taken mid-transition and may not close the gate on a
+    /// card that holds the keyboard, while the settled one may.
     private func refreshMouseGateAcrossSpaceSwitch() {
-        for delay in SurfaceExposure.spaceSettleReads {
-            guard delay > 0 else {
-                refreshMouseGate(from: .edge)
-                continue
-            }
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(delay))
-                self?.refreshMouseGate(from: .edge)
-            }
+        for read in SurfaceExposure.settleReads {
+            scheduleMouseGateRead(read)
+        }
+    }
+
+    /// One scheduled reading, taken now if it has no delay.
+    private func scheduleMouseGateRead(_ read: SurfaceExposure.SettleRead) {
+        guard read.delay > 0 else {
+            refreshMouseGate(from: read.turn)
+            return
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(read.delay))
+            self?.refreshMouseGate(from: read.turn)
         }
     }
 
