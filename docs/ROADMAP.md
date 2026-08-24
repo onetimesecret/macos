@@ -4,6 +4,21 @@ GitHub milestones and issues are the source of truth for delivery status. This d
 
 ## Current milestone
 
+### [Dogfood fixes](https://github.com/onetimesecret/macos/milestone/2)
+
+**Goal:** repair the faults daily dogfood use has surfaced so the pad behaves like a native citizen: menus, focus, Spaces, rendering, and shortcuts.
+
+- [#41 Backdrop rests when clicking the app's own menus, so Edit ▸ Find never fires](https://github.com/onetimesecret/macos/issues/41)
+- [#22 Focus law regressions: new page focus and chip draft TTL expiry](https://github.com/onetimesecret/macos/issues/22)
+- [#23 Persistent editor view: undo, IME, and focus race correctness risks](https://github.com/onetimesecret/macos/issues/23)
+- [#73 Pinned surface captures clicks while invisible over a fullscreen Space](https://github.com/onetimesecret/macos/issues/73)
+- [#74 Cmd-tab return lands on Desktop 1, cannot drag between desktops, flickers on return](https://github.com/onetimesecret/macos/issues/74)
+- [#75 Markdown renders inside fenced code blocks, a comment becomes an h1](https://github.com/onetimesecret/macos/issues/75)
+- [#76 Project owned, Zed compatible JSON5 keymap as the source of shortcuts](https://github.com/onetimesecret/macos/issues/76)
+- [#77 Cmd-n as the default new page shortcut](https://github.com/onetimesecret/macos/issues/77)
+
+## Completed milestones
+
 ### [Trustworthy persistence](https://github.com/onetimesecret/macos/milestone/1)
 
 **Goal:** unexpired OnetimePad content is durable, recoverable, and visibly saved within the security boundary adopted by the persistence ADR.
