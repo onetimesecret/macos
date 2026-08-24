@@ -22,9 +22,14 @@ import AppKit
 ///
 /// Fail-closed by construction: `isDisplayed` requires both signals to
 /// agree, so an unknown or half-answered state refuses the mouse rather
-/// than claims it. The worst case of refusing wrongly is a click on the
-/// card that does not raise it; the worst case of claiming wrongly is a
-/// press meant for another application acted on by this one.
+/// than claims it. Neither error is cheap. Refusing wrongly does not
+/// merely lose the click: `ignoresMouseEvents` hands it to the window
+/// underneath, so a press on a card the user can plainly see acts in
+/// somebody else's window instead, and while raised the outside click
+/// rule then rests the card the press was aimed at. Claiming wrongly is
+/// still the worse of the two, because a misrouted press at least lands
+/// in a window the user can see and can undo, while a press taken by a
+/// surface nobody is being shown acts where they have no way to look.
 struct SurfaceExposure: Equatable {
     /// Whether the window is on the Space the user is looking at, per
     /// `NSWindow.isOnActiveSpace`. False whenever the surface belongs to
@@ -98,8 +103,11 @@ struct SurfaceExposure: Equatable {
     /// to the application underneath, whereupon the outside click
     /// monitor rests the card and the raise has undone itself. The
     /// window being key is what says the card is meant to be in front,
-    /// and the notification edges will close the gate a moment later if
-    /// it truly is not.
+    /// and `raiseSettleRead` is what closes the gate a moment later if
+    /// it truly is not. Waiting for a notification edge instead would
+    /// not do: a card raised while it was already buried reads as
+    /// occluded before the raise and occluded after it, and a state that
+    /// never changes posts no change.
     static func writes(
         gate ignores: Bool, from turn: Turn, isKey: Bool
     ) -> Bool {
@@ -107,12 +115,27 @@ struct SurfaceExposure: Equatable {
         return !isKey
     }
 
-    /// When to re-read exposure after the active Space changes, as
-    /// offsets in seconds from the notification.
+    /// A re-reading of exposure to be taken later: when to take it, and
+    /// what authority it carries when it is written.
+    struct SettleRead: Equatable {
+        /// Offset in seconds from the edge that scheduled the reading.
+        let delay: TimeInterval
+
+        /// The turn the reading counts as, which decides whether it may
+        /// close the gate on a window holding the keyboard.
+        let turn: Turn
+    }
+
+    /// How long a transition takes to be certainly over, animation
+    /// included, after which the window server is describing the state
+    /// it arrived at rather than the one it left.
+    static let settledDelay: TimeInterval = 0.9
+
+    /// When to re-read exposure after one of `settleTriggers`.
     ///
-    /// The notification arrives while the switch is still in flight, and
-    /// the answer the window server gives during a transition describes
-    /// the Space being left. One reading is therefore not enough. If the
+    /// The notification arrives while the transition is still in flight,
+    /// and the answer the window server gives during one describes the
+    /// state being left. One reading is therefore not enough. If the
     /// transient answer closes the gate on a card that is in fact
     /// present, nothing afterwards has to change for it to stay shut: a
     /// window that claims every Space keeps its membership across the
@@ -121,10 +144,46 @@ struct SurfaceExposure: Equatable {
     /// scheduled rather than waited for.
     ///
     /// The first reading is prompt, so a card that really has gone out
-    /// of sight stops taking clicks at once. The last falls after the
-    /// transition, animation included, is certainly over, and it is the
-    /// one that decides.
-    static let spaceSettleReads: [TimeInterval] = [0, 0.9]
+    /// of sight stops taking clicks at once, and it is taken as a
+    /// settling turn: mid-transition is where the server's answer is
+    /// least trustworthy, and a card that holds the keyboard must not
+    /// lose its clicks to a guess. The last falls after the transition
+    /// is certainly over, carries an edge's authority, and is the one
+    /// that decides.
+    static let settleReads: [SettleRead] = [
+        SettleRead(delay: 0, turn: .settling),
+        SettleRead(delay: settledDelay, turn: .edge),
+    ]
+
+    /// The system edges after which what the user can see of the surface
+    /// may have changed while the stance did not, and about which the
+    /// window itself publishes nothing: the active Space changed, the
+    /// displays woke, or the session came back from the lock screen or
+    /// another user. A card that returned from any of them refusing
+    /// clicks would go on refusing them until the user happened to
+    /// change desktop.
+    ///
+    /// Occlusion is not in the list because AppKit posts that one per
+    /// window and it needs no settling: a change it reports is the
+    /// server's own account of the present.
+    static let settleTriggers: [Notification.Name] = [
+        NSWorkspace.activeSpaceDidChangeNotification,
+        NSWorkspace.screensDidWakeNotification,
+        NSWorkspace.sessionDidBecomeActiveNotification,
+    ]
+
+    /// The reading a raise schedules for itself.
+    ///
+    /// The settling turn a raise already takes may open the gate but not
+    /// close it on a keyed window, and for a card raised while it was
+    /// already wholly covered that is the end of the matter: occlusion
+    /// read occluded before the raise and reads occluded after it, so no
+    /// change is posted and no edge ever arrives to correct the gate
+    /// held open. A keyed surface the user cannot see would go on taking
+    /// clicks for as long as the raise lasted. This reading is late
+    /// enough to speak for the raise itself and carries the authority
+    /// the settling turn lacks.
+    static let raiseSettleRead = SettleRead(delay: settledDelay, turn: .edge)
 }
 
 extension BackdropStance {

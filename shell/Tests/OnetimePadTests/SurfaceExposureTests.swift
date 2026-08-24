@@ -33,10 +33,10 @@ final class SurfaceExposureTests: XCTestCase {
     }
 
     func testBothSignalsMustAgreeBeforeTheSurfaceCountsAsSeen() {
-        // Fail-closed: either signal saying "out of sight" is enough,
-        // because the cost of refusing a click wrongly is a raise that
-        // does not happen, while the cost of taking one wrongly is a
-        // press meant for another application acted on here.
+        // Fail-closed: either signal saying "out of sight" is enough.
+        // Refusing wrongly misroutes the press to the window underneath,
+        // which the user can at least see; taking one wrongly acts on a
+        // press in a surface nobody is being shown, which they cannot.
         XCTAssertFalse(
             SurfaceExposure(onActiveSpace: false, unoccluded: false).isDisplayed
         )
@@ -139,22 +139,88 @@ final class SurfaceExposureTests: XCTestCase {
         XCTAssertTrue(SurfaceExposure.writes(gate: true, from: .edge, isKey: true))
     }
 
-    // MARK: The Space switch's re-readings
+    // MARK: A transition's re-readings
 
-    func testTheSpaceSwitchIsReadPromptlyAndThenAgainOnceSettled() {
+    func testATransitionIsReadPromptlyAndThenAgainOnceSettled() {
         // One reading is not enough. The notification arrives
         // mid-transition, where the server's answer describes the Space
         // being left, and a gate closed on that answer has no later edge
         // to reopen it: a window on every Space need not change its
         // occlusion because the user changed desktop.
-        let reads = SurfaceExposure.spaceSettleReads
-        XCTAssertEqual(reads.first, 0, "the prompt reading takes clicks off an absent card at once")
+        let reads = SurfaceExposure.settleReads
+        XCTAssertEqual(
+            reads.first?.delay, 0, "the prompt reading takes clicks off an absent card at once"
+        )
         XCTAssertGreaterThan(reads.count, 1, "a settled reading must follow the transient one")
         XCTAssertGreaterThanOrEqual(
-            reads.last ?? 0, 0.5,
+            reads.last?.delay ?? 0, 0.5,
             "the last reading has to fall after the transition, animation included"
         )
-        XCTAssertEqual(reads, reads.sorted(), "the settled reading is the last word")
+        XCTAssertEqual(
+            reads.map(\.delay), reads.map(\.delay).sorted(),
+            "the settled reading is the last word"
+        )
+    }
+
+    func testThePromptReadingOfATransitionCannotCloseTheGateOnAKeyedWindow() {
+        // The prompt reading lands mid-transition, where the server
+        // describes the state being left. On a freshly raised card that
+        // answer can say "not here" about a card the user is looking at,
+        // and a gate closed there passes the next click underneath,
+        // whereupon the outside click monitor rests the card. It is
+        // taken as a settling turn for exactly that reason.
+        let prompt = SurfaceExposure.settleReads.first
+        XCTAssertEqual(prompt?.turn, .settling)
+        XCTAssertFalse(
+            SurfaceExposure.writes(gate: true, from: prompt?.turn ?? .edge, isKey: true),
+            "a mid-transition answer must not take the clicks off a card holding the keyboard"
+        )
+    }
+
+    func testTheSettledReadingOfATransitionDecidesEvenOverAKeyedWindow() {
+        // The counterweight: once the transition is certainly over the
+        // server is describing where it arrived, and a keyed card that
+        // is genuinely out of sight has to stop taking clicks.
+        let settled = SurfaceExposure.settleReads.last
+        XCTAssertEqual(settled?.turn, .edge)
+        XCTAssertTrue(
+            SurfaceExposure.writes(gate: true, from: settled?.turn ?? .settling, isKey: true)
+        )
+    }
+
+    func testWakeAndSessionReturnAreReadTheSameWayASpaceSwitchIs() {
+        // A card that came back from sleep or from the lock screen
+        // refusing clicks would go on refusing them until the user
+        // happened to change desktop, since neither wake nor a session
+        // hand-back tells the window anything about itself.
+        XCTAssertTrue(
+            SurfaceExposure.settleTriggers.contains(NSWorkspace.activeSpaceDidChangeNotification)
+        )
+        XCTAssertTrue(
+            SurfaceExposure.settleTriggers.contains(NSWorkspace.screensDidWakeNotification)
+        )
+        XCTAssertTrue(
+            SurfaceExposure.settleTriggers.contains(NSWorkspace.sessionDidBecomeActiveNotification)
+        )
+    }
+
+    // MARK: The raise's own re-reading
+
+    func testTheRaiseSchedulesAReadingThatCanCloseTheGateOnItself() {
+        // A card raised while it was already wholly covered reads
+        // occluded before the raise and occluded after it, so no
+        // occlusion change is posted and no edge arrives. The settling
+        // turn the raise takes may not close the gate on a keyed window,
+        // which leaves this reading as the only thing that ever can.
+        let read = SurfaceExposure.raiseSettleRead
+        XCTAssertGreaterThanOrEqual(
+            read.delay, 0.5, "the reading has to fall after the raise has landed"
+        )
+        XCTAssertEqual(read.turn, .edge)
+        XCTAssertTrue(
+            SurfaceExposure.writes(gate: true, from: read.turn, isKey: true),
+            "an occluded keyed card must end up refusing the mouse, not merely start out doing so"
+        )
     }
 
     func testAStanceOutOfSightIsAlwaysTransparent() {

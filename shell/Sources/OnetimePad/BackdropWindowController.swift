@@ -26,9 +26,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
 
     // The exposure watch, for the same reason and with the same care:
     // one token from the default centre for the window's own occlusion,
-    // one from the workspace centre for Space switches.
+    // and one from the workspace centre per settle trigger.
     private nonisolated(unsafe) var occlusionObserver: NSObjectProtocol?
-    private nonisolated(unsafe) var spaceObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var workspaceObservers: [NSObjectProtocol] = []
 
     init(model: BackdropModel) {
         self.model = model
@@ -135,21 +135,26 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshMouseGate(from: .edge) }
         }
-        // A Space switch is the other, and it is watched as well as
-        // occlusion because a window that claims every Space keeps its
-        // membership across the switch and need not change occlusion
-        // state for the card to stop being composited. The reading is
-        // taken a turn later, and then once more when the transition is
-        // certainly over: the switch is still settling at the moment the
+        // The workspace's transitions are the others
+        // (`SurfaceExposure.settleTriggers`), and they are watched as
+        // well as occlusion because a window that claims every Space
+        // keeps its membership across a switch and need not change
+        // occlusion state for the card to stop being composited, while a
+        // wake or a session hand-back changes what is on screen without
+        // telling the window anything about itself. Each is read a turn
+        // later, and then once more when the transition is certainly
+        // over: the switch is still settling at the moment the
         // notification arrives, the window server's answer during it
-        // describes the Space being left, and a gate closed on that
+        // describes the state being left, and a gate closed on that
         // answer would have no later edge to reopen it.
-        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.activeSpaceDidChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.refreshMouseGateAcrossSpaceSwitch() }
+        workspaceObservers = SurfaceExposure.settleTriggers.map { name in
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.refreshMouseGateAcrossTransition() }
+            }
         }
     }
 
@@ -160,8 +165,8 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         if let occlusionObserver {
             NotificationCenter.default.removeObserver(occlusionObserver)
         }
-        if let spaceObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver)
+        for observer in workspaceObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
@@ -276,6 +281,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // one route that activates first; the raise is then its
             // consequence, not its cause.)
             panel.makeKeyAndOrderFront(nil)
+            // And a reading late enough to speak for the raise. The
+            // settling turn scheduled below may open the gate but never
+            // close it over a keyed window, and a card raised while it
+            // was already wholly covered posts no occlusion change
+            // afterwards, so without this one nothing would ever shut
+            // the gate on a keyed surface the user cannot see.
+            scheduleMouseGateRead(SurfaceExposure.raiseSettleRead)
         case .resting:
             stopWatchingForOutsideClicks()
             panel.makeFirstResponder(nil)
@@ -403,8 +415,8 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         applyMouseGate(stance: model.stance, pinned: model.pinned, from: turn)
     }
 
-    /// The Space switch read twice, promptly and then once it has
-    /// settled (`SurfaceExposure.spaceSettleReads`).
+    /// A workspace transition read twice, promptly and then once it has
+    /// settled (`SurfaceExposure.settleReads`).
     ///
     /// A single reading taken from the notification lands
     /// mid-transition, where the server is still describing the desktop
@@ -415,17 +427,25 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// a card the user can see, refusing every click, with no way to
     /// tell that from the pin having quietly failed. The schedule is
     /// what guarantees a settled answer always follows the transient
-    /// one, and the settled answer is the last word.
-    private func refreshMouseGateAcrossSpaceSwitch() {
-        for delay in SurfaceExposure.spaceSettleReads {
-            guard delay > 0 else {
-                refreshMouseGate(from: .edge)
-                continue
-            }
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(delay))
-                self?.refreshMouseGate(from: .edge)
-            }
+    /// one, and the settled answer is the last word. Each reading is
+    /// written with the authority the schedule gives it: the prompt one
+    /// is a guess taken mid-transition and may not close the gate on a
+    /// card that holds the keyboard, while the settled one may.
+    private func refreshMouseGateAcrossTransition() {
+        for read in SurfaceExposure.settleReads {
+            scheduleMouseGateRead(read)
+        }
+    }
+
+    /// One scheduled reading, taken now if it has no delay.
+    private func scheduleMouseGateRead(_ read: SurfaceExposure.SettleRead) {
+        guard read.delay > 0 else {
+            refreshMouseGate(from: read.turn)
+            return
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(read.delay))
+            self?.refreshMouseGate(from: read.turn)
         }
     }
 

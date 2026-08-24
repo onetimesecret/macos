@@ -115,6 +115,22 @@ Space.
       card the raise had just put up. The line to look for if it goes
       wrong is `mouse gate=held open (settling over a keyed window)`,
       which is the guard doing its job.
+- [ ] **The raise's own second reading.** Same setup, but wait about two
+      seconds after the raise before clicking, and keep watching the
+      stream. The raise takes a further reading roughly a second in,
+      this time with the authority to close the gate the settling turn
+      had to leave open. A card that really is on top must still answer
+      the click, so `mouse gate=closed` there would be a card raised
+      into view and then made deaf, which is a defect. The reading
+      exists for the opposite case, a card the server never brought
+      forward, where the gate must end up closed even though no
+      occlusion change is ever posted.
+- [ ] **Waking and unlocking.** Pinned, on an ordinary desktop. Lock the
+      screen (or let the displays sleep), come back, and click the card.
+      It raises. The stream carries a `mouse gate=` line only if the
+      gate actually moved, so silence here with a working click is the
+      pass; a visible card that stops answering after a wake is the
+      failure this check is for.
 
 ## If the gate stays open over an invisible card
 
@@ -143,3 +159,5 @@ stay: a re-run adds a row rather than replacing one.
 | | | pin toggled under a full cover | | |
 | | | unpinned rest still passes clicks through | | |
 | | | first click after a raise lands | | |
+| | | the raise's second reading leaves a visible card clickable | | |
+| | | the card still answers after a wake or an unlock | | |

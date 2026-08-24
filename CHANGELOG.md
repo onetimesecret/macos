@@ -280,7 +280,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   next click to the application underneath. A Space switch is read twice
   for the mirror-image reason: the answer given mid-transition describes
   the desktop being left, and a card present on every Space has no later
-  edge to reopen a gate wrongly closed on it. The
+  edge to reopen a gate wrongly closed on it, so the prompt reading is
+  taken as the guess it is and only the settled one may take the clicks
+  off a card that holds the keyboard. A raise takes a late reading of
+  its own, because a card raised while it was already wholly covered
+  reads occluded before the raise and occluded after it: no change is
+  posted, no edge arrives, and without that reading the gate held open
+  over a keyed surface nobody can see would stay open for the life of
+  the raise. Waking the displays and returning from the lock screen or
+  another user are read the same way a Space switch is, so a card does
+  not come back from either one refusing every click. The
   pinned rest also stopped carrying `.stationary`, a flag it had
   inherited from the wallpaper recipe the unpinned rest is built from,
   leaving the overlay recipe AppKit actually documents. Whether that
