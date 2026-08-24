@@ -6,8 +6,9 @@ import SwiftUI
 /// permanent dashed ◌ ledger tab at the right end. Click selects;
 /// double-click holds the clock; drag reorders; ✕ on hover closes.
 ///
-/// The ledger tab is built here and not shown (issue #78, `HiddenUI`),
-/// so the run of tabs ends where the slots do.
+/// The ledger tab and the ↗ page button are built here and not shown
+/// (issue #78, `HiddenUI`), so what a user sees today is the slots and
+/// the +.
 ///
 /// A slot whose page expired keeps its place, its name and its rung,
 /// and draws the dashed empty treatment instead of a gauge (ADR-0017).
@@ -51,7 +52,12 @@ public struct TabStripView: View {
             }
             newPageTab
             Spacer(minLength: 8)
-            promotePageTab
+            // Also built and not drawn (issue #78): promotion still
+            // works everywhere else it worked, and the strip stops
+            // carrying a button for it.
+            if HiddenUI.showsPromoteButton {
+                promotePageTab
+            }
             // Built and not drawn (issue #78): the ledger keeps
             // recording, and the strip stops offering the way in.
             if HiddenUI.showsLedgerEntryPoints {
