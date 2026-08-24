@@ -129,6 +129,9 @@ public struct Keystroke: Hashable, Sendable {
         case unknownModifier(String)
         case repeatedModifier(String)
         case unknownKey(String)
+        /// Shift held over a key that is not a letter, which the two
+        /// dispatch routes would read differently. See `parse`.
+        case shiftedNonLetter(String)
     }
 
     /// Reads `cmd-shift-v` and its kin.
@@ -146,6 +149,16 @@ public struct Keystroke: Hashable, Sendable {
     /// ordinary character someone types into a page. A lone empty tail
     /// falls through to the unknown-key refusal instead, which costs the
     /// author one line and tells them which.
+    ///
+    /// Shift over a key that is not a letter is refused for the reason
+    /// `fn` and the function keys are refused: it would validate here
+    /// and then fire on one route and not the other. A key event's
+    /// unmodified characters honour shift on this platform, so
+    /// `cmd-shift-1` arrives at the page as `!` and never matches the
+    /// `1` the file wrote, while the surface's hidden buttons install
+    /// the same spelling and fire. Shift over a letter is exactly the
+    /// case lower-casing rescues, and shift over a named key is matched
+    /// by position, so both stay bindable.
     public static func parse(_ text: String) -> Result<Keystroke, ParseFailure> {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return .failure(.empty) }
@@ -176,6 +189,9 @@ public struct Keystroke: Hashable, Sendable {
             return .success(Keystroke(modifiers: modifiers, key: .named(named)))
         }
         if lowered.count == 1, let character = lowered.first {
+            guard !modifiers.contains(.shift) || character.isLetter else {
+                return .failure(.shiftedNonLetter(keyToken))
+            }
             return .success(Keystroke(modifiers: modifiers, key: .character(character)))
         }
         return .failure(.unknownKey(keyToken))
@@ -209,8 +225,10 @@ extension Keystroke {
     /// Character keys are matched by the character the board would have
     /// produced without modifiers, folded to lower case, because that
     /// is the only reading under which shift is a modifier rather than
-    /// a different key. Named keys are matched by position, since a
-    /// layout may put anything under the character a named key emits.
+    /// a different key. Folding rescues letters and nothing else, which
+    /// is why the parser refuses shift over anything but a letter.
+    /// Named keys are matched by position, since a layout may put
+    /// anything under the character a named key emits.
     public func matches(
         charactersIgnoringModifiers: String?,
         virtualKeyCode: UInt16,

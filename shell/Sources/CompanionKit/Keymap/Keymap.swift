@@ -114,6 +114,8 @@ extension Keystroke.ParseFailure {
         case .unknownModifier(let word): return "\"\(word)\" is not a modifier"
         case .repeatedModifier(let word): return "\"\(word)\" is named twice"
         case .unknownKey(let key): return "\"\(key)\" is not a key this build can bind"
+        case .shiftedNonLetter(let key):
+            return "shift can only be held over a letter, and \"\(key)\" is not one"
         }
     }
 }

@@ -125,6 +125,30 @@ final class KeymapValidationTests: XCTestCase {
         )
     }
 
+    /// A chord that would fire on one surface and not the other is
+    /// refused where every other unhonourable spelling is, and the line
+    /// beside it survives.
+    func testAShiftedNonLetterCostsOnlyItself() {
+        let keymap = resolve(
+            """
+            [{ "context": "Editor", "bindings": {
+              "cmd-shift-1": "page::New",
+              "cmd-w": "page::Close"
+            } }]
+            """)
+        XCTAssertEqual(keymap.bindings.map(\.command), [.pageClose])
+        XCTAssertEqual(
+            keymap.faults,
+            [
+                .malformedKeystroke(
+                    .bundledDefault, keystroke: "cmd-shift-1", failure: .shiftedNonLetter("1"))
+            ])
+        XCTAssertEqual(
+            keymap.faults.first?.summary,
+            "the bundled default keymap binds \"cmd-shift-1\", which is not a keystroke: "
+                + "shift can only be held over a letter, and \"1\" is not one")
+    }
+
     func testACommandThisBuildCannotRunIsRefused() {
         let keymap = resolve(
             """

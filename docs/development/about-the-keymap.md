@@ -51,6 +51,14 @@ capital letter. Function keys and `fn` are refused, because SwiftUI has
 no way to install them and a binding that validates and then never
 fires is the failure this layer exists to prevent.
 
+Shift is refused over anything but a letter, for that same reason.
+`cmd-shift-v` is fine; `cmd-shift-1` and `cmd-shift-,` are not. A key
+event reports its unmodified characters with shift already applied, so
+the page would see `!` where the file wrote `1` and never match, while
+the surface's hidden buttons would install the chord and fire it: one
+spelling, two surfaces, two answers. Shift over a named key (`cmd-shift-left`)
+is fine, because named keys are matched by their place on the board.
+
 Command ids are the enum in `Keymap/CommandID.swift`. Only commands
 this build implements are bindable; an id nothing implements is
 reported and dropped. `page::Select1` through `page::Select9` jump by
