@@ -106,7 +106,7 @@ erases (`crates/ffi/src/lib.rs:1479-1480`, `crates/ffi/src/persist.rs:355-370`,
    the prompt is the ACL working, not a failure.
 3. Close every page so no tab holds a page.
 4. Quit with ⌘Q, so the quit flush runs
-   (`shell/Sources/OnetimePad/BackdropApp.swift:121-151`).
+   (`shell/Sources/OnetimePad/BackdropApp.swift:123-134`).
 5. `ls -la "$STATE"` again.
 
    **Pass at this point:** `state.sealed` is gone, no

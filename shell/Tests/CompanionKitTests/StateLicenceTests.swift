@@ -278,11 +278,15 @@ final class LedgerClearRecoveryTests: XCTestCase {
     func testARefusedContentLicenceDoesNotAutoHeal() {
         // The asymmetry, stated. Withholding the content licence protects
         // yesterday's pages from being overwritten by this session's
-        // consolation page, and there is nothing better to do than keep
-        // protecting them, so no gesture in the app hands it back. The
-        // one licence-moving path leaves it exactly as it found it, and
-        // the launch rule keeps answering false for as long as the file
-        // is there and will not open.
+        // consolation page, and nothing AUTOMATIC hands it back: the
+        // launch rule keeps answering false for as long as the file is
+        // there and will not open, and the ledger's own clear, which is
+        // the licence-moving path that runs here, passes the content
+        // licence through exactly as it found it. The one thing that
+        // does heal it is the user's own discard of the file they
+        // cannot read (`ContentClearTests`, ADR-0016 section 7), which
+        // is a decision they made rather than a recovery the app
+        // performed for them.
         XCTAssertFalse(PageModel.grantsSaveLicence(fileExists: true, restored: false))
         XCTAssertFalse(PageModel.licencesAfterLedgerClear(content: false, ledger: false).content)
         XCTAssertFalse(PageModel.licencesAfterLedgerClear(content: false, ledger: true).content)
@@ -512,6 +516,25 @@ final class SaveScheduleTests: XCTestCase {
         XCTAssertFalse(schedule.isCurrent(original))
         XCTAssertTrue(schedule.isCurrent(retry))
     }
+
+    func testABurstAfterARefusalRidesTheRetrysOwnGeneration() {
+        // The two rules above, composed: after a write begins, the
+        // next mark opens one window that a whole burst rides, and the
+        // generation that survives the burst is the retry's own. This
+        // is arithmetic and nothing more; `SaveSchedule` carries no
+        // time at all, so the claim that the retry window is the
+        // longer one belongs where a real timer runs, and it is pinned
+        // there against a genuinely refused write
+        // (`RestoreFailureTests.testARefusedWriteOpensAWindowThatAbsorbsWhatFollows`).
+        var schedule = SaveSchedule()
+        _ = schedule.arm()
+        schedule.begin() // the write that was refused
+        let retry = schedule.arm()!
+        for _ in 0..<400 {
+            XCTAssertNil(schedule.arm())
+        }
+        XCTAssertTrue(schedule.isCurrent(retry))
+    }
 }
 
 /// The sudden-termination hold (ADR-0012): while the store differs from
@@ -521,9 +544,11 @@ final class SaveScheduleTests: XCTestCase {
 /// given back early loses the pages it was taken to protect.
 ///
 /// These check the arithmetic only, but the arithmetic is now what the
-/// guarantee rests on: both bundles declare `NSSupportsSuddenTermination`,
-/// so each app is a real sudden-termination candidate and this latch is
-/// the only thing holding the kill off while a write is pending.
+/// guarantee rests on: the one bundle the shell ships declares
+/// `NSSupportsSuddenTermination` (shell/OnetimePad-Info.plist, pinned by
+/// `BundleDeclarationTests`), so the app is a real sudden-termination
+/// candidate and this latch is the only thing holding the kill off while
+/// a write is pending.
 final class SuddenTerminationLatchTests: XCTestCase {
     /// The injected effects, counted. A class so the latch's escaping
     /// closures and the assertions share one instance.

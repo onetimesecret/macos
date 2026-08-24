@@ -79,7 +79,10 @@ written over it for the whole session (`:896-907`).
 4. Launch the app. macOS presents the unlock prompt for the login
    keychain. **Cancel it.** Cancelling is the case under test.
 5. Type a line on the page that opens, wait past the debounce, then
-   quit with ⌘Q.
+   quit with ⌘Q. The quit warns that this session was never being
+   saved, and offers Quit Anyway or Cancel. Choose **Quit Anyway**:
+   Cancel returns to the page, and the discard the alert points at
+   would overwrite the very file this procedure is protecting.
 6. Re read the evidence from step 2.
 
 **Pass:**
@@ -102,12 +105,19 @@ written over it for the whole session (`:896-907`).
   rotation: rotation deletes the keychain half
   (`crates/ffi/src/persist.rs:355-372`) and must not run on this path.
 - The `state-key` item still exists once the keychain is unlocked.
-- No quit alert appears (`shell/Sources/OnetimePad/BackdropApp.swift:121-151`),
-  because a session without the licence owes no write.
+- The quit alert says "This session was never being saved" and names the
+  discard as the way to keep the session's content
+  (`shell/Sources/CompanionKit/QuitPrompt.swift:48-73`, reply at
+  `:83-93`, presented at
+  `shell/Sources/OnetimePad/BackdropApp.swift:123-134`). It is the
+  withheld licence being said out loud at the last moment it still
+  matters (issue #49), not a save failure: the session owes no write.
+  Quit Anyway leaves the file untouched.
 
 **Fail:** any change to either sha256, a missing file, a missing key
-half, a missing keychain item, or a superseded disposal line
-(`crates/ffi/src/lib.rs:1354`).
+half, a missing keychain item, a superseded disposal line
+(`crates/ffi/src/lib.rs:1354`), or a quit that says nothing at all,
+which is the silence issue #49 exists to end.
 
 7. Recover:
 

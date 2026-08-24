@@ -124,7 +124,7 @@ section 7 covers the cases where it is not.
 
 | Event | Unexpired content survives | What the user sees |
 |---|---|---|
-| Clean quit (⌘Q) | Yes, in full | `applicationShouldTerminate` calls `saveState()` and stands down whatever the debounce still holds (`shell/Sources/OnetimePad/BackdropApp.swift:121-151`, `shell/Sources/CompanionKit/PageModel.swift:962-1065`). If that write is refused, an alert offers Quit Anyway or Cancel; a settled flush over a withheld licence with work in the session warns the same way (BackdropApp.swift:122-150). On relaunch the pages are there with less time on them. |
+| Clean quit (⌘Q) | Yes, in full | `applicationShouldTerminate` calls `saveState()` and stands down whatever the debounce still holds (`shell/Sources/OnetimePad/BackdropApp.swift:123-134`, `shell/Sources/CompanionKit/PageModel.swift:962-1065`). If that write is refused, an alert offers Quit Anyway or Cancel; a settled flush over a withheld licence with work in the session warns the same way (which outcome tells which story lives in `shell/Sources/CompanionKit/QuitPrompt.swift:48-73`, and the reply it becomes at `:83-93`). On relaunch the pages are there with less time on them. |
 | Crash (process fault) | Yes, except the debounce window | The last burst of typing inside the window is gone. Everything sealed before it is intact, because each write lands whole or not at all (`crates/ffi/src/persist.rs:1139-1198`). Nothing tells the user which keystrokes were lost. Window quantified in section 2. |
 | Force termination (`kill -9`, Force Quit) | Yes, except the debounce window | Identical to crash. SIGKILL runs no handler, so the sudden-termination latch (`shell/Sources/CompanionKit/PageModel.swift:101-141`) buys nothing here; the atomic write is what saves the rest. |
 | macOS restart or shutdown | Yes. **Required work**; today the file is discarded at `crates/ffi/src/lib.rs:1289-1312` | An orderly restart delivers a terminate while a write is owed, because the latch holds sudden termination off a dirty buffer (PageModel.swift:101-141, `shell/OnetimePad-Info.plist:56`), so the quit flush runs and the loss window is zero. A mutation that never reached `markDirty()` is not covered, and neither is a kill before the flush lands. Today the user sees an empty pad, which is the defect this ADR exists to remove. |
@@ -171,7 +171,8 @@ the write lifecycle as a word, saving, saved or save failed
 `saveState`), and the quit path warns on both loud outcomes: a refused
 write, and a settled flush over a withheld licence with work in the
 session (`quitOutcome` at PageModel.swift:1071-1085,
-BackdropApp.swift:121-151). `saveState()` still sets `saved = true` on
+`QuitPrompt.forOutcome` at CompanionKit/QuitPrompt.swift:48-73,
+BackdropApp.swift:123-134). `saveState()` still sets `saved = true` on
 the withheld-licence leg (PageModel.swift:990-994), so `settled` stays
 true there; the standing state is what carries the story, not the
 write's return value.
@@ -554,7 +555,8 @@ not.
   (`shell/Sources/CompanionKit/PageSurface.swift:94-119`), the header's
   write-lifecycle word, and the quit warning over a withheld licence
   with work in the session (`quitOutcome` at PageModel.swift:1071-1085,
-  `shell/Sources/OnetimePad/BackdropApp.swift:121-151`).
+  `shell/Sources/CompanionKit/QuitPrompt.swift:48-73`,
+  `shell/Sources/OnetimePad/BackdropApp.swift:123-134`).
 - The superseded-magic disposal path from section 9, so the one-time
   format break does not present as a permanently unwritable install.
 

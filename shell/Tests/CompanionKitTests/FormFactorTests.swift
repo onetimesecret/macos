@@ -66,6 +66,74 @@ final class FormFactorTests: XCTestCase {
         }
     }
 
+    /// The three guards under the `Bundle.main` early return, which no
+    /// test could reach before: under xctest the running identifier is
+    /// the test runner's, so the fallback arm above is the only one the
+    /// shipping entry point ever takes here.
+    ///
+    /// What they hold up is case 4's shell consequence (ADR-0016
+    /// section 9). A `.debug` copy and an installed release copy are
+    /// two apps to LaunchServices, and they must be two stores: two
+    /// processes resolving to one identifier would share a state
+    /// directory and a Keychain service, and two debounces would write
+    /// over one another's `state.sealed` on the same second. The
+    /// backdrop's identifier carries the panel's as a prefix, and the
+    /// table records what the rule then actually does with it, which is
+    /// adopt it: `.backdrop` is one dot-free suffix exactly as `.debug`
+    /// is, and nothing in the rule can tell a sibling form factor from
+    /// a build configuration. That is inert today, since the panel was
+    /// archived (ADR-0014) and no shipping code asks for
+    /// `FormFactor.panel` at all, and it is written down here rather
+    /// than left as a surprise for whoever revives a second form
+    /// factor: they would need a rule that names the siblings, not one
+    /// that counts dots.
+    func testOnlyTheAppsOwnIdentifierAndOneDotFreeSuffixAreAdopted() {
+        let panel = FormFactor.panelBundleIdentifier
+        let backdrop = FormFactor.backdropBundleIdentifier
+
+        let cases: [(running: String?, fallback: String, resolved: String, why: String)] = [
+            (nil, panel, panel, "a bare binary has no identifier at all"),
+            (panel, panel, panel, "the app's own identifier is itself"),
+            (backdrop, backdrop, backdrop, "and so is the other form factor's"),
+            (
+                panel + ".debug", panel, panel + ".debug",
+                "the one suffix the build lane produces is adopted"
+            ),
+            (
+                backdrop + ".debug", backdrop, backdrop + ".debug",
+                "on either form factor"
+            ),
+            (
+                backdrop, panel, backdrop,
+                "one dot-free suffix, even where it spells the sibling form factor's own id"
+            ),
+            (
+                backdrop + ".debug", panel, panel,
+                "but two suffixes are refused, whatever they spell"
+            ),
+            (panel, backdrop, backdrop, "and the prefix does not run the other way either"),
+            (panel + ".a.b", panel, panel, "two suffixes are not one suffix"),
+            (panel + ".", panel, panel, "an empty suffix is not a suffix"),
+            ("com.example.other", panel, panel, "another vendor's process is never adopted"),
+        ]
+        for probe in cases {
+            XCTAssertEqual(
+                FormFactor.resolvedBundleIdentifier(
+                    running: probe.running, fallback: probe.fallback),
+                probe.resolved,
+                "\(probe.running ?? "nil") over \(probe.fallback): \(probe.why)"
+            )
+        }
+
+        // The consequence, stated as the thing that would actually go
+        // wrong: the debug copy and the release copy of one app resolve
+        // to two identifiers, which is what makes them two stores.
+        XCTAssertNotEqual(
+            FormFactor.resolvedBundleIdentifier(running: backdrop + ".debug", fallback: backdrop),
+            FormFactor.resolvedBundleIdentifier(running: backdrop, fallback: backdrop)
+        )
+    }
+
     /// The ledger is a sibling of the state file, never the state file
     /// and never shared. Two form factors keep two ledgers for the same
     /// reason they keep two state files, and the two lifetimes (the

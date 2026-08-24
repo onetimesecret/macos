@@ -14,7 +14,7 @@ import Foundation
 /// screen, so the countdown redraw never stops; instead it coarsens to
 /// one repaint every 30 s while resting (`BackdropStance.tickInterval`).
 @MainActor
-final class BackdropModel: ObservableObject {
+final class BackdropModel: ObservableObject, QuitFlushable {
     /// The surface's posture. The window controller follows this; the
     /// view styles by it.
     @Published private(set) var stance: BackdropStance = .resting
