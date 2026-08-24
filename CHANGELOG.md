@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The keyboard is a file now** (issue #76,
+  `docs/development/about-the-keymap.md`). What each chord does used to
+  be spelled in Swift, in two places, and moving one was a code change
+  nobody could review as a list. It is now a bundled keymap in the Zed
+  editor's format, read with the two JSON5 tolerances a hand written
+  file cannot do without, comments and trailing commas, and the app
+  installs what the file says. Nothing about this release's shortcuts
+  changed: the bundled default reproduces exactly what the surface and
+  the page have always answered, and a test holds the whole table still
+  so an edit to the file has to change the table in the same commit.
+  You can lay your own keymap over it at
+  `~/Library/Application Support/com.onetimesecret.companion.backdrop/keymap.json`,
+  where a chord you name wins and a chord you set to `null` goes away.
+  Every binding is validated before it is installed: an unparseable
+  chord, an unknown command or a context that does not exist costs that
+  line and is written to the log, and a file that is wrong about its own
+  shape is refused whole, leaving the bundled default standing. A typo
+  in your keymap costs you your customisation, never your app.
+
 - **A restore failure and a withheld save are now impossible to miss**
   (issue #49, ADR-0016 sections 2 and 7). When an existing state file
   refuses to open at launch, the session still gets its working page,
