@@ -161,10 +161,9 @@ final class MenuTrackingWatch {
     /// undo exactly what init did. Removing from `.default` when a
     /// different centre was injected takes back nothing and leaves the
     /// real observations standing, which under test is a watch that goes
-    /// on recording after the case that made it has finished.
-    /// nonisolated(unsafe) for the same reason as the tokens: deinit is
-    /// nonisolated, and NotificationCenter's removal is thread-safe.
-    private nonisolated(unsafe) let center: NotificationCenter
+    /// on recording after the case that made it has finished. A `let` of
+    /// a Sendable type, so deinit may read it without the tokens' caveat.
+    private let center: NotificationCenter
 
     /// Object nil on both observations, so every menu in the process is
     /// covered: the main menu bar, the status item's menu, and the chip
