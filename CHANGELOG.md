@@ -231,6 +231,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that did the destroying no longer exists, and nothing in the restore
   path deletes a file it could not open.
 
+### Fixed
+
+- **The app's own menus no longer put the card away** (issue #41). A
+  raised surface rests on any press the global mouse monitor sees, on
+  the reasoning that a press the card's window never received belongs
+  to somebody else. Menus broke that reasoning: they track in windows
+  the window server owns, so clicking our own menu bar looked exactly
+  like clicking into another application. The card fell to the desktop,
+  the app deactivated, and the menu was torn down before an item could
+  be chosen, which is why Edit then Find could never fire although ⌘F
+  always did. Menu tracking sessions are now recorded as intervals on
+  the same clock the press is stamped on
+  (`NSEvent.timestamp` and `ProcessInfo.systemUptime` share a base) and
+  each press is judged by its own moment, so the answer no longer
+  depends on whether the menu happens to still be up when the deferred
+  handler runs, which for a nested tracking loop it usually is not. The
+  press that opens a menu arrives fractionally before the session it
+  causes, so a short grace counts it as the opening press rather than as
+  a dismissal. The observation covers every menu in the process, the
+  main menu bar, the status item's menu and the chip context menu
+  alike. A session whose end never posts expires after thirty seconds
+  rather than claiming presses forever, since the record is fed by
+  notifications that are assumed to come in pairs and an exception that
+  never lapsed would silently retire the outside click rule for the rest
+  of the session. Nothing else about the rule moves: a press in another
+  application still rests the surface without being consumed, Esc still
+  rests, the status item's left click still puts a keyed surface away,
+  and Settings and About are still outside by this rule.
+
 ### Added
 
 - **The shell's persistence lifecycle now runs in CI**
