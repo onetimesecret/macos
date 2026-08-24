@@ -164,6 +164,18 @@ keystroke types, with no beep.**
 - [ ] From a keyed empty window (close the last page so the keys stay
       and the calm sentence shows), press ⌥⌘N: the conjured page mounts
       focused; type at once.
+- [ ] Click an **empty slot** on the strip (one whose page expired, or
+      shorten a page to the bottom rung and wait it out): selecting it
+      opens a page into it, and that page mounts focused; type at once.
+      ⌘1 through ⌘9 onto such a slot is the same path and must do the
+      same.
+- [ ] ⌥⌘←/→ onto an **empty slot**: the walk opens a page into the slot
+      it lands on, and that page mounts focused; type at once.
+
+The last two are the ADR-0017 mint paths, which arrived after the
+original three and go through the same teardown: the empty state's
+catcher gives way to a freshly built editor, and first responder leaves
+with the catcher.
 
 ### §F.2: The paths that must still work (no regression)
 
@@ -193,6 +205,11 @@ front` names it) and leave this window visible but not key.
       content area and a real editor are the only key-granting
       surfaces, and those are the lawful third and fourth grants of
       ADR-0005, not violations of this invariant).
+- [ ] Click an **empty slot** on the unkeyed window: a page is opened
+      into it, and the keyboard still belongs to the front app. This is
+      the one the mint paths make worth re-checking, since they now ask
+      for focus where they used not to; the ask is refused for an
+      unkeyed surface, and the refusal is what this line is about.
 
 ## Separate procedures, in their own documents
 
