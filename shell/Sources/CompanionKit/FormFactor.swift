@@ -291,6 +291,19 @@ extension FormFactor {
             seamsInjected: false
         )
     }
+
+    /// Whether a runner is what is running, on those same two signals
+    /// and with no seam in the question.
+    ///
+    /// The refusal above asks whether a construction may touch the
+    /// shipping state. This asks the plainer thing, for the files a
+    /// seam is not required to reach: is any of this machine's owner's
+    /// own configuration in reach at all. A suite that reads what they
+    /// wrote gives a different answer on their machine than on anyone
+    /// else's, which is not a suite.
+    static var runningUnderTests: Bool {
+        refusesProductionStateUnderTests(seamsInjected: false)
+    }
 }
 
 // MARK: - Where settings rest
@@ -313,6 +326,46 @@ extension FormFactor {
     /// real suite and persisted fine: a bug that only shows in the
     /// build people actually run.
     public static var settingsDefaults: UserDefaults { .standard }
+}
+
+// MARK: - Where the user's own keymap rests
+
+extension FormFactor {
+    /// The directory a person may leave configuration in, named for the
+    /// running build's bundle id.
+    ///
+    /// Beside the state directory rather than inside it, and the two
+    /// properties that make the state directory right for ciphertext
+    /// are exactly what make it wrong for this. That directory carries
+    /// a `.noindex` suffix so Spotlight never reads the sealed
+    /// generations, and it is excluded from backup so a snapshot cannot
+    /// hold a copy the app believes it replaced. A keymap is the
+    /// opposite kind of file in both respects: the user wrote it, they
+    /// should be able to find it by searching for it, and losing it in
+    /// a restore would be a small betrayal for no gain. Nothing here is
+    /// sealed and nothing here is secret.
+    ///
+    /// The app never creates this directory. Configuration is optional,
+    /// absence is the ordinary case, and an empty folder appearing in
+    /// Application Support for a feature nobody used is noise.
+    public var configurationDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(credentialService, isDirectory: true)
+    }
+
+    /// The user's keymap, laid over the bundled default when it exists
+    /// (`Keymap.load(userOverride:)`). Named as Zed names its own, so a
+    /// file copied from there arrives under the name it left with.
+    public var userKeymapFileURL: URL {
+        Self.userKeymapFileURL(in: configurationDirectory)
+    }
+
+    /// The keymap's place inside any configuration directory, stated
+    /// once so a test's injected directory and the shipping one cannot
+    /// spell it differently.
+    public static func userKeymapFileURL(in directory: URL) -> URL {
+        directory.appendingPathComponent("keymap.json")
+    }
 }
 
 // MARK: - Which build am I on

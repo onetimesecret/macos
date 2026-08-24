@@ -112,6 +112,12 @@ cp "$BIN" "$APP/Contents/MacOS/OnetimePad"
 # not what ships: its accessor searches beside the .app, so the app
 # carries the asset in Contents/Resources where Bundle.main finds it.
 cp shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg "$APP/Contents/Resources/"
+# The bundled default keymap, which is the authoritative list of what
+# the keyboard does (issue #76, docs/development/about-the-keymap.md).
+# Here for the same reason as the logo mark: Bundle.main is where the
+# app looks first, and a bundle without this file has no shortcuts at
+# all.
+cp shell/Sources/CompanionKit/Resources/default-keymap.json "$APP/Contents/Resources/"
 cp shell/OnetimePad-Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 # Use whatever OnetimePad icon is already sitting in dist/icons/ (the

@@ -33,7 +33,7 @@ struct BackdropApp: App {
                 // window the delegate owns.
                 CommandGroup(replacing: .appSettings) {
                     Button("Settings…") { appDelegate.openSettings() }
-                        .keyboardShortcut(",", modifiers: .command)
+                        .keyboardShortcut(appDelegate.settingsShortcut)
                 }
                 // Repointed for the same reason and with more at stake.
                 // The synthesized item calls AppKit's own
@@ -202,11 +202,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
                 action: #selector(showAbout),
                 keyEquivalent: ""
             ).target = self
-            menu.addItem(
+            let settingsItem = menu.addItem(
                 withTitle: "Settings…",
                 action: #selector(openSettings),
-                keyEquivalent: ","
-            ).target = self
+                keyEquivalent: settingsKeystroke?.menuKeyEquivalent ?? ""
+            )
+            settingsItem.keyEquivalentModifierMask = settingsKeystroke?.menuModifierMask ?? []
+            settingsItem.target = self
             menu.addItem(.separator())
             menu.addItem(
                 withTitle: "Quit",
@@ -226,6 +228,37 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         } else {
             model.summon()
         }
+    }
+
+    /// The chord Settings advertises, taken from the keymap
+    /// (`app::Settings`) rather than spelled here.
+    ///
+    /// A menu key equivalent is an app-wide claim, live even while a
+    /// Settings text field holds the keyboard, so only a keymap section
+    /// that opted into `use_key_equivalents` can hand one out; the
+    /// bundled default does. Nil means the file took the binding away,
+    /// and then the menu shows the item without a chord, which is the
+    /// right answer to "unbind Settings" and not a reason to put the
+    /// old chord back.
+    var settingsKeystroke: Keystroke? {
+        model.pages.keymap.menuKeystroke(for: .appSettings)
+    }
+
+    /// The same chord for the SwiftUI command group, and nil for the
+    /// same reason: a main-menu shortcut is the app-wide half of the
+    /// claim, so restoring ⌘, here would hand back most of what the
+    /// unbinding took away. Both menu items stay, and stay clickable;
+    /// what a nil costs is the chord, which is what was asked for.
+    ///
+    /// The keymap has nothing to say only when the file took the
+    /// binding away or moved it into a section that does not advertise
+    /// chords. An override that cannot be read leaves the bundled
+    /// default standing, and the bundled default binds ⌘, in a section
+    /// that does; a bundled default this build lost binds nothing at
+    /// all, and quietly keeping one chord out of the twenty would be
+    /// the surprise, not the honesty.
+    var settingsShortcut: KeyboardShortcut? {
+        settingsKeystroke?.keyboardShortcut
     }
 
     /// The Settings window, from the menu bar's ⌘, or either of the

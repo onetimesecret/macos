@@ -223,8 +223,22 @@ public struct CountdownButton: View {
 /// The surface-level keyboard map (docs/spec/04), carried by zero-size
 /// hidden buttons: active exactly while the surface holds the keys —
 /// never a global claim (the summon hotkeys are the one exception, and
-/// they live in the form factors' hotkey types). ⇧⌘V and ⌘↩ belong to
-/// the editor.
+/// they live in the form factors' hotkey types).
+///
+/// Which chord runs which command is no longer written here. It is
+/// read out of the keymap (issue #76,
+/// `docs/development/about-the-keymap.md`): the bundled default file
+/// says ⌘1 through ⌘9 jump by visible tab order, ⌘0 opens the ledger,
+/// ⌘W closes, ⌘S forces the debounced write to happen now, ⌘, opens
+/// Settings and Esc hands the keyboard back, and a user's own keymap
+/// may say otherwise. What is left here is the installation: one
+/// hidden button per chord the surface carries, mounted only while the
+/// surface is raised.
+///
+/// The seal gestures (⇧⌘V, ⌘↩) and the wrap toggle are in the same
+/// file and are not installed here. They are dispatched by the page's
+/// own text view, which sees a keystroke before any of these buttons
+/// do and which owns the caret they act on.
 public struct PageKeyboardMap: View {
     @ObservedObject var model: PageModel
 
@@ -234,43 +248,10 @@ public struct PageKeyboardMap: View {
 
     public var body: some View {
         Group {
-            // ⌘1–⌘9: jump by visible tab order.
-            ForEach(1...9, id: \.self) { number in
-                Button("") { model.select(index: number - 1) }
-                    .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
+            ForEach(model.keymap.surfaceShortcuts()) { installed in
+                Button("") { model.perform(installed.command) }
+                    .keyboardShortcut(installed.shortcut)
             }
-            // ⌘0: the ledger.
-            Button("") { model.showLedger() }
-                .keyboardShortcut("0", modifiers: .command)
-            // ⌥⌘N: new page, default rung.
-            Button("") { model.newPage() }
-                .keyboardShortcut("n", modifiers: [.command, .option])
-            // ⌥⌘← / ⌥⌘→: previous / next page.
-            Button("") { model.step(-1) }
-                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
-            Button("") { model.step(1) }
-                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
-            // ⌘W: close the page — every macOS app's close verb. The
-            // ledger view, when showing, closes back to the page.
-            Button("") { model.closeCurrent() }
-                .keyboardShortcut("w", modifiers: .command)
-            // ⌘,: Settings — the macOS convention, honoured while the
-            // surface holds the keys.
-            Button("") { model.onOpenSettings?() }
-                .keyboardShortcut(",", modifiers: .command)
-            // ⌘S: force-save now, riding the debounced write's own
-            // status surface (issue #46). `saveState()` is main-actor
-            // and synchronous, the same call the debounce timer and the
-            // quit path make, so this asks for nothing the write
-            // lifecycle does not already do on its own; it only asks
-            // for it now rather than at the debounce's far end. A press
-            // with nothing owed still lands on `.saved`, which is the
-            // reassurance the shortcut exists to give.
-            Button("") { model.saveState() }
-                .keyboardShortcut("s", modifiers: .command)
-            // Esc outside the editor (the ledger, chrome): hand back.
-            Button("") { model.escape() }
-                .keyboardShortcut(.cancelAction)
         }
         .frame(width: 0, height: 0)
         .opacity(0)

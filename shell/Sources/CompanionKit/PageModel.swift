@@ -398,6 +398,15 @@ public final class PageModel: ObservableObject {
     /// Settings window, the surface merely asks for it).
     public var onOpenSettings: (() -> Void)?
 
+    /// What the keyboard does, resolved once at launch from the bundled
+    /// default keymap and whatever override the user wrote
+    /// (`Keymap.load(userOverride:)`). Read by the surface, which
+    /// installs the chords it carries, and by the page's own text view,
+    /// which answers the rest. Held here because both of them already
+    /// hold the model, and because one resolution shared is the only
+    /// way the two routes can be guaranteed to agree.
+    public private(set) var keymap: ResolvedKeymap
+
     private let client: CompanionClient
     private let defaults: UserDefaults
 
@@ -518,18 +527,49 @@ public final class PageModel: ObservableObject {
         let client: CompanionClient?
         let saveDebounce: TimeInterval?
         let saveRetryDebounce: TimeInterval?
+        /// The user keymap a test wants read, if any. This one reads
+        /// differently from its neighbours: nil under the runner means
+        /// *no override at all*, rather than the shipping path, and it
+        /// says so on its own rather than by watching a neighbour
+        /// (`PageModel.userKeymapURL(formFactor:seam:underTests:)`).
+        /// A suite that fell back to the shipping path would resolve
+        /// the installed app's own configuration directory and start
+        /// passing or failing on whatever the person running the tests
+        /// happens to have bound, which is not a test.
+        let keymapOverride: URL?
 
         public init(
             stateDirectory: URL? = nil,
             client: CompanionClient? = nil,
             saveDebounce: TimeInterval? = nil,
-            saveRetryDebounce: TimeInterval? = nil
+            saveRetryDebounce: TimeInterval? = nil,
+            keymapOverride: URL? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
             self.saveDebounce = saveDebounce
             self.saveRetryDebounce = saveRetryDebounce
+            self.keymapOverride = keymapOverride
         }
+    }
+
+    /// Which user keymap a launch reads: the file a test named, and
+    /// the form factor's own otherwise.
+    ///
+    /// The keymap seam is the only thing that decides it. The state
+    /// directory's seam used to, which made a model seamed for its
+    /// files but not for its keymap read the installed user's file, and
+    /// a suite that passes or fails on whatever the person running it
+    /// happens to have bound is not a suite. Under the runner the
+    /// shipping path is refused outright rather than merely unused, so
+    /// no future seam can put that coupling back by accident.
+    static func userKeymapURL(
+        formFactor: FormFactor,
+        seam: URL?,
+        underTests: Bool = FormFactor.runningUnderTests
+    ) -> URL? {
+        if let seam { return seam }
+        return underTests ? nil : formFactor.userKeymapFileURL
     }
 
     /// `defaults` is injectable so tests can point at a throwaway
@@ -580,6 +620,13 @@ public final class PageModel: ObservableObject {
         saveDebounce = seams.saveDebounce ?? Self.saveDebounce
         saveRetryDebounce = seams.saveRetryDebounce ?? Self.saveRetryDebounce
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
+        // Resolved once, here, so the surface and the page's text view
+        // are answering out of one map. A test reads only the override
+        // it named, which for most of them is none.
+        keymap = Keymap.load(
+            userOverride: Self.userKeymapURL(formFactor: formFactor, seam: seams.keymapOverride)
+        )
+        keymap.report(subsystem: formFactor.loggerSubsystem)
         // Unset → float on top, matching the original behavior.
         floatsOnTop = defaults.object(forKey: Self.floatsKey) as? Bool ?? true
         // Unset → wrap, which is how every plain-text editor opens and
