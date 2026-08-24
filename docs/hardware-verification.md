@@ -44,7 +44,7 @@ both and note any divergence in feel, not just function:
       selection.
 - [ ] ⌫ on a chip removes it (and zeroizes core-side — no visible
       check here; the contract test covers it).
-- [ ] ⌥⌘N new page; ⌥⌘←/→ walk pages; ⌘1–⌘9 jump in visible tab
+- [ ] ⌘N new page; ⌥⌘←/→ walk pages; ⌘1–⌘9 jump in visible tab
       order; ⌘0 opens the ledger.
 - [ ] Drag a tab to reorder; confirm the ⌘-number map follows the new
       visible order.
@@ -158,11 +158,11 @@ keystroke types, with no beep.**
 
 ### §F.1: The regressions (must now hold)
 
-- [ ] Viewing a page, press ⌥⌘N: the new page mounts focused; type at
+- [ ] Viewing a page, press ⌘N: the new page mounts focused; type at
       once.
 - [ ] Click the **+** tab: the new page mounts focused; type at once.
 - [ ] From a keyed empty window (close the last page so the keys stay
-      and the calm sentence shows), press ⌥⌘N: the conjured page mounts
+      and the calm sentence shows), press ⌘N: the conjured page mounts
       focused; type at once.
 
 ### §F.2: The paths that must still work (no regression)

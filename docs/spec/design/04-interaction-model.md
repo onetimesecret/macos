@@ -211,7 +211,7 @@ bar's way, exactly where a spreadsheet hand already knows to look.
   user chose, never LRU surprise.
 - **Drag to reorder**, live; the ⌘-number map follows the visible order.
 - **Close** is an ✕ on tab hover; a closed page rests in the ledger like
-  an expired one. New page: the + affordance, or ⌥⌘N.
+  an expired one. New page: the + affordance, or ⌘N.
 
 ## The ledger — ⌘0
 
@@ -268,7 +268,7 @@ would expect.
 | ⌘1 – ⌘9 | jump to page 1–9, in visible tab order |
 | ⌘0 | the ledger — expired & closed pages, dimmed |
 | ⌥⌘← / ⌥⌘→ | previous / next page |
-| ⌥⌘N | new page, default rung |
+| ⌘N | new page, default rung (⌥⌘N until issue #77; the bindings live in the keymap now, docs/development/about-the-keymap.md) |
 | ⌘F / ⌘G / ⇧⌘G | find in the page, next match, previous — the docked find bar, not the floating panel |
 | ⌥⌘F | find and replace in the page |
 | ⌘E | use the selection for find; refuses a selection holding a chip, which has no text to search for |

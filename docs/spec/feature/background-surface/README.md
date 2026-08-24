@@ -311,7 +311,7 @@ Added by the parity amendment:
    goes under `com.onetimesecret.companion.backdrop` in the Keychain.
    The panel's own token is untouched and neither app prompts for the
    other's item.
-10. Tabs: ⌘1 through ⌘9, ⌥⌘N (including the refusal at nine), ⌥⌘←/→,
+10. Tabs: ⌘1 through ⌘9, ⌘N (including the refusal at nine), ⌥⌘←/→,
     ⌘W, drag to reorder, double-click to hold the clock, and the ledger
     tab, all from a raised card and none of them reachable from a
     resting one.

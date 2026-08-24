@@ -12,7 +12,7 @@ Where the editing surface actually lives
 ┌─ SWIFT SHELL ─────────────────────────────────────────────────────────────┐
 │                                                                           │
 │  PageSurface.swift:190  PageKeyboardMap                                   │
-│    ⌘1..9 ⌘0 ⌥⌘N ⌥⌘← ⌥⌘→ ⌘W ⌘, esc      ← app-level map, no text verbs    │
+│    ⌘1..9 ⌘0 ⌘N ⌥⌘← ⌥⌘→ ⌘W ⌘, esc       ← app-level map, no text verbs    │
 │                                                                           │
 │  InkEditorView.swift                                                      │
 │  ┌─────────────────────────────────────────────────────────────────────┐  │
