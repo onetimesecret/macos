@@ -36,6 +36,13 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # The action's built-in default is a retired model id, which 404s
+          # before the review starts. Set the ANTHROPIC_MODEL repo variable
+          # to change models without a PR; the literal is the floor, so an
+          # unset or cleared variable still lands on a live model.
+          model: ${{ vars.ANTHROPIC_MODEL || 'claude-opus-5' }}
+
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
