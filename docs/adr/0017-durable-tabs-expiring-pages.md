@@ -17,7 +17,7 @@ and the store holds `sheets: Vec<Sheet>` in visible tab order
 the tree. When a page's countdown reaches zero, `expire_due` partitions
 it out of the vector and drops it (crates/core/src/store.rs:1260-1274),
 `refresh()` reconciles selection to whatever is left
-(shell/Sources/CompanionKit/PageModel.swift:1135-1146, :1193-1196), and the
+(shell/Sources/CompanionKit/PageModel.swift:1155-1166, :1213-1216), and the
 tab vanishes from the strip.
 
 The maintainer's complaint, docs/dogfood/ABERRATIONS.md:67-68:
@@ -35,7 +35,7 @@ the arrangement the user built by dragging tabs into an order
 (crates/core/src/store.rs:332-340) is destroyed by the countdowns rather
 than by the user. ⌘3 means a different page every day, and eventually
 nothing, because the keyboard map indexes the live array
-(shell/Sources/CompanionKit/PageModel.swift:1282-1319).
+(shell/Sources/CompanionKit/PageModel.swift:1302-1339).
 
 Three constraints bound the answer.
 
@@ -130,7 +130,7 @@ Required work item 8's skip is what enforces that. `next_event` reads
 and must walk tabs and skip the ones holding no page, so a tab
 contributes nothing to `companion_next_event_ms`
 (crates/ffi/src/lib.rs:1284), which is what arms the shell's one timer
-(shell/Sources/CompanionKit/PageModel.swift:2192). Nothing about a tab
+(shell/Sources/CompanionKit/PageModel.swift:2214). Nothing about a tab
 expires. The objection worth answering is that a rung sitting on the
 durable object looks like a TTL on the durable object; the answer is
 that a rung with no clock cannot end anything, and the alternative (each
@@ -156,7 +156,7 @@ Three strings, two objects.
 - `Tab.name: Option<String>` is set only by the rename gesture that
   exists today (crates/core/src/store.rs:859-878 core-side,
   shell/Sources/CompanionKit/TabStripView.swift:220-221, :292-314 and
-  shell/Sources/CompanionKit/PageModel.swift:1760-1761 shell-side),
+  shell/Sources/CompanionKit/PageModel.swift:1782-1783 shell-side),
   capped at 80 characters, never derived, durable.
 - `Page.derived_title: Option<String>` is `derive_title`'s segment walk
   (crates/core/src/sheet.rs:574-592), re-derived on edit at the site that
@@ -265,17 +265,17 @@ reason is ADR-0006:40-42: the empty branch renders no `InkEditorView`,
 so a selected tab with no page would unmount the editor and re-mount it
 on the first keystroke, turning every expiry into an editor teardown and
 putting ADR-0005's Return-to-create grant
-(shell/Sources/CompanionKit/PageModel.swift:1599-1603) in competition
+(shell/Sources/CompanionKit/PageModel.swift:1621-1625) in competition
 with the tab's own selection path. Minting on selection keeps one editor
 mounted and keeps `storages` and `undoManagers` keyed to a live page
-(shell/Sources/CompanionKit/PageModel.swift:1135-1145).
+(shell/Sources/CompanionKit/PageModel.swift:1155-1165).
 
 **Which selections mint: a user gesture, and nothing else.** The
 gestures are exactly three. A click on the tab
 (shell/Sources/CompanionKit/TabStripView.swift:214, into `select(_:)` at
-shell/Sources/CompanionKit/PageModel.swift:1274-1279). ⌘1 through ⌘9
-(`select(index:)`, shell/Sources/CompanionKit/PageModel.swift:1285-1288).
-⌥⌘←/→ (`step`, shell/Sources/CompanionKit/PageModel.swift:1292-1319). A
+shell/Sources/CompanionKit/PageModel.swift:1294-1299). ⌘1 through ⌘9
+(`select(index:)`, shell/Sources/CompanionKit/PageModel.swift:1305-1308).
+⌥⌘←/→ (`step`, shell/Sources/CompanionKit/PageModel.swift:1312-1339). A
 restored selection never mints, and neither does the selection
 `refresh()` reconciles. Return is the one other way a page comes into
 being and it is not a selection at all; it arrives through ADR-0005's
@@ -284,7 +284,7 @@ create grant, which required work item 11 rewrites.
 Narrowing to the gesture is what settles the live-expiry case, and
 without it the rule contradicts itself. `refresh()` reconciles selection
 on every reload, through `reconciledSelection`
-(shell/Sources/CompanionKit/PageModel.swift:1146, :1194-1196), so a rule
+(shell/Sources/CompanionKit/PageModel.swift:1166, :1214-1216), so a rule
 that minted on any selection would mint whenever the selected tab's page
 expired under the user's cursor. That is the same silent countdown on
 nothing that the expiry paragraph below refuses for the closed-app case,
@@ -345,7 +345,7 @@ ADR-0009 sense.
 Second, the cap. Nine tabs (crates/core/src/store.rs:25-31), refused at
 the wall with a message rather than evicted
 (crates/core/src/store.rs:200-202,
-shell/Sources/CompanionKit/PageModel.swift:1522-1528). A durable tab
+shell/Sources/CompanionKit/PageModel.swift:1544-1550). A durable tab
 that never expires cannot accumulate, because the ceiling never moves:
 reaching it forces the user to close one. The cap was already written as
 the anti-eviction bound, since "silent eviction of deliberately placed
@@ -381,9 +381,9 @@ that rotate both key halves, and ADR-0016 section 8 dates the ciphertext
 artifact from the first save until the last tab is closed. Both readings
 depart from the shipped drop-on-empty path, which keys on a single
 predicate today:
-`erasesContentFile` (shell/Sources/CompanionKit/PageModel.swift:769-807)
+`erasesContentFile` (shell/Sources/CompanionKit/PageModel.swift:789-827)
 is called with `client.sheets().isEmpty`
-(shell/Sources/CompanionKit/PageModel.swift:995-1010), and the core's
+(shell/Sources/CompanionKit/PageModel.swift:1015-1030), and the core's
 `is_empty` is the page vector's own
 (crates/core/src/store.rs:279-280). This ADR makes the sealed file also
 carry tab names, rungs and strip order, so an empty page set stops being
@@ -533,7 +533,7 @@ except the magic bump in item 1, which issue #54 has already taken.
    **6a.** The emptiness predicate splits in two. Neither half is
    `is_empty` as it stands (crates/core/src/store.rs:279-280), read
    shell-side as `client.sheets().isEmpty`
-   (shell/Sources/CompanionKit/PageModel.swift:911), because the sealed
+   (shell/Sources/CompanionKit/PageModel.swift:931), because the sealed
    file now carries tab names, rungs and strip order. The core owns both
    halves, as `holds_no_page()` and `has_no_tabs()`, and one FFI export
    carries both across the seam beside the summaries
@@ -556,7 +556,7 @@ except the magic bump in item 1, which issue #54 has already taken.
      fires here.
    - **No tabs remain.** The tab vector is empty. This is the drop.
      `erasesContentFile`'s `storeEmpty` argument
-     (shell/Sources/CompanionKit/PageModel.swift:769-807, :995-1010)
+     (shell/Sources/CompanionKit/PageModel.swift:789-827, :1015-1030)
      takes this predicate and only this one, so the file is unlinked
      only when there is nothing left to reseal.
 
@@ -618,7 +618,7 @@ except the magic bump in item 1, which issue #54 has already taken.
    that makes "nothing about a tab expires" true, not the shim.
 9. `PageModel.storages` and `PageModel.undoManagers` must be re-keyed
    from tab id to page identity
-   (shell/Sources/CompanionKit/PageModel.swift:1135-1145). This is the
+   (shell/Sources/CompanionKit/PageModel.swift:1155-1165). This is the
    split's one real correctness trap. A reused tab holds a new page, and
    inheriting the dead page's `NSTextStorage` or undo stack would let a
    later ⌘Z re-insert a dead chip's attachment character, which is the
@@ -627,11 +627,11 @@ except the magic bump in item 1, which issue #54 has already taken.
    filters on the live sheet id set must filter on the live page
    identity set.
 10. ⌘1 through ⌘9 and ⌥⌘←/→ index into `model.sheets`
-    (shell/Sources/CompanionKit/PageModel.swift:1282-1319). They must
+    (shell/Sources/CompanionKit/PageModel.swift:1302-1339). They must
     index tab slots, so ⌘3 on an empty tab opens a page into it through
     item 5a rather than being a no-op.
 11. `shouldOfferEnterCreate`'s `sheetsEmpty` predicate
-    (shell/Sources/CompanionKit/PageModel.swift:1599-1603, fed at
+    (shell/Sources/CompanionKit/PageModel.swift:1621-1625, fed at
     shell/Sources/CompanionKit/PageSurface.swift:61) becomes "the
     selected tab holds no page". It follows the selection, not the
     strip: a selected empty tab offers the create surface while another
@@ -641,7 +641,7 @@ except the magic bump in item 1, which issue #54 has already taken.
     per selection, so feeding either here hides the create surface
     exactly when a user is looking at an empty tab. The Return grant's
     own `if sheets.isEmpty { newPage() }` inside `createPageAndFocus`
-    (shell/Sources/CompanionKit/PageModel.swift:1562-1567, reached only
+    (shell/Sources/CompanionKit/PageModel.swift:1584-1589, reached only
     from shell/Sources/CompanionKit/PageSurface.swift:62) opens a page
     into the selected tab through item 5a, and mints a tab only when no
     tabs remain.
@@ -650,7 +650,7 @@ except the magic bump in item 1, which issue #54 has already taken.
     in the shell and it is the one that would make restore mint: it
     calls `newSheet()` whenever the store comes back empty and then
     seats the selection on the first entry
-    (shell/Sources/CompanionKit/PageModel.swift:687-691). It takes item
+    (shell/Sources/CompanionKit/PageModel.swift:707-711). It takes item
     6a's second predicate, no tabs remain, not the first. Otherwise
     every launch after an overnight expiry mints into a tab the user
     never selected and starts a fresh countdown on nothing, which is the
@@ -696,7 +696,7 @@ except the magic bump in item 1, which issue #54 has already taken.
   and the tab names, rungs and order are resealed under the new halves,
   so there is a fresh ciphertext generation on disk holding no page
   content. Only closing every tab removes the file
-  (shell/Sources/CompanionKit/PageModel.swift:769-807).
+  (shell/Sources/CompanionKit/PageModel.swift:789-827).
 - **Residual exposure, stated plainly and not claimed away.** A user can
   type "prod DB credentials" into the rename field, and under ADR-0016
   that string is durable across reboot, under a long-lived key, with no
@@ -728,7 +728,7 @@ except the magic bump in item 1, which issue #54 has already taken.
   that keeps its shell-side `NSTextStorage` or `UndoManager` across a
   page replacement puts an attachment character for a zeroized chip
   within reach of ⌘Z, which is what ADR-0009:34-42 closed. The re-key at
-  shell/Sources/CompanionKit/PageModel.swift:1135-1145 is the whole
+  shell/Sources/CompanionKit/PageModel.swift:1155-1165 is the whole
   mitigation, and it needs a test that mints into a reused tab and
   presses undo past the page boundary.
 - The core's page vector stops being the strip. Every reader that
@@ -741,7 +741,7 @@ except the magic bump in item 1, which issue #54 has already taken.
   will read as a bug to someone whose nine tabs are all empty.
 - The empty state stops meaning what it meant. `shouldOfferEnterCreate`
   was written for an empty sheet list
-  (shell/Sources/CompanionKit/PageModel.swift:1599-1603); under the
+  (shell/Sources/CompanionKit/PageModel.swift:1621-1625); under the
   split the strip can be full while nothing is live, which is a state
   nothing in the shell renders today.
 
