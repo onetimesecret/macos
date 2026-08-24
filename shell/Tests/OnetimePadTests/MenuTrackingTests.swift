@@ -66,7 +66,37 @@ final class MenuTrackingTests: XCTestCase {
         // Judged while the menu is still up, which is what a submenu or
         // a slow choice looks like.
         let sessions = [MenuTracking.Session(began: t, ended: nil)]
-        XCTAssertTrue(MenuTracking.claims(press: t + 30, sessions: sessions))
+        XCTAssertTrue(MenuTracking.claims(press: t + 5, sessions: sessions))
+    }
+
+    // MARK: The end that never came
+
+    func testAnOpenSessionStopsClaimingOnceItIsOlderThanTheLimit() {
+        // One begin without its end would otherwise claim every press
+        // for the life of the process, and the outside click rule would
+        // be dead with no symptom but a card that never rests again.
+        let sessions = [MenuTracking.Session(began: t, ended: nil)]
+        XCTAssertFalse(
+            MenuTracking.claims(press: t + MenuTracking.openLimit + 0.01, sessions: sessions)
+        )
+    }
+
+    func testAMenuHeldOpenNearlyToTheLimitStillClaimsItsPress() {
+        // The limit must not cost a real menu its exception: a person
+        // reading a long menu, or leaving one standing while they think,
+        // is inside the cap for the whole of it.
+        let sessions = [MenuTracking.Session(began: t, ended: nil)]
+        XCTAssertTrue(
+            MenuTracking.claims(press: t + MenuTracking.openLimit - 0.01, sessions: sessions)
+        )
+    }
+
+    func testAnUnbalancedSessionLetsAPlainOutsideClickRestTheSurfaceAgain() {
+        // The shape of the fault, end to end: a begin whose end never
+        // posted, and then, much later, the user clicking into another
+        // app. That press must rest the card.
+        let stranded = [MenuTracking.Session(began: t, ended: nil)]
+        XCTAssertFalse(MenuTracking.claims(press: t + 600, sessions: stranded))
     }
 
     func testAPressBetweenTwoSessionsRestsTheSurface() {
@@ -132,11 +162,19 @@ final class MenuTrackingTests: XCTestCase {
         XCTAssertEqual(MenuTracking.closing(settled, at: t + 2), settled)
     }
 
-    func testPruningKeepsOpenSessionsHoweverOldTheyAre() {
+    func testPruningKeepsAnOpenSessionThatCanStillClaimAPress() {
         // A menu the user has left standing is still the reason the
-        // next press must be ignored.
-        let sessions = [MenuTracking.Session(began: t - 600, ended: nil)]
+        // next press must be ignored, so it survives the sweep for as
+        // long as it is entitled to claim anything.
+        let sessions = [MenuTracking.Session(began: t - 1, ended: nil)]
         XCTAssertEqual(MenuTracking.pruned(sessions, now: t), sessions)
+    }
+
+    func testPruningDropsAnOpenSessionThatOutlivedItsLimit() {
+        // It can no longer claim a press, and left on the books it would
+        // only give the next `closing` the wrong session to end.
+        let sessions = [MenuTracking.Session(began: t - 600, ended: nil)]
+        XCTAssertTrue(MenuTracking.pruned(sessions, now: t).isEmpty)
     }
 
     func testPruningDropsSessionsClosedBeyondRetention() {
@@ -181,6 +219,22 @@ final class MenuTrackingTests: XCTestCase {
     }
 
     @MainActor
+    func testTheWatchStopsObservingTheCentreItWasGiven() {
+        // Undoing the observations on `.default` regardless of what was
+        // injected takes back nothing at all: the real observations
+        // outlive the watch, holding it up by its own closures, and a
+        // test's centre keeps feeding a watch its case has finished
+        // with. The tokens must go back to the centre they came from.
+        let center = RecordingCenter()
+        do {
+            let watch = MenuTrackingWatch(center: center)
+            XCTAssertEqual(center.removed, 0)
+            withExtendedLifetime(watch) {}
+        }
+        XCTAssertEqual(center.removed, 2, "both observations belong to the injected centre")
+    }
+
+    @MainActor
     func testTheWatchStampsSessionsOnTheClockEventsCarry() {
         // NSEvent.timestamp and systemUptime share a base; if the watch
         // stamped anything else, every comparison above would be
@@ -194,5 +248,21 @@ final class MenuTrackingTests: XCTestCase {
         let began = watch.sessions.first?.began ?? -1
         XCTAssertGreaterThanOrEqual(began, before)
         XCTAssertLessThanOrEqual(began, after)
+    }
+}
+
+/// A notification centre that counts the observations taken back from
+/// it. Nothing else about it differs from the real thing, which is the
+/// point: the watch cannot tell it apart, and deinit either returns the
+/// tokens here or quietly loses them somewhere else.
+private final class RecordingCenter: NotificationCenter {
+    // nonisolated(unsafe) because the watch's deinit is nonisolated, as
+    // every deinit is; the only writes come from there and from the test
+    // that owns this instance, both on the main thread.
+    nonisolated(unsafe) var removed = 0
+
+    override func removeObserver(_ observer: Any) {
+        removed += 1
+        super.removeObserver(observer)
     }
 }
