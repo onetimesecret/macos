@@ -164,6 +164,18 @@ keystroke types, with no beep.**
 - [ ] From a keyed empty window (close the last page so the keys stay
       and the calm sentence shows), press ⌥⌘N: the conjured page mounts
       focused; type at once.
+- [ ] Click an **empty slot** on the strip (one whose page expired, or
+      shorten a page to the bottom rung and wait it out): selecting it
+      opens a page into it, and that page mounts focused; type at once.
+      ⌘1 through ⌘9 onto such a slot is the same path and must do the
+      same.
+- [ ] ⌥⌘←/→ onto an **empty slot**: the walk opens a page into the slot
+      it lands on, and that page mounts focused; type at once.
+
+The last two are the ADR-0017 mint paths, which arrived after the
+original three and go through the same teardown: the empty state's
+catcher gives way to a freshly built editor, and first responder leaves
+with the catcher.
 
 ### §F.2: The paths that must still work (no regression)
 
@@ -172,6 +184,11 @@ keystroke types, with no beep.**
       back.)
 - [ ] ⌘0 to the ledger, then ⌘0 again back to the page: focused, type
       at once.
+- [ ] The same round trip several times in quick succession, ⌘0 ⌘0 ⌘0
+      ⌘0: every return lands focused. Speed is the point, not
+      thoroughness. The outgoing editor's teardown and the incoming
+      one's mount overlap here, and telling those two apart is what the
+      hand-off has to get right (issue #23).
 - [ ] Plain switch ⌘1 through ⌘9 across several pages: each lands
       focused; type at once.
 - [ ] ⌥⌘←/→ walk across the pages: each lands focused; type at once.
@@ -193,6 +210,11 @@ front` names it) and leave this window visible but not key.
       content area and a real editor are the only key-granting
       surfaces, and those are the lawful third and fourth grants of
       ADR-0005, not violations of this invariant).
+- [ ] Click an **empty slot** on the unkeyed window: a page is opened
+      into it, and the keyboard still belongs to the front app. This is
+      the one the mint paths make worth re-checking, since they now ask
+      for focus where they used not to; the ask is refused for an
+      unkeyed surface, and the refusal is what this line is about.
 
 ## Separate procedures, in their own documents
 
@@ -230,6 +252,16 @@ is indexed in [`qa/recovery-matrix.md`](qa/recovery-matrix.md):
   case 7.
 - [`raised-card-drag-tracking.md`](qa/verification-procedures/raised-card-drag-tracking.md).
   Owner: delano. Drag and resize tracking on the raised card. Not an
+  ADR-0016 case.
+- [`pinned-over-fullscreen.md`](qa/verification-procedures/pinned-over-fullscreen.md).
+  Owner: delano. A pinned card and another app's full-screen Space:
+  whether the card is visible there, and, either way, that clicks reach
+  the full-screen app rather than the pad (issue #73). Not an ADR-0016
+  case.
+- [`spaces-and-cmd-tab.md`](qa/verification-procedures/spaces-and-cmd-tab.md).
+  Owner: delano. ⌘Tab back landing where the user is rather than on
+  Desktop 1, the shape of any flicker on return, and the edge drag that
+  ADR-0019 decides against rather than fixes (issue #74). Not an
   ADR-0016 case.
 
 Whether any of them has been run is recorded in each file's own Status

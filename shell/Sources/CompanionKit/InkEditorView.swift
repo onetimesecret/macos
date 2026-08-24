@@ -101,6 +101,29 @@ public struct InkEditorView: NSViewRepresentable {
         return scroll
     }
 
+    /// The editor is going away: a ledger round trip, or the empty
+    /// state that the selected tab holding no page puts on screen
+    /// (ADR-0017 made that a frequent event rather than a rare one).
+    ///
+    /// The model keeps a weak handle on the mounted editor so a summon
+    /// or a grant can hand it the keyboard, and weak is not the same as
+    /// mounted: a view torn out of the window answers that handle until
+    /// ARC lets go, and a hand-off arriving in the meantime would settle
+    /// on a view with no window rather than wait for the editor coming
+    /// to replace it. `PageModel.mountedEditor` refuses such a view on
+    /// the way in; retiring the handle here means it is never offered
+    /// one (issue #23).
+    ///
+    /// Only when the handle is still this view's. SwiftUI may build a
+    /// replacement before dismantling what it replaces, and clearing
+    /// unconditionally would then drop the live editor a moment after it
+    /// arrived.
+    public static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+        guard let textView = scroll.documentView as? InkTextView,
+              coordinator.model.activeEditor === textView else { return }
+        coordinator.model.activeEditor = nil
+    }
+
     /// The page inside its scroller: a text view free to grow as tall as
     /// its text, clipped by a card-sized window onto it.
     ///
@@ -131,6 +154,31 @@ public struct InkEditorView: NSViewRepresentable {
         scroll.drawsBackground = false
         scroll.documentView = textView
         return scroll
+    }
+
+    /// End an in-progress IME composition on the page that is leaving,
+    /// before the page underneath the editor changes.
+    ///
+    /// Marked text is anchored to offsets in the outgoing page's
+    /// storage, and the input method holds a conversion session pointing
+    /// at them. The identity change this editor used to take on every
+    /// switch discarded both by tearing the view down; the persistent
+    /// view has to do it by hand, or the pending composition commits
+    /// into the incoming page or leaves the input context aimed at a
+    /// range that has since been replaced (ADR-0006's third eject
+    /// trigger, issue #23).
+    ///
+    /// Both halves are needed and in this order: the input context is
+    /// told to abandon its session, and the view is then unmarked, which
+    /// is what settles the composition through the coordinator's own gate
+    /// while `currentSheet` and the storage still name the page it was
+    /// typed on. What was provisionally composed stays on that page, in
+    /// the storage and in the core alike, and nothing crosses the
+    /// boundary. A view with nothing marked is left alone.
+    static func discardComposition(in textView: InkTextView) {
+        guard textView.hasMarkedText() else { return }
+        textView.inputContext?.discardMarkedText()
+        textView.unmarkText()
     }
 
     /// ⌘F and its neighbours, switched on.
@@ -230,10 +278,7 @@ public struct InkEditorView: NSViewRepresentable {
         // page's storage — the wrong page — or leaves the input context
         // pointing at a stale range (ADR-0006 eject-trigger #3, issue
         // #23). Discard before the swap so nothing crosses the boundary.
-        if textView.hasMarkedText() {
-            textView.inputContext?.discardMarkedText()
-            textView.unmarkText()
-        }
+        Self.discardComposition(in: textView)
         coordinator.saveViewState(textView: textView, scrollView: scroll)
         let incoming = model.storage(for: sheetID)
         // The one-layout-manager-per-storage invariant rests on this
