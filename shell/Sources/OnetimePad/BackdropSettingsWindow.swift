@@ -37,10 +37,11 @@ final class BackdropSettingsWindowController {
             // The window is built once and shown many times, so without
             // this it would keep the Space it was first opened on and
             // every later ⌘, would carry the user there instead of
-            // opening here. It is also the app's one ordinary window,
-            // which makes it the only thing left that can pull an
-            // activation onto another desktop now that the surface
-            // itself claims all of them (issue #74).
+            // opening here. It is one of the app's two ordinary windows,
+            // About being the other, and both can pull an activation
+            // onto another desktop now that the surface itself claims
+            // all of them (issue #74); About takes the same bit where it
+            // is shown.
             window.collectionBehavior.insert(.moveToActiveSpace)
             window.center()
             self.window = window

@@ -237,6 +237,15 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             aboutOptions[.applicationIcon] = Self.maruhiColorImage(side: 256)
         }
         NSApp.orderFrontStandardAboutPanel(options: aboutOptions)
+        // AppKit builds one About panel and reuses it for the life of
+        // the process, and it is an ordinary window: left open, or
+        // merely built, on another desktop, it is something of this app
+        // to reveal, so the next activation carries the user's screen
+        // there. That is exactly the defect ADR-0019 removed from the
+        // surface, and Settings takes the same bit at creation. This
+        // panel is not ours to construct, so the bit goes on after
+        // AppKit has put it up.
+        Self.standardAboutPanel()?.collectionBehavior.insert(.moveToActiveSpace)
         // The app is usually inactive when About is chosen from the
         // status item; without activation the panel appears behind
         // whatever is frontmost. This activation is About's, not a
@@ -245,6 +254,19 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // no notification to consume the flag).
         aboutActivation = !NSApp.isActive
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// The panel `orderFrontStandardAboutPanel` has just put up. AppKit
+    /// hands back no reference to it, so it is picked out of the app's
+    /// windows by what it is: on screen, titled, and carrying no title
+    /// text. Settings has a title, and the surface and its key relay are
+    /// borderless, so none of ours can be mistaken for it. If a future
+    /// macOS builds the panel differently the lookup finds nothing and
+    /// the panel keeps the behavior it had before this existed.
+    private static func standardAboutPanel() -> NSWindow? {
+        NSApp.windows.first { window in
+            window.isVisible && window.styleMask.contains(.titled) && window.title.isEmpty
+        }
     }
 
     /// What this app calls itself to the user, for the places a bundle

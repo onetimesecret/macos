@@ -55,10 +55,13 @@ already does.
 ## Consequences
 
 Activating the pad never changes the user's desktop, because there is
-nothing of the app to reveal elsewhere. Settings, the app's one ordinary
-window, takes `.moveToActiveSpace` for the same reason from the other
-side: built once and shown many times, it would otherwise anchor the app
-to the desktop it was first opened on.
+nothing of the app to reveal elsewhere. The app's two ordinary windows,
+Settings and the standard About panel, take `.moveToActiveSpace` for the
+same reason from the other side: each is built once and shown many
+times, so either would otherwise anchor the app to the desktop it was
+first opened on and undo the fix from outside the surface. Settings
+takes the bit when it is created; About is AppKit's own window, so it
+takes the bit each time it is put up.
 
 The summon's order-out round trip becomes unreachable, since a window on
 every Space is on the active one by definition. It is kept as a safety

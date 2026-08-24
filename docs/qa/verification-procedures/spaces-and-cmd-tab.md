@@ -43,10 +43,10 @@ Quit any running copy first (`scripts/quit-app.sh`; only the graceful
 path saves state), then `scripts/package-app.sh && open
 dist/OnetimePad.app`.
 
-Have at least three desktops (Mission Control, add two), and close the
-Settings window before starting, since an open ordinary window is the
-other thing that can pull an activation across desktops. The surface's
-log is worth a second terminal:
+Have at least three desktops (Mission Control, add two), and close both
+Settings and About before starting, since an open ordinary window is the
+other thing that can pull an activation across desktops and those two
+are the app's only ones. The surface's log is worth a second terminal:
 
 ```
 log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
@@ -73,6 +73,12 @@ log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
 - [ ] **Settings does not drag the app back.** Open Settings on Desktop
       1, close it, go to Desktop 3, press ⌘, again. It opens on Desktop
       3.
+- [ ] **About does not drag the app back either.** About is a second
+      ordinary window and AppKit reuses one instance of it. Open it from
+      the tray on Desktop 1, leave it open, go to Desktop 3 and ⌘Tab to
+      OnetimePad: the desktop must not change, and the panel comes here
+      rather than staying behind. Then choose About again from the tray
+      on Desktop 3 and confirm it appears on Desktop 3.
 
 ### The flicker
 
@@ -118,6 +124,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | pinned across ⌃→ and ⌃← | | |
 | | | Dock icon from another desktop | | |
 | | | Settings opens where the user is | | |
+| | | About opens where the user is, and follows a ⌘Tab | | |
 | | | ten ⌘Tab returns, unpinned | | Record the shape of any flicker. |
 | | | ten ⌘Tab returns, pinned | | |
 | | | edge drag stays on this desktop | | The documented decision, ADR-0019. |
