@@ -237,6 +237,37 @@ final class KeymapValidationTests: XCTestCase {
         XCTAssertEqual(keymap.command(for: try parse("ctrl-n"), in: .editor), .pageNew)
     }
 
+    /// A section may advertise its chords in a menu, and a later
+    /// section that says the same thing about the same chord is not a
+    /// withdrawal. Restating a default line to keep it in sight beside
+    /// your own edits must not cost Settings its menu equivalent.
+    func testRestatingAChordDoesNotWithdrawItsMenuEquivalent() {
+        let keymap = Keymap.resolve(
+            defaultText: """
+                [{ "context": "Editor", "use_key_equivalents": true,
+                   "bindings": { "cmd-,": "app::Settings" } }]
+                """,
+            overrideText: """
+                [{ "context": "Editor", "bindings": { "cmd-,": "app::Settings" } }]
+                """)
+        XCTAssertEqual(keymap.faults, [])
+        XCTAssertEqual(keymap.menuKeystroke(for: .appSettings)?.canonical, "cmd-,")
+    }
+
+    /// The other direction: a section that does ask for equivalents
+    /// grants one to a chord that had none.
+    func testAnOverrideCanGrantAMenuEquivalentToAChordThatHadNone() {
+        let keymap = Keymap.resolve(
+            defaultText: """
+                [{ "context": "Editor", "bindings": { "cmd-,": "app::Settings" } }]
+                """,
+            overrideText: """
+                [{ "context": "Editor", "use_key_equivalents": true,
+                   "bindings": { "cmd-,": "app::Settings" } }]
+                """)
+        XCTAssertEqual(keymap.menuKeystroke(for: .appSettings)?.canonical, "cmd-,")
+    }
+
     /// Null is Zed's unbinding, and it has to work, or a user cannot
     /// take back a chord the app claimed.
     func testNullTakesAChordAway() {

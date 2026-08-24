@@ -412,14 +412,27 @@ public enum Keymap {
                     settledInSection[keystroke] = command
 
                     for context in contexts {
-                        if let existing = table[context]?[keystroke], existing.command != command {
-                            diagnostics.append(
-                                .reboundKeystroke(
-                                    source,
-                                    keystroke: keystroke.canonical,
-                                    from: existing.command,
-                                    to: command
-                                ))
+                        // A section that restates a chord already
+                        // pointed at this command changes nothing, and
+                        // must take nothing away either: an override
+                        // repeating a default line, to keep it in sight
+                        // beside its own edits, cannot be read as
+                        // withdrawing the menu equivalent the default
+                        // granted. A section that asks for equivalents
+                        // can still add one to a chord that had none.
+                        var useKeyEquivalents = section.useKeyEquivalents
+                        if let existing = table[context]?[keystroke] {
+                            if existing.command == command {
+                                useKeyEquivalents = useKeyEquivalents || existing.useKeyEquivalents
+                            } else {
+                                diagnostics.append(
+                                    .reboundKeystroke(
+                                        source,
+                                        keystroke: keystroke.canonical,
+                                        from: existing.command,
+                                        to: command
+                                    ))
+                            }
                         }
                         if !context.isConsulted {
                             diagnostics.append(
@@ -430,7 +443,7 @@ public enum Keymap {
                             context: context,
                             keystroke: keystroke,
                             command: command,
-                            useKeyEquivalents: section.useKeyEquivalents
+                            useKeyEquivalents: useKeyEquivalents
                         )
                     }
                 }
