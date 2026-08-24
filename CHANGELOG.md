@@ -131,6 +131,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Two routes and a restored page read against its own rung**
+  (`companion-core` 0.13.0, `companion-ffi` 0.13.0). Minor on both,
+  pre-1.0, and additive: what compiled against 0.12.0 still compiles.
+  `companion_page_discard` and `companion_persist_rotate_and_save` are
+  the two new routes. The entry below narrates them as part of the tab
+  and page split they belong to, and they landed after the bump that
+  entry names, so this is where they are priced. The core's restore
+  side moved with them. A page that comes back from a sealed file has
+  its remaining life read against its tab's rung, a restored hold is
+  read against the ceiling the pause gesture itself imposes so a file
+  cannot hand back a hold longer than a press could make, the key
+  rotation trigger is pinned to the state the pad is in rather than the
+  transition that reached it, and a content key half that was zeroed
+  but whose unlink was refused counts as the forgetting it already is.
+  An unavailable key travels the seam as itself rather than collapsing
+  into a damaged snapshot, which is what lets the surface tell a
+  missing key from a corrupt file in the banner it now raises (issue
+  #49).
+
 - **A tab outlives every page it holds, so an expiry empties a slot
   instead of closing it** (`companion-core` 0.12.0, `companion-ffi`
   0.12.0, ADR-0017). The strip stopped being nine deadlines: when a
@@ -169,9 +188,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unlinked, so emptying the pad writes a file where it used to remove
   one.
 
-  Each question has its own write. `companion_persist_rotate_and_save`
-  is the new one and it takes the first: when the last page expires and
-  tabs remain, both content key halves are rotated and the surviving
+  Each question has its own write. `companion_persist_rotate_and_save`,
+  which arrived in 0.13.0, takes the first: when the last page expires
+  and tabs remain, both content key halves are rotated and the surviving
   names, rungs and order are resealed under new ones, so every
   ciphertext generation the pages lived in, the unlinked ones included,
   stops being decryptable at that moment. `companion_persist_erase`
@@ -194,11 +213,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when the slot holds no page, which is what it does.
 
   Burning the local copy after a promotion stopped taking the slot with
-  it. `companion_page_discard` is page addressed where close is tab
-  addressed: it entombs the page, records the same discard, and leaves
-  the slot standing, named and empty, the way an expiry leaves one. An
-  explicit close and the cap are still the only two things that end a
-  tab.
+  it. `companion_page_discard`, also 0.13.0, is page addressed where
+  close is tab addressed: it entombs the page, records the same
+  discard, and leaves the slot standing, named and empty, the way an
+  expiry leaves one. An explicit close and the cap are still the only
+  two things that end a tab.
 
   A name is the user's or the tab has none. `Tab.name` is set only by
   the rename gesture, capped at 80 characters as before, and never
