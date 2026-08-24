@@ -35,10 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nobody could review as a list. It is now a bundled keymap in the Zed
   editor's format, read with the two JSON5 tolerances a hand written
   file cannot do without, comments and trailing commas, and the app
-  installs what the file says. Nothing about this release's shortcuts
-  changed: the bundled default reproduces exactly what the surface and
-  the page have always answered, and a test holds the whole table still
-  so an edit to the file has to change the table in the same commit.
+  installs what the file says. The bundled default reproduces exactly
+  what the surface and the page have always answered, and a test holds
+  the whole table still so an edit to the file has to change the table
+  in the same commit. One behaviour did change, and for the better:
+  caps lock no longer breaks ⇧⌘V or ⌥Z. The old code compared the
+  event's whole device-independent flag set against the chord, so the
+  caps lock bit riding along made both gestures dead until the light
+  went off; the reading now takes the four modifiers a binding can name
+  and drops the rest, caps lock, function and numeric pad alike.
   You can lay your own keymap over it at
   `~/Library/Application Support/com.onetimesecret.companion.backdrop/keymap.json`,
   where a chord you name wins and a chord you set to `null` goes away.
@@ -46,7 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chord, an unknown command or a context that does not exist costs that
   line and is written to the log, and a file that is wrong about its own
   shape is refused whole, leaving the bundled default standing. A typo
-  in your keymap costs you your customisation, never your app.
+  in your keymap costs you your customisation, never your app. Shift is
+  bindable over a letter (`cmd-shift-v`) and over a named key, and
+  refused over anything else: `cmd-shift-1` would fire on one surface
+  and be dead on the other, so it is refused out loud instead.
 
 - **A restore failure and a withheld save are now impossible to miss**
   (issue #49, ADR-0016 sections 2 and 7). When an existing state file

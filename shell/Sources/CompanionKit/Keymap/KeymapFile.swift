@@ -163,6 +163,9 @@ public enum KeymapFileFailure: Error, Equatable, Sendable {
     case bindingsNotAnObject(index: Int)
     case contextNotAString(index: Int)
     case unsupportedSchemaVersion(Int)
+    /// The version was something other than a whole number, described
+    /// as the reader found it.
+    case schemaVersionNotAWholeNumber(String)
     case repeatedSchemaVersion
 }
 
@@ -178,6 +181,35 @@ enum KeymapFileReader {
     /// binds nothing, which is exactly the no-op we want it to be over
     /// there.
     static let schemaVersionKey = "schema_version"
+
+    /// The version an entry declares, or nil when the value is not a
+    /// whole number at all.
+    ///
+    /// The boolean is the case that has to be named. `JSONSerialization`
+    /// hands `true` back as an `NSNumber` that bridges to `Int` 1, so
+    /// asking `as? Int` on its own would read `"schema_version": true`
+    /// as a file declaring version 1 and accept it.
+    private static func declaredVersion(_ value: Any) -> Int? {
+        guard let number = value as? NSNumber else { return nil }
+        guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        return number as? Int
+    }
+
+    /// What the value was, for a line the author can act on. The old
+    /// reading reported every one of these as version -1, which named a
+    /// version no file has ever declared.
+    private static func describe(_ value: Any) -> String {
+        switch value {
+        case is String: return "text"
+        case let number as NSNumber where CFGetTypeID(number) == CFBooleanGetTypeID():
+            return "true or false"
+        case is NSNumber: return "a fractional number"
+        case is [Any]: return "a list"
+        case is [String: Any]: return "an object"
+        case is NSNull: return "null"
+        default: return "not a whole number"
+        }
+    }
 
     static func read(_ text: String) -> Result<[KeymapSection], KeymapFileFailure> {
         let canonical = JSON5.canonicalise(text)
@@ -205,8 +237,11 @@ enum KeymapFileReader {
             if let version = object[schemaVersionKey] {
                 if sawVersion { return .failure(.repeatedSchemaVersion) }
                 sawVersion = true
-                guard let number = version as? Int, number == schemaVersion else {
-                    return .failure(.unsupportedSchemaVersion((version as? Int) ?? -1))
+                guard let number = declaredVersion(version) else {
+                    return .failure(.schemaVersionNotAWholeNumber(describe(version)))
+                }
+                guard number == schemaVersion else {
+                    return .failure(.unsupportedSchemaVersion(number))
                 }
                 // A metadata entry may also carry bindings, and there
                 // is no reason to forbid it, so the entry falls through
