@@ -131,11 +131,11 @@ struct SurfaceExposure: Equatable {
     /// it arrived at rather than the one it left.
     static let settledDelay: TimeInterval = 0.9
 
-    /// When to re-read exposure after the active Space changes.
+    /// When to re-read exposure after one of `settleTriggers`.
     ///
-    /// The notification arrives while the switch is still in flight, and
-    /// the answer the window server gives during a transition describes
-    /// the Space being left. One reading is therefore not enough. If the
+    /// The notification arrives while the transition is still in flight,
+    /// and the answer the window server gives during one describes the
+    /// state being left. One reading is therefore not enough. If the
     /// transient answer closes the gate on a card that is in fact
     /// present, nothing afterwards has to change for it to stay shut: a
     /// window that claims every Space keeps its membership across the
@@ -153,6 +153,23 @@ struct SurfaceExposure: Equatable {
     static let settleReads: [SettleRead] = [
         SettleRead(delay: 0, turn: .settling),
         SettleRead(delay: settledDelay, turn: .edge),
+    ]
+
+    /// The system edges after which what the user can see of the surface
+    /// may have changed while the stance did not, and about which the
+    /// window itself publishes nothing: the active Space changed, the
+    /// displays woke, or the session came back from the lock screen or
+    /// another user. A card that returned from any of them refusing
+    /// clicks would go on refusing them until the user happened to
+    /// change desktop.
+    ///
+    /// Occlusion is not in the list because AppKit posts that one per
+    /// window and it needs no settling: a change it reports is the
+    /// server's own account of the present.
+    static let settleTriggers: [Notification.Name] = [
+        NSWorkspace.activeSpaceDidChangeNotification,
+        NSWorkspace.screensDidWakeNotification,
+        NSWorkspace.sessionDidBecomeActiveNotification,
     ]
 
     /// The reading a raise schedules for itself.

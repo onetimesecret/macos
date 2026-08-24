@@ -26,9 +26,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
 
     // The exposure watch, for the same reason and with the same care:
     // one token from the default centre for the window's own occlusion,
-    // one from the workspace centre for Space switches.
+    // and one from the workspace centre per settle trigger.
     private nonisolated(unsafe) var occlusionObserver: NSObjectProtocol?
-    private nonisolated(unsafe) var spaceObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var workspaceObservers: [NSObjectProtocol] = []
 
     init(model: BackdropModel) {
         self.model = model
@@ -136,21 +136,26 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshMouseGate(from: .edge) }
         }
-        // A Space switch is the other, and it is watched as well as
-        // occlusion because a window that claims every Space keeps its
-        // membership across the switch and need not change occlusion
-        // state for the card to stop being composited. The reading is
-        // taken a turn later, and then once more when the transition is
-        // certainly over: the switch is still settling at the moment the
+        // The workspace's transitions are the others
+        // (`SurfaceExposure.settleTriggers`), and they are watched as
+        // well as occlusion because a window that claims every Space
+        // keeps its membership across a switch and need not change
+        // occlusion state for the card to stop being composited, while a
+        // wake or a session hand-back changes what is on screen without
+        // telling the window anything about itself. Each is read a turn
+        // later, and then once more when the transition is certainly
+        // over: the switch is still settling at the moment the
         // notification arrives, the window server's answer during it
-        // describes the Space being left, and a gate closed on that
+        // describes the state being left, and a gate closed on that
         // answer would have no later edge to reopen it.
-        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.activeSpaceDidChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.refreshMouseGateAcrossSpaceSwitch() }
+        workspaceObservers = SurfaceExposure.settleTriggers.map { name in
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.refreshMouseGateAcrossTransition() }
+            }
         }
     }
 
@@ -161,8 +166,8 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         if let occlusionObserver {
             NotificationCenter.default.removeObserver(occlusionObserver)
         }
-        if let spaceObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver)
+        for observer in workspaceObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
@@ -373,7 +378,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         applyMouseGate(stance: model.stance, pinned: model.pinned, from: turn)
     }
 
-    /// The Space switch read twice, promptly and then once it has
+    /// A workspace transition read twice, promptly and then once it has
     /// settled (`SurfaceExposure.settleReads`).
     ///
     /// A single reading taken from the notification lands
@@ -389,7 +394,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// written with the authority the schedule gives it: the prompt one
     /// is a guess taken mid-transition and may not close the gate on a
     /// card that holds the keyboard, while the settled one may.
-    private func refreshMouseGateAcrossSpaceSwitch() {
+    private func refreshMouseGateAcrossTransition() {
         for read in SurfaceExposure.settleReads {
             scheduleMouseGateRead(read)
         }

@@ -139,9 +139,9 @@ final class SurfaceExposureTests: XCTestCase {
         XCTAssertTrue(SurfaceExposure.writes(gate: true, from: .edge, isKey: true))
     }
 
-    // MARK: The Space switch's re-readings
+    // MARK: A transition's re-readings
 
-    func testTheSpaceSwitchIsReadPromptlyAndThenAgainOnceSettled() {
+    func testATransitionIsReadPromptlyAndThenAgainOnceSettled() {
         // One reading is not enough. The notification arrives
         // mid-transition, where the server's answer describes the Space
         // being left, and a gate closed on that answer has no later edge
@@ -162,7 +162,7 @@ final class SurfaceExposureTests: XCTestCase {
         )
     }
 
-    func testThePromptReadingOfASwitchCannotCloseTheGateOnAKeyedWindow() {
+    func testThePromptReadingOfATransitionCannotCloseTheGateOnAKeyedWindow() {
         // The prompt reading lands mid-transition, where the server
         // describes the state being left. On a freshly raised card that
         // answer can say "not here" about a card the user is looking at,
@@ -177,7 +177,7 @@ final class SurfaceExposureTests: XCTestCase {
         )
     }
 
-    func testTheSettledReadingOfASwitchDecidesEvenOverAKeyedWindow() {
+    func testTheSettledReadingOfATransitionDecidesEvenOverAKeyedWindow() {
         // The counterweight: once the transition is certainly over the
         // server is describing where it arrived, and a keyed card that
         // is genuinely out of sight has to stop taking clicks.
@@ -185,6 +185,22 @@ final class SurfaceExposureTests: XCTestCase {
         XCTAssertEqual(settled?.turn, .edge)
         XCTAssertTrue(
             SurfaceExposure.writes(gate: true, from: settled?.turn ?? .settling, isKey: true)
+        )
+    }
+
+    func testWakeAndSessionReturnAreReadTheSameWayASpaceSwitchIs() {
+        // A card that came back from sleep or from the lock screen
+        // refusing clicks would go on refusing them until the user
+        // happened to change desktop, since neither wake nor a session
+        // hand-back tells the window anything about itself.
+        XCTAssertTrue(
+            SurfaceExposure.settleTriggers.contains(NSWorkspace.activeSpaceDidChangeNotification)
+        )
+        XCTAssertTrue(
+            SurfaceExposure.settleTriggers.contains(NSWorkspace.screensDidWakeNotification)
+        )
+        XCTAssertTrue(
+            SurfaceExposure.settleTriggers.contains(NSWorkspace.sessionDidBecomeActiveNotification)
         )
     }
 
