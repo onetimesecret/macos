@@ -33,10 +33,10 @@ final class SurfaceExposureTests: XCTestCase {
     }
 
     func testBothSignalsMustAgreeBeforeTheSurfaceCountsAsSeen() {
-        // Fail-closed: either signal saying "out of sight" is enough,
-        // because the cost of refusing a click wrongly is a raise that
-        // does not happen, while the cost of taking one wrongly is a
-        // press meant for another application acted on here.
+        // Fail-closed: either signal saying "out of sight" is enough.
+        // Refusing wrongly misroutes the press to the window underneath,
+        // which the user can at least see; taking one wrongly acts on a
+        // press in a surface nobody is being shown, which they cannot.
         XCTAssertFalse(
             SurfaceExposure(onActiveSpace: false, unoccluded: false).isDisplayed
         )

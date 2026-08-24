@@ -22,9 +22,14 @@ import AppKit
 ///
 /// Fail-closed by construction: `isDisplayed` requires both signals to
 /// agree, so an unknown or half-answered state refuses the mouse rather
-/// than claims it. The worst case of refusing wrongly is a click on the
-/// card that does not raise it; the worst case of claiming wrongly is a
-/// press meant for another application acted on by this one.
+/// than claims it. Neither error is cheap. Refusing wrongly does not
+/// merely lose the click: `ignoresMouseEvents` hands it to the window
+/// underneath, so a press on a card the user can plainly see acts in
+/// somebody else's window instead, and while raised the outside click
+/// rule then rests the card the press was aimed at. Claiming wrongly is
+/// still the worse of the two, because a misrouted press at least lands
+/// in a window the user can see and can undo, while a press taken by a
+/// surface nobody is being shown acts where they have no way to look.
 struct SurfaceExposure: Equatable {
     /// Whether the window is on the Space the user is looking at, per
     /// `NSWindow.isOnActiveSpace`. False whenever the surface belongs to
