@@ -110,6 +110,8 @@ extension KeymapFileFailure {
         case .contextNotAString(let index): return "the context of entry \(index) is not a string"
         case .unsupportedSchemaVersion(let version):
             return "it declares schema version \(version), and this build reads version \(KeymapFileReader.schemaVersion)"
+        case .schemaVersionNotAWholeNumber(let found):
+            return "its schema version is \(found) rather than a whole number, and this build reads version \(KeymapFileReader.schemaVersion)"
         case .repeatedSchemaVersion: return "it declares a schema version more than once"
         }
     }

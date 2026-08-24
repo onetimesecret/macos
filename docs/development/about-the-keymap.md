@@ -29,7 +29,8 @@ array of sections:
 - **`schema_version`** is optional and belongs to the first entry. A
   file that says nothing is read as version 1. A version this build
   does not know gets the file refused whole, which is what the field is
-  for.
+  for. It has to be a whole number: `"1"` and `true` are refused as text
+  and as a boolean rather than coerced into a version.
 - **`context`** is the surface: `Editor`, `TabStrip` or `Ledger`. Only
   `Editor` is consulted today; a binding in either of the others is
   read, reported as inert, and does nothing until some surface starts

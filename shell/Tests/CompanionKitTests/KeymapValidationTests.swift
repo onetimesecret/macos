@@ -96,6 +96,44 @@ final class KeymapValidationTests: XCTestCase {
             keymap.diagnostics, [.fileRejected(.bundledDefault, .unsupportedSchemaVersion(99))])
     }
 
+    /// A version that is not a number is refused as what it is. The old
+    /// reading reported it as version -1, which is a version no file has
+    /// ever declared and no author could act on.
+    func testAVersionWrittenAsTextIsRefusedForBeingText() {
+        let keymap = resolve(
+            """
+            [
+              { "schema_version": "1" },
+              { "context": "Editor", "bindings": { "cmd-alt-n": "page::New" } }
+            ]
+            """)
+        XCTAssertTrue(keymap.bindings.isEmpty)
+        XCTAssertEqual(
+            keymap.diagnostics,
+            [.fileRejected(.bundledDefault, .schemaVersionNotAWholeNumber("text"))])
+        XCTAssertEqual(
+            keymap.diagnostics.first?.summary,
+            "the bundled default keymap was refused whole: its schema version is text rather "
+                + "than a whole number, and this build reads version 1")
+    }
+
+    /// JSON's `true` arrives as an `NSNumber` that bridges to 1, so a
+    /// bare `as? Int` read this file as declaring version 1 and accepted
+    /// it.
+    func testAVersionWrittenAsABooleanIsNotReadAsVersionOne() {
+        let keymap = resolve(
+            """
+            [
+              { "schema_version": true },
+              { "context": "Editor", "bindings": { "cmd-alt-n": "page::New" } }
+            ]
+            """)
+        XCTAssertTrue(keymap.bindings.isEmpty)
+        XCTAssertEqual(
+            keymap.diagnostics,
+            [.fileRejected(.bundledDefault, .schemaVersionNotAWholeNumber("true or false"))])
+    }
+
     func testTwoVersionsInOneFileAreRefused() {
         let keymap = resolve("[{ \"schema_version\": 1 }, { \"schema_version\": 1 }]")
         XCTAssertEqual(
