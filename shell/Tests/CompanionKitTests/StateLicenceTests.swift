@@ -517,14 +517,15 @@ final class SaveScheduleTests: XCTestCase {
         XCTAssertTrue(schedule.isCurrent(retry))
     }
 
-    func testTheRetryWindowAbsorbsEverythingTypedInsideIt() {
-        // The two rules above, composed, which is the shape ADR-0016
-        // section 2 describes and neither of them says alone: a refusal
-        // silently changes the window for everything typed afterwards.
-        // The retry is armed on a window of its own, longer than the
-        // debounce, and every later mutation rides it rather than
-        // arming a shorter one, so a user typing steadily after a
-        // failed write waits out the retry and not the debounce.
+    func testABurstAfterARefusalRidesTheRetrysOwnGeneration() {
+        // The two rules above, composed: after a write begins, the
+        // next mark opens one window that a whole burst rides, and the
+        // generation that survives the burst is the retry's own. This
+        // is arithmetic and nothing more; `SaveSchedule` carries no
+        // time at all, so the claim that the retry window is the
+        // longer one belongs where a real timer runs, and it is pinned
+        // there against a genuinely refused write
+        // (`RestoreFailureTests.testARefusedWriteOpensAWindowThatAbsorbsWhatFollows`).
         var schedule = SaveSchedule()
         _ = schedule.arm()
         schedule.begin() // the write that was refused
