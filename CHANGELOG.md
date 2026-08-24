@@ -233,6 +233,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **⌘Tab back lands where the user is, not on Desktop 1** (issue #74,
+  ADR-0019). The resting surface claimed no place on Spaces other than
+  the one it was created on, and the window server switches desktops to
+  reveal an app's windows when the app is activated, so every activation
+  carried the user home to Desktop 1. Every posture now claims every
+  desktop, and holds that membership through raises, rests and the pin,
+  which is also half of the flicker: rewriting the membership bits is a
+  request to move the window between Spaces, and they were rewritten on
+  every raise, including the raise over an already raised surface that a
+  ⌘Tab back performs. The other half was the summon's order-out round
+  trip, a literal blink, which a window present on every Space can no
+  longer reach; it stays as a tested safety net, since being wrong about
+  a window stranded off-Space would cost keystrokes. Settings takes
+  `.moveToActiveSpace` for the same reason from the other side: the
+  app's one ordinary window, built once and shown many times, used to
+  anchor the app to the desktop it was first opened on. What is *not*
+  fixed is dragging the card to another desktop by the screen edge, and
+  ADR-0019 says why it will not be: the card's place is the app's own
+  state clamped to the primary screen, the window server never sees a
+  window drag, and a surface present on every desktop has nowhere else
+  to be moved to. Whether any flicker survives, and of what shape, is
+  for `docs/qa/verification-procedures/spaces-and-cmd-tab.md`, which
+  names the remaining candidate and the change it would take.
+
 - **A pinned card that cannot be seen no longer takes the click**
   (issue #73, ADR-0015). Pinned, with another app full screen on the
   active Space, the card was invisible and yet presses meant for that

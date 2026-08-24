@@ -258,6 +258,11 @@ is indexed in [`qa/recovery-matrix.md`](qa/recovery-matrix.md):
   whether the card is visible there, and, either way, that clicks reach
   the full-screen app rather than the pad (issue #73). Not an ADR-0016
   case.
+- [`spaces-and-cmd-tab.md`](qa/verification-procedures/spaces-and-cmd-tab.md).
+  Owner: delano. ⌘Tab back landing where the user is rather than on
+  Desktop 1, the shape of any flicker on return, and the edge drag that
+  ADR-0019 decides against rather than fixes (issue #74). Not an
+  ADR-0016 case.
 
 Whether any of them has been run is recorded in each file's own Status
 line and Results table, which is the one place a run belongs. A tally
