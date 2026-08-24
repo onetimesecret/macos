@@ -101,6 +101,23 @@ final class BundledKeymapTests: XCTestCase {
         XCTAssertEqual(try bundled().menuKeystroke(for: .appSettings)?.canonical, "cmd-,")
     }
 
+    /// And an override that takes ⌘, away leaves nothing for the menu
+    /// to advertise, which is what both Settings items read
+    /// (`BackdropAppDelegate.settingsKeystroke`). A nil there is the
+    /// unbinding working, so neither item may fall back to the chord
+    /// the file just removed.
+    func testUnbindingSettingsLeavesTheMenuNothingToAdvertise() throws {
+        let text = try XCTUnwrap(Keymap.bundledDefaultText())
+        let keymap = Keymap.resolve(
+            defaultText: text,
+            overrideText: """
+                [{ "context": "Editor", "bindings": { "cmd-,": null } }]
+                """)
+        XCTAssertEqual(keymap.faults, [])
+        XCTAssertNil(keymap.menuKeystroke(for: .appSettings))
+        XCTAssertFalse(keymap.bindings.contains { $0.command == .appSettings })
+    }
+
     // MARK: The file has to reach the shipped bundle
 
     /// SwiftPM never builds the .app, so `Bundle.module` under the test
