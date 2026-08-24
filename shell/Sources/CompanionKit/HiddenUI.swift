@@ -21,6 +21,15 @@ import Foundation
 /// not to a preference and not to a launch variable: nothing a running
 /// app does should be able to put one of these back on screen, because
 /// the point of the exercise is to see the surface without them.
+///
+/// One deliberate exception, at the site rather than here. A ledger
+/// that will not open puts a standing line on the surface telling the
+/// user to clear it in Settings, and that clear is the only way out;
+/// so `ConnectionSettingsView` shows its section while
+/// `PageModel.ledgerRestoreRefused` stands, and it goes again the
+/// moment the clear lands. Hiding an affordance is a judgement about
+/// clutter, and it is not worth making it by ending a recovery route
+/// the app itself just recommended.
 public enum HiddenUI {
     /// The dashed ledger tab at the right end of the strip, the ⌘0
     /// binding in the bundled keymap, and the clear button in Settings.
@@ -43,4 +52,15 @@ public enum HiddenUI {
     /// The 6pt ember dot at the head of the header, beside the app's
     /// name. The name stays, and so does the header's drag (issue #78).
     public static let showsHeaderDot = false
+
+    /// Whether Settings draws its Clear-the-ledger section: when the
+    /// entry points are shown at all, and while a refused ledger is
+    /// standing on the surface pointing at this control as the way out.
+    ///
+    /// A decision rather than an expression inside a view body, so the
+    /// exception above is somewhere a test can reach
+    /// (`RestoreFailureTests`).
+    public static func showsLedgerClear(ledgerRestoreRefused: Bool) -> Bool {
+        showsLedgerEntryPoints || ledgerRestoreRefused
+    }
 }

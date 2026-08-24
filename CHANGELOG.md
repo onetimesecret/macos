@@ -23,12 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   site is one flag in `HiddenUI`, so a build that wants any of them back
   gets it back in one line while the decision to keep them or drop them
   is still being made. `ledger::Show` remains a legal command id, so a
-  keymap of your own can still put the ledger on a chord. One known
-  inconsistency comes with the hide and is accepted for now: the
-  standing line shown when the audit trail will not open still tells you
-  to clear the ledger in Settings, which is one of the controls this
-  change hides, and it will be reworded or restored when the audit story
-  is settled rather than patched on the way past.
+  keymap of your own can still put the ledger on a chord. The clear
+  button has one deliberate exception, because a hide must not end a
+  recovery route: when the audit trail will not open, the surface puts
+  up a standing line telling you to clear the ledger in Settings, and
+  for as long as that line stands the Settings section it names is
+  there. Clearing takes the line down and the section with it.
 
 - **⌘N makes a new page** (issue #77). It was ⌥⌘N, which existed
   because ⌘N looked spoken for, and it is not: the pad has no document

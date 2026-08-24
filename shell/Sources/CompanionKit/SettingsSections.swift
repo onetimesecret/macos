@@ -132,10 +132,16 @@ public struct ConnectionSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             // Hidden with the rest of the ledger's entry points (issue
-            // #78). `clearLedger()` below stays wired: the section is
-            // what is suppressed, not the verb, and a build that flips
-            // the flag gets its button back with its confirmation.
-            if HiddenUI.showsLedgerEntryPoints {
+            // #78), except while the surface is standing there telling
+            // the user to come here and clear the ledger. That banner
+            // names this button as the one way out of a ledger that
+            // will not open, and hiding the button it names would make
+            // the instruction a dead end.
+            //
+            // The flag is `@Published`, so the section arrives with the
+            // banner and leaves the moment the clear lands: the
+            // disappearance is the receipt.
+            if HiddenUI.showsLedgerClear(ledgerRestoreRefused: model.ledgerRestoreRefused) {
                 Section {
                     Button("Clear the ledger", role: .destructive) { confirmingLedgerClear = true }
                         .confirmationDialog(
