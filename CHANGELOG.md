@@ -73,6 +73,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A page a day, with the tabs down the side** (issue #79,
+  `docs/spec/feature/vertical-time-tabs/README.md`,
+  `docs/adr/0020-a-day-is-a-projection-of-live-pages.md`). A prototype
+  mode, off by default and turned on in Settings, that stands the strip
+  on its side and gives each day a row: Today at the top, then -1d, -3d,
+  back through whatever is still alive. The decision underneath it
+  landed first, because it is the part that could have gone wrong
+  quietly. A unit of time is not something the app creates, names,
+  orders or reaps. It is a bucket over the page's own creation stamp,
+  computed fresh every time the surface asks and stored nowhere, so
+  nothing about a tab changes: the calendar creates no tab, closes none,
+  re-dates none, re-orders none and re-labels none, and a day leaves the
+  rail only because the page keyed to it expired under the countdown it
+  always had. The labels are relative rather than dated, which is what
+  lets local midnight roll them over on the repaint the app already runs
+  — no new timer, no midnight alarm, and the sealed file's format did
+  not move by a byte. Turning the mode on or off moves no content and
+  writes no new sealed generation: it is one boolean in `UserDefaults`,
+  and the tabs, their names and their rungs are the same underneath
+  either way you look at them. With it off, the horizontal strip is
+  exactly what it was.
+
 - **The keyboard is a file now** (issue #76,
   `docs/development/about-the-keymap.md`). What each chord does used to
   be spelled in Swift, in two places, and moving one was a code change
