@@ -275,6 +275,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             if BackdropStance.requiresSpaceRoundTrip(
                 visible: panel.isVisible, onActiveSpace: panel.isOnActiveSpace
             ) {
+                // Logged because the blink is the whole symptom of issue
+                // #74 and the net is the one order-out left that can
+                // cause it: without a line here, a net that fired and a
+                // net that stayed idle look the same in the stream, and
+                // the hardware procedure asks the runner to tell them
+                // apart.
+                Self.logger.info("summon=round trip (surface was off-Space)")
                 panel.orderOut(nil)
             }
             // `.nonactivatingPanel` (set at init — the style-mask bit is
