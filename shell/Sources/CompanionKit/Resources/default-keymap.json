@@ -1,0 +1,78 @@
+// The bundled default keymap.
+//
+// This file is the authoritative list of what the keyboard does on the
+// page surface. It is data, and it is meant to be edited as data: a
+// binding moves by changing a line here, not by changing Swift.
+//
+// The format is Zed's keymap format, read with the two JSON5
+// tolerances a hand written file cannot do without, comments and
+// trailing commas. Each entry is a section: which surface it applies
+// to, whether its chords may also be advertised as macOS menu key
+// equivalents, and the chords themselves, each pointing at a stable
+// command id that some part of this build actually implements. An id
+// nothing implements is refused when the file is validated, and the
+// binding is dropped rather than installed as a key that does nothing.
+//
+// You can override any of this without touching the app. Write your own
+// keymap at:
+//
+//     ~/Library/Application Support/com.onetimesecret.companion.backdrop/keymap.json
+//
+// Sections there are applied after these, so a chord you name wins, and
+// a chord you set to null is taken away. See docs/development/about-the-keymap.md.
+[
+  {
+    // Version 1 of the schema. An entry that carries only this is
+    // metadata, and a Zed that read this file would see a section that
+    // binds nothing.
+    "schema_version": 1
+  },
+  {
+    // The Editor surface: everything the raised card answers while it
+    // holds the keyboard. Some of these chords are carried by the
+    // surface itself and some by the page's text view, which sees a
+    // keystroke first; which is which follows from the command, not
+    // from the file.
+    "context": "Editor",
+    "use_key_equivalents": true,
+    "bindings": {
+      // Jump to a page by its place in the visible tab order.
+      "cmd-1": "page::Select1",
+      "cmd-2": "page::Select2",
+      "cmd-3": "page::Select3",
+      "cmd-4": "page::Select4",
+      "cmd-5": "page::Select5",
+      "cmd-6": "page::Select6",
+      "cmd-7": "page::Select7",
+      "cmd-8": "page::Select8",
+      "cmd-9": "page::Select9",
+
+      // The ledger, at the far end of the same run of keys.
+      "cmd-0": "ledger::Show",
+
+      // Pages: a new one at the default rung, the neighbours, and the
+      // close verb every macOS app has.
+      "cmd-alt-n": "page::New",
+      "cmd-alt-left": "page::Previous",
+      "cmd-alt-right": "page::Next",
+      "cmd-w": "page::Close",
+
+      // Sealing, which is the one gesture that cannot be undone. Both
+      // are answered by the page's text view, where the caret and the
+      // selection live.
+      "cmd-shift-v": "clipboard::Seal",
+      "cmd-enter": "clipboard::SealSelection",
+
+      // Long lines wrap, or run and scroll sideways. Deliberately not a
+      // command chord: it is a plain character, and every search field
+      // and settings box has as much right to it, so it fires only
+      // while the page itself holds the keyboard.
+      "alt-z": "editor::ToggleWrap",
+
+      // The app around the page.
+      "cmd-s": "state::SaveNow",
+      "cmd-,": "app::Settings",
+      "escape": "surface::HandBackKeys",
+    },
+  },
+]
