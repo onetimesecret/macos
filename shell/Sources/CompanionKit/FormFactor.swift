@@ -374,15 +374,21 @@ extension FormFactor {
 /// build am I on" answered at a glance.
 public enum BuildVersion {
     /// A bare `swift run` has no bundle version, so the core speaks for
-    /// itself; a bundled build shows the stamped version (the build
-    /// scripts append the git SHA), and a bundle whose version does not
-    /// extend the core's own reveals a stale xcframework instead of
-    /// hiding it.
+    /// itself; a bundled build names both numbers, always.
+    ///
+    /// The line used to drop the core whenever the bundle version began
+    /// with it, and to name both only when it did not. That rule made
+    /// sense while the two strings came from one source: an extension of
+    /// the core's version was the build script's own stamp, and anything
+    /// else could only mean the binary had linked a stale xcframework,
+    /// which was worth saying out loud. Issue #89 gave the app its own
+    /// marketing version, so the numbers now move for their own reasons
+    /// and a difference between them is the ordinary case rather than a
+    /// warning. Naming both is what stays honest: "build" answers which
+    /// build am I on, "core" answers which seam it linked, and neither
+    /// answer can be inferred from the other any more.
     public static func trayTitle(core: String, bundleVersion: String?) -> String {
         guard let bundleVersion else { return "core \(core)" }
-        if bundleVersion.hasPrefix(core) {
-            return "build \(bundleVersion)"
-        }
         return "build \(bundleVersion), core \(core)"
     }
 }
