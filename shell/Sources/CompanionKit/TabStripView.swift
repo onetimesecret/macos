@@ -82,8 +82,18 @@ public struct TabStripView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .help("New page (⌘N)")
+        .help(Self.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
         .accessibilityLabel(Text("New page"))
+    }
+
+    /// The + button's tooltip, which names the chord the keymap actually
+    /// bound rather than the one this view used to spell out. A keymap
+    /// that moved `page::New` moves the tooltip with it, and a keymap
+    /// that unbound it leaves the tooltip saying only what the button
+    /// does, which is still true.
+    static func newPageHelp(chord: Keystroke?) -> String {
+        guard let chord else { return "New page" }
+        return "New page (\(chord.displaySymbol))"
     }
 
     /// ↗ page (docs/spec/04, promotion flow): promote the visible page

@@ -179,6 +179,26 @@ final class KeystrokeParsingTests: XCTestCase {
         XCTAssertNotNil(try parsed("cmd-alt-left").keyboardShortcut)
     }
 
+    // MARK: Saying the chord out loud
+
+    /// The symbols go up in Apple's order, which is not the order the
+    /// file was written in.
+    func testTheDisplaySymbolReadsTheWayAMenuReads() throws {
+        XCTAssertEqual(try parsed("cmd-n").displaySymbol, "⌘N")
+        XCTAssertEqual(try parsed("cmd-shift-v").displaySymbol, "⇧⌘V")
+        XCTAssertEqual(try parsed("cmd-alt-left").displaySymbol, "⌥⌘←")
+        XCTAssertEqual(try parsed("ctrl-alt-shift-cmd-a").displaySymbol, "⌃⌥⇧⌘A")
+    }
+
+    func testEveryNamedKeyHasSomethingToShow() throws {
+        for named in NamedKey.allCases {
+            XCTAssertFalse(
+                try parsed(named.rawValue).displaySymbol.isEmpty,
+                "\(named.rawValue) would render as nothing at all")
+        }
+        XCTAssertEqual(try parsed("escape").displaySymbol, "⎋")
+    }
+
     func testAMenuEquivalentCarriesTheCharacterAndTheMask() throws {
         let keystroke = try parsed("cmd-,")
         XCTAssertEqual(keystroke.menuKeyEquivalent, ",")

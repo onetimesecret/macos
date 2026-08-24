@@ -80,6 +80,46 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertTrue(installed.contains(.pageNew))
     }
 
+    // MARK: What the buttons say you can press
+
+    /// The + button's tooltip is the one place the app spells a chord
+    /// out in prose, so it has to be reading the same map the chord came
+    /// from. It used to say ⌘N because someone typed ⌘N.
+    func testTheNewPageTooltipFollowsTheMap() throws {
+        let model = try makeModel()
+        XCTAssertEqual(
+            TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)),
+            "New page (⌘N)")
+    }
+
+    func testTheNewPageTooltipFollowsAnOverrideThatMovedTheChord() throws {
+        let override = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymap-\(UUID().uuidString).json")
+        try #"[{ "context": "Editor", "bindings": { "cmd-n": null, "ctrl-alt-k": "page::New" } }]"#
+            .write(to: override, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: override) }
+
+        let model = try makeModel(keymapOverride: override)
+        XCTAssertEqual(
+            TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)),
+            "New page (⌃⌥K)")
+    }
+
+    /// A tooltip must not go on advertising a chord the file took away.
+    func testTheNewPageTooltipSaysNothingWhenNothingIsBound() {
+        XCTAssertEqual(TabStripView.newPageHelp(chord: nil), "New page")
+    }
+
+    /// The hint is not the menu equivalent: a section that declined key
+    /// equivalents still bound the chord, and the tooltip still says so.
+    func testAHintIsOfferedEvenWithoutKeyEquivalents() throws {
+        let keymap = Keymap.resolve(
+            defaultText: #"[{ "context": "Editor", "bindings": { "cmd-k": "page::New" } }]"#,
+            overrideText: nil)
+        XCTAssertNil(keymap.menuKeystroke(for: .pageNew))
+        XCTAssertEqual(keymap.hintKeystroke(for: .pageNew)?.displaySymbol, "⌘K")
+    }
+
     // MARK: The user's file, read from disk
 
     func testAModelReadsTheOverrideItWasPointedAt() throws {
