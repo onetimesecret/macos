@@ -24,6 +24,14 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     // and every other touch runs on the main actor.
     private nonisolated(unsafe) var screenObserver: NSObjectProtocol?
 
+    // The exposure watch, for the same reason and with the same care:
+    // one token from the default centre for the window's own occlusion,
+    // one from the workspace centre per settle trigger, and one from the
+    // distributed centre per trigger only it carries.
+    private nonisolated(unsafe) var occlusionObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var workspaceObservers: [NSObjectProtocol] = []
+    private nonisolated(unsafe) var distributedObservers: [NSObjectProtocol] = []
+
     init(model: BackdropModel) {
         self.model = model
         panel = BackdropPanel()
@@ -44,13 +52,24 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             .dropFirst()
             .sink { [weak self] pinned in
                 guard let self else { return }
+                // In the order `apply(_:)` uses, and for the same
+                // reason. The stance's own ungated rule goes first,
+                // because the altitude and frame below are about to
+                // change what is on screen and the window server's
+                // present reading still describes the posture being
+                // left: a pin judged from that reading is a pin judged
+                // from where the card was a moment ago.
                 panel.ignoresMouseEvents = model.stance.ignoresMouse(pinned: pinned)
-                panel.level = model.stance.level(pinned: pinned)
-                panel.collectionBehavior = model.stance.collectionBehavior(pinned: pinned)
+                applyAltitude(stance: model.stance, pinned: pinned)
                 applyFrame(
                     stance: model.stance, pinned: pinned,
                     geometry: model.displayedGeometry
                 )
+                // And the readings a turn later, once the window server
+                // has made of all that what it will. Without them the
+                // pin has no exposure gate at all, since neither an
+                // occlusion change nor a Space switch need follow it.
+                refreshMouseGateAfterPostureChange()
             }
             .store(in: &observers)
         // Wherever the window hugs the card (a pinned rest, and every
@@ -102,11 +121,65 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.fitToScreen() }
         }
+        // The two edges at which what the user can see of the surface
+        // changes without the stance changing at all (issue #73). The
+        // occlusion notification is the authoritative one: AppKit posts
+        // it so that an app can stop drawing what nobody will see, and
+        // the mouse gate wants the same fact for the opposite reason.
+        occlusionObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: panel,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshMouseGate(from: .edge) }
+        }
+        // The workspace's transitions are the others
+        // (`SurfaceExposure.settleTriggers`), and they are watched as
+        // well as occlusion because a window that claims every Space
+        // keeps its membership across a switch and need not change
+        // occlusion state for the card to stop being composited, while a
+        // wake or a session hand-back changes what is on screen without
+        // telling the window anything about itself. Each is read a turn
+        // later, and then once more when the transition is certainly
+        // over: the switch is still settling at the moment the
+        // notification arrives, the window server's answer during it
+        // describes the state being left, and a gate closed on that
+        // answer would have no later edge to reopen it.
+        workspaceObservers = SurfaceExposure.settleTriggers.map { name in
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.refreshMouseGateAcrossTransition() }
+            }
+        }
+        // The unlock, which the workspace centre does not carry: an
+        // ordinary lock switches no session and need not sleep the
+        // displays, so it is the distributed centre or nothing.
+        distributedObservers = SurfaceExposure.distributedSettleTriggers.map { name in
+            DistributedNotificationCenter.default().addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.refreshMouseGateAcrossTransition() }
+            }
+        }
     }
 
     deinit {
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
+        }
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+        }
+        for observer in workspaceObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        for observer in distributedObservers {
+            DistributedNotificationCenter.default().removeObserver(observer)
         }
         if let outsideClickMonitor {
             NSEvent.removeMonitor(outsideClickMonitor)
@@ -185,9 +258,14 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         // by the time it is ordered back, and already accept it by the
         // time it is made key.
         panel.isInteractive = stance.acceptsKey
+        // The posture's own rule, ungated, because the ordering below is
+        // about to change what is on screen: the window server's present
+        // reading describes the posture being left, and a raise arriving
+        // over a card that was buried under someone's window would start
+        // life mouse-transparent for no reason. The settled reading is
+        // taken a turn later, once the ordering has happened.
         panel.ignoresMouseEvents = stance.ignoresMouse(pinned: model.pinned)
-        panel.level = stance.level(pinned: model.pinned)
-        panel.collectionBehavior = stance.collectionBehavior(pinned: model.pinned)
+        applyAltitude(stance: stance, pinned: model.pinned)
         // Extent before ordering: a card-hugging window must already
         // hug when it orders front, or the frame change would be
         // visible as a snap after the fact.
@@ -195,13 +273,28 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         switch stance {
         case .raised:
             watchForOutsideClicks()
-            // A summon means *here*: if the surface is up on some other
-            // Space, order it out first so ordering front lands it on
-            // this one — `.moveToActiveSpace` covers the well-behaved
-            // cases; the explicit round trip makes it a guarantee (the
-            // panel's summon does the same). A keyed surface the user
-            // cannot see would silently swallow ink.
-            if panel.isVisible && !panel.isOnActiveSpace {
+            // A summon means *here*: a surface up on some Space the user
+            // has left would take the keyboard where they cannot see it
+            // and silently swallow ink, so it is ordered out first and
+            // ordering front lands it on this Space instead. The round
+            // trip is a blink, and on a ⌘Tab back from another Space
+            // that blink was the flicker (issue #74); now that every
+            // posture claims every desktop, a visible window is already
+            // on the desktop the user is looking at and the net does not
+            // fire there. It still can from another app's full-screen
+            // Space, which an unpinned rest declines to join, and
+            // transiently mid-transition, where the blink is the card
+            // landing here rather than a defect.
+            if BackdropStance.requiresSpaceRoundTrip(
+                visible: panel.isVisible, onActiveSpace: panel.isOnActiveSpace
+            ) {
+                // Logged because the blink is the whole symptom of issue
+                // #74 and the net is the one order-out left that can
+                // cause it: without a line here, a net that fired and a
+                // net that stayed idle look the same in the stream, and
+                // the hardware procedure asks the runner to tell them
+                // apart.
+                Self.logger.info("summon=round trip (surface was off-Space)")
                 panel.orderOut(nil)
             }
             // `.nonactivatingPanel` (set at init — the style-mask bit is
@@ -245,15 +338,197 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // the wallpaper's own window and vanish on a bare desktop.
             panel.orderFrontRegardless()
         }
+        // Now that the ordering has happened, ask the window server what
+        // it made of it. A turn later rather than here: occlusion and
+        // Space membership settle after the order, not during it.
+        refreshMouseGateAfterPostureChange()
         Self.logger.info(
             "stance=\(stance == .raised ? "raised" : "resting", privacy: .public) level=\(self.panel.level.rawValue, privacy: .public) visible=\(self.panel.isVisible, privacy: .public) frame=\(NSStringFromRect(self.panel.frame), privacy: .public)"
         )
+    }
+
+    // MARK: Altitude and Spaces
+
+    /// Where the surface sits in the stacking order and which Spaces it
+    /// belongs to, both stance-owned and both written only when they
+    /// actually move.
+    ///
+    /// The guards are not thrift. An assignment to `collectionBehavior`
+    /// is a request to the window server, and a request naming different
+    /// membership bits makes it move the window between Spaces; the
+    /// stance sinks fire on every raise, including a raise over an
+    /// already-raised surface, which is what ⌘Tab back does. Writing the
+    /// same value each time asked for that work on every activation
+    /// (issue #74). Level is guarded for company, since a level written
+    /// is a restack even when the number is unchanged.
+    ///
+    /// The guard compares the whole value, so a stance change does still
+    /// rewrite `collectionBehavior`: what a window does once it is on a
+    /// Space differs by posture, and `.stationary`, `.ignoresCycle` and
+    /// full-screen participation are all in there. What no longer
+    /// differs is the membership subset the rewrite names
+    /// (`BackdropStance.spaceMembership(pinned:)`), which is the part a
+    /// reassignment would turn on.
+    private func applyAltitude(stance: BackdropStance, pinned: Bool) {
+        let level = stance.level(pinned: pinned)
+        if panel.level != level {
+            panel.level = level
+        }
+        let behavior = stance.collectionBehavior(pinned: pinned)
+        if panel.collectionBehavior != behavior {
+            // Debug rather than info: a genuine stance change writes
+            // this every time and would crowd out the gate's own lines.
+            // It exists because the guard cannot be tested from here
+            // (reading `collectionBehavior` back gives our own last
+            // assignment, not what the window server did with it), so
+            // the hardware run judges it by counting these against the
+            // raises that should have produced none.
+            Self.logger.debug(
+                "collectionBehavior write=\(behavior.rawValue, privacy: .public) was=\(self.panel.collectionBehavior.rawValue, privacy: .public)"
+            )
+            panel.collectionBehavior = behavior
+        }
+    }
+
+    // MARK: The mouse gate
+
+    /// Whether the surface takes the mouse right now, judged by the
+    /// stance and by what the window server is actually showing of it
+    /// (issue #73). The decision is `BackdropStance.ignoresMouse(pinned:
+    /// exposure:)`; all this does is read the window and apply it.
+    ///
+    /// Written only on a change, since the gate is consulted from every
+    /// edge that can move it and an unchanged assignment is a message to
+    /// the window server for nothing. The change is logged because the
+    /// gate closing is invisible by definition: the symptom of a gate
+    /// stuck shut is a pinned card that stops answering clicks, and this
+    /// line is the only way to tell that from a card that never got the
+    /// press at all.
+    ///
+    /// Which turn is asking matters, and `SurfaceExposure.writes(gate:
+    /// from:raised:)` is where that is decided: the turn after a stance
+    /// is applied may open the gate but may not close it on a raised
+    /// surface, whose occlusion reading can still be a frame behind the
+    /// raise that has just happened.
+    private func applyMouseGate(
+        stance: BackdropStance, pinned: Bool, from turn: SurfaceExposure.Turn
+    ) {
+        let exposure = SurfaceExposure(window: panel)
+        let ignores = stance.ignoresMouse(pinned: pinned, exposure: exposure)
+        guard panel.ignoresMouseEvents != ignores else { return }
+        guard SurfaceExposure.writes(gate: ignores, from: turn, raised: stance == .raised) else {
+            Self.logger.info(
+                "mouse gate=held open (settling over a raised surface) onActiveSpace=\(exposure.onActiveSpace, privacy: .public) unoccluded=\(exposure.unoccluded, privacy: .public)"
+            )
+            return
+        }
+        panel.ignoresMouseEvents = ignores
+        Self.logger.info(
+            "mouse gate=\(ignores ? "closed" : "open", privacy: .public) onActiveSpace=\(exposure.onActiveSpace, privacy: .public) unoccluded=\(exposure.unoccluded, privacy: .public)"
+        )
+    }
+
+    /// The gate re-judged against the model as it stands, for the edges
+    /// that carry no posture of their own: an occlusion change, a Space
+    /// switch, and the settling turn after a stance or the pin is
+    /// applied.
+    ///
+    /// The turn a reading was scheduled with is what it deserved when it
+    /// was scheduled; `SurfaceExposure.authority(of:sinceTransition:)`
+    /// is what it deserves now, which is less whenever a transition
+    /// began while the reading was waiting.
+    private func refreshMouseGate(from turn: SurfaceExposure.Turn) {
+        applyMouseGate(
+            stance: model.stance,
+            pinned: model.pinned,
+            from: SurfaceExposure.authority(of: turn, sinceTransition: sinceTransition)
+        )
+    }
+
+    /// When the workspace last told us a transition was starting, on the
+    /// clock `NSEvent` timestamps share, and how long ago that was. A
+    /// transition that never happened is infinitely long over.
+    private var transitionBeganAt: TimeInterval?
+
+    private var sinceTransition: TimeInterval {
+        guard let transitionBeganAt else { return .infinity }
+        return ProcessInfo.processInfo.systemUptime - transitionBeganAt
+    }
+
+    /// The pair of readings every posture change takes for itself: a
+    /// stance applied, or the pin toggled under a stance that stays put.
+    ///
+    /// The prompt one is a turn later rather than immediate, since
+    /// occlusion and Space membership settle after the ordering rather
+    /// than during it, and it reads the model rather than the caller's
+    /// arguments because by then both have landed and a stance that
+    /// changed in between should win. It may open the gate but not close
+    /// it over a raise, for the reason `applyMouseGate` gives, which is
+    /// what makes the second reading necessary rather than tidy: a card
+    /// put in front while it was already wholly covered posts no
+    /// occlusion change afterwards, so without a scheduled reading
+    /// nothing would ever shut the gate on a surface the user cannot
+    /// see.
+    private func refreshMouseGateAfterPostureChange() {
+        Task { @MainActor [weak self] in self?.refreshMouseGate(from: .settling) }
+        scheduleMouseGateRead(SurfaceExposure.postureSettleRead)
+    }
+
+    /// A workspace transition read twice, promptly and then once it has
+    /// settled (`SurfaceExposure.settleReads`).
+    ///
+    /// A single reading taken from the notification lands
+    /// mid-transition, where the server is still describing the desktop
+    /// the user has left, and it can close the gate on a card that is
+    /// perfectly visible. Nothing would reopen it. The window claims
+    /// every Space, so its occlusion need not change when the desktop
+    /// does, and the gate would stay shut for as long as the app runs:
+    /// a card the user can see, refusing every click, with no way to
+    /// tell that from the pin having quietly failed. The schedule is
+    /// what guarantees a settled answer always follows the transient
+    /// one, and the settled answer is the last word. Each reading is
+    /// written with the authority the schedule gives it: the prompt one
+    /// is a guess taken mid-transition and may not close the gate on a
+    /// card that holds the keyboard, while the settled one may.
+    private func refreshMouseGateAcrossTransition() {
+        // Stamped before the readings are scheduled, and read by every
+        // reading that fires from anywhere: a raise's settled reading
+        // waiting out its second has no other way to learn that the
+        // desktop changed underneath it.
+        transitionBeganAt = ProcessInfo.processInfo.systemUptime
+        for read in SurfaceExposure.settleReads {
+            scheduleMouseGateRead(read)
+        }
+    }
+
+    /// One scheduled reading, taken now if it has no delay.
+    private func scheduleMouseGateRead(_ read: SurfaceExposure.SettleRead) {
+        guard read.delay > 0 else {
+            refreshMouseGate(from: read.turn)
+            return
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(read.delay))
+            self?.refreshMouseGate(from: read.turn)
+        }
     }
 
     // MARK: Resting on an outside click
 
     /// Watch for a click landing anywhere that is not this app, and
     /// rest the surface when one does.
+    ///
+    /// "Outside" means outside everything this app puts on screen, and
+    /// the card's own window is only part of that. Menus are the rest:
+    /// they track in windows the window server owns, so a press on our
+    /// menu bar, on the status item's menu, or on a chip's context menu
+    /// reaches this monitor indistinguishable from a click into another
+    /// application. Those presses are not outside anything, and resting
+    /// on them tore down the menu the user had just opened (issue #41),
+    /// so they are excluded here by the intervals `MenuTracking` keeps.
+    /// Our ordinary windows, Settings and About, are outside by this
+    /// rule and rest the card, which is the older behaviour left
+    /// standing.
     ///
     /// A *global* monitor deliberately: it observes the press and
     /// consumes nothing, so the click goes on to the window it was
@@ -272,7 +547,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         guard outsideClickMonitor == nil else { return }
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-        ) { [weak self] _ in
+        ) { [weak self] event in
+            // The moment of the press, carried out of the closure on
+            // its own: NSEvent is not Sendable, and the timestamp is
+            // the only thing the decision needs. It shares its base
+            // with `ProcessInfo.processInfo.systemUptime`, which is how
+            // it can be compared against the menu tracking intervals.
+            let pressedAt = event.timestamp
             // Hopped to a later turn deliberately, not merely to reach
             // the main actor: the clicked app's activation and our own
             // resign-key are still in flight when this fires, and
@@ -281,7 +562,15 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // stale key status and pull the keyboard back out of the
             // app the user just chose, which is the very fault this
             // whole change exists to remove.
-            Task { @MainActor in self?.model.rest() }
+            Task { @MainActor in
+                guard let self else { return }
+                // A menu of ours had the press, so nothing to dismiss.
+                // Judged by the press's own timestamp rather than by
+                // whether a menu is up now, because this turn may well
+                // be the one the menu's nested loop finally released.
+                guard !self.menuTracking.claims(press: pressedAt) else { return }
+                self.model.rest()
+            }
         }
     }
 
@@ -295,6 +584,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     // is nonisolated even on a @MainActor class, and the monitor token
     // is not Sendable. Every other touch is on the main actor.
     private nonisolated(unsafe) var outsideClickMonitor: Any?
+
+    /// What the app's own menus were doing, and when. It watches for
+    /// the life of the controller rather than only while raised: two
+    /// notifications cost nothing, and a session that began before the
+    /// raise is exactly the kind of thing a press then has to be
+    /// judged against.
+    private let menuTracking = MenuTrackingWatch()
 
     /// The surface's mechanics in the unified log — stance, level,
     /// visibility, frame; never content. Watch with:
@@ -346,9 +642,12 @@ private final class BackdropKeyRelayPanel: NSPanel {
 /// The window itself. Plash's desktop-window recipe, adapted: a
 /// borderless, transparent, shadowless pane that is `.stationary` (does
 /// not ride Mission Control transitions), `.ignoresCycle` (⌘` never
-/// lands on it), and `.fullScreenNone` (a full-screen Space is another
-/// app's room; the backdrop does not follow it there). Key status is
-/// stance-gated the way Plash gates interactivity.
+/// lands on it), `.canJoinAllSpaces` (furniture belongs on every
+/// desktop, and a window bound to one drags the user back to it on
+/// every activation, issue #74) and `.fullScreenNone` (a full-screen
+/// Space is another app's room; the unpinned backdrop does not follow
+/// it there). Key status is stance-gated the way Plash gates
+/// interactivity.
 final class BackdropPanel: NSPanel {
     /// Set by the controller from the stance, before ordering changes.
     var isInteractive = false
