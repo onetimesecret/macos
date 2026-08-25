@@ -120,6 +120,14 @@ procedure.
   went stale inside the branch that wrote them and again when these
   fixes landed. The spec's change map, ADR-0020 item 13 and this file
   all name types and functions for that file now.
+- **A merge on this stack carries a message.** `git merge --no-edit`
+  takes git's bare "Merge branch X into Y" and no trailers, and the
+  merges that carried the review's fixes up the chain (974102e, 129e3ba,
+  b76232c and the three before them) went out that way — they cannot be
+  corrected, since the alternative is an amend or a force-push and both
+  are refused here. The stack's own convention, set by 82a36b7, is a
+  one-sentence body saying what is being carried up plus the two
+  trailers. Use `git merge -m` and write it.
 
 ## Testing notes
 
