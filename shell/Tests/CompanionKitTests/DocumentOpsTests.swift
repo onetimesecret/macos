@@ -120,6 +120,26 @@ final class OpEmitterTests: XCTestCase {
         )
     }
 
+    /// The format keeps no seconds, so two instants inside the same
+    /// minute render identically and must collapse to one stamp: a
+    /// block touched forty seconds after its first commit is not a
+    /// range worth printing. (Epoch minutes end at multiples of 60, and
+    /// every real timezone offset is a whole number of minutes, so
+    /// 1_000 and 1_019 share a rendered minute in any locale.)
+    func testBlockLabelCollapsesAnEditWithinTheSameRenderedMinute() {
+        let label = InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 1_019)
+        XCTAssertFalse(label.contains("→"), "same rendered minute, so one stamp")
+        XCTAssertEqual(label, InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: nil))
+    }
+
+    /// One minute over the boundary is a range again: the collapse is
+    /// about identical stamps, not about nearness.
+    func testBlockLabelKeepsTheRangeAcrossAMinuteBoundary() {
+        XCTAssertTrue(
+            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 1_060).contains("→")
+        )
+    }
+
     func testBlockLabelShowsBothStampsOnceEdited() {
         XCTAssertTrue(
             InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 2_000).contains("→"),

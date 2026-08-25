@@ -1185,15 +1185,20 @@ public struct InkEditorView: NSViewRepresentable {
         }()
 
         /// `Thu 14:32`, or `Thu 14:32 → Thu 14:40` once the block has
-        /// been edited past its first commit.
+        /// been edited past its first commit. The comparison is on the
+        /// rendered stamps, not the raw seconds: the format keeps no
+        /// seconds, so an edit forty seconds after the first commit
+        /// still reads as one stamp rather than the degenerate range
+        /// `Thu 14:32 → Thu 14:32`.
         static func blockLabel(createdS: Int64, modifiedS: Int64?) -> String {
             let created = blockLabelFormatter.string(
                 from: Date(timeIntervalSince1970: TimeInterval(createdS))
             )
-            guard let modifiedS, modifiedS != createdS else { return created }
+            guard let modifiedS else { return created }
             let modified = blockLabelFormatter.string(
                 from: Date(timeIntervalSince1970: TimeInterval(modifiedS))
             )
+            guard modified != created else { return created }
             return "\(created) → \(modified)"
         }
 

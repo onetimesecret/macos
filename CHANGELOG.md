@@ -482,6 +482,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A block edited within the minute shows one stamp, not a degenerate
+  range.** The label above a block collapsed created and modified only
+  when the raw seconds were equal, but the format (`EEE HH:mm`,
+  ADR-0013) keeps no seconds, so a block touched forty seconds after
+  its first commit printed `Tue 13:30 → Tue 13:30`. The collapse now
+  compares the rendered stamps: identical stamps read as one, and the
+  arrow appears only once the range would actually say something.
 - **Markdown inside a fenced code block is inert** (issue #75). The page
   read every line on its own, so a `# comment` pasted inside a fence
   rendered at heading weight with its hashes dimmed, which reads as the
