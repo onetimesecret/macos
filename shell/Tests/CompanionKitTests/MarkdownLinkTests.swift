@@ -75,6 +75,15 @@ final class LinkDetectionTests: XCTestCase {
         XCTAssertEqual(links("mailto:someone@example.com"), [])
     }
 
+    /// The gate on bare URLs asks for a host, not a minimum length: a
+    /// target shorter than `https://something` is still a link when a
+    /// real host follows the scheme.
+    func testAShortHTTPURLStillReadsAsALink() {
+        let found = links("see http://a.io now")
+        XCTAssertEqual(found.count, 1)
+        XCTAssertEqual(found[0].target, "http://a.io")
+    }
+
     func testPlainProseCarriesNoLinks() {
         XCTAssertEqual(links("no urls here, not even http mentioned as a word"), [])
         XCTAssertEqual(links(""), [])

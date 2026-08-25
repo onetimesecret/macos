@@ -1394,20 +1394,22 @@ public struct InkEditorView: NSViewRepresentable {
         }()
 
         /// `Thu 14:32`, or `Thu 14:32 → Thu 14:40` once the block has
-        /// been edited past its first commit. The comparison is on the
-        /// rendered stamps, not the raw seconds: the format keeps no
-        /// seconds, so an edit forty seconds after the first commit
-        /// still reads as one stamp rather than the degenerate range
-        /// `Thu 14:32 → Thu 14:32`.
+        /// been edited past its first commit. The collapse is decided on
+        /// the underlying dates at minute granularity, not on the
+        /// rendered stamps: the format keeps no seconds, so an edit
+        /// forty seconds after the first commit still reads as one
+        /// stamp — but a modification exactly some weeks later would
+        /// render the same `EEE HH:mm` text while being a genuinely
+        /// different moment, and must keep its range.
         static func blockLabel(createdS: Int64, modifiedS: Int64?) -> String {
-            let created = blockLabelFormatter.string(
-                from: Date(timeIntervalSince1970: TimeInterval(createdS))
-            )
+            let createdDate = Date(timeIntervalSince1970: TimeInterval(createdS))
+            let created = blockLabelFormatter.string(from: createdDate)
             guard let modifiedS else { return created }
-            let modified = blockLabelFormatter.string(
-                from: Date(timeIntervalSince1970: TimeInterval(modifiedS))
-            )
-            guard modified != created else { return created }
+            let modifiedDate = Date(timeIntervalSince1970: TimeInterval(modifiedS))
+            guard !Calendar.current.isDate(
+                createdDate, equalTo: modifiedDate, toGranularity: .minute
+            ) else { return created }
+            let modified = blockLabelFormatter.string(from: modifiedDate)
             return "\(created) → \(modified)"
         }
 
@@ -1497,6 +1499,10 @@ final class InkLayoutManager: NSLayoutManager {
                 guard clamped.length > 0 else { continue }
                 let glyphs = glyphRange(forCharacterRange: clamped, actualCharacterRange: nil)
                 guard glyphs.length > 0 else { continue }
+                // TextKit asks for the visible slice, not the whole
+                // document; a region that falls entirely outside the
+                // requested glyphs needs no paint this pass.
+                guard NSIntersectionRange(glyphs, glyphsToShow).length > 0 else { continue }
                 // The first line's fragment rect swallows any
                 // `paragraphSpacingBefore` above it — the reserved label
                 // gap included — so the slab's top comes from the used
@@ -1936,9 +1942,11 @@ public enum InkStyle {
                       })
                 else { return }
                 let target = trimmedBareURL(text.substring(with: match.range))
-                guard target.utf16.count > "https://".utf16.count,
-                      URL(string: target) != nil
-                else { return }
+                // A scheme alone is not a destination; requiring a host
+                // rejects `https://` and its trailing-punctuation
+                // remnants while keeping short but real targets like
+                // `http://a.io` linked.
+                guard URL(string: target)?.host?.isEmpty == false else { return }
                 found.append(InkLink(
                     range: NSRange(
                         location: match.range.location, length: target.utf16.count

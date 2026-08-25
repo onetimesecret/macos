@@ -140,6 +140,19 @@ final class OpEmitterTests: XCTestCase {
         )
     }
 
+    /// The format repeats every week: a modification exactly seven days
+    /// after creation renders the same `EEE HH:mm` text while being a
+    /// different moment entirely. The collapse compares the dates at
+    /// minute granularity, not the rendered stamps, so the range
+    /// survives the aliasing.
+    func testBlockLabelKeepsTheRangeAcrossExactlyOneWeek() {
+        XCTAssertTrue(
+            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 1_000 + 604_800)
+                .contains("→"),
+            "a week-later edit renders the same stamp text but is not the same minute"
+        )
+    }
+
     func testBlockLabelShowsBothStampsOnceEdited() {
         XCTAssertTrue(
             InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 2_000).contains("→"),
