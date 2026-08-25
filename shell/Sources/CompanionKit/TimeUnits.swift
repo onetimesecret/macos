@@ -19,14 +19,25 @@ public enum TimeUnit: String, Sendable {
     /// today is or be told when it changes.
     case day
 
-    /// The bucket a page's day-relative offset falls in. The identity
-    /// for a day, because the core is already counting in the unit the
-    /// mode groups by; a coarser unit divides here, and this is the one
-    /// line it would divide in.
+    /// The bucket a page's day-relative offset falls in. All but the
+    /// identity for a day, because the core is already counting in the
+    /// unit the mode groups by; a coarser unit divides here, and this is
+    /// the one line it would divide in.
+    ///
+    /// The "all but" is the future, which pages do not have. A page
+    /// cannot honestly be born tomorrow, so a positive offset is a host
+    /// clock that moved backwards between the stamp and the reading, and
+    /// the page it stamped belongs to today. `label` folds the same way,
+    /// and the fold has to happen here as well or the two disagree: a
+    /// bucket of its own would draw a second row named "Today" above the
+    /// real one, and every lookup that asks for today by its bucket —
+    /// `openToday`, the summon's anchor — would find the empty one and
+    /// mint beside the page the user can already see. One Today, by
+    /// construction rather than by each caller remembering.
     public func bucket(dayOffset: Int) -> Int {
         switch self {
         case .day:
-            return dayOffset
+            return min(dayOffset, 0)
         }
     }
 
@@ -39,11 +50,12 @@ public enum TimeUnit: String, Sendable {
     /// midnight roll the reading over on the redraw the app already
     /// runs, since the offsets behind it are recomputed on every read.
     ///
-    /// A bucket above zero renders as Today as well. A page cannot
-    /// honestly be born tomorrow, so a positive offset means the host
-    /// clock moved backwards between the stamp and the reading, and the
-    /// friendlier lie is to call that page today's rather than to
-    /// invent a future day and put it above today on the rail.
+    /// A bucket above zero renders as Today as well, and `bucket(
+    /// dayOffset:)` sees to it that a projection never carries one. The
+    /// two agree deliberately: the grouping is where a backwards clock's
+    /// page is filed under today, and this is the statement of the same
+    /// rule for a caller that never went through the grouping, so a
+    /// reading taken at either end says the same thing.
     public func label(bucket: Int) -> String {
         switch self {
         case .day:
@@ -101,8 +113,10 @@ public struct TimeUnitProjection: Equatable, Sendable {
     /// row would then say one thing and show another.
     public struct Unit: Equatable, Sendable, Identifiable {
         /// How far back this day is, in units, counted from today: 0
-        /// for today, -1 for yesterday. Unique within a projection,
-        /// which is what makes it the identity as well.
+        /// for today, -1 for yesterday. Never above zero — a page from a
+        /// clock that went backwards is filed under today rather than
+        /// ahead of it. Unique within a projection, which is what makes
+        /// it the identity as well.
         public let bucket: Int
         /// "Today", "-1d" — what the rail draws.
         public let label: String
@@ -175,6 +189,12 @@ public struct TimeUnitProjection: Equatable, Sendable {
     ///   The filter is by day and not by page: a day the rail is
     ///   showing shows everything on it, so a page never quietly
     ///   vanishes out of a day that is on screen.
+    /// - A page stamped in the future belongs to today. A page cannot be
+    ///   born tomorrow, so a positive offset is a host clock that went
+    ///   backwards, and folding it into today's own bucket rather than
+    ///   giving it one of its own is what keeps "Today" the name of
+    ///   exactly one row — which every lookup that asks for today by its
+    ///   bucket then depends on.
     /// - A day's gauge, the countdown it prints and the countdown it
     ///   speaks all come from its soonest-dying page, ties going to the
     ///   earlier one in strip order. One page answers for the day, so a
@@ -212,10 +232,11 @@ public struct TimeUnitProjection: Equatable, Sendable {
             let holdsSelection = selectedPageID.map { id in
                 pages.contains { $0.pageID == id }
             } ?? false
-            // Above zero counts as today for `label`'s reason: a page
-            // cannot be born tomorrow, so a bucket in the future is a
-            // clock that went backwards, and its page belongs on screen
-            // rather than hidden behind an arithmetic nobody can see.
+            // Today is drawn whether or not anything is on it. Nothing
+            // above zero reaches here — the grouping folded a backwards
+            // clock's page into today, so its page is on screen rather
+            // than hidden behind an arithmetic nobody can see — which
+            // leaves this reading as the one place it names: bucket 0.
             let drawn = bucket >= 0 || holdsSelection || pages.contains(where: \.pageHasContent)
             guard drawn else {
                 hidden += pages.count

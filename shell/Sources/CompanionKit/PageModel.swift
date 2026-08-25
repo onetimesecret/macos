@@ -373,8 +373,32 @@ public final class PageModel: ObservableObject {
     /// projection reads `tabs` and calls no core mutator — which is what
     /// makes the toggle safe in both directions by construction rather
     /// than by care.
+    ///
+    /// The one thing that does move is where the selection is standing,
+    /// and only on the way in. See `reconciledTimeSelection`: the mode
+    /// draws no row for a slot holding no page, and the strip
+    /// deliberately leaves a selection on one when the page expires
+    /// under it. That is the state a user is most likely to flip this
+    /// from — the selected page died overnight — and entering the mode
+    /// with it would show a surface with nothing selected, no editor
+    /// mounted and no row lit until something else happened to call
+    /// `refresh()`. So the mode's own reconciliation runs at its own
+    /// entrance, where the rule was always meant to apply.
     @Published public var showsTimeUnits: Bool {
-        didSet { defaults.set(showsTimeUnits, forKey: Self.timeUnitsKey) }
+        didSet {
+            defaults.set(showsTimeUnits, forKey: Self.timeUnitsKey)
+            // One direction, and one state. Leaving the mode gives the
+            // strip back, and the strip draws every slot, so there is
+            // nothing to fall off; and a selection this mode does draw
+            // is returned unchanged, so the toggle cannot move a
+            // selection the user can see either before or after it. It
+            // mints nothing — `reconciledTimeSelection` never does — and
+            // it marks nothing dirty, which is the whole of what
+            // ADR-0020 asks a presentation preference to leave alone.
+            if showsTimeUnits, !oldValue {
+                selection = Self.reconciledTimeSelection(current: selection, projection: timeUnits)
+            }
+        }
     }
     private static let timeUnitsKey = "showsTimeUnits"
 
@@ -1384,6 +1408,13 @@ public final class PageModel: ObservableObject {
     /// runs on every accepted edit and every expiry, and a page expiring
     /// under the cursor must not start a fresh countdown on nothing
     /// (ADR-0017). Pure, so the fall is testable without a window.
+    ///
+    /// Two callers, and the second is the reason this is stated as a
+    /// rule rather than as a line inside `refresh()`: the mode's
+    /// entrance (`showsTimeUnits`) applies it too, because a selection
+    /// standing on a slot the mode draws no row for is exactly the state
+    /// somebody turns the mode on from, and the rule that answers it
+    /// must not wait for the next refresh to happen along.
     public nonisolated static func reconciledTimeSelection(
         current: UInt64?, projection: TimeUnitProjection
     ) -> UInt64? {
@@ -1906,6 +1937,11 @@ public final class PageModel: ObservableObject {
     /// lands. Nothing calls it from `refresh()`, from a mount or from
     /// the toggle: what is displayed is not thereby minted (ADR-0017).
     public func openToday() {
+        // Bucket 0 is today and there is exactly one of it: the
+        // projection folds a page stamped ahead of now into today rather
+        // than giving it a bucket of its own, so this cannot find an
+        // empty Today standing above a peopled one and mint beside a
+        // page already on screen (`TimeUnit.bucket(dayOffset:)`).
         if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first {
             select(tab)
             return
