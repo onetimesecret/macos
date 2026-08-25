@@ -299,42 +299,14 @@ public struct InkEditorView: NSViewRepresentable {
         // scroll alive for whatever page came next.
         coordinator.pruneViewState(keeping: Set(model.tabs.compactMap(\.pageID)))
         guard coordinator.currentSheet != sheetID else { return }
-        // A page switch reaches this editor as data, not identity
-        // (ADR-0006): the view — and with it first responder, and the
-        // ember — persists, while the page's storage is swapped in
-        // underneath. Caret and scroll are saved for the page on its
-        // way out and restored for the one coming in; undo history
-        // follows `currentSheet` through the delegate's per-page
-        // manager and needs no hand-off here.
-        // An in-progress IME composition is anchored to the outgoing
-        // page's offsets. The dropped `.id(selection)` used to discard
-        // it by tearing the view down; the persistent view must do it by
-        // hand, or the pending marked text commits into the incoming
-        // page's storage — the wrong page — or leaves the input context
-        // pointing at a stale range (ADR-0006 eject-trigger #3, issue
-        // #23). Discard before the swap so nothing crosses the boundary.
-        Self.discardComposition(in: textView)
-        coordinator.saveViewState(textView: textView, scrollView: scroll)
-        let incoming = model.storage(for: sheetID)
-        // The one-layout-manager-per-storage invariant rests on this
-        // path now; makeNSView's detach loop runs only at mount. The
-        // incoming storage may still carry a layout manager some
-        // torn-down editor (a ledger round trip) left behind — shed
-        // those before wiring ours to it. `replaceTextStorage` then
-        // moves this editor's layout manager off the outgoing storage,
-        // leaving both sides with exactly the managers they should
-        // have: one here, none on the page going to the background.
-        // The delegate follows the mount: the outgoing storage stops
-        // emitting (background writes are projection updates, not
-        // edits), the incoming one starts.
-        let outgoing = textView.textStorage
-        Coordinator.shedLayoutManagers(from: incoming, keeping: textView.layoutManager)
-        textView.layoutManager?.replaceTextStorage(incoming)
-        outgoing?.delegate = nil
-        incoming.delegate = coordinator
-        coordinator.currentSheet = sheetID
-        coordinator.restyle()
-        coordinator.restoreViewState(textView: textView, scrollView: scroll, for: sheetID)
+        // The page under the editor changed, so hand the editor over.
+        // The scroller goes with it: on this surface the editor is the
+        // only page in its clip, so the offset the user left this page
+        // at is the offset to put back when they return.
+        coordinator.moveEditor(
+            textView, to: sheetID,
+            storage: model.storage(for: sheetID), restoringScrollIn: scroll
+        )
     }
 
     // MARK: - Coordinator
@@ -368,15 +340,77 @@ public struct InkEditorView: NSViewRepresentable {
             self.model = model
         }
 
+        // MARK: The page swap (ADR-0006)
+
+        /// Move the one editor onto another page.
+        ///
+        /// A page switch reaches this editor as data, not identity
+        /// (ADR-0006): the view — and with it first responder, and the
+        /// ember — persists, while the page's storage is swapped in
+        /// underneath. Caret and scroll are saved for the page on its
+        /// way out and restored for the one coming in; undo history
+        /// follows `currentSheet` through the delegate's per-page
+        /// manager and needs no hand-off here.
+        ///
+        /// An in-progress IME composition is anchored to the outgoing
+        /// page's offsets. The dropped `.id(selection)` used to discard
+        /// it by tearing the view down; the persistent view must do it by
+        /// hand, or the pending marked text commits into the incoming
+        /// page's storage — the wrong page — or leaves the input context
+        /// pointing at a stale range (ADR-0006 eject-trigger #3, issue
+        /// #23). Discard before the swap so nothing crosses the boundary.
+        ///
+        /// The scroller is optional because the editor's own clip is not
+        /// the only place it can stand. A surface that rolls several days
+        /// past one scroller has a single offset belonging to the roll
+        /// rather than to any page in it, and it passes nil: the caret
+        /// leg still runs, because a caret belongs to the page wherever
+        /// the page is mounted, and the scroll leg is skipped rather than
+        /// putting one page's offset back onto everybody's scroller.
+        func moveEditor(
+            _ textView: InkTextView,
+            to sheetID: UInt64,
+            storage incoming: NSTextStorage,
+            restoringScrollIn scrollView: NSScrollView?
+        ) {
+            InkEditorView.discardComposition(in: textView)
+            saveViewState(textView: textView, scrollView: scrollView)
+            // The one-layout-manager-per-storage invariant rests on this
+            // path now; the mount's detach loop runs only at mount. The
+            // incoming storage may still carry a layout manager some
+            // torn-down editor (a ledger round trip) left behind — shed
+            // those before wiring ours to it. `replaceTextStorage` then
+            // moves this editor's layout manager off the outgoing storage,
+            // leaving both sides with exactly the managers they should
+            // have: one here, none on the page going to the background.
+            // The delegate follows the mount: the outgoing storage stops
+            // emitting (background writes are projection updates, not
+            // edits), the incoming one starts.
+            let outgoing = textView.textStorage
+            Self.shedLayoutManagers(from: incoming, keeping: textView.layoutManager)
+            textView.layoutManager?.replaceTextStorage(incoming)
+            outgoing?.delegate = nil
+            incoming.delegate = self
+            currentSheet = sheetID
+            restyle()
+            restoreViewState(textView: textView, scrollView: scrollView, for: sheetID)
+        }
+
         // MARK: Per-page view state (ADR-0006)
 
         /// Remember the outgoing page's caret and scroll before the
         /// swap. The pending typing group settles first, so half a
         /// word is not left open in a page that is going away.
-        func saveViewState(textView: InkTextView, scrollView: NSScrollView) {
+        ///
+        /// A mount with no scroller of its own saves the caret and stops
+        /// there. There is no offset belonging to this page to read, and
+        /// whatever a scrolled mount once saved is left standing rather
+        /// than overwritten with a guess.
+        func saveViewState(textView: InkTextView, scrollView: NSScrollView?) {
             guard let sheet = currentSheet else { return }
             textView.breakUndoCoalescing()
             savedCarets[sheet] = textView.selectedRange()
+            guard let scrollView else { return }
             savedScrolls[sheet] = scrollView.contentView.bounds.origin
         }
 
@@ -407,12 +441,20 @@ public struct InkEditorView: NSViewRepresentable {
         /// And because content can shrink while a page is in the
         /// background, the offset is clamped against the geometry that
         /// exists on arrival, not the geometry that was saved.
-        func restoreViewState(textView: InkTextView, scrollView: NSScrollView, for sheet: UInt64) {
+        ///
+        /// A mount with no scroller of its own takes the caret and stops
+        /// there, as `saveViewState` did: there is no clip of this page's
+        /// to move, so no hop is scheduled and any offset a scrolled
+        /// mount saved stays where it is, waiting for that mount.
+        func restoreViewState(
+            textView: InkTextView, scrollView: NSScrollView?, for sheet: UInt64
+        ) {
             let caret = Self.clamped(
                 savedCarets[sheet] ?? NSRange(location: 0, length: 0),
                 to: textView.textStorage?.length ?? 0
             )
             textView.setSelectedRange(caret)
+            guard let scrollView else { return }
             let offset = savedScrolls[sheet] ?? .zero
             DispatchQueue.main.async { [weak self, weak textView, weak scrollView] in
                 guard let self else { return }
