@@ -155,6 +155,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   either way you look at them. With it off, the horizontal strip is
   exactly what it was.
 
+  The switch is in Settings, under **A page a day, with time tabs down
+  the side**, and it is off until you ask for it. On, the days stand in
+  a narrow column on the left of the card — Today at the top, each row
+  with the countdown of the page on it that runs out soonest — and the
+  strip along the bottom is gone while they are there. Clicking a row
+  goes to that day; clicking Today when nothing has been written yet
+  starts today's page, which is the one click on the rail that makes
+  anything. The rail is for getting about and nothing else: it will not
+  rename a day, close one, hold its clock, shorten its countdown or let
+  you drag one somewhere else, because a day is not a slot and the order
+  of the days is not yours to shuffle. If it is holding pages back —
+  live pages with nothing written on them, which get no day of their own
+  — it says how many at the foot of the column and points at this
+  toggle, rather than letting a full pad look broken. **A limit worth
+  knowing before you turn it on:** while the mode is on, renaming a tab,
+  holding its clock, shortening its countdown and closing it are
+  reachable only by turning it off again. Those four move onto each
+  page's own gutter when the contiguous scroll lands.
+
 - **The keyboard is a file now** (issue #76,
   `docs/development/about-the-keymap.md`). What each chord does used to
   be spelled in Swift, in two places, and moving one was a code change

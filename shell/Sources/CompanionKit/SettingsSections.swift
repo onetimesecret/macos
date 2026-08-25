@@ -119,6 +119,13 @@ public struct ConnectionSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                Toggle("A page a day, with time tabs down the side", isOn: $model.showsTimeUnits)
+            } header: {
+                Text(timeUnitsCaption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle("Start at login", isOn: loginBinding)
                     .disabled(!LaunchAtLogin.mayRegister)
                 if let loginStatus {
@@ -189,6 +196,23 @@ public struct ConnectionSettingsView: View {
         .frame(width: 420)
         .frame(maxHeight: .infinity)
         .onAppear(perform: load)
+    }
+
+    /// The prototype's caption (issue #79). It has three jobs, and the
+    /// order is deliberate: say that it is a prototype, say that it
+    /// moves no content, and say what it costs while the mode is on.
+    /// A toggle whose caption promised only the good half would be the
+    /// kind of setting a user flips once and distrusts afterwards, and
+    /// the missing verbs are a real limit until each page carries its
+    /// own gutter.
+    private var timeUnitsCaption: String {
+        "A prototype. Your live pages stand down the side of the card grouped by the day they "
+            + "were written, newest first, instead of along the bottom as slots. It moves no "
+            + "content and writes nothing new to disk: the tabs, their names and their rungs "
+            + "are the same underneath either way you look at them, and turning it off puts the "
+            + "strip back as it was. While it is on, renaming a tab, holding its clock, "
+            + "shortening its countdown and closing it are reachable only by turning it off "
+            + "again."
     }
 
     /// The section only exists when the switch is offered, so the

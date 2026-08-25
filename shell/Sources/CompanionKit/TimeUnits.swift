@@ -104,6 +104,13 @@ public struct TimeUnitProjection: Equatable, Sendable {
     /// showing several pages says how long the day has left rather than
     /// how long its first page has. A day holding no page carries the
     /// quiet values and the rail draws `EmptyRule` over them instead.
+    ///
+    /// The two readings of that countdown — the one a row prints and
+    /// the one VoiceOver speaks — come from the same page as the gauge
+    /// and are carried here rather than looked up again in the view.
+    /// A view that went back to the summaries for the spoken half could
+    /// pick a different page from the one the bar is drawn from, and a
+    /// row would then say one thing and show another.
     public struct Unit: Equatable, Sendable, Identifiable {
         /// How far back this day is, in units, counted from today: 0
         /// for today, -1 for yesterday. Never above zero — a page from a
@@ -133,6 +140,12 @@ public struct TimeUnitProjection: Equatable, Sendable {
         public let lastHour: Bool
         /// What that page's countdown reads, "2h" or "14m".
         public let remainingLabel: String
+        /// The same countdown as a phrase, "two hours": what the rail
+        /// hands VoiceOver as the row's value, the way `SheetTab` hands
+        /// it the slot's. Empty for a day holding no page, which is
+        /// what the strip already says out loud about a slot with no
+        /// clock to report.
+        public let spokenRemaining: String
 
         public var id: Int { bucket }
     }
@@ -182,8 +195,10 @@ public struct TimeUnitProjection: Equatable, Sendable {
     ///   giving it one of its own is what keeps "Today" the name of
     ///   exactly one row — which every lookup that asks for today by its
     ///   bucket then depends on.
-    /// - A day's gauge comes from its soonest-dying page, ties going to
-    ///   the earlier one in strip order.
+    /// - A day's gauge, the countdown it prints and the countdown it
+    ///   speaks all come from its soonest-dying page, ties going to the
+    ///   earlier one in strip order. One page answers for the day, so a
+    ///   row cannot show one page's bar beside another page's words.
     ///
     /// Pure, `nonisolated` and over value types, so the whole model can
     /// be argued in tests that build no window and touch no core.
@@ -238,7 +253,8 @@ public struct TimeUnitProjection: Equatable, Sendable {
                 paused: soonest?.paused ?? false,
                 toppedUp: soonest?.holdToppedUp ?? false,
                 lastHour: soonest?.lastHour ?? false,
-                remainingLabel: soonest?.remainingLabel ?? ""
+                remainingLabel: soonest?.remainingLabel ?? "",
+                spokenRemaining: soonest?.spokenRemaining ?? ""
             ))
         }
         return TimeUnitProjection(units: units, hiddenBlankPages: hidden)

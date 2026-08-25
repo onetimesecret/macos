@@ -158,6 +158,16 @@ change — no existing test needed a line — and it is worth pressing on in
 review, because a flag dropped out of the editor's construction is
 invisible until the day it matters. Items 12 onward are still work.
 
+**Landed 2026-08-25, fourth pass.** Item 12 is in the tree, and it is
+the first thing in this decision a user can see: the rail, the card's
+branch and the Settings row that turns them on. The mode is now
+judgeable on navigation and toggle safety alone, which is why the rail
+was put before the roll — the biggest engineering is still ahead and
+can be reverted without taking the mode with it. The rail carries none
+of the strip's four verbs and says so in its own caption, which is the
+honest cost of shipping this half first. Items 13 and 14 are still
+work.
+
 1. `pub fn local_day(wall_ms: u64, utc_offset_seconds: i32) -> i64`,
    hoisted out of the arithmetic already inside `placeholder_title`
    (crates/core/src/sheet.rs:712-721, the
@@ -303,6 +313,35 @@ invisible until the day it matters. Items 12 onward are still work.
     `.frame(height: 120)`
     (shell/Sources/OnetimePad/BackdropSettingsWindow.swift:81) clips new
     rows silently.
+
+    **Landed**, in shell/Sources/CompanionKit/TimeRailView.swift.
+    `TabStripView.swift` did take no diff: `GaugeBar` is still at :435
+    and `EmptyRule` at :416, used from a second file in the same module.
+    The card branches at
+    shell/Sources/OnetimePad/Views/BackdropRootView.swift:114 with the
+    strip row at :139, and the toggle sits at
+    shell/Sources/CompanionKit/SettingsSections.swift:122 — the Surface
+    form's `.frame(height: 120)` is still at
+    shell/Sources/OnetimePad/BackdropSettingsWindow.swift:81, untouched
+    and unraised, because nothing was added to it. The line numbers in
+    the paragraph above name the tree this decision was written against.
+
+    Three things came out of the work that the item had not named.
+    First, `TimeUnitProjection.Unit` gained `spokenRemaining`
+    (shell/Sources/CompanionKit/TimeUnits.swift:134): the rail carries
+    `SheetTab`'s accessibility triple and the third of those had no
+    source, and looking it up in the summaries would have let a row
+    speak one page's clock while drawing another's — the gauge already
+    comes from the day's soonest-dying page, and now so do both readings
+    of its countdown. Second, which row is lit is a decision and not a
+    drawing, so it is a pure function too (`selectedBucket`): the mark
+    follows the selected page's day rather than the row last clicked, and
+    an empty Today takes it only when no other day has it. Third, the
+    card's two content rows are written out in full rather than sharing
+    one wrapped row, so the off path is identical by inspection; the cost
+    is that flipping the mode is an identity change that remounts the
+    editor, which is what a deliberate flip should cost and what a
+    keystroke never pays.
 13. The roll: one scroll view over a flipped stack, with the live editor
     as a **permanent child** whose frame origin moves and on which
     `removeFromSuperview` is never called, and every other visible page a

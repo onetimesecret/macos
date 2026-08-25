@@ -102,16 +102,45 @@ struct BackdropRootView: View {
                 .padding(.horizontal, 12)
                 .frame(height: 32)
             Divider()
-            PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // The glance is the same ink at the same measure,
-                // dimmed. Raising and lowering must not make the text
-                // jump, so only the opacity changes.
-                .opacity(raised ? 1 : 0.72)
+            // Two content rows, written out rather than one row with a
+            // rail wrapped around it (issue #79). The mode's branch is
+            // the whole expression, so the off-path tree below is the
+            // tree the card has always built, character for character:
+            // "pixel-identical while the toggle is off" is then a fact
+            // about the source rather than a hope about layout. The
+            // cost is that flipping the mode is an identity change and
+            // remounts the editor, which is what a deliberate flip
+            // should cost and what a keystroke must never.
+            if pages.showsTimeUnits {
+                HStack(spacing: 0) {
+                    // The rail eats into the page's column, not into
+                    // the header, so `BackdropGeometry.minWidth` and
+                    // its clamp are untouched by the mode.
+                    TimeRailView(model: pages)
+                        .opacity(raised ? 1 : 0.72)
+                    Divider()
+                    PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .opacity(raised ? 1 : 0.72)
+                }
+            } else {
+                PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // The glance is the same ink at the same measure,
+                    // dimmed. Raising and lowering must not make the
+                    // text jump, so only the opacity changes.
+                    .opacity(raised ? 1 : 0.72)
+            }
             PageStatusStack(model: pages)
-            Divider()
-            TabStripView(model: pages)
-                .opacity(raised ? 1 : 0.72)
+            // The two are exclusive: the days are the tabs while the
+            // mode is on, and a strip underneath them would be the same
+            // slots counted a second way. The strip's own verbs go with
+            // it for now, and Settings is how they come back.
+            if !pages.showsTimeUnits {
+                Divider()
+                TabStripView(model: pages)
+                    .opacity(raised ? 1 : 0.72)
+            }
         }
         .background(
             RoundedRectangle(cornerRadius: 12)
