@@ -49,7 +49,7 @@ pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecor
 pub use persist::RestoreError;
 pub use secret::SecretBuffer;
 pub use sheet::{
-    ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetId, Tab, TabId,
+    ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetId, Tab, TabId, local_day,
 };
 pub use store::{DEFAULT_SHEET_CAP, EditOp, PayloadError, Refusal, SheetStore};
 pub use ttl::{TTL_LADDER, Ttl};

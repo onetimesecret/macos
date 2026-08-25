@@ -12,3 +12,4 @@
 - [Two version numbers](project_two_version_numbers.md): app version lives in the shell plist (#89), crate version in crates/ffi; bump the plist for user visible work
 - [Stacked review findings](feedback_stacked_review_findings.md): verify each finding on the branch that owns the code; a claim false on 77 can be true on 78
 - [Conceal vocabulary](feedback_conceal_vocabulary.md): "promotion" is banned (#92); conceal/reveal only, and nspasteboard_concealed keeps the clipboard marker apart
+- [Issue #79 day seam](project_issue79_day_seam.md): one `local_day` for every day bucket, `Sheet::has_content` is the ledger's bar, and a new non-optional Codable field breaks the four summary fixtures in CompanionClientTests

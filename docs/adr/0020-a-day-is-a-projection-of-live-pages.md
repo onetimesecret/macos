@@ -128,9 +128,19 @@ map are in
 
 ## Required work
 
-None of the following exists today. Items 1 to 4 are the model and run
-under `cargo test` on Linux, which is where the risk is meant to be
-retired; the rest is shell work that only builds on macOS.
+None of the following existed when this decision was written. Items 1 to
+4 are the model and run under `cargo test` on Linux, which is where the
+risk is meant to be retired; the rest is shell work that only builds on
+macOS.
+
+**Landed 2026-08-25.** Items 1 to 6 are in the tree. The day arithmetic
+is one function with two callers and the content bar is one predicate
+with two callers, which is what makes the agreements this decision rests
+on structural rather than a habit; the tab summary carries both answers
+and nothing a user can see moved. A summary's keys are now the fifteen
+that were always there plus these two, and a test holds the whole set
+still, so the addition cannot quietly become a rename. Items 7 onward
+are still work.
 
 1. `pub fn local_day(wall_ms: u64, utc_offset_seconds: i32) -> i64`,
    hoisted out of the arithmetic already inside `placeholder_title`
@@ -142,31 +152,48 @@ retired; the rest is shell work that only builds on macOS.
    hour of local midnight can bucket differently after a DST change —
    the property `placeholder_title` already has and its tests already
    pin (crates/core/src/sheet.rs:1170-1185).
+
+   **Landed.** The conversion to local seconds both readings need came
+   out with it, as a private `local_seconds` beside it, so the day and
+   the clock face on a label are read out of one line rather than two
+   copies of it.
 2. `Sheet::has_content()`, holding the predicate that is inline in
    `entomb` today (crates/core/src/store.rs:1364-1371): any
    `Segment::Ink` that is not whitespace, or a non-empty chip vector.
    `entomb` calls it, so there is one predicate with two callers rather
    than two definitions that can drift. A `Sheet::local_day` convenience
    joins it for the FFI's use.
+
+   **Landed.** `entomb` asks the page rather than walking it, and a
+   test in the store puts the two readers over the same matrix of
+   pages: the predicate before the page dies, the ledger after.
 3. `SheetStore::wall_ms()` beside `now()` (crates/core/src/store.rs:450)
    and `local_offset_seconds()` (:402), because computing a *relative*
-   offset needs today's stamp as well as the page's.
+   offset needs today's stamp as well as the page's. **Landed.**
 4. `summary_json` (crates/ffi/src/lib.rs:2385) takes the current wall
    stamp and gains exactly two keys, `page_day_offset` and
    `page_has_content`, with JSON null for the first when the slot holds
    no page, matching `page_id`'s established null.
    `companion_tabs_json` (crates/ffi/src/lib.rs:978) reads the stamp
    once per call and passes it down. No new FFI symbol, no new route.
+
+   **Landed.** The stamp is read before the walk starts, so every row
+   of one answer is measured against one reading of today and two pages
+   born a minute apart cannot straddle a midnight that passed halfway
+   down the strip.
 5. The header's field-contract block for `companion_tabs_json`
    (crates/ffi/include/companion_ffi.h:213-235) gains the two fields in
    the same commit as the fields themselves: that the offset is
    relative, computed with the store's own UTC offset, recomputed on
    every call rather than cached, and null exactly when `has_page` is
    false. The header is hand-maintained (ADR-0003), so it is the
-   contract document as well as the declaration.
+   contract document as well as the declaration. **Landed**, in that
+   commit.
 6. `TabSummary` (shell/Sources/CompanionKit/CompanionClient.swift:26)
    decodes both fields, each with a doc comment saying why the stamp is
-   the page's and not the tab's.
+   the page's and not the tab's. **Landed**, with a contract test
+   decoding both off a live core, including the null offset on a slot
+   whose page has expired.
 7. A pure `TimeUnitProjection` over the summaries, in a new
    shell/Sources/CompanionKit/TimeUnits.swift, holding every law of the
    model in one place: a bucket is present when any of its pages has

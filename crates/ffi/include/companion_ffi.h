@@ -230,7 +230,26 @@ bool companion_tab_set_title(CompanionHandle *handle, uint64_t tab,
  *     3 hours remaining", the VoiceOver value), fraction_remaining
  *     (0.0..1.0), paused (bool), hold_topped_up (bool, the hold is
  *     already at its 24 hour ceiling, so the next pause press releases
- *     it), hold_remaining_ms, chip_count, last_hour (bool).
+ *     it), hold_remaining_ms, chip_count, last_hour (bool),
+ *   page_has_content (bool, whether the page holds anything: ink that
+ *     is more than whitespace, or at least one chip. It is the same bar
+ *     the ledger applies when it decides whether a dying page did
+ *     anything worth recording, answered core-side so there is one
+ *     definition of it rather than two that drift; false whenever
+ *     has_page is false. A boolean and never text: do not read a
+ *     document to answer this),
+ *   page_day_offset (int64 or null: which local day the PAGE was born
+ *     on, counted RELATIVE to today. 0 for a page made today, -1 for
+ *     one made yesterday, and so back; a positive value can only mean
+ *     the host clock went backwards since the page was made. The stamp
+ *     is the PAGE's own and not the tab's, because a slot opened last
+ *     week takes today's page and the tab's birthday would file it
+ *     under a day nobody was here. Computed with the store's own UTC
+ *     offset, the one the MMDD-HHmm placeholder above renders from, so
+ *     the label and the day can never disagree; computed afresh on
+ *     every call rather than cached, which is how a surface's labels
+ *     roll over at local midnight without a timer. Null exactly when
+ *     has_page is false: a slot holding no page is on no day).
  */
 char *companion_tabs_json(CompanionHandle *handle);
 

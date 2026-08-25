@@ -24,7 +24,9 @@ final class CompanionClientTests: XCTestCase {
             "hold_topped_up": false,
             "hold_remaining_ms": 0,
             "chip_count": 2,
-            "last_hour": false
+            "last_hour": false,
+            "page_has_content": true,
+            "page_day_offset": 0
         }]
         """
         let sheets = try JSONDecoder().decode([TabSummary].self, from: Data(json.utf8))
@@ -43,6 +45,11 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertFalse(sheet.paused)
         XCTAssertFalse(sheet.holdToppedUp)
         XCTAssertFalse(sheet.lastHour)
+        // The page's own two facts: something is on it, and it was made
+        // today. The day is relative and the page's rather than the
+        // slot's, so nothing here has to know what today is (ADR-0020).
+        XCTAssertTrue(sheet.pageHasContent)
+        XCTAssertEqual(sheet.pageDayOffset, 0)
     }
 
     func testHeldSheetDecoding() throws {
@@ -62,7 +69,9 @@ final class CompanionClientTests: XCTestCase {
             "hold_topped_up": false,
             "hold_remaining_ms": 3600000,
             "chip_count": 0,
-            "last_hour": true
+            "last_hour": true,
+            "page_has_content": true,
+            "page_day_offset": -1
         }]
         """
         let sheets = try JSONDecoder().decode([TabSummary].self, from: Data(json.utf8))
@@ -71,6 +80,9 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertEqual(sheets[0].holdRemainingMs, 3_600_000)
         XCTAssertTrue(sheets[0].lastHour)
         XCTAssertEqual(sheets[0].fractionRemaining, 0.5, accuracy: 0.0001)
+        // A held page is exactly how yesterday's page is still here to
+        // be read: the hold is the reason, the offset is the reading.
+        XCTAssertEqual(sheets[0].pageDayOffset, -1)
     }
 
     /// The tier is a separate fact from the hold itself: the tab labels
@@ -93,7 +105,9 @@ final class CompanionClientTests: XCTestCase {
             "hold_topped_up": true,
             "hold_remaining_ms": 86400000,
             "chip_count": 0,
-            "last_hour": true
+            "last_hour": true,
+            "page_has_content": true,
+            "page_day_offset": -2
         }]
         """
         let sheets = try JSONDecoder().decode([TabSummary].self, from: Data(json.utf8))
@@ -122,7 +136,9 @@ final class CompanionClientTests: XCTestCase {
             "hold_topped_up": false,
             "hold_remaining_ms": 0,
             "chip_count": 0,
-            "last_hour": false
+            "last_hour": false,
+            "page_has_content": false,
+            "page_day_offset": null
         }]
         """
         let tabs = try JSONDecoder().decode([TabSummary].self, from: Data(json.utf8))
@@ -131,6 +147,11 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertNil(tabs[0].pageID)
         XCTAssertEqual(tabs[0].title, "payroll", "the name outlived the page")
         XCTAssertEqual(tabs[0].rungLabel, "7d", "and so did the rung")
+        // The day follows the page id rather than the clock fields: it
+        // is null and not zero, because a slot holding no page is on no
+        // day, where zero would claim it holds one made today.
+        XCTAssertNil(tabs[0].pageDayOffset)
+        XCTAssertFalse(tabs[0].pageHasContent)
     }
 
     func testChipInfoDecoding() throws {

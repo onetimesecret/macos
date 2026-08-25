@@ -80,7 +80,7 @@ use ots_client::Transport as _;
 
 use companion_core::{
     ChipId, ChipMeta, DestinationClass, EditOp, LedgerEvent, RestoreError, Segment, Sheet, SheetId,
-    SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, TabId, Ttl,
+    SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, TabId, Ttl, local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -985,6 +985,11 @@ pub unsafe extern "C" fn companion_clear_clipboard_if_ours(handle: *mut Companio
 /// place, its label and its rung here, with `has_page` false and every
 /// clock field meaningless.
 ///
+/// All three readings the walk needs — the monotonic instant, the UTC
+/// offset and the wall stamp — are taken once, before it starts. One
+/// reading of today is what lets `page_day_offset` mean the same thing
+/// on every row of one answer.
+///
 /// # Safety
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
@@ -997,10 +1002,11 @@ pub unsafe extern "C" fn companion_tabs_json(handle: *mut CompanionHandle) -> *m
     };
     let now = guard.store.now();
     let offset = guard.store.local_offset_seconds();
+    let now_wall_ms = guard.store.wall_ms();
     let summaries: Vec<serde_json::Value> = guard
         .store
         .tabs()
-        .map(|tab| summary_json(tab, now, offset))
+        .map(|tab| summary_json(tab, now, offset, now_wall_ms))
         .collect();
     match serde_json::to_string(&summaries) {
         Ok(json) => into_c_string(json),
@@ -2401,8 +2407,25 @@ pub unsafe extern "C" fn companion_string_free(s: *mut c_char) {
 /// mean nothing at all when it is false: an empty tab has no clock, so
 /// there is nothing for them to describe and the strip draws the dashed
 /// treatment instead of a gauge.
-fn summary_json(tab: &Tab, now: std::time::Instant, utc_offset_seconds: i32) -> serde_json::Value {
+///
+/// The two page-shaped fields at the end are the page's own and follow
+/// `page_id`'s null rather than the clock fields' zero, because a day
+/// nobody was here on is not day zero. `page_day_offset` is
+/// deliberately *relative*: the far side never has to know what today
+/// is, so a repaint re-reads the summaries and the labels above them
+/// roll over at local midnight without anything being scheduled to make
+/// them. `now_wall_ms` arrives from the caller rather than being read
+/// here so every row of one strip is measured against one reading of
+/// today, which is the only way two pages born a minute apart cannot
+/// straddle a midnight that passed mid-walk.
+fn summary_json(
+    tab: &Tab,
+    now: std::time::Instant,
+    utc_offset_seconds: i32,
+    now_wall_ms: u64,
+) -> serde_json::Value {
     let page = tab.page();
+    let today = local_day(now_wall_ms, utc_offset_seconds);
     let remaining = page.map_or(std::time::Duration::ZERO, |sheet| sheet.remaining(now));
     serde_json::json!({
         "id": tab.id().raw(),
@@ -2427,6 +2450,8 @@ fn summary_json(tab: &Tab, now: std::time::Instant, utc_offset_seconds: i32) -> 
         }),
         "chip_count": page.map_or(0, Sheet::chip_count),
         "last_hour": page.is_some_and(|sheet| sheet.last_hour(now)),
+        "page_has_content": page.is_some_and(Sheet::has_content),
+        "page_day_offset": page.map(|sheet| sheet.local_day(utc_offset_seconds) - today),
     })
 }
 
@@ -3616,6 +3641,197 @@ mod tests {
             );
             assert_eq!(companion_tab_open_page(handle, 424_242), 0, "no such tab");
             assert_eq!(companion_tab_open_page(ptr::null_mut(), tab), 0);
+            companion_free(handle);
+        }
+    }
+
+    /// Which day a page belongs to is the core's answer, taken from the
+    /// page's own creation stamp and the store's own UTC offset, and it
+    /// crosses as an offset from today rather than as a date
+    /// (ADR-0020). The relative form is what lets a surface's labels
+    /// roll over at local midnight on a repaint it already runs, with
+    /// nothing armed to wake them.
+    #[test]
+    fn the_summary_says_which_day_the_page_was_born_on() {
+        let handle = handle();
+        unsafe {
+            let (_tab, page) = new_page(handle);
+            assert_ne!(page, 0);
+
+            // On a live pad the page was made today, whatever today is
+            // on the machine reading this.
+            assert_eq!(strip(handle)[0]["page_day_offset"].as_i64(), Some(0));
+
+            // Read against a later reading of today — which is what the
+            // same pad answers once a local midnight has passed under
+            // it — the same page is yesterday's, then the day before.
+            // Nothing was rescheduled to make that true: the
+            // subtraction happens on every call, which is the whole
+            // reason no timer is needed.
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                let tab = guard.store.tabs().next().expect("the slot is standing");
+                let now = guard.store.now();
+                let offset = guard.store.local_offset_seconds();
+                let today = guard.store.wall_ms();
+                let day_ms = 24 * 60 * 60 * 1_000;
+                for (days, expected) in [(1_u64, -1_i64), (2, -2), (6, -6)] {
+                    let later = summary_json(tab, now, offset, today + days * day_ms);
+                    assert_eq!(
+                        later["page_day_offset"].as_i64(),
+                        Some(expected),
+                        "a day of wall time is one day of bucket, wherever the clock stands"
+                    );
+                    assert_eq!(
+                        later["page_has_content"].as_bool(),
+                        Some(false),
+                        "and the other field is not the clock's"
+                    );
+                }
+            }
+            companion_free(handle);
+        }
+    }
+
+    /// Whether anything is on the page is the ledger's own bar, hoisted
+    /// so a surface can ask it of a live page (ADR-0020). It crosses as
+    /// a boolean: deciding it never needs a document to be read out,
+    /// and the answer never carries one back.
+    #[test]
+    fn the_summary_says_whether_anything_is_on_the_page() {
+        let handle = handle();
+        unsafe {
+            let (_tab, page) = new_page(handle);
+
+            // A page nobody has typed on holds nothing.
+            assert_eq!(strip(handle)[0]["page_has_content"].as_bool(), Some(false));
+
+            // Nor does one holding only whitespace. A stray newline is
+            // not a thing a person did, and a surface grouping by this
+            // must not show a day the user never had.
+            assert!(companion_sheet_sync_document(
+                handle,
+                page,
+                cstring(r#"[{"ink": "  \n "}]"#).as_ptr()
+            ));
+            assert_eq!(strip(handle)[0]["page_has_content"].as_bool(), Some(false));
+
+            // One typed line does.
+            assert!(companion_sheet_sync_document(
+                handle,
+                page,
+                cstring(r#"[{"ink": "rotate the key"}]"#).as_ptr()
+            ));
+            assert_eq!(strip(handle)[0]["page_has_content"].as_bool(), Some(true));
+
+            // And so does a sealed chip with nothing typed around it:
+            // sealing something is the most deliberate thing a person
+            // can do on a page.
+            assert!(companion_sheet_sync_document(
+                handle,
+                page,
+                cstring(r#"[{"ink": "  "}]"#).as_ptr()
+            ));
+            assert_eq!(strip(handle)[0]["page_has_content"].as_bool(), Some(false));
+            let chip = take_json(companion_sheet_seal_text(
+                handle,
+                page,
+                cstring("one secret").as_ptr(),
+                0,
+                0,
+            ));
+            assert!(chip.contains("excerpt"), "chip JSON: {chip}");
+            let summaries = strip(handle);
+            assert_eq!(summaries[0]["page_has_content"].as_bool(), Some(true));
+            assert_eq!(summaries[0]["chip_count"].as_u64(), Some(1));
+
+            // The boolean travelled and the bytes it was decided from
+            // did not, nor the excerpt standing in for them.
+            let json = take_json(companion_tabs_json(handle));
+            assert!(!json.contains("one secret"), "{json}");
+            companion_free(handle);
+        }
+    }
+
+    /// A slot holding no page is on no day. The offset is null there
+    /// rather than zero, following `page_id` rather than the clock
+    /// fields: zero would say the slot holds a page made today, which
+    /// is the one reading a projection must not make.
+    #[test]
+    fn an_empty_slot_reports_no_day_and_no_content() {
+        let handle = handle();
+        unsafe {
+            let (tab, page) = new_page(handle);
+            assert!(companion_tab_set_title(
+                handle,
+                tab,
+                cstring("payroll").as_ptr()
+            ));
+            assert!(companion_tab_set_rung(handle, tab, 0)); // 1h
+            assert!(companion_sheet_sync_document(
+                handle,
+                page,
+                cstring(r#"[{"ink": "rotate the key"}]"#).as_ptr()
+            ));
+            let before = strip(handle);
+            assert_eq!(before[0]["page_has_content"].as_bool(), Some(true));
+            assert_eq!(before[0]["page_day_offset"].as_i64(), Some(0));
+
+            // Overnight: the page dies and the slot stands with its
+            // name and its rung (ADR-0017). The tab did not move; the
+            // thing that was keyed to a day simply is not there.
+            age_by(handle, 2 * 60 * 60 * 1_000);
+            assert_eq!(companion_expire_due(handle), 1);
+            let after = strip(handle);
+            assert_eq!(after.len(), 1, "the tab stayed on the strip");
+            assert_eq!(after[0]["has_page"].as_bool(), Some(false));
+            assert_eq!(after[0]["title"].as_str(), Some("payroll"));
+            assert!(after[0]["page_day_offset"].is_null(), "{:?}", after[0]);
+            assert_eq!(after[0]["page_has_content"].as_bool(), Some(false));
+            companion_free(handle);
+        }
+    }
+
+    /// The two new fields are an addition and nothing else: every key
+    /// the strip already read is still spelled the way it was. A
+    /// summary is decoded by name on the far side, so a rename here is
+    /// an empty window there.
+    #[test]
+    fn the_fifteen_existing_summary_keys_are_unchanged() {
+        let handle = handle();
+        unsafe {
+            let (_tab, page) = new_page(handle);
+            assert_ne!(page, 0);
+            let summaries = strip(handle);
+            let mut keys: Vec<&str> = summaries[0]
+                .as_object()
+                .expect("a summary is an object")
+                .keys()
+                .map(String::as_str)
+                .collect();
+            keys.sort_unstable();
+            let mut expected = [
+                "id",
+                "has_page",
+                "page_id",
+                "title",
+                "rung_code",
+                "rung_label",
+                "remaining_ms",
+                "remaining_label",
+                "spoken_remaining",
+                "fraction_remaining",
+                "paused",
+                "hold_topped_up",
+                "hold_remaining_ms",
+                "chip_count",
+                "last_hour",
+                // The two this decision added, and nothing else.
+                "page_has_content",
+                "page_day_offset",
+            ];
+            expected.sort_unstable();
+            assert_eq!(keys, expected);
             companion_free(handle);
         }
     }

@@ -207,6 +207,45 @@ final class CoreContractTests: XCTestCase {
         XCTAssertTrue(client.blocks(sheet: 424_242).isEmpty)
     }
 
+    /// The two facts a projection over days needs, decoded off the live
+    /// core: which day the page was born on, relative to today, and
+    /// whether anything is on it (ADR-0020). Both are the core's
+    /// answers — the day so a shell-side time zone can never disagree
+    /// with the stamp on the tab, the content bar so there is one
+    /// definition of it and not a second one up here.
+    func testTheSummaryCarriesThePagesDayAndWhetherAnythingIsOnIt() throws {
+        let client = CompanionClient()
+        XCTAssertNotEqual(client.newTab(), 0)
+        var tab = try XCTUnwrap(client.tabs().first)
+        let sheetID = try XCTUnwrap(tab.pageID)
+
+        // A page made a moment ago was made today, and holds nothing.
+        XCTAssertEqual(tab.pageDayOffset, 0)
+        XCTAssertFalse(tab.pageHasContent)
+
+        // Whitespace is not content: a stray newline must not conjure a
+        // day the user never had.
+        XCTAssertTrue(client.syncDocument(sheet: sheetID, json: #"[{"ink": "  \n "}]"#))
+        tab = try XCTUnwrap(client.tabs().first)
+        XCTAssertFalse(tab.pageHasContent)
+        XCTAssertEqual(tab.pageDayOffset, 0, "the page is still there, and still today's")
+
+        // One typed line is.
+        XCTAssertTrue(client.syncDocument(sheet: sheetID, json: #"[{"ink": "rotate the key"}]"#))
+        tab = try XCTUnwrap(client.tabs().first)
+        XCTAssertTrue(tab.pageHasContent)
+
+        // Overnight the page dies and the slot stands (ADR-0017). With
+        // no page there is no day: nil rather than 0, because 0 would
+        // read as a slot holding a page made today.
+        XCTAssertTrue(client.ageForTests(byMs: 8 * 24 * 60 * 60 * 1_000))
+        XCTAssertEqual(client.expireDue(), 1)
+        let survivor = try XCTUnwrap(client.tabs().first)
+        XCTAssertFalse(survivor.hasPage, "the page expired")
+        XCTAssertNil(survivor.pageDayOffset, "no page, no day")
+        XCTAssertFalse(survivor.pageHasContent)
+    }
+
     func testAUserSetNameSticksAcrossASyncAndOutlivesThePage() throws {
         let client = CompanionClient()
         let tabID = client.newTab()

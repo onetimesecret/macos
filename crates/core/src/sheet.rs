@@ -581,6 +581,40 @@ impl Sheet {
     pub fn created_wall_ms(&self) -> u64 {
         self.created_wall_ms
     }
+
+    /// Whether this page holds anything at all: one line of ink that is
+    /// more than whitespace, or one sealed chip.
+    ///
+    /// This is the bar the ledger uses. `SheetStore::entomb` asks it
+    /// whether a dying page did anything worth recording, so the core
+    /// has one definition of holding something rather than two that can
+    /// drift apart, and a surface asking the same question of a live
+    /// page gets the answer the audit trail would have given at its
+    /// death. A page carrying nothing but a stray newline is
+    /// deliberately below the bar: whitespace is not a thing a person
+    /// did.
+    #[must_use]
+    pub fn has_content(&self) -> bool {
+        !self.chips.is_empty()
+            || self.segments.iter().any(|segment| match segment {
+                Segment::Ink(text) => !text.trim().is_empty(),
+                Segment::Chip(_) => false,
+            })
+    }
+
+    /// The local day this page was born on, through the offset the
+    /// caller's clock reports: [`local_day`] over the page's own stamp.
+    ///
+    /// The page's stamp and never the slot's, because a slot outlives
+    /// every page that stands in it. `SheetStore::open_page` mints
+    /// today's page into a tab opened last week, so the tab's birthday
+    /// would file a page typed this morning under a day nobody was
+    /// here. This one dies with the page, which is exactly the life a
+    /// reading of "which day is this page on" should have.
+    #[must_use]
+    pub fn local_day(&self, utc_offset_seconds: i32) -> i64 {
+        local_day(self.created_wall_ms, utc_offset_seconds)
+    }
 }
 
 /// A tab: the durable slot a page stands in. Not `Debug` — it may hold
@@ -703,6 +737,39 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
         .map(|line| line.chars().take(TITLE_CAP).collect())
 }
 
+/// The local day a wall-clock stamp falls on: days since the Unix
+/// epoch, counted after the stamp has been folded through the offset
+/// the caller's clock reports. The divide is `div_euclid` rather than a
+/// truncating one because the local reading can be negative even though
+/// the stamp cannot — the first hours of 1970 read from a zone west of
+/// UTC — and truncation would round those towards zero and call them
+/// the first of January.
+///
+/// This is the crate's only bucketing arithmetic, and it is
+/// [`placeholder_title`]'s: the `MMDD` half of the stamp a tab renders
+/// comes from this number, so the four digits on a label and the day
+/// anything else files that page under cannot disagree. Anyone
+/// grouping by day reads this rather than writing the divide again.
+///
+/// The offset is read at render time and applied to an old stamp,
+/// never stored beside it. A page staged within an hour of local
+/// midnight can therefore bucket differently after a daylight-saving
+/// change or a flight — the property [`placeholder_title`] already had,
+/// and the one its tests already pin. Storing a day index at creation
+/// would settle it, at the price of a field in the sealed snapshot and
+/// a durable answer to a question that is only ever asked at read time.
+#[must_use]
+pub fn local_day(wall_ms: u64, utc_offset_seconds: i32) -> i64 {
+    local_seconds(wall_ms, utc_offset_seconds).div_euclid(86_400)
+}
+
+/// Seconds since the Unix epoch in the caller's local time: the one
+/// conversion both the day and the clock face are read out of.
+fn local_seconds(wall_ms: u64, utc_offset_seconds: i32) -> i64 {
+    let epoch_seconds = i64::try_from(wall_ms / 1000).unwrap_or(i64::MAX);
+    epoch_seconds.saturating_add(i64::from(utc_offset_seconds))
+}
+
 /// `MMDD-HHmm` in the user's local time, from the tab's creation
 /// stamp. The common case: a slot nobody has named holding a page whose
 /// first line is still empty.
@@ -710,10 +777,8 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
 /// The word "untitled" no longer exists in the core: an unnamed tab
 /// reads as `MMDD-HHmm`, which tells the user when they opened it.
 pub(crate) fn placeholder_title(wall_ms: u64, utc_offset_seconds: i32) -> String {
-    let epoch_seconds = i64::try_from(wall_ms / 1000).unwrap_or(i64::MAX);
-    let local_seconds = epoch_seconds.saturating_add(i64::from(utc_offset_seconds));
-    let days = local_seconds.div_euclid(86_400);
-    let secs_of_day = local_seconds.rem_euclid(86_400);
+    let days = local_day(wall_ms, utc_offset_seconds);
+    let secs_of_day = local_seconds(wall_ms, utc_offset_seconds).rem_euclid(86_400);
     let (month, day) = civil_month_day(days);
     let hour = secs_of_day / 3_600;
     let minute = (secs_of_day % 3_600) / 60;
@@ -901,6 +966,7 @@ pub(crate) fn human_bytes(len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clock::{Clock, ManualClock};
 
     fn face(text: &str) -> (String, String) {
         let (excerpt, label, _) = text_face(text);
@@ -1182,6 +1248,152 @@ mod tests {
         assert_eq!(placeholder_title(1_709_210_040_000, 0), "0229-1234");
         // 2000-03-01T00:00:00Z, just past a century leap year.
         assert_eq!(placeholder_title(951_868_800_000, 0), "0301-0000");
+    }
+
+    #[test]
+    fn the_placeholder_stamp_did_not_move() {
+        // Every case pinned above, restated after the day arithmetic
+        // came out of `placeholder_title` and into `local_day`. The
+        // label is on screen, so the rendering has to be what it was.
+        assert_eq!(placeholder_title(STAMP, 0), "1114-2213");
+        assert_eq!(placeholder_title(STAMP, -8 * 3600), "1114-1413");
+        assert_eq!(placeholder_title(STAMP, 2 * 3600), "1115-0013");
+        assert_eq!(placeholder_title(0, 0), "0101-0000");
+        assert_eq!(placeholder_title(1_709_210_040_000, 0), "0229-1234");
+        assert_eq!(placeholder_title(951_868_800_000, 0), "0301-0000");
+
+        // And the agreement is now structural rather than a
+        // coincidence of two spellings: the four digits the label opens
+        // with are the calendar reading of the very day `local_day`
+        // counts, for every case above.
+        for (wall, offset) in [
+            (STAMP, 0),
+            (STAMP, -8 * 3600),
+            (STAMP, 2 * 3600),
+            (0, 0),
+            (1_709_210_040_000, 0),
+            (951_868_800_000, -8 * 3600),
+        ] {
+            let (month, day) = civil_month_day(local_day(wall, offset));
+            assert!(
+                placeholder_title(wall, offset).starts_with(&format!("{month:02}{day:02}")),
+                "the label and the bucket disagree at {wall} offset {offset}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_page_born_before_local_midnight_is_a_different_day_from_one_after() {
+        // [`STAMP`] is 2023-11-14T22:13:20Z, an hour and three quarters
+        // short of midnight.
+        let hour = 60 * 60 * 1000;
+        let eve = local_day(STAMP, 0);
+        assert_eq!(local_day(STAMP + hour, 0), eve, "23:13 is still the 14th");
+        assert_eq!(
+            local_day(STAMP + 2 * hour, 0),
+            eve + 1,
+            "00:13 is the 15th, and one day is one day"
+        );
+        // Which is the boundary the label crosses too.
+        assert_eq!(placeholder_title(STAMP + hour, 0), "1114-2313");
+        assert_eq!(placeholder_title(STAMP + 2 * hour, 0), "1115-0013");
+    }
+
+    #[test]
+    fn the_day_index_follows_the_offset_the_clock_reports() {
+        let utc = local_day(STAMP, 0);
+        // Two hours east of UTC, 22:13 has already crossed midnight.
+        assert_eq!(local_day(STAMP, 2 * 3600), utc + 1);
+        // Eight hours west it is the middle of the afternoon.
+        assert_eq!(local_day(STAMP, -8 * 3600), utc);
+        // And a stamp just past midnight UTC is still yesterday there:
+        // the negative offset is the case a truncating divide would get
+        // wrong for any stamp before the epoch, and the case a shell
+        // asking a system time zone would get wrong at the edges.
+        let after_midnight = STAMP + 4 * 60 * 60 * 1000; // 2023-11-15T02:13:20Z
+        assert_eq!(local_day(after_midnight, 0), utc + 1);
+        assert_eq!(local_day(after_midnight, -8 * 3600), utc);
+
+        // The offset a store hands out is a clock's answer, not a
+        // constant, and this is the pair a caller reads it as.
+        let clock = ManualClock::new().with_local_offset_seconds(2 * 3600);
+        assert_eq!(
+            local_day(clock.wall_ms(), clock.local_offset_seconds()),
+            utc + 1
+        );
+    }
+
+    #[test]
+    fn a_local_reading_before_the_epoch_rounds_the_way_the_calendar_does() {
+        // The stamp cannot be negative, but the local reading can: the
+        // first hours of 1970 seen from eight hours west of UTC are the
+        // last day of 1969. A truncating divide would round that
+        // towards zero and call it the first of January, and the label
+        // beside it already says otherwise.
+        assert_eq!(local_day(0, -8 * 3600), -1);
+        assert_eq!(placeholder_title(0, -8 * 3600), "1231-1600");
+        assert_eq!(local_day(0, 0), 0);
+    }
+
+    #[test]
+    fn a_stamp_near_midnight_buckets_by_the_offset_it_is_read_with() {
+        // 2023-11-14T23:30:00Z. Nothing about the page changes here;
+        // the offset does, which is what a daylight-saving change does
+        // to a page already staged. The bucket moves with it, and so
+        // does the label — the property the placeholder always had.
+        let near_midnight = 1_700_004_600_000;
+        assert_eq!(
+            local_day(near_midnight, 3600),
+            local_day(near_midnight, 0) + 1
+        );
+        assert_eq!(placeholder_title(near_midnight, 0), "1114-2330");
+        assert_eq!(placeholder_title(near_midnight, 3600), "1115-0030");
+    }
+
+    #[test]
+    fn a_pages_day_is_its_own_and_not_the_slots() {
+        // The slot was opened three days before the page standing in
+        // it, which is every reused tab: `open_page` mints today's page
+        // into a slot that is as old as it is.
+        let day = 24 * 60 * 60 * 1000;
+        let mut tab = unnamed_tab(None);
+        tab.page = Some(bare_sheet(STAMP + 3 * day));
+        let page = tab.page().expect("the slot holds one");
+        assert_eq!(tab.created_wall_ms(), STAMP);
+        assert_eq!(page.local_day(0), local_day(STAMP, 0) + 3);
+        assert_eq!(
+            tab.label(0),
+            "1114-2213",
+            "and the label still reads the slot's stamp, which is the point of the split"
+        );
+    }
+
+    #[test]
+    fn whitespace_alone_is_not_content() {
+        assert!(!bare_sheet(STAMP).has_content(), "an untouched page");
+        for blank in ["", "\n", "   ", " \t\n \r\n"] {
+            let mut sheet = bare_sheet(STAMP);
+            sheet.segments = vec![Segment::Ink(blank.into())];
+            assert!(
+                !sheet.has_content(),
+                "{blank:?} is not something a person did"
+            );
+        }
+        // One typed character is, wherever the blank lines fall.
+        let mut sheet = bare_sheet(STAMP);
+        sheet.segments = vec![Segment::Ink("\n\n  rotate the key  \n".into())];
+        assert!(sheet.has_content());
+    }
+
+    #[test]
+    fn a_chip_with_no_ink_is_content() {
+        let mut sheet = bare_sheet(STAMP);
+        sheet.chips = vec![SealedChip::text(ChipId(1), "one secret")];
+        sheet.segments = vec![Segment::Ink("   ".into()), Segment::Chip(ChipId(1))];
+        assert!(
+            sheet.has_content(),
+            "a page holding a sealed chip did something, whatever was typed around it"
+        );
     }
 
     #[test]

@@ -59,6 +59,35 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
     public let holdRemainingMs: UInt64
     public let chipCount: UInt64
     public let lastHour: Bool
+    /// Whether the page holds anything at all: ink that is more than
+    /// whitespace, or at least one sealed chip. False whenever
+    /// `hasPage` is false.
+    ///
+    /// Answered core-side because it is the same bar the ledger applies
+    /// when it decides whether a dying page did anything worth
+    /// recording, and a second spelling of "empty" up here would
+    /// eventually disagree with the audit trail. It arrives as a
+    /// boolean and never as text: nothing needs a document read out to
+    /// know whether a page has something on it.
+    public let pageHasContent: Bool
+    /// Which local day the PAGE was born on, counted relative to today:
+    /// 0 for a page made today, -1 for one made yesterday, and nil when
+    /// the slot holds no page — a slot with nothing in it is on no day,
+    /// so it follows `pageID`'s null rather than the clock fields' zero.
+    ///
+    /// The stamp behind it is the page's own and not the tab's. A slot
+    /// outlives every page that stands in it, so opening a page in a
+    /// tab from last week would file this morning's typing under a day
+    /// nobody was here; this one dies with the page it describes. The
+    /// core buckets it with the same UTC offset the "MMDD-HHmm"
+    /// placeholder is rendered from, so a tab's stamp and the day it
+    /// sorts into cannot disagree at a daylight-saving change.
+    ///
+    /// It arrives already relative, which is why nothing up here has to
+    /// know what today is or be woken when it changes: the core
+    /// recomputes it on every read, so the ordinary cosmetic redraw
+    /// rolls the reading over at local midnight on its own.
+    public let pageDayOffset: Int?
 
     enum CodingKeys: String, CodingKey {
         case id, title, paused
@@ -74,6 +103,8 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
         case holdRemainingMs = "hold_remaining_ms"
         case chipCount = "chip_count"
         case lastHour = "last_hour"
+        case pageHasContent = "page_has_content"
+        case pageDayOffset = "page_day_offset"
     }
 }
 
