@@ -168,11 +168,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the days is not yours to shuffle. If it is holding pages back —
   live pages with nothing written on them, which get no day of their own
   — it says how many at the foot of the column and points at this
-  toggle, rather than letting a full pad look broken. **A limit worth
-  knowing before you turn it on:** while the mode is on, renaming a tab,
-  holding its clock, shortening its countdown and closing it are
-  reachable only by turning it off again. Those four move onto each
-  page's own gutter when the contiguous scroll lands.
+  toggle, rather than letting a full pad look broken.
+
+  Beside that column the days read as one page torn along a
+  perforation. Today is at the top and time runs downward: your writing
+  from today, then a labelled tear, then yesterday's, and so on back
+  through whatever is still alive, all in one scroll rather than one
+  page at a time. The tear is drawn and never typed — nothing separating
+  two days is a character in anybody's document, so scrolling past a day
+  cannot change it — and a second page written on the same day sits
+  under a plain hairline rather than a tear, because that is one day's
+  writing and not a jump in time. Beside each tear is the day's own
+  gutter: what the page is called, how long it has left, and a
+  right-click menu with rename, hold the clock, shorten the countdown and
+  close, aimed at that page's own slot. That is where the four verbs the
+  strip used to carry now live, which is also why a day holding two
+  pages can still say which of them you meant. Clicking into an older
+  day takes you there with the caret where you clicked. Only the day you
+  are on can be typed into; the others are there to read. Opening the pad
+  and every summon put you back on today, instantly and with nothing
+  animating anywhere, and between those moments the scroll is yours —
+  including when a new day arrives above what you are reading, which
+  moves the page under you by exactly nothing. Long lines wrap while the
+  mode is on, whatever ⌥Z last decided, and ⌥Z goes back to deciding it
+  the moment the mode is off.
+
+  Underneath, nothing about a page moved. The sealed file's format did
+  not change by a byte, no new call was added to the seam, and the one
+  editor the app has ever had is still the only thing on screen you can
+  type into: it is carried between the days rather than rebuilt for
+  them, so the caret, a half-finished input-method composition and each
+  page's own undo history all survive crossing a tear — and ⌘Z after
+  clicking into an older day rewrites that day and cannot reach the one
+  above it. **What the mode deliberately does not do:** it will not
+  reorder anything, it will not rename or close a day from the column
+  beside it, it will not police one page per day, it will not create
+  today's page for you, and it leaves no marker where a day whose page
+  ran out used to be — the labels are relative, so the jump from -1d to
+  -3d says it by itself.
 
 - **The keyboard is a file now** (issue #76,
   `docs/development/about-the-keymap.md`). What each chord does used to

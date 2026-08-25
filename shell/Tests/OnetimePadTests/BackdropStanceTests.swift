@@ -281,6 +281,22 @@ final class BackdropStanceTests: XCTestCase {
         )
     }
 
+    // MARK: What a raise is for, which is not the same on both routes
+
+    /// The roll goes back to today when the user names the surface, and
+    /// stays where the reader left it when they merely name the app
+    /// (issue #79, ADR-0020 item 13). A ⌘Tab return re-keys the card
+    /// without being a summon, and moving the roll under somebody who
+    /// came back to the sentence they were reading is the one thing the
+    /// anchor must never do.
+    func testOnlyASummonTakesTheRollBackToToday() {
+        XCTAssertTrue(BackdropModel.anchorsOnToday(raise: .summon))
+        XCTAssertFalse(
+            BackdropModel.anchorsOnToday(raise: .activation),
+            "⌘Tab, the app switcher and the Dock name the app, not this surface"
+        )
+    }
+
     // MARK: The desktop level is genuinely below normal windows
 
     func testDesktopLevelSitsBelowNormalWindows() {

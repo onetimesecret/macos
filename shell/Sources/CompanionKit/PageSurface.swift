@@ -39,6 +39,17 @@ public struct PageContentView: View {
     public var body: some View {
         if model.showingLedger {
             LedgerView(entries: model.ledgerEntries)
+        } else if model.showsTimeUnits {
+            // The days, as one roll (issue #79). It answers for all
+            // three of the cases below at once — the selected page is
+            // the region the one editor is standing in, the older days
+            // are renderings around it, and an empty Day 0 carries the
+            // same empty state with the same two grants — so it takes
+            // the whole branch rather than sitting inside one of them.
+            // The mode is off by default and exclusive with the strip,
+            // so with it off nothing here is reached and the three
+            // branches below are the surface, unchanged.
+            DayScrollView(model: model, readOnly: readOnly, emptyHint: emptyHint)
         } else if let page = model.selectedPageID {
             // No `.id(page)` on the editor, and the omission is
             // contract, not oversight (ADR-0006): one editor persists

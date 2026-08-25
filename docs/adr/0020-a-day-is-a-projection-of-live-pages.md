@@ -168,6 +168,19 @@ of the strip's four verbs and says so in its own caption, which is the
 honest cost of shipping this half first. Items 13 and 14 are still
 work.
 
+**Landed 2026-08-25, fifth pass.** Items 13 and 14 are in the tree, and
+with them everything this decision asked for. The roll is the branch the
+whole stack existed to make revertible, and the claim it has to survive
+review on is the one this ADR rests on: there is still exactly one
+editor. It is built by the shipped factory, driven by the editor's own
+coordinator, and it is a permanent child of the stack whose frame origin
+is all that moves at a day switch, so nothing resigns first responder
+crossing a perforation. Every other visible day is a rendering over a
+storage the model never learns of, which is what keeps one view — and
+therefore one layout manager — per storage true by construction rather
+than by care. Nothing is outstanding now except the dogfood window this
+decision's status waits on.
+
 1. `pub fn local_day(wall_ms: u64, utc_offset_seconds: i32) -> i64`,
    hoisted out of the arithmetic already inside `placeholder_title`
    (crates/core/src/sheet.rs:712-721, the
@@ -356,11 +369,78 @@ work.
     ADR-0006 contract comment about the absent `.id(page)` intact. Every
     path that moves the editor between day regions goes through the
     focus law's refocus (:1576, private today).
+
+    **Landed**, in shell/Sources/CompanionKit/DayScrollView.swift:
+    `DayScrollView` over `DayStackView`, with `DayHeaderView`,
+    `QuietPageView` and `EmptyTodayView`. Names and no line numbers for
+    that file, deliberately: its numbers went stale twice inside the
+    branch that wrote them, and again when the review's fixes landed, so
+    a number here is a claim about a moment rather than an address. The
+    renderings are `PageModel.quietRendering(for:)` over the
+    `quietRenderings` map, pruned in `refresh()` on the same live-page
+    set as `storages` and `undoManagers`, all in
+    shell/Sources/CompanionKit/PageModel.swift;
+    `CompanionClient.documentRuns(sheet:)` is at
+    shell/Sources/CompanionKit/CompanionClient.swift:703.
+    `PageContentView` branches at
+    shell/Sources/CompanionKit/PageSurface.swift:42 with the ADR-0006
+    contract comment about the absent `.id(page)` intact below it, and
+    `refocusEditorIfKeyed` is internal now and called from the one path
+    that moves the editor between days
+    (`DayStackView.settleEditor(on:)`). The line numbers in the paragraph
+    above name the tree this decision was written against, three branches
+    ago.
+
+    Four things came out of the work the item had not named. The
+    rendering cache needs an invalidation as well as a prune
+    (`PageModel.invalidateQuietRendering(for:)`): a cached day is sound
+    only while the day cannot change, so the model drops a page's
+    reading wherever that page's document moves — the accepted arm of
+    `applyOps`, the accepted arm of `syncDocument`, and
+    `removeChipFromDocument` — and the roll re-reads a region whose
+    rendering the model rebuilt. Invalidating on the editor's way past
+    alone was the first version of this, and the review of this stack
+    found it wrong on four paths at once: an edit made with the strip
+    showing, the pass that *builds* the editor (the factory sets
+    `currentSheet` itself, so the swap is never taken), a chip burned out
+    of a day the editor had left, and a composition still in flight as
+    the editor left it. A cache invalidated by a view's choreography is
+    correct only on the paths somebody thought of. A pad with no live page
+    anywhere needs the editor *parked* rather than re-parented
+    (`DayStackView.parkEditor()`) — a fresh empty storage, no height, and
+    the model's weak handle dropped — because a permanent child must not
+    go on showing a page that expired. A day holding two pages needed a
+    third mark, the hairline, since a tear between them would have said
+    "a day passed" and lied. And the summon's re-anchor is
+    `PageModel.anchorOnToday()` behind the `onAnchorToday` closure,
+    called from `BackdropModel.raise(_:)` — but only for a
+    `BackdropRaise.summon`, and deliberately not for an activation:
+    `raise` is also what `applicationDidBecomeActive` calls, so a ⌘Tab
+    return re-keys the card without being a summon and must leave the
+    roll where the reader left it. Which raises anchor is
+    `BackdropModel.anchorsOnToday(raise:)`, a pure function with a test.
+
+    One thing was spent that branch 5 had banked:
+    shell/Sources/CompanionKit/TabStripView.swift takes one diff after
+    all. The rename alert moved out of `SheetTab`'s private method into a
+    shared `TabRenamePrompt` (:362), because the roll's gutter offers the
+    same verb and the alert's text is a rule about what a tab name is.
+    `GaugeBar` (:459) and `EmptyRule` (:440) are still used where they
+    stand.
 14. A hardware procedure under docs/qa/verification-procedures/, in the
     shape of the existing ones: midnight arriving while the card rests, a
     middle day expiring, summoning after scrolling into history, undo
     after clicking into an older day, toggling both ways with content on
     screen, VoiceOver down the rail, and reduced motion on.
+
+    **Landed**, as
+    docs/qa/verification-procedures/vertical-time-tabs.md, with two
+    cases the item had not listed — typing at the bottom of a long Day 0,
+    which is the path that re-measures a region on every keystroke, and a
+    pad full of blank old pages, which is the instrument for the content
+    predicate's own eject trigger. It opens with staging, because the
+    mode shows only the days the rungs let live and a pad re-rung to 8h
+    reads as broken when it is merely empty.
 
 ## Consequences
 

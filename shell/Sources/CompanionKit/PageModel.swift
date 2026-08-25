@@ -404,10 +404,27 @@ public final class PageModel: ObservableObject {
 
     /// ⌥Z. A page whose lines all fit shows no difference, so the toggle
     /// says what it did rather than leaving the keystroke looking dead.
+    ///
+    /// Not reachable while the days are down the side; see
+    /// `wrapIsFixedNotice` and the `.editorToggleWrap` arm of `perform`.
     public func toggleWrap() {
         wrapsLines.toggle()
         flash(wrapsLines ? "long lines wrap" : "long lines run on")
     }
+
+    /// What ⌥Z says instead, while the days are down the side (issue
+    /// #79).
+    ///
+    /// The roll wraps every day whatever the preference says: a line
+    /// that ran off the side of one day would run off the side of the
+    /// roll, and a roll scrolling in two directions would have no honest
+    /// anchor. So the chord cannot do the one thing it is for, and both
+    /// of the alternatives to saying so are worse than a sentence — a
+    /// dead key, or the stored preference rewritten under a surface that
+    /// will not honour it, which hands horizontal mode back unwrapped
+    /// for a keystroke whose effect the user was never shown.
+    public static let wrapIsFixedNotice =
+        "long lines always wrap while the time tabs are showing"
 
     /// The rule, as a pure decision on the two facts a launch knows, so
     /// the release branch is testable from a debug test binary: a debug
@@ -465,6 +482,18 @@ public final class PageModel: ObservableObject {
     /// Settings window, the surface merely asks for it).
     public var onOpenSettings: (() -> Void)?
 
+    /// Set by the roll while it is mounted: put the clip back on Day 0
+    /// (issue #79). Nil in horizontal mode, where there is one page in
+    /// the clip and no roll to anchor.
+    ///
+    /// A closure rather than a Combine sink, for what the surface has to
+    /// do with it. Re-anchoring is one instant clip move at one moment —
+    /// a summon — and a publisher would mean a subscription to keep
+    /// alive, a value to invent for it, and an anchor that could fire on
+    /// a pass nobody asked for. The mounted surface hands the model a
+    /// way to reach it and takes it back on dismantle.
+    public var onAnchorToday: (() -> Void)?
+
     /// What the keyboard does, resolved once at launch from the bundled
     /// default keymap and whatever override the user wrote
     /// (`Keymap.load(userOverride:)`). Read by the surface, which
@@ -504,6 +533,30 @@ public final class PageModel: ObservableObject {
     /// comes back. Pruned with the storages; cleared for a page whose
     /// storage is changed behind the editor's back.
     private var undoManagers: [UInt64: UndoManager] = [:]
+
+    /// Each visible day's page as the roll renders it while the editor
+    /// is standing somewhere else (issue #79): the same ink and the same
+    /// chip faces, in an attributed string the quiet regions copy into
+    /// their own private storages.
+    ///
+    /// Keyed by page identity and pruned with `storages`, for the same
+    /// reason. Held here rather than in the view because the roll
+    /// rebuilds its regions whenever the day model moves and a rendering
+    /// rebuilt per pass would ask the core for every visible day's
+    /// document on every keystroke.
+    ///
+    /// Sound to cache because every path that changes a page's document
+    /// drops that page's entry on its way through
+    /// (`invalidateQuietRendering(for:)`), so the rendering a page comes
+    /// back with is built after the last edit it took rather than before
+    /// the first. The invalidation is at the mutation — an accepted op
+    /// batch, a wholesale mirror, a chip burned out of a document — and
+    /// deliberately not at the roll's swap, because a page can change
+    /// while the roll is not the surface on screen at all, or while it
+    /// is and the editor is standing on another day. A cache invalidated
+    /// by a view's choreography is a cache that is correct only on the
+    /// paths somebody thought of.
+    private var quietRenderings: [UInt64: NSAttributedString] = [:]
 
     /// The slot a selection gesture last minted a page into, and the
     /// monotonic reading at which it did. Read by `pause` alone, so a
@@ -1330,6 +1383,11 @@ public final class PageModel: ObservableObject {
         // attachment character (ADR-0009, ADR-0017 item 9).
         storages = storages.filter { livePages.contains($0.key) }
         undoManagers = undoManagers.filter { livePages.contains($0.key) }
+        // The roll's renderings of the days the editor is not standing
+        // on go the same way and on the same set. They are plaintext of
+        // a page, so an entry outliving its page would be exactly the
+        // ink an expiry is supposed to take away.
+        quietRenderings = quietRenderings.filter { livePages.contains($0.key) }
         selection = Self.reconciledSelection(current: selection, live: tabs.map(\.id))
         // With the days down the side, a slot holding no page is not on
         // the rail at all, so a selection left on one would be pointing
@@ -1445,6 +1503,66 @@ public final class PageModel: ObservableObject {
         storages[id] = created
         return created
     }
+
+    /// How a page reads on the roll while the editor is somewhere else
+    /// (issue #79), built on first use from the core's own document.
+    ///
+    /// Deliberately **not** `storage(for:)`. The map above is the
+    /// editor's, and a quiet region borrowing an entry from it would put
+    /// two layout managers on one storage, hand `shedLayoutManagers` a
+    /// manager to rip out from under a region that is still on screen,
+    /// and enter the roll into the parity assertion that compares one
+    /// storage to one core document. A rendering of its own keeps every
+    /// storage in the app at exactly one view and exactly one manager,
+    /// which is the invariant ADR-0006 rests on stated as a property of
+    /// the object graph rather than as a rule to remember.
+    ///
+    /// It is a rendering and not an editor: the roll copies it into a
+    /// storage no delegate is watching, so nothing it holds can emit an
+    /// op, and the chips in it carry the same non-secret face they
+    /// carry on the live page and no bytes at all.
+    public func quietRendering(for id: UInt64) -> NSAttributedString {
+        if let existing = quietRenderings[id] { return existing }
+        let rendered = NSMutableAttributedString()
+        for run in client.documentRuns(sheet: id) {
+            switch run {
+            case .ink(let text):
+                rendered.append(NSAttributedString(
+                    string: text,
+                    attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]
+                ))
+            case .chip(let info):
+                rendered.append(NSAttributedString(attachment: ChipAttachment(info: info)))
+            }
+        }
+        quietRenderings[id] = rendered
+        return rendered
+    }
+
+    /// Forget how a page reads quietly, because the page has changed.
+    ///
+    /// Called from every path in this file that moves a page's document
+    /// — an accepted op batch, a wholesale mirror, a chip burned out of
+    /// one — and by the roll as the editor lands on a page, which is the
+    /// moment a page starts being able to change. Without it this cache
+    /// would go on holding the page as it stood before, so the day the
+    /// user just wrote on would come back, when they moved to another
+    /// one, showing what it said before they arrived.
+    ///
+    /// Dropping the entry is the whole of it: the next reader rebuilds
+    /// from the core, and the roll notices because the object it gets
+    /// back is not the one its region was seeded from.
+    public func invalidateQuietRendering(for id: UInt64) {
+        quietRenderings[id] = nil
+    }
+
+    /// Which pages the editor has a storage for.
+    ///
+    /// A reading seam for the tests that assert the roll never borrows
+    /// one (issue #79): every quiet day renders over a storage of its
+    /// own, and asking `storage(for:)` whether a page has one would make
+    /// one, which is the very thing under test.
+    var pagesWithStorage: Set<UInt64> { Set(storages.keys) }
 
     /// The page's undo history, created on first use. The editor asks
     /// its delegate for a manager on every undo touch, so history
@@ -1763,7 +1881,14 @@ public final class PageModel: ObservableObject {
     /// hence the turn's delay (ADR-0005's timing discipline). An
     /// unkeyed window is left alone — focusing would be *taking*, and
     /// the law only ever accepts.
-    private func refocusEditorIfKeyed() {
+    ///
+    /// Internal rather than private since the roll (issue #79) moves the
+    /// one editor between days without a SwiftUI mount changing, so the
+    /// surface has to ask for this itself where `select` would otherwise
+    /// have asked on its behalf. Focus is law (ADR-0005): every path
+    /// that changes what is mounted, or where the mounted thing stands,
+    /// comes through here.
+    func refocusEditorIfKeyed() {
         guard holdsKeys else { return }
         focusEditorWhenMounted(in: nil, requireKeys: true)
     }
@@ -1947,6 +2072,32 @@ public final class PageModel: ObservableObject {
             return
         }
         newPage()
+    }
+
+    /// A summon: put the surface back on today (issue #79).
+    ///
+    /// Day 0 is the top of the roll, and between summons the scroll is
+    /// free — a reader can sit in Day -3 as long as they like. Coming
+    /// forward is the moment that changes: the pad is furniture (doc 03
+    /// section 2), and a pad untouched since yesterday should present
+    /// today rather than wherever it was last left. So the clip goes
+    /// back to the origin, instantly and unanimated, and when today
+    /// already holds a page the selection goes with it.
+    ///
+    /// It cannot mint. The selection arm runs only when today's day
+    /// already holds a live page, and `select(_:)` cannot open a page
+    /// into a slot that holds one; a summon onto an empty Day 0 lands on
+    /// the empty state with its Return grant intact, which is exactly
+    /// the state ADR-0017 describes for a selected tab whose page
+    /// expired. Nothing happens at all in horizontal mode, which has one
+    /// page in its clip and no roll to anchor.
+    public func anchorOnToday() {
+        guard showsTimeUnits else { return }
+        if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first,
+           tab != selection {
+            select(tab)
+        }
+        onAnchorToday?()
     }
 
     /// The empty state's create-and-focus, shared by the third and
@@ -2283,6 +2434,12 @@ public final class PageModel: ObservableObject {
     public func applyOps(sheet: UInt64, opsJSON: String) {
         let accepted = client.applyOps(sheet: sheet, json: opsJSON)
         if accepted {
+            // The page just changed, so how it reads when it is quiet
+            // changed with it (issue #79). Here rather than at the
+            // roll's swap: this is the path a keystroke takes in either
+            // mode, and the page it names is not always a page the roll
+            // is on — or a page any roll is mounted over.
+            invalidateQuietRendering(for: sheet)
             markDirty()
             refresh()
         } else {
@@ -2314,7 +2471,12 @@ public final class PageModel: ObservableObject {
         if !accepted {
             logger.error("the recovery mirror itself was refused; core and editor disagree")
         }
-        if accepted { markDirty() }
+        if accepted {
+            // A wholesale rewrite is the largest change a page can take,
+            // so the roll's reading of it is the most wrong (issue #79).
+            invalidateQuietRendering(for: sheet)
+            markDirty()
+        }
         refresh()
     }
 
@@ -2477,7 +2639,15 @@ public final class PageModel: ObservableObject {
     /// so it runs under the emission guard rather than travelling back
     /// as an op.
     private func removeChipFromDocument(_ chipId: UInt64) {
+        // Which page owns the chip has to be asked before the delete
+        // takes the answer away, and asked of the core rather than of
+        // the storages below (issue #79). A chip can be standing on a
+        // day the editor has never visited: that page has a rendering on
+        // the roll and no storage at all, so the loop would find nothing
+        // and the burned chip would go on being drawn there.
+        let host = livePageIDs.first { chipIds(onSheet: $0).contains(chipId) }
         _ = client.deleteChip(id: chipId)
+        if let host { invalidateQuietRendering(for: host) }
         for (sheet, storage) in storages {
             var found: NSRange?
             storage.enumerateAttribute(
