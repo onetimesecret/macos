@@ -357,13 +357,13 @@ final class DayScrollProjectionTests: XCTestCase {
             "the chip never reached the day's rendering"
         )
 
-        // The state a promoted chip leaves: a receipt in hand and the
+        // The state a concealed chip leaves: a receipt in hand and the
         // offer to be rid of the local copy, taken while the editor is
         // standing on another day.
-        var draft = PromotionDraft(target: .chip(chip.chipId), ttlSecs: 3600)
+        var draft = ConcealDraft(target: .chip(chip.chipId), ttlSecs: 3600)
         draft.receiptId = "receipt-for-the-chip"
-        model.promotion = draft
-        model.burnPromotedCopy()
+        model.concealDraft = draft
+        model.burnConcealedCopy()
 
         roll.stack.update(
             projection: spreadOverDays(model, selecting: yesterday),

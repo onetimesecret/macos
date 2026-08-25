@@ -933,14 +933,14 @@ public struct InkEditorView: NSViewRepresentable {
             copy.target = self
             copy.representedObject = chipID as NSNumber
             menu.addItem(copy)
-            let promote = NSMenuItem(
-                title: "Promote to one-time link…",
-                action: #selector(promoteChip(_:)),
+            let conceal = NSMenuItem(
+                title: "Conceal into a one-time link…",
+                action: #selector(concealChip(_:)),
                 keyEquivalent: ""
             )
-            promote.target = self
-            promote.representedObject = chipID as NSNumber
-            menu.addItem(promote)
+            conceal.target = self
+            conceal.representedObject = chipID as NSNumber
+            menu.addItem(conceal)
             let remove = NSMenuItem(
                 title: "Remove chip",
                 action: #selector(removeChip(_:)),
@@ -958,10 +958,10 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// The chip's ↗: open the inline confirmation. The bytes stay
-        /// core-side; promotion moves them core → client → network.
-        @objc private func promoteChip(_ sender: NSMenuItem) {
+        /// core-side; the conceal moves them core → client → network.
+        @objc private func concealChip(_ sender: NSMenuItem) {
             guard let id = (sender.representedObject as? NSNumber)?.uint64Value else { return }
-            model.beginPromotion(.chip(id))
+            model.beginConceal(.chip(id))
         }
 
         @objc private func removeChip(_ sender: NSMenuItem) {

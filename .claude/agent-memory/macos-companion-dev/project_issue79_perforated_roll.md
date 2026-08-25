@@ -129,6 +129,45 @@ procedure.
   one-sentence body saying what is being carried up plus the two
   trailers. Use `git merge -m` and write it.
 
+## Taking main through the stack (2026-08-25)
+
+main moved while the six branches were built — the conceal rename
+(#106), ADR-0021 (#113) and the milestone-3 docs restructure (#103) —
+and it came in bottom-up: `origin/main` merged into 79-2, then 79-2 into
+79-3 and so on to the tip. Four of the five conflicts were *adjacency*
+and not disagreement, which is the shape to expect from a rename landing
+under a stack: our new lines sat next to a line main reworded.
+
+- 79-2: `crates/core/src/lib.rs` (one re-export both sides edited —
+  `Promotion`→`Conceal` beside our appended `local_day`),
+  `crates/ffi/src/lib.rs` (our four day-seam tests inserted directly
+  above a doc comment main reworded), `MEMORY.md` (two index entries on
+  one line; conceal above day seam, which keeps the #79 entries
+  contiguous and made every later rung's MEMORY.md merge clean).
+- 79-3: `PageModel.swift` — the `showsTimeUnits` arm of `refresh()` sits
+  immediately above "A promotion whose subject died", now "A conceal".
+- 79-5: `BackdropRootView.swift` — the card's off path is copied out in
+  full *on purpose*, so main's edit inside the original ("Promote and
+  demote must not make the text jump" → "Raising and lowering") had to
+  be taken into the copy or the branch's own "identical by inspection"
+  claim would have been false.
+- 79-4 and the tip merged clean.
+
+**Where the vocabulary had to move, and where it deliberately did not.**
+`DayScrollProjectionTests.swift` used `PromotionDraft`,
+`model.promotion` and `burnPromotedCopy()`; those are now `ConcealDraft`,
+`model.concealDraft` and `burnConcealedCopy()` — a compile error nothing
+on Linux would have caught, so grep the renamed symbols by hand after a
+merge like this. `QuietPageView`'s doc listed "promote" among the verbs
+that arrive with the editor, meaning the exit ramp; it says conceal now.
+But `DayStackView.promote(page:caretAt:)` and the prose about a click
+*promoting a page to the selected one* were left alone: that is the
+"bring forward" sense, ADR-0007 Amendment 3 retires the word only "in
+this sense", and main's own copy of the vertical-time-tabs spec says "a
+click in a quiet region promotes its page". Renaming it would invent
+vocabulary the conceal decision never established and put the code at
+odds with the merged spec.
+
 ## Testing notes
 
 - `DayScrollView.makeRoll(model:coordinator:emptyHint:)` is a static so

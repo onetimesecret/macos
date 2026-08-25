@@ -22,7 +22,7 @@
 //!   Amendment 1).
 //! - **Copy-out**: the core writes the pasteboard itself
 //!   ([`companion_chip_copy_out`]), applying the hygiene contract
-//!   (transient + concealed marks, change-count-guarded clear). The
+//!   (transient + `ConcealedType` marks, change-count-guarded clear). The
 //!   shell never sees the bytes it is copying.
 //! - **The one deliberate ingest-direction entry** is
 //!   [`companion_sheet_seal_text`], the ⌘↩ retrofit: its argument is
@@ -35,7 +35,7 @@
 //! Visible ink crosses freely in both directions
 //! ([`companion_sheet_sync_document`], the ledger) — it renders on
 //! screen, so holding it shell-side breaks no law; the core keeps a
-//! snapshot for tab titles, the ledger, and page promotion.
+//! snapshot for tab titles, the ledger, and concealing a page.
 //!
 //! ## Scheduling, not polling
 //!
@@ -60,9 +60,9 @@
 //! `.xcframework` wraps (`scripts/build-core.sh`). ADR-0003.
 #![allow(unsafe_code)] // A C ABI requires raw pointers; every unsafe fn documents its contract.
 
+mod conceal;
 mod diagnostics;
 mod persist;
-mod promotion;
 
 use diagnostics::diag_fault;
 
@@ -75,8 +75,8 @@ use std::time::Duration;
 
 use companion_credentials::{CredentialStore, credential_store_for, default_credential_store};
 use companion_transport::UreqTransport;
+use conceal::{ConcealOpts, Concealed, Connection, conceal, ladder_snapped_ttl};
 use ots_client::Transport as _;
-use promotion::{Connection, PromoteOpts, Promoted, ladder_snapped_ttl, promote};
 
 use companion_core::{
     ChipId, ChipMeta, DestinationClass, EditOp, LedgerEvent, RestoreError, Segment, Sheet, SheetId,
@@ -121,18 +121,26 @@ impl Board {
     fn put_external(
         &mut self,
         content: PasteboardContent,
-        concealed: bool,
+        nspasteboard_concealed: bool,
         origin: Option<String>,
     ) {
         match self {
-            Board::Memory(pb) => pb.put_external_with_origin(content, concealed, origin),
+            Board::Memory(pb) => {
+                pb.put_external_with_origin(content, nspasteboard_concealed, origin);
+            }
             #[cfg(target_os = "macos")]
             Board::System(pb) => {
                 let (bytes, kind) = match content {
                     PasteboardContent::Text(s) => (s.into_bytes(), ContentKind::Text),
                     PasteboardContent::Image(b) => (b, ContentKind::Image),
                 };
-                pb.write(Zeroizing::new(bytes), kind, WriteOptions { concealed });
+                pb.write(
+                    Zeroizing::new(bytes),
+                    kind,
+                    WriteOptions {
+                        nspasteboard_concealed,
+                    },
+                );
             }
         }
     }
@@ -150,12 +158,12 @@ impl Board {
         }
     }
 
-    /// Whether the current item carries the concealed mark (tests only,
-    /// same reasoning as [`Board::current_is_transient`]).
+    /// Whether the current item carries the `ConcealedType` mark (tests
+    /// only, same reasoning as [`Board::current_is_transient`]).
     #[cfg(test)]
-    fn current_is_concealed(&self) -> bool {
+    fn current_is_nspasteboard_concealed(&self) -> bool {
         match self {
-            Board::Memory(pb) => pb.read().is_some_and(|item| item.concealed),
+            Board::Memory(pb) => pb.read().is_some_and(|item| item.nspasteboard_concealed),
             #[cfg(target_os = "macos")]
             Board::System(_) => false,
         }
@@ -216,8 +224,8 @@ struct Companion {
     store: SheetStore<SystemClock>,
     pasteboard: Board,
     last_write: Option<ChangeCount>,
-    /// Where promotion goes (non-secret). `None` until the shell
-    /// configures a connection; promotion refuses until then.
+    /// Where a conceal goes (non-secret). `None` until the shell
+    /// configures a connection; the conceal action refuses until then.
     connection: Option<Connection>,
     /// Where the API token rests: the macOS Keychain in the app, the
     /// in-memory store in tests and off macOS. The token itself never
@@ -480,7 +488,7 @@ pub unsafe extern "C" fn companion_tab_close(handle: *mut CompanionHandle, tab: 
 /// keeps its name, its rung, its position and its number key. Returns
 /// whether a page by that id was standing.
 ///
-/// Page addressed on purpose. The burn offered after a promotion names
+/// Page addressed on purpose. The burn offered after a conceal names
 /// the content that travelled, not the slot it travelled from, and
 /// closing the tab there would spend an arrangement the gesture never
 /// asked about: only an explicit close and the cap end a tab
@@ -803,7 +811,7 @@ pub unsafe extern "C" fn companion_sheet_seal_from_drag(
 /// Replace a page's document snapshot: a JSON array of runs, in
 /// document order — `{"ink": "text"}` for visible ink, `{"chip": id}`
 /// where a sealed chip sits. The shell owns the live document; this
-/// mirror exists for tab titles, the ledger, and page promotion.
+/// mirror exists for tab titles, the ledger, and concealing a page.
 ///
 /// The snapshot is **authoritative for chip liveness**: a chip of this
 /// sheet the snapshot no longer references was deleted in the editor,
@@ -880,8 +888,9 @@ pub unsafe extern "C" fn companion_sheet_apply_ops(
 // ---------------------------------------------------------------------------
 
 /// Copy a chip's bytes back out: the core writes the pasteboard itself,
-/// marked transient **and concealed** (a chip is sealed by definition),
-/// and remembers the write for [`companion_clear_clipboard_if_ours`].
+/// marked transient **and `ConcealedType`** (a chip is sealed by
+/// definition), and remembers the write for
+/// [`companion_clear_clipboard_if_ours`].
 /// Copy-out does **not** consume the chip — multi-paste is a core
 /// moment. Returns whether the chip existed.
 ///
@@ -907,9 +916,13 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
         ChipMeta::Text { .. } => ContentKind::Text,
         ChipMeta::Image { .. } => ContentKind::Image,
     };
-    let receipt = guard
-        .pasteboard
-        .write(bytes, kind, WriteOptions { concealed: true });
+    let receipt = guard.pasteboard.write(
+        bytes,
+        kind,
+        WriteOptions {
+            nspasteboard_concealed: true,
+        },
+    );
     guard.last_write = Some(receipt);
     guard
         .store
@@ -1147,7 +1160,7 @@ pub unsafe extern "C" fn companion_ledger_clear(handle: *mut CompanionHandle) {
 /// A live page's document, replayed for a shell rebuilding its editor
 /// after a restore: `[{"ink": "…"}, {"chip": {…}}, …]` in document
 /// order, each chip as the same non-secret face the seal routes return
-/// (id, kind, excerpt, size label, promoted) — the boundary law holds:
+/// (id, kind, excerpt, size label, concealed) — the boundary law holds:
 /// ink renders anyway, and a chip crosses as its face, never its bytes.
 /// The caller owns the returned string and must release it with
 /// [`companion_string_free`]. Returns null for an unknown page.
@@ -1182,7 +1195,7 @@ pub unsafe extern "C" fn companion_sheet_document_json(
                     },
                     "excerpt": chip.excerpt(),
                     "size_label": chip.size_label(),
-                    "promoted": chip.promotion().is_some(),
+                    "concealed": chip.conceal().is_some(),
                 }})
             }),
         })
@@ -1990,10 +2003,10 @@ pub unsafe extern "C" fn companion_tab_pause_press(handle: *mut CompanionHandle,
 }
 
 // ---------------------------------------------------------------------------
-// Promotion — the exit ramp, the app's only network action
+// Conceal — the exit ramp, an explicit user action
 // ---------------------------------------------------------------------------
 
-/// Configure where promotion goes. `json` carries the non-secret
+/// Configure where a conceal goes. `json` carries the non-secret
 /// connection config plus, optionally, the API token in transit to the
 /// credential store:
 ///
@@ -2068,7 +2081,7 @@ pub unsafe extern "C" fn companion_connection_configure(
 /// `has_token` is an **existence** check — does the credential store
 /// hold a token — decided without reading the secret. So calling this
 /// at launch to render Settings never provokes the Keychain ACL prompt;
-/// that prompt is reserved for the read a promotion actually needs.
+/// that prompt is reserved for the read a conceal actually needs.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2124,7 +2137,7 @@ pub unsafe extern "C" fn companion_connection_test(handle: *mut CompanionHandle)
         guard.connection.clone()
     };
     let Some(conn) = conn else {
-        return promotion_error("no connection configured");
+        return conceal_error("no connection configured");
     };
     let api = ots_client::Api::new(conn.server_url, Box::new(ots_client::NoAuth));
     let result = match companion_transport::UreqTransport::new().send(api.status_request()) {
@@ -2143,7 +2156,7 @@ pub unsafe extern "C" fn companion_connection_test(handle: *mut CompanionHandle)
     into_c_string(result.to_string())
 }
 
-/// Promote one sealed chip into a one-time link: the ↗ on a chip's
+/// Conceal one sealed chip into a one-time link: the ↗ on a chip's
 /// hover actions. `opts_json` is `{"ttl_secs"?, "passphrase"?,
 /// "recipient"?}` or null (all defaults; TTL defaults to the page's
 /// remaining time snapped **down** the ladder). The sealed bytes travel
@@ -2160,7 +2173,7 @@ pub unsafe extern "C" fn companion_connection_test(handle: *mut CompanionHandle)
 /// `handle` must be a valid handle. `opts_json`, when non-null, must be
 /// a valid, NUL-terminated UTF-8 C string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_chip_promote(
+pub unsafe extern "C" fn companion_chip_conceal(
     handle: *mut CompanionHandle,
     chip: u64,
     opts_json: *const c_char,
@@ -2168,8 +2181,8 @@ pub unsafe extern "C" fn companion_chip_promote(
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
-    let Some(opts) = PromoteOpts::parse(unsafe { cstr(opts_json) }) else {
-        return promotion_error("malformed promotion options");
+    let Some(opts) = ConcealOpts::parse(unsafe { cstr(opts_json) }) else {
+        return conceal_error("malformed conceal options");
     };
     let chip = ChipId::from_raw(chip);
 
@@ -2180,36 +2193,36 @@ pub unsafe extern "C" fn companion_chip_promote(
             return ptr::null_mut();
         };
         let Some(conn) = guard.connection.clone() else {
-            return promotion_error("no connection configured");
+            return conceal_error("no connection configured");
         };
         let holder = guard
             .store
             .sheets()
             .find(|sheet| sheet.chip(chip).is_some());
         let Some(sheet) = holder else {
-            return promotion_error("that content is gone");
+            return conceal_error("that content is gone");
         };
         if matches!(
             sheet.chip(chip).map(companion_core::SealedChip::meta),
             Some(ChipMeta::Image { .. })
         ) {
-            return promotion_error(
+            return conceal_error(
                 "this chip holds an image, which cannot travel as a text secret yet",
             );
         }
         let default_ttl = ladder_snapped_ttl(sheet.remaining(guard.store.now()));
         let Some(bytes) = guard.store.chip_payload(chip) else {
-            return promotion_error("that content is gone");
+            return conceal_error("that content is gone");
         };
         let Ok(text) = std::str::from_utf8(&bytes) else {
-            return promotion_error("this chip is not text");
+            return conceal_error("this chip is not text");
         };
         let payload = Zeroizing::new(text.to_owned());
         (conn, load_token(&*guard.credentials), payload, default_ttl)
     };
     let (conn, token, payload, default_ttl) = staged;
 
-    match promote(
+    match conceal(
         &conn,
         token,
         payload,
@@ -2217,16 +2230,16 @@ pub unsafe extern "C" fn companion_chip_promote(
         default_ttl,
         UreqTransport::new(),
     ) {
-        Ok(promoted) => finish_promotion(handle, promoted, Promotable::Chip(chip)),
-        Err(message) => promotion_error(&message),
+        Ok(concealed) => finish_conceal(handle, concealed, Concealable::Chip(chip)),
+        Err(message) => conceal_error(&message),
     }
 }
 
-/// Promote the whole page: the ↗ page in the footer. The payload is the
+/// Conceal the whole page: the ↗ page in the footer. The payload is the
 /// page in document order — ink verbatim, sealed bytes inlined where
 /// their chips sit — refused when the page holds an image chip. Options,
 /// blocking behaviour, locking, and the result shape match
-/// [`companion_chip_promote`]; no per-chip promotion mark is set (the
+/// [`companion_chip_conceal`]; no per-chip conceal mark is set (the
 /// link stands for the page — "burn local copy" on success is the
 /// shell closing the sheet). The egress is recorded: one `sent` record
 /// against the page's own identity, destination `link`, with a size
@@ -2236,7 +2249,7 @@ pub unsafe extern "C" fn companion_chip_promote(
 /// `handle` must be a valid handle. `opts_json`, when non-null, must be
 /// a valid, NUL-terminated UTF-8 C string.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn companion_sheet_promote(
+pub unsafe extern "C" fn companion_sheet_conceal(
     handle: *mut CompanionHandle,
     sheet: u64,
     opts_json: *const c_char,
@@ -2244,8 +2257,8 @@ pub unsafe extern "C" fn companion_sheet_promote(
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
-    let Some(opts) = PromoteOpts::parse(unsafe { cstr(opts_json) }) else {
-        return promotion_error("malformed promotion options");
+    let Some(opts) = ConcealOpts::parse(unsafe { cstr(opts_json) }) else {
+        return conceal_error("malformed conceal options");
     };
     let sheet = SheetId::from_raw(sheet);
 
@@ -2254,14 +2267,14 @@ pub unsafe extern "C" fn companion_sheet_promote(
             return ptr::null_mut();
         };
         let Some(conn) = guard.connection.clone() else {
-            return promotion_error("no connection configured");
+            return conceal_error("no connection configured");
         };
         let payload = match guard.store.sheet_payload(sheet) {
             Ok(payload) => payload,
-            Err(e) => return promotion_error(&e.to_string()),
+            Err(e) => return conceal_error(&e.to_string()),
         };
         if payload.trim().is_empty() {
-            return promotion_error("nothing to promote");
+            return conceal_error("nothing to conceal");
         }
         let default_ttl = guard
             .store
@@ -2273,7 +2286,7 @@ pub unsafe extern "C" fn companion_sheet_promote(
     };
     let (conn, token, payload, default_ttl) = staged;
 
-    match promote(
+    match conceal(
         &conn,
         token,
         payload,
@@ -2281,8 +2294,8 @@ pub unsafe extern "C" fn companion_sheet_promote(
         default_ttl,
         UreqTransport::new(),
     ) {
-        Ok(promoted) => finish_promotion(handle, promoted, Promotable::Page(sheet)),
-        Err(message) => promotion_error(&message),
+        Ok(concealed) => finish_conceal(handle, concealed, Concealable::Page(sheet)),
+        Err(message) => conceal_error(&message),
     }
 }
 
@@ -2294,9 +2307,9 @@ fn load_token(credentials: &dyn CredentialStore) -> Option<Zeroizing<String>> {
         .map(|s| Zeroizing::new(s.to_owned()))
 }
 
-/// What a promotion put on the wire: one chip, or a whole page.
+/// What a conceal put on the wire: one chip, or a whole page.
 #[derive(Clone, Copy)]
-enum Promotable {
+enum Concealable {
     /// The ↗ on a chip. The receipt id lands on that chip.
     Chip(ChipId),
     /// The ↗ page in the footer. Nothing is marked, the link stands
@@ -2307,45 +2320,51 @@ enum Promotable {
 /// After a successful conceal: the link onto the clipboard (transient —
 /// the link is a capability, not the secret, but no pasteboard manager
 /// should archive it), the receipt id onto the chip when a chip was
-/// promoted, one `sent` record with destination `link` in the ledger,
+/// concealed, one `sent` record with destination `link` in the ledger,
 /// and the result JSON out.
 ///
-/// The record is written for both shapes of promotion. A page leaving
+/// The record is written for both shapes of conceal. A page leaving
 /// as one link is the largest egress this app performs, so it is the
 /// last one that should be missing from the audit trail; the record
 /// carries the page's own identity, its title and a size class, and no
 /// content, exactly like the chip's.
-fn finish_promotion(handle: &CompanionHandle, promoted: Promoted, sent: Promotable) -> *mut c_char {
+fn finish_conceal(
+    handle: &CompanionHandle,
+    concealed: Concealed,
+    sent: Concealable,
+) -> *mut c_char {
     let Ok(mut guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
     let receipt = guard.pasteboard.write(
-        Zeroizing::new(promoted.link.into_bytes()),
+        Zeroizing::new(concealed.link.into_bytes()),
         ContentKind::Text,
-        WriteOptions { concealed: false },
+        WriteOptions {
+            nspasteboard_concealed: false,
+        },
     );
     guard.last_write = Some(receipt);
     match sent {
         // The chip or page may have expired mid-flight; the link is on
         // the clipboard regardless, the record just has nowhere to land.
-        Promotable::Chip(chip) => {
+        Concealable::Chip(chip) => {
             guard
                 .store
-                .mark_chip_promoted(chip, promoted.receipt_id.clone());
+                .mark_chip_concealed(chip, concealed.receipt_id.clone());
             guard.store.record_sent(chip, DestinationClass::OneTimeLink);
         }
-        Promotable::Page(sheet) => {
+        Concealable::Page(sheet) => {
             guard
                 .store
                 .record_sheet_sent(sheet, DestinationClass::OneTimeLink);
         }
     }
-    into_c_string(serde_json::json!({ "ok": true, "receipt_id": promoted.receipt_id }).to_string())
+    into_c_string(serde_json::json!({ "ok": true, "receipt_id": concealed.receipt_id }).to_string())
 }
 
 /// A `{"ok": false, "error"}` result. Error strings are messages for
 /// the inline failure state and never carry secret material.
-fn promotion_error(message: &str) -> *mut c_char {
+fn conceal_error(message: &str) -> *mut c_char {
     into_c_string(serde_json::json!({ "ok": false, "error": message }).to_string())
 }
 
@@ -2449,7 +2468,7 @@ fn chip_json(store: &SheetStore<SystemClock>, sheet: SheetId, chip: ChipId) -> *
         },
         "excerpt": sealed.excerpt(),
         "size_label": sealed.size_label(),
-        "promoted": sealed.promotion().is_some(),
+        "concealed": sealed.conceal().is_some(),
     });
     match serde_json::to_string(&value) {
         Ok(json) => into_c_string(json),
@@ -2725,7 +2744,9 @@ mod tests {
             let receipt = drag.write(
                 Zeroizing::new(Vec::new()),
                 ContentKind::Text,
-                WriteOptions { concealed: false },
+                WriteOptions {
+                    nspasteboard_concealed: false,
+                },
             );
             drag.clear_if_unchanged(receipt);
             assert!(companion_sheet_seal_from_drag(handle, sheet, 0, 0).is_null());
@@ -2735,7 +2756,9 @@ mod tests {
             drag.write(
                 Zeroizing::new(dragged.clone().into_bytes()),
                 ContentKind::Text,
-                WriteOptions { concealed: false },
+                WriteOptions {
+                    nspasteboard_concealed: false,
+                },
             );
             let chip = take_json(companion_sheet_seal_from_drag(handle, sheet, 0, 0));
             assert!(!chip.contains(&dragged), "drag bytes leaked into chip JSON");
@@ -3216,7 +3239,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_out_writes_the_pasteboard_in_core_marked_concealed() {
+    fn copy_out_writes_the_pasteboard_in_core_marked_nspasteboard_concealed() {
         let handle = handle();
         unsafe {
             let (_tab, sheet) = new_page(handle);
@@ -3241,8 +3264,8 @@ mod tests {
                     "outbound copies carry the transient mark"
                 );
                 assert!(
-                    guard.pasteboard.current_is_concealed(),
-                    "chip copies carry the concealed mark"
+                    guard.pasteboard.current_is_nspasteboard_concealed(),
+                    "chip copies carry the `ConcealedType` mark"
                 );
             }
 
@@ -3423,14 +3446,14 @@ mod tests {
         }
     }
 
-    /// Every promotion path that can refuse **without** a socket, plus
+    /// Every conceal path that can refuse **without** a socket, plus
     /// the connection-config contract: TLS-only, and the token goes to
     /// the credential store and never comes back out in any JSON.
     #[test]
-    fn connection_config_and_offline_promotion_refusals() {
+    fn connection_config_and_offline_conceal_refusals() {
         let handle = handle();
         unsafe {
-            // Promotion refuses before any network when unconfigured.
+            // A conceal refuses before any network when unconfigured.
             let (_tab, sheet) = new_page(handle);
             let chip = take_json(companion_sheet_seal_text(
                 handle,
@@ -3442,7 +3465,7 @@ mod tests {
             let chip_id = serde_json::from_str::<serde_json::Value>(&chip).unwrap()["chip_id"]
                 .as_u64()
                 .unwrap();
-            let refusal = take_json(companion_chip_promote(handle, chip_id, ptr::null()));
+            let refusal = take_json(companion_chip_conceal(handle, chip_id, ptr::null()));
             let v: serde_json::Value = serde_json::from_str(&refusal).unwrap();
             assert_eq!(v["ok"], false);
             assert!(v["error"].as_str().unwrap().contains("no connection"));
@@ -3475,7 +3498,7 @@ mod tests {
             assert_eq!(v["has_token"], true);
 
             // Malformed options refuse before any network.
-            let refusal = take_json(companion_chip_promote(
+            let refusal = take_json(companion_chip_conceal(
                 handle,
                 chip_id,
                 cstring("[]").as_ptr(),
@@ -3485,11 +3508,11 @@ mod tests {
             assert!(v["error"].as_str().unwrap().contains("malformed"));
 
             // A gone chip refuses; an empty page refuses.
-            let refusal = take_json(companion_chip_promote(handle, 424_242, ptr::null()));
+            let refusal = take_json(companion_chip_conceal(handle, 424_242, ptr::null()));
             assert!(refusal.contains("gone"));
             let (_empty_tab, empty) = new_page(handle);
-            let refusal = take_json(companion_sheet_promote(handle, empty, ptr::null()));
-            assert!(refusal.contains("nothing to promote"));
+            let refusal = take_json(companion_sheet_conceal(handle, empty, ptr::null()));
+            assert!(refusal.contains("nothing to conceal"));
 
             // An empty token string deletes the stored one.
             assert!(companion_connection_configure(
@@ -3813,7 +3836,7 @@ mod tests {
         }
     }
 
-    /// The burn after a promotion, across the seam: it names the page
+    /// The burn after a conceal, across the seam: it names the page
     /// and leaves the slot, which is the whole difference between it
     /// and a close (ADR-0017).
     #[test]
@@ -4045,7 +4068,7 @@ mod tests {
     /// the pasteboard is a boundary the app cannot follow the bytes
     /// past, and a one-time link is a capability handed to someone else.
     #[test]
-    fn a_copy_out_and_a_promotion_each_leave_one_sent_record() {
+    fn a_copy_out_and_a_conceal_each_leave_one_sent_record() {
         let secret = format!("ghp_{}", "n0ts3cr3t".repeat(4));
         let handle = handle();
         unsafe {
@@ -4062,15 +4085,15 @@ mod tests {
 
             assert!(companion_chip_copy_out(handle, chip_id));
 
-            // The promotion's network half is exercised elsewhere; what
+            // The conceal's network half is exercised elsewhere; what
             // this test owns is the record the successful finish leaves.
-            let result = take_json(finish_promotion(
+            let result = take_json(finish_conceal(
                 &*handle,
-                Promoted {
+                Concealed {
                     link: "https://example.invalid/secret/abc".to_string(),
                     receipt_id: "rcpt-1".to_string(),
                 },
-                Promotable::Chip(ChipId::from_raw(chip_id)),
+                Concealable::Chip(ChipId::from_raw(chip_id)),
             ));
             assert!(result.contains("\"ok\":true"), "{result}");
 
@@ -4101,12 +4124,12 @@ mod tests {
         }
     }
 
-    /// Promoting a whole page is the largest egress this app performs,
+    /// Concealing a whole page is the largest egress this app performs,
     /// and it leaves the same kind of line in the ledger a chip does:
     /// destination `link`, the page's own identity, a size class, and
     /// nothing of what was sent.
     #[test]
-    fn promoting_a_whole_page_leaves_one_sent_record() {
+    fn concealing_a_whole_page_leaves_one_sent_record() {
         let secret = format!("ghp_{}", "n0ts3cr3t".repeat(4));
         let handle = handle();
         unsafe {
@@ -4131,13 +4154,13 @@ mod tests {
 
             // The network half is exercised elsewhere; what this test
             // owns is the record the successful finish leaves.
-            let result = take_json(finish_promotion(
+            let result = take_json(finish_conceal(
                 &*handle,
-                Promoted {
+                Concealed {
                     link: "https://example.invalid/secret/abc".to_string(),
                     receipt_id: "rcpt-page".to_string(),
                 },
-                Promotable::Page(SheetId::from_raw(sheet)),
+                Concealable::Page(SheetId::from_raw(sheet)),
             ));
             assert!(result.contains("\"ok\":true"), "{result}");
 
@@ -4146,7 +4169,7 @@ mod tests {
             let records: Vec<serde_json::Value> = serde_json::from_str(&ledger).unwrap();
             let sent: Vec<&serde_json::Value> =
                 records.iter().filter(|r| r["event"] == "sent").collect();
-            assert_eq!(sent.len(), 1, "one page promotion, one record: {ledger}");
+            assert_eq!(sent.len(), 1, "one page conceal, one record: {ledger}");
             assert_eq!(sent[0]["destination"], "link");
             assert_eq!(sent[0]["title"], "rotate on friday");
             assert_eq!(sent[0]["size"], "tiny");

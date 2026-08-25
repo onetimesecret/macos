@@ -76,7 +76,7 @@ The claims in docs 02–03, made implementable:
   all** — the UI receives only the mechanical excerpt and counts, so it
   can never draw the bytes, and no reveal affordance can exist. Visible
   ink is ordinary text the user chose to keep readable; it transits the
-  UI like any editor's buffer. Copy-out and promotion of sealed bytes go
+  UI like any editor's buffer. Copy-out and concealing of sealed bytes go
   core → pasteboard / core → network client directly, never through the
   UI layer. This upgrades the webview-residual-copy concern from a
   scoring criterion to a solved case for sealed content.
@@ -104,9 +104,16 @@ The claims in docs 02–03, made implementable:
   SIP-protected `WebContent`, so the binary holding resident secrets can
   be fully hardened. Note this guarantee is macOS-specific — it does not
   transfer to a Linux/Windows sibling (doc 06 §15).
-- **Network boundary.** Exactly one outbound destination (the configured
-  OTS server), TLS-only, only on explicit promotion. No telemetry, no
-  update pings beyond a launch-time check against the release feed.
+- **Network boundary.** At most two outbound destinations, TLS-only,
+  and no others. Today there is one: the configured OTS server, reached
+  only on an explicit conceal. The second, a sync relay reached only for
+  a page the user has shared to their own enrolled devices, is decided
+  in ADR-0021 (issue #93) and is not built. When it lands it sees
+  ciphertext only, is opt-in per page, and holds nothing past that
+  page's own TTL. No telemetry, no update pings beyond a launch-time
+  check against the release feed. `crates/transport` is where the
+  boundary is enforced, and the enforcement stays: its allowlist widens
+  from one entry to two rather than being removed.
 - **Credential storage.** API token in the macOS Keychain, never in
   config files.
 - **Threat honesty.** Out of scope and said so: a compromised local user
@@ -121,7 +128,7 @@ The claims in docs 02–03, made implementable:
 Grounded in the current repo (`apps/api/v3/routes.txt`,
 `src/schemas/api/v3/`):
 
-- **Promotion** → `POST /api/v3/secret/conceal` with
+- **Conceal** → `POST /api/v3/secret/conceal` with
   `{ kind: "conceal", secret, ttl, share_domain, passphrase?, recipient? }`.
   The sheet's remaining TTL seeds `ttl`, snapped to server-permitted
   values; entitlement rejections (cf. `secret_ttl_entitlement_spec.rb`)
@@ -133,12 +140,12 @@ Grounded in the current repo (`apps/api/v3/routes.txt`,
   `ots-client` crate isolates auth as a strategy trait so the swap is
   additive.
 - **Guest mode:** where the server enables guest route gating,
-  `POST /api/v3/guest/secret/conceal` allows promotion with no account —
-  worth supporting so the open-source app is fully useful against
+  `POST /api/v3/guest/secret/conceal` allows a guest conceal with no
+  account, worth supporting so the open-source app is fully useful against
   self-hosted instances with zero setup.
-- **Post-promotion:** store only the receipt identifier on the live
+- **After a conceal:** store only the receipt identifier on the live
   sheet (for a "burn remote" affordance there alone). No receipt
-  browsing, no local history of promoted secrets (doc 03 §5).
+  browsing, no local history of concealed secrets (doc 03 §5).
 - **Server config:** `GET /api/v3/status` + config endpoints at
   connection-test time to learn allowed TTLs and share domains, cached in
   memory only.

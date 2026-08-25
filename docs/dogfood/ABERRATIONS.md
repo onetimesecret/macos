@@ -4,7 +4,7 @@ Local, informal, gitignored (matches the *.txt rule). A running log of
 surprising or non-obvious runtime behavior found while building or
 dogfooding the app: things a naive mental model gets wrong. Not a bug
 tracker and not a spec. When one of these turns out to be structural,
-promote it: an ADR if it is a decision, README/DOGFOOD.md if it is
+graduate it: an ADR if it is a decision, README/DOGFOOD.md if it is
 operational guidance other people need, an issue if it should be fixed.
 
 ---
@@ -89,10 +89,10 @@ As a user, if I'm going to trust this pad as a safe place to paste things, I als
 
 2026-08-19: triage index (additive; the notes above remain the record)
 
-- **Promote to ADR / decision:** reboot persistence versus the current
-  boot-session security boundary (promoted 2026-08-20, from the note at
+- **Graduate to ADR / decision:** reboot persistence versus the current
+  boot-session security boundary (graduated 2026-08-20, from the note at
   line 74: [ADR-0016](../adr/0016-content-persists-across-restart.md));
-  separating durable tabs from expiring pages (promoted 2026-08-20, from
+  separating durable tabs from expiring pages (graduated 2026-08-20, from
   the note at lines 67 to 69:
   [ADR-0017](../adr/0017-durable-tabs-expiring-pages.md), which defers
   the separate visual treatment for the first line and the tab title);

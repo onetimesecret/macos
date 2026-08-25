@@ -35,13 +35,13 @@ public enum DocumentEditOp: Equatable, Sendable {
     }
 }
 
-/// An in-flight promotion: the inline, in-place confirmation's state
+/// An in-flight conceal: the inline, in-place confirmation's state
 /// (docs/spec/04 — not a modal). Holds options and outcome, never
 /// content: the payload stays core-side throughout.
-public struct PromotionDraft {
+public struct ConcealDraft {
     /// Sendable explicitly, not by inference: a public enum gets no
     /// implicit conformance, and this value is captured by the
-    /// detached task that carries the promotion to the network.
+    /// detached task that carries the conceal to the network.
     public enum Target: Equatable, Sendable {
         case chip(UInt64)
         case page(UInt64)
@@ -67,7 +67,7 @@ public struct PromotionDraft {
     }
 
     /// The ladder rungs at or under the page's remaining time — the
-    /// promoted secret never outlives the local intent (doc 06 №13).
+    /// concealed secret never outlives the local intent (doc 06 №13).
     public static func snappedTtl(remainingMs: UInt64) -> UInt64 {
         let ladder: [UInt64] = [3600, 10800, 28800, 86400, 259_200, 604_800]
         let remaining = remainingMs / 1000
@@ -332,10 +332,10 @@ public final class PageModel: ObservableObject {
     /// and this model never places document content itself.
     public var performSealedPaste: (() -> Void)?
 
-    /// The inline promotion confirmation, when one is open.
-    @Published public var promotion: PromotionDraft?
+    /// The inline conceal confirmation, when one is open.
+    @Published public var concealDraft: ConcealDraft?
 
-    /// Connection state for Settings and the promotion header (never
+    /// Connection state for Settings and the conceal header (never
     /// the token itself).
     @Published public private(set) var connection: ConnectionInfo?
 
@@ -764,7 +764,7 @@ public final class PageModel: ObservableObject {
         // The connection outlives the process in two non-secret halves:
         // config in UserDefaults, the token in the Keychain (core-side).
         // Configuring with a nil token keeps whatever the Keychain
-        // holds, so guest promotion works with zero setup and a saved
+        // holds, so a guest conceal works with zero setup and a saved
         // token survives relaunch.
         _ = self.client.configureConnection(
             serverUrl: defaults.string(forKey: Self.serverKey) ?? Self.defaultServer,
@@ -1350,7 +1350,7 @@ public final class PageModel: ObservableObject {
 
     /// The pages the strip is holding right now, by identity. The
     /// pruning set for the document maps, and the liveness set the
-    /// promotion drafts are checked against.
+    /// conceal drafts are checked against.
     private var livePageIDs: Set<UInt64> {
         Set(tabs.compactMap(\.pageID))
     }
@@ -1397,7 +1397,7 @@ public final class PageModel: ObservableObject {
         if showsTimeUnits {
             selection = Self.reconciledTimeSelection(current: selection, projection: timeUnits)
         }
-        // A promotion whose subject died — expiry, mostly; `close`
+        // A conceal whose subject died — expiry, mostly; `close`
         // clears its own — must not keep the confirmation standing:
         // ↩ lands on "Create link", and a stale draft would answer a
         // stray keystroke with a network call over a page (or a chip's
@@ -1405,7 +1405,7 @@ public final class PageModel: ObservableObject {
         // when it survives on no live page: its host page has gone,
         // even if others remain. The core is authoritative here, even
         // for a page whose editor never mounted.
-        if let draft = promotion {
+        if let draft = concealDraft {
             var liveChips: Set<UInt64> = []
             if case .chip = draft.target {
                 liveChips = Set(livePages.flatMap { chipIds(onSheet: $0) })
@@ -1413,7 +1413,7 @@ public final class PageModel: ObservableObject {
             if Self.isRefreshOrphan(
                 target: draft.target, liveSheets: livePages, liveChips: liveChips
             ) {
-                promotion = nil
+                concealDraft = nil
             }
         }
         ledgerEntries = client.ledger()
@@ -2173,25 +2173,25 @@ public final class PageModel: ObservableObject {
         // The chips must be asked for *before* the close; a dead page
         // replays no runs.
         let closingPage = tabs.first { $0.id == id }?.pageID
-        if let draft = promotion, let closingPage,
-           Self.shouldClearPromotion(
+        if let draft = concealDraft, let closingPage,
+           Self.shouldClearConcealDraft(
                target: draft.target,
                closingSheet: closingPage,
                chipsOnSheet: chipIds(onSheet: closingPage)
            ) {
-            promotion = nil
+            concealDraft = nil
         }
         _ = client.closeTab(id: id)
         markDirty()
         refresh()
     }
 
-    /// Whether closing `closingSheet` orphans the open promotion
+    /// Whether closing `closingSheet` orphans the open conceal
     /// draft: a draft for the page itself, or for a chip the page
     /// carries. A draft aimed elsewhere survives — its subject is
     /// still alive. Pure, so the decision is testable without a core.
-    public nonisolated static func shouldClearPromotion(
-        target: PromotionDraft.Target,
+    public nonisolated static func shouldClearConcealDraft(
+        target: ConcealDraft.Target,
         closingSheet: UInt64,
         chipsOnSheet: Set<UInt64>
     ) -> Bool {
@@ -2201,14 +2201,14 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// Whether a refresh orphans the open promotion draft: its subject
+    /// Whether a refresh orphans the open conceal draft: its subject
     /// is no longer among the live pages. A page draft dies when its id
     /// drops from the live set; a chip draft dies when the chip rides
     /// on no live page — which is exactly when its host page has gone,
     /// whether it was the last page or one of several. Pure, so the
     /// decision is testable without a core.
     public nonisolated static func isRefreshOrphan(
-        target: PromotionDraft.Target,
+        target: ConcealDraft.Target,
         liveSheets: Set<UInt64>,
         liveChips: Set<UInt64>
     ) -> Bool {
@@ -2535,12 +2535,12 @@ public final class PageModel: ObservableObject {
     }
     #endif
 
-    // MARK: Promotion — the exit ramp
+    // MARK: Conceal — the exit ramp
 
     /// Open the inline confirmation for a chip's ↗ or the footer's
     /// ↗ page. Everything after this is in-place: no modal, and the
     /// network boundary is the one confirming click.
-    public func beginPromotion(_ target: PromotionDraft.Target) {
+    public func beginConceal(_ target: ConcealDraft.Target) {
         notice = nil
         // A page draft names a page; a chip draft borrows the selected
         // slot's page, which is the page the chip is showing on.
@@ -2549,9 +2549,9 @@ public final class PageModel: ObservableObject {
         case .chip: selectedPageID
         }
         let remaining = tabs.first { $0.pageID == pageId }?.remainingMs ?? 0
-        promotion = PromotionDraft(
+        concealDraft = ConcealDraft(
             target: target,
-            ttlSecs: PromotionDraft.snappedTtl(remainingMs: remaining)
+            ttlSecs: ConcealDraft.snappedTtl(remainingMs: remaining)
         )
     }
 
@@ -2559,30 +2559,30 @@ public final class PageModel: ObservableObject {
     /// releases its lock during the round-trip, so the surface stays
     /// live. On success the link is on the clipboard (written
     /// core-side) and the confirmation offers Burn local copy.
-    public func confirmPromotion() {
-        guard var draft = promotion, !draft.inFlight else { return }
+    public func confirmConceal() {
+        guard var draft = concealDraft, !draft.inFlight else { return }
         draft.inFlight = true
         draft.error = nil
-        promotion = draft
+        concealDraft = draft
         let client = self.client
         let target = draft.target
         let ttl = draft.ttlSecs
         let passphrase = draft.passphrase
         let recipient = draft.recipient
         Task.detached(priority: .userInitiated) {
-            let outcome: PromotionOutcome = switch target {
+            let outcome: ConcealOutcome = switch target {
             case .chip(let id):
-                client.promoteChip(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
+                client.concealChip(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
             case .page(let id):
-                client.promoteSheet(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
+                client.concealSheet(id: id, ttlSecs: ttl, passphrase: passphrase, recipient: recipient)
             }
             await MainActor.run { [weak self] in
-                self?.finishPromotion(outcome, for: target)
+                self?.finishConceal(outcome, for: target)
             }
         }
     }
 
-    private func finishPromotion(_ outcome: PromotionOutcome, for target: PromotionDraft.Target) {
+    private func finishConceal(_ outcome: ConcealOutcome, for target: ConcealDraft.Target) {
         // Before the staleness guard: the round trip moved core-side
         // state (a receipt in the ledger either way), whether or not
         // the draft that started it is still standing.
@@ -2591,7 +2591,7 @@ public final class PageModel: ObservableObject {
         // different target — while the call was out; a stale outcome
         // must not land on someone else's draft. (On success the link
         // is on the clipboard and the receipt marked either way.)
-        guard var draft = promotion, draft.target == target else { return }
+        guard var draft = concealDraft, draft.target == target else { return }
         draft.inFlight = false
         if outcome.ok {
             draft.error = nil
@@ -2599,9 +2599,9 @@ public final class PageModel: ObservableObject {
             flash("the link is on the clipboard")
         } else {
             // Inline, with retry; content never left the sheet.
-            draft.error = outcome.error ?? "promotion failed"
+            draft.error = outcome.error ?? "the conceal failed"
         }
-        promotion = draft
+        concealDraft = draft
         refresh()
     }
 
@@ -2609,8 +2609,8 @@ public final class PageModel: ObservableObject {
     /// may go. A chip burns by a core delete that zeroizes its bytes
     /// and drops its sentinel, its glyph stripped from the projection;
     /// a page burns by closing (it rests in the ledger).
-    public func burnPromotedCopy() {
-        guard let draft = promotion, draft.receiptId != nil else { return }
+    public func burnConcealedCopy() {
+        guard let draft = concealDraft, draft.receiptId != nil else { return }
         switch draft.target {
         case .chip(let id):
             removeChipFromDocument(id)
@@ -2625,11 +2625,11 @@ public final class PageModel: ObservableObject {
             markDirty()
             refresh()
         }
-        promotion = nil
+        concealDraft = nil
     }
 
-    public func dismissPromotion() {
-        promotion = nil
+    public func dismissConceal() {
+        concealDraft = nil
     }
 
     /// Remove a chip from the core (its bytes die there, and its
@@ -2715,7 +2715,7 @@ public final class PageModel: ObservableObject {
 
     /// The Settings test button: one status round-trip, off the main
     /// actor, result to `completion` on the main actor.
-    public func testConnection(completion: @escaping @MainActor (PromotionOutcome) -> Void) {
+    public func testConnection(completion: @escaping @MainActor (ConcealOutcome) -> Void) {
         let client = self.client
         Task.detached(priority: .userInitiated) {
             let outcome = client.testConnection()

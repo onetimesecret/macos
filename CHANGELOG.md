@@ -9,6 +9,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The word for the exit ramp is conceal** (issue #105). "Promotion"
+  was never the project's word for turning staged content into a
+  one-time link. The API route has always been
+  `POST /api/v3/secret/conceal`, `crates/ots-client` has always called
+  it that, and everything above the client had drifted into a second
+  vocabulary for the same act, with "reveal" left with no counterpart to
+  answer to. The code now says conceal everywhere: the module is
+  `crates/ffi/src/conceal.rs`, the view is `ConcealView`, the chip's
+  wire flag is `concealed`, and the core keeps a `Conceal` record on a
+  chip that has travelled. **This renames two exported C symbols**,
+  `companion_chip_promote` to `companion_chip_conceal` and
+  `companion_sheet_promote` to `companion_sheet_conceal`, so any caller
+  outside this repository has to move with it; `crates/ffi` and
+  `crates/core` go to 0.14.0 for it. The chip face's JSON key changes
+  from `promoted` to `concealed` on both sides of the seam in the same
+  pass, since a mismatch there would have failed at runtime and not at
+  compile time. `crates/pasteboard` kept the one legitimate other
+  meaning: `org.nspasteboard.ConcealedType` and its `CONCEALED_TYPE`
+  constant are Apple and community convention, not ours, so the UTI
+  stays exactly as it was and only the struct fields that carried it
+  were renamed to `nspasteboard_concealed`, which takes that crate to
+  0.3.0. An unqualified "conceal" in this tree now means the one thing.
+  Retired along the way: the claim that this is the app's only network
+  action, which the C header and the Swift seam both made. Both now say
+  what the action is instead, an explicit one the user takes.
+
+- **What the network rule actually protects** (issue #92). The design
+  documents said the app has exactly one outbound destination and that
+  reaching the network is never a side effect. That conflated two
+  different things: how many places content can go, and whether the
+  user knew and chose. Only the second is a principle worth keeping. The
+  anti-goal is now "not a general sync service", scoped against Dropbox,
+  iCloud Drive and Notion rather than against replication itself, and
+  principle 6 forbids unaccounted traffic rather than automatic traffic:
+  no destination the user did not enroll, no payload the app would not
+  show them, no retention on a relay beyond the page's own expiry. The
+  network boundary in doc 05 now names at most two destinations and says
+  plainly that the second one is not built, and `crates/transport` keeps
+  enforcing the boundary either way. Nothing about sync ships here; what
+  ships is a rule that will still be true when it does. The open
+  decisions and their prior art are open question 19 in doc 06,
+  headed for ADR-0021.
+
 - **The version moves when the app moves** (issue #89). About and the
   tray menu now say 0.13.0, which is this app after milestone 2: ⌘N
   makes a page, the keyboard is a file you can edit, four affordances

@@ -1096,7 +1096,7 @@ final class DayHeaderView: NSView {
 /// clicking into history should do — promotes this page to the selected
 /// one and puts the caret where the pointer was. Everything else a
 /// reader might want of a quiet day (select, copy out, work a chip,
-/// promote) arrives with the editor, one click later.
+/// conceal) arrives with the editor, one click later.
 final class QuietPageView: NSTextView {
     let page: UInt64
     private let onClick: (UInt64, Int) -> Void

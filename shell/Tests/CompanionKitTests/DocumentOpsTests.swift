@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class OpEmitterTests: XCTestCase {
     private func chipInfo(id: UInt64) -> ChipInfo {
-        ChipInfo(chipId: id, kind: "text", excerpt: "ch…ip", sizeLabel: "4 ch", promoted: false)
+        ChipInfo(chipId: id, kind: "text", excerpt: "ch…ip", sizeLabel: "4 ch", concealed: false)
     }
 
     func testTypingEmitsOneInsert() {
@@ -370,7 +370,7 @@ final class DocumentOpsWiringTests: XCTestCase {
             InkEditorView.Coordinator.chipString(
                 ChipInfo(
                     chipId: face.chipId, kind: face.kind, excerpt: face.excerpt,
-                    sizeLabel: face.sizeLabel, promoted: face.promoted)),
+                    sizeLabel: face.sizeLabel, concealed: face.concealed)),
             at: 0
         )
         XCTAssertFalse(InkEditorView.Coordinator.runs(of: storage).contains {
