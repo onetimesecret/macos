@@ -179,7 +179,7 @@ struct BackdropRootView: View {
             if !raised {
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture { model.raise() }
+                    .onTapGesture { model.raise(.summon) }
                     .help("Click to raise the card")
             }
         }

@@ -703,8 +703,27 @@ Built as argued, and one clause of it is now more specific.
 to the origin."~~ On mount and on every summon, and *not* on a ⌘Tab
 return: re-keying the card is not a summon, and moving the roll under
 someone who came back to the sentence they were writing would be the
-opposite of what the anchor is for. `BackdropModel.raise()` is the one
-caller, so the anchor rides the same moment the pasteboard offer does.
+opposite of what the anchor is for.
+
+Which meant `BackdropModel.raise` could not be the one caller after all,
+because it is also what `applicationDidBecomeActive` calls: a ⌘Tab
+return is a raise over an already-raised card, and hanging the anchor on
+the raise gave that return the summon's behaviour. So the raise takes
+its reason — `BackdropRaise.summon` or `.activation` — and
+`BackdropModel.anchorsOnToday(raise:)` is the whole of the boundary, in
+one pure function with a test rather than in four call sites. The
+gestures that name **this surface** anchor: ⌃⌥Space, the menu-bar item,
+and a click on the resting card. The gestures that name **the app** do
+not: ⌘Tab, the app switcher, and the Dock icon. The pasteboard offer is
+deliberately not split this way — an offer is about what is on the board
+now, and coming forward is when it is worth making however the user got
+there.
+
+The Dock icon is the judgement call, and it is filed as an activation on
+this ground: clicked while the app is inactive it arrives as
+`applicationDidBecomeActive` and while it is active as
+`applicationShouldHandleReopen`, so filing the two differently would
+give one gesture two meanings decided by a state the user cannot see.
 
 Two mechanisms the answer named in passing turned out to matter enough
 to have tests of their own. The first is that the anchor moves the

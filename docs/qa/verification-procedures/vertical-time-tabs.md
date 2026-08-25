@@ -160,9 +160,14 @@ bounces; a page appears without a gesture asking for one.
 3. Repeat with the card pinned, and repeat with a ⌘Tab away and back
    rather than a summon. A ⌘Tab return is not a summon: it re-keys the
    card, and re-anchoring on that path would move the roll under someone
-   who never asked for it.
+   who never asked for it. Then do the same with the Dock icon, which is
+   filed the same way for the same reason (the anchor rides the gestures
+   that name this surface — ⌃⌥Space, the menu-bar item, a click on the
+   resting card — and never the ones that name the app).
 
-**Pass:** a ⌘Tab return leaves the scroll where it was.
+**Pass:** a ⌘Tab return leaves the scroll where it was, and so does a
+click on the Dock icon; ⌃⌥Space, the menu-bar item and a click on the
+resting card all take it back to today.
 
 ## Case 4: typing at the bottom of a long Day 0
 
@@ -292,6 +297,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | 2 tabs still standing with the mode off | | |
 | | | 3 summon re-anchors on today | | |
 | | | 3 ⌘Tab return leaves the scroll alone | | |
+| | | 3 Dock icon leaves the scroll alone | | |
 | | | 4 typing at the bottom of a long Day 0 | | Note any stall with three days mounted. |
 | | | 4 resize re-wraps every day | | |
 | | | 5 undo cannot cross a perforation | | |

@@ -2,6 +2,34 @@ import AppKit
 import CompanionKit
 import Foundation
 
+/// Why the card is coming forward.
+///
+/// The window cannot tell the difference — both end in a raised, keyed
+/// surface at the front of the active Space — and what the card is
+/// *showing* has to (issue #79).
+///
+/// A **summon** is the user naming this surface: ⌃⌥Space, the menu-bar
+/// item, or a click on the resting card, which the card's own overlay
+/// calls "the same deliberate act as any other summon". An
+/// **activation** is the user naming the app, with the surface arriving
+/// as a consequence: ⌘Tab, the app switcher, the Dock icon. Only a
+/// summon takes the roll back to today, because somebody who ⌘Tabbed
+/// away from a sentence in an older day came back to that sentence and
+/// not to today (ADR-0020 item 13).
+///
+/// The Dock icon is filed as an activation, and it is the one judgement
+/// call here. Clicked while the app is inactive it arrives as
+/// `applicationDidBecomeActive` and while it is active as
+/// `applicationShouldHandleReopen`; filing those two differently would
+/// give one gesture two meanings, decided by a state the user cannot
+/// see. So the boundary is drawn where it can be described: the anchor
+/// rides the gestures that name the surface, never the ones that name
+/// the app.
+enum BackdropRaise {
+    case summon
+    case activation
+}
+
 /// The backdrop's own state: the stance the surface is in and where the
 /// card sits within the pane. The pages themselves, with their ink,
 /// chips, clocks, ledger and exit ramp, belong to the shared
@@ -135,7 +163,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// summons the keys back rather than resting.
     func summon() {
         if Self.stanceAfterSummon(current: stance, holdsKeys: holdsKeys) == .raised {
-            raise()
+            raise(.summon)
         } else {
             rest()
         }
@@ -159,19 +187,39 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// `.raised` is meaningful, not a no-op: the publisher emits on
     /// every set, and the controller answers by pulling the surface to
     /// the active Space and re-keying it — the re-summon path.
-    func raise() {
+    ///
+    /// Every caller says why it is raising, because one thing here is
+    /// not the same on both routes: see `BackdropRaise`.
+    func raise(_ reason: BackdropRaise) {
         stance = .raised
         pages.startRedraw(interval: stance.tickInterval)
         // Each raise looks at the board once, never a poll: coming
         // forward is the moment the offer is worth making (ADR-0007
-        // Amendment 1), and it is the same moment the panel picks.
+        // Amendment 1), and it is the same moment the panel picks. Both
+        // reasons take this: an offer is about what is on the board now,
+        // and coming forward is when it is worth making however the user
+        // got here.
         pages.refreshPasteboardOffer()
-        // And the same moment the days go back to today (issue #79).
-        // Between summons the roll's scroll is the reader's own, and a
-        // summon is where the pad goes back to being furniture that
-        // presents the current day. A no-op with the mode off, where
+        // The days go back to today on a summon and not on a bare
+        // activation (issue #79). Between summons the roll's scroll is
+        // the reader's own, and a summon is where the pad goes back to
+        // being furniture that presents the current day; a ⌘Tab return
+        // re-keys the card without anybody having asked for it to move,
+        // and moving the roll under a sentence being read is exactly
+        // what the anchor is not for. A no-op with the mode off, where
         // there is one page in the clip and nothing to anchor.
-        pages.anchorOnToday()
+        if Self.anchorsOnToday(raise: reason) { pages.anchorOnToday() }
+    }
+
+    /// Which raises take the roll back to today. Pure, so the boundary
+    /// between a summon and an activation is an assertion rather than a
+    /// comment — it is decided in one place, and the four call sites
+    /// name their reason rather than each carrying a copy of the rule.
+    nonisolated static func anchorsOnToday(raise reason: BackdropRaise) -> Bool {
+        switch reason {
+        case .summon: true
+        case .activation: false
+        }
     }
 
     /// Esc, a click outside the card, or a summon from a keyed
