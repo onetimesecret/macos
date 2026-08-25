@@ -1254,6 +1254,22 @@ public final class PageModel: ObservableObject {
         Set(tabs.compactMap(\.pageID))
     }
 
+    /// The live pages grouped by the day they were born on, newest day
+    /// first: the whole of what the time-unit mode draws (issue #79).
+    ///
+    /// Computed, and cached nowhere on purpose. Every fact it rests on
+    /// is already in `tabs`, which `refresh()` re-reads on every
+    /// accepted edit, every expiry and every cosmetic redraw. A stored
+    /// copy would go stale the moment a page expired and — worse — it
+    /// would freeze the day reading the core recomputes on each read,
+    /// so the labels would stop rolling over at local midnight and the
+    /// mode would need the timer this whole design exists to avoid.
+    /// What it costs instead is a walk over at most nine summaries the
+    /// model has already decoded, with no call into the core at all.
+    public var timeUnits: TimeUnitProjection {
+        TimeUnitProjection.project(tabs: tabs, selectedPageID: selectedPageID, unit: .day)
+    }
+
     public func refresh() {
         tabs = client.tabs()
         let livePages = livePageIDs
