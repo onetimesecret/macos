@@ -1727,6 +1727,29 @@ public final class PageModel: ObservableObject {
 
     // MARK: Pages
 
+    /// What the pad says when the cap declines a tenth tab.
+    ///
+    /// Not "let one expire" any more: an expiry empties a slot and never
+    /// frees it, so closing is the only thing that moves the wall
+    /// (ADR-0017). Saying otherwise would send the user off to wait for
+    /// something that cannot happen.
+    ///
+    /// With the days down the side the same wall can be hit with no
+    /// visible cause (issue #79). Nine slots may be full of old pages
+    /// with nothing on them, which the projection does not draw, so the
+    /// strip a tab would be closed from is not on screen and the
+    /// refusal reads as a bug. The sentence names the toggle that brings
+    /// those pages back rather than leaving the user to guess, and
+    /// nothing is auto-discarded to make room: reaping blank pages is a
+    /// lifetime mechanism nobody asked for. Pure, so both sentences are
+    /// testable without a window.
+    public nonisolated static func capRefusal(showsTimeUnits: Bool) -> String {
+        let wall = "the window holds 9 tabs, close one to make room"
+        guard showsTimeUnits else { return wall }
+        return "\(wall) — the pages with nothing on them are behind the time tabs "
+            + "toggle in Settings"
+    }
+
     /// A new tab at this form factor's opening rung, holding a new
     /// page. 0 means the store refused at the cap of 9. Returns the
     /// TAB's id, which is what the selection keeps.
@@ -1747,11 +1770,7 @@ public final class PageModel: ObservableObject {
         notice = nil
         let created = newTab()
         if created == 0 {
-            // Not "let one expire" any more: an expiry empties a slot
-            // and never frees it, so closing is the only thing that
-            // moves the wall (ADR-0017). Saying otherwise would send
-            // the user off to wait for something that cannot happen.
-            flash("the window holds 9 tabs, close one to make room")
+            flash(Self.capRefusal(showsTimeUnits: showsTimeUnits))
         }
         refresh()
         if created != 0 {
@@ -1774,6 +1793,38 @@ public final class PageModel: ObservableObject {
             selection = created
             refocusEditorIfKeyed()
         }
+    }
+
+    /// ⌘N while the days are down the side: go to today's page, and make
+    /// one when today has none (issue #79).
+    ///
+    /// Deliberately not a new mint policy. Two arms, both of them
+    /// shipped. When today already holds a live page this is a plain
+    /// `select(_:)`, which cannot mint into an occupied slot, so a
+    /// second ⌘N is a jump and never a second page. When today holds
+    /// none it is `newPage()`, the same path ⌘N takes with the strip
+    /// showing, which opens a fresh slot at this form factor's rung and
+    /// hands its editor the keys. Every mint stamps the clock's own
+    /// reading of now, so the page it makes lands on today by
+    /// construction rather than by being filed there.
+    ///
+    /// What it will not do is reach for some arbitrary empty tab to put
+    /// today's page in. That would be opinionated in exactly the place
+    /// the issue asked for unopinionated, and it has a real cost:
+    /// flipping back to the strip would show a tab the user named
+    /// holding today's typing. At the cap it refuses through
+    /// `newPage()`'s own refusal, widened in this mode to name the
+    /// toggle (`capRefusal`).
+    ///
+    /// Reached from gestures only — ⌘N, and the rail's Today row when it
+    /// lands. Nothing calls it from `refresh()`, from a mount or from
+    /// the toggle: what is displayed is not thereby minted (ADR-0017).
+    public func openToday() {
+        if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first {
+            select(tab)
+            return
+        }
+        newPage()
     }
 
     /// The empty state's create-and-focus, shared by the third and

@@ -25,7 +25,14 @@ extension PageModel {
         }
         switch command {
         case .pageNew:
-            newPage()
+            // ⌘N asks for a page to type on now. With the strip that is
+            // a new slot; with the days down the side it is today's
+            // page, which may already be there (issue #79). One command
+            // with two readings of the same intent, rather than a
+            // second id: the raw values here are published contract,
+            // named in whatever keymap.json a user has written, and
+            // both readings keep working under the chord they chose.
+            if showsTimeUnits { openToday() } else { newPage() }
         case .pageClose:
             closeCurrent()
         case .pagePrevious:
