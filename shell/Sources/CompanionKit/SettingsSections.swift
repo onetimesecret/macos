@@ -86,12 +86,12 @@ public struct ConnectionSettingsView: View {
                 TextField("Server URL", text: $serverUrl, prompt: Text("https://eu.onetimesecret.com"))
                 TextField("Share domain", text: $shareDomain, prompt: Text("optional — defaults to the server's host"))
             } header: {
-                Text("Where promotion goes — the app's one outbound destination, https only.")
+                Text("Where a conceal goes — the app's one outbound destination, https only.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Section {
-                TextField("Organization extid", text: $extid, prompt: Text("empty for guest promotion"))
+                TextField("Organization extid", text: $extid, prompt: Text("empty for guest conceals"))
                 SecureField("API token", text: $token, prompt: Text(tokenPrompt))
                 if model.connection?.hasToken == true {
                     Button("Clear stored token", role: .destructive) { confirmingClear = true }
@@ -103,7 +103,7 @@ public struct ConnectionSettingsView: View {
                             Button("Clear token", role: .destructive) { clearToken() }
                             Button("Cancel", role: .cancel) {}
                         } message: {
-                            Text("Promotion falls back to guest links until you enter a new token.")
+                            Text("Conceals fall back to guest links until you enter a new token.")
                         }
                 }
             } header: {

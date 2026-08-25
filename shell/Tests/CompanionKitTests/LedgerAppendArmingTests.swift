@@ -18,8 +18,8 @@ import XCTest
 /// calls themselves, because a test session never loads a state file
 /// and the licence guard inside `markDirty` rightly stands down there.
 ///
-/// The one appending path not driven here is the link promotion
-/// (`finishPromotion`): its record lands only after a successful round
+/// The one appending path not driven here is the conceal into a link
+/// (`finishConceal`): its record lands only after a successful round
 /// trip to a live server, which a unit test must not make. Its arming
 /// call sits unconditionally ahead of the staleness guard, covering
 /// success and failure alike.

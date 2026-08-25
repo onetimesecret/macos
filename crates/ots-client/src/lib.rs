@@ -1,8 +1,8 @@
 //! Client for the [Onetime Secret](https://onetimesecret.com) v3 API.
 //!
-//! Built for the macOS companion's promotion flow — the app's *only*
-//! network operation — but general on purpose: a plain v3 client with no
-//! UI or platform dependencies.
+//! Built for the macOS companion's conceal flow — the exit ramp an
+//! explicit user action opens — but general on purpose: a plain v3
+//! client with no UI or platform dependencies.
 //!
 //! Sans-IO by design: [`Api`] builds [`HttpRequest`]s and parses
 //! [`HttpResponse`]s without doing any networking, so the crate is fully
