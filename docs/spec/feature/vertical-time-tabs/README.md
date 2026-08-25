@@ -3,7 +3,7 @@
 
 # Feature: vertical time tabs — a page per unit of time
 
-Status: **draft**, rail landed · 2026-08-25
+Status: **draft**, prototype complete · 2026-08-25
 Scope: a prototype mode on the backdrop, behind a Settings toggle that
 is off by default. Horizontal tabs keep their behaviour and their
 pixels. The sealed format, the tab model, the TTL ladder and the cap are
@@ -438,12 +438,12 @@ day one.
 ## Change map, branch by branch
 
 Six stacked branches, each targeting the one below it, bottom-up into
-main. Branches 1 to 5 are in the tree as of 2026-08-25 — the decision,
-the seam, the projection with its flag, the editor factoring, and the
-rail with its Settings toggle. The first four moved no pixel at all,
-deliberately; branch 5 is the first that a user can see and turn on.
-What is still missing is the roll, and with it the four verbs the strip
-used to carry.
+main. All six are in the tree as of 2026-08-25 — the decision, the seam,
+the projection with its flag, the editor factoring, the rail with its
+Settings toggle, and the roll. The first four moved no pixel at all,
+deliberately; branch 5 is the first that a user can see and turn on, and
+branch 6 is the one the stack exists for. Nothing is outstanding except
+the dogfood window ADR-0020 waits on.
 
 1. **The spec and the decision** (this document and ADR-0020). Docs only.
    `docs/spec/design/04-interaction-model.md` is deliberately **not**
@@ -491,13 +491,23 @@ used to carry.
    their verbs, the quiet regions, the anchor rule, and the hardware
    procedure that answers the issue's three questions on a real machine.
    This is where the engineering goes and the branch that can be reverted
-   without losing the mode.
+   without losing the mode. **Landed**, in
+   `shell/Sources/CompanionKit/DayScrollView.swift`: `DayScrollView`
+   (`:44`) over `DayStackView` (`:163`), with `DayHeaderView` (`:738`),
+   `QuietPageView` (`:999`) and `EmptyTodayView` (`:1089`).
+   `PageContentView` branches at
+   `shell/Sources/CompanionKit/PageSurface.swift:42`, the renderings and
+   their pruning are at `shell/Sources/CompanionKit/PageModel.swift:513`,
+   `:1344` and `:1471`, and the summon's re-anchor is
+   `PageModel.anchorOnToday()` (`:2032`) called from
+   `shell/Sources/OnetimePad/BackdropModel.swift:174`. The hardware
+   procedure is
+   [`docs/qa/verification-procedures/vertical-time-tabs.md`](../../../qa/verification-procedures/vertical-time-tabs.md).
 
-A known limit of the tree as it stands, resolved by branch 6: while the
-mode is on and the roll has not landed, rename, hold, rung and close are
-reachable only by flipping the toggle off. The Settings caption says so
-in as many words, because a prototype that quietly loses four verbs is
-how a toggle earns a user's distrust.
+The limit branch 5 shipped with is closed: rename, hold, rung and close
+are on each page's own gutter inside the roll, addressed to that page's
+slot, and the Settings caption says where they are rather than
+apologising for their absence.
 
 ## Test plan
 
@@ -593,10 +603,14 @@ decision that is Rust, the more of it is validated before a PR exists.
 - **No change to the cap, the ladder, the 7d ceiling, the refusal message
   or any default rung** — including a mode-specific default rung, which
   would be the mode reaching into core state.
-- **No change to horizontal mode's behaviour or pixels.**
-  `TabStripView.swift` takes no diff at all: `GaugeBar` is public and
-  `EmptyRule` and `HoldChip` are module-internal, so the rail reuses them
-  where they stand.
+- **No change to horizontal mode's behaviour or pixels.** `GaugeBar` is
+  public and `EmptyRule` and `HoldChip` are module-internal, so the rail
+  reuses them where they stand rather than moving them. ~~`TabStripView.swift`
+  takes no diff at all.~~ It takes exactly one, on branch 6: the rename
+  prompt moved out of `SheetTab`'s private method into a shared
+  `TabRenamePrompt`, because the roll offers the same verb and the alert
+  states a rule about what a tab name *is*. Same words, same buttons,
+  same empty-field meaning, two callers.
 - **No auto-minting of Day 0**, at launch, on restore, on the toggle, in
   `refresh()`, from the rail, or when the selected page expires under the
   cursor.
@@ -629,6 +643,95 @@ decision that is Rust, the more of it is validated before a PR exists.
   organization and retention features by default.
 - **No form factor but the backdrop.** The panel is archived (ADR-0014)
   and gets no rail.
+
+## What the prototype answered
+
+Written after the six branches landed, in the background-surface house
+style: appended rather than edited into the three answers above, so the
+argument as it was made and the thing as it was built can be read side
+by side. Where building it moved an answer, the superseded sentence is
+struck through here rather than deleted up there.
+
+### The middle day: it closes up, and it costs nothing to keep it that way
+
+Built exactly as argued, and cheaper than expected. A day is a bucket
+that a live page falls into; when the page expires the bucket is
+computed and nothing is in it, so the row is simply not there on the
+next read. There is no removal path, no tombstone, and no code that
+knows a day ever existed — which is the strongest form of the argument
+the answer above makes from principle. What the roll adds is the
+mechanical half: the regions are laid out top-down by frame in one pass
+over the projection, so a bucket that stops appearing closes the layout
+up with no animation and nothing to reconcile.
+
+One thing had to be decided that the answer did not name: **a day
+holding two pages needed a second kind of mark.** A tear between the
+two would have said "a day passed" and lied. It renders as a plain
+hairline instead — `DayHeaderView.Mark.hairline`, chosen by a pure
+function with a test — so the vocabulary is now three marks: nothing
+above the roll's first header, a dashed tear at a day boundary, and a
+hairline between two pages of one day.
+
+### "Content": non-whitespace ink or one chip, and the shell never guesses
+
+Built as argued and unchanged by building it. The predicate is
+`Sheet::has_content()`, the bar `entomb` already applied, with one
+definition and two callers; it crosses the seam as `page_has_content`,
+a boolean, so no document is ever read out to decide whether a day
+exists. The two exemptions — today is always a place, and the selected
+page's day is always drawn — turned out to be load-bearing in a way the
+answer only implied: because the selected page's day is always present,
+the roll can rely on the selected page always having a region to stand
+in, and the editor never has to be mounted over a day the projection is
+not drawing.
+
+The one number nobody can produce from here is whether the bar is set
+right. That is what the rail's hidden-pages count is for, and the QA
+procedure asks for it to be written down.
+
+### The anchor: Day 0 is the top, and a summon goes back to it
+
+Built as argued, and one clause of it is now more specific.
+~~"On launch, on entering the mode, and on every summon, the clip goes
+to the origin."~~ On mount and on every summon, and *not* on a ⌘Tab
+return: re-keying the card is not a summon, and moving the roll under
+someone who came back to the sentence they were writing would be the
+opposite of what the anchor is for. `BackdropModel.raise()` is the one
+caller, so the anchor rides the same moment the pasteboard offer does.
+
+Two mechanisms the answer named in passing turned out to matter enough
+to have tests of their own. The first is that the anchor moves the
+selection as well as the scroll when today holds a page, and that it
+cannot mint: it selects an occupied slot or does nothing, so a summon
+onto an empty Day 0 lands on the empty state with its Return grant
+intact. The second is the prepend rule
+(`DayStackView.offsetAfterPrepending`), which has an edge the answer did
+not: a reader **at the origin** is deliberately not moved when a new day
+arrives above them, because the origin is where the new day now is, and
+holding them still there would hide the very thing "Day 0 is always
+displayed" promises. A reader scrolled into history is moved by exactly
+the height that arrived, so nothing shifts under a sentence being read.
+
+### What building it cost that the argument did not price
+
+- **A rendering cache.** Quiet days render from
+  `PageModel.quietRendering(for:)`, built once per page and pruned on
+  the same live-page set as the storages. It needs one invalidation the
+  design did not name: the entry is dropped when the editor moves onto
+  that page, or a day the user has just written on would come back
+  reading as it did before they arrived.
+- **A parked editor.** When no live page is visible at all the editor
+  cannot be re-parented (it is a permanent child) and must not keep
+  showing the page that expired. It is handed a fresh empty storage,
+  given no height, and the model's weak handle is dropped — the same
+  thing a dismantle does, without the dismantle.
+- **One diff to `TabStripView.swift`**, for the rename prompt, which the
+  "no diff at all" claim above now records as spent.
+- **A flip that costs undo.** The card's two content rows are distinct
+  structural identities, so flipping the mode remounts the editor and
+  spends every page's undo history and the caret within the page.
+  Nothing is lost from the document or from disk. It is what a
+  deliberate flip in Settings costs and what no keystroke pays.
 
 ## Open questions
 
