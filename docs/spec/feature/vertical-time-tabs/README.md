@@ -44,6 +44,15 @@ left for the code to decide by accident: what a middle day's expiry does
 to the scroll, what "content" means, and where Day 0 sits when the
 surface opens.
 
+One convention, stated once so that nobody has to guess it per citation.
+The line numbers in the argument sections — everything above "Change
+map" — name the tree each was **written against**, and the six branches
+have moved most of them since; the symbol beside each one is what to
+grep for. The change map, the "what the prototype answered" sections and
+the test plan describe the landed state, and their citations are
+refreshed against the tree as it stands. Where a file has proved it will
+keep moving, they name the type or the function and no number at all.
+
 ## The model: a day is a query, not an object
 
 A unit of time is not a thing the app creates. It is a bucket over the
@@ -52,14 +61,16 @@ page's own birth stamp, computed on every read and stored nowhere.
 `Sheet::created_wall_ms` is the page's birthday in Unix milliseconds
 (`crates/core/src/sheet.rs`, the field split of ADR-0017). Fold it
 through the store's own UTC offset — the same offset the tab's
-`MMDD-HHmm` placeholder already renders from
-(`crates/core/src/sheet.rs:712-721`, and the bucket is the
-`local_seconds.div_euclid(86_400)` line at `:715`) — and a page has a
-local day index. Subtract today's index from the page's and the answer
-is a small relative integer: 0 for a page born today, -1 for one born
-yesterday. That integer, and one boolean saying whether the page holds
-anything, are the only two facts the seam gains
-(`crates/ffi/src/lib.rs:2385`, `summary_json`).
+`MMDD-HHmm` placeholder renders from — and a page has a local day index.
+That fold used to be one line inside `placeholder_title`; branch 2
+hoisted it into `local_day` (`crates/core/src/sheet.rs:762`, the
+`local_seconds(…).div_euclid(86_400)` at `:763`), which
+`placeholder_title` now calls, so the label and the day are read out of
+one line rather than two copies of it. Subtract today's index from the
+page's and the answer is a small relative integer: 0 for a page born
+today, -1 for one born yesterday. That integer, and one boolean saying
+whether the page holds anything, are the only two facts the seam gains
+(`crates/ffi/src/lib.rs:2402`, `summary_json`).
 
 Everything follows from that arithmetic and nothing else exists:
 
@@ -453,14 +464,15 @@ the dogfood window ADR-0020 waits on.
    amended: a prototype behind a default-off toggle has not earned an
    amendment to the standing interaction model, and the ADR carries its
    own acceptance gate and eject triggers instead.
-2. **The seam says which day a page was born on.** `local_day` hoisted
-   out of `placeholder_title` (`crates/core/src/sheet.rs:712-721`),
-   `Sheet::has_content()` extracted from `entomb`
-   (`crates/core/src/store.rs:1364-1371`), `SheetStore::wall_ms()` beside
-   `now()` (`:450`), two additive keys on `summary_json`
-   (`crates/ffi/src/lib.rs:2385`) with the header's field contract
+2. **The seam says which day a page was born on.** `local_day`
+   (`crates/core/src/sheet.rs:762`) hoisted out of `placeholder_title`,
+   which is now one of its two callers (`:779`); `Sheet::has_content()`
+   (`:597`) extracted from `entomb` (`crates/core/src/store.rs:1387`);
+   `SheetStore::wall_ms()` (`crates/core/src/store.rs:467`) beside
+   `now()` (`:450`); two additive keys on `summary_json`
+   (`crates/ffi/src/lib.rs:2402`) with the header's field contract
    extended in the same commit
-   (`crates/ffi/include/companion_ffi.h:213-235`), and the two fields
+   (`crates/ffi/include/companion_ffi.h:213-253`), and the two fields
    decoded onto `TabSummary`. No new FFI symbol and nothing a user can
    see.
 3. **The projection.** A pure `TimeUnitProjection` over the tab
@@ -495,16 +507,20 @@ the dogfood window ADR-0020 waits on.
    procedure that answers the issue's three questions on a real machine.
    This is where the engineering goes and the branch that can be reverted
    without losing the mode. **Landed**, in
-   `shell/Sources/CompanionKit/DayScrollView.swift`: `DayScrollView`
-   (`:44`) over `DayStackView` (`:163`), with `DayHeaderView` (`:738`),
-   `QuietPageView` (`:999`) and `EmptyTodayView` (`:1089`).
+   `shell/Sources/CompanionKit/DayScrollView.swift`: `DayScrollView` over
+   `DayStackView`, with `DayHeaderView`, `QuietPageView` and
+   `EmptyTodayView`. Type names rather than line numbers for that file,
+   and deliberately: it is the file this stack rewrote most, its numbers
+   went stale twice inside the branch that wrote them, and a name is
+   `grep`-able where a number is only ever a claim about a moment.
    `PageContentView` branches at
-   `shell/Sources/CompanionKit/PageSurface.swift:42`, the renderings and
-   their pruning are at `shell/Sources/CompanionKit/PageModel.swift:513`,
-   `:1344` and `:1471`, and the summon's re-anchor is
-   `PageModel.anchorOnToday()` (`:2032`) called from
-   `shell/Sources/OnetimePad/BackdropModel.swift:174`. The hardware
-   procedure is
+   `shell/Sources/CompanionKit/PageSurface.swift:42`; the renderings, the
+   invalidation every mutation site now calls and the liveness prune are
+   `PageModel.quietRendering(for:)`, `invalidateQuietRendering(for:)` and
+   the filter inside `refresh()`; and the summon's re-anchor is
+   `PageModel.anchorOnToday()`, reached from `BackdropModel.raise(_:)`
+   only for a `BackdropRaise.summon` (see the anchor section below). The
+   hardware procedure is
    [`docs/qa/verification-procedures/vertical-time-tabs.md`](../../../qa/verification-procedures/vertical-time-tabs.md).
 
 The limit branch 5 shipped with is closed: rename, hold, rung and close
@@ -522,7 +538,9 @@ decision that is Rust, the more of it is validated before a PR exists.
   born after; the day index follows the offset the clock reports,
   including a negative one; whitespace alone is not content; a chip with
   no ink is content; the placeholder stamp did not move
-  (`crates/core/src/sheet.rs:1170-1185` re-asserted); the content
+  (`the_placeholder_stamp_did_not_move`, `crates/core/src/sheet.rs:1254`,
+  re-asserting every case the label's own tests pin at `:1237`); the
+  content
   predicate is the one the ledger already used, over a matrix of pages;
   and an expiring page still leaves its tab standing in place.
 - **Seam.** The summary says which day the page was born on, read
@@ -543,7 +561,10 @@ decision that is Rust, the more of it is validated before a PR exists.
   blank; ordering is newest first; two pages born the same day land in one
   unit in strip order; the hidden count counts the live pages the
   projection drops; and the label tables for 0, -1, -7 and a positive
-  bucket, since a skewed clock must not invent a future day.
+  bucket, since a skewed clock must not invent a future day — a page
+  stamped ahead of now is *filed* under today as well as labelled it, so
+  that "Today" names exactly one row and the lookups that ask for today
+  by its bucket cannot find an empty one standing above a peopled one.
 - **The load-bearing identity.** With the mode off, the mode-aware target
   list equals the strip element for element. This is what makes
   "horizontal mode is unchanged" an assertion rather than a promise.

@@ -126,9 +126,13 @@ not the redraw.
 The decision under test: the scroll **closes up** and the gap lives in
 the labels. No ghost row, no placeholder, no renumbering.
 
-1. Stage three days, and give the middle day's page a short rung (click
-   its countdown in the day's gutter to step the ladder down, or use the
-   gutter's context menu).
+1. Stage three days, and give the middle day's page a short rung:
+   right-click that day's gutter and use its **Shorten the countdown**
+   item, which steps the ladder down one press at a time. The countdown
+   printed in the gutter is a label and not a button — the clickable
+   countdown is the card header's, and it steps the *selected* page's
+   rung, so click into the middle day first if you would rather use that
+   one.
 2. Wait for it to expire, or leave the card and come back after the
    rung has run out.
 
@@ -237,6 +241,13 @@ renamed or re-ordered; a new sealed generation written for a flip.
    the caret within the page. Nothing on disk or on screen is lost. It
    is what a deliberate flip in Settings costs and what no keystroke
    pays.
+4. And one expected move. Turning the mode **on** while the selected
+   tab's page has expired — the state an overnight expiry leaves —
+   selects the newest day that is on screen instead, because the rail
+   draws no row for a slot holding no page and a selection there would
+   name something nobody can see. It creates nothing and it happens in
+   that direction only; turning the mode off leaves the selection
+   exactly where it is, the strip having a row for every slot.
 
 ## Case 7: VoiceOver down the rail and across the roll
 

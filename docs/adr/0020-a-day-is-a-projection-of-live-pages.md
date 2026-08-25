@@ -371,40 +371,54 @@ decision's status waits on.
     focus law's refocus (:1576, private today).
 
     **Landed**, in shell/Sources/CompanionKit/DayScrollView.swift:
-    `DayScrollView` (:44) over `DayStackView` (:163), with
-    `DayHeaderView` (:738), `QuietPageView` (:999) and `EmptyTodayView`
-    (:1089). The renderings are
-    `PageModel.quietRendering(for:)`
-    (shell/Sources/CompanionKit/PageModel.swift:1471) over the map at
-    :513, pruned in `refresh()` at :1344 on the same set as `storages`
-    (:484) and `undoManagers` (:494);
+    `DayScrollView` over `DayStackView`, with `DayHeaderView`,
+    `QuietPageView` and `EmptyTodayView`. Names and no line numbers for
+    that file, deliberately: its numbers went stale twice inside the
+    branch that wrote them, and again when the review's fixes landed, so
+    a number here is a claim about a moment rather than an address. The
+    renderings are `PageModel.quietRendering(for:)` over the
+    `quietRenderings` map, pruned in `refresh()` on the same live-page
+    set as `storages` and `undoManagers`, all in
+    shell/Sources/CompanionKit/PageModel.swift;
     `CompanionClient.documentRuns(sheet:)` is at
     shell/Sources/CompanionKit/CompanionClient.swift:703.
     `PageContentView` branches at
     shell/Sources/CompanionKit/PageSurface.swift:42 with the ADR-0006
     contract comment about the absent `.id(page)` intact below it, and
-    `refocusEditorIfKeyed` (:1834) is internal now and called from the
-    one path that moves the editor between days
-    (`DayStackView.settleEditor(on:)`, DayScrollView.swift:495). The line
-    numbers in the paragraph above name the tree this decision was
-    written against, three branches ago.
+    `refocusEditorIfKeyed` is internal now and called from the one path
+    that moves the editor between days
+    (`DayStackView.settleEditor(on:)`). The line numbers in the paragraph
+    above name the tree this decision was written against, three branches
+    ago.
 
     Four things came out of the work the item had not named. The
     rendering cache needs an invalidation as well as a prune
-    (`invalidateQuietRendering(for:)`, PageModel.swift:1498): a cached
-    day is sound only while the day is quiet, and a page stops being
-    quiet the moment the editor arrives on it. A pad with no live page
+    (`PageModel.invalidateQuietRendering(for:)`): a cached day is sound
+    only while the day cannot change, so the model drops a page's
+    reading wherever that page's document moves — the accepted arm of
+    `applyOps`, the accepted arm of `syncDocument`, and
+    `removeChipFromDocument` — and the roll re-reads a region whose
+    rendering the model rebuilt. Invalidating on the editor's way past
+    alone was the first version of this, and the review of this stack
+    found it wrong on four paths at once: an edit made with the strip
+    showing, the pass that *builds* the editor (the factory sets
+    `currentSheet` itself, so the swap is never taken), a chip burned out
+    of a day the editor had left, and a composition still in flight as
+    the editor left it. A cache invalidated by a view's choreography is
+    correct only on the paths somebody thought of. A pad with no live page
     anywhere needs the editor *parked* rather than re-parented
-    (DayScrollView.swift:551) — a fresh empty storage, no height, and the
-    model's weak handle dropped — because a permanent child must not go
-    on showing a page that expired. A day holding two pages needed a
+    (`DayStackView.parkEditor()`) — a fresh empty storage, no height, and
+    the model's weak handle dropped — because a permanent child must not
+    go on showing a page that expired. A day holding two pages needed a
     third mark, the hairline, since a tear between them would have said
     "a day passed" and lied. And the summon's re-anchor is
-    `PageModel.anchorOnToday()` (:2032) behind the `onAnchorToday`
-    closure (:454), called from
-    shell/Sources/OnetimePad/BackdropModel.swift:174 — the raise path,
-    and deliberately not the ⌘Tab return, which re-keys the card without
-    being a summon.
+    `PageModel.anchorOnToday()` behind the `onAnchorToday` closure,
+    called from `BackdropModel.raise(_:)` — but only for a
+    `BackdropRaise.summon`, and deliberately not for an activation:
+    `raise` is also what `applicationDidBecomeActive` calls, so a ⌘Tab
+    return re-keys the card without being a summon and must leave the
+    roll where the reader left it. Which raises anchor is
+    `BackdropModel.anchorsOnToday(raise:)`, a pure function with a test.
 
     One thing was spent that branch 5 had banked:
     shell/Sources/CompanionKit/TabStripView.swift takes one diff after
