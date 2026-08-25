@@ -9,19 +9,37 @@
 # release configuration and installs it to /Applications.
 #
 # --no-launch builds without opening the app afterwards.
+#
+# --allow-capture launches with COMPANION_ALLOW_CAPTURE=1, which lifts
+# the surface's screen-capture exclusion for the life of that run, so
+# the window shows up in screenshots and screen recordings. A debug
+# build always offers the Settings switch; the variable is what seeds
+# it on, so a scripted run needs no click. The opt-out is never
+# persisted and fails closed at the next launch (ADR-0012), which is
+# why this is a flag and not the default. Exporting the variable in
+# the calling shell does the same thing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 NO_LAUNCH=0
-if [[ $# -gt 1 ]]; then
-  echo "too many arguments (the only flag is --no-launch)" >&2
-  exit 1
-elif [[ "${1:-}" == "--no-launch" ]]; then
-  NO_LAUNCH=1
-elif [[ -n "${1:-}" ]]; then
-  echo "unknown argument: $1 (the only flag is --no-launch)" >&2
-  exit 1
+ALLOW_CAPTURE=0
+# An exported COMPANION_ALLOW_CAPTURE means the same thing as the flag.
+# `open` does not forward the caller's environment to the app it starts,
+# so a variable set in this shell would otherwise be dropped on the way.
+if [[ -n "${COMPANION_ALLOW_CAPTURE:-}" ]]; then
+  ALLOW_CAPTURE=1
 fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-launch) NO_LAUNCH=1 ;;
+    --allow-capture) ALLOW_CAPTURE=1 ;;
+    *)
+      echo "unknown argument: $1 (the flags are --no-launch and --allow-capture)" >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
 
 # The dev lane builds the dev shape of the core, test seams included
 # (ADR-0018), which keeps bindings/ linkable by `swift test` between
@@ -65,6 +83,11 @@ echo "==> scripts/package-app.sh --debug"
 scripts/package-app.sh --debug
 
 if [[ "$NO_LAUNCH" == 0 ]]; then
-  echo "==> Launching $DIST_APP"
-  open "$DIST_APP"
+  if ((ALLOW_CAPTURE)); then
+    echo "==> Launching $DIST_APP (screen capture allowed)"
+    open --env COMPANION_ALLOW_CAPTURE=1 "$DIST_APP"
+  else
+    echo "==> Launching $DIST_APP"
+    open "$DIST_APP"
+  fi
 fi
