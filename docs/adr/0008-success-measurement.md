@@ -45,12 +45,12 @@ Concretely:
    retention cohorts, and feature-usage frequency are not inputs to
    keep, kill, or invest decisions about this app, because the design
    guarantees they read as failure.
-2. **The one clean quantitative signal is server-side promotion counts
-   attributable to the client**, once the v3 promotion call carries a
+2. **The one clean quantitative signal is server-side conceal counts
+   attributable to the client**, once the v3 conceal call carries a
    client identifier (it does not today; see Consequences). It is a
-   floor, not a measure: it counts exits, not dwell. Every session that ends without a promotion, which the spec
+   floor, not a measure: it counts exits, not dwell. Every session that ends without a conceal, which the spec
    treats as a normal successful session, is invisible to it, and so is
-   every promotion to a self-hosted instance.
+   every conceal against a self-hosted instance.
 3. **The measurement gap is never closed with telemetry.** Not knowing
    how the app is used is a purchased property (doc 02, section 5; doc
    03, principle 4), not a bug to fix. Proposals for "just anonymous
@@ -66,7 +66,7 @@ Concretely:
   up front. No A/B tests, no funnels, no per-feature usage data. The
   spec's design principles and doc 06's open questions do the work that
   analytics would do elsewhere.
-- The promotion count needs attribution plumbing that does not exist
+- The conceal count needs attribution plumbing that does not exist
   yet: the client sends no identifier today (`crates/ffi`), and the
   server must count by it. Until both land, there is no quantitative
   signal at all. Even after, it needs honest interpretation: it can
@@ -81,7 +81,7 @@ Concretely:
 
 ## Eject triggers
 
-- Promotion attribution stops working: the API stops distinguishing
+- Conceal attribution stops working: the API stops distinguishing
   clients, or self-hosted routing grows to where the counts are no
   longer representative. The decision then needs a replacement signal,
   chosen under the same constraint, never retention.

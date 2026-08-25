@@ -20,7 +20,7 @@ The create-path spec rejected the *proxy-client* topology (the app POSTing
 plaintext to a remote proxy). This is the third topology — the app **is**
 the proxy — and it is additive, not a replacement:
 
-- The app's own promotions keep the in-process path: `promote` calls
+- The app's own conceals keep the in-process path: `conceal` calls
   `byoe::seal` directly. No loopback round trip for ourselves.
 - The service is a thin HTTP skin over the **same** `crates/byoe`
   construction, for clients that are not this app. Nothing forks.

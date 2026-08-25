@@ -16,7 +16,7 @@ The steps, in order:
 
 4. **Add App Sandbox and entitlements.** This is the actual work. `scripts/Companion.entitlements` already exists and already carries the keychain group; extend that file rather than creating a second one:
    - `com.apple.security.app-sandbox` = true (mandatory for anything shipped through App Store Connect)
-   - `com.apple.security.network.client` = true (promotion POST and the connection test)
+   - `com.apple.security.network.client` = true (the conceal POST and the connection test)
    - `keychain-access-groups`, already present as `$(AppIdentifierPrefix)@BUNDLE_IDENTIFIER@`. Do not hardcode a bundle id here: the build scripts substitute the signing certificate's Team ID and the id of the bundle being assembled, so the release bundle and its `.debug` variant each land in their own group. A single shared group would be a single shared keychain, which ADR-0012 forbids across the dev and release lanes. This entitlement also does double duty: it is the restricted one that forces macOS to issue a genuine provisioning profile, which is what makes Mac TestFlight work at all. Restricted cuts both ways, though, so see step 5: claim it without embedding a profile and the app will not launch (amfid -413).
 
 5. **Certificates and profile.** An "Apple Distribution" certificate signs the `.app`; a "Mac Installer Distribution" (a.k.a. "3rd Party Mac Developer Installer") certificate signs the `.pkg`. Create a Mac App Store distribution provisioning profile for the App ID and copy it to `Contents/embedded.provisionprofile` before signing. App Store re-signs your build on ingest, so the embedded profile is for upload validation, not the final identity.
@@ -50,7 +50,7 @@ The steps, in order:
 
 Where sandboxing will actually bite this app, in priority order:
 
-**Keychain is the one to verify on device.** The core uses `security-framework` generic-password items scoped by service name with no explicit `kSecAttrAccessGroup` (`crates/credentials/src/lib.rs`). Under sandbox those land in the app's own keychain automatically, and with the `keychain-access-groups` entitlement whose first group is the app id, store/load/exists/delete stay consistent across TestFlight builds (Apple signs them all with the same App Store identity, so the ACL doesn't re-prompt the way your ad-hoc rebuilds do). But this is the single highest-risk integration point; test the full save-token, relaunch, promote round trip in the sandboxed build before trusting it.
+**Keychain is the one to verify on device.** The core uses `security-framework` generic-password items scoped by service name with no explicit `kSecAttrAccessGroup` (`crates/credentials/src/lib.rs`). Under sandbox those land in the app's own keychain automatically, and with the `keychain-access-groups` entitlement whose first group is the app id, store/load/exists/delete stay consistent across TestFlight builds (Apple signs them all with the same App Store identity, so the ACL doesn't re-prompt the way your ad-hoc rebuilds do). But this is the single highest-risk integration point; test the full save-token, relaunch, conceal round trip in the sandboxed build before trusting it.
 
 **The ⌃⌥Space hotkey survives.** Carbon `RegisterEventHotKey` (`BackdropHotKey.swift`) is permitted in sandboxed App Store apps and needs neither an entitlement nor an Accessibility grant. Good news, because an event-tap approach would not have survived.
 
