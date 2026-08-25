@@ -245,7 +245,7 @@ struct TimeUnitTab: View {
     /// not there yet.
     private var helpText: String {
         guard unit.pageIDs.isEmpty else {
-            return Self.help(spokenLabel: unit.spokenLabel, chord: chord)
+            return Self.dayHelp(spokenLabel: unit.spokenLabel, chord: chord)
         }
         return Self.todayHelp(hasPage: false, chord: chord)
     }
@@ -254,7 +254,7 @@ struct TimeUnitTab: View {
     /// because the column is narrow, and this is where the phrase
     /// behind the abbreviation lives. With nothing bound it says only
     /// what the row does, which is still true.
-    static func help(spokenLabel: String, chord: Keystroke?) -> String {
+    static func dayHelp(spokenLabel: String, chord: Keystroke?) -> String {
         chorded("Go to \(spokenLabel)", chord: chord)
     }
 
@@ -266,7 +266,7 @@ struct TimeUnitTab: View {
     /// that gains a page reads the same either way it was asked.
     static func todayHelp(hasPage: Bool, chord: Keystroke?) -> String {
         guard hasPage else { return chorded("Start today's page", chord: chord) }
-        return help(spokenLabel: "today", chord: chord)
+        return dayHelp(spokenLabel: "today", chord: chord)
     }
 
     /// The chord in parentheses after the description, or the plain

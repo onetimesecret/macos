@@ -127,7 +127,7 @@ final class TimeRailTests: XCTestCase {
         XCTAssertEqual(TimeUnitTab.todayHelp(hasPage: true, chord: nil), "Go to today")
         XCTAssertEqual(
             TimeUnitTab.todayHelp(hasPage: true, chord: nil),
-            TimeUnitTab.help(spokenLabel: peopled.spokenLabel, chord: nil),
+            TimeUnitTab.dayHelp(spokenLabel: peopled.spokenLabel, chord: nil),
             "today read differently depending on which helper was asked")
     }
 
@@ -142,7 +142,7 @@ final class TimeRailTests: XCTestCase {
         XCTAssertEqual(TimeRailView.chord(forRowAt: 0, keymap: model.keymap)?.displaySymbol, "⌘1")
         XCTAssertEqual(TimeRailView.chord(forRowAt: 1, keymap: model.keymap)?.displaySymbol, "⌘2")
         XCTAssertEqual(
-            TimeUnitTab.help(
+            TimeUnitTab.dayHelp(
                 spokenLabel: "yesterday",
                 chord: TimeRailView.chord(forRowAt: 1, keymap: model.keymap)),
             "Go to yesterday (⌘2)")
@@ -156,7 +156,7 @@ final class TimeRailTests: XCTestCase {
     func testTheTooltipDegradesToThePlainDescription() throws {
         let model = try makeModel()
         XCTAssertNil(TimeRailView.chord(forRowAt: 9, keymap: model.keymap))
-        XCTAssertEqual(TimeUnitTab.help(spokenLabel: "yesterday", chord: nil), "Go to yesterday")
+        XCTAssertEqual(TimeUnitTab.dayHelp(spokenLabel: "yesterday", chord: nil), "Go to yesterday")
         XCTAssertEqual(TimeUnitTab.todayHelp(hasPage: false, chord: nil), "Start today's page")
     }
 
