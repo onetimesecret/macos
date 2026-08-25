@@ -13,7 +13,7 @@ import Foundation
 /// The card carries a real height, the way a window does. It began as a
 /// floor under the editor while the card grew downward with its ink,
 /// which reads well for one page of ink and badly for everything the
-/// parity work added: a tab strip, a ledger, and an inline promotion
+/// parity work added: a tab strip, a ledger, and an inline conceal
 /// all need the card to be a fixed frame with a scrolling page inside
 /// it, not a shape that changes size as the page fills.
 struct BackdropGeometry: Codable, Equatable {
@@ -73,7 +73,7 @@ struct BackdropGeometry: Codable, Equatable {
     func clamped(to pane: CGRect) -> BackdropGeometry {
         // Raw components, not the rect accessors: CGRect normalizes a
         // negative size (`width` turns absolute, `minX` shifts), which
-        // would quietly promote a degenerate pane to a real one.
+        // would quietly turn a degenerate pane into a real one.
         let paneWidth = max(0, pane.size.width)
         let paneHeight = max(0, pane.size.height)
 

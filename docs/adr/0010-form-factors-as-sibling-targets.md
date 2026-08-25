@@ -11,7 +11,7 @@ two things: the summoned non-activating panel — which the alpha-stage
 CompanionApp already is — remains the right primary architecture, and
 there is a second, genuinely different posture worth exploring: the
 **desktop-canvas background surface** (the Plash/Übersicht model — a
-window at desktop level, glanceable and passive, promoted to a floating
+window at desktop level, glanceable and passive, raised to a floating
 editor on demand).
 
 We want that exploration without disturbing or destabilizing the panel
@@ -85,7 +85,7 @@ not.)
 ## Eject triggers
 
 - **A sibling graduates from exploration to product** (gets persistence,
-  promotion, or a release artifact): extract the shared `CompanionKit`
+  the conceal path, or a release artifact): extract the shared `CompanionKit`
   library target then, as its own change, and both form factors move
   onto it together.
   **Fired 2026-07-25.** CompanionBackdrop gained persistence (argued in
@@ -96,7 +96,7 @@ not.)
   under its own Keychain service, reached through
   `companion_new_scoped`, and neither app reads the other's.
   **Fired again the same day, wider.** The parity amendment gave the
-  backdrop tabs, chips, the ledger and promotion, which would have put
+  backdrop tabs, chips, the ledger and the conceal path, which would have put
   roughly eighteen hundred lines of secret-touching view code in both
   targets. So the extraction went past the wrapper: the page model
   (`PageModel`) and every form-factor-neutral view moved to

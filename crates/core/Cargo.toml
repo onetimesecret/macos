@@ -1,6 +1,6 @@
 [package]
 name = "companion-core"
-version = "0.13.0"
+version = "0.14.0"
 description = "Sheet store for the Onetime Secret macOS companion: ink + sealed chips, pausable per-page countdowns, the session ledger, zeroizing buffers. No UI, no macOS dependencies."
 publish = false
 edition.workspace = true
@@ -36,7 +36,7 @@ loro = { version = "=1.13.9", default-features = false }
 libc = "0.2"
 
 [dev-dependencies]
-# Examples only: the demo REPL runs promotion through the client crate,
+# Examples only: the demo REPL runs the conceal call through the client crate,
 # a real transport, and Keychain-or-guest credentials; copies out
 # through the in-memory pasteboard.
 ots-client = { path = "../ots-client" }

@@ -19,10 +19,10 @@ public struct PageContentView: View {
 
     /// A surface showing a page it will not let you edit — the
     /// backdrop's resting glance. The same editor, the same storage,
-    /// the same measure, with editing refused: promote and demote must
-    /// not make the text jump, and a second read-only view over the
-    /// page's storage would break the one-layout-manager invariant
-    /// ADR-0006 rests on.
+    /// the same measure, with editing refused: raising and lowering the
+    /// card must not make the text jump, and a second read-only view
+    /// over the page's storage would break the one-layout-manager
+    /// invariant ADR-0006 rests on.
     let readOnly: Bool
 
     /// What the empty state offers, named as the gesture that actually
@@ -80,7 +80,7 @@ public struct PageContentView: View {
 // MARK: - The status lines
 
 /// Everything between the page and the tabs: the pasteboard offer, the
-/// notice line, the open promotion, and the page's draining gauge. Each
+/// notice line, the open conceal, and the page's draining gauge. Each
 /// appears only when it has something to say, so a quiet surface shows
 /// none of them and the layout does not reserve their room.
 public struct PageStatusStack: View {
@@ -159,10 +159,10 @@ public struct PageStatusStack: View {
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        if let draft = model.promotion, !model.showingLedger {
+        if let draft = model.concealDraft, !model.showingLedger {
             // The inline, in-place confirmation (never a modal):
             // the network boundary is the one confirming click.
-            PromotionView(model: model, draft: draft)
+            ConcealView(model: model, draft: draft)
         }
         if let sheet = model.selectedTab, sheet.hasPage, !model.showingLedger {
             // The page's bottom edge drains continuously.

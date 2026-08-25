@@ -1,10 +1,11 @@
-//! Promotion: the exit ramp, behind the seam (docs/spec/04).
+//! Conceal: the exit ramp, behind the seam (docs/spec/04).
 //!
-//! The only network action in the app. Sealed bytes travel **core →
-//! `ots-client` → transport** inside this module; the shell hands over
-//! ids and options, and gets back non-secret JSON. On success the share
-//! link lands on the clipboard and only the receipt identifier stays on
-//! the chip (doc 03 §5 — no link, no history).
+//! The one place an explicit user action sends content out. Sealed
+//! bytes travel **core → `ots-client` → transport** inside this module;
+//! the shell hands over ids and options, and gets back non-secret JSON.
+//! On success the share link lands on the clipboard and only the
+//! receipt identifier stays on the chip (doc 03 §5 — no link, no
+//! history).
 //!
 //! This half is sans-network: it builds and interprets the conceal
 //! call through any [`Transport`], so tests drive it with a mock and CI
@@ -19,7 +20,7 @@ use ots_client::{
 };
 use zeroize::Zeroizing;
 
-/// Where promotion goes: the app's one outbound destination plus the
+/// Where a conceal goes: the app's one outbound destination plus the
 /// Basic-auth username half. Non-secret — the API token never sits
 /// here; it lives in the credential store and is loaded per call.
 #[derive(Clone)]
@@ -50,13 +51,13 @@ impl Connection {
 
 /// Options the confirmation step gathers. All optional: TTL defaults to
 /// the sheet's remaining time snapped to the ladder.
-pub(crate) struct PromoteOpts {
+pub(crate) struct ConcealOpts {
     pub ttl_secs: Option<u64>,
     pub passphrase: Option<Zeroizing<String>>,
     pub recipient: Option<String>,
 }
 
-impl PromoteOpts {
+impl ConcealOpts {
     /// Parse the options JSON. `None` (or `{}`) is a valid, all-default
     /// options object; malformed JSON is a refusal, not a guess.
     pub fn parse(json: Option<&str>) -> Option<Self> {
@@ -88,7 +89,7 @@ impl PromoteOpts {
 }
 
 /// The sheet's remaining time snapped **down** to a ladder value — the
-/// promoted secret never outlives the local intent (open question №13).
+/// concealed secret never outlives the local intent (open question №13).
 pub(crate) fn ladder_snapped_ttl(remaining: Duration) -> u64 {
     let allowed: Vec<u64> = TTL_LADDER.iter().map(Duration::as_secs).collect();
     // The ladder is non-empty, so `snap_ttl` always finds a value.
@@ -98,7 +99,7 @@ pub(crate) fn ladder_snapped_ttl(remaining: Duration) -> u64 {
 /// The outcome the seam reports: the share link (for the clipboard,
 /// core-side) and the receipt identifier (the only thing retained).
 #[derive(Debug)]
-pub(crate) struct Promoted {
+pub(crate) struct Concealed {
     pub link: String,
     pub receipt_id: String,
 }
@@ -111,14 +112,14 @@ pub(crate) struct Promoted {
 // zeroize on drop when the call returns, success or failure — a
 // reference would leave the caller holding live sealed bytes longer.
 #[allow(clippy::needless_pass_by_value)]
-pub(crate) fn promote<T: Transport>(
+pub(crate) fn conceal<T: Transport>(
     conn: &Connection,
     token: Option<Zeroizing<String>>,
     payload: Zeroizing<String>,
-    opts: &PromoteOpts,
+    opts: &ConcealOpts,
     default_ttl_secs: u64,
     transport: T,
-) -> Result<Promoted, String> {
+) -> Result<Concealed, String> {
     let mut conceal_payload = ConcealPayload::new(payload.as_str(), conn.effective_share_domain())
         .with_ttl(opts.ttl_secs.unwrap_or(default_ttl_secs));
     if let Some(passphrase) = &opts.passphrase {
@@ -138,7 +139,7 @@ pub(crate) fn promote<T: Transport>(
         client.guest_conceal(&conceal_payload)
     };
     match result {
-        Ok(data) => Ok(Promoted {
+        Ok(data) => Ok(Concealed {
             link: share_link(conn.server_url.as_str(), &data),
             receipt_id: data.receipt.identifier,
         }),
@@ -205,14 +206,14 @@ mod tests {
         "secret":{"identifier":"scrt_1","key":"abcdef"},
         "share_domain":null}}"#;
 
-    fn defaults() -> PromoteOpts {
-        PromoteOpts::parse(None).unwrap()
+    fn defaults() -> ConcealOpts {
+        ConcealOpts::parse(None).unwrap()
     }
 
     #[test]
     fn authenticated_when_token_and_extid_present() {
         let transport = MockTransport::returning(200, OK_BODY);
-        let out = promote(
+        let out = conceal(
             &conn(),
             Some(Zeroizing::new("tok".into())),
             Zeroizing::new("the payload".into()),
@@ -232,7 +233,7 @@ mod tests {
     #[test]
     fn guest_route_without_token_and_never_credentialed() {
         let transport = MockTransport::returning(200, OK_BODY);
-        promote(
+        conceal(
             &conn(),
             None,
             Zeroizing::new("p".into()),
@@ -250,8 +251,8 @@ mod tests {
     #[test]
     fn payload_carries_ttl_and_derived_share_domain() {
         let transport = MockTransport::returning(200, OK_BODY);
-        let opts = PromoteOpts::parse(Some(r#"{"ttl_secs": 3600}"#)).unwrap();
-        promote(
+        let opts = ConcealOpts::parse(Some(r#"{"ttl_secs": 3600}"#)).unwrap();
+        conceal(
             &conn(),
             None,
             Zeroizing::new("p".into()),
@@ -270,7 +271,7 @@ mod tests {
     #[test]
     fn errors_are_messages_not_panics() {
         let transport = MockTransport::failing("dns");
-        let err = promote(
+        let err = conceal(
             &conn(),
             None,
             Zeroizing::new("p".into()),
@@ -282,7 +283,7 @@ mod tests {
         assert!(err.contains("could not reach the server"));
 
         let transport = MockTransport::returning(401, r#"{"message":"bad credentials"}"#);
-        let err = promote(
+        let err = conceal(
             &conn(),
             Some(Zeroizing::new("tok".into())),
             Zeroizing::new("p".into()),
@@ -304,9 +305,9 @@ mod tests {
 
     #[test]
     fn opts_parse_rejects_malformed_json() {
-        assert!(PromoteOpts::parse(Some("not json")).is_none());
-        assert!(PromoteOpts::parse(Some("[1,2]")).is_none());
-        let opts = PromoteOpts::parse(Some(
+        assert!(ConcealOpts::parse(Some("not json")).is_none());
+        assert!(ConcealOpts::parse(Some("[1,2]")).is_none());
+        let opts = ConcealOpts::parse(Some(
             r#"{"ttl_secs":60,"passphrase":"pw","recipient":"a@b.c"}"#,
         ))
         .unwrap();

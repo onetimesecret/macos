@@ -145,7 +145,7 @@ that would move the rung back to the Page.
 
 A Tab has no TTL. Neither does a block, and ADR-0013's per-paragraph
 identities do not change that. TTL granularity is the page and the
-promoted link, and this ADR records that as settled rather than as a
+concealed link, and this ADR records that as settled rather than as a
 position taken today. ADR-0011's ladder is unchanged, including the 7d
 ceiling (crates/core/src/ttl.rs:26-33, :45-46).
 
@@ -429,7 +429,7 @@ except the magic bump in item 1, which issue #54 has already taken.
 2. `emit` changes shape (crates/core/src/persist.rs:423-437). After
    `wall_ms`, write a tab count, then per tab in strip order:
    `uuid[16]`, `created_wall_ms` u64, `name` as an optional (a u8
-   present flag plus length-prefixed bytes, mirroring the promotion
+   present flag plus length-prefixed bytes, mirroring the conceal
    encoding at crates/core/src/persist.rs:539-545), rung seconds u64, a
    u8 page-present flag, then the per-page body as ADR-0016 section 4
    leaves it, with `drained_ms` in place of the running span at
@@ -505,7 +505,7 @@ except the magic bump in item 1, which issue #54 has already taken.
    6a), `move_sheet` (:332-340),
    `new_sheet` (:199-217), `close_sheet` (:284-294), `expire_due`
    (:1260-1274), `chip_home` (:884-886), the normalize passes in
-   `delete_chip` (:905) and `mark_chip_promoted` (:1010), and
+   `delete_chip` (:905) and `mark_chip_concealed` (:1010), and
    `next_event` (:1226-1228). The persistence seam holds the rest: the
    two per-sheet export passes in `snapshot`
    (crates/core/src/persist.rs:189-198) and `emit`'s own pass
@@ -602,7 +602,7 @@ except the magic bump in item 1, which issue #54 has already taken.
 
    The routes split the same way. Tab addressed: new, close, move,
    set_title, set_rung, cycle_rung, pause_press. Page addressed: seal,
-   sync, apply_ops, document_json, meta_json, blocks_json, promote.
+   sync, apply_ops, document_json, meta_json, blocks_json, conceal.
    `companion_ffi.h` is hand maintained
    (crates/ffi/include/companion_ffi.h:15-16), so it follows in the same
    commit as the routes it describes. `SheetSummary` follows

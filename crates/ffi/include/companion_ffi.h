@@ -143,7 +143,7 @@ void companion_free(CompanionHandle *handle);
  * the page is dropped whole and the tab stays where it is, empty and
  * reusable, and the strip still shows it.
  *
- * The routes below take a TAB id. The sealing, document, promotion and
+ * The routes below take a TAB id. The sealing, document, conceal and
  * meta routes further down take a PAGE id, which the summary carries
  * as page_id. The two counters are unrelated: never pass one where the
  * other belongs, and never derive one from the other.
@@ -182,7 +182,7 @@ bool companion_tab_close(CompanionHandle *handle, uint64_t tab);
  * bytes zeroized, one discarded record in the ledger, and the tab keeps
  * its name, its rung, its position and its number key. Returns whether
  * a page by that id was standing. Page addressed because the burn
- * offered after a promotion names the content that travelled and not
+ * offered after a conceal names the content that travelled and not
  * the slot it travelled from.
  */
 bool companion_page_discard(CompanionHandle *handle, uint64_t page);
@@ -287,7 +287,7 @@ bool companion_store_emptiness(CompanionHandle *handle,
  * Returns the chip's JSON (free with companion_string_free()):
  *   chip_id, kind ("text"|"image"), excerpt (the mechanical face —
  *   the only rendering the content ever gets), size_label ("40 ch",
- *   "5 ln", "212 KB"), promoted (bool).
+ *   "5 ln", "212 KB"), concealed (bool).
  * Null when the board is empty, the page unknown, content empty, or
  * the range not on the page.
  * at_utf16/len_utf16 name the selection the gesture replaces, in
@@ -390,7 +390,7 @@ bool companion_sheet_sync_document(CompanionHandle *handle, uint64_t sheet,
  * after companion_persist_restore(): a JSON array of runs in document
  * order — {"ink": "text"} for visible ink, {"chip": {…}} where a chip
  * sits, the chip object carrying the same non-secret face the seal
- * routes return (chip_id, kind, excerpt, size_label, promoted). Ink
+ * routes return (chip_id, kind, excerpt, size_label, concealed). Ink
  * renders anyway; a chip crosses as its face, never its bytes. Free
  * with companion_string_free(). Null for an unknown page.
  */
@@ -431,9 +431,9 @@ char *companion_sheet_blocks_json(CompanionHandle *handle, uint64_t sheet);
 
 /*
  * Copy a chip back out: the core writes the pasteboard itself, marked
- * transient AND concealed (a chip is sealed by definition). Does not
- * consume the chip — multi-paste is a core moment. Returns whether the
- * chip existed.
+ * transient AND ConcealedType (a chip is sealed by definition). Does
+ * not consume the chip — multi-paste is a core moment. Returns whether
+ * the chip existed.
  *
  * A successful copy-out is an auditable egress: it leaves one "sent"
  * ledger record with destination "clipboard". The pasteboard is the
@@ -714,11 +714,11 @@ bool companion_persist_restore(CompanionHandle *handle, const char *path);
 bool companion_persist_erase(CompanionHandle *handle, const char *path);
 
 /* ------------------------------------------------------------------ */
-/* Promotion: the exit ramp, the app's only network action             */
+/* Conceal: the exit ramp, an explicit user action                    */
 /* ------------------------------------------------------------------ */
 
 /*
- * Configure where promotion goes. json (non-secret except the token in
+ * Configure where a conceal goes. json (non-secret except the token in
  * transit):
  *   { "server_url": "https://…",   // required, https only
  *     "share_domain": "…",         // "" -> the server's host
@@ -737,7 +737,7 @@ bool companion_connection_configure(CompanionHandle *handle, const char *json);
  * share_domain, extid, has_token. has_token is an existence check —
  * decided without reading the secret, so rendering Settings at launch
  * never triggers the Keychain prompt; that is reserved for the read a
- * promotion needs.
+ * conceal needs.
  */
 char *companion_connection_json(CompanionHandle *handle);
 
@@ -749,7 +749,7 @@ char *companion_connection_json(CompanionHandle *handle);
 char *companion_connection_test(CompanionHandle *handle);
 
 /*
- * Promote one sealed chip into a one-time link (the chip's hover ↗).
+ * Conceal one sealed chip into a one-time link (the chip's hover ↗).
  * opts_json: {"ttl_secs"?, "passphrase"?, "recipient"?} or NULL (TTL
  * defaults to the page's remaining time snapped DOWN the ladder).
  * Sealed bytes travel core -> client -> transport, never through the
@@ -759,18 +759,18 @@ char *companion_connection_test(CompanionHandle *handle);
  * the network call. Returns {"ok": true, "receipt_id"} or
  * {"ok": false, "error"}; free with companion_string_free().
  */
-char *companion_chip_promote(CompanionHandle *handle, uint64_t chip,
+char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
                              const char *opts_json);
 
 /*
- * Promote the whole page (the footer's ↗ page): ink verbatim, sealed
+ * Conceal the whole page (the footer's ↗ page): ink verbatim, sealed
  * bytes inlined in document order. Refuses a page holding an image
- * chip. Options, blocking, and result shape as companion_chip_promote.
+ * chip. Options, blocking, and result shape as companion_chip_conceal.
  * No per-chip mark is set, the link stands for the page, but the
  * egress is recorded: one "sent" record against the page's own
  * identity, destination "link", with a size class and no content.
  */
-char *companion_sheet_promote(CompanionHandle *handle, uint64_t sheet,
+char *companion_sheet_conceal(CompanionHandle *handle, uint64_t sheet,
                               const char *opts_json);
 
 /* Free a string returned by this library. Null is a no-op. */

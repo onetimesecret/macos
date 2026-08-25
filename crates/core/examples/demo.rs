@@ -9,7 +9,7 @@
 //! `paste-seal`), never by detection; chips render as their mechanical
 //! excerpt and nothing else — there is no reveal command, at any
 //! privilege. One pausable countdown per page; the ledger keeps what
-//! happened, in metadata, never what was written. `promote` dry-runs
+//! happened, in metadata, never what was written. `conceal` dry-runs
 //! the v3 conceal request without a byte leaving the machine; `send` is
 //! the real thing.
 
@@ -136,9 +136,9 @@ fn main() {
                 println!("the ledger is empty.");
             }
             "tick" | "t" => tick(&mut store, &clock, rest, &mut current),
-            "promote" => {
+            "conceal" => {
                 if let Some(id) = page(&mut current, &store) {
-                    promote(&mut store, id, rest);
+                    conceal(&mut store, id, rest);
                 }
             }
             "send" => {
@@ -172,7 +172,7 @@ fn help() {
   paste-seal         the ⇧⌘V gesture: seal whatever the clipboard holds
   image              seal a pretend screenshot (metadata-only chip)
   rm-chip <n>        ⌫ on chip n: removes it whole, bytes zeroized
-  copy <n>           copy chip n back out (marked concealed + transient)
+  copy <n>           copy chip n back out (marked ConcealedType + transient)
   clear              clear-after-copy: only if the clipboard is still ours
   rung               click the countdown label: one rung shorter, clock reset
   pause              double-click the tab: hold 1h, top up to 24h, release
@@ -180,7 +180,7 @@ fn help() {
   ledger             ⌘0, what happened, in metadata only
   clear-ledger       throw the whole ledger away
   tick <2h|30m|5s>   advance the clock; due pages expire silently
-  promote <n|page>   dry-run the v3 conceal request — nothing is sent
+  conceal <n|page>   dry-run the v3 conceal request — nothing is sent
   send <n|page>      the real thing: a live POST to {DEMO_SERVER}
                      (guest route, or authenticated after `login`)
   login <key> <secret>   store API credentials (Keychain on macOS)
@@ -384,12 +384,12 @@ fn render(store: &SheetStore<ManualClock>, current: Option<SheetId>) {
             Segment::Chip(chip_id) => {
                 if let Some(chip) = sheet.chip(*chip_id) {
                     chip_no += 1;
-                    let promoted = chip
-                        .promotion()
+                    let concealed = chip
+                        .conceal()
                         .map(|p| format!(" ↗ receipt {}", p.receipt_id))
                         .unwrap_or_default();
                     println!(
-                        "│ {chip_no}· [ {} · {} ]{promoted}",
+                        "│ {chip_no}· [ {} · {} ]{concealed}",
                         chip.excerpt(),
                         chip.size_label()
                     );
@@ -443,13 +443,19 @@ fn copy_out(
         companion_core::ChipMeta::Image { .. } => ContentKind::Image,
     };
     // Chips are sealed by definition: outbound copies always carry the
-    // concealed mark (and the transient mark, as every write does).
-    pb.write(bytes, kind, WriteOptions { concealed: true });
+    // `ConcealedType` mark (and the transient mark, as every write does).
+    pb.write(
+        bytes,
+        kind,
+        WriteOptions {
+            nspasteboard_concealed: true,
+        },
+    );
     // Egress to the pasteboard is auditable: the ledger keeps the fact,
     // never the bytes (ADR-0012).
     store.record_sent(id, DestinationClass::Clipboard);
     println!(
-        "on the clipboard, marked transient + concealed (clipboard managers will skip it). \
+        "on the clipboard, marked transient + ConcealedType (clipboard managers will skip it). \
          the chip stays — multi-paste away."
     );
 }
@@ -580,7 +586,7 @@ fn parse_duration(arg: &str) -> Option<Duration> {
     Some(Duration::from_secs(secs))
 }
 
-/// Resolve `promote <n|page>` / `send <n|page>` into a payload without
+/// Resolve `conceal <n|page>` / `send <n|page>` into a payload without
 /// letting the demo hold plaintext longer than the call.
 fn payload_for(
     store: &SheetStore<ManualClock>,
@@ -601,18 +607,18 @@ fn payload_for(
         match std::str::from_utf8(&bytes) {
             Ok(text) => Some(zeroize::Zeroizing::new(text.to_string())),
             Err(_) => {
-                println!("v1 promotes text; the v3 conceal payload is text-shaped");
+                println!("v1 conceals text; the v3 conceal payload is text-shaped");
                 None
             }
         }
     }
 }
 
-fn promote(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
+fn conceal(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
     let now = store.now();
     let Some(text) = payload_for(store, page, arg) else {
         if !arg.trim().is_empty() && arg.trim() != "page" && nth_chip(store, page, arg).is_none() {
-            println!("usage: promote <chip #|page>");
+            println!("usage: conceal <chip #|page>");
         }
         return;
     };
@@ -627,7 +633,7 @@ fn promote(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
         .guest_conceal_request(&payload)
         .expect("payload serializes");
 
-    println!("── promotion · DRY RUN — nothing leaves this machine ──");
+    println!("── conceal · DRY RUN — nothing leaves this machine ──");
     println!("   {} {}", request.method, request.url);
     for (name, value) in &request.headers {
         println!("   {name}: {value}");
@@ -642,14 +648,14 @@ fn promote(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
         companion_core::ttl::human_remaining(Duration::from_secs(snapped)),
     );
     if let Some(raw) = nth_chip(store, page, arg) {
-        store.mark_chip_promoted(companion_core::ChipId::from_raw(raw), "dry-run".into());
+        store.mark_chip_concealed(companion_core::ChipId::from_raw(raw), "dry-run".into());
         println!(
-            "   chip marked promoted; in the app: link on clipboard, offer to burn local copy."
+            "   chip marked concealed; in the app: link on clipboard, offer to burn local copy."
         );
     }
 }
 
-/// `send`'s live counterpart to `promote`'s dry run: a real POST through
+/// `send`'s live counterpart to `conceal`'s dry run: a real POST through
 /// the real transport (`companion-transport`), authenticated from
 /// Keychain-or-dev-store credentials when `login` has set them,
 /// otherwise the guest route. Only the receipt id is retained on the
@@ -670,7 +676,7 @@ fn send(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
         .ok()
         .zip(creds.load(CRED_ACCOUNT_SECRET).ok());
 
-    println!("── promotion · LIVE — POSTing to {DEMO_SERVER} ──");
+    println!("── conceal · LIVE — POSTing to {DEMO_SERVER} ──");
     let result = if let Some((key, secret)) = stored {
         let auth = BasicAuth::new(
             String::from_utf8_lossy(&key).into_owned(),
@@ -690,7 +696,7 @@ fn send(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
             let receipt = data.receipt.identifier.clone();
             land_link_on_clipboard(&link);
             if let Some(raw) = nth_chip(store, page, arg) {
-                store.mark_chip_promoted(companion_core::ChipId::from_raw(raw), receipt.clone());
+                store.mark_chip_concealed(companion_core::ChipId::from_raw(raw), receipt.clone());
             }
             println!("   {link}");
             println!("   on the clipboard. only the receipt id ({receipt}) is retained.");
@@ -708,7 +714,9 @@ fn land_link_on_clipboard(link: &str) {
     pb.write(
         Zeroizing::new(link.as_bytes().to_vec()),
         ContentKind::Text,
-        WriteOptions { concealed: false },
+        WriteOptions {
+            nspasteboard_concealed: false,
+        },
     );
 }
 

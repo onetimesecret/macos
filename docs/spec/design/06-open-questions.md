@@ -102,10 +102,10 @@ with a current leaning where one exists.
 14. **Distribution.** Direct download + Homebrew cask (leaning), or also
     Mac App Store (sandbox implications, review friction vs reach)?
 15. **Guest-mode prominence.** Where servers allow guest conceal, does
-    promotion work with zero configuration out of the box (great for
+    concealing work with zero configuration out of the box (great for
     self-hosters, but link provenance/trust questions for
     onetimesecret.com defaults)?
-16. **TTL semantics across promotion.** Snap sheet-remaining time to
+16. **TTL semantics across a conceal.** Snap sheet-remaining time to
     server-allowed TTLs — up, down, or nearest? Down is the conservative
     (never outlive intent) leaning.
 17. **Global shortcut collisions.** ⇧⌘V is "paste and match style" in
@@ -138,13 +138,46 @@ with a current leaning where one exists.
     third app was visited in between). Leaning: skip general
     attribution; the narrow poll-free version is cheap enough to build
     if the dogfood keeps missing it.
+19. **Multi-device sync.** Two decisions are open, both headed for
+    ADR-0021 (issue #93). These are standardized problems with published
+    prior art, and the ADR should argue from it rather than from taste.
+
+    *Whose clock expires a page* (issue #100). Deadlines are today
+    `Instant` values on a sleep-inclusive monotonic clock, comparable
+    only inside one boot session (`crates/ffi/src/lib.rs:1498`), so a
+    deadline cannot be replicated as a deadline. Prior art says
+    replicate the policy `(created_wall_ms, ttl_ms)` and let each device
+    compute its own deadline on its own clock: that is Signal's
+    disappearing-messages model, client-side enforcement with no
+    cross-device timer sync and skew accepted. Failure must be
+    one-directional. The effective deadline is the minimum across
+    candidates, so a peer can shorten a life but never extend one, which
+    is the rule `wall_away_ms` already follows locally. And expiry has
+    to be an absorbing terminal state rather than a content edit, or a
+    lagging replica merges its queued edits back in after the clear.
+    - https://support.signal.org/hc/en-us/articles/360007320771-Set-and-manage-disappearing-messages
+    - https://signal.org/blog/disappearing-messages/
+    - https://jhellerstein.github.io/blog/crdt-turtles/ (expiring on a
+      local wall clock is a documented non-convergence pattern)
+
+    *How a device joins when no peer is awake* (issue #94). Prior art:
+    MLS external commits, RFC 9420. The delivery service publishes one
+    `GroupInfo` object carrying the `external_pub` extension; a joining
+    device downloads it and commits itself into the group with no
+    existing member online. Two caveats the ADR must cover. RFC 9420
+    section 3.1 assumes an untrusted delivery service and does not
+    define who may external-join, so authorization has to be
+    cryptographic rather than possession of the object. And an external
+    joiner learns only the new epoch's secrets, never the previous
+    epoch's, so enrollment and backfill are two different problems.
+    - https://www.rfc-editor.org/rfc/rfc9420.html
 
 ## Ecosystem
 
-18. **Windows/Linux siblings.** The core-crate split keeps the door
+20. **Windows/Linux siblings.** The core-crate split keeps the door
     open; naming it "macOS companion" closes it rhetorically. Decide
     posture before announcing.
-19. **Relationship to future v3 PASETO work.** The desktop app is a real
+21. **Relationship to future v3 PASETO work.** The desktop app is a real
     first consumer of v3 auth — should its needs (long-lived org tokens,
     device-ish identity, offline grace) feed back into that design now,
     while it's unbuilt?

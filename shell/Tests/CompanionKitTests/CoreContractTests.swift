@@ -315,7 +315,7 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(client.tabs().count, 9)
     }
 
-    /// The connection half of the promotion contract — config only, no
+    /// The connection half of the conceal contract — config only, no
     /// token and no socket: a token here would write the real Keychain
     /// on a developer's machine, and the network paths are covered by
     /// the Rust mock-transport tests.
@@ -339,9 +339,9 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(info.shareDomain, "share.example.com")
         XCTAssertEqual(info.extid, "org_1")
 
-        // Promotion of a vanished chip refuses inline, before any
+        // Concealing a vanished chip refuses inline, before any
         // network — the error is a message, never a crash.
-        let outcome = client.promoteChip(id: 424_242, ttlSecs: nil, passphrase: "", recipient: "")
+        let outcome = client.concealChip(id: 424_242, ttlSecs: nil, passphrase: "", recipient: "")
         XCTAssertFalse(outcome.ok)
         XCTAssertNotNil(outcome.error)
     }

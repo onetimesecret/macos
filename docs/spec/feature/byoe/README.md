@@ -4,21 +4,21 @@
 # Feature Spec: Bring Your Own Encryption on Create
 
 Status: **draft**, for review · 2026-07-15
-Scope: the **create/promote path only** (the encrypt half). Reveal is a
+Scope: the **create/conceal path only** (the encrypt half). Reveal is a
 recipient concern and is explicitly out of scope (see Non-goals).
 Governs against: [`../../design/05-technical-direction.md`](../../design/05-technical-direction.md)
-(promotion, security posture) and
+(concealing, security posture) and
 [`../../design/04-interaction-model.md`](../../design/04-interaction-model.md)
-(the promotion gesture). Protocol source of truth: the `byoe/1` spec in
+(the conceal gesture). Protocol source of truth: the `byoe/1` spec in
 the `byoe-proxy` repository (`docs/byoe-protocol.md`).
 
 ## Summary
 
 BYOE lets the companion encrypt a secret **locally, under a customer-held
-master key**, before it is promoted to Onetime Secret. OTS stores an
+master key**, before it is concealed to Onetime Secret. OTS stores an
 opaque envelope it can never open. Decryption at reveal needs two
 independent keys: the **master key** (held only by the app, in the
-Keychain) and a per-secret **link key** (minted fresh per promotion,
+Keychain) and a per-secret **link key** (minted fresh per conceal,
 carried only in the share URL fragment). Neither key alone opens
 anything; the OTS store holds only ciphertext.
 
@@ -27,7 +27,8 @@ written around a small **proxy** the customer runs, because a browser
 cannot safely hold a long-lived master key. A native macOS app with
 Keychain is precisely the environment where it can, so the proxy
 collapses into the app: no second outbound host, no CORS surface, the
-"one outbound destination" invariant (`crates/ffi/src/promotion.rs`)
+"OTS is the only conceal destination" invariant
+(`crates/ffi/src/conceal.rs`)
 stays intact.
 
 ## Non-goals
@@ -45,7 +46,7 @@ stays intact.
   protocol. v1 of this feature gates the two against each other in the UI
   (a chip is BYOE-encrypted **or** passphrase-gated, not both).
 - **Image chips.** BYOE is a text-envelope construction; image chips are
-  already refused on promote (`crates/ffi/src/lib.rs`, chip-promote).
+  already refused on conceal (`crates/ffi/src/lib.rs`, chip-conceal).
 
 ## The one decision: local master key, no proxy
 
@@ -56,7 +57,7 @@ Two topologies were considered; this feature takes the first.
    destination preserved, no proxy to deploy, testable without a network.
 2. **Proxy client (rejected for v1).** The app POSTs plaintext to the
    customer's proxy `/v1/encrypt`, then conceals the returned envelope. A
-   second TLS/auth/CORS surface and a second host the promotion path must
+   second TLS/auth/CORS surface and a second host the conceal path must
    reach. It buys nothing a native app needs, since the reason the proxy
    holds the key (an untrustworthy browser) does not apply here.
 
@@ -128,8 +129,8 @@ fine.
 ## Change map
 
 Grounded in the current create path
-(`companion_chip_promote` / `companion_sheet_promote` →
-`promotion::promote` → `ots_client::Client::conceal` → `ureq`).
+(`companion_chip_conceal` / `companion_sheet_conceal` →
+`conceal::conceal` → `ots_client::Client::conceal` → `ureq`).
 
 - **New logic crate `crates/byoe`.** No macOS deps, Linux-testable,
   matching existing crate hygiene (`Cargo.toml` workspace). One pure
@@ -144,14 +145,14 @@ Grounded in the current create path
 - **`crates/ots-client/src/types.rs`.** Add an `encryption_mode` field to
   `ConcealPayload` and its hand-written `Serialize` impl, so the wire body
   carries `"encryption_mode":"byoe"` and `secret` = the envelope string.
-- **`crates/ffi/src/promotion.rs` (`promote`).** When BYOE is enabled for
+- **`crates/ffi/src/conceal.rs` (`conceal`).** When BYOE is enabled for
   the connection, seal the staged payload into the envelope, swap it into
   `ConcealPayload`, and thread the returned `link_key` out through
-  `Promoted`.
+  `Concealed`.
 - **`crates/ots-client/src/api.rs` (`share_link`) and
-  `crates/ffi/src/lib.rs` (`finish_promotion`).** Append `#k=<hex
+  `crates/ffi/src/lib.rs` (`finish_conceal`).** Append `#k=<hex
   link_key>` to the clipboard link. The `link_key` is the sensitive half
-  and today nothing flows it out of `promote`; this is real (small)
+  and today nothing flows it out of `conceal`; this is real (small)
   plumbing. The fragment rides in the URL and is never written to the
   chip.
 - **Shell / Settings (`shell/Sources/CompanionApp/SettingsWindow.swift`).**
@@ -176,13 +177,13 @@ Grounded in the current create path
 
 - Plaintext is sealed in-process and the envelope replaces it in the
   payload before any socket opens; on failure nothing has left the sheet,
-  matching the existing promote contract.
+  matching the existing conceal contract.
 - The clipboard now carries the decryption half in the fragment. The link
   write is already transient-marked (`WriteOptions`), but BYOE raises the
   stakes: the link is now sufficient (with proxy reach) to reveal. Note it
   in the UI so the user treats the link as the secret.
 - Error strings carry no key or plaintext material, unchanged from
-  `promote`.
+  `conceal`.
 - No new outbound destination; the network boundary
   (`crates/transport`, TLS-only, single host) is untouched.
 
@@ -213,9 +214,9 @@ refuse-vs-fallback policy when unsupported.
   cryptographic risk and it needs no OTS server.
 - **Tamper tests.** A flipped bit anywhere in the envelope, and a swapped
   `kid`/`pid`, must fail the tag (mirrors `persist.rs` tamper tests).
-- **Wire shape.** `promote` with BYOE on produces `encryption_mode:"byoe"`
+- **Wire shape.** `conceal` with BYOE on produces `encryption_mode:"byoe"`
   and an envelope-valued `secret`, asserted through the existing
-  `MockTransport` in `promotion.rs`.
+  `MockTransport` in `conceal.rs`.
 - **Link assembly.** The clipboard link ends in `#k=<hex>` and the chip
   retains only the receipt id (no link, no key).
 - **Off-macOS.** The crate and wire changes build and test on Linux; the
@@ -245,7 +246,7 @@ refuse-vs-fallback policy when unsupported.
 ## Effort estimate
 
 Roughly **2 to 3 days** of Rust for `crates/byoe`, the wire field, and the
-promote/plumbing changes, plus a modest Settings surface for key custody.
+conceal/plumbing changes, plus a modest Settings surface for key custody.
 The work is fully testable against the reference proxy without an OTS
 server, but ships no user-visible value until the server and reveal sides
 exist.
@@ -254,7 +255,7 @@ exist.
 
 - `byoe/1` protocol spec: `byoe-proxy` repo, `docs/byoe-protocol.md`.
 - Reference implementation and test vectors: `byoe-proxy` repo.
-- Promotion architecture: [`../../design/05-technical-direction.md`](../../design/05-technical-direction.md),
-  `crates/ffi/src/promotion.rs`, `crates/ffi/src/lib.rs`.
+- Conceal architecture: [`../../design/05-technical-direction.md`](../../design/05-technical-direction.md),
+  `crates/ffi/src/conceal.rs`, `crates/ffi/src/lib.rs`.
 - State-file crypto precedent (`ring`, Keychain custody):
   `crates/ffi/src/persist.rs`.

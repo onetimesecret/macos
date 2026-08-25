@@ -83,8 +83,8 @@ use crate::clock::Clock;
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
-    ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId,
-    TITLE_CAP, Tab, TabId, derive_title,
+    ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock, SheetId, TITLE_CAP,
+    Tab, TabId, derive_title,
 };
 use crate::store::{HOLD_FIRST, HOLD_TOPUP, SheetStore};
 use crate::ttl::Ttl;
@@ -536,11 +536,11 @@ fn emit_chip(chip: &SealedChip, out: &mut dyn Sink) {
         ChipMeta::Text { .. } => 0,
         ChipMeta::Image { .. } => 1,
     });
-    match &chip.promotion {
+    match &chip.conceal {
         None => out.u8(0),
-        Some(promotion) => {
+        Some(conceal) => {
             out.u8(1);
-            out.bytes(promotion.receipt_id.as_bytes());
+            out.bytes(conceal.receipt_id.as_bytes());
         }
     }
     out.bytes(chip.bytes.expose());
@@ -886,9 +886,9 @@ fn read_page(
         let mut record = reader.framed().ok_or(Malformed)?;
         let chip_uuid = record.uuid().ok_or(Malformed)?;
         let kind = record.u8().ok_or(Malformed)?;
-        let promotion = match record.u8().ok_or(Malformed)? {
+        let conceal = match record.u8().ok_or(Malformed)? {
             0 => None,
-            1 => Some(Promotion {
+            1 => Some(Conceal {
                 receipt_id: record.str().ok_or(Malformed)?.to_string(),
             }),
             _ => return Err(Malformed),
@@ -908,7 +908,7 @@ fn read_page(
             1 => SealedChip::image_with_uuid(chip_id, chip_uuid, bytes.to_vec()),
             _ => return Err(Malformed),
         };
-        chip.promotion = promotion;
+        chip.conceal = conceal;
         chips.push(chip);
     }
 
@@ -1120,7 +1120,7 @@ mod tests {
             .id()
     }
 
-    /// A populated store: two pages — ink + text chip (promoted) + image
+    /// A populated store: two pages — ink + text chip (concealed) + image
     /// chip on the first, plain ink on the second — and a closed page in
     /// the ledger. The trailing ink carries an astral character so every
     /// test over this fixture crosses a surrogate pair.
@@ -1137,7 +1137,7 @@ mod tests {
         let image = store
             .seal_image(first, vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3])
             .unwrap();
-        assert!(store.mark_chip_promoted(token, "receipt-42".into()));
+        assert!(store.mark_chip_concealed(token, "receipt-42".into()));
         assert!(store.sync_document(
             first,
             vec![
@@ -1202,9 +1202,9 @@ mod tests {
                 .unwrap()
                 .excerpt()
         );
-        assert_eq!(chips[0].promotion().unwrap().receipt_id, "receipt-42");
+        assert_eq!(chips[0].conceal().unwrap().receipt_id, "receipt-42");
         assert_eq!(chips[1].excerpt(), "PNG image");
-        assert!(chips[1].promotion().is_none());
+        assert!(chips[1].conceal().is_none());
 
         // The sealed bytes themselves made the trip.
         let (bytes, _) = revived.copy_out_chip(chips[0].id()).unwrap();
@@ -1968,7 +1968,7 @@ mod tests {
             let mut chip = Vec::new();
             chip.extend_from_slice(uuid.as_bytes());
             chip.push(0); // a text chip
-            chip.push(0); // never promoted
+            chip.push(0); // never concealed
             chip.extend_from_slice(&(text.len() as u64).to_le_bytes());
             chip.extend_from_slice(text.as_bytes());
             chip.extend_from_slice(chip_tail);
