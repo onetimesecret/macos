@@ -9,7 +9,7 @@ GitHub milestones and issues are the source of truth for delivery status. This d
 **Goal:** a user's pages reach their second machine through a relay that can never read them, off until it is turned on, with the pad still working when there is no account and no network.
 
 - [#92 Reconcile the not a sync service doctrine with the relay ADR-0013 licenses](https://github.com/onetimesecret/macos/issues/92)
-- [#93 ADR-0020: multi device sync over a blind relay](https://github.com/onetimesecret/macos/issues/93)
+- [#93 ADR-0021: multi device sync over a blind relay](https://github.com/onetimesecret/macos/issues/93)
 - [#94 Decide how a device joins when no peer is awake](https://github.com/onetimesecret/macos/issues/94)
 - [#95 Derive a per GOP key so relay ciphertext dies at the ceremony](https://github.com/onetimesecret/macos/issues/95)
 - [#96 There is no delta seam: the document module exports whole snapshots only](https://github.com/onetimesecret/macos/issues/96)
