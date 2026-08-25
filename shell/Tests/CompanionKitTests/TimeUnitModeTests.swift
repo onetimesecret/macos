@@ -237,6 +237,101 @@ final class TimeUnitModeTests: XCTestCase {
             "the sentence the strip has always shown moved")
     }
 
+    // MARK: The jump chords, in both readings
+
+    /// ⌘1 with the days down the side lands on today, and today is a
+    /// place rather than a page: on a pad with nothing on it the chord
+    /// takes the shipped create path instead of finding nothing to
+    /// select. That is a gesture minting, which is the only kind there
+    /// is (ADR-0017) — and the second press is a jump, so the chord
+    /// cannot stack blank pages up.
+    func testTheFirstJumpChordLandsOnTodayAndCreatesWhenTodayIsEmpty() throws {
+        let (model, _) = try makeModel()
+        model.showsTimeUnits = true
+        XCTAssertTrue(model.tabs.isEmpty, "the pad starts with nothing on it")
+        XCTAssertEqual(model.visibleTargets, [.today])
+
+        model.perform(.pageSelect1)
+
+        XCTAssertEqual(model.tabs.count, 1, "⌘1 on an empty today made no page")
+        let page = try XCTUnwrap(model.selectedPageID)
+        XCTAssertEqual(peopledDays(model.timeUnits).first?.pageIDs, [page])
+        XCTAssertNil(model.notice, "nothing was refused")
+
+        model.perform(.pageSelect1)
+        XCTAssertEqual(model.tabs.count, 1, "a second ⌘1 widened the pad")
+        XCTAssertEqual(model.selectedPageID, page)
+    }
+
+    /// ⌘2 counts days too, and a pad whose pages were all written today
+    /// has one day: the chord has nowhere to go, where with the strip
+    /// showing it lands on the second slot. That contrast is the whole
+    /// reinterpretation, stated on the only shape a test can build —
+    /// no Swift test can move a page across a local midnight, because
+    /// the ageing seam restores a snapshot with every creation stamp
+    /// intact.
+    func testTheSecondJumpChordCountsDaysAndNotSlots() throws {
+        let (model, _) = try makeModel()
+        model.loadStateIfNeeded()
+        model.newPage()
+        model.newPage()
+        let first = try XCTUnwrap(model.tabs.first?.id)
+        model.select(first)
+        XCTAssertEqual(model.tabs.count, 3)
+        XCTAssertEqual(peopledDays(model.timeUnits).count, 1, "one session, one day")
+
+        model.showsTimeUnits = true
+        model.perform(.pageSelect2)
+        XCTAssertEqual(model.selection, first, "⌘2 counted slots while the days were showing")
+
+        model.showsTimeUnits = false
+        model.perform(.pageSelect2)
+        XCTAssertEqual(
+            model.selection, model.tabs[1].id, "⌘2 stopped counting slots with the mode off")
+        XCTAssertEqual(model.tabs.count, 3, "a jump minted or closed something")
+    }
+
+    /// And ⌥⌘→ walks days rather than slots. On a pad written in one
+    /// sitting the walk stays where it is, where the strip's walk moves
+    /// along one slot; both readings clamp at the end rather than
+    /// wrapping, which is the walk the app has always had.
+    func testTheStepChordWalksDaysWhileTheModeIsOn() throws {
+        let (model, _) = try makeModel()
+        model.loadStateIfNeeded()
+        model.newPage()
+        model.newPage()
+        let first = try XCTUnwrap(model.tabs.first?.id)
+        model.select(first)
+
+        model.showsTimeUnits = true
+        model.perform(.pageNext)
+        XCTAssertEqual(model.selection, first, "the walk stepped a slot while the days showed")
+
+        model.showsTimeUnits = false
+        model.perform(.pageNext)
+        XCTAssertEqual(model.selection, model.tabs[1].id, "the walk stopped stepping slots")
+    }
+
+    /// With the mode off all three chords do what they always did: ⌘1
+    /// the first slot, ⌘2 the second, ⌥⌘→ the next one along. This is
+    /// the identity `visibleTargets` promises, pressed as keystrokes
+    /// rather than read off an array.
+    func testWithTheModeOffTheThreeChordsLandOnTheStrip() throws {
+        let (model, _) = try makeModel()
+        model.loadStateIfNeeded()
+        model.newPage()
+        model.newPage()
+        XCTAssertFalse(model.showsTimeUnits, "the prototype must be off unless it is asked for")
+
+        model.perform(.pageSelect1)
+        XCTAssertEqual(model.selection, model.tabs[0].id)
+        model.perform(.pageSelect2)
+        XCTAssertEqual(model.selection, model.tabs[1].id)
+        model.perform(.pageNext)
+        XCTAssertEqual(model.selection, model.tabs[2].id)
+        XCTAssertEqual(model.tabs.count, 3, "a jump minted or closed something")
+    }
+
     // MARK: An expiry under the mode
 
     /// A page leaving takes its region off the rail and leaves
