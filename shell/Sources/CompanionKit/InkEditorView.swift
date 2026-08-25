@@ -107,7 +107,7 @@ public struct InkEditorView: NSViewRepresentable {
     static func makeInkTextView(
         model: PageModel, sheetID: UInt64, coordinator: Coordinator
     ) -> InkTextView {
-        let layoutManager = NSLayoutManager()
+        let layoutManager = InkLayoutManager()
         let container = NSTextContainer(size: NSSize(
             width: 0, height: CGFloat.greatestFiniteMagnitude
         ))
@@ -136,6 +136,17 @@ public struct InkEditorView: NSViewRepresentable {
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
+        // Link reading is the restyle pass's alone (ADR-0023): the
+        // system detector writes `.link` attributes as the user types,
+        // which is a rewrite of the page's styling outside restyle()
+        // and a second opinion about what counts as a URL.
+        textView.isAutomaticLinkDetectionEnabled = false
+        // And the styling is ours too. The default link attributes
+        // repaint every `.link` range blue-and-underlined over the
+        // restyle pass's work, and carry the pointing-hand cursor that
+        // promises open-on-click — the wrong promise on a page where a
+        // plain click edits (⌘-click is the opening gesture).
+        textView.linkTextAttributes = [:]
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(
             width: 12, height: Coordinator.topInset
@@ -952,6 +963,38 @@ public struct InkEditorView: NSViewRepresentable {
             menu.popUp(positioning: nil, at: NSPoint(x: cellFrame.minX, y: cellFrame.maxY), in: view)
         }
 
+        // MARK: Links — ⌘-click opens, a plain click edits (ADR-0023)
+
+        /// Every click on a `.link` range lands here, and the answer is
+        /// always "handled", because the default answer — open on any
+        /// click — makes the URL's own text uneditable by mouse. With ⌘
+        /// held the click is an aimed gesture and the link opens;
+        /// without it the click is editing, so the caret is placed
+        /// where the click fell, exactly as on any other ink.
+        public func textView(
+            _ view: NSTextView, clickedOnLink link: Any, at charIndex: Int
+        ) -> Bool {
+            let event = NSApp.currentEvent
+            guard event?.modifierFlags.contains(.command) == true else {
+                // The caret goes to the insertion point nearest the
+                // click, not merely to the clicked character's start;
+                // the char index is the fallback when no event is in
+                // flight to measure against.
+                if let event {
+                    let point = view.convert(event.locationInWindow, from: nil)
+                    view.setSelectedRange(
+                        NSRange(location: view.characterIndexForInsertion(at: point), length: 0)
+                    )
+                } else {
+                    view.setSelectedRange(NSRange(location: charIndex, length: 0))
+                }
+                return true
+            }
+            let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
+            if let url { NSWorkspace.shared.open(url) }
+            return true
+        }
+
         @objc private func copyOutChip(_ sender: NSMenuItem) {
             guard let id = (sender.representedObject as? NSNumber)?.uint64Value else { return }
             model.copyOutChip(id)
@@ -989,14 +1032,14 @@ public struct InkEditorView: NSViewRepresentable {
             guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
             let text = storage.string as NSString
             let metas = model.coreClient.blocks(sheet: sheet)
-            var displays: [BlockDisplay] = []
-            storage.beginEditing()
+            // First pass: walk the page block by block and classify
+            // every paragraph. One scanner serves the whole page, since
+            // a fence opened in one block goes on holding the lines of
+            // the blocks after it: what a line means depends on
+            // everything above it (issue #75).
+            var walks: [BlockWalk] = []
             var location = 0
             var block = 0
-            // One scanner for the whole page, since a fence opened in
-            // one block goes on holding the lines of the blocks after
-            // it: what a line means depends on everything above it
-            // (issue #75).
             var scanner = InkStyle.FenceScanner()
             while location < text.length {
                 let meta = block < metas.count ? metas[block] : nil
@@ -1008,43 +1051,88 @@ public struct InkEditorView: NSViewRepresentable {
                 let extent = Self.blockRange(
                     from: location, paragraphs: meta?.paragraphs ?? 1, of: text
                 )
-                // A blank block is spacing, not writing: it carries a
-                // stamp in the core but shows none, so a page of empty
-                // paragraphs no longer stacks a column of identical
-                // times down the margin.
-                let blank = Self.isBlank(extent, of: text)
-                let createdS = blank ? nil : meta?.createdS
+                // A block that begins inside an open fence belongs to
+                // the fence region the blocks above it started: the core
+                // splits a typed fence into one block per line, but the
+                // eye reads the fence as one slab, so those blocks stamp
+                // together (and an unterminated fence carries the region
+                // to the end of the page, the same reading the styling
+                // gives its lines).
+                let joinsPrevious = scanner.insideFence
                 var head = extent
+                var paragraphs: [(range: NSRange, kind: InkStyle.LineKind)] = []
                 var paragraphStart = location
                 while paragraphStart < NSMaxRange(extent) {
                     let paragraph = text.paragraphRange(
                         for: NSRange(location: paragraphStart, length: 0)
                     )
-                    // Only the block's first line reserves the gap the
-                    // label sits in; the rest of a pasted passage runs on
-                    // at ordinary spacing.
-                    let leads = paragraphStart == location
-                    if leads { head = paragraph }
-                    styleParagraph(
-                        paragraph, of: storage,
-                        kind: scanner.classify(text.substring(with: paragraph)),
-                        labeled: createdS != nil && leads
+                    if paragraphStart == location { head = paragraph }
+                    paragraphs.append(
+                        (paragraph, scanner.classify(text.substring(with: paragraph)))
                     )
                     if paragraph.length == 0 { break }
                     paragraphStart = NSMaxRange(paragraph)
                 }
-                if let createdS {
-                    displays.append(BlockDisplay(
-                        range: head,
-                        text: Self.blockLabel(createdS: createdS, modifiedS: meta?.modifiedS)
-                    ))
-                }
+                walks.append(BlockWalk(
+                    head: head, meta: meta,
+                    // A blank block is spacing, not writing: it carries a
+                    // stamp in the core but shows none, so a page of
+                    // empty paragraphs no longer stacks a column of
+                    // identical times down the margin.
+                    blank: Self.isBlank(extent, of: text),
+                    paragraphs: paragraphs, joinsPrevious: joinsPrevious
+                ))
                 block += 1
                 if extent.length == 0 { break }
                 location = NSMaxRange(extent)
             }
+            // Second pass: lay the attributes down group by group,
+            // where a group is one ordinary block or the run of blocks
+            // a fence region spans, and stamp each group once at its
+            // first line, earliest created to latest modified. Interior
+            // blocks of a region get neither label nor the reserved
+            // gap, so the fence renders as contiguous lines.
+            var displays: [BlockDisplay] = []
+            storage.beginEditing()
+            var lower = 0
+            while lower < walks.count {
+                var upper = lower + 1
+                while upper < walks.count, walks[upper].joinsPrevious { upper += 1 }
+                let group = Array(walks[lower..<upper])
+                let label = Self.groupLabel(for: group)
+                for (position, walk) in group.enumerated() {
+                    for (index, paragraph) in walk.paragraphs.enumerated() {
+                        // Only the group's very first line reserves the
+                        // gap the label sits in; the rest of a pasted
+                        // passage or a fence region runs on at ordinary
+                        // spacing.
+                        styleParagraph(
+                            paragraph.range, of: storage, kind: paragraph.kind,
+                            labeled: label != nil && position == 0 && index == 0
+                        )
+                    }
+                }
+                if let label, let head = group.first?.head {
+                    displays.append(BlockDisplay(range: head, text: label))
+                }
+                lower = upper
+            }
             storage.endEditing()
             blockDisplays = displays
+            // Third pass, cheap because the classification is already
+            // in hand: collect the fence regions as character ranges,
+            // opening rule through closing rule, for the layout manager
+            // to wash as one slab. The wash used to be a per-paragraph
+            // `.backgroundColor`, which rendered as per-line stripes
+            // hugging the glyph runs; drawn once per region it is the
+            // contiguous rectangle the eye expects.
+            fenceRegions = Self.fenceRegions(
+                of: walks.flatMap(\.paragraphs)
+            )
+            if let layoutManager = textView?.layoutManager as? InkLayoutManager {
+                layoutManager.fenceRegions = fenceRegions
+                textView?.needsDisplay = true
+            }
             // `paragraphSpacingBefore` is ignored on the first paragraph
             // of the storage, so the top block's gap has to come from the
             // container inset instead — otherwise its label would be laid
@@ -1092,10 +1180,12 @@ public struct InkEditorView: NSViewRepresentable {
             // one will actually render: an untouched block carries no
             // stamp and gets no gap.
             paragraphStyle.paragraphSpacingBefore = labeled ? Self.blockLabelReserve : 0
-            // Every line is laid back down to plain ink first, the wash
-            // included, because a line that was code a keystroke ago
-            // has to be able to stop being code when the fence above it
-            // closes or is deleted.
+            // Every line is laid back down to plain ink first, because
+            // a line that was code a keystroke ago has to be able to
+            // stop being code when the fence above it closes or is
+            // deleted. (The clear background is belt and braces: the
+            // fence wash is no longer an attribute, but nothing stray
+            // should linger behind a line either.)
             storage.addAttributes(
                 [
                     .font: InkStyle.baseFont,
@@ -1105,9 +1195,14 @@ public struct InkEditorView: NSViewRepresentable {
                 ],
                 range: range
             )
+            // A link is laid back down to plain ink too: the character
+            // that breaks a URL has to un-link what it broke, and a
+            // line swallowed by a fence stops being clickable at all.
+            storage.removeAttribute(.link, range: range)
+            storage.removeAttribute(.underlineStyle, range: range)
             switch kind {
             case .body:
-                break
+                styleLinks(in: range, of: storage)
             case .heading(let level, let markerLength):
                 storage.addAttribute(
                     .font,
@@ -1122,24 +1217,57 @@ public struct InkEditorView: NSViewRepresentable {
                 )
             case .fenceRule:
                 // The fence's own line is markup, dimmed the way a
-                // heading's hashes are, and washed like the lines it
-                // brackets so the block reads as one slab.
-                storage.addAttributes(
-                    [
-                        .foregroundColor: NSColor.tertiaryLabelColor,
-                        .backgroundColor: InkStyle.codeBackground,
-                    ],
+                // heading's hashes are. The wash it shares with the
+                // lines it brackets is not an attribute: painting the
+                // slab per paragraph left unpainted stripes at every
+                // paragraph gap and hugged the glyph runs, so the wash
+                // is drawn once per region by the layout manager.
+                storage.addAttribute(
+                    .foregroundColor,
+                    value: NSColor.tertiaryLabelColor,
                     range: range
                 )
             case .code:
                 // Literally what was typed: the markup a code line
                 // carries is part of the code, so nothing here is read
-                // as a heading and nothing is dimmed.
-                storage.addAttribute(
-                    .backgroundColor,
-                    value: InkStyle.codeBackground,
-                    range: range
+                // as a heading and nothing is dimmed. The wash behind
+                // it belongs to the whole fence region and is painted
+                // by the layout manager, not laid down per line.
+                break
+            }
+        }
+
+        /// The hybrid link affordance (ADR-0023), laid down as
+        /// attributes on a body line: the construct carries `.link` and
+        /// reads as a link, and its markdown syntax — brackets, parens,
+        /// the URL between them — stays on screen, dimmed the way a
+        /// fence's rules are. What a click does with the `.link` is the
+        /// delegate's business (`textView(_:clickedOnLink:at:)`): ⌘
+        /// opens, a plain click only moves the caret.
+        private func styleLinks(in range: NSRange, of storage: NSTextStorage) {
+            let line = (storage.string as NSString).substring(with: range)
+            for link in InkStyle.links(in: line) {
+                guard let url = URL(string: link.target) else { continue }
+                let place = { (span: NSRange) in
+                    NSRange(location: range.location + span.location, length: span.length)
+                }
+                storage.addAttributes(
+                    [
+                        .link: url,
+                        .foregroundColor: NSColor.linkColor,
+                        .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    ],
+                    range: place(link.range)
                 )
+                for span in link.markup {
+                    storage.addAttributes(
+                        [
+                            .foregroundColor: NSColor.tertiaryLabelColor,
+                            .underlineStyle: 0,
+                        ],
+                        range: place(span)
+                    )
+                }
             }
         }
 
@@ -1153,6 +1281,87 @@ public struct InkEditorView: NSViewRepresentable {
         private struct BlockDisplay {
             let range: NSRange
             let text: String
+        }
+
+        /// One core block as the first restyle pass read it: where it
+        /// starts, what it carries, and whether it began inside a fence
+        /// another block opened — the fact the second pass groups by.
+        private struct BlockWalk {
+            let head: NSRange
+            let meta: BlockInfo?
+            let blank: Bool
+            let paragraphs: [(range: NSRange, kind: InkStyle.LineKind)]
+            let joinsPrevious: Bool
+        }
+
+        /// The stamp a group renders, or nil for a group with nothing
+        /// to say. A lone block keeps the original reading — blank is
+        /// spacing and shows nothing. A fence region typed line by line
+        /// is many core blocks the eye reads as one slab, so it takes
+        /// one stamp spanning them: earliest created to latest touch,
+        /// and the branch of `blockLabel` that collapses an identical
+        /// pair still applies.
+        private static func groupLabel(for group: [BlockWalk]) -> String? {
+            if group.count == 1, let walk = group.first {
+                guard !walk.blank, let createdS = walk.meta?.createdS else { return nil }
+                return blockLabel(createdS: createdS, modifiedS: walk.meta?.modifiedS)
+            }
+            return fenceRegionLabel(
+                stamps: group.compactMap(\.meta).map { ($0.createdS, $0.modifiedS) }
+            )
+        }
+
+        /// The stamp a fence region wears: earliest created to latest
+        /// touch across every block the region spans, since the lines
+        /// were typed over a stretch of time but read as one slab. A
+        /// block that was touched but never modified counts its created
+        /// stamp as its latest, and a region with no committed content
+        /// at all wears nothing.
+        static func fenceRegionLabel(
+            stamps: [(createdS: Int64?, modifiedS: Int64?)]
+        ) -> String? {
+            guard let created = stamps.compactMap({ $0.createdS }).min() else { return nil }
+            let modified = stamps.compactMap { $0.modifiedS ?? $0.createdS }.max()
+            return blockLabel(createdS: created, modifiedS: modified)
+        }
+
+        /// The fence regions the last restyle read off the page, as
+        /// character ranges from opening rule through closing rule (or
+        /// through the last classified line, for a fence left open).
+        /// Mirrored onto the layout manager, which paints one slab per
+        /// entry; kept here as well so the region reading is assertable
+        /// without a drawing pass.
+        private(set) var fenceRegions: [NSRange] = []
+
+        /// Folds a page's classified paragraphs into fence regions. The
+        /// classification already carries the scanner's whole-page
+        /// reading, so this is a plain fold: a rule met outside a region
+        /// opens one, the rule that answers it closes it, and code lines
+        /// extend whatever is open. A fence left open runs to the last
+        /// paragraph handed in, the same reading the styling gives its
+        /// lines.
+        static func fenceRegions(
+            of paragraphs: [(range: NSRange, kind: InkStyle.LineKind)]
+        ) -> [NSRange] {
+            var regions: [NSRange] = []
+            var open: NSRange?
+            for paragraph in paragraphs {
+                switch paragraph.kind {
+                case .fenceRule:
+                    if let region = open {
+                        regions.append(NSUnionRange(region, paragraph.range))
+                        open = nil
+                    } else {
+                        open = paragraph.range
+                    }
+                case .code:
+                    if let region = open { open = NSUnionRange(region, paragraph.range) }
+                case .body, .heading:
+                    break
+                }
+            }
+            if let region = open { regions.append(region) }
+            return regions
         }
 
         private var blockDisplays: [BlockDisplay] = []
@@ -1185,15 +1394,22 @@ public struct InkEditorView: NSViewRepresentable {
         }()
 
         /// `Thu 14:32`, or `Thu 14:32 → Thu 14:40` once the block has
-        /// been edited past its first commit.
+        /// been edited past its first commit. The collapse is decided on
+        /// the underlying dates at minute granularity, not on the
+        /// rendered stamps: the format keeps no seconds, so an edit
+        /// forty seconds after the first commit still reads as one
+        /// stamp — but a modification exactly some weeks later would
+        /// render the same `EEE HH:mm` text while being a genuinely
+        /// different moment, and must keep its range.
         static func blockLabel(createdS: Int64, modifiedS: Int64?) -> String {
-            let created = blockLabelFormatter.string(
-                from: Date(timeIntervalSince1970: TimeInterval(createdS))
-            )
-            guard let modifiedS, modifiedS != createdS else { return created }
-            let modified = blockLabelFormatter.string(
-                from: Date(timeIntervalSince1970: TimeInterval(modifiedS))
-            )
+            let createdDate = Date(timeIntervalSince1970: TimeInterval(createdS))
+            let created = blockLabelFormatter.string(from: createdDate)
+            guard let modifiedS else { return created }
+            let modifiedDate = Date(timeIntervalSince1970: TimeInterval(modifiedS))
+            guard !Calendar.current.isDate(
+                createdDate, equalTo: modifiedDate, toGranularity: .minute
+            ) else { return created }
+            let modified = blockLabelFormatter.string(from: modifiedDate)
             return "\(created) → \(modified)"
         }
 
@@ -1254,6 +1470,80 @@ public struct InkEditorView: NSViewRepresentable {
                 )
             }
         }
+    }
+}
+
+// MARK: - The layout manager
+
+/// The page's layout manager, which exists to paint the fence wash.
+/// Painted as a per-paragraph `.backgroundColor` attribute, the wash
+/// rendered as per-line slabs — unpainted stripes at every paragraph
+/// gap, edges hugging the glyph runs — instead of the one rectangle a
+/// code block reads as. Here it is drawn once per region, under the
+/// glyphs, at the full width of the text container, before the
+/// superclass lays down whatever backgrounds remain (selection included,
+/// which is why the slab goes down first).
+final class InkLayoutManager: NSLayoutManager {
+    /// The fence regions of the current page, as character ranges, in
+    /// document order. `restyle` owns these; drawing only reads them.
+    var fenceRegions: [NSRange] = []
+
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        if let container = textContainers.first, let storage = textStorage {
+            let whole = NSRange(location: 0, length: storage.length)
+            for region in fenceRegions {
+                // Clamped, because an edit can land between the restyle
+                // that computed these ranges and the draw that reads
+                // them; a stale region must never index past the text.
+                let clamped = NSIntersectionRange(region, whole)
+                guard clamped.length > 0 else { continue }
+                let glyphs = glyphRange(forCharacterRange: clamped, actualCharacterRange: nil)
+                guard glyphs.length > 0 else { continue }
+                // TextKit asks for the visible slice, not the whole
+                // document; a region that falls entirely outside the
+                // requested glyphs needs no paint this pass.
+                guard NSIntersectionRange(glyphs, glyphsToShow).length > 0 else { continue }
+                // The first line's fragment rect swallows any
+                // `paragraphSpacingBefore` above it — the reserved label
+                // gap included — so the slab's top comes from the used
+                // rect, where the region's glyphs actually begin.
+                let top = lineFragmentUsedRect(
+                    forGlyphAt: glyphs.location, effectiveRange: nil
+                ).minY
+                let bottom = boundingRect(forGlyphRange: glyphs, in: container).maxY
+                guard let slab = Self.slabRect(
+                    firstLineTop: top, regionBottom: bottom,
+                    containerWidth: container.size.width, origin: origin
+                ) else { continue }
+                // TextKit draws on the main thread; the assumption is
+                // stated rather than inherited because the SDK does not
+                // isolate NSLayoutManager, and the wash's constant
+                // lives on the main-actor style enum.
+                let wash = MainActor.assumeIsolated { InkStyle.codeBackground }
+                wash.setFill()
+                NSBezierPath(roundedRect: slab, xRadius: 4, yRadius: 4).fill()
+            }
+        }
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    /// The rectangle a fence region's wash covers, in the view's
+    /// coordinates: from the top of the region's first used line to the
+    /// bottom of its last fragment, at the full width of the text
+    /// container, offset by the container's origin. Nil when the metrics
+    /// describe nothing worth painting. Pure, so the geometry is
+    /// testable without a layout pass.
+    nonisolated static func slabRect(
+        firstLineTop: CGFloat, regionBottom: CGFloat,
+        containerWidth: CGFloat, origin: NSPoint
+    ) -> NSRect? {
+        guard regionBottom > firstLineTop, containerWidth > 0 else { return nil }
+        return NSRect(
+            x: origin.x,
+            y: origin.y + firstLineTop,
+            width: containerWidth,
+            height: regionBottom - firstLineTop
+        )
     }
 }
 
@@ -1586,6 +1876,107 @@ public enum InkStyle {
     /// that a slab of code reads as one thing without turning the page
     /// into a document of boxes.
     public static let codeBackground = NSColor.quaternaryLabelColor
+
+    /// One link a body line carries: the whole construct's range, the
+    /// URL a ⌘-click would open, and whichever spans of the construct
+    /// are markdown syntax rather than reading matter — dimmed on
+    /// screen the way a fence's rules are, never hidden. Ranges are
+    /// UTF-16 offsets into the line the link was read from.
+    public struct InkLink: Equatable {
+        public let range: NSRange
+        public let target: String
+        public let markup: [NSRange]
+
+        public init(range: NSRange, target: String, markup: [NSRange] = []) {
+            self.range = range
+            self.target = target
+            self.markup = markup
+        }
+    }
+
+    /// The links a line of body ink carries, in document order:
+    /// markdown `[text](url)` constructs first, then bare http(s) URLs
+    /// that fall outside them. Deliberately conservative — only http
+    /// and https, nothing with whitespace, and only strings `URL` will
+    /// actually parse — because a link is an affordance to open
+    /// something, and a guessed-at target is worse than plain ink.
+    /// Pure, so the reading is testable without a text view.
+    public nonisolated static func links(in line: String) -> [InkLink] {
+        let text = line as NSString
+        let full = NSRange(location: 0, length: text.length)
+        var found: [InkLink] = []
+        // `[text](url)`: the label reads as the link; the brackets, the
+        // parens and the URL between them are syntax. The URL half
+        // refuses parens and whitespace, which keeps the match from
+        // swallowing prose after a stray `(`.
+        if let markdown = try? NSRegularExpression(
+            pattern: #"\[([^\[\]]*)\]\((https?://[^()\s]+)\)"#
+        ) {
+            markdown.enumerateMatches(in: line, range: full) { match, _, _ in
+                guard let match, match.numberOfRanges == 3 else { return }
+                let target = text.substring(with: match.range(at: 2))
+                guard URL(string: target) != nil else { return }
+                let label = match.range(at: 1)
+                found.append(InkLink(
+                    range: match.range,
+                    target: target,
+                    markup: [
+                        NSRange(location: match.range.location, length: 1),
+                        NSRange(
+                            location: NSMaxRange(label),
+                            length: NSMaxRange(match.range) - NSMaxRange(label)
+                        ),
+                    ]
+                ))
+            }
+        }
+        // Bare URLs, outside any markdown construct already claimed.
+        // The match runs to whitespace and is then walked back off
+        // trailing punctuation, so `see https://example.com.` links the
+        // URL and leaves the sentence its full stop.
+        if let bare = try? NSRegularExpression(pattern: #"https?://[^\s<>]+"#) {
+            bare.enumerateMatches(in: line, range: full) { match, _, _ in
+                guard let match,
+                      !found.contains(where: {
+                          NSIntersectionRange($0.range, match.range).length > 0
+                      })
+                else { return }
+                let target = trimmedBareURL(text.substring(with: match.range))
+                // A scheme alone is not a destination; requiring a host
+                // rejects `https://` and its trailing-punctuation
+                // remnants while keeping short but real targets like
+                // `http://a.io` linked.
+                guard URL(string: target)?.host?.isEmpty == false else { return }
+                found.append(InkLink(
+                    range: NSRange(
+                        location: match.range.location, length: target.utf16.count
+                    ),
+                    target: target
+                ))
+            }
+        }
+        return found.sorted { $0.range.location < $1.range.location }
+    }
+
+    /// Walks trailing sentence punctuation back off a bare URL: the
+    /// full stop after `https://example.com.` belongs to the sentence.
+    /// A closing paren comes off only while unbalanced, so the
+    /// Wikipedia idiom `…/Rust_(language)` keeps its tail while
+    /// `(see https://example.com)` gives the paren back to the prose.
+    private nonisolated static func trimmedBareURL(_ candidate: String) -> String {
+        var url = Substring(candidate)
+        while let last = url.last {
+            if ".,;:!?\"'".contains(last) {
+                url = url.dropLast()
+            } else if last == ")",
+                      url.filter({ $0 == ")" }).count > url.filter({ $0 == "(" }).count {
+                url = url.dropLast()
+            } else {
+                break
+            }
+        }
+        return String(url)
+    }
 
     /// What a line is, once the lines above it have been read.
     ///

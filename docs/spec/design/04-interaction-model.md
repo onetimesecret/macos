@@ -253,9 +253,36 @@ character, at least as long, closes it, and everything between the two
 is read literally: a `#` line there is a comment, a `-` line is a flag,
 and neither is styled as a heading or a list. The fence's own lines
 carry the dimming a heading's hashes do and the block takes a faint
-wash, so it reads as one slab of code. An unterminated fence holds to
-the last line of the page, which is the reading a writer mid-paste
-would expect.
+wash, so it reads as one slab of code. The wash is one rectangle per
+fence region — opening rule through closing rule, at the full width of
+the page's text column — painted behind the text rather than attached
+to it, so no stripes appear at paragraph seams and the slab's edges do
+not hug the glyph runs. The dimmed rules stay on screen inside the
+wash: the markup remains visible, as everywhere else. An unterminated
+fence holds to the last line of the page, which is the reading a writer
+mid-paste would expect.
+
+**A fence region stamps once** (ADR-0022). A fence typed line by line is
+one core block per line — the block model (ADR-0013) is untouched — but
+the display treats the run of blocks from the opening rule to the rule
+that answers it as one labeled unit: a single created/modified stamp
+above the opening rule, spanning the earliest creation and the latest
+touch across the blocks the region covers, and no label gap above the
+interior lines, so the slab renders contiguous. An unterminated fence
+carries the region to the end of the page, the same reading the styling
+gives its lines.
+
+**Links: ⌘-click opens, a plain click edits** (ADR-0023). A bare
+http(s) URL in body ink, and a markdown `[text](url)` whose target is
+http(s), render as links — link color, underlined — with the markdown
+syntax (the brackets, the parens, the URL between them) dimmed in place
+like a fence's rules: visible, never hidden, still exactly the bytes
+that were typed. Opening is an aimed gesture: ⌘-click opens the target
+in the default browser; a plain click is editing and only places the
+caret, so the URL's own text stays as reachable by mouse as any other
+ink. Nothing inside a fence is a link — a URL there is code — and the
+system's automatic link detection is off: what counts as a link is the
+restyle pass's one conservative reading, not the OS's.
 
 ## The keyboard map, complete
 
