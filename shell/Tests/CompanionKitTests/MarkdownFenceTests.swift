@@ -229,12 +229,19 @@ final class FenceRenderingTests: XCTestCase {
         for line in 2...4 {
             XCTAssertEqual(font(ofLine: line), InkStyle.baseFont, "line \(line) took heading weight")
             XCTAssertEqual(foreground(ofLine: line), NSColor.labelColor, "line \(line) was dimmed")
-            XCTAssertEqual(background(ofLine: line), InkStyle.codeBackground)
         }
         XCTAssertEqual(font(ofLine: 6), InkStyle.headingFont(level: 1))
-        XCTAssertEqual(background(ofLine: 6), NSColor.clear)
+        // The wash is one slab per region, painted by the layout
+        // manager, so the region has to run from the opening rule
+        // through the closing one and stop before the heading below.
+        XCTAssertEqual(coordinator.fenceRegions, [NSRange(location: 17, length: 38)])
     }
 
+    /// The wash is drawn by the layout manager as one rectangle per
+    /// region, so no line carries a `.backgroundColor` of its own: a
+    /// per-paragraph attribute painted per-line stripes with gaps at
+    /// every paragraph seam. What the attributes must still say is that
+    /// the fence's own rules are dimmed markup.
     func testTheFenceItselfRendersAsABlock() {
         makeEditor()
         paste(
@@ -245,15 +252,24 @@ final class FenceRenderingTests: XCTestCase {
             """
         )
         for line in 0...2 {
-            XCTAssertEqual(background(ofLine: line), InkStyle.codeBackground)
+            XCTAssertEqual(
+                background(ofLine: line), NSColor.clear,
+                "line \(line) carries a per-line wash; the slab belongs to the layout manager"
+            )
         }
         XCTAssertEqual(foreground(ofLine: 0), NSColor.tertiaryLabelColor)
         XCTAssertEqual(foreground(ofLine: 2), NSColor.tertiaryLabelColor)
+        XCTAssertEqual(
+            coordinator.fenceRegions,
+            [NSRange(location: 0, length: (storage.string as NSString).length)]
+        )
     }
 
     /// Closing the fence hands the lines below it back to prose, wash
     /// and all: the restyle pass lays every line down as plain ink
-    /// before it decides what the line is.
+    /// before it decides what the line is, and the region — the range
+    /// the layout manager washes — closes at the answering rule instead
+    /// of running to the end of the page.
     func testClosingAFenceReleasesTheLinesBelowIt() {
         makeEditor()
         paste(
@@ -262,7 +278,8 @@ final class FenceRenderingTests: XCTestCase {
             # comment
             """
         )
-        XCTAssertEqual(background(ofLine: 1), InkStyle.codeBackground)
+        // An open fence washes to the last line of the page.
+        XCTAssertEqual(coordinator.fenceRegions, [NSRange(location: 0, length: 13)])
 
         textView.setSelectedRange(NSRange(location: (storage.string as NSString).length, length: 0))
         textView.insertText(
@@ -271,8 +288,104 @@ final class FenceRenderingTests: XCTestCase {
         )
         coordinator.restyle()
 
-        XCTAssertEqual(background(ofLine: 1), InkStyle.codeBackground)
         XCTAssertEqual(font(ofLine: 3), InkStyle.headingFont(level: 1))
-        XCTAssertEqual(background(ofLine: 3), NSColor.clear)
+        // The region now ends with the answering rule's own line; the
+        // heading below it is outside the wash.
+        XCTAssertEqual(coordinator.fenceRegions, [NSRange(location: 0, length: 18)])
+    }
+}
+
+/// The slab's geometry, tested as arithmetic (the shell's pattern for
+/// UI-adjacent logic): given the metrics a layout pass would hand over,
+/// the rectangle must span the region top to bottom at full container
+/// width, offset by the container's origin, and decline to paint
+/// nothing.
+final class CodeSlabTests: XCTestCase {
+    func testTheSlabSpansTheRegionAtFullContainerWidth() {
+        let slab = InkLayoutManager.slabRect(
+            firstLineTop: 40, regionBottom: 100,
+            containerWidth: 380, origin: NSPoint(x: 12, y: 12)
+        )
+        XCTAssertEqual(slab, NSRect(x: 12, y: 52, width: 380, height: 60))
+    }
+
+    /// The reserved label gap above a stamped fence lives in the first
+    /// line's fragment rect, not its used rect, so the caller measures
+    /// the top from the used rect; the arithmetic only has to keep the
+    /// origin offset honest, not re-subtract the gap.
+    func testTheSlabHonorsTheContainerOrigin() {
+        let slab = InkLayoutManager.slabRect(
+            firstLineTop: 0, regionBottom: 17,
+            containerWidth: 200, origin: NSPoint(x: 20, y: 32)
+        )
+        XCTAssertEqual(slab, NSRect(x: 20, y: 32, width: 200, height: 17))
+    }
+
+    func testDegenerateMetricsPaintNothing() {
+        XCTAssertNil(InkLayoutManager.slabRect(
+            firstLineTop: 50, regionBottom: 50, containerWidth: 380, origin: .zero
+        ))
+        XCTAssertNil(InkLayoutManager.slabRect(
+            firstLineTop: 60, regionBottom: 50, containerWidth: 380, origin: .zero
+        ))
+        XCTAssertNil(InkLayoutManager.slabRect(
+            firstLineTop: 0, regionBottom: 50, containerWidth: 0, origin: .zero
+        ))
+    }
+}
+
+/// The fold from classified paragraphs to fence regions, tested on
+/// ranges alone: the scanner has already said what every line is, so
+/// the fold only has to pair rules and stretch the region between them.
+@MainActor
+final class FenceRegionFoldTests: XCTestCase {
+    private typealias Paragraph = (range: NSRange, kind: InkStyle.LineKind)
+
+    func testAClosedFenceIsOneRegionRuleToRule() {
+        let paragraphs: [Paragraph] = [
+            (NSRange(location: 0, length: 8), .heading(level: 1, markerLength: 2)),
+            (NSRange(location: 8, length: 4), .fenceRule),
+            (NSRange(location: 12, length: 10), .code),
+            (NSRange(location: 22, length: 4), .fenceRule),
+            (NSRange(location: 26, length: 5), .body),
+        ]
+        XCTAssertEqual(
+            InkEditorView.Coordinator.fenceRegions(of: paragraphs),
+            [NSRange(location: 8, length: 20)]
+        )
+    }
+
+    func testAnOpenFenceRunsToTheLastParagraph() {
+        let paragraphs: [Paragraph] = [
+            (NSRange(location: 0, length: 4), .fenceRule),
+            (NSRange(location: 4, length: 6), .code),
+        ]
+        XCTAssertEqual(
+            InkEditorView.Coordinator.fenceRegions(of: paragraphs),
+            [NSRange(location: 0, length: 10)]
+        )
+    }
+
+    /// Two fences back to back are two slabs, not one: the rule that
+    /// closes the first cannot also open the second.
+    func testAdjacentFencesStaySeparateRegions() {
+        let paragraphs: [Paragraph] = [
+            (NSRange(location: 0, length: 4), .fenceRule),
+            (NSRange(location: 4, length: 4), .fenceRule),
+            (NSRange(location: 8, length: 4), .fenceRule),
+            (NSRange(location: 12, length: 4), .fenceRule),
+        ]
+        XCTAssertEqual(
+            InkEditorView.Coordinator.fenceRegions(of: paragraphs),
+            [NSRange(location: 0, length: 8), NSRange(location: 8, length: 8)]
+        )
+    }
+
+    func testAPageWithoutFencesHasNoRegions() {
+        let paragraphs: [Paragraph] = [
+            (NSRange(location: 0, length: 6), .body),
+            (NSRange(location: 6, length: 8), .heading(level: 2, markerLength: 3)),
+        ]
+        XCTAssertEqual(InkEditorView.Coordinator.fenceRegions(of: paragraphs), [])
     }
 }

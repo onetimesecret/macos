@@ -253,9 +253,14 @@ character, at least as long, closes it, and everything between the two
 is read literally: a `#` line there is a comment, a `-` line is a flag,
 and neither is styled as a heading or a list. The fence's own lines
 carry the dimming a heading's hashes do and the block takes a faint
-wash, so it reads as one slab of code. An unterminated fence holds to
-the last line of the page, which is the reading a writer mid-paste
-would expect.
+wash, so it reads as one slab of code. The wash is one rectangle per
+fence region — opening rule through closing rule, at the full width of
+the page's text column — painted behind the text rather than attached
+to it, so no stripes appear at paragraph seams and the slab's edges do
+not hug the glyph runs. The dimmed rules stay on screen inside the
+wash: the markup remains visible, as everywhere else. An unterminated
+fence holds to the last line of the page, which is the reading a writer
+mid-paste would expect.
 
 **A fence region stamps once** (ADR-0022). A fence typed line by line is
 one core block per line — the block model (ADR-0013) is untouched — but

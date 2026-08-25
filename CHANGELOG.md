@@ -502,6 +502,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reserved label gap above the interior lines, so the fence renders as
   the contiguous slab it reads as. Display only: the core's block model
   and every stamp in it are untouched.
+- **The code-block wash is one slab, not a stack of stripes**
+  (`docs/spec/design/04-interaction-model.md`). The wash behind a fence
+  was painted as a per-paragraph `.backgroundColor` attribute, so it
+  rendered as per-line slabs with unpainted stripes at every paragraph
+  seam, hugging the glyph runs instead of forming the one rectangle a
+  code block reads as. The wash now draws once per fence region —
+  opening rule through closing rule, at the full width of the text
+  column — behind the text, in the layout manager's background pass.
+  The dimmed fence rules stay visible inside it, as the
+  markup-preserving rule requires.
 - **Markdown inside a fenced code block is inert** (issue #75). The page
   read every line on its own, so a `# comment` pasted inside a fence
   rendered at heading weight with its hashes dimmed, which reads as the

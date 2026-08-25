@@ -107,7 +107,7 @@ public struct InkEditorView: NSViewRepresentable {
     static func makeInkTextView(
         model: PageModel, sheetID: UInt64, coordinator: Coordinator
     ) -> InkTextView {
-        let layoutManager = NSLayoutManager()
+        let layoutManager = InkLayoutManager()
         let container = NSTextContainer(size: NSSize(
             width: 0, height: CGFloat.greatestFiniteMagnitude
         ))
@@ -1076,6 +1076,20 @@ public struct InkEditorView: NSViewRepresentable {
             }
             storage.endEditing()
             blockDisplays = displays
+            // Third pass, cheap because the classification is already
+            // in hand: collect the fence regions as character ranges,
+            // opening rule through closing rule, for the layout manager
+            // to wash as one slab. The wash used to be a per-paragraph
+            // `.backgroundColor`, which rendered as per-line stripes
+            // hugging the glyph runs; drawn once per region it is the
+            // contiguous rectangle the eye expects.
+            fenceRegions = Self.fenceRegions(
+                of: walks.flatMap(\.paragraphs)
+            )
+            if let layoutManager = textView?.layoutManager as? InkLayoutManager {
+                layoutManager.fenceRegions = fenceRegions
+                textView?.needsDisplay = true
+            }
             // `paragraphSpacingBefore` is ignored on the first paragraph
             // of the storage, so the top block's gap has to come from the
             // container inset instead — otherwise its label would be laid
@@ -1123,10 +1137,12 @@ public struct InkEditorView: NSViewRepresentable {
             // one will actually render: an untouched block carries no
             // stamp and gets no gap.
             paragraphStyle.paragraphSpacingBefore = labeled ? Self.blockLabelReserve : 0
-            // Every line is laid back down to plain ink first, the wash
-            // included, because a line that was code a keystroke ago
-            // has to be able to stop being code when the fence above it
-            // closes or is deleted.
+            // Every line is laid back down to plain ink first, because
+            // a line that was code a keystroke ago has to be able to
+            // stop being code when the fence above it closes or is
+            // deleted. (The clear background is belt and braces: the
+            // fence wash is no longer an attribute, but nothing stray
+            // should linger behind a line either.)
             storage.addAttributes(
                 [
                     .font: InkStyle.baseFont,
@@ -1153,24 +1169,23 @@ public struct InkEditorView: NSViewRepresentable {
                 )
             case .fenceRule:
                 // The fence's own line is markup, dimmed the way a
-                // heading's hashes are, and washed like the lines it
-                // brackets so the block reads as one slab.
-                storage.addAttributes(
-                    [
-                        .foregroundColor: NSColor.tertiaryLabelColor,
-                        .backgroundColor: InkStyle.codeBackground,
-                    ],
+                // heading's hashes are. The wash it shares with the
+                // lines it brackets is not an attribute: painting the
+                // slab per paragraph left unpainted stripes at every
+                // paragraph gap and hugged the glyph runs, so the wash
+                // is drawn once per region by the layout manager.
+                storage.addAttribute(
+                    .foregroundColor,
+                    value: NSColor.tertiaryLabelColor,
                     range: range
                 )
             case .code:
                 // Literally what was typed: the markup a code line
                 // carries is part of the code, so nothing here is read
-                // as a heading and nothing is dimmed.
-                storage.addAttribute(
-                    .backgroundColor,
-                    value: InkStyle.codeBackground,
-                    range: range
-                )
+                // as a heading and nothing is dimmed. The wash behind
+                // it belongs to the whole fence region and is painted
+                // by the layout manager, not laid down per line.
+                break
             }
         }
 
@@ -1226,6 +1241,45 @@ public struct InkEditorView: NSViewRepresentable {
             guard let created = stamps.compactMap({ $0.createdS }).min() else { return nil }
             let modified = stamps.compactMap { $0.modifiedS ?? $0.createdS }.max()
             return blockLabel(createdS: created, modifiedS: modified)
+        }
+
+        /// The fence regions the last restyle read off the page, as
+        /// character ranges from opening rule through closing rule (or
+        /// through the last classified line, for a fence left open).
+        /// Mirrored onto the layout manager, which paints one slab per
+        /// entry; kept here as well so the region reading is assertable
+        /// without a drawing pass.
+        private(set) var fenceRegions: [NSRange] = []
+
+        /// Folds a page's classified paragraphs into fence regions. The
+        /// classification already carries the scanner's whole-page
+        /// reading, so this is a plain fold: a rule met outside a region
+        /// opens one, the rule that answers it closes it, and code lines
+        /// extend whatever is open. A fence left open runs to the last
+        /// paragraph handed in, the same reading the styling gives its
+        /// lines.
+        static func fenceRegions(
+            of paragraphs: [(range: NSRange, kind: InkStyle.LineKind)]
+        ) -> [NSRange] {
+            var regions: [NSRange] = []
+            var open: NSRange?
+            for paragraph in paragraphs {
+                switch paragraph.kind {
+                case .fenceRule:
+                    if let region = open {
+                        regions.append(NSUnionRange(region, paragraph.range))
+                        open = nil
+                    } else {
+                        open = paragraph.range
+                    }
+                case .code:
+                    if let region = open { open = NSUnionRange(region, paragraph.range) }
+                case .body, .heading:
+                    break
+                }
+            }
+            if let region = open { regions.append(region) }
+            return regions
         }
 
         private var blockDisplays: [BlockDisplay] = []
@@ -1332,6 +1386,76 @@ public struct InkEditorView: NSViewRepresentable {
                 )
             }
         }
+    }
+}
+
+// MARK: - The layout manager
+
+/// The page's layout manager, which exists to paint the fence wash.
+/// Painted as a per-paragraph `.backgroundColor` attribute, the wash
+/// rendered as per-line slabs — unpainted stripes at every paragraph
+/// gap, edges hugging the glyph runs — instead of the one rectangle a
+/// code block reads as. Here it is drawn once per region, under the
+/// glyphs, at the full width of the text container, before the
+/// superclass lays down whatever backgrounds remain (selection included,
+/// which is why the slab goes down first).
+final class InkLayoutManager: NSLayoutManager {
+    /// The fence regions of the current page, as character ranges, in
+    /// document order. `restyle` owns these; drawing only reads them.
+    var fenceRegions: [NSRange] = []
+
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        if let container = textContainers.first, let storage = textStorage {
+            let whole = NSRange(location: 0, length: storage.length)
+            for region in fenceRegions {
+                // Clamped, because an edit can land between the restyle
+                // that computed these ranges and the draw that reads
+                // them; a stale region must never index past the text.
+                let clamped = NSIntersectionRange(region, whole)
+                guard clamped.length > 0 else { continue }
+                let glyphs = glyphRange(forCharacterRange: clamped, actualCharacterRange: nil)
+                guard glyphs.length > 0 else { continue }
+                // The first line's fragment rect swallows any
+                // `paragraphSpacingBefore` above it — the reserved label
+                // gap included — so the slab's top comes from the used
+                // rect, where the region's glyphs actually begin.
+                let top = lineFragmentUsedRect(
+                    forGlyphAt: glyphs.location, effectiveRange: nil
+                ).minY
+                let bottom = boundingRect(forGlyphRange: glyphs, in: container).maxY
+                guard let slab = Self.slabRect(
+                    firstLineTop: top, regionBottom: bottom,
+                    containerWidth: container.size.width, origin: origin
+                ) else { continue }
+                // TextKit draws on the main thread; the assumption is
+                // stated rather than inherited because the SDK does not
+                // isolate NSLayoutManager, and the wash's constant
+                // lives on the main-actor style enum.
+                let wash = MainActor.assumeIsolated { InkStyle.codeBackground }
+                wash.setFill()
+                NSBezierPath(roundedRect: slab, xRadius: 4, yRadius: 4).fill()
+            }
+        }
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    /// The rectangle a fence region's wash covers, in the view's
+    /// coordinates: from the top of the region's first used line to the
+    /// bottom of its last fragment, at the full width of the text
+    /// container, offset by the container's origin. Nil when the metrics
+    /// describe nothing worth painting. Pure, so the geometry is
+    /// testable without a layout pass.
+    nonisolated static func slabRect(
+        firstLineTop: CGFloat, regionBottom: CGFloat,
+        containerWidth: CGFloat, origin: NSPoint
+    ) -> NSRect? {
+        guard regionBottom > firstLineTop, containerWidth > 0 else { return nil }
+        return NSRect(
+            x: origin.x,
+            y: origin.y + firstLineTop,
+            width: containerWidth,
+            height: regionBottom - firstLineTop
+        )
     }
 }
 
