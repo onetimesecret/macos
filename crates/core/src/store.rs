@@ -14,7 +14,7 @@ use zeroize::Zeroizing;
 
 use crate::blocks::BlockIndex;
 use crate::clock::Clock;
-use crate::document::SheetDocument;
+use crate::document::{SheetDocument, UpdateRefusal};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
     ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock, SheetId, TITLE_CAP,
@@ -100,6 +100,54 @@ impl std::fmt::Display for PayloadError {
 }
 
 impl std::error::Error for PayloadError {}
+
+/// Why a remote update or key frame was refused. Every arm leaves the
+/// page exactly as it was: refusal is whole, the same discipline the
+/// restore path applies to a damaged file, because a remote edit does
+/// not get a looser contract than a snapshot (issue #96).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteRefusal {
+    /// No such page.
+    UnknownSheet,
+    /// The bytes do not decode as an update batch or key frame.
+    Malformed,
+    /// The update depends on operations this page's document does not
+    /// hold: the sender is across a ceremony boundary, or this device
+    /// was away for longer than one GOP. The recovery is to rejoin at
+    /// the current key frame ([`SheetStore::adopt_key_frame`]), never
+    /// to ask for history (ADR-0013, ADR-0021 section 1).
+    MissingHistory,
+    /// The update would stand a chip sentinel this page does not own,
+    /// or stand one twice. The protocol delivers a chip's sealed bytes
+    /// before the delta that references it, or the delta waits.
+    ChipRoster,
+    /// A key frame was offered to a page whose document already holds
+    /// history. Joining is only ever from a fresh page: merging a key
+    /// frame over standing ops would duplicate the body rather than
+    /// replace it, and a device carrying pre-ceremony history drops it
+    /// (a fresh page) before it rejoins (ADR-0021 sections 1 and 5).
+    NotFresh,
+}
+
+impl std::fmt::Display for RemoteRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RemoteRefusal::UnknownSheet => write!(f, "no such page"),
+            RemoteRefusal::Malformed => write!(f, "the update does not decode"),
+            RemoteRefusal::MissingHistory => {
+                write!(f, "the update depends on history this page does not hold")
+            }
+            RemoteRefusal::ChipRoster => {
+                write!(f, "the update references a chip this page does not own")
+            }
+            RemoteRefusal::NotFresh => {
+                write!(f, "a key frame lands only on a fresh page")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RemoteRefusal {}
 
 /// One edit against a sheet's body (ADR-0013): the operation shape the
 /// shell sends instead of a whole-document snapshot. Every position and
@@ -874,6 +922,82 @@ impl<C: Clock> SheetStore<C> {
         }
     }
 
+    // -----------------------------------------------------------------
+    // The delta seam: what sync puts on a wire (issue #96, ADR-0021 §1)
+    // -----------------------------------------------------------------
+
+    /// A page's sync frontier, as opaque bytes: the cursor a peer hands
+    /// back to [`SheetStore::export_document_updates`] to ask for what
+    /// it has not seen. Opaque on purpose — nothing above the document
+    /// module may read a peer identity out of it (issue #96). `None`
+    /// for an unknown page.
+    #[must_use]
+    pub fn document_version(&self, id: SheetId) -> Option<Vec<u8>> {
+        Some(self.sheet(id)?.document.version())
+    }
+
+    /// The operations a page's document holds beyond `since`: the
+    /// delta a peer at that frontier needs, ADR-0013's P-frames,
+    /// plaintext here and sealed by the seam above before any wire
+    /// (ADR-0021 section 2). `None` for an unknown page or a frontier
+    /// that does not decode. A stale frontier from across a ceremony
+    /// boundary is well-formed and yields the whole current GOP.
+    #[must_use]
+    pub fn export_document_updates(
+        &self,
+        id: SheetId,
+        since: &[u8],
+    ) -> Option<Zeroizing<Vec<u8>>> {
+        self.sheet(id)?.document.export_updates_since(since)
+    }
+
+    /// Apply a peer's update batch to a page, refusing it whole unless
+    /// it lands cleanly: decodable, no missing dependencies, and every
+    /// chip sentinel resolving one-to-one against the chips this page
+    /// owns. An accepted batch then settles exactly as a local edit
+    /// does ([`SheetStore::settle_document`]): the projection rebuilds,
+    /// the title re-derives, and a chip whose sentinel a peer deleted
+    /// dies here with the same `Discarded` record ⌫ writes. The block
+    /// index was not narrated op by op, so it rebuilds with fresh
+    /// identities, which is the standing fallback for any unnarrated
+    /// mutation rather than a new rule.
+    pub fn apply_remote_update(&mut self, id: SheetId, bytes: &[u8]) -> Result<(), RemoteRefusal> {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return Err(RemoteRefusal::UnknownSheet);
+        };
+        let owned: Vec<ItemId> = sheet.chips.iter().map(|chip| chip.uuid).collect();
+        sheet
+            .document
+            .import_update(bytes, &owned)
+            .map_err(refusal_from)?;
+        self.settle_document(id);
+        Ok(())
+    }
+
+    /// Join a page to a channel's current key frame: the whole sealed
+    /// state a device adopts instead of the history it structurally
+    /// never receives (ADR-0013, ADR-0021 section 5). Only a fresh
+    /// page — one whose document holds no operations — may adopt, so a
+    /// device carrying pre-ceremony history drops it first and rejoins
+    /// empty; anything else is refused whole. The same chip-roster
+    /// discipline applies: a key frame referencing chips this page does
+    /// not own waits for the protocol to deliver them.
+    pub fn adopt_key_frame(&mut self, id: SheetId, frame: &[u8]) -> Result<(), RemoteRefusal> {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return Err(RemoteRefusal::UnknownSheet);
+        };
+        if !sheet.document.is_pristine() {
+            return Err(RemoteRefusal::NotFresh);
+        }
+        let owned: Vec<ItemId> = sheet.chips.iter().map(|chip| chip.uuid).collect();
+        sheet
+            .document
+            .import_update(frame, &owned)
+            .map_err(refusal_from)?;
+        self.settle_document(id);
+        Ok(())
+    }
+
     /// Name a tab. An empty or all-whitespace submission clears the
     /// name; anything else is capped at 80 characters and outlives
     /// every later edit, and every page the slot goes on to hold.
@@ -1403,6 +1527,18 @@ impl<C: Clock> SheetStore<C> {
             DestinationClass::None,
         );
         // `sheet` drops here; every SecretBuffer zeroizes on the way down.
+    }
+}
+
+/// The document module's refusal, restated in the store's vocabulary.
+/// A plain `From` impl would do it, but the mapping is spelled out so
+/// the two enums cannot drift apart silently: a new arm on either side
+/// is a compile error here.
+fn refusal_from(refusal: UpdateRefusal) -> RemoteRefusal {
+    match refusal {
+        UpdateRefusal::Malformed => RemoteRefusal::Malformed,
+        UpdateRefusal::MissingHistory => RemoteRefusal::MissingHistory,
+        UpdateRefusal::ChipRoster => RemoteRefusal::ChipRoster,
     }
 }
 
@@ -3451,5 +3587,225 @@ mod tests {
         // and the record of the page's end carries none of it.
         assert!(store.close_tab(slot(&store, id)));
         assert_content_free(&store);
+    }
+
+    // ------------------------------------------------------------------
+    // The delta seam at the store (issue #96, ADR-0021 §1)
+    // ------------------------------------------------------------------
+
+    /// Ship every update `from` holds beyond `mirror`'s frontier into
+    /// `mirror`: the round one publish-and-fetch cycle performs, minus
+    /// the wire.
+    fn ship(
+        from: &SheetStore<ManualClock>,
+        from_page: SheetId,
+        mirror: &mut SheetStore<ManualClock>,
+        mirror_page: SheetId,
+    ) -> Result<(), RemoteRefusal> {
+        let frontier = mirror.document_version(mirror_page).unwrap();
+        let delta = from.export_document_updates(from_page, &frontier).unwrap();
+        mirror.apply_remote_update(mirror_page, &delta)
+    }
+
+    #[test]
+    fn a_peers_updates_land_and_settle_like_local_edits() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "Shared title\nand a body".into(),
+            }],
+        ));
+        ship(&alpha, a, &mut beta, b).unwrap();
+        assert_eq!(beta.sheet(b).unwrap().segments(), alpha.sheet(a).unwrap().segments());
+        // The settle ran: the mirrored page derived the same title.
+        assert_eq!(beta.sheet(b).unwrap().derived_title(), Some("Shared title"));
+
+        // Deltas are incremental: a second edit ships alone and lands
+        // on top of the first.
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Delete {
+                pos_u16: 0,
+                len_u16: 7,
+            }],
+        ));
+        ship(&alpha, a, &mut beta, b).unwrap();
+        assert_eq!(beta.sheet(b).unwrap().segments(), alpha.sheet(a).unwrap().segments());
+        assert_eq!(beta.sheet(b).unwrap().derived_title(), Some("title"));
+    }
+
+    #[test]
+    fn a_remote_chip_the_page_does_not_own_refuses_whole() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "ink".into(),
+            }],
+        ));
+        alpha.seal_text_at(a, "sealed bytes", 0, 0).unwrap();
+
+        let before = beta.sheet(b).unwrap().segments().to_vec();
+        assert_eq!(
+            ship(&alpha, a, &mut beta, b),
+            Err(RemoteRefusal::ChipRoster)
+        );
+        // Refused whole: not even the ink landed.
+        assert_eq!(beta.sheet(b).unwrap().segments(), &before[..]);
+    }
+
+    #[test]
+    fn a_chip_delivered_first_lets_its_sentinel_land_and_die() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "before after".into(),
+            }],
+        ));
+        let chip = alpha.seal_text_at(a, "the secret", 7, 0).unwrap();
+        let uuid = alpha.sheet(a).unwrap().chip(chip).unwrap().uuid();
+
+        // Simulate the protocol delivering the chip's sealed bytes
+        // ahead of the delta (the ChipRoster contract): the mirror owns
+        // a chip under the same identity before the sentinel arrives.
+        {
+            let sheet = beta.sheet_mut(b).unwrap();
+            let id = ChipId(9001);
+            sheet
+                .chips
+                .push(SealedChip::text_with_uuid(id, uuid, "the secret"));
+        }
+        ship(&alpha, a, &mut beta, b).unwrap();
+        assert_eq!(beta.sheet(b).unwrap().chip_count(), 1);
+        let mirrored: Vec<Segment> = beta.sheet(b).unwrap().segments().to_vec();
+        assert!(matches!(mirrored[1], Segment::Chip(_)));
+
+        // A peer deleting the sentinel kills the mirror's chip through
+        // the same settle a local ⌫ takes, Discarded record included.
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Delete {
+                pos_u16: 7,
+                len_u16: 1,
+            }],
+        ));
+        ship(&alpha, a, &mut beta, b).unwrap();
+        assert_eq!(beta.sheet(b).unwrap().chip_count(), 0);
+        assert!(
+            beta.ledger()
+                .any(|record| record.event == LedgerEvent::Discarded && record.item == uuid),
+            "the remote deletion left no Discarded record"
+        );
+    }
+
+    #[test]
+    fn a_device_across_the_boundary_rejoins_at_the_key_frame() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+
+        // The mirror follows for a while…
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "early DOOMED words".into(),
+            }],
+        ));
+        ship(&alpha, a, &mut beta, b).unwrap();
+
+        // …then sleeps through a ceremony.
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Delete {
+                pos_u16: 5,
+                len_u16: 7,
+            }],
+        ));
+        alpha.cycle_rung(slot(&alpha, a)).unwrap();
+
+        // Its stale frontier is answered with the whole current GOP,
+        // which its pre-ceremony history cannot accept…
+        let refusal = ship(&alpha, a, &mut beta, b);
+        assert!(
+            matches!(
+                refusal,
+                Err(RemoteRefusal::MissingHistory | RemoteRefusal::ChipRoster)
+            ) || {
+                // A post-ceremony full export has no dependency on the
+                // old history, so the import may also land as a merge —
+                // which would duplicate the body. Either way the mirror
+                // must not end up agreeing silently; assert it did not.
+                beta.sheet(b).unwrap().segments() != alpha.sheet(a).unwrap().segments()
+            },
+            "a stale mirror must never silently agree across a ceremony"
+        );
+
+        // …so it drops what it holds and rejoins at the key frame: a
+        // fresh page adopting the channel's current state whole.
+        let frame = alpha.sheet(a).unwrap().document.export_snapshot();
+        let tab = slot(&beta, b);
+        assert!(beta.discard_page(b));
+        let fresh = beta.open_page(tab).unwrap();
+        beta.adopt_key_frame(fresh, &frame).unwrap();
+        assert_eq!(
+            beta.sheet(fresh).unwrap().segments(),
+            alpha.sheet(a).unwrap().segments()
+        );
+
+        // And the frame it adopted carries nothing from behind the
+        // boundary.
+        assert!(!contains(&frame, b"DOOMED"));
+    }
+
+    #[test]
+    fn a_key_frame_lands_only_on_a_fresh_page() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "the channel state".into(),
+            }],
+        ));
+        let frame = alpha.sheet(a).unwrap().document.export_snapshot();
+
+        assert!(beta.apply_ops(
+            b,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "standing history".into(),
+            }],
+        ));
+        assert_eq!(
+            beta.adopt_key_frame(b, &frame),
+            Err(RemoteRefusal::NotFresh)
+        );
+        assert_eq!(
+            beta.sheet(b).unwrap().derived_title(),
+            Some("standing history")
+        );
     }
 }
