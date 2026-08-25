@@ -3,7 +3,7 @@
 
 # Feature: vertical time tabs — a page per unit of time
 
-Status: **draft**, for review · 2026-08-24
+Status: **draft**, rail landed · 2026-08-25
 Scope: a prototype mode on the backdrop, behind a Settings toggle that
 is off by default. Horizontal tabs keep their behaviour and their
 pixels. The sealed format, the tab model, the TTL ladder and the cap are
@@ -296,6 +296,53 @@ close a day would be exactly the misreading ADR-0017's eject trigger is
 about. `TabFramesKey` and its midX reorder test are never touched, so the
 two modes never contend over one preference key's semantics.
 
+**What shipped, as of branch 5.** The rail lives in
+`shell/Sources/CompanionKit/TimeRailView.swift`: a `VStack(spacing: 2)`
+of `TimeUnitTab` over `model.timeUnits.units`, 56pt wide, with the
+strip's background and the strip's selected fill. Four decisions were kept out of the drawing and
+are pure functions with tests of their own, in the idiom
+`TabStripView.newPageHelp` set:
+
+- `TimeUnitTab.target(for:)` (`:209`) — where a tap lands. It maps a
+  unit to its first slot in strip order, and to `.today` only where a
+  day answers to no slot at all, which is exactly what
+  `PageModel.visibleTargets` does with the same units. A click on the
+  second row and ⌘2 therefore cannot disagree about where the second day
+  is, and a test asserts the two lists element for element.
+- `TimeRailView.selectedBucket(projection:selection:)` (`:98`) — which
+  row is lit. It follows the selected page's day rather than the row
+  last clicked, so a selection the keyboard moved, or one that fell onto
+  another day after an expiry, moves the mark too. An empty Today
+  answers to no slot, so it takes the mark exactly when no other day has
+  it.
+- `TimeRailView.chord(forRowAt:keymap:)` (`:115`) — which chord a
+  tooltip may name, asked of the keymap rather than spelled into the
+  view, so a user who moved ⌘2 moves the tooltip with it and a user who
+  unbound it gets a tooltip that says only what the row does. A tenth
+  row has no chord and cannot: ten live days would take ten live pages,
+  one over the cap.
+- `TimeRailView.hiddenPagesLine(count:)` and `hiddenPagesHelp(count:)`
+  (`:126`, `:133`) — the footer. The short form fits the 56pt column and
+  the sentence behind it names the toggle, which is what doc 05's
+  no-abbreviation-only rule asks for. It is absent entirely at zero: a
+  line reading "0 blank" would be chrome measuring the absence of a
+  problem.
+
+`TimeUnitProjection.Unit` gained one field for the rail,
+`spokenRemaining` (`shell/Sources/CompanionKit/TimeUnits.swift:134`),
+taken from the same soonest-dying page as the gauge. A view reaching
+back into the summaries for the spoken half could have picked a
+different page from the one the bar is drawn from, and the row would
+then have said one thing and shown another.
+
+What the rail deliberately does not carry, restated now that it exists:
+no rename, no close, no rung, no hold, no reorder, and no row at all for
+a tab holding no page — the tab is standing underneath, named and empty,
+and the strip shows it again the moment the mode goes off. Nothing on
+the rail mints by being drawn; the one click that makes anything is an
+empty Today's, which takes the shipped create path and says so in its
+tooltip.
+
 **The roll** is one `NSScrollView` over a flipped stack laid out top-down
 by frame. Perforations are chrome: a hairline drawn between regions in
 `EmptyRule`'s dash vocabulary, plus the unit's label in the leading
@@ -391,10 +438,12 @@ day one.
 ## Change map, branch by branch
 
 Six stacked branches, each targeting the one below it, bottom-up into
-main. Branches 1 to 3 are in the tree as of 2026-08-25 — the decision,
-the seam and the projection with its flag — and nothing a user can see
-has moved. That is the intended shape: the first pixel arrives with
-branch 5, and until then the mode is a model with tests and no surface.
+main. Branches 1 to 5 are in the tree as of 2026-08-25 — the decision,
+the seam, the projection with its flag, the editor factoring, and the
+rail with its Settings toggle. The first four moved no pixel at all,
+deliberately; branch 5 is the first that a user can see and turn on.
+What is still missing is the roll, and with it the four verbs the strip
+used to carry.
 
 1. **The spec and the decision** (this document and ADR-0020). Docs only.
    `docs/spec/design/04-interaction-model.md` is deliberately **not**
@@ -418,27 +467,37 @@ branch 5, and until then the mode is a model with tests and no surface.
    branch 5.
 4. **The editor factoring.** Separate building the one persistent editor
    from wrapping it in a scroll view, and the page-swap ceremony from
-   `updateNSView` (`shell/Sources/CompanionKit/InkEditorView.swift:35`,
-   `:141`, `:248-303`). The review evidence for this branch is the
-   sentence "behaviour does not change on this branch", backed by the
-   existing suite unedited.
+   `updateNSView`. **Landed**, as
+   `InkEditorView.makeInkTextView(model:sheetID:coordinator:)`
+   (`shell/Sources/CompanionKit/InkEditorView.swift:107`) and
+   `Coordinator.moveEditor(_:to:storage:restoringScrollIn:)` (`:370`),
+   with `makeNSView` (`:35`), `updateNSView` (`:283`) and
+   `scrollStack(for:)` (`:176`) as they were. The review evidence for
+   that branch is the sentence "behaviour does not change on this
+   branch", backed by the existing suite unedited.
 5. **The rail.** `TimeRailView`, the Settings toggle, the mode-aware
-   selection wired up, and the hidden-blank-pages footer. The card's
-   content row branches as a whole expression
-   (`shell/Sources/OnetimePad/Views/BackdropRootView.swift:99-115`), with
-   the off-path view tree written out identically to today's rather than
+   selection wired up, and the hidden-blank-pages footer. **Landed**, in
+   `shell/Sources/CompanionKit/TimeRailView.swift`, with the card's
+   content row branching as a whole expression
+   (`shell/Sources/OnetimePad/Views/BackdropRootView.swift:114`) and the
+   off-path view tree written out identically to today's rather than
    wrapped, so "pixel-identical when the toggle is off" is structural and
-   not a hope. The strip row (`:112-114`) is simply absent while the mode
-   is on.
+   not a hope. The strip row (`:139`) is simply absent while the mode is
+   on. The toggle is one row in `ConnectionSettingsView`
+   (`shell/Sources/CompanionKit/SettingsSections.swift:122`) whose
+   caption says all three things: prototype, moves no content, and which
+   verbs it costs while it is on.
 6. **The perforated roll.** The contiguous scroll, the day headers and
    their verbs, the quiet regions, the anchor rule, and the hardware
    procedure that answers the issue's three questions on a real machine.
    This is where the engineering goes and the branch that can be reverted
    without losing the mode.
 
-A known limit of branch 5, resolved by branch 6: while the mode is on and
-the roll has not landed, rename, hold, rung and close are reachable only
-by flipping the toggle off.
+A known limit of the tree as it stands, resolved by branch 6: while the
+mode is on and the roll has not landed, rename, hold, rung and close are
+reachable only by flipping the toggle off. The Settings caption says so
+in as many words, because a prototype that quietly loses four verbs is
+how a toggle earns a user's distrust.
 
 ## Test plan
 
@@ -479,6 +538,21 @@ decision that is Rust, the more of it is validated before a PR exists.
   and leaves the tabs, the emptiness predicates, the selection and the
   save status byte-identical; nothing is marked dirty; the termination
   latch never moves.
+- **The rail, without a window.** The rows are the projection's days in
+  the projection's order; a row's tap target is its day's first slot and
+  `.today` only where a day answers to no slot; the row targets equal
+  `visibleTargets` element for element on a live pad in the mode; Today
+  has a row with and without a page and its tooltip says which; a
+  tooltip names the chord the keymap bound and degrades to the plain
+  description when nothing is; the footer's line appears exactly when
+  the hidden count is non-zero; and each row reads its distance and its
+  clock out loud.
+- **The chords, pressed.** ⌘1 in the mode lands on today and takes the
+  create path when today is empty, and a second press is a jump; ⌘2 and
+  ⌥⌘→ count days rather than slots, asserted as the contrast between the
+  two modes on a pad written in one sitting, because no Swift test can
+  move a page across a local midnight; and with the mode off all three
+  land on the strip exactly where they always did.
 - **Geometry, in a real window and TextKit stack** (the `PageScrollTests`
   idiom, never a mock): the stack's height is the sum of its parts; Day 0
   sits at document offset 0 and re-anchoring leaves the clip at the
