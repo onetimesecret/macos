@@ -11,3 +11,4 @@
 - [Window behaviour stack 41/22/23/73/74](project_window_behaviour_stack.md): merge-only propagation in dogfood-a; the mouse gate must converge open
 - [Two version numbers](project_two_version_numbers.md): app version lives in the shell plist (#89), crate version in crates/ffi; bump the plist for user visible work
 - [Stacked review findings](feedback_stacked_review_findings.md): verify each finding on the branch that owns the code; a claim false on 77 can be true on 78
+- [Conceal vocabulary](feedback_conceal_vocabulary.md): "promotion" is banned (#92); conceal/reveal only, and nspasteboard_concealed keeps the clipboard marker apart
