@@ -150,6 +150,14 @@ that build no window, and the identity that protects horizontal mode —
 the target list with the mode off equals the strip element for element —
 is an assertion rather than a promise. Items 11 onward are still work.
 
+**Landed 2026-08-25, third pass.** Item 11 is in the tree, and it is the
+one item in this list whose whole claim is that nothing happened: the
+editor's building and its page swap now have names and callers of their
+own, and horizontal mode does not know. The evidence is the shape of the
+change — no existing test needed a line — and it is worth pressing on in
+review, because a flag dropped out of the editor's construction is
+invisible until the day it matters. Items 12 onward are still work.
+
 1. `pub fn local_day(wall_ms: u64, utc_offset_seconds: i32) -> i64`,
    hoisted out of the arithmetic already inside `placeholder_title`
    (crates/core/src/sheet.rs:712-721, the
@@ -259,6 +267,30 @@ is an assertion rather than a promise. Items 11 onward are still work.
     editor without forking it. The contract comments move with the code
     they guard, `shedLayoutManagers` still runs at mount (:58), and the
     existing suite passes unedited.
+
+    **Landed.** The building is
+    `InkEditorView.makeInkTextView(model:sheetID:coordinator:)`
+    (shell/Sources/CompanionKit/InkEditorView.swift:107, with the mount's
+    shed at :121) and the swap is
+    `Coordinator.moveEditor(_:to:storage:restoringScrollIn:)` (:370-397),
+    statement for statement and in the order they were in, with the
+    contract comments carried across beside the code they guard.
+    `makeNSView` (:35) and `updateNSView` (:283-310) are thin callers and
+    `scrollStack(for:)` (:176) did not move a character. The line numbers
+    in the paragraph above name the tree this decision was written
+    against, before the factoring moved them.
+
+    Two things came out of the work that the item had not named. Editing
+    stays with the mount rather than with the building, because
+    `readOnly` is the backdrop's stance and not a property of the editor
+    — `updateNSView` re-gates it on every pass — so the factory sets no
+    `isEditable` and takes no `readOnly`. And `saveViewState` and
+    `restoreViewState` now take an optional scroll view: a caret belongs
+    to the page wherever the page is mounted, an offset belongs to the
+    clip the page sits in, so a mount with no scroller of its own runs
+    the caret leg and skips the scroll leg. That is the leg the roll will
+    take, since one scroller over several days has an offset belonging to
+    the roll rather than to any page in it.
 12. The rail: a new `TimeRailView` reusing `GaugeBar`
     (shell/Sources/CompanionKit/TabStripView.swift:435) and `EmptyRule`
     (:416) where they stand, so TabStripView.swift takes no diff; the
