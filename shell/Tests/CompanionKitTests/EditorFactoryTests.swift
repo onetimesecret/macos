@@ -68,7 +68,13 @@ final class EditorFactoryTests: XCTestCase {
             "the page renders what was typed; nothing may rewrite ink on its way in"
         )
         XCTAssertFalse(textView.drawsBackground, "the card's own material shows through the page")
-        XCTAssertTrue(textView.usesFindPanel, "⌘F and its neighbours validate against this switch")
+        // AppKit's two find switches read back as one choice, and the
+        // bar is the face this page picks: with it on, `usesFindPanel`
+        // answers false however it was set. `enableFinding` sets both,
+        // in the order `makeNSView` set them before the building was
+        // factored out of it (9da5cdc), so what the built editor
+        // carries is what the mounted page has always carried — and the
+        // bar is the switch that can be held to it.
         XCTAssertTrue(textView.usesFindBar, "the bar under the card's edge, not a second window")
         XCTAssertEqual(textView.textContainerInset.height, InkEditorView.Coordinator.topInset)
         XCTAssertEqual(textView.typingAttributes[.font] as? NSFont, InkStyle.baseFont)
