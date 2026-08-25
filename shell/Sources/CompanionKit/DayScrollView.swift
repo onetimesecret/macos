@@ -99,16 +99,25 @@ public struct DayScrollView: NSViewRepresentable {
     }
 
     /// The roll is going away: the ledger, or the toggle going off. The
-    /// model's handles onto it are retired here for
+    /// model's handle on the editor is retired here for
     /// `InkEditorView.dismantleNSView`'s reason — a weak handle answers
     /// for a view torn out of its window until ARC lets go, and a
     /// hand-off arriving in the meantime would settle on a view with no
     /// window rather than wait for the surface coming to replace it
-    /// (issue #23).
+    /// (issue #23). Only when the handle is still this mount's: SwiftUI
+    /// may build a replacement before dismantling what it replaces, and
+    /// clearing unconditionally would drop the live editor a moment
+    /// after it arrived.
+    ///
+    /// The anchor closure is deliberately left alone for the same
+    /// reason, without the identity check being available to it: a
+    /// replacement roll has already installed its own by now, and the
+    /// closure this mount installed holds its scroller weakly, so an
+    /// anchor that outlives its surface is a no-op rather than a
+    /// misfire.
     public static func dismantleNSView(
         _ scroll: NSScrollView, coordinator: InkEditorView.Coordinator
     ) {
-        coordinator.model.onAnchorToday = nil
         guard let stack = scroll.documentView as? DayStackView,
               let editor = stack.editor,
               coordinator.model.activeEditor === editor else { return }
@@ -526,6 +535,22 @@ final class DayStackView: NSView {
         editor = built
         addSubview(built)
         observeEditor(built)
+        // A mount with no scroller of its own has to grant what
+        // `scrollStack(for:)` grants the editor's own clip. `NSTextView`
+        // starts with `maxSize` at its frame — zero, for a view built
+        // into nothing — and a vertically resizable view will not grow
+        // past `maxSize.height`, so today's page would stop at no height
+        // at all: the storage would keep taking text, the layout manager
+        // would keep laying it out, and none of it past the first line
+        // would be on screen. Unbounded on both axes, resizable down the
+        // page and not across it, which is the same grant the page's own
+        // scroller makes and the one whose absence is silent.
+        built.isVerticallyResizable = true
+        built.isHorizontallyResizable = false
+        built.minSize = .zero
+        built.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude
+        )
         // Wrap is forced on while the days are showing, and the stored
         // `wrapsLines` preference is left exactly where the user left
         // it: a line that ran off the side of one day would run off the
@@ -1087,7 +1112,9 @@ final class QuietPageView: NSTextView {
 /// costs nothing, where minting it would start a countdown nobody asked
 /// for.
 final class EmptyTodayView: NSView {
-    private let grant = KeyGrantingClickView(frame: .zero)
+    /// The focus law's catcher, kept reachable so a test can take the
+    /// grant a click would take without synthesizing the click.
+    let grant = KeyGrantingClickView(frame: .zero)
     private let lead = NSTextField(labelWithString: "Empty is the resting state.")
     private let hint: NSTextField
 
@@ -1110,7 +1137,20 @@ final class EmptyTodayView: NSView {
         grant.selectedTabHoldsNoPage = { [weak model] in
             model?.selectedTabHoldsNoPage ?? true
         }
-        grant.onCreate = { [weak model] window in model?.createPageAndFocus(in: window) }
+        // `openToday()` rather than `createPageAndFocus(in:)`, which is
+        // what the strip's own empty state calls. The two agree on the
+        // cases the strip can be in — no tabs at all, or a selected slot
+        // holding nothing — and disagree on the one only the roll has:
+        // this region can be on screen while the editor is standing on
+        // an older day, and there `createPageAndFocus` would find the
+        // selected slot peopled and quietly do nothing at all. Today's
+        // place has to make today's page. It is still the shipped
+        // gesture and it still cannot mint twice: a second click finds
+        // today holding a page and selects it (ADR-0017).
+        grant.onCreate = { [weak model] window in
+            model?.openToday()
+            model?.focusEditorWhenMounted(in: window)
+        }
         grant.onEscape = { [weak model] in model?.escape() }
         addSubview(grant)
     }

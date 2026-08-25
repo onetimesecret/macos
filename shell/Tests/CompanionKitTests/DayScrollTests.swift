@@ -258,9 +258,23 @@ final class DayScrollTests: XCTestCase {
             "three long days must not fit in one card, or the fixture proves nothing"
         )
         XCTAssertTrue(roll.stack.editor?.superview === roll.stack)
+        let editor = try XCTUnwrap(roll.stack.editor)
         XCTAssertGreaterThan(
-            try XCTUnwrap(roll.stack.editor).frame.minY, 0,
+            editor.frame.minY, 0,
             "the editor is the second day, so it cannot be at the top of the roll"
+        )
+        // The grant `scrollStack` makes to the editor's own clip, which
+        // this mount has to make for itself: without it a vertically
+        // resizable text view will not grow past a `maxSize` that starts
+        // at its frame, and today's page is written past a ceiling of
+        // nothing (the silent failure `PageScrollTests` guards).
+        XCTAssertEqual(editor.maxSize.height, CGFloat.greatestFiniteMagnitude)
+        XCTAssertEqual(editor.maxSize.width, CGFloat.greatestFiniteMagnitude)
+        XCTAssertTrue(editor.isVerticallyResizable)
+        XCTAssertFalse(editor.isHorizontallyResizable)
+        XCTAssertGreaterThan(
+            editor.frame.height, 100,
+            "a long day is mounted at a height that shows none of it"
         )
 
         let last = try XCTUnwrap(roll.stack.laidOut.last).body
@@ -525,6 +539,33 @@ final class DayScrollTests: XCTestCase {
             accuracy: 0.5,
             "the empty state is the surface at that moment, not a caption at the top of it"
         )
+    }
+
+    /// The one click on the roll that makes anything: today's place is
+    /// where today's page starts. It goes through `openToday()`, the
+    /// same gesture ⌘N takes in this mode, so a second click finds
+    /// today holding a page and selects it rather than stacking a blank
+    /// one on top of it (ADR-0017).
+    func testClickingTodaysEmptyPlaceStartsTodaysPageAndOnlyOne() throws {
+        let model = try makeModel()
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: TimeUnitProjection.project(
+                tabs: [], selectedPageID: nil, unit: .day
+            ),
+            selectedPage: nil,
+            readOnly: false
+        )
+        let place = try XCTUnwrap(roll.stack.laidOut.first?.body as? EmptyTodayView)
+
+        place.grant.onCreate?(roll.window)
+
+        XCTAssertEqual(model.tabs.count, 1, "the click into today made nothing")
+        XCTAssertNotNil(model.selectedPageID)
+
+        place.grant.onCreate?(roll.window)
+
+        XCTAssertEqual(model.tabs.count, 1, "a second click stacked a second blank page")
     }
 
     /// The last page expires and the roll has nothing to show. The
