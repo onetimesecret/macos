@@ -27,6 +27,31 @@ cannot show a control that does nothing.
   ledger-and-focus ceremony. `MintFocusTests` covers that ceremony and
   passed unedited.
 
+## Two laws the adversarial review added (2026-08-25)
+
+- **A bucket is never positive.** `TimeUnit.bucket(dayOffset:)` clamps
+  at today (`min(dayOffset, 0)`). `label` already folded a positive
+  offset to "Today"; the grouping did not, so a host clock that went
+  backwards drew *two* rows named Today — the peopled skewed one and
+  the empty bucket 0 the projection always inserts — and every
+  `first(where: { $0.bucket == 0 })` lookup found the empty one. ⌘N
+  minted a second page beside the visible one and the summon's anchor
+  selected nothing. Fold in the one line where an offset becomes a
+  bucket rather than hardening each lookup: the skew then cannot be
+  observed at all. The two lookups (`openToday`, `anchorOnToday`) are
+  unchanged and now correct by construction.
+- **The mode's reconciliation runs at the mode's entrance.**
+  `reconciledTimeSelection` had one caller, `refresh()`, and the
+  `showsTimeUnits` didSet triggers no refresh — so the transition that
+  most reliably produces "selection on a slot the rail draws no row for"
+  (the selected page expired overnight) was the one transition the rule
+  was never applied to. The didSet now applies the fall when the value
+  flips **to true only**. Off is deliberately untouched: the strip draws
+  every slot, so there is nothing to fall off. It mints nothing and
+  marks nothing dirty, and it cannot move a selection the mode it is
+  entering would draw — which is what keeps ADR-0020's toggle-safety
+  claim. Tests pin all three directions.
+
 ## Two things worth knowing before branch 5 or 6
 
 - **Days cannot be staged against a live core from Swift.**
