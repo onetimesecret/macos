@@ -39,9 +39,9 @@ procedure.
   for the length of a call.
 - **Perforations are chrome.** Nothing separating two days may be a
   character in a storage; it would cross the seam as an insert op.
-- **The rendering cache needs invalidating, not just pruning.** A cached
-  day is sound only while the day is quiet, and a page stops being quiet
-  the moment the editor arrives on it.
+- **The rendering cache is invalidated at the mutation, not at the
+  view's swap.** See below: the first version invalidated on the
+  editor's way past and was wrong on four paths at once.
 
 ## Six AppKit traps this branch actually hit
 
@@ -71,6 +71,55 @@ procedure.
   the header's top that growth is invisible and the reader slides down
   twelve points; `topmostPageAnchor` and `keepStill` therefore both
   measure `body.frame.minY`.
+
+## What the adversarial review changed (2026-08-25)
+
+- **Invalidate where the page changes, and let the view see it.** The
+  cache was dropped only in `settleEditor`'s swap, which misses: an edit
+  made with the strip showing (the map outlives a roll dismantle), the
+  pass that *builds* the editor (`makeInkTextView` sets `currentSheet`
+  itself, so the swap's guard early-returns), a chip burned out of a day
+  the editor had left, and a composition still marked as the editor
+  leaves. `PageModel` now drops a page's rendering in `applyOps`
+  (accepted), `syncDocument` (accepted) and `removeChipFromDocument` —
+  and the chip's host page is looked up **before** the delete, from the
+  core, because a chip can stand on a day with a rendering and no
+  storage. Model-side correctness is only half: a `QuietPageView` never
+  re-read its rendering, so it holds the object it was seeded from and
+  `reseed(with:)` compares identity, driven from `quietRegion(for:)` and
+  from `refreshQuietRegions()` on the **ordinary** pass — none of these
+  changes moves a bucket, a page id or the selection, so none of them
+  changes the roll's signature.
+- **Settle the composition before `assembleRows`, not inside the swap.**
+  The outgoing day's rendering is read from the core during assembly,
+  and marked text is deliberately kept out of the core until it settles.
+  `settleComposition(before:)` runs first — and inside the `isLayingOut`
+  gate, because settling grows the editor and a text view that grows
+  posts a frame change.
+- **The anchor rides a summon, not an activation.** `BackdropModel.raise`
+  is also `applicationDidBecomeActive`'s handler, so hanging
+  `anchorOnToday()` on it gave a ⌘Tab return the summon's behaviour —
+  contradicting ADR-0020, the spec, and the QA case this same stack
+  wrote. `raise(_ reason: BackdropRaise)` now takes its reason and
+  `BackdropModel.anchorsOnToday(raise:)` is the pure boundary (with a
+  test). Summons: ⌃⌥Space, the menu-bar item, the click on the resting
+  card. Activations: ⌘Tab, the app switcher, **the Dock** — filed that
+  way because a Dock click arrives at `applicationDidBecomeActive` when
+  the app is inactive and `applicationShouldHandleReopen` when it is
+  active, and one gesture must not mean two things. The pasteboard
+  offer is deliberately *not* split; it rides every raise.
+- **⌥Z is 79-6's defect, not 79-3's.** The spec said ⌥Z is inert in the
+  mode and the code toggled `wrapsLines` anyway. The gate belongs here
+  because `coordinator.applyWrap(true)` is here: on 79-3 and 79-5 the
+  mode still mounts `PageContentView`'s ordinary editor, which honours
+  the preference, so gating there would have made those branches wrong.
+  `KeymapRegistry`'s `.editorToggleWrap` arm branches on the mode and
+  flashes `PageModel.wrapIsFixedNotice`; "inert" became "changes
+  nothing, and says so", which the spec bullet now states.
+- **Cite DayScrollView.swift by symbol, never by line.** Its numbers
+  went stale inside the branch that wrote them and again when these
+  fixes landed. The spec's change map, ADR-0020 item 13 and this file
+  all name types and functions for that file now.
 
 ## Testing notes
 
