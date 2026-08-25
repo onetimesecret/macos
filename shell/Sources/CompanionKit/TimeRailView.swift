@@ -9,9 +9,9 @@ import SwiftUI
 /// no rung, no hold and no drag-reorder: days have an order the user
 /// does not shuffle and a label the user does not type, and a rail that
 /// could close a day would be exactly the misreading ADR-0017's eject
-/// trigger is about. Those four verbs are not lost — they are one flip
-/// of the Settings toggle away while this prototype has no roll, and
-/// they arrive on each page's own gutter when it does.
+/// trigger is about. Those four verbs are not lost: they sit on each
+/// page's own gutter inside the roll, where a day holding two pages can
+/// still say which of them is being renamed or closed.
 ///
 /// A slot holding no page draws no row here, because a slot holding no
 /// page is on no day. The tab is still standing underneath, named and

@@ -166,6 +166,12 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         // forward is the moment the offer is worth making (ADR-0007
         // Amendment 1), and it is the same moment the panel picks.
         pages.refreshPasteboardOffer()
+        // And the same moment the days go back to today (issue #79).
+        // Between summons the roll's scroll is the reader's own, and a
+        // summon is where the pad goes back to being furniture that
+        // presents the current day. A no-op with the mode off, where
+        // there is one page in the clip and nothing to anchor.
+        pages.anchorOnToday()
     }
 
     /// Esc, a click outside the card, or a summon from a keyed

@@ -210,9 +210,9 @@ public struct ConnectionSettingsView: View {
             + "were written, newest first, instead of along the bottom as slots. It moves no "
             + "content and writes nothing new to disk: the tabs, their names and their rungs "
             + "are the same underneath either way you look at them, and turning it off puts the "
-            + "strip back as it was. While it is on, renaming a tab, holding its clock, "
-            + "shortening its countdown and closing it are reachable only by turning it off "
-            + "again."
+            + "strip back as it was. The days read as one page torn along a perforation: "
+            + "renaming, holding, shortening and closing live on each day's own gutter, and "
+            + "the column beside them is for getting about."
     }
 
     /// The section only exists when the switch is offered, so the
