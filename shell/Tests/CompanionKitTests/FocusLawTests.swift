@@ -329,7 +329,16 @@ final class FocusLawTests: XCTestCase {
 
         let quiet = try XCTUnwrap(stack.quietRegions[quietPage])
         XCTAssertFalse(quiet.acceptsFirstResponder, "a rendering offered to take the keyboard")
-        XCTAssertFalse(window.makeFirstResponder(quiet))
+        // The window is asked all the same, and its answer is about
+        // itself rather than about this view: AppKit documents
+        // `makeFirstResponder` as returning true even when the responder
+        // refuses, the window taking the status in its place. So the
+        // refusal is read off the window afterwards.
+        _ = window.makeFirstResponder(quiet)
+        XCTAssertFalse(
+            window.firstResponder === quiet,
+            "a rendering is holding the keyboard the editor was given"
+        )
         XCTAssertFalse(
             model.activeEditor === quiet,
             "the model's one handle names a view that cannot type"

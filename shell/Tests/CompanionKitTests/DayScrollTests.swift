@@ -470,8 +470,18 @@ final class DayScrollTests: XCTestCase {
         XCTAssertFalse(quiet.acceptsFirstResponder)
         XCTAssertFalse(quiet.isEditable, "a quiet day must not take a keystroke")
         XCTAssertFalse(quiet.isSelectable)
+        XCTAssertFalse(quiet.becomeFirstResponder(), "a rendering agreed to take the keyboard")
+
+        // And asked anyway, the way a stray hand-off would ask. What the
+        // call answers is not the law: AppKit documents
+        // `makeFirstResponder` as returning true even when the responder
+        // refuses, because the window takes the status itself in that
+        // case. Where the keyboard ends up is the law, and it never ends
+        // up on a rendering.
+        _ = roll.window.makeFirstResponder(quiet)
+
         XCTAssertFalse(
-            roll.window.makeFirstResponder(quiet),
+            roll.window.firstResponder === quiet,
             "the window handed the keyboard to a rendering"
         )
     }

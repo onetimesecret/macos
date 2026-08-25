@@ -43,7 +43,7 @@ procedure.
   day is sound only while the day is quiet, and a page stops being quiet
   the moment the editor arrives on it.
 
-## Five AppKit traps this branch actually hit
+## Six AppKit traps this branch actually hit
 
 - **A TextKit 1 storage nobody retains is freed.** Ownership runs
   storage → layout manager → container → view, and the back references
@@ -60,6 +60,11 @@ procedure.
 - **Key paths cannot name tuple elements.** `laidOut.map(\.header.mark)`
   does not compile; `laidOut.map { $0.header.mark }` does. (Branch 5
   suspected this and avoided it; branch 6 confirms it is worth avoiding.)
+- **`makeFirstResponder` answers true for a view that refuses.** Apple
+  documents it in as many words: a responder that refuses hands the
+  status to the window instead, and the call still returns true. Assert
+  a refusal off `window.firstResponder` afterwards, never off the
+  return. The stack's first CI run failed two tests on this.
 - **A header is not a fixed height, so the anchor measures the ink.**
   The page that was first on the roll gains a tear the moment a day
   arrives above it, and its header grows by `tearReserve`. Measured at
