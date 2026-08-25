@@ -89,7 +89,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   always had. The labels are relative rather than dated, which is what
   lets local midnight roll them over on the repaint the app already runs
   — no new timer, no midnight alarm, and the sealed file's format did
-  not move by a byte. Turning the mode on or off moves no content and
+  not move by a byte. The core now says, on each tab it already
+  describes, which day that tab's page was born on relative to today and
+  whether anything is on it, which is two more fields on a reading the
+  app already takes and no new call, no renamed field and no change to
+  what is stored. Turning the mode on or off moves no content and
   writes no new sealed generation: it is one boolean in `UserDefaults`,
   and the tabs, their names and their rungs are the same underneath
   either way you look at them. With it off, the horizontal strip is

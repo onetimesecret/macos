@@ -450,8 +450,13 @@ decision that is Rust, the more of it is validated before a PR exists.
   (`crates/core/src/sheet.rs:1170-1185` re-asserted); the content
   predicate is the one the ledger already used, over a matrix of pages;
   and an expiring page still leaves its tab standing in place.
-- **Seam.** The summary says which day the page was born on, after ageing
-  a page past a local midnight; an empty slot reports no day and no
+- **Seam.** The summary says which day the page was born on, read
+  against a reading of today a day later and six days later. Not by
+  ageing the page: the ageing seam is a snapshot restored at a later
+  wall stamp, and a restore carries every creation stamp through
+  untouched (`crates/core/src/persist.rs:1189-1190` asserts exactly
+  that), so the far side of a local midnight is reached by moving today
+  and never by moving the page. An empty slot reports no day and no
   content; the fifteen existing summary keys are unchanged; and the
   standing boundary-law test — seal a secret through every route, assert
   the bytes appear in no JSON output — still passes untouched, because an
