@@ -6,7 +6,7 @@ import Foundation
 /// ADR-0010 put the form factors in sibling targets and named the
 /// extraction that fires when a sibling graduates. Persistence fired it
 /// once, for the seam wrapper. Feature parity fires it again and harder:
-/// the tab strip, the ink editor, the ledger, and the promotion flow are
+/// the tab strip, the ink editor, the ledger, and the conceal flow are
 /// the same code, and the same code touching sealed content must not
 /// exist twice. What is genuinely per-form-factor is small enough to fit
 /// here (where the Keychain items live, where the sealed file rests,

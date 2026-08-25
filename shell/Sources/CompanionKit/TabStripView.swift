@@ -52,11 +52,11 @@ public struct TabStripView: View {
             }
             newPageTab
             Spacer(minLength: 8)
-            // Also built and not drawn (issue #78): promotion still
-            // works everywhere else it worked, and the strip stops
+            // Also built and not drawn (issue #78): the conceal action
+            // still works everywhere else it worked, and the strip stops
             // carrying a button for it.
-            if HiddenUI.showsPromoteButton {
-                promotePageTab
+            if HiddenUI.showsConcealButton {
+                concealPageTab
             }
             // Built and not drawn (issue #78): the ledger keeps
             // recording, and the strip stops offering the way in.
@@ -120,12 +120,12 @@ public struct TabStripView: View {
         return "\(what) (\(chord.displaySymbol))"
     }
 
-    /// ↗ page (docs/spec/04, promotion flow): promote the visible page
+    /// ↗ page (docs/spec/04, conceal flow): conceal the visible page
     /// into a one-time link. Opens the inline confirmation — nothing
     /// leaves until its one confirming click.
-    private var promotePageTab: some View {
+    private var concealPageTab: some View {
         Button {
-            if let page = model.selectedPageID { model.beginPromotion(.page(page)) }
+            if let page = model.selectedPageID { model.beginConceal(.page(page)) }
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: "arrow.up.right")
@@ -139,8 +139,8 @@ public struct TabStripView: View {
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .disabled(model.selectedPageID == nil || model.showingLedger)
-        .help("Promote this page to a one-time link")
-        .accessibilityLabel(Text("Promote page to one-time link"))
+        .help("Conceal this page into a one-time link")
+        .accessibilityLabel(Text("Conceal page into one-time link"))
     }
 
     /// The dashed residue tab: the audit trail, one line per event. A

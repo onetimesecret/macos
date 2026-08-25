@@ -145,7 +145,7 @@ impl ChipId {
 /// One run of the body's cached projection: visible ink, or a sealed
 /// chip's position. The sheet's operation-logged document is the source
 /// of truth; this shape is rebuilt from its runs for the ledger, for
-/// tab titles, and for sheet promotion; ink is not secret (it
+/// tab titles, and for concealing a sheet; ink is not secret (it
 /// renders), so holding a copy here breaks no law.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Segment {
@@ -175,11 +175,11 @@ pub enum ChipMeta {
     },
 }
 
-/// Record of a chip's promotion to a one-time link. Only the receipt
-/// identifier is retained — no link, no local history of promoted
-/// secrets (doc 03 §5).
+/// Record of a chip's conceal: the moment it became a one-time link.
+/// Only the receipt identifier is retained — no link, no local history
+/// of concealed secrets (doc 03 §5).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Promotion {
+pub struct Conceal {
     /// Server receipt identifier, kept solely to offer "burn remote" on
     /// this live chip.
     pub receipt_id: String,
@@ -197,7 +197,7 @@ pub struct SealedChip {
     pub(crate) meta: ChipMeta,
     pub(crate) excerpt: String,
     pub(crate) size_label: String,
-    pub(crate) promotion: Option<Promotion>,
+    pub(crate) conceal: Option<Conceal>,
 }
 
 impl SealedChip {
@@ -220,7 +220,7 @@ impl SealedChip {
             meta,
             excerpt,
             size_label,
-            promotion: None,
+            conceal: None,
         }
     }
 
@@ -245,7 +245,7 @@ impl SealedChip {
             meta: ChipMeta::Image { byte_len },
             excerpt,
             size_label: human_bytes(byte_len),
-            promotion: None,
+            conceal: None,
         }
     }
 
@@ -282,10 +282,10 @@ impl SealedChip {
         &self.size_label
     }
 
-    /// Promotion annotation, if this chip became a one-time link.
+    /// Conceal annotation, if this chip became a one-time link.
     #[must_use]
-    pub fn promotion(&self) -> Option<&Promotion> {
-        self.promotion.as_ref()
+    pub fn conceal(&self) -> Option<&Conceal> {
+        self.conceal.as_ref()
     }
 }
 

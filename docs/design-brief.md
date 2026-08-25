@@ -17,7 +17,7 @@ A macOS menu-bar resident that parks a secret-shaped snippet in a cell
 that **drains over a chosen TTL and deletes itself**. It is furniture:
 present in peripheral vision, never centre stage. A cell is a *handle for
 content in motion*, not a display of the content. The whole product is a
-quiet loop — place, glance, copy back out or promote to a link, forget.
+quiet loop: place, glance, copy back out or conceal into a link, forget.
 
 ## Fixed — not up for design (with the reason, so it isn't arbitrary)
 
@@ -65,10 +65,10 @@ quiet loop — place, glance, copy back out or promote to a link, forget.
 - **Native + frugal.** No Electron/webviews, single-digit-MB download, tens
   of MB resident. This rules out heavy illustration or asset campaigns.
   (`§4`.)
-- **Promotion is the only network action, and it is deliberately
-  understated** — "discoverable on every cell, prominent on none." The
-  promote-to-link CTA must never read as a hero button, and never fire as a
-  side effect. (`§6`.)
+- **Concealing is the app's explicit network action, and it is
+  deliberately understated**: "discoverable on every cell, prominent on
+  none." The conceal-to-link CTA must never read as a hero button, and
+  never fire as a side effect. (`§6`.)
 
 ## Anti-goals — do not design these
 
@@ -119,7 +119,7 @@ settle them:
 - **Cap behaviour at 12** — should hitting the ceiling feel like a wall or
   a nudge, and what does "refuse" look like on screen?
 - **Default landing rung** (8h) — does it feel right as you cycle?
-- **Promote-to-link CTA** — subtle yet discoverable on every cell.
+- **Conceal-to-link CTA**: subtle yet discoverable on every cell.
 - **Float-on-top affordance** — currently a header pin (`pin.fill` on /
   `pin` off) that toggles whether the panel floats above other apps
   (`.statusBar`) or behaves like a normal window (`.normal`). Right

@@ -92,7 +92,7 @@ impl Pasteboard for SystemPasteboard {
             return None;
         };
 
-        let concealed = self.types_present().iter().any(|t| t == CONCEALED_TYPE);
+        let nspasteboard_concealed = self.types_present().iter().any(|t| t == CONCEALED_TYPE);
 
         // Provenance, read in the same pass as the content so the shell
         // never has a reason to touch the board itself (ADR-0007
@@ -110,7 +110,7 @@ impl Pasteboard for SystemPasteboard {
 
         Some(PasteboardItem {
             content,
-            concealed,
+            nspasteboard_concealed,
             origin_url,
         })
     }
@@ -129,11 +129,11 @@ impl Pasteboard for SystemPasteboard {
         };
 
         let transient_marker = NSString::from_str(TRANSIENT_TYPE);
-        let concealed_marker = NSString::from_str(CONCEALED_TYPE);
+        let nspasteboard_concealed_marker = NSString::from_str(CONCEALED_TYPE);
 
         let mut declared: Vec<&NSString> = vec![content_type, &transient_marker];
-        if options.concealed {
-            declared.push(&concealed_marker);
+        if options.nspasteboard_concealed {
+            declared.push(&nspasteboard_concealed_marker);
         }
         let types_array = NSArray::from_slice(&declared);
 
@@ -159,9 +159,9 @@ impl Pasteboard for SystemPasteboard {
         let marker_data = NSData::with_bytes(&[]);
         self.pasteboard
             .setData_forType(Some(&marker_data), &transient_marker);
-        if options.concealed {
+        if options.nspasteboard_concealed {
             self.pasteboard
-                .setData_forType(Some(&marker_data), &concealed_marker);
+                .setData_forType(Some(&marker_data), &nspasteboard_concealed_marker);
         }
 
         ChangeCount(new_count as u64)
@@ -197,11 +197,17 @@ impl Pasteboard for SystemPasteboard {
 mod tests {
     use super::*;
 
-    fn write_text(pb: &mut SystemPasteboard, text: &str, concealed: bool) -> ChangeCount {
+    fn write_text(
+        pb: &mut SystemPasteboard,
+        text: &str,
+        nspasteboard_concealed: bool,
+    ) -> ChangeCount {
         pb.write(
             Zeroizing::new(text.as_bytes().to_vec()),
             ContentKind::Text,
-            WriteOptions { concealed },
+            WriteOptions {
+                nspasteboard_concealed,
+            },
         )
     }
 
@@ -210,7 +216,7 @@ mod tests {
         let mut pb = SystemPasteboard::for_testing();
         write_text(&mut pb, "hunter2", true);
         let item = pb.read().unwrap();
-        assert!(item.concealed);
+        assert!(item.nspasteboard_concealed);
         assert_eq!(item.content, PasteboardContent::Text("hunter2".into()));
         assert!(pb.types_present().iter().any(|t| t == TRANSIENT_TYPE));
     }
@@ -246,11 +252,11 @@ mod tests {
     }
 
     #[test]
-    fn unconcealed_write_carries_only_the_transient_mark() {
+    fn write_without_the_nspasteboard_mark_carries_only_transient() {
         let mut pb = SystemPasteboard::for_testing();
         write_text(&mut pb, "not a secret", false);
         let item = pb.read().unwrap();
-        assert!(!item.concealed);
+        assert!(!item.nspasteboard_concealed);
         assert!(pb.types_present().iter().any(|t| t == TRANSIENT_TYPE));
     }
 

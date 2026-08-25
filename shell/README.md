@@ -83,7 +83,7 @@ the seam.
   at 0 cells is the baseline to regress against.
 - VoiceOver operability awaits the hardware runbook
   (docs/hardware-verification.md §B); its failure modes are ADR-0002
-  eject triggers. Promotion (↗ link / ↗ page) and the Settings window
+  eject triggers. The conceal path (↗ link / ↗ page) and the Settings window
   are the remaining slices.
 
 ## The boundary law (hard form, rev C)
