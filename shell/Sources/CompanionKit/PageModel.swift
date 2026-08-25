@@ -237,6 +237,30 @@ public enum QuitSaveOutcome: Equatable, Sendable {
     case unsavableWithContent
 }
 
+/// What a navigation gesture can land on (issue #79).
+///
+/// The strip has always offered exactly one kind of target, a durable
+/// slot, and ⌘1–⌘9 and ⌥⌘←/→ indexed the strip directly. With the days
+/// down the side they index days instead, and one of those days —
+/// today, which is a place whether or not a page is standing in it —
+/// answers to no slot at all. So the gestures route through this rather
+/// than forking: one path, two readings, and no new command id.
+///
+/// No new id is not a convenience. `CommandID`'s raw values are
+/// published contract, named in whatever `keymap.json` a user has
+/// written, and a binding parked in `.tabStrip` would validate, log
+/// `contextNotConsulted` and do nothing, because only `.editor` is
+/// consulted. Reinterpreting the verbs the app already has under an
+/// exclusive, default-off mode keeps the keyboard complete with no new
+/// surface at all.
+public enum SurfaceTarget: Equatable, Sendable {
+    /// A slot, by its tab id — every target the strip has ever had.
+    case tab(UInt64)
+    /// Today, holding no page yet. Selecting it takes the shipped
+    /// create path; nothing here is minted by being drawn (ADR-0017).
+    case today
+}
+
 @MainActor
 public final class PageModel: ObservableObject {
     /// What this form factor decides differently — where its Keychain
@@ -334,6 +358,49 @@ public final class PageModel: ObservableObject {
         didSet { defaults.set(wrapsLines, forKey: Self.wrapKey) }
     }
     private static let wrapKey = "wrapsLines"
+
+    /// Whether the surface groups the live pages by the day they were
+    /// born on and stands the tabs down the side, instead of showing
+    /// the durable slots along the bottom (issue #79). A prototype, off
+    /// until the user asks for it.
+    ///
+    /// Persisted the way every other preference here is, and persisted
+    /// nowhere else: this writes one boolean to `defaults` and never
+    /// calls `markDirty()`. A mark would take the sudden-termination
+    /// hold and arm a debounced ciphertext write, so looking at the same
+    /// pages a second way would buy a fresh sealed generation every time
+    /// the user changed their mind. Nothing else moves either — the
+    /// projection reads `tabs` and calls no core mutator — which is what
+    /// makes the toggle safe in both directions by construction rather
+    /// than by care.
+    ///
+    /// The one thing that does move is where the selection is standing,
+    /// and only on the way in. See `reconciledTimeSelection`: the mode
+    /// draws no row for a slot holding no page, and the strip
+    /// deliberately leaves a selection on one when the page expires
+    /// under it. That is the state a user is most likely to flip this
+    /// from — the selected page died overnight — and entering the mode
+    /// with it would show a surface with nothing selected, no editor
+    /// mounted and no row lit until something else happened to call
+    /// `refresh()`. So the mode's own reconciliation runs at its own
+    /// entrance, where the rule was always meant to apply.
+    @Published public var showsTimeUnits: Bool {
+        didSet {
+            defaults.set(showsTimeUnits, forKey: Self.timeUnitsKey)
+            // One direction, and one state. Leaving the mode gives the
+            // strip back, and the strip draws every slot, so there is
+            // nothing to fall off; and a selection this mode does draw
+            // is returned unchanged, so the toggle cannot move a
+            // selection the user can see either before or after it. It
+            // mints nothing — `reconciledTimeSelection` never does — and
+            // it marks nothing dirty, which is the whole of what
+            // ADR-0020 asks a presentation preference to leave alone.
+            if showsTimeUnits, !oldValue {
+                selection = Self.reconciledTimeSelection(current: selection, projection: timeUnits)
+            }
+        }
+    }
+    private static let timeUnitsKey = "showsTimeUnits"
 
     /// ⌥Z. A page whose lines all fit shows no difference, so the toggle
     /// says what it did rather than leaving the keystroke looking dead.
@@ -632,6 +699,10 @@ public final class PageModel: ObservableObject {
         // Unset → wrap, which is how every plain-text editor opens and
         // the only sane default for a card this narrow.
         wrapsLines = defaults.object(forKey: Self.wrapKey) as? Bool ?? true
+        // Unset → off. A prototype is something a user turns on, and an
+        // upgrade must not rearrange the pad of somebody who never
+        // asked for a second way of looking at it (issue #79).
+        showsTimeUnits = defaults.object(forKey: Self.timeUnitsKey) as? Bool ?? false
         // No pages yet: the restore is the caller's to time
         // (`loadStateIfNeeded`). The panel defers it to the first
         // reveal, so launching at login never raises a Keychain prompt
@@ -1231,6 +1302,22 @@ public final class PageModel: ObservableObject {
         Set(tabs.compactMap(\.pageID))
     }
 
+    /// The live pages grouped by the day they were born on, newest day
+    /// first: the whole of what the time-unit mode draws (issue #79).
+    ///
+    /// Computed, and cached nowhere on purpose. Every fact it rests on
+    /// is already in `tabs`, which `refresh()` re-reads on every
+    /// accepted edit, every expiry and every cosmetic redraw. A stored
+    /// copy would go stale the moment a page expired and — worse — it
+    /// would freeze the day reading the core recomputes on each read,
+    /// so the labels would stop rolling over at local midnight and the
+    /// mode would need the timer this whole design exists to avoid.
+    /// What it costs instead is a walk over at most nine summaries the
+    /// model has already decoded, with no call into the core at all.
+    public var timeUnits: TimeUnitProjection {
+        TimeUnitProjection.project(tabs: tabs, selectedPageID: selectedPageID, unit: .day)
+    }
+
     public func refresh() {
         tabs = client.tabs()
         let livePages = livePageIDs
@@ -1244,6 +1331,14 @@ public final class PageModel: ObservableObject {
         storages = storages.filter { livePages.contains($0.key) }
         undoManagers = undoManagers.filter { livePages.contains($0.key) }
         selection = Self.reconciledSelection(current: selection, live: tabs.map(\.id))
+        // With the days down the side, a slot holding no page is not on
+        // the rail at all, so a selection left on one would be pointing
+        // at something the surface is not drawing. One boolean ahead of
+        // the fall leaves the strip's own reconciliation exactly as it
+        // was, and this arm mints no more than that one does.
+        if showsTimeUnits {
+            selection = Self.reconciledTimeSelection(current: selection, projection: timeUnits)
+        }
         // A conceal whose subject died — expiry, mostly; `close`
         // clears its own — must not keep the confirmation standing:
         // ↩ lands on "Create link", and a stale draft would answer a
@@ -1293,6 +1388,39 @@ public final class PageModel: ObservableObject {
     public nonisolated static func reconciledSelection(current: UInt64?, live: [UInt64]) -> UInt64? {
         if let current, live.contains(current) { return current }
         return live.first
+    }
+
+    /// Which tab the selection falls to while the days are down the
+    /// side and the slot it names is not one the rail is drawing
+    /// (issue #79).
+    ///
+    /// The strip's rule above keeps a selection on a tab whose page
+    /// expired, deliberately: the slot is still there, and the surface
+    /// shows its empty state rather than moving the user somewhere they
+    /// did not ask to go. In this mode that slot is not on screen at
+    /// all — the rail draws days, and a day exists because a live page
+    /// is keyed to it — so a selection left there would name something
+    /// nobody can see. It falls to the newest visible page instead. When
+    /// no page is visible anywhere it stays exactly where it is, which
+    /// is the empty Today the create grant is already waiting on.
+    ///
+    /// It never mints, for `reconciledSelection`'s reason: `refresh()`
+    /// runs on every accepted edit and every expiry, and a page expiring
+    /// under the cursor must not start a fresh countdown on nothing
+    /// (ADR-0017). Pure, so the fall is testable without a window.
+    ///
+    /// Two callers, and the second is the reason this is stated as a
+    /// rule rather than as a line inside `refresh()`: the mode's
+    /// entrance (`showsTimeUnits`) applies it too, because a selection
+    /// standing on a slot the mode draws no row for is exactly the state
+    /// somebody turns the mode on from, and the rule that answers it
+    /// must not wait for the next refresh to happen along.
+    public nonisolated static func reconciledTimeSelection(
+        current: UInt64?, projection: TimeUnitProjection
+    ) -> UInt64? {
+        let visible = projection.units.flatMap(\.tabIDs)
+        if let current, visible.contains(current) { return current }
+        return visible.first ?? current
     }
 
     /// The page's document, created on first use. A page restored from
@@ -1359,6 +1487,67 @@ public final class PageModel: ObservableObject {
 
     // MARK: Navigation — the keyboard map
 
+    /// What ⌘1–⌘9 count through and ⌥⌘←/→ walk, in the order the
+    /// surface draws them (issue #79).
+    ///
+    /// With the mode off this is the strip, element for element, and a
+    /// test says exactly that
+    /// (`visibleTargetsWithTheModeOffEqualTheStripElementForElement`).
+    /// That identity is the whole evidence for "horizontal mode is
+    /// unchanged": the two modes share one routing path instead of two
+    /// that would have to be kept in step by hand, and the shared
+    /// path's value with the mode off is the array these gestures have
+    /// always indexed.
+    ///
+    /// With the mode on it is one entry per visible day, newest first,
+    /// so ⌘2 means the second day rather than the second slot. A day
+    /// holding more than one page answers with the first of them in
+    /// strip order, and only today can be a day with no page at all,
+    /// which is the single `.today` entry.
+    public var visibleTargets: [SurfaceTarget] {
+        guard showsTimeUnits else { return tabs.map { .tab($0.id) } }
+        return timeUnits.units.map { unit -> SurfaceTarget in
+            guard let tab = unit.tabIDs.first else { return .today }
+            return .tab(tab)
+        }
+    }
+
+    /// Select whatever the surface is drawing at that entry.
+    ///
+    /// Both arms are gestures the app already ships: a slot goes
+    /// through `select(_:)`, which mints into it when it holds nothing,
+    /// and today goes through `openToday()`, which selects today's page
+    /// when there is one and otherwise takes the shipped create path.
+    /// Nothing new mints here, and nothing mints at all without a
+    /// gesture asking for it (ADR-0017).
+    public func select(target: SurfaceTarget) {
+        switch target {
+        case .tab(let id):
+            select(id)
+        case .today:
+            openToday()
+        }
+    }
+
+    /// Where a ⌥⌘←/→ walk starts from.
+    ///
+    /// With the strip that is the selected slot's own entry, which is
+    /// the index the walk has always begun at. With the days down the
+    /// side it is the day the selected page was born on, which is not
+    /// always that day's first entry, because a day can hold more than
+    /// one page. A selection the surface is not drawing — a slot whose
+    /// page expired, in a mode that draws no such slot — starts the
+    /// walk at the top, where today is.
+    private func indexOfSelection(within targets: [SurfaceTarget]) -> Int {
+        guard let selection else { return 0 }
+        if showsTimeUnits, let day = timeUnits.units.firstIndex(
+            where: { $0.tabIDs.contains(selection) }
+        ) {
+            return day
+        }
+        return targets.firstIndex(of: .tab(selection)) ?? 0
+    }
+
     /// Select a tab, and open a page into it if it holds none.
     ///
     /// This is one of the three gestures that mint, and the mint is
@@ -1388,32 +1577,33 @@ public final class PageModel: ObservableObject {
         if leavingLedger || minted { refocusEditorIfKeyed() }
     }
 
-    /// ⌘1 to ⌘9: jump by visible tab order. The index is into the strip,
-    /// so ⌘3 means the third slot whether or not it holds a page, and
-    /// it means the same slot next week.
+    /// ⌘1 to ⌘9: jump by visible order. With the strip that is the
+    /// slot, so ⌘3 means the third slot whether or not it holds a page,
+    /// and it means the same slot next week. With the days down the
+    /// side it is the third day (issue #79).
     public func select(index: Int) {
-        guard tabs.indices.contains(index) else { return }
-        select(tabs[index].id)
+        let targets = visibleTargets
+        guard targets.indices.contains(index) else { return }
+        select(target: targets[index])
     }
 
     /// ⌥⌘← / ⌥⌘→. Steps slots, not pages, and mints into the slot it
-    /// lands on when that slot is empty.
+    /// lands on when that slot is empty — or steps days, when the days
+    /// are the thing on screen.
+    ///
+    /// The landing is `select`'s, and always was: the walk lands on
+    /// slots, the slot it lands on may be empty, and it carries
+    /// `select`'s hand-off for `select`'s reasons. It used to carry a
+    /// copy of that ceremony and now calls it, so a walk that both
+    /// leaves the ledger and mints still asks for the keys once, after
+    /// the mint rather than before it, and there is one place for the
+    /// rule to live rather than two that can drift.
     public func step(_ delta: Int) {
-        guard !tabs.isEmpty else { return }
-        let leavingLedger = showingLedger
-        if leavingLedger { showingLedger = false }
-        let current = tabs.firstIndex { $0.id == selection } ?? 0
-        let next = Self.steppedIndex(from: current, by: delta, within: tabs.count)
-        let landed = tabs[next].id
-        selection = landed
-        let minted = openPageIfSlotIsEmpty(landed)
-        // The walk lands on slots, and the slot it lands on may be
-        // empty, so it carries `select`'s hand-off for `select`'s
-        // reasons. One call rather than two: a walk that both leaves
-        // the ledger and mints has one editor to focus, and the focus
-        // is asked for after the mint rather than before it, so the
-        // wait is for the editor that is actually coming.
-        if leavingLedger || minted { refocusEditorIfKeyed() }
+        let targets = visibleTargets
+        guard !targets.isEmpty else { return }
+        let current = indexOfSelection(within: targets)
+        let next = Self.steppedIndex(from: current, by: delta, within: targets.count)
+        select(target: targets[next])
     }
 
     /// The mint the three selection gestures share: a page into the
@@ -1654,6 +1844,29 @@ public final class PageModel: ObservableObject {
 
     // MARK: Pages
 
+    /// What the pad says when the cap declines a tenth tab.
+    ///
+    /// Not "let one expire" any more: an expiry empties a slot and never
+    /// frees it, so closing is the only thing that moves the wall
+    /// (ADR-0017). Saying otherwise would send the user off to wait for
+    /// something that cannot happen.
+    ///
+    /// With the days down the side the same wall can be hit with no
+    /// visible cause (issue #79). Nine slots may be full of old pages
+    /// with nothing on them, which the projection does not draw, so the
+    /// strip a tab would be closed from is not on screen and the
+    /// refusal reads as a bug. The sentence names the toggle that brings
+    /// those pages back rather than leaving the user to guess, and
+    /// nothing is auto-discarded to make room: reaping blank pages is a
+    /// lifetime mechanism nobody asked for. Pure, so both sentences are
+    /// testable without a window.
+    public nonisolated static func capRefusal(showsTimeUnits: Bool) -> String {
+        let wall = "the window holds 9 tabs, close one to make room"
+        guard showsTimeUnits else { return wall }
+        return "\(wall) — the pages with nothing on them are behind the time tabs "
+            + "toggle in Settings"
+    }
+
     /// A new tab at this form factor's opening rung, holding a new
     /// page. 0 means the store refused at the cap of 9. Returns the
     /// TAB's id, which is what the selection keeps.
@@ -1674,11 +1887,7 @@ public final class PageModel: ObservableObject {
         notice = nil
         let created = newTab()
         if created == 0 {
-            // Not "let one expire" any more: an expiry empties a slot
-            // and never frees it, so closing is the only thing that
-            // moves the wall (ADR-0017). Saying otherwise would send
-            // the user off to wait for something that cannot happen.
-            flash("the window holds 9 tabs, close one to make room")
+            flash(Self.capRefusal(showsTimeUnits: showsTimeUnits))
         }
         refresh()
         if created != 0 {
@@ -1701,6 +1910,43 @@ public final class PageModel: ObservableObject {
             selection = created
             refocusEditorIfKeyed()
         }
+    }
+
+    /// ⌘N while the days are down the side: go to today's page, and make
+    /// one when today has none (issue #79).
+    ///
+    /// Deliberately not a new mint policy. Two arms, both of them
+    /// shipped. When today already holds a live page this is a plain
+    /// `select(_:)`, which cannot mint into an occupied slot, so a
+    /// second ⌘N is a jump and never a second page. When today holds
+    /// none it is `newPage()`, the same path ⌘N takes with the strip
+    /// showing, which opens a fresh slot at this form factor's rung and
+    /// hands its editor the keys. Every mint stamps the clock's own
+    /// reading of now, so the page it makes lands on today by
+    /// construction rather than by being filed there.
+    ///
+    /// What it will not do is reach for some arbitrary empty tab to put
+    /// today's page in. That would be opinionated in exactly the place
+    /// the issue asked for unopinionated, and it has a real cost:
+    /// flipping back to the strip would show a tab the user named
+    /// holding today's typing. At the cap it refuses through
+    /// `newPage()`'s own refusal, widened in this mode to name the
+    /// toggle (`capRefusal`).
+    ///
+    /// Reached from gestures only — ⌘N, and the rail's Today row when it
+    /// lands. Nothing calls it from `refresh()`, from a mount or from
+    /// the toggle: what is displayed is not thereby minted (ADR-0017).
+    public func openToday() {
+        // Bucket 0 is today and there is exactly one of it: the
+        // projection folds a page stamped ahead of now into today rather
+        // than giving it a bucket of its own, so this cannot find an
+        // empty Today standing above a peopled one and mint beside a
+        // page already on screen (`TimeUnit.bucket(dayOffset:)`).
+        if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first {
+            select(tab)
+            return
+        }
+        newPage()
     }
 
     /// The empty state's create-and-focus, shared by the third and

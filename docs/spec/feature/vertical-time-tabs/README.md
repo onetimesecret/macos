@@ -391,7 +391,10 @@ day one.
 ## Change map, branch by branch
 
 Six stacked branches, each targeting the one below it, bottom-up into
-main.
+main. Branches 1 to 3 are in the tree as of 2026-08-25 — the decision,
+the seam and the projection with its flag — and nothing a user can see
+has moved. That is the intended shape: the first pixel arrives with
+branch 5, and until then the mode is a model with tests and no surface.
 
 1. **The spec and the decision** (this document and ADR-0020). Docs only.
    `docs/spec/design/04-interaction-model.md` is deliberately **not**

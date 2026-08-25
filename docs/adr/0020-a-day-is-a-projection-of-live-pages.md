@@ -139,8 +139,16 @@ with two callers, which is what makes the agreements this decision rests
 on structural rather than a habit; the tab summary carries both answers
 and nothing a user can see moved. A summary's keys are now the fifteen
 that were always there plus these two, and a test holds the whole set
-still, so the addition cannot quietly become a rename. Items 7 onward
-are still work.
+still, so the addition cannot quietly become a rename.
+
+**Landed 2026-08-25, second pass.** Items 7 to 10 are in the tree, and
+still nothing a user can see: the projection, the flag, the mode-aware
+targets and `openToday()` landed together with no Settings row and no
+rail, deliberately, so that a branch merged on its own can never show a
+control that does nothing. The model's every law is now argued in tests
+that build no window, and the identity that protects horizontal mode —
+the target list with the mode off equals the strip element for element —
+is an assertion rather than a promise. Items 11 onward are still work.
 
 1. `pub fn local_day(wall_ms: u64, utc_offset_seconds: i32) -> i64`,
    hoisted out of the arithmetic already inside `placeholder_title`
@@ -201,17 +209,35 @@ are still work.
    inside a bucket keep strip order; a unit's gauge comes from its
    soonest-dying page; and a count of the live pages the projection
    drops. `TimeUnit` is an enum with one case, `.day`.
+
+   **Landed**, in shell/Sources/CompanionKit/TimeUnits.swift, over
+   value types with no AppKit in the file, so the whole model is under
+   XCTest without a window or a running core. One law was written down
+   that this list had left open: a day the projection draws draws every
+   page on it, filtering by day and never by page, so a page cannot
+   quietly disappear out of a day that is on screen and the hidden
+   count stays a count of days nobody can reach.
 8. `showsTimeUnits` on `PageModel`, in the `wrapsLines` pattern
    (shell/Sources/CompanionKit/PageModel.swift:333-336, seeded at :634),
    writing only to the injected `UserDefaults`. It deliberately does not
    call `markDirty()`, which would take the sudden-termination hold and
    arm a debounced ciphertext write, buying a fresh sealed generation
    for a presentation preference.
+
+   **Landed.** A test flips it both ways across an edit and asserts the
+   strip, the two emptiness predicates, the selection, the save status
+   and the arming counter are all where they were.
 9. `select(index:)` (shell/Sources/CompanionKit/PageModel.swift:1394)
    and `step(_:)` (:1401) route through a mode-aware list of targets
    whose value with the mode off equals the strip element for element,
    pinned by a dedicated test. That test is the evidence for "horizontal
    mode is unchanged".
+
+   **Landed.** `step` gave up its copy of `select`'s ledger-and-focus
+   ceremony and calls `select` instead of repeating it, so the rule
+   lives in one place; the existing focus-law suite, which pins that a
+   walk leaving the ledger and minting asks for the keys exactly once,
+   passes unedited.
 10. `openToday()`: select today's tab when a live page is there, else go
     through the shipped create path (`newPage()`,
     shell/Sources/CompanionKit/PageModel.swift:1673, and
@@ -219,6 +245,11 @@ are still work.
     naming the Settings toggle in this mode. The `.pageNew` arm
     (shell/Sources/CompanionKit/Keymap/KeymapRegistry.swift:27-28)
     branches on the mode. No new `CommandID`, no keymap row.
+
+    **Landed**, through `newPage()`. The refusal is the shipped one with
+    its sentence widened in this mode (`PageModel.capRefusal`), so the
+    words the strip has always shown are unchanged and a test holds both
+    of them still.
 11. The editor factoring: building the one persistent `InkTextView`
     separates from wrapping it in a scroll view
     (shell/Sources/CompanionKit/InkEditorView.swift:35, and

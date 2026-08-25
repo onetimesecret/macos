@@ -136,7 +136,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   describes, which day that tab's page was born on relative to today and
   whether anything is on it, which is two more fields on a reading the
   app already takes and no new call, no renamed field and no change to
-  what is stored. Turning the mode on or off moves no content and
+  what is stored. Above that seam the days are one pure function over the
+  tabs the app already reads, and every rule the mode has lives in it: a
+  day is shown when a page on it has something on it, or it is today, or
+  it holds the page under the caret; today has a row whether or not
+  anything is standing on it; several pages made on one day are grouped
+  rather than policed; and the number of live pages the grouping is not
+  showing is carried along beside it, so a pad that is full of old blank
+  pages can say so instead of looking broken. ⌘1 to ⌘9 and ⌥⌘←/→ count
+  days while the mode is on and slots while it is off, through one list
+  whose value with the mode off is the strip element for element, and ⌘N
+  goes to today's page: it selects the one that is there, and when there
+  is none it makes one down the same path it always used. No new chord
+  and no new command name, so a keymap of your own keeps working under
+  either arrangement. Turning the mode on or off moves no content and
   writes no new sealed generation: it is one boolean in `UserDefaults`,
   and the tabs, their names and their rungs are the same underneath
   either way you look at them. With it off, the horizontal strip is
