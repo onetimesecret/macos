@@ -582,6 +582,26 @@ impl Sheet {
         self.created_wall_ms
     }
 
+    /// Whether this page holds anything at all: one line of ink that is
+    /// more than whitespace, or one sealed chip.
+    ///
+    /// This is the bar the ledger uses. `SheetStore::entomb` asks it
+    /// whether a dying page did anything worth recording, so the core
+    /// has one definition of holding something rather than two that can
+    /// drift apart, and a surface asking the same question of a live
+    /// page gets the answer the audit trail would have given at its
+    /// death. A page carrying nothing but a stray newline is
+    /// deliberately below the bar: whitespace is not a thing a person
+    /// did.
+    #[must_use]
+    pub fn has_content(&self) -> bool {
+        !self.chips.is_empty()
+            || self.segments.iter().any(|segment| match segment {
+                Segment::Ink(text) => !text.trim().is_empty(),
+                Segment::Chip(_) => false,
+            })
+    }
+
     /// The local day this page was born on, through the offset the
     /// caller's clock reports: [`local_day`] over the page's own stamp.
     ///
@@ -1331,6 +1351,34 @@ mod tests {
             tab.label(0),
             "1114-2213",
             "and the label still reads the slot's stamp, which is the point of the split"
+        );
+    }
+
+    #[test]
+    fn whitespace_alone_is_not_content() {
+        assert!(!bare_sheet(STAMP).has_content(), "an untouched page");
+        for blank in ["", "\n", "   ", " \t\n \r\n"] {
+            let mut sheet = bare_sheet(STAMP);
+            sheet.segments = vec![Segment::Ink(blank.into())];
+            assert!(
+                !sheet.has_content(),
+                "{blank:?} is not something a person did"
+            );
+        }
+        // One typed character is, wherever the blank lines fall.
+        let mut sheet = bare_sheet(STAMP);
+        sheet.segments = vec![Segment::Ink("\n\n  rotate the key  \n".into())];
+        assert!(sheet.has_content());
+    }
+
+    #[test]
+    fn a_chip_with_no_ink_is_content() {
+        let mut sheet = bare_sheet(STAMP);
+        sheet.chips = vec![SealedChip::text(ChipId(1), "one secret")];
+        sheet.segments = vec![Segment::Ink("   ".into()), Segment::Chip(ChipId(1))];
+        assert!(
+            sheet.has_content(),
+            "a page holding a sealed chip did something, whatever was typed around it"
         );
     }
 

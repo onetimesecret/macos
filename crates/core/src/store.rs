@@ -1357,16 +1357,18 @@ impl<C: Clock> SheetStore<C> {
     /// the chips on it already have records of their own, from the
     /// moment they were sealed. A page with nothing on it (no chips, no
     /// non-blank ink) records nothing: it did nothing worth auditing.
+    ///
+    /// The bar is [`Sheet::has_content`] rather than a walk written out
+    /// here, because it is also the answer anything else asking whether
+    /// a page holds something gets. Two spellings of the same predicate
+    /// would eventually disagree, and the disagreement would be between
+    /// what a surface shows and what the ledger admits happened.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "consuming is the point: the page dies here, and its SecretBuffers zeroize as it drops"
     )]
     fn entomb(&mut self, sheet: Sheet, label: String, event: LedgerEvent) {
-        let has_ink = sheet.segments.iter().any(|s| match s {
-            Segment::Ink(text) => !text.trim().is_empty(),
-            Segment::Chip(_) => false,
-        });
-        if !has_ink && sheet.chips.is_empty() {
+        if !sheet.has_content() {
             return;
         }
         // The inversion (ADR-0012): the ledger copies a name that was
@@ -2127,6 +2129,94 @@ mod tests {
         // The page's birth is on the record; its death is not, because
         // a page that held nothing did nothing worth auditing.
         assert_eq!(events(&store), vec![LedgerEvent::Created]);
+    }
+
+    #[test]
+    fn the_content_predicate_is_the_one_the_ledger_already_used() {
+        // Whether a page holds something now has one definition and two
+        // readers, so the matrix asks both about the same page: the
+        // predicate before it dies, and the ledger after. They must
+        // never differ, or a surface would show a page as having
+        // something on it that the audit trail says did nothing.
+        //
+        // Each case: what the page holds, whether a chip is sealed onto
+        // it, and whether that amounts to content.
+        let cases: [(&str, &[&str], bool, bool); 7] = [
+            ("nothing at all", &[], false, false),
+            ("one stray newline", &["\n"], false, false),
+            ("spaces and tabs", &["  \t \n  "], false, false),
+            (
+                "blank lines in several runs",
+                &["\n", "   ", "\t"],
+                false,
+                false,
+            ),
+            ("a typed line", &["rotate the key"], false, true),
+            ("ink after blank lines", &["\n\n", " done "], false, true),
+            ("a chip and no ink at all", &["   "], true, true),
+        ];
+        for (what, ink, chip, expected) in cases {
+            let (mut store, _) = store();
+            let page = store.new_tab().unwrap().1;
+            let segments = ink
+                .iter()
+                .map(|text| Segment::Ink((*text).to_string()))
+                .collect();
+            assert!(store.sync_document(page, segments));
+            if chip {
+                seal(&mut store, page, "one secret");
+            }
+
+            assert_eq!(
+                store
+                    .sheet(page)
+                    .expect("the page is standing")
+                    .has_content(),
+                expected,
+                "{what}: the predicate"
+            );
+            let before = store.ledger().count();
+            assert!(store.close_tab(slot(&store, page)));
+            assert_eq!(
+                store.ledger().count() > before,
+                expected,
+                "{what}: the ledger disagreed with the predicate it is made of"
+            );
+        }
+    }
+
+    #[test]
+    fn an_expiring_page_still_leaves_its_tab_standing_whatever_it_held() {
+        let (mut store, clock) = store();
+        let blank = store.new_tab().unwrap().1;
+        let written = store.new_tab().unwrap().1;
+        store.set_rung(slot(&store, blank), Ttl::MIN).unwrap(); // 1h
+        store.set_rung(slot(&store, written), Ttl::MIN).unwrap();
+        assert!(store.sync_document(blank, vec![Segment::Ink("  \n".into())]));
+        assert!(store.sync_document(written, vec![Segment::Ink("rotate the key".into())]));
+        assert!(!store.sheet(blank).unwrap().has_content());
+        assert!(store.sheet(written).unwrap().has_content());
+
+        clock.advance(HOUR);
+        assert_eq!(store.expire_due().len(), 2, "both countdowns ran out");
+
+        // Two slots before, two slots after. What a page held decides
+        // what the ledger records and nothing else: it never decides
+        // whether the tab the page stood in survives. A reader who
+        // groups pages by anything at all is reading a projection, and
+        // the strip underneath it did not move.
+        assert_eq!(store.tabs().count(), 2, "the strip kept its width");
+        assert!(store.holds_no_page());
+        assert!(!store.has_no_tabs());
+        assert_eq!(
+            events(&store),
+            vec![
+                LedgerEvent::Expired,
+                LedgerEvent::Created,
+                LedgerEvent::Created
+            ],
+            "one death worth recording, two births"
+        );
     }
 
     #[test]
