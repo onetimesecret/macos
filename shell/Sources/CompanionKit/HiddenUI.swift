@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Dogfood triage named four affordances that were not earning their
 /// place on the card: the ledger's entry points, the resize glyph in the
-/// bottom corner, the promote button in the tab strip, and the coloured
+/// bottom corner, the ↗ page button in the tab strip, and the coloured
 /// dot beside the app's name. None of them was deleted. Some will come
 /// back in a different shape and some will be taken out for good, and
 /// until that is decided the honest thing is to keep the code and stop
@@ -38,10 +38,10 @@ public enum HiddenUI {
     /// keymap can still bind it (issue #78).
     public static let showsLedgerEntryPoints = false
 
-    /// The ↗ page button, which promotes the visible page to a one-time
-    /// link. The promotion flow itself, its confirmation and its ledger
-    /// records all stand (issue #78).
-    public static let showsPromoteButton = false
+    /// The ↗ page button, which conceals the visible page into a
+    /// one-time link. The conceal flow itself, its confirmation and its
+    /// ledger records all stand (issue #78).
+    public static let showsConcealButton = false
 
     /// The drawn corner glyph that says the card is resizable. The eight
     /// invisible grips underneath it keep their gestures: the card

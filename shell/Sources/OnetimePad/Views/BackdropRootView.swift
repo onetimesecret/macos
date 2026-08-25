@@ -105,7 +105,7 @@ struct BackdropRootView: View {
             PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // The glance is the same ink at the same measure,
-                // dimmed. Promote and demote must not make the text
+                // dimmed. Raising and lowering must not make the text
                 // jump, so only the opacity changes.
                 .opacity(raised ? 1 : 0.72)
             PageStatusStack(model: pages)

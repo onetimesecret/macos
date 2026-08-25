@@ -26,7 +26,7 @@ import XCTest
 ///     that this session's own seal replaces the unreadable file inside
 ///     one debounce with no further gesture, which is the armed write
 ///     observed at its far end rather than counted at its near one.
-///   - `finishPromotion` lands only after a round trip to a live
+///   - `finishConceal` lands only after a round trip to a live
 ///     server, which a unit test must not make. Its arming call sits
 ///     unconditionally ahead of the staleness guard, covering the
 ///     success and failure arms alike.
@@ -127,15 +127,15 @@ final class MutationArmingTests: XCTestCase {
                 chip = model.sealPasteboard(replacing: NSRange(location: 0, length: 0))
                 return chip != nil
             }),
-            ("burnPromotedCopy on a chip, through removeChipFromDocument", {
+            ("burnConcealedCopy on a chip, through removeChipFromDocument", {
                 guard let chipId = chip?.chipId else { return false }
                 let before = summary(tab)?.chipCount ?? 0
-                // The state a successful promotion of a chip leaves: a
+                // The state a successful conceal of a chip leaves: a
                 // receipt in hand and the offer to be rid of the copy.
-                var draft = PromotionDraft(target: .chip(chipId), ttlSecs: 3600)
+                var draft = ConcealDraft(target: .chip(chipId), ttlSecs: 3600)
                 draft.receiptId = "receipt-for-the-chip"
-                model.promotion = draft
-                model.burnPromotedCopy()
+                model.concealDraft = draft
+                model.burnConcealedCopy()
                 return before > 0 && summary(tab)?.chipCount == before - 1
             }),
             ("sealDrag", {
@@ -146,11 +146,11 @@ final class MutationArmingTests: XCTestCase {
                 dragBoard.clearContents()
                 return chip != nil
             }),
-            ("burnPromotedCopy on a page", {
-                var draft = PromotionDraft(target: .page(page), ttlSecs: 3600)
+            ("burnConcealedCopy on a page", {
+                var draft = ConcealDraft(target: .page(page), ttlSecs: 3600)
                 draft.receiptId = "receipt-for-the-page"
-                model.promotion = draft
-                model.burnPromotedCopy()
+                model.concealDraft = draft
+                model.burnConcealedCopy()
                 return summary(tab)?.hasPage == false
             }),
             ("openPageIfSlotIsEmpty, through a selection", {

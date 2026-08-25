@@ -56,6 +56,13 @@ Choose terminology by what is defensible, not by what is aspirational:
    or tab), and its time on the system clipboard is bounded and ends
    the moment you stage it. These are checkable statements about what
    the code does, truer and a stronger sell than "verifiably forgets."
+5. **Name the exit ramp `conceal`, and reserve `reveal` for the ingress
+   that does not exist yet.** Concealing is the act of turning staged
+   content into a one-time link, the same verb the server uses
+   (`POST /api/v3/secret/conceal`). Revealing is its corollary, opening
+   such a link, and the pad has no referent for it today. "Promotion"
+   is not the project's word and is not to be used. Amendment 3 records
+   the full definitions and the one collision to watch.
 
 ## Consequences
 
@@ -264,3 +271,76 @@ that were hashed. Verifying a download means checking the signature and
 the notarization; verifying the source means rebuilding and comparing
 the digest. Those are two separate checks and the documentation should
 not blur them.
+
+## Amendment 3: conceal and reveal are the vocabulary; "promotion" is retired
+
+- **Status:** accepted
+- **Date:** 2026-08-24
+
+Folded in here rather than filed separately, as with Amendments 1 and 2.
+The decision text above is edited in place; this section records what
+changed and why.
+
+### What changed
+
+The Decision list gains item 5. This ADR is the terminology ADR and it
+never defined the words for the app's own exit ramp, which is how an
+agent came to invent one. The definitions are:
+
+- **conceal**: the act of turning staged content into a one-time link.
+  It matches the v3 API verb, `POST /api/v3/secret/conceal`, so the
+  client and the server say the same thing about the same operation.
+  This is the app's exit ramp: the noun for the step, the verb for the
+  action, and the word the UI, the code and the docs all use.
+- **reveal**: the corollary, opening a one-time link. In the pad it
+  currently has no referent, because the pad conceals but does not
+  reveal. The word is reserved for a future ingress path, pasting a
+  link and opening it in the pad, rather than spent on anything else.
+  In particular it is not a name for unmasking a chip, which does not
+  exist and must not (doc 04: chips are never revealable).
+- **"promotion" is retired.** It was invented by an agent, was never
+  the project's word, and is not to be reintroduced. Neither is
+  "promote", "promoted" or "promote-to-link" in this sense. Where an
+  identifier carried it, it is renamed:
+  `companion_chip_promote` → `companion_chip_conceal`,
+  `companion_sheet_promote` → `companion_sheet_conceal`,
+  `crates/ffi/src/promotion.rs` → `crates/ffi/src/conceal.rs`,
+  the outcome type `Promoted` → `Concealed`,
+  `PromoteOpts` → `ConcealOpts`,
+  `finish_promotion` → `finish_conceal`,
+  `mark_chip_promoted` → `mark_chip_concealed`,
+  `PromotionView` → `ConcealView`,
+  and the chip JSON field `promoted` → `concealed`.
+
+### The one collision
+
+`conceal` is also the pasteboard hygiene vocabulary: macOS clipboard
+managers honour `org.nspasteboard.ConcealedType`, an unrelated
+community convention meaning "do not record this item."
+
+Unqualified `conceal` and `concealed` mean the Onetime Secret action.
+The pasteboard flag keeps its constant name, `CONCEALED_TYPE` holding
+`org.nspasteboard.ConcealedType`, because that is Apple and community
+convention and renaming it would break the only thing that makes it
+legible. Its struct fields are spelled `nspasteboard_concealed`
+(`crates/pasteboard/src/lib.rs`) so a reader can tell the two meanings
+apart at the point of use without chasing a type.
+
+### Rationale
+
+Two words were in circulation for one operation, and the one in the
+docs was not the one on the wire. That is the failure mode this ADR
+exists to prevent: terminology chosen for how it sounds rather than for
+what it names. Matching the server verb costs nothing and removes a
+translation step from every conversation, every bug report and every
+future API doc.
+
+Reserving `reveal` is the same discipline applied ahead of time. It is
+the obvious name for exactly one future feature, and spending it on a
+different meaning now would leave that feature unnameable later.
+
+### What this does not claim
+
+Naming the operation says nothing about what it protects. The security
+properties of a conceal live in ADR-0012 and in doc 05, not in the
+word.

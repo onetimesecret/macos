@@ -76,4 +76,4 @@ Some paths cannot be reached from CI at all. ADR-0016 section 10 requires hardwa
 
 ## Dogfood loop
 
-Keep new observations in [ABERRATIONS.md](../dogfood/ABERRATIONS.md). Promote each one to an ADR, GitHub issue, plan, or [DOGFOOD.md](../dogfood/DOGFOOD.md) guidance once it is understood. Link the destination from the original observation.
+Keep new observations in [ABERRATIONS.md](../dogfood/ABERRATIONS.md). Graduate each one to an ADR, GitHub issue, plan, or [DOGFOOD.md](../dogfood/DOGFOOD.md) guidance once it is understood. Link the destination from the original observation.

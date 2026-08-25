@@ -194,19 +194,19 @@ final class MintFocusTests: XCTestCase {
     // MARK: The draft a dying page leaves behind (issue #22, second finding)
 
     /// The live counterpart to `FocusLawTests`'s pure `isRefreshOrphan`
-    /// cases: a promoted chip whose own page expires while another page
+    /// cases: a concealed chip whose own page expires while another page
     /// stays open must not leave the confirmation standing, or a stray
     /// ↩ ("Create link" carries the default action) fires a network
     /// call for bytes that no longer exist.
-    func testAPromotedChipOnAnExpiringPageClearsItsDraftWhileOtherPagesRemain() throws {
+    func testAConcealedChipOnAnExpiringPageClearsItsDraftWhileOtherPagesRemain() throws {
         let model = try makeModel()
         model.loadStateIfNeeded()
         let doomedTab = try XCTUnwrap(model.selection)
         let chip = try XCTUnwrap(
             model.sealText("hunter2", replacing: NSRange(location: 0, length: 0))
         )
-        model.beginPromotion(.chip(chip.chipId))
-        XCTAssertNotNil(model.promotion)
+        model.beginConceal(.chip(chip.chipId))
+        XCTAssertNotNil(model.concealDraft)
 
         // A second page, so the strip still holds a live one once the
         // chip's page dies. Both slots open on the form factor's rung,
@@ -232,7 +232,7 @@ final class MintFocusTests: XCTestCase {
         )
         XCTAssertEqual(model.selectedPageID, survivor, "and another page is still open")
         XCTAssertNil(
-            model.promotion,
+            model.concealDraft,
             "the chip rides on no live page, so its confirmation must not still answer ↩"
         )
     }

@@ -276,7 +276,7 @@ final class SurfaceExposureTests: XCTestCase {
         }
     }
 
-    func testTheSettlingTurnIsNotPromotedByAQuietSpell() {
+    func testTheSettlingTurnIsNotUpgradedByAQuietSpell() {
         // The demotion runs one way. A prompt reading is a guess because
         // of where it sits in its own transition, and no amount of time
         // since some earlier one makes it otherwise.

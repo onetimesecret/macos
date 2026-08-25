@@ -1,16 +1,16 @@
 import SwiftUI
 
-/// The promotion confirmation, inline and in place (docs/spec/04 — not
+/// The conceal confirmation, inline and in place (docs/spec/04 — not
 /// a modal): destination, TTL seeded from the page's remaining time,
 /// optional passphrase and recipient, one confirming click. The network
 /// boundary is explicit — nothing leaves until "Create link". Failure
 /// is inline with retry; success says the link is on the clipboard and
 /// offers Burn local copy.
-public struct PromotionView: View {
+public struct ConcealView: View {
     @ObservedObject var model: PageModel
-    let draft: PromotionDraft
+    let draft: ConcealDraft
 
-    public init(model: PageModel, draft: PromotionDraft) {
+    public init(model: PageModel, draft: ConcealDraft) {
         self.model = model
         self.draft = draft
     }
@@ -58,7 +58,7 @@ public struct PromotionView: View {
                 .foregroundStyle(.tertiary)
                 .help("The app's one outbound destination")
             Button {
-                model.dismissPromotion()
+                model.dismissConceal()
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
@@ -71,8 +71,8 @@ public struct PromotionView: View {
 
     private var title: String {
         switch draft.target {
-        case .chip: "promote this sealed content to a one-time link"
-        case .page: "promote this page to a one-time link"
+        case .chip: "conceal this sealed content into a one-time link"
+        case .page: "conceal this page into a one-time link"
         }
     }
 
@@ -118,7 +118,7 @@ public struct PromotionView: View {
                 Text(error)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Color.ember)
-                    .accessibilityLabel(Text("Promotion failed: \(error)"))
+                    .accessibilityLabel(Text("Conceal failed: \(error)"))
             }
             HStack {
                 if !isConfigured {
@@ -133,7 +133,7 @@ public struct PromotionView: View {
                         .accessibilityLabel(Text("Sending"))
                 }
                 Button(draft.error == nil ? "Create link" : "Retry") {
-                    model.confirmPromotion()
+                    model.confirmConceal()
                 }
                 .controlSize(.small)
                 .disabled(draft.inFlight)
@@ -155,10 +155,10 @@ public struct PromotionView: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.primary)
             Spacer()
-            Button("Burn local copy") { model.burnPromotedCopy() }
+            Button("Burn local copy") { model.burnConcealedCopy() }
                 .controlSize(.small)
                 .help(burnHelp)
-            Button("Keep it") { model.dismissPromotion() }
+            Button("Keep it") { model.dismissConceal() }
                 .controlSize(.small)
         }
     }
@@ -174,15 +174,15 @@ public struct PromotionView: View {
 
     private var ttlBinding: Binding<UInt64> {
         Binding(
-            get: { model.promotion?.ttlSecs ?? draft.ttlSecs },
-            set: { model.promotion?.ttlSecs = $0 }
+            get: { model.concealDraft?.ttlSecs ?? draft.ttlSecs },
+            set: { model.concealDraft?.ttlSecs = $0 }
         )
     }
 
-    private func fieldBinding(_ path: WritableKeyPath<PromotionDraft, String>) -> Binding<String> {
+    private func fieldBinding(_ path: WritableKeyPath<ConcealDraft, String>) -> Binding<String> {
         Binding(
-            get: { model.promotion?[keyPath: path] ?? "" },
-            set: { model.promotion?[keyPath: path] = $0 }
+            get: { model.concealDraft?[keyPath: path] ?? "" },
+            set: { model.concealDraft?[keyPath: path] = $0 }
         )
     }
 }

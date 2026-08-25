@@ -21,7 +21,7 @@ deliberate gesture (⇧⌘V, a drop, or ⌘↩ on a selection) seals content int
 a chip whose bytes never render. One countdown governs each sheet — like
 a CPU's L1/L2 cache, the value is in being small, close, and evicted by
 policy, never in being a system of record. Zero means zeroized, silently.
-Secondarily, a chip or a whole page can be promoted into a Onetime Secret
+Secondarily, a chip or a whole page can be concealed into a Onetime Secret
 link (v3 API) when the content needs to travel to another person or
 machine.
 
@@ -45,7 +45,7 @@ individual features, written against it, live under
 
 | Feature | Contents | Status |
 | --- | --- | --- |
-| [feature/byoe](../feature/byoe/README.md) | Bring Your Own Encryption on the promotion path: envelope construction, key custody, wire changes | Draft |
+| [feature/byoe](../feature/byoe/README.md) | Bring Your Own Encryption on the conceal path: envelope construction, key custody, wire changes | Draft |
 | [feature/background-surface](../feature/background-surface/README.md) | A second form factor: an ambient desktop-level surface, raised to edit — with the research on what macOS permits | Exploration (ADR-0010) |
 
 ## Design rounds and prototype
@@ -82,7 +82,7 @@ now sheets and sealed chips.)
 
 The companion is open source and standalone-useful: the core loop (type
 or paste, hold briefly, copy out, forget) requires no account and no
-network. The Onetime Secret v3 API appears only at the promotion step —
+network. The Onetime Secret v3 API appears only at the conceal step,
 turning local ephemeral content into a one-time link. Authentication
 starts with HTTP Basic (organization `extid` + API token pair) and
 migrates to PASETO when the v3 auth work lands. See

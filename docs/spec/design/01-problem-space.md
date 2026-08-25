@@ -105,7 +105,7 @@ analogy holds up under weight — it is the spec in miniature:
 
 The one place the analogy is deliberately extended: a cache line can be
 **written back** to a slower, more durable tier. Here the write-back path
-is promotion to a Onetime Secret link — the moment content stops being
+is concealing into a Onetime Secret link, the moment content stops being
 "mine, in transit between my own contexts" and becomes "shared, in transit
 to someone else". Same lifecycle philosophy (one view, then gone), one
 tier further out.
@@ -158,8 +158,8 @@ Not personas — moments. The same person hits all of these in a week:
   (Recovery code during a device migration; credentials during onboarding
   week.)
 - **The hand-off.** The content must leave the machine — to a colleague, a
-  client, another device. This is the promotion moment, and the only
-  moment the network appears.
+  client, another device. This is the moment content is concealed into a
+  link, and the only moment the core loop touches the network.
 
 ## Anti-goals
 
@@ -172,9 +172,12 @@ Stated early because scope discipline *is* the product:
   no organization, no folders, no tags.
 - **Not a search index.** A handful of glanceable sheets need eyes, not a
   query language. If it needs search, it has failed the "small" property.
-- **Not a sync service.** No cloud, no accounts for the core loop, no
-  state that outlives the machine (initially, no state that outlives the
-  process — see open questions).
+- **Not a general sync service.** Dropbox, iCloud Drive and Notion exist
+  and this app is not competing with them: no folder tree, no shared
+  workspaces, no account as the cost of the core loop, no archive that
+  outlives the content's own expiry. Where the pad does move a page
+  between a person's own devices, it does so on the pad's lifecycle and
+  inherits every expiry rule rather than suspending them.
 - **Not sticky.** No streaks, no counters, no upsell surface area, no
   reasons to open it beyond having content in hand. Comfortable being
   forgotten between uses.

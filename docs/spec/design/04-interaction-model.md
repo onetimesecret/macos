@@ -149,7 +149,7 @@ teaches ⌘↩.
   whole, selection cannot reach inside it.
 - **Hover reveals actions, never content:** copy-out (marked transient +
   concealed on the pasteboard, non-consuming — multi-paste is a core
-  moment) and ↗ link (promotion).
+  moment) and ↗ link (conceal).
 - **No per-chip timers, ever.** Time belongs to the sheet.
 
 ## Time: the ladder, the gauge, and the pause
@@ -282,12 +282,12 @@ it one rung · drag tabs to reorder · double-click a tab to pause its clock
 move · drag any edge to resize · double-click the title bar to stretch
 vertically · drop content onto the page to seal it.
 
-## Promotion flow (secondary interaction)
+## Conceal flow (secondary interaction)
 
-Unchanged in role: the only network action, and the single place the app
-ever mentions accounts. Two affordances: **↗ link** on a chip's hover
-actions (promote that sealed content) and **↗ page** in the footer
-(promote the sheet).
+Unchanged in role: the app's explicit network action, and the single
+place it ever mentions accounts. Two affordances: **↗ link** on a chip's
+hover actions (conceal that sealed content) and **↗ page** in the footer
+(conceal the sheet).
 
 1. If no account is configured, an inline hint links to Settings →
    Connection, plus a guest-mode option where the server allows it.
