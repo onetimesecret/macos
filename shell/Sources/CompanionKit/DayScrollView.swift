@@ -680,24 +680,35 @@ final class DayStackView: NSView {
         scroll.reflectScrolledClipView(scroll.contentView)
     }
 
-    /// The topmost page on the roll and where it stands, taken before an
-    /// assembly so the same page can be found again afterwards.
+    /// The topmost page on the roll and where its ink stands, taken
+    /// before an assembly so the same page can be found again
+    /// afterwards.
+    ///
+    /// The ink rather than the header above it, because a header is not
+    /// a fixed height: the page that was first on the roll gains a
+    /// perforation the moment a day arrives over it, and its header
+    /// grows by `tearReserve` to draw one. Measured at the header's top
+    /// that growth is invisible — the header moved by exactly what was
+    /// inserted — and everything below it, the reader included, slides
+    /// down by the twelve points nothing answered for. Measured at the
+    /// ink's top the chrome that appeared counts as part of what
+    /// arrived, which is what a reader experiences it as.
     private func topmostPageAnchor() -> (page: UInt64, top: CGFloat)? {
         guard let row = rows.first(where: { $0.page != nil }), let page = row.page else {
             return nil
         }
-        return (page: page, top: row.header.frame.minY)
+        return (page: page, top: row.body.frame.minY)
     }
 
     /// Local midnight, or a page minted into a day above the one being
     /// read: rows arrived over the top of the roll. Move the clip down
-    /// by exactly what was inserted, so what the reader was looking at
-    /// stays where it was.
+    /// by exactly as far as the roll's first page moved, so what the
+    /// reader was looking at stays where it was.
     private func keepStill(anchoredOn anchor: (page: UInt64, top: CGFloat)?) {
         guard let anchor, let scroll = enclosingScrollView,
               let row = rows.first(where: { $0.page == anchor.page }) else { return }
         let origin = Self.offsetAfterPrepending(
-            insertedHeight: row.header.frame.minY - anchor.top,
+            insertedHeight: row.body.frame.minY - anchor.top,
             current: scroll.contentView.bounds.origin
         )
         guard origin != scroll.contentView.bounds.origin else { return }

@@ -43,7 +43,7 @@ procedure.
   day is sound only while the day is quiet, and a page stops being quiet
   the moment the editor arrives on it.
 
-## Four AppKit traps this branch actually hit
+## Five AppKit traps this branch actually hit
 
 - **A TextKit 1 storage nobody retains is freed.** Ownership runs
   storage → layout manager → container → view, and the back references
@@ -60,6 +60,12 @@ procedure.
 - **Key paths cannot name tuple elements.** `laidOut.map(\.header.mark)`
   does not compile; `laidOut.map { $0.header.mark }` does. (Branch 5
   suspected this and avoided it; branch 6 confirms it is worth avoiding.)
+- **A header is not a fixed height, so the anchor measures the ink.**
+  The page that was first on the roll gains a tear the moment a day
+  arrives above it, and its header grows by `tearReserve`. Measured at
+  the header's top that growth is invisible and the reader slides down
+  twelve points; `topmostPageAnchor` and `keepStill` therefore both
+  measure `body.frame.minY`.
 
 ## Testing notes
 
