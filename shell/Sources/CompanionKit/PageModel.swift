@@ -335,6 +335,25 @@ public final class PageModel: ObservableObject {
     }
     private static let wrapKey = "wrapsLines"
 
+    /// Whether the surface groups the live pages by the day they were
+    /// born on and stands the tabs down the side, instead of showing
+    /// the durable slots along the bottom (issue #79). A prototype, off
+    /// until the user asks for it.
+    ///
+    /// Persisted the way every other preference here is, and persisted
+    /// nowhere else: this writes one boolean to `defaults` and never
+    /// calls `markDirty()`. A mark would take the sudden-termination
+    /// hold and arm a debounced ciphertext write, so looking at the same
+    /// pages a second way would buy a fresh sealed generation every time
+    /// the user changed their mind. Nothing else moves either — the
+    /// projection reads `tabs` and calls no core mutator — which is what
+    /// makes the toggle safe in both directions by construction rather
+    /// than by care.
+    @Published public var showsTimeUnits: Bool {
+        didSet { defaults.set(showsTimeUnits, forKey: Self.timeUnitsKey) }
+    }
+    private static let timeUnitsKey = "showsTimeUnits"
+
     /// ⌥Z. A page whose lines all fit shows no difference, so the toggle
     /// says what it did rather than leaving the keystroke looking dead.
     public func toggleWrap() {
@@ -632,6 +651,10 @@ public final class PageModel: ObservableObject {
         // Unset → wrap, which is how every plain-text editor opens and
         // the only sane default for a card this narrow.
         wrapsLines = defaults.object(forKey: Self.wrapKey) as? Bool ?? true
+        // Unset → off. A prototype is something a user turns on, and an
+        // upgrade must not rearrange the pad of somebody who never
+        // asked for a second way of looking at it (issue #79).
+        showsTimeUnits = defaults.object(forKey: Self.timeUnitsKey) as? Bool ?? false
         // No pages yet: the restore is the caller's to time
         // (`loadStateIfNeeded`). The panel defers it to the first
         // reveal, so launching at login never raises a Keychain prompt
