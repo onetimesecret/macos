@@ -130,8 +130,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-dates none, re-orders none and re-labels none, and a day leaves the
   rail only because the page keyed to it expired under the countdown it
   always had. The labels are relative rather than dated, which is what
-  lets local midnight roll them over on the repaint the app already runs
-  — no new timer, no midnight alarm, and the sealed file's format did
+  lets local midnight roll them over on the repaint the app already runs,
+  with no new timer, no midnight alarm, and the sealed file's format did
   not move by a byte. The core now says, on each tab it already
   describes, which day that tab's page was born on relative to today and
   whether anything is on it, which is two more fields on a reading the
@@ -160,26 +160,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   The switch is in Settings, under **A page a day, with time tabs down
   the side**, and it is off until you ask for it. On, the days stand in
-  a narrow column on the left of the card — Today at the top, each row
-  with the countdown of the page on it that runs out soonest — and the
+  a narrow column on the left of the card (Today at the top, each row
+  with the countdown of the page on it that runs out soonest), and the
   strip along the bottom is gone while they are there. Clicking a row
   goes to that day; clicking Today when nothing has been written yet
   starts today's page, which is the one click on the rail that makes
   anything. The rail is for getting about and nothing else: it will not
   rename a day, close one, hold its clock, shorten its countdown or let
   you drag one somewhere else, because a day is not a slot and the order
-  of the days is not yours to shuffle. If it is holding pages back —
-  live pages with nothing written on them, which get no day of their own
-  — it says how many at the foot of the column and points at this
+  of the days is not yours to shuffle. If it is holding pages back (live
+  pages with nothing written on them, which get no day of their own), it
+  says how many at the foot of the column and points at this
   toggle, rather than letting a full pad look broken.
 
   Beside that column the days read as one page torn along a
   perforation. Today is at the top and time runs downward: your writing
   from today, then a labelled tear, then yesterday's, and so on back
   through whatever is still alive, all in one scroll rather than one
-  page at a time. The tear is drawn and never typed — nothing separating
+  page at a time. The tear is drawn and never typed: nothing separating
   two days is a character in anybody's document, so scrolling past a day
-  cannot change it — and a second page written on the same day sits
+  cannot change it. A second page written on the same day sits
   under a plain hairline rather than a tear, because that is one day's
   writing and not a jump in time. Beside each tear is the day's own
   gutter: what the page is called, how long it has left, and a
@@ -190,7 +190,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   day takes you there with the caret where you clicked. Only the day you
   are on can be typed into; the others are there to read. Opening the pad
   and every summon put you back on today, instantly and with nothing
-  animating anywhere, and between those moments the scroll is yours —
+  animating anywhere, and between those moments the scroll is yours,
   including when a new day arrives above what you are reading, which
   moves the page under you by exactly nothing. Long lines wrap while the
   mode is on, whatever ⌥Z last decided, and ⌥Z goes back to deciding it
@@ -201,13 +201,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   editor the app has ever had is still the only thing on screen you can
   type into: it is carried between the days rather than rebuilt for
   them, so the caret, a half-finished input-method composition and each
-  page's own undo history all survive crossing a tear — and ⌘Z after
+  page's own undo history all survive crossing a tear, and ⌘Z after
   clicking into an older day rewrites that day and cannot reach the one
   above it. **What the mode deliberately does not do:** it will not
   reorder anything, it will not rename or close a day from the column
   beside it, it will not police one page per day, it will not create
   today's page for you, and it leaves no marker where a day whose page
-  ran out used to be — the labels are relative, so the jump from -1d to
+  ran out used to be: the labels are relative, so the jump from -1d to
   -3d says it by itself.
 
 - **The keyboard is a file now** (issue #76,

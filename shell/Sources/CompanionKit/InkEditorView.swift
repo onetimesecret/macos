@@ -89,9 +89,9 @@ public struct InkEditorView: NSViewRepresentable {
     ///
     /// Built apart from `scrollStack(for:)` because a scroller of its own
     /// is only one of the places this editor can stand. A surface that
-    /// rolls several days past a single clip needs the same editor —
+    /// rolls several days past a single clip needs the same editor,
     /// the same first responder, the same coordinator, the same
-    /// `activeEditor` handle, the same `performSealedPaste` — mounted
+    /// `activeEditor` handle, the same `performSealedPaste`, mounted
     /// inside a stack rather than inside a scroll view (ADR-0020), and a
     /// second copy of this wiring is exactly how the two surfaces would
     /// quietly stop agreeing about what the one editor is. Everything a
@@ -100,8 +100,8 @@ public struct InkEditorView: NSViewRepresentable {
     /// sheds the undo history a teardown left behind.
     ///
     /// Main-actor by hand rather than by inference: everything it wires
-    /// belongs to the main thread — the model, the styling, the view —
-    /// and a builder called from somewhere other than a representable's
+    /// belongs to the main thread (the model, the styling, the view), and
+    /// a builder called from somewhere other than a representable's
     /// own lifecycle should say so at its declaration.
     @MainActor
     static func makeInkTextView(
@@ -113,7 +113,7 @@ public struct InkEditorView: NSViewRepresentable {
         ))
         container.widthTracksTextView = true
         let storage = model.storage(for: sheetID)
-        // The page's storage outlives any one editor instance — the
+        // The page's storage outlives any one editor instance, the
         // ledger and the empty state unmount the editor, even though
         // page↔page switches no longer do (ADR-0006). Detach layout
         // managers a torn-down editor left behind so exactly one
@@ -128,7 +128,7 @@ public struct InkEditorView: NSViewRepresentable {
 
         let textView = InkTextView(frame: .zero, textContainer: container)
         // Rich text stays on so chip attachments survive editing; the
-        // user-facing surface is still plain — ⌘V pastes plain text and
+        // user-facing surface is still plain, ⌘V pastes plain text and
         // no ruler/font UI exists. Styling is ours alone (restyle()).
         textView.isRichText = true
         textView.allowsUndo = true
@@ -345,8 +345,8 @@ public struct InkEditorView: NSViewRepresentable {
         /// Move the one editor onto another page.
         ///
         /// A page switch reaches this editor as data, not identity
-        /// (ADR-0006): the view — and with it first responder, and the
-        /// ember — persists, while the page's storage is swapped in
+        /// (ADR-0006): the view (and with it first responder, and the
+        /// ember) persists, while the page's storage is swapped in
         /// underneath. Caret and scroll are saved for the page on its
         /// way out and restored for the one coming in; undo history
         /// follows `currentSheet` through the delegate's per-page
@@ -356,7 +356,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// page's offsets. The dropped `.id(selection)` used to discard
         /// it by tearing the view down; the persistent view must do it by
         /// hand, or the pending marked text commits into the incoming
-        /// page's storage — the wrong page — or leaves the input context
+        /// page's storage (the wrong page) or leaves the input context
         /// pointing at a stale range (ADR-0006 eject-trigger #3, issue
         /// #23). Discard before the swap so nothing crosses the boundary.
         ///
@@ -378,7 +378,7 @@ public struct InkEditorView: NSViewRepresentable {
             // The one-layout-manager-per-storage invariant rests on this
             // path now; the mount's detach loop runs only at mount. The
             // incoming storage may still carry a layout manager some
-            // torn-down editor (a ledger round trip) left behind — shed
+            // torn-down editor (a ledger round trip) left behind, shed
             // those before wiring ours to it. `replaceTextStorage` then
             // moves this editor's layout manager off the outgoing storage,
             // leaving both sides with exactly the managers they should

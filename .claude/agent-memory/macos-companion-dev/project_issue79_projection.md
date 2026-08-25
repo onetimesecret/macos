@@ -1,4 +1,4 @@
-# Issue #79 — the day projection (branch 3 of the vertical-time-tabs stack)
+# Issue #79: the day projection (branch 3 of the vertical-time-tabs stack)
 
 Landed 2026-08-25 on `claude/79-3-day-projection-ymyi7n`, over the day
 seam. ADR-0020 required-work items 7 to 10. No pixel: the Settings row
@@ -17,7 +17,7 @@ cannot show a control that does nothing.
   never by page, so `hiddenBlankPages` counts pages in days nobody can
   reach and never pages inside a day that is on screen.
 - `PageModel.showsTimeUnits` (defaults key `showsTimeUnits`, default
-  false, no `markDirty`), `PageModel.timeUnits` (computed — never cache
+  false, no `markDirty`), `PageModel.timeUnits` (computed, never cache
   it, or the labels stop rolling over at local midnight and the mode
   needs the timer the design exists to avoid), `SurfaceTarget`,
   `visibleTargets`, `select(target:)`, `openToday()`, `capRefusal(
@@ -32,8 +32,8 @@ cannot show a control that does nothing.
 - **A bucket is never positive.** `TimeUnit.bucket(dayOffset:)` clamps
   at today (`min(dayOffset, 0)`). `label` already folded a positive
   offset to "Today"; the grouping did not, so a host clock that went
-  backwards drew *two* rows named Today — the peopled skewed one and
-  the empty bucket 0 the projection always inserts — and every
+  backwards drew *two* rows named Today (the peopled skewed one and
+  the empty bucket 0 the projection always inserts), and every
   `first(where: { $0.bucket == 0 })` lookup found the empty one. ⌘N
   minted a second page beside the visible one and the summon's anchor
   selected nothing. Fold in the one line where an offset becomes a
@@ -42,14 +42,14 @@ cannot show a control that does nothing.
   unchanged and now correct by construction.
 - **The mode's reconciliation runs at the mode's entrance.**
   `reconciledTimeSelection` had one caller, `refresh()`, and the
-  `showsTimeUnits` didSet triggers no refresh — so the transition that
+  `showsTimeUnits` didSet triggers no refresh, so the transition that
   most reliably produces "selection on a slot the rail draws no row for"
   (the selected page expired overnight) was the one transition the rule
   was never applied to. The didSet now applies the fall when the value
   flips **to true only**. Off is deliberately untouched: the strip draws
   every slot, so there is nothing to fall off. It mints nothing and
   marks nothing dirty, and it cannot move a selection the mode it is
-  entering would draw — which is what keeps ADR-0020's toggle-safety
+  entering would draw, which is what keeps ADR-0020's toggle-safety
   claim. Tests pin all three directions.
 
 ## Two things worth knowing before branch 5 or 6

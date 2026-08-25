@@ -6,8 +6,8 @@ import SwiftUI
 /// ADR-0020).
 ///
 /// One `NSScrollView` over one flipped stack laid out top-down by frame.
-/// Per day the stack holds a header — the tear, the relative label, and
-/// that page's own gutter with its title, its countdown and its verbs —
+/// Per day the stack holds a header (the tear, the relative label, and
+/// that page's own gutter with its title, its countdown and its verbs)
 /// and under it the page itself. Exactly one of those pages is the app's
 /// single editor (ADR-0006): the same `InkTextView`, built by the same
 /// factory, driven by the same coordinator, so op emission, restyling,
@@ -19,13 +19,13 @@ import SwiftUI
 /// its frame origin and swaps the storage underneath it, and
 /// `removeFromSuperview` is never called on it, so nothing resigns first
 /// responder and no composition, caret or undo stack is lost crossing a
-/// perforation — the exact class of bug issues #19, #22 and #23 closed.
+/// perforation, the exact class of bug issues #19, #22 and #23 closed.
 ///
 /// Every other visible page is a `QuietPageView`: a rendering over its
 /// **own** private storage, not editable, not selectable, and unable to
 /// take first responder. Private storages are what keep the roll out of
 /// `PageModel.storages`, `undoManagers`, `shedLayoutManagers` and the
-/// projection-parity assertion entirely — every storage in the app still
+/// projection-parity assertion entirely, every storage in the app still
 /// carries exactly one layout manager, because each still has exactly
 /// one view. There is still one editor, one `activeEditor`, one
 /// `performSealedPaste` and one first-responder candidate in the card,
@@ -44,7 +44,7 @@ import SwiftUI
 public struct DayScrollView: NSViewRepresentable {
     @ObservedObject var model: PageModel
 
-    /// Refuse edits while still showing the pages — the backdrop's
+    /// Refuse edits while still showing the pages, the backdrop's
     /// resting glance, on the same terms `InkEditorView` takes it. The
     /// stance can change without the days changing, so it is re-gated on
     /// every pass rather than at mount alone.
@@ -63,8 +63,8 @@ public struct DayScrollView: NSViewRepresentable {
     }
 
     /// The editor's own coordinator, and deliberately not a new type.
-    /// Everything the page does — emit ops, restyle, render chips, seal
-    /// a selection, answer for undo — is this object's, and a roll with
+    /// Everything the page does (emit ops, restyle, render chips, seal
+    /// a selection, answer for undo) is this object's, and a roll with
     /// a coordinator of its own would be a second implementation of the
     /// page for the mode to drift away from.
     public func makeCoordinator() -> InkEditorView.Coordinator {
@@ -100,7 +100,7 @@ public struct DayScrollView: NSViewRepresentable {
 
     /// The roll is going away: the ledger, or the toggle going off. The
     /// model's handle on the editor is retired here for
-    /// `InkEditorView.dismantleNSView`'s reason — a weak handle answers
+    /// `InkEditorView.dismantleNSView`'s reason, a weak handle answers
     /// for a view torn out of its window until ARC lets go, and a
     /// hand-off arriving in the meantime would settle on a view with no
     /// window rather than wait for the surface coming to replace it
@@ -128,7 +128,7 @@ public struct DayScrollView: NSViewRepresentable {
     ///
     /// A static rather than a body of `makeNSView`, because a test
     /// cannot make a SwiftUI `Context` and everything worth asserting
-    /// about this surface is geometry — where the regions sit, which
+    /// about this surface is geometry, where the regions sit, which
     /// view is where, what the clip can reach. The app and the tests
     /// therefore build the same object out of the same call.
     static func makeRoll(
@@ -149,7 +149,7 @@ public struct DayScrollView: NSViewRepresentable {
         coordinator.observeClip(of: scroll)
         // The mount half of the anchor rule. A fresh clip is at its
         // origin already, so this says the rule rather than enforcing
-        // it — which is the point: there is no anchoring state that can
+        // it, which is the point: there is no anchoring state that can
         // be wrong, only a place the roll opens at.
         stack.scrollToDayZero()
         return scroll
@@ -165,9 +165,9 @@ public struct DayScrollView: NSViewRepresentable {
 ///
 /// Auto Layout is not in play anywhere here. Every child is placed by
 /// frame, out of one `relayout()` that measures each region against the
-/// layout it was actually given — `ensureLayout(for:)` and then
+/// layout it was actually given, `ensureLayout(for:)` and then
 /// `usedRect`, the one measurement the page's scroll restore already
-/// trusts — rather than against a `frame` height a relayout still in
+/// trusts, rather than against a `frame` height a relayout still in
 /// flight may report as zero.
 final class DayStackView: NSView {
     /// One row of the roll: a header, and what stands under it.
@@ -221,8 +221,8 @@ final class DayStackView: NSView {
     private var headers: [DayHeaderView] = []
 
     /// The empty storage a parked editor is left showing. Held here
-    /// because a layout manager does not own its text storage — the
-    /// ownership runs the other way — so an unheld one would be freed
+    /// because a layout manager does not own its text storage, the
+    /// ownership runs the other way, so an unheld one would be freed
     /// out from under the view still pointing at it.
     private var parkedStorage: NSTextStorage?
 
@@ -302,7 +302,7 @@ final class DayStackView: NSView {
         )
     }
 
-    /// A measurement changed. Only frames move from here — nothing
+    /// A measurement changed. Only frames move from here, nothing
     /// touches the model, because a layout pass is the one place a
     /// synchronous change to observed state would re-enter SwiftUI
     /// mid-render.
@@ -337,7 +337,7 @@ final class DayStackView: NSView {
         }
         // Building the editor gives it a frame, and a frame change is
         // one of the two things that call `relayout`. Hold the pass shut
-        // until the rows it would be laying out are the new ones — and
+        // until the rows it would be laying out are the new ones, and
         // shut it before the composition settles below, because settling
         // one puts characters in the editor and a text view that grows
         // posts a frame change like any other.
@@ -346,7 +346,7 @@ final class DayStackView: NSView {
         // it is drawn. A composition in flight is provisional text the
         // emission gate deliberately keeps out of the core, so a
         // rendering built for the outgoing day while it is still marked
-        // would show that day without the sentence just typed into it —
+        // would show that day without the sentence just typed into it,
         // and the swap below, which is what settles the composition,
         // happens after the rows are assembled. So settle first: the
         // assembly reads the core, and the core has to be told before it
@@ -491,7 +491,7 @@ final class DayStackView: NSView {
     }
 
     /// The rendering of a day the editor is not standing on, built once
-    /// per page and kept for as long as the projection holds it — and
+    /// per page and kept for as long as the projection holds it, and
     /// re-read whenever the model has rebuilt it underneath.
     private func quietRegion(for page: UInt64) -> QuietPageView {
         let rendering = model.quietRendering(for: page)
@@ -514,7 +514,7 @@ final class DayStackView: NSView {
     /// An assembly is not the only moment a day the roll is drawing can
     /// change. A chip burned out of an older page, an edit that landed
     /// through the strip while this roll was unmounted, a composition
-    /// settling as the editor leaves — none of those moves a bucket, a
+    /// settling as the editor leaves, none of those moves a bucket, a
     /// page id or the selection, so none of them changes the signature
     /// and none of them assembles anything. This is how the roll notices
     /// them, and it is why a region's contents can be trusted without
@@ -573,7 +573,7 @@ final class DayStackView: NSView {
         // itself, so a fresh mount looks to the line below like a page
         // the editor was already standing on. From here on this page can
         // change, and what it says when it goes quiet again must be read
-        // after those changes rather than before them — the model drops
+        // after those changes rather than before them, the model drops
         // the reading at every mutation now, and this covers the moment
         // before there has been one.
         model.invalidateQuietRendering(for: page)
@@ -599,8 +599,8 @@ final class DayStackView: NSView {
         observeEditor(built)
         // A mount with no scroller of its own has to grant what
         // `scrollStack(for:)` grants the editor's own clip. `NSTextView`
-        // starts with `maxSize` at its frame — zero, for a view built
-        // into nothing — and a vertically resizable view will not grow
+        // starts with `maxSize` at its frame (zero, for a view built
+        // into nothing) and a vertically resizable view will not grow
         // past `maxSize.height`, so today's page would stop at no height
         // at all: the storage would keep taking text, the layout manager
         // would keep laying it out, and none of it past the first line
@@ -619,7 +619,7 @@ final class DayStackView: NSView {
         // side of the roll, and a roll that scrolled in two directions
         // would have no honest anchor. This passes `true` rather than
         // the preference, so the setting takes effect again the moment
-        // the mode goes off — and ⌥Z changes nothing here, because the
+        // the mode goes off, and ⌥Z changes nothing here, because the
         // dispatch refuses it in this mode and says so rather than
         // writing a value this surface would not honour
         // (`PageModel.wrapIsFixedNotice`).
@@ -628,8 +628,8 @@ final class DayStackView: NSView {
     }
 
     /// No page anywhere on the roll: the last one expired, or the pad
-    /// has nothing on it at all. The editor stays a child of the stack —
-    /// it is never re-parented — but it stops showing anything, because
+    /// has nothing on it at all. The editor stays a child of the stack,
+    /// it is never re-parented, but it stops showing anything, because
     /// a page that has expired must not still be legible in a view
     /// nobody can see the frame of.
     ///
@@ -753,8 +753,8 @@ final class DayStackView: NSView {
     /// a fixed height: the page that was first on the roll gains a
     /// perforation the moment a day arrives over it, and its header
     /// grows by `tearReserve` to draw one. Measured at the header's top
-    /// that growth is invisible — the header moved by exactly what was
-    /// inserted — and everything below it, the reader included, slides
+    /// that growth is invisible (the header moved by exactly what was
+    /// inserted) and everything below it, the reader included, slides
     /// down by the twelve points nothing answered for. Measured at the
     /// ink's top the chrome that appeared counts as part of what
     /// arrived, which is what a reader experiences it as.
@@ -786,7 +786,7 @@ final class DayStackView: NSView {
     /// A reader scrolled into history keeps what they were reading: the
     /// offset grows by exactly the height that arrived above them, so
     /// the calendar cannot yank content out from under a sentence being
-    /// read. A reader at the origin is not scrolled at all — they are
+    /// read. A reader at the origin is not scrolled at all: they are
     /// looking at the top of the roll, and the top of the roll is where
     /// the new day now is, which is the whole of "Day 0 is always
     /// displayed" and the only place this rule would fight it. Pure, so
@@ -800,7 +800,7 @@ final class DayStackView: NSView {
 
     /// What the roll is made of, in document order: each header and the
     /// region under it. A reading seam for the tests, in the idiom
-    /// `Coordinator.blockLabelLayout` set — the geometry is the claim
+    /// `Coordinator.blockLabelLayout` set, the geometry is the claim
     /// worth asserting, and it is better asserted against the parts than
     /// against a number somebody wrote down. Nothing writes through it.
     var laidOut: [(header: DayHeaderView, body: NSView)] {
@@ -1022,7 +1022,7 @@ final class DayHeaderView: NSView {
 
     // MARK: The page's verbs
 
-    /// Rename, hold, rung and close, addressed to this page's own slot —
+    /// Rename, hold, rung and close, addressed to this page's own slot,
     /// the strip's context menu, on the page rather than on the rail.
     /// Built per click so each item says what the next press of it will
     /// actually do.
@@ -1093,7 +1093,7 @@ final class DayHeaderView: NSView {
 /// editor.
 ///
 /// A click here is the whole of its interaction, and it does what
-/// clicking into history should do — promotes this page to the selected
+/// clicking into history should do: promotes this page to the selected
 /// one and puts the caret where the pointer was. Everything else a
 /// reader might want of a quiet day (select, copy out, work a chip,
 /// conceal) arrives with the editor, one click later.
@@ -1167,7 +1167,7 @@ final class QuietPageView: NSTextView {
     /// chip burned out of it, an edit that reached it through the strip,
     /// a composition settling as the editor left. The model drops its
     /// reading at each of those, so the object it hands back afterwards
-    /// is a different one — and that, rather than a comparison of the
+    /// is a different one, and that, rather than a comparison of the
     /// text, is the signal. An unchanged day hands back the very string
     /// this was seeded from and nothing is copied at all.
     ///
@@ -1199,7 +1199,7 @@ final class QuietPageView: NSTextView {
     }
 
     /// The click itself, in this region's own coordinates, apart from
-    /// the event that carried it — so what a click on a day does can be
+    /// the event that carried it, so what a click on a day does can be
     /// asserted without a synthesized `NSEvent`, which is a fact about
     /// AppKit rather than about this surface.
     func clicked(at point: NSPoint) {
@@ -1213,7 +1213,7 @@ final class QuietPageView: NSTextView {
 /// state, mounted inside the roll.
 ///
 /// The same two lines of copy the strip's surface shows, over the same
-/// `KeyGrantingClickView` — the focus law's third and fourth grants
+/// `KeyGrantingClickView`, the focus law's third and fourth grants
 /// (ADR-0005), so a click into the emptiness conjures today's page and
 /// hands its editor the keyboard, and Return does the same while the
 /// card already holds the keys. Displayed is not minted: drawing this
@@ -1247,8 +1247,8 @@ final class EmptyTodayView: NSView {
         }
         // `openToday()` rather than `createPageAndFocus(in:)`, which is
         // what the strip's own empty state calls. The two agree on the
-        // cases the strip can be in — no tabs at all, or a selected slot
-        // holding nothing — and disagree on the one only the roll has:
+        // cases the strip can be in (no tabs at all, or a selected slot
+        // holding nothing) and disagree on the one only the roll has:
         // this region can be on screen while the editor is standing on
         // an older day, and there `createPageAndFocus` would find the
         // selected slot peopled and quietly do nothing at all. Today's

@@ -288,7 +288,7 @@ final class DayScrollProjectionTests: XCTestCase {
     /// editor is standing on another day: an edit that reached it in the
     /// other mode, a chip burned out of it, a composition settling as
     /// the editor left. The model therefore drops a page's reading at
-    /// the mutation rather than on the roll's way past — and the roll
+    /// the mutation rather than on the roll's way past, and the roll
     /// re-reads on the ordinary pass, since none of those changes moves
     /// a bucket, a page id or the selection, and so none of them
     /// assembles anything.
@@ -332,7 +332,7 @@ final class DayScrollProjectionTests: XCTestCase {
     /// The same law where the user can see it fastest: a chip burned
     /// after its page went quiet. The burn is a core delete of a chip
     /// standing in a day the editor has left, so nothing about the roll
-    /// changes shape — and the sealed thing the user just asked to be
+    /// changes shape, and the sealed thing the user just asked to be
     /// rid of must not go on being drawn there (ADR-0009).
     func testAChipBurnedOutOfAQuietDayStopsBeingDrawnOnIt() throws {
         let model = try makeModel()

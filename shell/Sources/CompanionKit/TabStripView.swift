@@ -345,7 +345,7 @@ struct SheetTab: View {
 /// An `NSAlert` with a text field rather than a SwiftUI alert, since the
 /// SwiftUI form of this takes a text field only from macOS 14 and both
 /// apps ship to 13. It answers with the string the user submitted and
-/// nothing else — the caller renames — so the one surface that owns a
+/// nothing else (the caller renames) so the one surface that owns a
 /// tab's identity stays the model.
 ///
 /// Submitting an empty field is meaningful, not a cancel: it drops the
@@ -355,8 +355,8 @@ struct SheetTab: View {
 /// Shared because the strip is no longer the only place the verb is
 /// offered. The roll carries rename on each page's own day-header gutter
 /// (issue #79), and the informative text below is a rule about what a
-/// tab name *is* — it outlives every page, it is frozen into every
-/// ledger record, so the secret must stay out of it — which is a rule
+/// tab name *is* (it outlives every page, it is frozen into every
+/// ledger record, so the secret must stay out of it), which is a rule
 /// the app should state once.
 @MainActor
 enum TabRenamePrompt {

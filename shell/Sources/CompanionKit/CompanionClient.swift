@@ -72,7 +72,7 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
     public let pageHasContent: Bool
     /// Which local day the PAGE was born on, counted relative to today:
     /// 0 for a page made today, -1 for one made yesterday, and nil when
-    /// the slot holds no page — a slot with nothing in it is on no day,
+    /// the slot holds no page: a slot with nothing in it is on no day,
     /// so it follows `pageID`'s null rather than the clock fields' zero.
     ///
     /// The stamp behind it is the page's own and not the tab's. A slot

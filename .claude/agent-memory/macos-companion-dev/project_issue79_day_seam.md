@@ -1,4 +1,4 @@
-# Issue #79 — the day seam (branch 2 of the vertical-time-tabs stack)
+# Issue #79: the day seam (branch 2 of the vertical-time-tabs stack)
 
 Landed 2026-08-25 on `claude/79-2-day-seam-ymyi7n`, over the docs-only
 spec branch. ADR-0020 required-work items 1 to 6.
@@ -9,9 +9,9 @@ spec branch. ADR-0020 required-work items 1 to 6.
   (crates/core/src/sheet.rs), hoisted out of `placeholder_title`, which
   now calls it. A private `local_seconds` holds the epoch conversion the
   day and the clock face share. **Never write the `div_euclid(86_400)`
-  again anywhere** — the point of the hoist is that a tab's `MMDD` stamp
+  again anywhere**: the point of the hoist is that a tab's `MMDD` stamp
   and the day it buckets into cannot disagree at a DST change.
-- `Sheet::has_content()` — non-whitespace ink or at least one chip. It
+- `Sheet::has_content()`: non-whitespace ink or at least one chip. It
   is the ledger's bar: `SheetStore::entomb` calls it, and a store test
   puts both readers over one matrix of pages.
 - `Sheet::local_day(offset)` and `SheetStore::wall_ms()`.
@@ -28,7 +28,7 @@ spec branch. ADR-0020 required-work items 1 to 6.
   decodes four literal summary payloads; a missing key throws
   `keyNotFound` for a non-optional property (an `Int?` survives, because
   synthesis uses `decodeIfPresent`). Update every fixture in the same
-  commit as the field — Swift does not build on Linux, so CI is the
+  commit as the field: Swift does not build on Linux, so CI is the
   first place this shows up.
 - **`age_by` / `companion_test_age_ms` cannot move a page's birthday.**
   It snapshots and restores at a later wall stamp, and restore carries

@@ -459,7 +459,7 @@ impl<C: Clock> SheetStore<C> {
     /// reading, which survives a sleep and cannot be dragged about by
     /// the system clock. A caller saying *which day* something happened
     /// on wants this one, together with
-    /// [`local_offset_seconds`](SheetStore::local_offset_seconds) —
+    /// [`local_offset_seconds`](SheetStore::local_offset_seconds),
     /// the same pair a [`Tab::label`] placeholder is rendered from, so
     /// a caller reading both from here cannot bucket a page into a day
     /// its own label denies.

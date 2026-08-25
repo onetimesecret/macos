@@ -85,7 +85,7 @@ public struct TimeRailView: View {
     ///
     /// A number that is routinely above zero in dogfood means the
     /// content bar is set wrong, which is ADR-0020's fifth eject
-    /// trigger — so this line is a measurement as much as a message.
+    /// trigger, so this line is a measurement as much as a message.
     @ViewBuilder
     private func hiddenPages(count: Int) -> some View {
         if let line = Self.hiddenPagesLine(count: count) {
@@ -103,14 +103,14 @@ public struct TimeRailView: View {
     /// The mark follows the selected page's day rather than the row
     /// that was last clicked, so a selection moved by the keyboard, or
     /// dropped onto another day by the fall after an expiry, moves it
-    /// too. A selection standing in a slot the rail draws no row for —
-    /// an empty slot, or a blank old page the content bar is holding
-    /// back — lights nothing at all: what is on screen is then not on
+    /// too. A selection standing in a slot the rail draws no row for (an
+    /// empty slot, or a blank old page the content bar is holding
+    /// back) lights nothing at all: what is on screen is then not on
     /// the rail, and marking a row would say the surface is somewhere
     /// it is not.
     ///
     /// Today is the one row that can answer to no slot, and while it
-    /// holds no page it takes the mark only by elimination — on the pad
+    /// holds no page it takes the mark only by elimination, on the pad
     /// where no drawn day holds a page, so there is nothing else the
     /// mark could sit on and today is the place the next page would
     /// land. Pure, because which row is lit is a decision and not a
@@ -126,13 +126,13 @@ public struct TimeRailView: View {
 
     /// The ⌘-number that lands on the row at this place on the rail.
     ///
-    /// ⌘1–⌘9 count the rail's rows while the mode is on, so the row at
+    /// ⌘1 to ⌘9 count the rail's rows while the mode is on, so the row at
     /// index 1 is what ⌘2 selects and its tooltip can say so. Asked of
     /// the keymap rather than spelled here, for `newPageHelp`'s reason:
     /// a user who moved the chord moves the tooltip with it, and a user
     /// who unbound it gets a tooltip that says only what the row does.
-    /// Nothing is bound past the ninth row, and a tenth day — which
-    /// takes ten live pages, one over the cap — simply has no chord.
+    /// Nothing is bound past the ninth row, and a tenth day (which
+    /// takes ten live pages, one over the cap) simply has no chord.
     static func chord(forRowAt index: Int, keymap: ResolvedKeymap) -> Keystroke? {
         let number = index + 1
         guard let command = CommandID.allCases.first(where: { $0.selectsPageNumber == number })
@@ -156,7 +156,7 @@ public struct TimeRailView: View {
             ? "One live page has nothing on it"
             : "\(count) live pages have nothing on them"
         return "\(pages), so no day is drawn for them. Turn the time tabs off in Settings "
-            + "to reach them — nothing is discarded to make room."
+            + "to reach them, nothing is discarded to make room."
     }
 }
 
@@ -179,8 +179,8 @@ private struct TimeRailRow: Identifiable {
 /// it that dies soonest, or the dashed rule when the day holds no page
 /// at all.
 ///
-/// Internal rather than private so the three pure decisions below — the
-/// target a tap resolves to and the two tooltips — can be tested without
+/// Internal rather than private so the three pure decisions below (the
+/// target a tap resolves to and the two tooltips) can be tested without
 /// a window, in the idiom `TabStripView.newPageHelp` and
 /// `SheetTab.holdMenuTitle` set.
 struct TimeUnitTab: View {
@@ -278,7 +278,7 @@ struct TimeUnitTab: View {
     }
 
     /// The chord in parentheses after the description, or the plain
-    /// description when the keymap bound nothing — `newPageHelp`'s
+    /// description when the keymap bound nothing, `newPageHelp`'s
     /// shape, so every tooltip in the app degrades the same way.
     private static func chorded(_ what: String, chord: Keystroke?) -> String {
         guard let chord else { return what }

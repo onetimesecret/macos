@@ -14,7 +14,7 @@
 ## Context
 
 Issue #79 asks for a page per unit of time, with the tabs turned down
-the side of the card and labelled relative to now — Today, -1d, -3d. The
+the side of the card and labelled relative to now: Today, -1d, -3d. The
 issue is labelled `decision` as much as `prototype`, and the decision
 underneath it is prior to any pixel: what is a unit of time made of.
 
@@ -27,7 +27,7 @@ tab-per-day meets `DEFAULT_SHEET_CAP = 9`
 which `restore` enforces on the way in as well, refusing a file that
 claims more tabs than the cap as `Malformed`
 (crates/core/src/persist.rs:252), and it makes the calendar a second
-lifetime mechanism for a durable slot — the condition
+lifetime mechanism for a durable slot, the condition
 ADR-0017 names in as many words as its own eject trigger, which reopens
 that ADR and ADR-0016 or does not ship. A persisted day object needs a
 field in the snapshot, and the framing rule buys only *appended,
@@ -76,8 +76,8 @@ back-dated tab; a tab stamp would label a page typed this morning "Day
 issue's own rule: no page, no unit.
 
 **The core answers, and it answers relatively.** `summary_json` gains
-`page_day_offset` — 0 for today, -1 for yesterday, null for a slot
-holding no page — and `page_has_content`. `local_offset_seconds` stays
+`page_day_offset` (0 for today, -1 for yesterday, null for a slot
+holding no page) and `page_has_content`. `local_offset_seconds` stays
 off the ABI and no `Foundation.TimeZone` is used anywhere, so the tab's
 `MMDD-HHmm` label and the day it is bucketed into cannot disagree at a
 DST change. Shipping the *relative* offset rather than a day index is
@@ -92,7 +92,7 @@ every 30 s at rest, shell/Sources/OnetimePad/BackdropStance.swift:182-187).
 new reason to fire, and no `Timer` is added.
 
 **Content is the ledger's bar.** A unit is listed when one of its pages
-holds non-whitespace ink or at least one chip — the exact predicate
+holds non-whitespace ink or at least one chip, the exact predicate
 `entomb` already applies to decide whether a dying page did anything
 worth recording (crates/core/src/store.rs:1364-1371), extracted as
 `Sheet::has_content()` and called by both. A day therefore gets a row
@@ -113,7 +113,7 @@ gestures plus the Return grant.
 middle day's page expires the unit is absent and the perforation joins
 its neighbours, carrying the surviving label. There is no placeholder
 row and no renumbering, because a row for a day whose pages are gone is
-durable state remembering a deletion — a tombstone (ADR-0009) and an
+durable state remembering a deletion: a tombstone (ADR-0009) and an
 archive-shaped record (doc 03 §1). Underneath, the tab stays standing,
 named and empty, exactly as `expire_due` leaves it.
 
@@ -146,15 +146,15 @@ still nothing a user can see: the projection, the flag, the mode-aware
 targets and `openToday()` landed together with no Settings row and no
 rail, deliberately, so that a branch merged on its own can never show a
 control that does nothing. The model's every law is now argued in tests
-that build no window, and the identity that protects horizontal mode —
-the target list with the mode off equals the strip element for element —
-is an assertion rather than a promise. Items 11 onward are still work.
+that build no window, and the identity that protects horizontal mode (the
+target list with the mode off equals the strip element for element) is an
+assertion rather than a promise. Items 11 onward are still work.
 
 **Landed 2026-08-25, third pass.** Item 11 is in the tree, and it is the
 one item in this list whose whole claim is that nothing happened: the
 editor's building and its page swap now have names and callers of their
 own, and horizontal mode does not know. The evidence is the shape of the
-change — no existing test needed a line — and it is worth pressing on in
+change (no existing test needed a line) and it is worth pressing on in
 review, because a flag dropped out of the editor's construction is
 invisible until the day it matters. Items 12 onward are still work.
 
@@ -162,7 +162,7 @@ invisible until the day it matters. Items 12 onward are still work.
 the first thing in this decision a user can see: the rail, the card's
 branch and the Settings row that turns them on. The mode is now
 judgeable on navigation and toggle safety alone, which is why the rail
-was put before the roll — the biggest engineering is still ahead and
+was put before the roll: the biggest engineering is still ahead and
 can be reverted without taking the mode with it. The rail carries none
 of the strip's four verbs and says so in its own caption, which is the
 honest cost of shipping this half first. Items 13 and 14 are still
@@ -176,8 +176,8 @@ editor. It is built by the shipped factory, driven by the editor's own
 coordinator, and it is a permanent child of the stack whose frame origin
 is all that moves at a day switch, so nothing resigns first responder
 crossing a perforation. Every other visible day is a rendering over a
-storage the model never learns of, which is what keeps one view — and
-therefore one layout manager — per storage true by construction rather
+storage the model never learns of, which is what keeps one view (and
+therefore one layout manager) per storage true by construction rather
 than by care. Nothing is outstanding now except the dogfood window this
 decision's status waits on.
 
@@ -188,8 +188,8 @@ decision's status waits on.
    `placeholder_title` calling it and re-exported from
    crates/core/src/lib.rs to satisfy `missing_docs`. Its doc comment
    states that the offset is read at render time, so a stamp within an
-   hour of local midnight can bucket differently after a DST change —
-   the property `placeholder_title` already has and its tests already
+   hour of local midnight can bucket differently after a DST change. That
+   is the property `placeholder_title` already has and its tests already
    pin (crates/core/src/sheet.rs:1170-1185).
 
    **Landed.** The conversion to local seconds both readings need came
@@ -306,7 +306,7 @@ decision's status waits on.
     Two things came out of the work that the item had not named. Editing
     stays with the mount rather than with the building, because
     `readOnly` is the backdrop's stance and not a property of the editor
-    — `updateNSView` re-gates it on every pass — so the factory sets no
+    (`updateNSView` re-gates it on every pass), so the factory sets no
     `isEditable` and takes no `readOnly`. And `saveViewState` and
     `restoreViewState` now take an optional scroll view: a caret belongs
     to the page wherever the page is mounted, an offset belongs to the
@@ -333,7 +333,7 @@ decision's status waits on.
     The card branches at
     shell/Sources/OnetimePad/Views/BackdropRootView.swift:114 with the
     strip row at :139, and the toggle sits at
-    shell/Sources/CompanionKit/SettingsSections.swift:122 — the Surface
+    shell/Sources/CompanionKit/SettingsSections.swift:122. The Surface
     form's `.frame(height: 120)` is still at
     shell/Sources/OnetimePad/BackdropSettingsWindow.swift:81, untouched
     and unraised, because nothing was added to it. The line numbers in
@@ -344,7 +344,7 @@ decision's status waits on.
     (shell/Sources/CompanionKit/TimeUnits.swift:134): the rail carries
     `SheetTab`'s accessibility triple and the third of those had no
     source, and looking it up in the summaries would have let a row
-    speak one page's clock while drawing another's — the gauge already
+    speak one page's clock while drawing another's. The gauge already
     comes from the day's soonest-dying page, and now so do both readings
     of its countdown. Second, which row is lit is a decision and not a
     drawing, so it is a pure function too (`selectedBucket`): the mark
@@ -395,9 +395,9 @@ decision's status waits on.
     rendering cache needs an invalidation as well as a prune
     (`PageModel.invalidateQuietRendering(for:)`): a cached day is sound
     only while the day cannot change, so the model drops a page's
-    reading wherever that page's document moves — the accepted arm of
+    reading wherever that page's document moves: the accepted arm of
     `applyOps`, the accepted arm of `syncDocument`, and
-    `removeChipFromDocument` — and the roll re-reads a region whose
+    `removeChipFromDocument`, and the roll re-reads a region whose
     rendering the model rebuilt. Invalidating on the editor's way past
     alone was the first version of this, and the review of this stack
     found it wrong on four paths at once: an edit made with the strip
@@ -407,13 +407,13 @@ decision's status waits on.
     the editor left it. A cache invalidated by a view's choreography is
     correct only on the paths somebody thought of. A pad with no live page
     anywhere needs the editor *parked* rather than re-parented
-    (`DayStackView.parkEditor()`) — a fresh empty storage, no height, and
-    the model's weak handle dropped — because a permanent child must not
+    (`DayStackView.parkEditor()`): a fresh empty storage, no height, and
+    the model's weak handle dropped, because a permanent child must not
     go on showing a page that expired. A day holding two pages needed a
     third mark, the hairline, since a tear between them would have said
     "a day passed" and lied. And the summon's re-anchor is
     `PageModel.anchorOnToday()` behind the `onAnchorToday` closure,
-    called from `BackdropModel.raise(_:)` — but only for a
+    called from `BackdropModel.raise(_:)`, but only for a
     `BackdropRaise.summon`, and deliberately not for an activation:
     `raise` is also what `applicationDidBecomeActive` calls, so a ⌘Tab
     return re-keys the card without being a summon and must leave the
@@ -435,7 +435,7 @@ decision's status waits on.
 
     **Landed**, as
     docs/qa/verification-procedures/vertical-time-tabs.md, with two
-    cases the item had not listed — typing at the bottom of a long Day 0,
+    cases the item had not listed: typing at the bottom of a long Day 0,
     which is the path that re-measures a region on every keystroke, and a
     pad full of blank old pages, which is the instrument for the content
     predicate's own eject trigger. It opens with staging, because the
@@ -451,9 +451,9 @@ arranged two ways rather than two stores.
 
 **Stated cost, one.** The mode materializes a plaintext rendering of
 every visible day at mount, where horizontal mode holds one storage per
-page the user actually visits. This is not a new class of exposure — the
+page the user actually visits. This is not a new class of exposure (the
 core already holds every live page's plaintext, and horizontal mode
-reaches the same nine storages once the user has visited nine tabs — only
+reaches the same nine storages once the user has visited nine tabs), only
 an earlier one, and it sits inside ADR-0012's threat boundary rather than
 crossing it. It is bounded by the cap, released on mode flip and on
 unmount, and it is not lazily materialized: the bound is nine, and the
@@ -527,7 +527,7 @@ the toggle alone.
   does not carry. Then the day-header gutter is not enough and either the
   rail carries the verbs or the modes are less exclusive than this design
   assumes.
-- The toggle is found to have moved core state in either direction — a
+- The toggle is found to have moved core state in either direction: a
   changed tab, a changed selection the user did not make, a fresh sealed
   generation, or a rotation. That falsifies the property the whole
   two-way safety argument rests on.
@@ -537,7 +537,7 @@ the toggle alone.
 1. **Any unit but the day.** The bucketing is parameterised where
    retrofitting would be expensive and the core field is day-relative,
    but only the day is built and only the day is tested. A week needs a
-   week-start policy — Sunday or Monday, locale or fixed — and probably a
+    week-start policy (Sunday or Monday, locale or fixed) and probably a
    second core field, and a prototype has no basis to guess either.
 2. **Amending docs/spec/design/04-interaction-model.md.** The tab law
    there describes the horizontal strip, which is unchanged. It is

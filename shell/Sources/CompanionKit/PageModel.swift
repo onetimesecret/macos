@@ -240,9 +240,9 @@ public enum QuitSaveOutcome: Equatable, Sendable {
 /// What a navigation gesture can land on (issue #79).
 ///
 /// The strip has always offered exactly one kind of target, a durable
-/// slot, and ⌘1–⌘9 and ⌥⌘←/→ indexed the strip directly. With the days
-/// down the side they index days instead, and one of those days —
-/// today, which is a place whether or not a page is standing in it —
+/// slot, and ⌘1 to ⌘9 and ⌥⌘←/→ indexed the strip directly. With the days
+/// down the side they index days instead, and one of those days,
+/// today, which is a place whether or not a page is standing in it,
 /// answers to no slot at all. So the gestures route through this rather
 /// than forking: one path, two readings, and no new command id.
 ///
@@ -254,7 +254,7 @@ public enum QuitSaveOutcome: Equatable, Sendable {
 /// exclusive, default-off mode keeps the keyboard complete with no new
 /// surface at all.
 public enum SurfaceTarget: Equatable, Sendable {
-    /// A slot, by its tab id — every target the strip has ever had.
+    /// A slot, by its tab id: every target the strip has ever had.
     case tab(UInt64)
     /// Today, holding no page yet. Selecting it takes the shipped
     /// create path; nothing here is minted by being drawn (ADR-0017).
@@ -369,8 +369,8 @@ public final class PageModel: ObservableObject {
     /// calls `markDirty()`. A mark would take the sudden-termination
     /// hold and arm a debounced ciphertext write, so looking at the same
     /// pages a second way would buy a fresh sealed generation every time
-    /// the user changed their mind. Nothing else moves either — the
-    /// projection reads `tabs` and calls no core mutator — which is what
+    /// the user changed their mind. Nothing else moves either, the
+    /// projection reads `tabs` and calls no core mutator, which is what
     /// makes the toggle safe in both directions by construction rather
     /// than by care.
     ///
@@ -379,7 +379,7 @@ public final class PageModel: ObservableObject {
     /// draws no row for a slot holding no page, and the strip
     /// deliberately leaves a selection on one when the page expires
     /// under it. That is the state a user is most likely to flip this
-    /// from — the selected page died overnight — and entering the mode
+    /// from (the selected page died overnight) and entering the mode
     /// with it would show a surface with nothing selected, no editor
     /// mounted and no row lit until something else happened to call
     /// `refresh()`. So the mode's own reconciliation runs at its own
@@ -392,7 +392,7 @@ public final class PageModel: ObservableObject {
             // nothing to fall off; and a selection this mode does draw
             // is returned unchanged, so the toggle cannot move a
             // selection the user can see either before or after it. It
-            // mints nothing — `reconciledTimeSelection` never does — and
+            // mints nothing (`reconciledTimeSelection` never does) and
             // it marks nothing dirty, which is the whole of what
             // ADR-0020 asks a presentation preference to leave alone.
             if showsTimeUnits, !oldValue {
@@ -419,7 +419,7 @@ public final class PageModel: ObservableObject {
     /// that ran off the side of one day would run off the side of the
     /// roll, and a roll scrolling in two directions would have no honest
     /// anchor. So the chord cannot do the one thing it is for, and both
-    /// of the alternatives to saying so are worse than a sentence — a
+    /// of the alternatives to saying so are worse than a sentence, a
     /// dead key, or the stored preference rewritten under a surface that
     /// will not honour it, which hands horizontal mode back unwrapped
     /// for a keystroke whose effect the user was never shown.
@@ -487,8 +487,8 @@ public final class PageModel: ObservableObject {
     /// the clip and no roll to anchor.
     ///
     /// A closure rather than a Combine sink, for what the surface has to
-    /// do with it. Re-anchoring is one instant clip move at one moment —
-    /// a summon — and a publisher would mean a subscription to keep
+    /// do with it. Re-anchoring is one instant clip move at one moment (a
+    /// summon), and a publisher would mean a subscription to keep
     /// alive, a value to invent for it, and an anchor that could fire on
     /// a pass nobody asked for. The mounted surface hands the model a
     /// way to reach it and takes it back on dismantle.
@@ -549,8 +549,8 @@ public final class PageModel: ObservableObject {
     /// drops that page's entry on its way through
     /// (`invalidateQuietRendering(for:)`), so the rendering a page comes
     /// back with is built after the last edit it took rather than before
-    /// the first. The invalidation is at the mutation — an accepted op
-    /// batch, a wholesale mirror, a chip burned out of a document — and
+    /// the first. The invalidation is at the mutation (an accepted op
+    /// batch, a wholesale mirror, a chip burned out of a document), and
     /// deliberately not at the roll's swap, because a page can change
     /// while the roll is not the surface on screen at all, or while it
     /// is and the editor is standing on another day. A cache invalidated
@@ -1361,7 +1361,7 @@ public final class PageModel: ObservableObject {
     /// Computed, and cached nowhere on purpose. Every fact it rests on
     /// is already in `tabs`, which `refresh()` re-reads on every
     /// accepted edit, every expiry and every cosmetic redraw. A stored
-    /// copy would go stale the moment a page expired and — worse — it
+    /// copy would go stale the moment a page expired and (worse) it
     /// would freeze the day reading the core recomputes on each read,
     /// so the labels would stop rolling over at local midnight and the
     /// mode would need the timer this whole design exists to avoid.
@@ -1456,8 +1456,8 @@ public final class PageModel: ObservableObject {
     /// expired, deliberately: the slot is still there, and the surface
     /// shows its empty state rather than moving the user somewhere they
     /// did not ask to go. In this mode that slot is not on screen at
-    /// all — the rail draws days, and a day exists because a live page
-    /// is keyed to it — so a selection left there would name something
+    /// all, the rail draws days, and a day exists because a live page
+    /// is keyed to it, so a selection left there would name something
     /// nobody can see. It falls to the newest visible page instead. When
     /// no page is visible anywhere it stays exactly where it is, which
     /// is the empty Today the create grant is already waiting on.
@@ -1542,8 +1542,8 @@ public final class PageModel: ObservableObject {
     /// Forget how a page reads quietly, because the page has changed.
     ///
     /// Called from every path in this file that moves a page's document
-    /// — an accepted op batch, a wholesale mirror, a chip burned out of
-    /// one — and by the roll as the editor lands on a page, which is the
+    /// (an accepted op batch, a wholesale mirror, a chip burned out of
+    /// one), and by the roll as the editor lands on a page, which is the
     /// moment a page starts being able to change. Without it this cache
     /// would go on holding the page as it stood before, so the day the
     /// user just wrote on would come back, when they moved to another
@@ -1605,7 +1605,7 @@ public final class PageModel: ObservableObject {
 
     // MARK: Navigation — the keyboard map
 
-    /// What ⌘1–⌘9 count through and ⌥⌘←/→ walk, in the order the
+    /// What ⌘1 to ⌘9 count through and ⌥⌘←/→ walk, in the order the
     /// surface draws them (issue #79).
     ///
     /// With the mode off this is the strip, element for element, and a
@@ -1653,8 +1653,8 @@ public final class PageModel: ObservableObject {
     /// the index the walk has always begun at. With the days down the
     /// side it is the day the selected page was born on, which is not
     /// always that day's first entry, because a day can hold more than
-    /// one page. A selection the surface is not drawing — a slot whose
-    /// page expired, in a mode that draws no such slot — starts the
+    /// one page. A selection the surface is not drawing (a slot whose
+    /// page expired, in a mode that draws no such slot) starts the
     /// walk at the top, where today is.
     private func indexOfSelection(within targets: [SurfaceTarget]) -> Int {
         guard let selection else { return 0 }
@@ -1706,7 +1706,7 @@ public final class PageModel: ObservableObject {
     }
 
     /// ⌥⌘← / ⌥⌘→. Steps slots, not pages, and mints into the slot it
-    /// lands on when that slot is empty — or steps days, when the days
+    /// lands on when that slot is empty, or steps days, when the days
     /// are the thing on screen.
     ///
     /// The landing is `select`'s, and always was: the walk lands on
@@ -1988,7 +1988,7 @@ public final class PageModel: ObservableObject {
     public nonisolated static func capRefusal(showsTimeUnits: Bool) -> String {
         let wall = "the window holds 9 tabs, close one to make room"
         guard showsTimeUnits else { return wall }
-        return "\(wall) — the pages with nothing on them are behind the time tabs "
+        return "\(wall), the pages with nothing on them are behind the time tabs "
             + "toggle in Settings"
     }
 
@@ -2058,7 +2058,7 @@ public final class PageModel: ObservableObject {
     /// `newPage()`'s own refusal, widened in this mode to name the
     /// toggle (`capRefusal`).
     ///
-    /// Reached from gestures only — ⌘N, and the rail's Today row when it
+    /// Reached from gestures only, ⌘N, and the rail's Today row when it
     /// lands. Nothing calls it from `refresh()`, from a mount or from
     /// the toggle: what is displayed is not thereby minted (ADR-0017).
     public func openToday() {
@@ -2077,7 +2077,7 @@ public final class PageModel: ObservableObject {
     /// A summon: put the surface back on today (issue #79).
     ///
     /// Day 0 is the top of the roll, and between summons the scroll is
-    /// free — a reader can sit in Day -3 as long as they like. Coming
+    /// free, a reader can sit in Day -3 as long as they like. Coming
     /// forward is the moment that changes: the pad is furniture (doc 03
     /// section 2), and a pad untouched since yesterday should present
     /// today rather than wherever it was last left. So the clip goes
@@ -2438,7 +2438,7 @@ public final class PageModel: ObservableObject {
             // changed with it (issue #79). Here rather than at the
             // roll's swap: this is the path a keystroke takes in either
             // mode, and the page it names is not always a page the roll
-            // is on — or a page any roll is mounted over.
+            // is on, or a page any roll is mounted over.
             invalidateQuietRendering(for: sheet)
             markDirty()
             refresh()

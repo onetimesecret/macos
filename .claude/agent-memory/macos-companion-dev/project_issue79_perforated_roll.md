@@ -1,4 +1,4 @@
-# Issue #79 — the perforated roll (branch 6 of the vertical-time-tabs stack)
+# Issue #79: the perforated roll (branch 6 of the vertical-time-tabs stack)
 
 Landed 2026-08-25 on `claude/79-6-perforated-roll-ymyi7n`, over the time
 rail. ADR-0020 required-work items 13 and 14, which completes the list.
@@ -19,7 +19,7 @@ procedure.
   same live-page set as `storages`/`undoManagers`.
 - `PageModel.anchorOnToday()` and the `onAnchorToday` closure, called
   from `BackdropModel.raise()`.
-- `TabRenamePrompt.newName(for:)` in TabStripView.swift — the one diff
+- `TabRenamePrompt.newName(for:)` in TabStripView.swift, the one diff
   that file takes in this whole stack.
 
 ## Five things a later branch must not re-decide
@@ -31,7 +31,7 @@ procedure.
   is *parked* (fresh empty storage, zero frame, `activeEditor` dropped)
   rather than removed.
 - **A quiet region's storage is its own and the model never learns of
-  it.** That is what keeps one view — and therefore one layout manager —
+  it.** That is what keeps one view (and therefore one layout manager)
   per storage true by construction. `model.storage(for:)` is for the
   editor alone.
 - **The quiet region for the page the editor is moving onto comes out of
@@ -81,29 +81,29 @@ procedure.
   itself, so the swap's guard early-returns), a chip burned out of a day
   the editor had left, and a composition still marked as the editor
   leaves. `PageModel` now drops a page's rendering in `applyOps`
-  (accepted), `syncDocument` (accepted) and `removeChipFromDocument` —
+  (accepted), `syncDocument` (accepted) and `removeChipFromDocument`,
   and the chip's host page is looked up **before** the delete, from the
   core, because a chip can stand on a day with a rendering and no
   storage. Model-side correctness is only half: a `QuietPageView` never
   re-read its rendering, so it holds the object it was seeded from and
   `reseed(with:)` compares identity, driven from `quietRegion(for:)` and
-  from `refreshQuietRegions()` on the **ordinary** pass — none of these
+  from `refreshQuietRegions()` on the **ordinary** pass. None of these
   changes moves a bucket, a page id or the selection, so none of them
   changes the roll's signature.
 - **Settle the composition before `assembleRows`, not inside the swap.**
   The outgoing day's rendering is read from the core during assembly,
   and marked text is deliberately kept out of the core until it settles.
-  `settleComposition(before:)` runs first — and inside the `isLayingOut`
+  `settleComposition(before:)` runs first, and inside the `isLayingOut`
   gate, because settling grows the editor and a text view that grows
   posts a frame change.
 - **The anchor rides a summon, not an activation.** `BackdropModel.raise`
   is also `applicationDidBecomeActive`'s handler, so hanging
-  `anchorOnToday()` on it gave a ⌘Tab return the summon's behaviour —
+  `anchorOnToday()` on it gave a ⌘Tab return the summon's behaviour,
   contradicting ADR-0020, the spec, and the QA case this same stack
   wrote. `raise(_ reason: BackdropRaise)` now takes its reason and
   `BackdropModel.anchorsOnToday(raise:)` is the pure boundary (with a
   test). Summons: ⌃⌥Space, the menu-bar item, the click on the resting
-  card. Activations: ⌘Tab, the app switcher, **the Dock** — filed that
+  card. Activations: ⌘Tab, the app switcher, **the Dock**, filed that
   way because a Dock click arrives at `applicationDidBecomeActive` when
   the app is inactive and `applicationShouldHandleReopen` when it is
   active, and one gesture must not mean two things. The pasteboard
@@ -123,7 +123,7 @@ procedure.
 - **A merge on this stack carries a message.** `git merge --no-edit`
   takes git's bare "Merge branch X into Y" and no trailers, and the
   merges that carried the review's fixes up the chain (974102e, 129e3ba,
-  b76232c and the three before them) went out that way — they cannot be
+  b76232c and the three before them) went out that way. They cannot be
   corrected, since the alternative is an amend or a force-push and both
   are refused here. The stack's own convention, set by 82a36b7, is a
   one-sentence body saying what is being carried up plus the two
@@ -131,22 +131,22 @@ procedure.
 
 ## Taking main through the stack (2026-08-25)
 
-main moved while the six branches were built — the conceal rename
-(#106), ADR-0021 (#113) and the milestone-3 docs restructure (#103) —
-and it came in bottom-up: `origin/main` merged into 79-2, then 79-2 into
+main moved while the six branches were built: the conceal rename
+(#106), ADR-0021 (#113) and the milestone-3 docs restructure (#103).
+It came in bottom-up: `origin/main` merged into 79-2, then 79-2 into
 79-3 and so on to the tip. Four of the five conflicts were *adjacency*
 and not disagreement, which is the shape to expect from a rename landing
 under a stack: our new lines sat next to a line main reworded.
 
-- 79-2: `crates/core/src/lib.rs` (one re-export both sides edited —
+- 79-2: `crates/core/src/lib.rs` (one re-export both sides edited,
   `Promotion`→`Conceal` beside our appended `local_day`),
   `crates/ffi/src/lib.rs` (our four day-seam tests inserted directly
   above a doc comment main reworded), `MEMORY.md` (two index entries on
   one line; conceal above day seam, which keeps the #79 entries
   contiguous and made every later rung's MEMORY.md merge clean).
-- 79-3: `PageModel.swift` — the `showsTimeUnits` arm of `refresh()` sits
+- 79-3: `PageModel.swift`. The `showsTimeUnits` arm of `refresh()` sits
   immediately above "A promotion whose subject died", now "A conceal".
-- 79-5: `BackdropRootView.swift` — the card's off path is copied out in
+- 79-5: `BackdropRootView.swift`. The card's off path is copied out in
   full *on purpose*, so main's edit inside the original ("Promote and
   demote must not make the text jump" → "Raising and lowering") had to
   be taken into the copy or the branch's own "identical by inspection"
@@ -156,7 +156,7 @@ under a stack: our new lines sat next to a line main reworded.
 **Where the vocabulary had to move, and where it deliberately did not.**
 `DayScrollProjectionTests.swift` used `PromotionDraft`,
 `model.promotion` and `burnPromotedCopy()`; those are now `ConcealDraft`,
-`model.concealDraft` and `burnConcealedCopy()` — a compile error nothing
+`model.concealDraft` and `burnConcealedCopy()`, a compile error nothing
 on Linux would have caught, so grep the renamed symbols by hand after a
 merge like this. `QuietPageView`'s doc listed "promote" among the verbs
 that arrive with the editor, meaning the exit ramp; it says conceal now.
@@ -171,7 +171,7 @@ odds with the merged spec.
 ## Testing notes
 
 - `DayScrollView.makeRoll(model:coordinator:emptyHint:)` is a static so
-  the tests build what `makeNSView` builds — a SwiftUI `Context` cannot
+  the tests build what `makeNSView` builds: a SwiftUI `Context` cannot
   be made in XCTest, so `DayStackView.update(projection:selectedPage:
   readOnly:)` is the seam a test drives instead.
 - **Hold the window.** The stack is a subview of a scroll view inside a

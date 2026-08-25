@@ -741,8 +741,8 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
 /// epoch, counted after the stamp has been folded through the offset
 /// the caller's clock reports. The divide is `div_euclid` rather than a
 /// truncating one because the local reading can be negative even though
-/// the stamp cannot — the first hours of 1970 read from a zone west of
-/// UTC — and truncation would round those towards zero and call them
+/// the stamp cannot (the first hours of 1970 read from a zone west of
+/// UTC), and truncation would round those towards zero and call them
 /// the first of January.
 ///
 /// This is the crate's only bucketing arithmetic, and it is
@@ -754,7 +754,7 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
 /// The offset is read at render time and applied to an old stamp,
 /// never stored beside it. A page staged within an hour of local
 /// midnight can therefore bucket differently after a daylight-saving
-/// change or a flight — the property [`placeholder_title`] already had,
+/// change or a flight, the property [`placeholder_title`] already had,
 /// and the one its tests already pin. Storing a day index at creation
 /// would settle it, at the price of a field in the sealed snapshot and
 /// a durable answer to a question that is only ever asked at read time.
@@ -1340,7 +1340,7 @@ mod tests {
         // 2023-11-14T23:30:00Z. Nothing about the page changes here;
         // the offset does, which is what a daylight-saving change does
         // to a page already staged. The bucket moves with it, and so
-        // does the label — the property the placeholder always had.
+        // does the label, the property the placeholder always had.
         let near_midnight = 1_700_004_600_000;
         assert_eq!(
             local_day(near_midnight, 3600),

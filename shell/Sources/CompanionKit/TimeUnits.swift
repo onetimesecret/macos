@@ -7,8 +7,8 @@ import Foundation
 /// configurable and to start with the day, and this is what starting
 /// with the day costs honestly: the bucketing is parameterised at the
 /// seam where retrofitting it later would be expensive, and nothing
-/// here guesses at a week. A week needs a week-start policy — Sunday or
-/// Monday, the locale's or a fixed one — and probably a second field on
+/// here guesses at a week. A week needs a week-start policy (Sunday or
+/// Monday, the locale's or a fixed one) and probably a second field on
 /// the summary, and a prototype has no basis to choose either. When one
 /// is designed it arrives as a second case here, and every law below is
 /// already asking this enum rather than assuming a day.
@@ -30,8 +30,8 @@ public enum TimeUnit: String, Sendable {
     /// the page it stamped belongs to today. `label` folds the same way,
     /// and the fold has to happen here as well or the two disagree: a
     /// bucket of its own would draw a second row named "Today" above the
-    /// real one, and every lookup that asks for today by its bucket —
-    /// `openToday`, the summon's anchor — would find the empty one and
+    /// real one, and every lookup that asks for today by its bucket
+    /// (`openToday`, the summon's anchor) would find the empty one and
     /// mint beside the page the user can already see. One Today, by
     /// construction rather than by each caller remembering.
     public func bucket(dayOffset: Int) -> Int {
@@ -84,7 +84,7 @@ public enum TimeUnit: String, Sendable {
 /// else (issue #79).
 ///
 /// A unit of time is not an object the app creates, names, orders or
-/// reaps. It is this — a query over the pages that happen to be alive,
+/// reaps. It is this: a query over the pages that happen to be alive,
 /// recomputed whenever anyone asks, persisted nowhere. That is what
 /// keeps the calendar from becoming a second lifetime mechanism for
 /// tabs (ADR-0017's named eject trigger): no tab is created, closed,
@@ -105,22 +105,22 @@ public struct TimeUnitProjection: Equatable, Sendable {
     /// how long its first page has. A day holding no page carries the
     /// quiet values and the rail draws `EmptyRule` over them instead.
     ///
-    /// The two readings of that countdown — the one a row prints and
-    /// the one VoiceOver speaks — come from the same page as the gauge
+    /// The two readings of that countdown (the one a row prints and
+    /// the one VoiceOver speaks) come from the same page as the gauge
     /// and are carried here rather than looked up again in the view.
     /// A view that went back to the summaries for the spoken half could
     /// pick a different page from the one the bar is drawn from, and a
     /// row would then say one thing and show another.
     public struct Unit: Equatable, Sendable, Identifiable {
         /// How far back this day is, in units, counted from today: 0
-        /// for today, -1 for yesterday. Never above zero — a page from a
+        /// for today, -1 for yesterday. Never above zero, a page from a
         /// clock that went backwards is filed under today rather than
         /// ahead of it. Unique within a projection, which is what makes
         /// it the identity as well.
         public let bucket: Int
-        /// "Today", "-1d" — what the rail draws.
+        /// "Today", "-1d": what the rail draws.
         public let label: String
-        /// "today", "yesterday" — what VoiceOver says.
+        /// "today", "yesterday": what VoiceOver says.
         public let spokenLabel: String
         /// The pages this day holds, in strip order. Empty only for
         /// today, which is a place whether or not a page stands in it.
@@ -165,7 +165,7 @@ public struct TimeUnitProjection: Equatable, Sendable {
     /// pages would otherwise make today unreachable with no visible
     /// cause. Nothing is auto-discarded to make room: reaping blank
     /// pages is a lifetime mechanism nobody asked for. The number is
-    /// also the instrument for the content predicate itself — if it is
+    /// also the instrument for the content predicate itself, if it is
     /// routinely above zero in dogfood, the bar is set wrong
     /// (ADR-0020's eject triggers).
     public let hiddenBlankPages: Int
@@ -193,7 +193,7 @@ public struct TimeUnitProjection: Equatable, Sendable {
     ///   born tomorrow, so a positive offset is a host clock that went
     ///   backwards, and folding it into today's own bucket rather than
     ///   giving it one of its own is what keeps "Today" the name of
-    ///   exactly one row — which every lookup that asks for today by its
+    ///   exactly one row, which every lookup that asks for today by its
     ///   bucket then depends on.
     /// - A day's gauge, the countdown it prints and the countdown it
     ///   speaks all come from its soonest-dying page, ties going to the
@@ -208,7 +208,7 @@ public struct TimeUnitProjection: Equatable, Sendable {
         var rows: [Int: [TabSummary]] = [:]
         // A summary that claims a page but names neither its id nor its
         // day is not something the mode can draw or navigate to, so it
-        // is carried nowhere — and counted, because a live page the
+        // is carried nowhere, and counted, because a live page the
         // surface is not showing is exactly what the footer is for.
         var hidden = 0
         for tab in tabs {
@@ -233,9 +233,9 @@ public struct TimeUnitProjection: Equatable, Sendable {
                 pages.contains { $0.pageID == id }
             } ?? false
             // Today is drawn whether or not anything is on it. Nothing
-            // above zero reaches here — the grouping folded a backwards
+            // above zero reaches here, the grouping folded a backwards
             // clock's page into today, so its page is on screen rather
-            // than hidden behind an arithmetic nobody can see — which
+            // than hidden behind an arithmetic nobody can see, which
             // leaves this reading as the one place it names: bucket 0.
             let drawn = bucket >= 0 || holdsSelection || pages.contains(where: \.pageHasContent)
             guard drawn else {

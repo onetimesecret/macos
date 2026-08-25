@@ -1,4 +1,4 @@
-# Issue #79 — the time rail (branch 5 of the vertical-time-tabs stack)
+# Issue #79: the time rail (branch 5 of the vertical-time-tabs stack)
 
 Landed 2026-08-25 on `claude/79-5-time-rail-ymyi7n`, over the editor
 factoring. ADR-0020 required-work item 12. The first branch of this
@@ -31,11 +31,11 @@ that turns them on. The roll is still branch 6's.
 - **The card's two content rows are written out in full**, deliberately,
   so the off path is identical by inspection rather than by trusting a
   wrapper with one child. The cost is a remount of the editor on a
-  flip — which is what a deliberate flip should cost and what a
+  flip, which is what a deliberate flip should cost and what a
   keystroke must never pay.
 - **The lit row is the day the surface is showing, or nothing at all.**
-  A selection standing where the rail draws no row — an empty slot, or
-  a blank old page the content bar holds back — lights nothing, and an
+  A selection standing where the rail draws no row (an empty slot, or
+  a blank old page the content bar holds back) lights nothing, and an
   empty Today takes the mark only by elimination, on the pad where no
   drawn day holds a page. The stack's first CI run caught
   `selectedBucket` lighting Today for a slot it draws no row for, which
