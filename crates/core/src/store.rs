@@ -451,6 +451,23 @@ impl<C: Clock> SheetStore<C> {
         self.clock.now()
     }
 
+    /// The store's wall-clock reading, Unix epoch milliseconds.
+    ///
+    /// It sits beside [`now`](SheetStore::now) because the two answer
+    /// different questions and neither can be had from the other. A
+    /// caller saying how much longer something has wants the monotonic
+    /// reading, which survives a sleep and cannot be dragged about by
+    /// the system clock. A caller saying *which day* something happened
+    /// on wants this one, together with
+    /// [`local_offset_seconds`](SheetStore::local_offset_seconds) —
+    /// the same pair a [`Tab::label`] placeholder is rendered from, so
+    /// a caller reading both from here cannot bucket a page into a day
+    /// its own label denies.
+    #[must_use]
+    pub fn wall_ms(&self) -> u64 {
+        self.clock.wall_ms()
+    }
+
     // -----------------------------------------------------------------
     // Sealing — the gesture routes land here
     // -----------------------------------------------------------------
