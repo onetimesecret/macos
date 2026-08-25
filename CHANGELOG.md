@@ -136,8 +136,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   describes, which day that tab's page was born on relative to today and
   whether anything is on it, which is two more fields on a reading the
   app already takes and no new call, no renamed field and no change to
-  what is stored. Above that seam the days are one pure function over the
-  tabs the app already reads, and every rule the mode has lives in it: a
+  what is stored. Both fields are additive, so no caller outside this
+  repository has to move, but `crates/ffi` and `crates/core` go to
+  0.15.0 for the new reading. Above that seam the days are one pure
+  function over the tabs the app already reads, and every rule the mode
+  has lives in it: a
   day is shown when a page on it has something on it, or it is today, or
   it holds the page under the caret; today has a row whether or not
   anything is standing on it; several pages made on one day are grouped

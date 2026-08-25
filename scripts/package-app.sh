@@ -19,6 +19,9 @@
 # either configuration:
 #   open --env COMPANION_ALLOW_CAPTURE=1 dist/OnetimePad.app
 #   open --env COMPANION_ALLOW_CAPTURE=1 /Applications/OnetimePad.app
+# Both entry points take --allow-capture, which is the same launch
+# without the incantation: scripts/dev.sh --allow-capture and
+# scripts/install.sh --allow-capture.
 # Debug builds get a .debug bundle id so a dev instance and the
 # installed copy can coexist without contending for the menu bar,
 # defaults, keychain items, and state (ADR-0012).

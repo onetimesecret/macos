@@ -10,6 +10,15 @@
 # under a .debug bundle id and launches it from dist/.
 #
 # --no-launch installs without opening the app afterwards.
+#
+# --allow-capture launches with COMPANION_ALLOW_CAPTURE=1, which lifts
+# the surface's screen-capture exclusion for the life of that run, so
+# the window shows up in screenshots and screen recordings. This is a
+# release build, where the variable is the only thing that reveals the
+# Settings switch at all, and it seeds it on so a scripted run needs no
+# click. The opt-out is never persisted and fails closed at the next
+# launch (ADR-0012), which is why this is a flag and not the default.
+# Exporting the variable in the calling shell does the same thing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -21,15 +30,24 @@ if [[ -f scripts/local.env ]]; then
 fi
 
 NO_LAUNCH=0
-if [[ $# -gt 1 ]]; then
-  echo "too many arguments (the only flag is --no-launch)" >&2
-  exit 1
-elif [[ "${1:-}" == "--no-launch" ]]; then
-  NO_LAUNCH=1
-elif [[ -n "${1:-}" ]]; then
-  echo "unknown argument: $1 (the only flag is --no-launch)" >&2
-  exit 1
+ALLOW_CAPTURE=0
+# An exported COMPANION_ALLOW_CAPTURE means the same thing as the flag.
+# `open` does not forward the caller's environment to the app it starts,
+# so a variable set in this shell would otherwise be dropped on the way.
+if [[ -n "${COMPANION_ALLOW_CAPTURE:-}" ]]; then
+  ALLOW_CAPTURE=1
 fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-launch) NO_LAUNCH=1 ;;
+    --allow-capture) ALLOW_CAPTURE=1 ;;
+    *)
+      echo "unknown argument: $1 (the flags are --no-launch and --allow-capture)" >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
 
 # Refuse to point the destructive steps below at anything but a real
 # absolute destination, and refuse before any build work starts so a
@@ -118,6 +136,11 @@ install_bundle OnetimePad
 migrate_legacy_bundle CompanionBackdrop
 
 if [[ "$NO_LAUNCH" == 0 ]]; then
-  echo "==> Launching installed app"
-  open "$APP_DEST/OnetimePad.app"
+  if ((ALLOW_CAPTURE)); then
+    echo "==> Launching installed app (screen capture allowed)"
+    open --env COMPANION_ALLOW_CAPTURE=1 "$APP_DEST/OnetimePad.app"
+  else
+    echo "==> Launching installed app"
+    open "$APP_DEST/OnetimePad.app"
+  fi
 fi
