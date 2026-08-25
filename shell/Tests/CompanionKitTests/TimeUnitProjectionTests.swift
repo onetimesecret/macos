@@ -26,7 +26,8 @@ final class TimeUnitProjectionTests: XCTestCase {
         paused: Bool = false,
         toppedUp: Bool = false,
         lastHour: Bool = false,
-        remaining: String = "1h"
+        remaining: String = "1h",
+        spoken: String = "one hour"
     ) -> TabSummary {
         TabSummary(
             id: tab,
@@ -37,7 +38,7 @@ final class TimeUnitProjectionTests: XCTestCase {
             rungLabel: "7d",
             remainingMs: page == nil ? 0 : remainingMs,
             remainingLabel: page == nil ? "" : remaining,
-            spokenRemaining: page == nil ? "" : "one hour",
+            spokenRemaining: page == nil ? "" : spoken,
             fractionRemaining: page == nil ? 0 : fraction,
             paused: paused,
             holdToppedUp: toppedUp,
@@ -214,17 +215,24 @@ final class TimeUnitProjectionTests: XCTestCase {
     /// A row shows how long the day has left, not how long its first
     /// page has: the gauge is the soonest-dying page's, so a day cannot
     /// look comfortable while something on it is minutes from going.
+    ///
+    /// Both readings of that countdown come from the same page as the
+    /// bar — the one the row prints and the one VoiceOver speaks — so a
+    /// row cannot show one page's time and say another's.
     func testTheGaugeComesFromTheSoonestDyingPage() throws {
         let projection = project([
             slot(
                 tab: 1, page: 11, day: -1, content: true, remainingMs: 7_200_000,
-                fraction: 0.9, remaining: "2h"),
+                fraction: 0.9, remaining: "2h", spoken: "two hours"),
             slot(
                 tab: 2, page: 22, day: -1, content: true, remainingMs: 600_000,
-                fraction: 0.1, paused: true, toppedUp: true, lastHour: true, remaining: "10m"),
+                fraction: 0.1, paused: true, toppedUp: true, lastHour: true, remaining: "10m",
+                spoken: "ten minutes"),
         ])
         let day = try XCTUnwrap(projection.units.last)
         XCTAssertEqual(day.remainingLabel, "10m")
+        XCTAssertEqual(
+            day.spokenRemaining, "ten minutes", "the row said one page and showed another")
         XCTAssertEqual(day.fractionRemaining, 0.1)
         XCTAssertTrue(day.paused)
         XCTAssertTrue(day.toppedUp)
@@ -239,6 +247,8 @@ final class TimeUnitProjectionTests: XCTestCase {
         let today = project([]).units.first
         XCTAssertEqual(today?.fractionRemaining, 0)
         XCTAssertEqual(today?.remainingLabel, "")
+        XCTAssertEqual(
+            today?.spokenRemaining, "", "an empty day read out a countdown it does not have")
         XCTAssertEqual(today?.paused, false)
         XCTAssertEqual(today?.lastHour, false)
     }
