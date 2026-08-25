@@ -1,7 +1,7 @@
 # docs/spec/feature/vertical-time-tabs/README.md
 ---
 
-# Feature: vertical time tabs — a page per unit of time
+# Feature: vertical time tabs, a page per unit of time
 
 Status: **draft**, prototype complete · 2026-08-25
 Scope: a prototype mode on the backdrop, behind a Settings toggle that
@@ -30,7 +30,7 @@ fixes".
 
 Turn the strip on its side and let each tab be a unit of time rather
 than a slot. Today at the top, yesterday under it, the days before that
-below, each labelled relative to now — Today, -1d, -3d — so the labels
+below, each labelled relative to now (Today, -1d, -3d), so the labels
 stay true without anyone rewriting them. One page per unit. The unit is
 configurable and the first one is the day. Day 0 is always displayed,
 whether or not anything is on it. A unit gets a tab only if its page has
@@ -45,8 +45,8 @@ to the scroll, what "content" means, and where Day 0 sits when the
 surface opens.
 
 One convention, stated once so that nobody has to guess it per citation.
-The line numbers in the argument sections — everything above "Change
-map" — name the tree each was **written against**, and the six branches
+The line numbers in the argument sections (everything above "Change
+map") name the tree each was **written against**, and the six branches
 have moved most of them since; the symbol beside each one is what to
 grep for. The change map, the "what the prototype answered" sections and
 the test plan describe the landed state, and their citations are
@@ -60,8 +60,8 @@ page's own birth stamp, computed on every read and stored nowhere.
 
 `Sheet::created_wall_ms` is the page's birthday in Unix milliseconds
 (`crates/core/src/sheet.rs`, the field split of ADR-0017). Fold it
-through the store's own UTC offset — the same offset the tab's
-`MMDD-HHmm` placeholder renders from — and a page has a local day index.
+through the store's own UTC offset (the same offset the tab's
+`MMDD-HHmm` placeholder renders from) and a page has a local day index.
 That fold used to be one line inside `placeholder_title`; branch 2
 hoisted it into `local_day` (`crates/core/src/sheet.rs:762`, the
 `local_seconds(…).div_euclid(86_400)` at `:763`), which
@@ -138,7 +138,7 @@ explicit that silent eviction of deliberately placed content would break
 trust, and eviction is by the TTL the user chose.
 
 The arithmetic that says nine is enough. A page's countdown runs at most
-seven days — the ladder's ceiling, with no forever rung
+seven days, the ladder's ceiling, with no forever rung
 (`crates/core/src/ttl.rs:26-33`, `:45-46`). A seven-day span, wherever
 inside a day it begins, touches at most eight distinct local days: the
 day it starts on, six whole days, and the day it ends on. So the pages
@@ -148,7 +148,7 @@ never asks the cap for a tenth tab.
 
 One case escapes that arithmetic, and it is better stated than hidden. A
 held page outlives its rung: every further pause press tops the hold up
-to twenty-four hours from now, and the store says so in as many words —
+to twenty-four hours from now, and the store says so in as many words:
 repeated pauses are how a page outlives its rung
 (`crates/core/src/store.rs:1191-1195`). A page held across a week can be
 born nine or ten days back and still be alive, and the rail will show its
@@ -163,7 +163,7 @@ user could be refused a new page with no visible cause. The answer is
 honesty rather than a new mechanism: the rail's footer shows a dimmed
 count of the live pages the projection is not showing, its tooltip names
 the Settings toggle as the way to reach them, and the refusal message in
-this mode names the toggle too. Nothing is auto-discarded — auto-reaping
+this mode names the toggle too. Nothing is auto-discarded: auto-reaping
 blank pages to make room is precisely the second lifetime mechanism the
 ADRs forbid. The count doubles as an instrument: if it is routinely
 non-zero in dogfood, the content predicate is wrong.
@@ -182,7 +182,7 @@ mints nothing. The rail mints nothing on selection. An empty Day 0 shows
 the empty state the app already ships, with its Return grant intact
 (`shell/Sources/CompanionKit/PageSurface.swift:281`, `EmptyStateKeyGrant`).
 
-Because every mint stamps `wall_ms()` — which is now — every page the
+Because every mint stamps `wall_ms()`, which is now, every page the
 user creates lands in Day 0 by construction. The gesture-only rule and
 the one-page-per-day shape turn out to want the same thing.
 
@@ -190,7 +190,7 @@ the one-page-per-day shape turn out to want the same thing.
 none does. That is `openToday()`, and it is deliberately not a new mint
 policy: it either selects an occupied tab, which cannot mint, or it goes
 through the shipped create path unchanged. No mint-target heuristic, no
-reuse of an arbitrary named empty tab — flipping back to horizontal must
+reuse of an arbitrary named empty tab: flipping back to horizontal must
 never reveal that a tab the user named now holds today's page.
 
 ## The three answers
@@ -209,7 +209,7 @@ would need durable state remembering that a day once had content. That
 is a tombstone for dead content, which ADR-0009 forbids for sealed bytes
 and doc 03 §1 calls the safety net that quietly becomes an archive. It
 would also have to live somewhere, and no content-derived or app-derived
-string may reach the durable Tab — ADR-0017's load-bearing refusal.
+string may reach the durable Tab, ADR-0017's load-bearing refusal.
 Renumbering the survivors to 1st, 2nd, 3rd would lie about time. Relative
 labels give the gap for free, which is the strongest argument for the
 issue's own choice of relative labels, and the issue's own example
@@ -225,7 +225,7 @@ is missing because it was blank.
 
 ### What "content" means: non-whitespace ink, or one chip
 
-Non-whitespace ink, or at least one sealed chip — answered core-side,
+Non-whitespace ink, or at least one sealed chip, answered core-side,
 never inferred from the shell.
 
 It is not a new predicate. It is the one `SheetStore::entomb` already
@@ -241,7 +241,7 @@ mark in the ledger.**
 would manufacture a day and hold a rail row for as long as the page
 lives. And there is no existing core definition of it, so it would be a
 second emptiness predicate in a codebase that already carries two
-security-load-bearing ones — `holds_no_page` fires key rotation and
+security-load-bearing ones: `holds_no_page` fires key rotation and
 `has_no_tabs` is the only condition that unlinks the sealed file, and the
 header warns in as many words against recomputing either shell-side
 (`crates/ffi/include/companion_ffi.h:237-253`).
@@ -262,7 +262,7 @@ zero, yesterday below it behind a perforation, and so on back through
 whatever is still alive.
 
 On launch, on entering the mode, and on every summon, the clip goes to
-the origin — instantly, unanimated, with no per-session scroll memory to
+the origin, instantly, unanimated, with no per-session scroll memory to
 persist or restore. That makes "Day 0 is always displayed" structural
 rather than enforced: there is no anchoring state that can be wrong, and
 it matches the order the issue itself writes the rail in.
@@ -314,29 +314,29 @@ strip's background and the strip's selected fill. Four decisions were kept out o
 are pure functions with tests of their own, in the idiom
 `TabStripView.newPageHelp` set:
 
-- `TimeUnitTab.target(for:)` (`:209`) — where a tap lands. It maps a
+- `TimeUnitTab.target(for:)` (`:209`), where a tap lands. It maps a
   unit to its first slot in strip order, and to `.today` only where a
   day answers to no slot at all, which is exactly what
   `PageModel.visibleTargets` does with the same units. A click on the
   second row and ⌘2 therefore cannot disagree about where the second day
   is, and a test asserts the two lists element for element.
-- `TimeRailView.selectedBucket(projection:selection:)` (`:98`) — which
+- `TimeRailView.selectedBucket(projection:selection:)` (`:98`), which
   row is lit. It follows the selected page's day rather than the row
   last clicked, so a selection the keyboard moved, or one that fell onto
   another day after an expiry, moves the mark too. A selection standing
-  where the rail draws no row — an empty slot, or a blank old page the
-  content bar is holding back — lights nothing at all, because what is
+  where the rail draws no row (an empty slot, or a blank old page the
+  content bar is holding back) lights nothing at all, because what is
   on screen is then not on the rail. An empty Today answers to no slot,
   so it takes the mark only by elimination: on the pad where no drawn
   day holds a page, and today is where the next page would land.
-- `TimeRailView.chord(forRowAt:keymap:)` (`:115`) — which chord a
+- `TimeRailView.chord(forRowAt:keymap:)` (`:115`), which chord a
   tooltip may name, asked of the keymap rather than spelled into the
   view, so a user who moved ⌘2 moves the tooltip with it and a user who
   unbound it gets a tooltip that says only what the row does. A tenth
   row has no chord and cannot: ten live days would take ten live pages,
   one over the cap.
 - `TimeRailView.hiddenPagesLine(count:)` and `hiddenPagesHelp(count:)`
-  (`:126`, `:133`) — the footer. The short form fits the 56pt column and
+  (`:126`, `:133`), the footer. The short form fits the 56pt column and
   the sentence behind it names the toggle, which is what doc 05's
   no-abbreviation-only rule asks for. It is absent entirely at zero: a
   line reading "0 blank" would be chrome measuring the absence of a
@@ -351,7 +351,7 @@ then have said one thing and shown another.
 
 What the rail deliberately does not carry, restated now that it exists:
 no rename, no close, no rung, no hold, no reorder, and no row at all for
-a tab holding no page — the tab is standing underneath, named and empty,
+a tab holding no page. The tab is standing underneath, named and empty,
 and the strip shows it again the moment the mode goes off. Nothing on
 the rail mints by being drawn; the one click that makes anything is an
 empty Today's, which takes the shipped create path and says so in its
@@ -368,7 +368,7 @@ The single persistent editor survives intact, which is the invariant this
 design is built around. The live `InkTextView` is a permanent child of
 the stack; when the selected day changes, only its frame origin moves and
 `removeFromSuperview` is never called on it, so nothing resigns first
-responder and focus, marked text and per-page undo survive a day switch —
+responder and focus, marked text and per-page undo survive a day switch,
 the exact class of bug issues #19, #22 and #23 closed. Every other
 visible page is a quiet region: a non-editable, non-selectable text view
 that refuses first responder, over its **own** `NSTextStorage` seeded
@@ -403,9 +403,9 @@ branch to get wrong.
 ## The toggle
 
 `showsTimeUnits` is a `@Published` boolean on `PageModel` whose `didSet`
-writes to the injected `UserDefaults`, seeded in `init` — the `wrapsLines`
-pattern, `shell/Sources/CompanionKit/PageModel.swift:333-336` and `:634`
-— default false. Its row goes in `ConnectionSettingsView`
+writes to the injected `UserDefaults` and is seeded in `init`, following the
+`wrapsLines` pattern (`shell/Sources/CompanionKit/PageModel.swift:333-336`
+and `:634`), and defaults to false. Its row goes in `ConnectionSettingsView`
 (`shell/Sources/CompanionKit/SettingsSections.swift:114-119`), not in
 `BackdropSettingsView`'s Surface form, whose hard-coded
 `.frame(height: 120)`
@@ -424,11 +424,11 @@ ways across an edit and asserts `client.tabs()`, `client.emptiness()`,
 the selection and the save status are unchanged.
 
 The keyboard gains no new chord. `CommandID` raw values are published
-contract — a user's own `keymap.json` names them — and a binding placed
+contract (a user's own `keymap.json` names them), and a binding placed
 in `.tabStrip` would validate, log `contextNotConsulted` and do nothing,
 because `KeymapContext.isConsulted` is true only for `.editor`
 (`shell/Sources/CompanionKit/Keymap/CommandID.swift:105-107`). Instead
-⌘1–⌘9 and ⌥⌘←/→ route through a mode-aware list of targets whose value
+⌘1 to ⌘9 and ⌥⌘←/→ route through a mode-aware list of targets whose value
 with the mode off equals the strip element for element, pinned by a
 dedicated test, and ⌘N branches to `openToday()` while the mode is on
 (`shell/Sources/CompanionKit/Keymap/KeymapRegistry.swift:27-28`).
@@ -452,7 +452,7 @@ day one.
 ## Change map, branch by branch
 
 Six stacked branches, each targeting the one below it, bottom-up into
-main. All six are in the tree as of 2026-08-25 — the decision, the seam,
+main. All six are in the tree as of 2026-08-25: the decision, the seam,
 the projection with its flag, the editor factoring, the rail with its
 Settings toggle, and the roll. The first four moved no pixel at all,
 deliberately; branch 5 is the first that a user can see and turn on, and
@@ -551,8 +551,8 @@ decision that is Rust, the more of it is validated before a PR exists.
   that), so the far side of a local midnight is reached by moving today
   and never by moving the page. An empty slot reports no day and no
   content; the fifteen existing summary keys are unchanged; and the
-  standing boundary-law test — seal a secret through every route, assert
-  the bytes appear in no JSON output — still passes untouched, because an
+  standing boundary-law test (seal a secret through every route, assert
+  the bytes appear in no JSON output) still passes untouched, because an
   integer and a bool carry no ink.
 - **Projection (pure Swift, no AppKit).** Today is a unit with or without
   a page; a day whose only page is whitespace is absent; a day whose page
@@ -561,7 +561,7 @@ decision that is Rust, the more of it is validated before a PR exists.
   blank; ordering is newest first; two pages born the same day land in one
   unit in strip order; the hidden count counts the live pages the
   projection drops; and the label tables for 0, -1, -7 and a positive
-  bucket, since a skewed clock must not invent a future day — a page
+  bucket, since a skewed clock must not invent a future day. A page
   stamped ahead of now is *filed* under today as well as labelled it, so
   that "Today" names exactly one row and the lookups that ask for today
   by its bucket cannot find an empty one standing above a peopled one.
@@ -597,9 +597,9 @@ decision that is Rust, the more of it is validated before a PR exists.
   same instance first responder; a quiet region refuses first responder;
   and a click in a quiet region promotes its page and lands the caret
   where it was clicked.
-- **The no-ops.** Mounting the roll emits no ops to any page — identical
+- **The no-ops.** Mounting the roll emits no ops to any page (identical
   document runs before and after, which is what makes "perforations are
-  chrome" an assertion — and undo after the editor moves cannot cross a
+  chrome" an assertion), and undo after the editor moves cannot cross a
   page boundary.
 - **Hardware** (branch 6, `docs/qa/verification-procedures/`): local
   midnight arriving while the card rests, with no timer firing; a middle
@@ -625,7 +625,7 @@ decision that is Rust, the more of it is validated before a PR exists.
   about modes, which is what keeps the toggle from moving core state in
   either direction.
 - **No change to the cap, the ladder, the 7d ceiling, the refusal message
-  or any default rung** — including a mode-specific default rung, which
+  or any default rung**, including a mode-specific default rung, which
   would be the mode reaching into core state.
 - **No change to horizontal mode's behaviour or pixels.** `GaugeBar` is
   public and `EmptyRule` and `HoldChip` are module-internal, so the rail
@@ -653,7 +653,7 @@ decision that is Rust, the more of it is validated before a PR exists.
   nothing while the mode is on: the dispatch refuses it and says so
   (`PageModel.wrapIsFixedNotice`) rather than leaving a dead key. The
   stored `wrapsLines` preference is untouched and resumes when the mode
-  is off, which is why the refusal is the whole of the behaviour — a
+  is off, which is why the refusal is the whole of the behaviour. A
   preference written blind under a surface that ignores it would hand
   horizontal mode back unwrapped.
 - **No per-page scroll memory in the mode.** The roll owns one offset.
@@ -686,7 +686,7 @@ Built exactly as argued, and cheaper than expected. A day is a bucket
 that a live page falls into; when the page expires the bucket is
 computed and nothing is in it, so the row is simply not there on the
 next read. There is no removal path, no tombstone, and no code that
-knows a day ever existed — which is the strongest form of the argument
+knows a day ever existed, which is the strongest form of the argument
 the answer above makes from principle. What the roll adds is the
 mechanical half: the regions are laid out top-down by frame in one pass
 over the projection, so a bucket that stops appearing closes the layout
@@ -695,8 +695,8 @@ up with no animation and nothing to reconcile.
 One thing had to be decided that the answer did not name: **a day
 holding two pages needed a second kind of mark.** A tear between the
 two would have said "a day passed" and lied. It renders as a plain
-hairline instead — `DayHeaderView.Mark.hairline`, chosen by a pure
-function with a test — so the vocabulary is now three marks: nothing
+hairline instead (`DayHeaderView.Mark.hairline`, chosen by a pure
+function with a test), so the vocabulary is now three marks: nothing
 above the roll's first header, a dashed tear at a day boundary, and a
 hairline between two pages of one day.
 
@@ -706,8 +706,8 @@ Built as argued and unchanged by building it. The predicate is
 `Sheet::has_content()`, the bar `entomb` already applied, with one
 definition and two callers; it crosses the seam as `page_has_content`,
 a boolean, so no document is ever read out to decide whether a day
-exists. The two exemptions — today is always a place, and the selected
-page's day is always drawn — turned out to be load-bearing in a way the
+exists. The two exemptions (today is always a place, and the selected
+page's day is always drawn) turned out to be load-bearing in a way the
 answer only implied: because the selected page's day is always present,
 the roll can rely on the selected page always having a region to stand
 in, and the editor never has to be mounted over a day the projection is
@@ -730,13 +730,13 @@ Which meant `BackdropModel.raise` could not be the one caller after all,
 because it is also what `applicationDidBecomeActive` calls: a ⌘Tab
 return is a raise over an already-raised card, and hanging the anchor on
 the raise gave that return the summon's behaviour. So the raise takes
-its reason — `BackdropRaise.summon` or `.activation` — and
+its reason, `BackdropRaise.summon` or `.activation`, and
 `BackdropModel.anchorsOnToday(raise:)` is the whole of the boundary, in
 one pure function with a test rather than in four call sites. The
 gestures that name **this surface** anchor: ⌃⌥Space, the menu-bar item,
 and a click on the resting card. The gestures that name **the app** do
 not: ⌘Tab, the app switcher, and the Dock icon. The pasteboard offer is
-deliberately not split this way — an offer is about what is on the board
+deliberately not split this way: an offer is about what is on the board
 now, and coming forward is when it is worth making however the user got
 there.
 
@@ -770,7 +770,7 @@ the height that arrived, so nothing shifts under a sentence being read.
 - **A parked editor.** When no live page is visible at all the editor
   cannot be re-parented (it is a permanent child) and must not keep
   showing the page that expired. It is handed a fresh empty storage,
-  given no height, and the model's weak handle is dropped — the same
+  given no height, and the model's weak handle is dropped, the same
   thing a dismantle does, without the dismantle.
 - **One diff to `TabStripView.swift`**, for the rename prompt, which the
   "no diff at all" claim above now records as spent.
@@ -782,7 +782,7 @@ the height that arrived, so nothing shifts under a sentence being read.
 
 ## Open questions
 
-1. **Does reinterpreting ⌘1–⌘9 and ⌘N confuse the hands?** In the mode
+1. **Does reinterpreting ⌘1 to ⌘9 and ⌘N confuse the hands?** In the mode
    the numbers address days rather than slots, and ⌘N goes to today
    instead of making a tenth tab. *Leaning:* acceptable, because the
    modes are exclusive, the mode is off by default, and no user keymap
@@ -798,8 +798,8 @@ the height that arrived, so nothing shifts under a sentence being read.
 3. **Is a day the right unit, and is anything else worth building?** The
    issue says configurable, starting with the day. *Leaning:* a day, and
    nothing else until someone asks for a week and can say what a week
-   starts on. A week needs a week-start policy — Sunday or Monday, locale
-   or fixed — and probably a second core field.
+   starts on. A week needs a week-start policy (Sunday or Monday, locale
+   or fixed) and probably a second core field.
 4. **Is "an expired day and a blank day look the same" a problem?**
    *Leaning:* no. It is the issue's own example, and the alternative is a
    tombstone. But it is the first thing a dogfooder is likely to report as
@@ -848,7 +848,7 @@ produces something judgeable. Branch 6 is the rest: hand-laid AppKit
 geometry, a live editor riding inside a stack, and the hardware pass. If
 the geometry misbehaves, the documented fallback is to give the editor
 its own inner scroller sized to content, with elasticity off so it cannot
-swallow the wheel — same view, same responder, same coordinator, one
+swallow the wheel: same view, same responder, same coordinator, one
 extra clip.
 
 ## References

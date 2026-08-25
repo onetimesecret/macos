@@ -52,7 +52,7 @@ extension PageModel {
             // the side the page cannot: the roll wraps every day
             // whatever the preference says (issue #79). One command with
             // two readings of the same intent, the way `.pageNew` above
-            // has two — except that here the second reading is a
+            // has two, except that here the second reading is a
             // refusal, said out loud rather than written silently into a
             // preference the surface on screen is not honouring. The
             // gate is here, at the dispatch, so that the stored value

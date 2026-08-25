@@ -76,7 +76,7 @@ final class TimeRailTests: XCTestCase {
     }
 
     /// A day holding several pages answers with the first of them in
-    /// strip order — one row, one landing, and the rest of the day's
+    /// strip order, one row, one landing, and the rest of the day's
     /// pages reached by scrolling the roll rather than by the rail.
     func testADayHoldingSeveralPagesSendsAClickToItsFirst() throws {
         let projection = project([
@@ -113,7 +113,7 @@ final class TimeRailTests: XCTestCase {
     /// two rows do different things. Holding a page it is a jump like
     /// any other; holding none, a click takes the shipped create path,
     /// which is the one place on the rail where clicking makes
-    /// something — and the tooltip says so rather than promising a page
+    /// something, and the tooltip says so rather than promising a page
     /// that is not there.
     func testTodayIsARowWithOrWithoutAPageAndSaysWhich() throws {
         let bare = try XCTUnwrap(project([]).units.first)
@@ -135,7 +135,7 @@ final class TimeRailTests: XCTestCase {
 
     /// The tooltip names the chord the keymap actually bound, the way
     /// the + button's does: a keymap that moved ⌘2 moves this with it.
-    /// ⌘1–⌘9 count the rail's rows while the mode is on, so the row at
+    /// ⌘1 to ⌘9 count the rail's rows while the mode is on, so the row at
     /// index 1 is the one ⌘2 selects.
     func testTheTooltipNamesTheChordBoundToThatRow() throws {
         let model = try makeModel()
@@ -148,7 +148,7 @@ final class TimeRailTests: XCTestCase {
             "Go to yesterday (⌘2)")
     }
 
-    /// And says only what the row does when nothing is bound to it — a
+    /// And says only what the row does when nothing is bound to it, a
     /// tooltip advertising a chord the keymap took away is how the
     /// ledger tab came to offer ⌘0 after ⌘0 was withdrawn (issue #78).
     /// A tenth row has no chord either, and cannot: it would take ten
@@ -211,7 +211,7 @@ final class TimeRailTests: XCTestCase {
     /// Today with no page answers to no slot at all, so it takes the
     /// mark exactly when no other day has it: the empty pad, where
     /// today is where the next page would land. A selection sitting on
-    /// a slot the rail does not draw lights nothing, which is honest —
+    /// a slot the rail does not draw lights nothing, which is honest,
     /// the thing on screen is not on the rail.
     func testAnEmptyTodayIsLitOnlyWhenNoDayHoldsTheSelection() {
         let bare = project([slot(tab: 9)])
@@ -234,7 +234,7 @@ final class TimeRailTests: XCTestCase {
 
     /// VoiceOver gets the phrase, not the abbreviation, and the value
     /// beside it is the countdown of the page the row's gauge is drawn
-    /// from — the same triple `SheetTab` hands it for a slot.
+    /// from, the same triple `SheetTab` hands it for a slot.
     func testEachRowReadsItsDistanceAndItsClockOutLoud() {
         let projection = project([
             slot(tab: 1, page: 11, day: 0),

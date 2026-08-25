@@ -1,4 +1,4 @@
-# Issue #79 — the editor factoring (branch 4 of the vertical-time-tabs stack)
+# Issue #79: the editor factoring (branch 4 of the vertical-time-tabs stack)
 
 Landed 2026-08-25 on `claude/79-4-editor-factoring-ymyi7n`, over the day
 projection. ADR-0020 required-work item 11. A pure refactor whose whole
@@ -8,13 +8,13 @@ FocusLawTests) is unedited, which is the evidence.
 
 ## What exists now, in InkEditorView.swift
 
-- `InkEditorView.makeInkTextView(model:sheetID:coordinator:)` — the one
+- `InkEditorView.makeInkTextView(model:sheetID:coordinator:)`, the one
   editor built without a scroller: TextKit 1 stack, the page's storage
   with `shedLayoutManagers(from:keeping: nil)`, the storage delegate,
   every flag, the delegate wiring, `activeEditor`, `performSealedPaste`.
   `makeNSView` sheds the undo history, calls it, grants editing and
   wraps it in `scrollStack(for:)`.
-- `Coordinator.moveEditor(_:to:storage:restoringScrollIn:)` — the swap
+- `Coordinator.moveEditor(_:to:storage:restoringScrollIn:)`, the swap
   ceremony, statement for statement in its old order: discard the
   composition, save, shed, `replaceTextStorage`, delegate handoff,
   `currentSheet`, restyle, restore. `updateNSView` is a thin caller.
@@ -29,7 +29,7 @@ FocusLawTests) is unedited, which is the evidence.
 - **`saveViewState` and `restoreViewState` take `NSScrollView?`.** A
   caret belongs to the page wherever it is mounted; an offset belongs to
   the clip the page sits in. Passing nil runs the caret leg and skips
-  the scroll leg — no main-queue hop is scheduled, and an offset a
+  the scroll leg: no main-queue hop is scheduled, and an offset a
   scrolled mount saved is left standing rather than overwritten. That is
   the leg a roll with one scroller over several days takes.
 

@@ -150,8 +150,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// ⌘Tab (or the Dock icon) landing on this app raises the surface:
-    /// the user came here, so bring it, pulled to their Space and keyed
-    /// — unconditionally, never a rest, because activation only ever
+    /// the user came here, so bring it, pulled to their Space and keyed,
+    /// unconditionally, never a rest, because activation only ever
     /// means "bring it to me". The launch's own activation (and
     /// `showAbout`'s) is exempt: the backdrop starts resting, present
     /// but not summoned.
@@ -159,7 +159,7 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// Raised as an **activation** and not as a summon: the user named
     /// the app, not this surface, and someone who ⌘Tabbed away from a
     /// sentence in an older day is coming back to that sentence. What
-    /// hangs off the distinction is the roll's anchor — see
+    /// hangs off the distinction is the roll's anchor, see
     /// `BackdropRaise`.
     func applicationDidBecomeActive(_ notification: Notification) {
         if Date().timeIntervalSince(launchedAt) < 2 { return }

@@ -4,8 +4,8 @@ import Foundation
 
 /// Why the card is coming forward.
 ///
-/// The window cannot tell the difference — both end in a raised, keyed
-/// surface at the front of the active Space — and what the card is
+/// The window cannot tell the difference (both end in a raised, keyed
+/// surface at the front of the active Space) and what the card is
 /// *showing* has to (issue #79).
 ///
 /// A **summon** is the user naming this surface: ⌃⌥Space, the menu-bar
@@ -213,7 +213,7 @@ final class BackdropModel: ObservableObject, QuitFlushable {
 
     /// Which raises take the roll back to today. Pure, so the boundary
     /// between a summon and an activation is an assertion rather than a
-    /// comment — it is decided in one place, and the four call sites
+    /// comment, it is decided in one place, and the four call sites
     /// name their reason rather than each carrying a copy of the rule.
     nonisolated static func anchorsOnToday(raise reason: BackdropRaise) -> Bool {
         switch reason {

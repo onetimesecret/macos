@@ -8,7 +8,7 @@ import XCTest
 /// The projection is the whole of what the mode knows: which days exist,
 /// which pages are on them, which of them the surface draws and how each
 /// one reads. Swift builds only on macOS CI, so the model is deliberately
-/// two pure things — an integer the core computes, tested in Rust, and
+/// two pure things: an integer the core computes, tested in Rust, and
 /// this function over the summaries carrying it. Nothing below constructs
 /// a model, a view or a client; each case is a strip of summaries in, a
 /// shape out.
@@ -76,8 +76,8 @@ final class TimeUnitProjectionTests: XCTestCase {
         XCTAssertEqual(peopled.units.first?.tabIDs, [1])
     }
 
-    /// A slot whose page expired is on no day at all. The tab stands —
-    /// it is still in the strip this projection reads — but there is
+    /// A slot whose page expired is on no day at all. The tab stands (it
+    /// is still in the strip this projection reads) but there is
     /// nothing left to key a day on, so it draws no row and counts as
     /// nothing hidden either, because no live page is being kept back.
     func testASlotHoldingNoPageIsOnNoDay() {
@@ -156,7 +156,7 @@ final class TimeUnitProjectionTests: XCTestCase {
 
     /// A day the projection draws draws everything on it. The filter is
     /// by day and not by page, so a page never quietly disappears out of
-    /// a day that is on screen — and the hidden count stays about days
+    /// a day that is on screen, and the hidden count stays about days
     /// nobody can reach rather than about pages inside days they can.
     func testADrawnDayCarriesEveryPageOnIt() {
         let projection = project([
@@ -196,7 +196,7 @@ final class TimeUnitProjectionTests: XCTestCase {
     /// Nine slots can fill with old pages that have nothing on them, and
     /// the projection draws none of them: today becomes unreachable with
     /// no visible cause. The count is the honesty valve, and the
-    /// instrument for the content predicate itself — routinely above
+    /// instrument for the content predicate itself, routinely above
     /// zero means the bar is wrong (ADR-0020's eject triggers).
     func testTheHiddenCountIsTheLivePagesTheProjectionDrops() {
         let projection = project([
@@ -217,7 +217,7 @@ final class TimeUnitProjectionTests: XCTestCase {
     /// look comfortable while something on it is minutes from going.
     ///
     /// Both readings of that countdown come from the same page as the
-    /// bar — the one the row prints and the one VoiceOver speaks — so a
+    /// bar (the one the row prints and the one VoiceOver speaks) so a
     /// row cannot show one page's time and say another's.
     func testTheGaugeComesFromTheSoonestDyingPage() throws {
         let projection = project([
@@ -279,7 +279,7 @@ final class TimeUnitProjectionTests: XCTestCase {
     ///
     /// It files it under today as well, and not merely labels it so. Two
     /// rows both named "Today" would be a smaller lie than a page nobody
-    /// can see, but it is a lie the grouping does not have to tell — and
+    /// can see, but it is a lie the grouping does not have to tell, and
     /// one that costs, because the empty row would be the one every
     /// lookup asking for today by its bucket found first, and ⌘N would
     /// mint a second page beside the one already on screen.
@@ -302,7 +302,7 @@ final class TimeUnitProjectionTests: XCTestCase {
     /// slot whose page expired, deliberately, because the slot is still
     /// on screen; here it is not, so the selection falls to the newest
     /// visible page. With nothing visible anywhere it stays where it is,
-    /// which is the empty Today the create grant is waiting on — and it
+    /// which is the empty Today the create grant is waiting on, and it
     /// mints nothing in either case (ADR-0017).
     func testTheModesSelectionFallsToTheNewestVisiblePage() {
         let peopled = project([

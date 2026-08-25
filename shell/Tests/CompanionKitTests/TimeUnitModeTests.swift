@@ -2,8 +2,8 @@ import XCTest
 
 @testable import CompanionKit
 
-/// What the time-unit mode does to a live pad, and — the larger half of
-/// the claim — what it does not (issue #79).
+/// What the time-unit mode does to a live pad and (the larger half of
+/// the claim) what it does not (issue #79).
 ///
 /// The mode is a way of looking at the same pages, so the load-bearing
 /// assertions here are negative ones: with it off nothing about the
@@ -32,7 +32,7 @@ final class TimeUnitModeTests: XCTestCase {
 
     /// The days that actually hold pages. Today has a row whether or not
     /// anything is on it, so a claim about grouping is a claim about
-    /// these — and a run that happened to straddle local midnight would
+    /// these, and a run that happened to straddle local midnight would
     /// otherwise turn one honest day into two rows.
     private func peopledDays(_ projection: TimeUnitProjection) -> [TimeUnitProjection.Unit] {
         projection.units.filter { !$0.pageIDs.isEmpty }
@@ -54,7 +54,7 @@ final class TimeUnitModeTests: XCTestCase {
     // MARK: The identity that protects horizontal mode
 
     /// The branch's load-bearing claim, stated as an assertion rather
-    /// than as a promise: with the mode off, the list ⌘1–⌘9 and ⌥⌘←/→
+    /// than as a promise: with the mode off, the list ⌘1 to ⌘9 and ⌥⌘←/→
     /// index is the strip, element for element. The two modes share one
     /// routing path instead of two that would have to be kept in step,
     /// and this is what makes the sharing safe.
@@ -158,7 +158,7 @@ final class TimeUnitModeTests: XCTestCase {
 
     /// A model built over defaults that already carry the preference
     /// opens in the mode, which is the whole of what "persisted" means
-    /// here — one boolean, in `UserDefaults`, and nothing durable
+    /// here, one boolean, in `UserDefaults`, and nothing durable
     /// anywhere else.
     func testTheModeIsRememberedInTheDefaultsAndNowhereElse() throws {
         let (first, defaults) = try makeModel()
@@ -172,7 +172,7 @@ final class TimeUnitModeTests: XCTestCase {
     // MARK: Going to today
 
     /// ⌘N in the mode, on a pad with nothing on it. One page, minted
-    /// through the shipped create path, selected — and exactly one, so
+    /// through the shipped create path, selected, and exactly one, so
     /// the gesture is a jump rather than a stack of blank pages.
     func testOpenTodayOnAnEmptyPadMintsExactlyOnePageAndSelectsIt() throws {
         let (model, _) = try makeModel()
@@ -243,7 +243,7 @@ final class TimeUnitModeTests: XCTestCase {
     /// place rather than a page: on a pad with nothing on it the chord
     /// takes the shipped create path instead of finding nothing to
     /// select. That is a gesture minting, which is the only kind there
-    /// is (ADR-0017) — and the second press is a jump, so the chord
+    /// is (ADR-0017), and the second press is a jump, so the chord
     /// cannot stack blank pages up.
     func testTheFirstJumpChordLandsOnTodayAndCreatesWhenTodayIsEmpty() throws {
         let (model, _) = try makeModel()
@@ -266,7 +266,7 @@ final class TimeUnitModeTests: XCTestCase {
     /// ⌘2 counts days too, and a pad whose pages were all written today
     /// has one day: the chord has nowhere to go, where with the strip
     /// showing it lands on the second slot. That contrast is the whole
-    /// reinterpretation, stated on the only shape a test can build —
+    /// reinterpretation, stated on the only shape a test can build,
     /// no Swift test can move a page across a local midnight, because
     /// the ageing seam restores a snapshot with every creation stamp
     /// intact.
@@ -369,7 +369,7 @@ final class TimeUnitModeTests: XCTestCase {
     /// emptied slot, because the slot is still on screen and jumping
     /// somebody somewhere they did not ask to go is worse than showing
     /// them an empty state. The rail draws no such slot, so there the
-    /// selection falls to the newest page that is visible — and neither
+    /// selection falls to the newest page that is visible, and neither
     /// path mints.
     func testOnlyTheModeFallsASelectionOffASlotHoldingNoPage() throws {
         let (model, _) = try makeModel()
@@ -398,7 +398,7 @@ final class TimeUnitModeTests: XCTestCase {
     /// And the fall applies at the mode's own entrance, not only on the
     /// next refresh to happen along. Turning the toggle on from a
     /// selection standing on an emptied slot is the likeliest flip there
-    /// is — the page died overnight — and it used to open the mode with
+    /// is (the page died overnight) and it used to open the mode with
     /// nothing selected, no editor mounted and no row lit.
     func testTurningTheModeOnFallsASelectionTheRailWouldNotDraw() throws {
         let (model, _) = try makeModel()
@@ -426,7 +426,7 @@ final class TimeUnitModeTests: XCTestCase {
 
     /// The other two directions, which must not move: a selection the
     /// rail does draw is left exactly where it is, and leaving the mode
-    /// falls nothing at all, because the strip draws every slot — the
+    /// falls nothing at all, because the strip draws every slot, the
     /// emptied ones included, which is its own deliberate rule.
     func testTheToggleMovesNoSelectionTheSurfaceCanShow() throws {
         let (model, _) = try makeModel()
@@ -453,7 +453,7 @@ final class TimeUnitModeTests: XCTestCase {
     // MARK: The chord the mode takes away
 
     /// ⌥Z with the days down the side. The roll wraps every day whatever
-    /// the preference says, so the chord cannot do what it is for — and
+    /// the preference says, so the chord cannot do what it is for, and
     /// what it must not do instead is rewrite the stored preference
     /// under a surface that will not honour it, which would leave the
     /// flash claiming one thing while every line went on wrapping and

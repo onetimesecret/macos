@@ -985,8 +985,8 @@ pub unsafe extern "C" fn companion_clear_clipboard_if_ours(handle: *mut Companio
 /// place, its label and its rung here, with `has_page` false and every
 /// clock field meaningless.
 ///
-/// All three readings the walk needs — the monotonic instant, the UTC
-/// offset and the wall stamp — are taken once, before it starts. One
+/// All three readings the walk needs (the monotonic instant, the UTC
+/// offset and the wall stamp) are taken once, before it starts. One
 /// reading of today is what lets `page_day_offset` mean the same thing
 /// on every row of one answer.
 ///
@@ -3662,9 +3662,9 @@ mod tests {
             // on the machine reading this.
             assert_eq!(strip(handle)[0]["page_day_offset"].as_i64(), Some(0));
 
-            // Read against a later reading of today — which is what the
+            // Read against a later reading of today, which is what the
             // same pad answers once a local midnight has passed under
-            // it — the same page is yesterday's, then the day before.
+            // it, the same page is yesterday's, then the day before.
             // Nothing was rescheduled to make that true: the
             // subtraction happens on every call, which is the whole
             // reason no timer is needed.

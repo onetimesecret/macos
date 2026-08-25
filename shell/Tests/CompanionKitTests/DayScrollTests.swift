@@ -9,8 +9,8 @@ import XCTest
 /// stand, how tall the stack is, which view is the editor, and what
 /// happens to that one view when the selected day moves. None of it is
 /// worth modelling twice, so this suite builds the surface the app
-/// builds — `DayScrollView.makeRoll` is the same call `makeNSView`
-/// makes — and asserts against the frames AppKit actually gave it, in
+/// builds (`DayScrollView.makeRoll` is the same call `makeNSView`
+/// makes) and asserts against the frames AppKit actually gave it, in
 /// the `PageScrollTests` idiom.
 ///
 /// The days are hand-spread. A live core cannot put two pages on two
@@ -72,7 +72,7 @@ final class DayScrollTests: XCTestCase {
         )
     }
 
-    /// The model's real slots, filed under the days named for them — one
+    /// The model's real slots, filed under the days named for them, one
     /// entry per slot, in strip order.
     private func filed(_ model: PageModel, under days: [Int]) -> [TabSummary] {
         var tabs: [TabSummary] = []
@@ -124,7 +124,7 @@ final class DayScrollTests: XCTestCase {
     // MARK: The shape of the stack
 
     /// Every row is its header and then its region, and the document is
-    /// exactly as tall as the rows it holds — or as tall as the clip,
+    /// exactly as tall as the rows it holds, or as tall as the clip,
     /// when there is less writing than card.
     func testTheStackIsItsHeadersAndItsRegionsAndNothingElse() throws {
         let model = try makeModel()
@@ -579,7 +579,7 @@ final class DayScrollTests: XCTestCase {
     }
 
     /// The last page expires and the roll has nothing to show. The
-    /// editor stays a child of the stack — it is never re-parented — but
+    /// editor stays a child of the stack (it is never re-parented) but
     /// it stops standing over a page, and the ink of the page that died
     /// goes with it.
     func testTheLastPageExpiringLeavesNoInkOnScreen() throws {

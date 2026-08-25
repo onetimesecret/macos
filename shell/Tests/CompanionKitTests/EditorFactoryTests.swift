@@ -11,7 +11,7 @@ import XCTest
 /// representable that made a text view and a scroller in a single
 /// breath. A surface that shows several days at once needs the same
 /// editor mounted somewhere else (ADR-0020), and the danger in
-/// separating the two halves is not that the seam breaks loudly — it is
+/// separating the two halves is not that the seam breaks loudly, it is
 /// that a flag goes missing quietly. The flags below are the ones whose
 /// absence is invisible until it matters: rich text, or chips stop
 /// surviving an edit; undo, or ⌘Z beeps; the coordinator on both the
@@ -73,7 +73,7 @@ final class EditorFactoryTests: XCTestCase {
         // answers false however it was set. `enableFinding` sets both,
         // in the order `makeNSView` set them before the building was
         // factored out of it (9da5cdc), so what the built editor
-        // carries is what the mounted page has always carried — and the
+        // carries is what the mounted page has always carried, and the
         // bar is the switch that can be held to it.
         XCTAssertTrue(textView.usesFindBar, "the bar under the card's edge, not a second window")
         XCTAssertEqual(textView.textContainerInset.height, InkEditorView.Coordinator.topInset)
@@ -192,7 +192,7 @@ final class EditorFactoryTests: XCTestCase {
     /// The swap ceremony with no scroller of its own: the shape a
     /// surface that rolls several days past one clip will mount the
     /// editor in (ADR-0020). Everything that belongs to the page still
-    /// crosses — the storage, the storage delegate, the caret — and the
+    /// crosses (the storage, the storage delegate, the caret) and the
     /// offset, which belongs to a scroller rather than to a page, is
     /// simply not asked for.
     func testMovingTheEditorWithNoScrollerCarriesThePageAndItsCaret() throws {

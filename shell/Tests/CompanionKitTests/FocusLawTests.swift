@@ -281,8 +281,8 @@ final class FocusLawTests: XCTestCase {
     /// The roll shows several days at once, and every one of them is a
     /// text view. The law is that only one of them can ever hold the
     /// keyboard: the editor. A quiet day refuses first responder, the
-    /// window refuses to hand it over, and the model's single handle —
-    /// the one every grant and every summon focuses through — names the
+    /// window refuses to hand it over, and the model's single handle (the
+    /// one every grant and every summon focuses through) names the
     /// editor and nothing else.
     ///
     /// Real AppKit, because what is under test is a view's relationship

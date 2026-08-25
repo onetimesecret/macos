@@ -50,7 +50,7 @@ suite structurally cannot reach it.
 **The mode shows only the days the rungs let live.** The ladder tops out
 at 7d (`crates/core/src/ttl.rs`), and the backdrop opens tabs at
 `.sevenDays` (`shell/Sources/CompanionKit/FormFactor.swift`,
-`defaultRung`), so out of the box Day -1 back to Day -6 are reachable —
+`defaultRung`), so out of the box Day -1 back to Day -6 are reachable,
 but a pad re-rung to 8h shows only Day 0, and the mode then reads as
 broken when it is merely empty.
 
@@ -69,7 +69,7 @@ session:
 5. On the day of the session, turn the toggle on in Settings.
 
 If three days of waiting is not available, the second-best staging is to
-step the system clock forward a day between pages — but read the warning
+step the system clock forward a day between pages, but read the warning
 at the top of
 [clock-step-back.md](clock-step-back.md) first, since stepping the clock
 is destructive to software that is not under test, and note in the
@@ -93,7 +93,7 @@ defaults read com.onetimesecret.companion.backdrop showsTimeUnits
 
 The mode has no timer of its own and no midnight alarm. The labels are
 relative and the offsets behind them are recomputed on every read, so
-the ordinary cosmetic redraw rolls them over — 1 Hz while raised, one
+the ordinary cosmetic redraw rolls them over: 1 Hz while raised, one
 repaint every 30 s while resting. The accepted cost is stated in the
 spec and is what this case measures: **a label can be up to 30 s stale
 at local midnight while the card rests.**
@@ -104,7 +104,7 @@ at local midnight while the card rests.**
 2. Watch across midnight without touching the card.
 
 **Pass:** within about half a minute of the hour, every row's label
-moves back one — what was Today reads -1d, and a new Today row appears
+moves back one, so what was Today reads -1d, and a new Today row appears
 at the top of the rail and the roll with the empty state under it if
 nothing has been written yet. Nothing else moves: the tabs, their names
 and their rungs are unchanged, no page was created, and the countdowns
@@ -129,7 +129,7 @@ the labels. No ghost row, no placeholder, no renumbering.
 1. Stage three days, and give the middle day's page a short rung:
    right-click that day's gutter and use its **Shorten the countdown**
    item, which steps the ladder down one press at a time. The countdown
-   printed in the gutter is a label and not a button — the clickable
+   printed in the gutter is a label and not a button: the clickable
    countdown is the card header's, and it steps the *selected* page's
    rung, so click into the middle day first if you would rather use that
    one.
@@ -166,8 +166,8 @@ bounces; a page appears without a gesture asking for one.
    card, and re-anchoring on that path would move the roll under someone
    who never asked for it. Then do the same with the Dock icon, which is
    filed the same way for the same reason (the anchor rides the gestures
-   that name this surface — ⌃⌥Space, the menu-bar item, a click on the
-   resting card — and never the ones that name the app).
+   that name this surface (⌃⌥Space, the menu-bar item, a click on the
+   resting card) and never the ones that name the app).
 
 **Pass:** a ⌘Tab return leaves the scroll where it was, and so does a
 click on the Dock icon; ⌃⌥Space, the menu-bar item and a click on the
@@ -180,8 +180,8 @@ resting card all take it back to today.
 
 **Pass:** the caret stays visible; the roll does not jump, scroll itself
 or lose its place; the days below today move down as today grows and
-none of them flickers. Typing stays smooth with three days on screen —
-this is the path that re-measures a region on every keystroke, so a stall
+none of them flickers. Typing stays smooth with three days on screen.
+This is the path that re-measures a region on every keystroke, so a stall
 here is the thing to write down.
 
 **Fail:** a jump on any keystroke; a caret that leaves the viewport; a
@@ -202,7 +202,7 @@ how a zeroized chip's glyph comes back (ADR-0009).
 2. Click into an older day's region. The caret should land on the
    character you clicked, and that day becomes the page being written
    on.
-3. Type a few words there, then press ⌘Z several times — more times than
+3. Type a few words there, then press ⌘Z several times, more times than
    you typed.
 
 **Pass:** the undos rewrite the older day only, and stop when that page
@@ -242,7 +242,7 @@ renamed or re-ordered; a new sealed generation written for a flip.
    is what a deliberate flip in Settings costs and what no keystroke
    pays.
 4. And one expected move. Turning the mode **on** while the selected
-   tab's page has expired — the state an overnight expiry leaves —
+   tab's page has expired (the state an overnight expiry leaves)
    selects the newest day that is on screen instead, because the rail
    draws no row for a slot holding no page and a selection there would
    name something nobody can see. It creates nothing and it happens in
@@ -253,8 +253,8 @@ renamed or re-ordered; a new sealed generation written for a flip.
 
 1. Turn VoiceOver on (⌘F5) and tab into the card.
 
-**Pass:** each rail row announces its day in full words — "today",
-"yesterday", "3 days ago" — followed by how long the page on it that
+**Pass:** each rail row announces its day in full words ("today",
+"yesterday", "3 days ago") followed by how long the page on it that
 dies soonest has left, and the selected row announces as selected. The
 short forms (`-3d`) are on screen only; nothing is announced as an
 abbreviation alone. Each perforation announces the day, the page's name

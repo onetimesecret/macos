@@ -210,7 +210,7 @@ final class CoreContractTests: XCTestCase {
     /// The two facts a projection over days needs, decoded off the live
     /// core: which day the page was born on, relative to today, and
     /// whether anything is on it (ADR-0020). Both are the core's
-    /// answers — the day so a shell-side time zone can never disagree
+    /// answers, the day so a shell-side time zone can never disagree
     /// with the stamp on the tab, the content bar so there is one
     /// definition of it and not a second one up here.
     func testTheSummaryCarriesThePagesDayAndWhetherAnythingIsOnIt() throws {
