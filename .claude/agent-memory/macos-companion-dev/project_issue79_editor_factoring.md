@@ -33,7 +33,14 @@ FocusLawTests) is unedited, which is the evidence.
   scrolled mount saved is left standing rather than overwritten. That is
   the leg a roll with one scroller over several days takes.
 
-## Testing note
+## Testing notes
+
+**`usesFindPanel` cannot be asserted anywhere.** AppKit's two find
+switches are one choice: `enableFinding` sets the panel, then the bar,
+and the panel then reads back false. The first CI run of this stack
+failed on exactly that assertion. Hold a built editor to `usesFindBar`
+instead; the source order is the shipped one and must not be reordered
+to make a getter agree.
 
 `EditorFactoryTests` builds the editor in a headless window
 (PageScrollTests idiom) over `isolatedModel` + an ephemeral core.

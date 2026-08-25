@@ -22,7 +22,7 @@ that turns them on. The roll is still branch 6's.
 - `BackdropRootView.card` branches, and `ConnectionSettingsView` has
   the toggle. `TabStripView.swift` takes no diff at all.
 
-## Three contracts a later branch must not re-decide
+## Four contracts a later branch must not re-decide
 
 - **The rail's targets are `visibleTargets`' targets.** Both map a unit
   to its first slot in strip order, `.today` only where a day answers
@@ -33,6 +33,13 @@ that turns them on. The roll is still branch 6's.
   wrapper with one child. The cost is a remount of the editor on a
   flip — which is what a deliberate flip should cost and what a
   keystroke must never pay.
+- **The lit row is the day the surface is showing, or nothing at all.**
+  A selection standing where the rail draws no row — an empty slot, or
+  a blank old page the content bar holds back — lights nothing, and an
+  empty Today takes the mark only by elimination, on the pad where no
+  drawn day holds a page. The stack's first CI run caught
+  `selectedBucket` lighting Today for a slot it draws no row for, which
+  would have said the surface was somewhere it is not.
 - **The rail carries no verb.** No rename, close, rung, hold or
   reorder, and no row for a tab holding no page. `TabFramesKey` is
   never touched, so the two modes cannot contend over one preference

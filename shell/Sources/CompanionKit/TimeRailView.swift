@@ -103,17 +103,25 @@ public struct TimeRailView: View {
     /// The mark follows the selected page's day rather than the row
     /// that was last clicked, so a selection moved by the keyboard, or
     /// dropped onto another day by the fall after an expiry, moves it
-    /// too. Today is the one row that can answer to no slot at all, and
-    /// while it holds no page it takes the mark exactly when no other
-    /// day has it: that is the empty pad, where today is the place the
-    /// next page would land. Pure, because which row is lit is a
-    /// decision and not a drawing.
+    /// too. A selection standing in a slot the rail draws no row for —
+    /// an empty slot, or a blank old page the content bar is holding
+    /// back — lights nothing at all: what is on screen is then not on
+    /// the rail, and marking a row would say the surface is somewhere
+    /// it is not.
+    ///
+    /// Today is the one row that can answer to no slot, and while it
+    /// holds no page it takes the mark only by elimination — on the pad
+    /// where no drawn day holds a page, so there is nothing else the
+    /// mark could sit on and today is the place the next page would
+    /// land. Pure, because which row is lit is a decision and not a
+    /// drawing.
     static func selectedBucket(projection: TimeUnitProjection, selection: UInt64?) -> Int? {
         if let selection,
             let day = projection.units.first(where: { $0.tabIDs.contains(selection) }) {
             return day.bucket
         }
-        return projection.units.first { $0.bucket == 0 && $0.pageIDs.isEmpty }?.bucket
+        guard projection.units.allSatisfy({ $0.pageIDs.isEmpty }) else { return nil }
+        return projection.units.first { $0.bucket == 0 }?.bucket
     }
 
     /// The ⌘-number that lands on the row at this place on the rail.

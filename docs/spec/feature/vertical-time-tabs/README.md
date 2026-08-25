@@ -312,9 +312,12 @@ are pure functions with tests of their own, in the idiom
 - `TimeRailView.selectedBucket(projection:selection:)` (`:98`) — which
   row is lit. It follows the selected page's day rather than the row
   last clicked, so a selection the keyboard moved, or one that fell onto
-  another day after an expiry, moves the mark too. An empty Today
-  answers to no slot, so it takes the mark exactly when no other day has
-  it.
+  another day after an expiry, moves the mark too. A selection standing
+  where the rail draws no row — an empty slot, or a blank old page the
+  content bar is holding back — lights nothing at all, because what is
+  on screen is then not on the rail. An empty Today answers to no slot,
+  so it takes the mark only by elimination: on the pad where no drawn
+  day holds a page, and today is where the next page would land.
 - `TimeRailView.chord(forRowAt:keymap:)` (`:115`) — which chord a
   tooltip may name, asked of the keymap rather than spelled into the
   view, so a user who moved ⌘2 moves the tooltip with it and a user who
