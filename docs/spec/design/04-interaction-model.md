@@ -272,6 +272,18 @@ interior lines, so the slab renders contiguous. An unterminated fence
 carries the region to the end of the page, the same reading the styling
 gives its lines.
 
+**Links: ⌘-click opens, a plain click edits** (ADR-0023). A bare
+http(s) URL in body ink, and a markdown `[text](url)` whose target is
+http(s), render as links — link color, underlined — with the markdown
+syntax (the brackets, the parens, the URL between them) dimmed in place
+like a fence's rules: visible, never hidden, still exactly the bytes
+that were typed. Opening is an aimed gesture: ⌘-click opens the target
+in the default browser; a plain click is editing and only places the
+caret, so the URL's own text stays as reachable by mouse as any other
+ink. Nothing inside a fence is a link — a URL there is code — and the
+system's automatic link detection is off: what counts as a link is the
+restyle pass's one conservative reading, not the OS's.
+
 ## The keyboard map, complete
 
 | Keys | Action |

@@ -136,6 +136,17 @@ public struct InkEditorView: NSViewRepresentable {
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
+        // Link reading is the restyle pass's alone (ADR-0023): the
+        // system detector writes `.link` attributes as the user types,
+        // which is a rewrite of the page's styling outside restyle()
+        // and a second opinion about what counts as a URL.
+        textView.isAutomaticLinkDetectionEnabled = false
+        // And the styling is ours too. The default link attributes
+        // repaint every `.link` range blue-and-underlined over the
+        // restyle pass's work, and carry the pointing-hand cursor that
+        // promises open-on-click — the wrong promise on a page where a
+        // plain click edits (⌘-click is the opening gesture).
+        textView.linkTextAttributes = [:]
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(
             width: 12, height: Coordinator.topInset
@@ -952,6 +963,38 @@ public struct InkEditorView: NSViewRepresentable {
             menu.popUp(positioning: nil, at: NSPoint(x: cellFrame.minX, y: cellFrame.maxY), in: view)
         }
 
+        // MARK: Links — ⌘-click opens, a plain click edits (ADR-0023)
+
+        /// Every click on a `.link` range lands here, and the answer is
+        /// always "handled", because the default answer — open on any
+        /// click — makes the URL's own text uneditable by mouse. With ⌘
+        /// held the click is an aimed gesture and the link opens;
+        /// without it the click is editing, so the caret is placed
+        /// where the click fell, exactly as on any other ink.
+        public func textView(
+            _ view: NSTextView, clickedOnLink link: Any, at charIndex: Int
+        ) -> Bool {
+            let event = NSApp.currentEvent
+            guard event?.modifierFlags.contains(.command) == true else {
+                // The caret goes to the insertion point nearest the
+                // click, not merely to the clicked character's start;
+                // the char index is the fallback when no event is in
+                // flight to measure against.
+                if let event {
+                    let point = view.convert(event.locationInWindow, from: nil)
+                    view.setSelectedRange(
+                        NSRange(location: view.characterIndexForInsertion(at: point), length: 0)
+                    )
+                } else {
+                    view.setSelectedRange(NSRange(location: charIndex, length: 0))
+                }
+                return true
+            }
+            let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:))
+            if let url { NSWorkspace.shared.open(url) }
+            return true
+        }
+
         @objc private func copyOutChip(_ sender: NSMenuItem) {
             guard let id = (sender.representedObject as? NSNumber)?.uint64Value else { return }
             model.copyOutChip(id)
@@ -1152,9 +1195,14 @@ public struct InkEditorView: NSViewRepresentable {
                 ],
                 range: range
             )
+            // A link is laid back down to plain ink too: the character
+            // that breaks a URL has to un-link what it broke, and a
+            // line swallowed by a fence stops being clickable at all.
+            storage.removeAttribute(.link, range: range)
+            storage.removeAttribute(.underlineStyle, range: range)
             switch kind {
             case .body:
-                break
+                styleLinks(in: range, of: storage)
             case .heading(let level, let markerLength):
                 storage.addAttribute(
                     .font,
@@ -1186,6 +1234,40 @@ public struct InkEditorView: NSViewRepresentable {
                 // it belongs to the whole fence region and is painted
                 // by the layout manager, not laid down per line.
                 break
+            }
+        }
+
+        /// The hybrid link affordance (ADR-0023), laid down as
+        /// attributes on a body line: the construct carries `.link` and
+        /// reads as a link, and its markdown syntax — brackets, parens,
+        /// the URL between them — stays on screen, dimmed the way a
+        /// fence's rules are. What a click does with the `.link` is the
+        /// delegate's business (`textView(_:clickedOnLink:at:)`): ⌘
+        /// opens, a plain click only moves the caret.
+        private func styleLinks(in range: NSRange, of storage: NSTextStorage) {
+            let line = (storage.string as NSString).substring(with: range)
+            for link in InkStyle.links(in: line) {
+                guard let url = URL(string: link.target) else { continue }
+                let place = { (span: NSRange) in
+                    NSRange(location: range.location + span.location, length: span.length)
+                }
+                storage.addAttributes(
+                    [
+                        .link: url,
+                        .foregroundColor: NSColor.linkColor,
+                        .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    ],
+                    range: place(link.range)
+                )
+                for span in link.markup {
+                    storage.addAttributes(
+                        [
+                            .foregroundColor: NSColor.tertiaryLabelColor,
+                            .underlineStyle: 0,
+                        ],
+                        range: place(span)
+                    )
+                }
             }
         }
 
@@ -1788,6 +1870,105 @@ public enum InkStyle {
     /// that a slab of code reads as one thing without turning the page
     /// into a document of boxes.
     public static let codeBackground = NSColor.quaternaryLabelColor
+
+    /// One link a body line carries: the whole construct's range, the
+    /// URL a ⌘-click would open, and whichever spans of the construct
+    /// are markdown syntax rather than reading matter — dimmed on
+    /// screen the way a fence's rules are, never hidden. Ranges are
+    /// UTF-16 offsets into the line the link was read from.
+    public struct InkLink: Equatable {
+        public let range: NSRange
+        public let target: String
+        public let markup: [NSRange]
+
+        public init(range: NSRange, target: String, markup: [NSRange] = []) {
+            self.range = range
+            self.target = target
+            self.markup = markup
+        }
+    }
+
+    /// The links a line of body ink carries, in document order:
+    /// markdown `[text](url)` constructs first, then bare http(s) URLs
+    /// that fall outside them. Deliberately conservative — only http
+    /// and https, nothing with whitespace, and only strings `URL` will
+    /// actually parse — because a link is an affordance to open
+    /// something, and a guessed-at target is worse than plain ink.
+    /// Pure, so the reading is testable without a text view.
+    public nonisolated static func links(in line: String) -> [InkLink] {
+        let text = line as NSString
+        let full = NSRange(location: 0, length: text.length)
+        var found: [InkLink] = []
+        // `[text](url)`: the label reads as the link; the brackets, the
+        // parens and the URL between them are syntax. The URL half
+        // refuses parens and whitespace, which keeps the match from
+        // swallowing prose after a stray `(`.
+        if let markdown = try? NSRegularExpression(
+            pattern: #"\[([^\[\]]*)\]\((https?://[^()\s]+)\)"#
+        ) {
+            markdown.enumerateMatches(in: line, range: full) { match, _, _ in
+                guard let match, match.numberOfRanges == 3 else { return }
+                let target = text.substring(with: match.range(at: 2))
+                guard URL(string: target) != nil else { return }
+                let label = match.range(at: 1)
+                found.append(InkLink(
+                    range: match.range,
+                    target: target,
+                    markup: [
+                        NSRange(location: match.range.location, length: 1),
+                        NSRange(
+                            location: NSMaxRange(label),
+                            length: NSMaxRange(match.range) - NSMaxRange(label)
+                        ),
+                    ]
+                ))
+            }
+        }
+        // Bare URLs, outside any markdown construct already claimed.
+        // The match runs to whitespace and is then walked back off
+        // trailing punctuation, so `see https://example.com.` links the
+        // URL and leaves the sentence its full stop.
+        if let bare = try? NSRegularExpression(pattern: #"https?://[^\s<>]+"#) {
+            bare.enumerateMatches(in: line, range: full) { match, _, _ in
+                guard let match,
+                      !found.contains(where: {
+                          NSIntersectionRange($0.range, match.range).length > 0
+                      })
+                else { return }
+                let target = trimmedBareURL(text.substring(with: match.range))
+                guard target.utf16.count > "https://".utf16.count,
+                      URL(string: target) != nil
+                else { return }
+                found.append(InkLink(
+                    range: NSRange(
+                        location: match.range.location, length: target.utf16.count
+                    ),
+                    target: target
+                ))
+            }
+        }
+        return found.sorted { $0.range.location < $1.range.location }
+    }
+
+    /// Walks trailing sentence punctuation back off a bare URL: the
+    /// full stop after `https://example.com.` belongs to the sentence.
+    /// A closing paren comes off only while unbalanced, so the
+    /// Wikipedia idiom `…/Rust_(language)` keeps its tail while
+    /// `(see https://example.com)` gives the paren back to the prose.
+    private nonisolated static func trimmedBareURL(_ candidate: String) -> String {
+        var url = Substring(candidate)
+        while let last = url.last {
+            if ".,;:!?\"'".contains(last) {
+                url = url.dropLast()
+            } else if last == ")",
+                      url.filter({ $0 == ")" }).count > url.filter({ $0 == "(" }).count {
+                url = url.dropLast()
+            } else {
+                break
+            }
+        }
+        return String(url)
+    }
 
     /// What a line is, once the lines above it have been read.
     ///

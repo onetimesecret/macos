@@ -116,6 +116,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Links: ⌘-click opens, a plain click edits** (ADR-0023,
+  `docs/spec/design/04-interaction-model.md`). A bare http(s) URL in
+  body ink, and a markdown `[text](url)` with an http(s) target, now
+  render as links — link color, underlined, the markdown syntax dimmed
+  in place like a fence's rules, never hidden. Opening is an aimed
+  gesture: ⌘-click opens the target in the default browser, while a
+  plain click only places the caret, so the URL's own text stays as
+  editable by mouse as any other ink. Detection is the restyle pass's
+  one conservative reading — http and https only, trailing sentence
+  punctuation handed back to the sentence, nothing inside a fence — and
+  the system's automatic link detection stays off.
 - **A page a day, with the tabs down the side** (issue #79,
   `docs/spec/feature/vertical-time-tabs/README.md`,
   `docs/adr/0020-a-day-is-a-projection-of-live-pages.md`). A prototype
