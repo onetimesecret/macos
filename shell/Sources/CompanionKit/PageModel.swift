@@ -1283,6 +1283,14 @@ public final class PageModel: ObservableObject {
         storages = storages.filter { livePages.contains($0.key) }
         undoManagers = undoManagers.filter { livePages.contains($0.key) }
         selection = Self.reconciledSelection(current: selection, live: tabs.map(\.id))
+        // With the days down the side, a slot holding no page is not on
+        // the rail at all, so a selection left on one would be pointing
+        // at something the surface is not drawing. One boolean ahead of
+        // the fall leaves the strip's own reconciliation exactly as it
+        // was, and this arm mints no more than that one does.
+        if showsTimeUnits {
+            selection = Self.reconciledTimeSelection(current: selection, projection: timeUnits)
+        }
         // A promotion whose subject died — expiry, mostly; `close`
         // clears its own — must not keep the confirmation standing:
         // ↩ lands on "Create link", and a stale draft would answer a
@@ -1332,6 +1340,32 @@ public final class PageModel: ObservableObject {
     public nonisolated static func reconciledSelection(current: UInt64?, live: [UInt64]) -> UInt64? {
         if let current, live.contains(current) { return current }
         return live.first
+    }
+
+    /// Which tab the selection falls to while the days are down the
+    /// side and the slot it names is not one the rail is drawing
+    /// (issue #79).
+    ///
+    /// The strip's rule above keeps a selection on a tab whose page
+    /// expired, deliberately: the slot is still there, and the surface
+    /// shows its empty state rather than moving the user somewhere they
+    /// did not ask to go. In this mode that slot is not on screen at
+    /// all — the rail draws days, and a day exists because a live page
+    /// is keyed to it — so a selection left there would name something
+    /// nobody can see. It falls to the newest visible page instead. When
+    /// no page is visible anywhere it stays exactly where it is, which
+    /// is the empty Today the create grant is already waiting on.
+    ///
+    /// It never mints, for `reconciledSelection`'s reason: `refresh()`
+    /// runs on every accepted edit and every expiry, and a page expiring
+    /// under the cursor must not start a fresh countdown on nothing
+    /// (ADR-0017). Pure, so the fall is testable without a window.
+    public nonisolated static func reconciledTimeSelection(
+        current: UInt64?, projection: TimeUnitProjection
+    ) -> UInt64? {
+        let visible = projection.units.flatMap(\.tabIDs)
+        if let current, visible.contains(current) { return current }
+        return visible.first ?? current
     }
 
     /// The page's document, created on first use. A page restored from
