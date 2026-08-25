@@ -1,7 +1,11 @@
 # ADR-0021: Multi device sync over a blind relay
 
-- **Status:** proposed
-- **Date:** 2026-08-25
+- **Status:** accepted
+- **Date:** 2026-08-25. Drafted with two items flagged for ratification;
+  both were decided by the maintainer the same day (PR #113): the
+  one-key-frame join stands as drafted, and the fail-closed hold was
+  rejected in favor of the rule section 6 now records, a paused page
+  stays paused until it is unpaused.
 - **Depends on:**
   [ADR-0013](0013-document-provenance-and-block-metadata.md), which
   decided the shape of sync in the abstract: broadcast rules rather than
@@ -279,11 +283,14 @@ availability problem one layer down and widens section 4's admission by
 a full state snapshot per epoch, held continuously rather than only
 between a ceremony and the next wake.
 
-**Required work.** Issue #94 records the ratification and the two
-details the recommendation leaves open: what supersession means when a
-ceremony fails partway (section 2's ceremony rule is what prevents the
-half state), and what the device shows while it waits, which is issue
-#102's degraded-state sentence, not a silent spinner.
+Ratified 2026-08-25 (PR #113), including the enrollment and backfill
+split as stated above.
+
+**Required work.** Issue #94 keeps the two details the decision leaves
+open: what supersession means when a ceremony fails partway (section
+2's ceremony rule is what prevents the half state), and what the
+device shows while it waits, which is issue #102's degraded-state
+sentence, not a silent spinner.
 
 ### 6. Whose clock expires a page
 
@@ -317,7 +324,8 @@ expiring on a local wall clock without a terminal marker is a
 documented non-convergence pattern
 (https://jhellerstein.github.io/blog/crdt-turtles/). The device that
 expires a page publishes a signed terminal marker for the page id,
-refuses every further op for that id, and destroys the page's key.
+refuses every further op for that id, and destroys the page's key; the
+hold rule below is the one gate on who may publish that marker.
 Destroying the key kills the relay's buffered ciphertext for that page
 for everyone at once, which is stronger than deleting bytes and is the
 same structural argument as section 2. Locally, expiry stays
@@ -326,28 +334,46 @@ marker is what makes the second device's entombment agree with the
 first's, and each device writes its own ledger record, so two wall
 stamped ledgers describing one death is expected and correct.
 
-**The hold is a replicated register, and it fails closed.** The pause
+**The hold is a replicated register, and the hold wins.** Ratified
+2026-08-25: a paused page stays paused until it is unpaused. The pause
 machine (crates/core/src/store.rs:1160; one hour first press,
-twenty-four topped up, crates/core/src/store.rs:39, :43) becomes a
-replicated register on the logical clock. A hold extends the effective
-deadline only once every enrolled device has seen it; until then the
-minimum rule stands and the original deadline governs. The consequence
-is stated rather than discovered: a paused page still dies on schedule
-if an enrolled device was offline past the original deadline, because
-that device never saw the hold, computed the original expiry, and
-published a terminal marker that section 6's absorbing rule obliges
-everyone to honor. *Open for ratification: fail closed is this ADR's
-recommendation, and the maintainer has not yet confirmed it.* The
-rejected alternative, letting the hold win uncontested (fail open),
-keeps a paused page alive on the strength of a hold one device
-believes in and an offline device has never heard of, which turns a
-device in a drawer into a way for content to outlive the deadline
-every device agreed to at creation. "A page living too long is the
-failure this app exists to prevent" decides it.
+twenty-four hours topped up, crates/core/src/store.rs:39, :43) becomes
+a replicated register on the logical clock, and a live hold suspends
+the countdown on every device exactly as it suspends it locally. The
+hold is not a clock candidate under the minimum rule; it is policy,
+the user's own instruction, the same class of exception ADR-0016
+section 4 already grants a deliberate rung click. Two consequences
+make that safe to say. A device offline past the original deadline
+never saw the hold, so it still entombs its own copy on its own clock,
+and its plaintext does not outlive its own belief; what it may not do
+is publish the terminal marker, because for a synced page the marker
+may be published only by a device whose view of the hold register is
+current with the channel. And on reconnecting to a page still alive
+under a hold, the early-entombing device holds nothing and rejoins at
+the current key frame, which is section 5's recovery path doing double
+duty; the cost of its caution is a rejoin, never a divergence. The
+exposure is the one the pause gesture already sells locally: a page's
+life is its TTL plus the time the user deliberately held it, bounded
+per press by the hold ceiling.
 
-**Required work.** Issue #100 lands the rule with a test that drives
-two stores through a shared expiry and proves the earlier deadline
-fires, and amends `clock.rs`'s module doc in place: the monotonic
+**Rejected: fail closed**, this ADR's own first draft, under which the
+original deadline governed until every enrolled device had seen the
+hold, and an offline device's terminal marker killed a paused page for
+everyone. It was rejected because it turns a device in a drawer into a
+veto over a live gesture on the machine in front of the user. The
+minimum rule exists so a peer's clock cannot extend a page's life; a
+hold is not a clock, it is the user, and a held page is not living too
+long, it is living exactly as long as it was asked to. What survives
+of the fail-closed instinct is the marker gate above: an uninformed
+device still cannot extend anything, and it still cannot kill what it
+cannot see.
+
+**Required work.** Issue #100 lands the rule with two tests: one
+drives two stores through a shared expiry and proves the earlier
+deadline fires, and one holds a page on one store while the other
+sits out its original deadline, then proves the holder's page
+survives and the returning store rejoins rather than killing it. It
+also amends `clock.rs`'s module doc in place: the monotonic
 discipline survives for every locally observed interval, and the
 replicated policy is a second wall-clock reader beside the restart gap,
 subject to the same never-extend arithmetic.
@@ -407,11 +433,14 @@ establishing that the account is not the device.
   disagree sees pages die at the earlier of the two readings, which
   will occasionally read as a page dying early on the device with the
   slow clock. That is the accepted direction of error.
-- A paused page with an offline enrolled device dies on schedule
-  (pending the ratification flagged in section 6). The hold gesture
-  weakens from a certainty to a proposal once a second device is
-  enrolled, and issue #102's status surface has to say so rather than
-  let the user discover it.
+- A paused page stays paused across devices. A device that was
+  offline past the original deadline entombs its local copy on its own
+  clock and, on reconnecting, rejoins the still-live page at the
+  current key frame. Issue #102's status surface owes that device a
+  sentence: the page died here on schedule and came back because a
+  hold elsewhere kept it alive. The page's total life is its TTL plus
+  the held time, which is what the pause gesture already means on one
+  device.
 - A new device enrols empty and backfills only when a peer wakes. The
   new-laptop case works with everyone asleep, and shows an empty pad
   with an honest sentence until a peer comes online. Nobody is put in
