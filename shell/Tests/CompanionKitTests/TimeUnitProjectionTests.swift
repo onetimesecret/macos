@@ -264,15 +264,25 @@ final class TimeUnitProjectionTests: XCTestCase {
     /// A page cannot honestly be born tomorrow, so a bucket above zero
     /// means the host clock went backwards between the stamp and the
     /// reading. The mode calls that page today's rather than inventing a
-    /// future day, and it draws it rather than hiding it: a duplicate
-    /// label is a smaller lie than a page nobody can see.
-    func testAClockThatWentBackwardsCannotInventAFutureDay() {
+    /// future day, and it draws it rather than hiding it: the page stays
+    /// where the user can reach it.
+    ///
+    /// It files it under today as well, and not merely labels it so. Two
+    /// rows both named "Today" would be a smaller lie than a page nobody
+    /// can see, but it is a lie the grouping does not have to tell — and
+    /// one that costs, because the empty row would be the one every
+    /// lookup asking for today by its bucket found first, and ⌘N would
+    /// mint a second page beside the one already on screen.
+    func testAClockThatWentBackwardsIsFiledUnderTodayRatherThanAheadOfIt() {
+        XCTAssertEqual(TimeUnit.day.bucket(dayOffset: 3), 0, "a future day was invented")
         XCTAssertEqual(TimeUnit.day.label(bucket: 3), "Today")
         XCTAssertEqual(TimeUnit.day.spokenLabel(bucket: 3), "today")
 
         let projection = project([slot(tab: 1, page: 11, day: 3, content: false)])
-        XCTAssertEqual(projection.units.map(\.bucket), [3, 0])
-        XCTAssertEqual(projection.units.map(\.label), ["Today", "Today"])
+        XCTAssertEqual(projection.units.map(\.bucket), [0], "the skewed page took a row of its own")
+        XCTAssertEqual(projection.units.map(\.label), ["Today"])
+        XCTAssertEqual(
+            projection.units.first?.pageIDs, [11], "the skewed page is not on the day it reads as")
         XCTAssertEqual(projection.hiddenBlankPages, 0, "a page from a skewed clock went missing")
     }
 
