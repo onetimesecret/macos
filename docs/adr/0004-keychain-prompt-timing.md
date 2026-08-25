@@ -15,12 +15,12 @@ before they had asked for anything.
 
 The constraint is legibility of intent: a security prompt should appear
 at the moment the user can attribute it to something they did. "The app
-started" is not that moment. "I promoted a draft to the server" is.
+started" is not that moment. "I concealed a draft into a link" is.
 
 ## Decision
 
 The Keychain ACL prompt is allowed to appear only when a secret is
-actually used — a promotion reading the token — never for a presence
+actually used, a conceal reading the token, never for a presence
 check. Status surfaces (launch, Settings) may ask *whether* a token is
 stored, and that question must be answerable without decrypting.
 
@@ -33,7 +33,7 @@ is stored", not "we can read it right now".
 ## Consequences
 
 - No prompt at launch or when opening Settings; the prompt lands on the
-  promotion that spends the token, where the user can name the cause.
+  conceal that spends the token, where the user can name the cause.
 - `exists()` and `load().is_ok()` deliberately diverge: `exists()`
   returns `true` for an item the process is not (yet) authorized to
   decrypt. Anyone "simplifying" `exists()` back into a `load` reverts
@@ -41,7 +41,7 @@ is stored", not "we can read it right now".
   header all state the semantics so the divergence is contract, not
   quirk.
 - `has_token: true` no longer promises the next read will succeed; a
-  promotion can still hit a denied or failed read and must surface that
+  conceal can still hit a denied or failed read and must surface that
   itself.
 - A backend error in the presence check degrades to `has_token: false`
   (Settings must never wedge on the Keychain) — a broken Keychain is

@@ -4,20 +4,43 @@ GitHub milestones and issues are the source of truth for delivery status. This d
 
 ## Current milestone
 
+### [Multi device sync](https://github.com/onetimesecret/macos/milestone/3)
+
+**Goal:** a user's pages reach their second machine through a relay that can never read them, off until it is turned on, with the pad still working when there is no account and no network.
+
+- [#92 Reconcile the not a sync service doctrine with the relay ADR-0013 licenses](https://github.com/onetimesecret/macos/issues/92)
+- [#93 ADR-0021: multi device sync over a blind relay](https://github.com/onetimesecret/macos/issues/93)
+- [#94 Decide how a device joins when no peer is awake](https://github.com/onetimesecret/macos/issues/94)
+- [#95 Derive a per GOP key so relay ciphertext dies at the ceremony](https://github.com/onetimesecret/macos/issues/95)
+- [#96 There is no delta seam: the document module exports whole snapshots only](https://github.com/onetimesecret/macos/issues/96)
+- [#97 Pair devices with their own key exchange, not with the account](https://github.com/onetimesecret/macos/issues/97)
+- [#98 Authenticate the account and gate the relay channel](https://github.com/onetimesecret/macos/issues/98)
+- [#99 The relay protocol and what the relay is allowed to hold](https://github.com/onetimesecret/macos/issues/99)
+- [#100 Decide whose clock expires a page when two devices hold it](https://github.com/onetimesecret/macos/issues/100)
+- [#101 Make the compaction ceremony a coordinated protocol event](https://github.com/onetimesecret/macos/issues/101)
+- [#102 What sync looks like in the app: enrolment, status, and the off switch](https://github.com/onetimesecret/macos/issues/102)
+
+See the [detailed plan](plans/multi-device-sync.md).
+
+## Completed milestones
+
 ### [Dogfood fixes](https://github.com/onetimesecret/macos/milestone/2)
 
 **Goal:** repair the faults daily dogfood use has surfaced so the pad behaves like a native citizen: menus, focus, Spaces, rendering, and shortcuts.
 
-- [#41 Backdrop rests when clicking the app's own menus, so Edit ▸ Find never fires](https://github.com/onetimesecret/macos/issues/41)
 - [#22 Focus law regressions: new page focus and chip draft TTL expiry](https://github.com/onetimesecret/macos/issues/22)
 - [#23 Persistent editor view: undo, IME, and focus race correctness risks](https://github.com/onetimesecret/macos/issues/23)
+- [#41 Backdrop rests when clicking the app's own menus, so Edit ▸ Find never fires](https://github.com/onetimesecret/macos/issues/41)
 - [#73 Pinned surface captures clicks while invisible over a fullscreen Space](https://github.com/onetimesecret/macos/issues/73)
 - [#74 Cmd-tab return lands on Desktop 1, cannot drag between desktops, flickers on return](https://github.com/onetimesecret/macos/issues/74)
 - [#75 Markdown renders inside fenced code blocks, a comment becomes an h1](https://github.com/onetimesecret/macos/issues/75)
 - [#76 Project owned, Zed compatible JSON5 keymap as the source of shortcuts](https://github.com/onetimesecret/macos/issues/76)
 - [#77 Cmd-n as the default new page shortcut](https://github.com/onetimesecret/macos/issues/77)
+- [#78 Hide the ledger, resize arrows, page button, and header dot](https://github.com/onetimesecret/macos/issues/78)
 
-## Completed milestones
+[#79 Explore a page per unit of time with vertical time tabs](https://github.com/onetimesecret/macos/issues/79) remains open. It is an exploration of a different tab model rather than a fault, so it was deliberately not treated as a blocker for closing this milestone, and it carries forward on its own.
+
+Decisions: [ADR-0019](adr/0019-the-pad-is-on-every-space.md) (the pad is on every Space, and does not travel between them).
 
 ### [Trustworthy persistence](https://github.com/onetimesecret/macos/milestone/1)
 
@@ -40,7 +63,7 @@ See the [detailed plan](plans/trustworthy-persistence.md).
 ## Documentation map
 
 - [`adr/`](adr/): accepted and proposed architectural, security, and product decisions.
-- [`dogfood/ABERRATIONS.md`](dogfood/ABERRATIONS.md): raw dogfood observations awaiting triage or promotion.
+- [`dogfood/ABERRATIONS.md`](dogfood/ABERRATIONS.md): raw dogfood observations awaiting triage or a permanent home.
 - [`dogfood/DOGFOOD.md`](dogfood/DOGFOOD.md): durable operational guidance for dogfooders and contributors.
 - [`plans/`](plans/): detailed, milestone-scoped plans. These link to GitHub issues rather than copying their status.
 - [`qa/recovery-matrix.md`](qa/recovery-matrix.md): the seven persistence lifecycle cases, what asserts each one, and when its hardware procedure last ran.

@@ -35,7 +35,7 @@ several form factors and learn from the difference.
 
 The research's central finding is that "typed into" and "behind
 everything" are contradictory window states on macOS — even Plash, the
-reference wallpaper app, promotes itself to a floating level to accept
+reference wallpaper app, raises itself to a floating level to accept
 a click. The backdrop therefore does not blur the two; it is always in
 exactly one of two stances:
 
@@ -143,7 +143,7 @@ What the amendment grants, and what it holds back:
   licence to save, so a bad key or a damaged snapshot cannot overwrite
   yesterday's page with today's empty one. A refused save at quit is an
   alert, not a silent loss.
-- **Still no chips, no promotion, no network.** Persistence was the one
+- **Still no chips, no conceal, no network.** Persistence was the one
   authority argued for here. The rest of the v0 absences stand.
 
 This graduates the backdrop out of exploration, which fires ADR-0010's
@@ -186,7 +186,7 @@ Each absence, and why it falls:
   and it does not describe what the ledger is: a tab you visit, holding
   dead pages, showing nothing until asked. Nothing about it stands on
   the resting glance.
-- **Promotion and the network.** The exit ramp was to stay in the panel
+- **Concealing and the network.** The exit ramp was to stay in the panel
   until the backdrop earned it by an amendment here. This is that
   amendment. The backdrop reaches its own connection settings, and a
   token saved there is stored under the backdrop's own Keychain
@@ -239,7 +239,7 @@ Absent, each on purpose:
   (ADR-0010).~~ **Superseded by the persistence amendment above.** The
   no-fighting half of the reasoning survives it: the backdrop still
   never touches the panel's state file or its Keychain service.
-- ~~**No promotion, no network.**~~ **Superseded by the parity
+- ~~**No conceal, no network.**~~ **Superseded by the parity
   amendment, which is the amendment this bullet asked for.** The exit
   ramp was to stay in the panel until the backdrop earned it here.
 - ~~**No ledger.**~~ **Superseded by the parity amendment: the ledger
@@ -306,7 +306,7 @@ Added by the parity amendment:
    clipboard and clears it, ⌘↩ seals the selection or line, an external
    drop seals), and the resting glance draws the resulting excerpt
    capsules with no affordance to reveal anything.
-9. Promotion: a link created from the backdrop reaches the server and
+9. Conceal: a link created from the backdrop reaches the server and
    lands on the clipboard, and a token saved in the backdrop's Settings
    goes under `com.onetimesecret.companion.backdrop` in the Keychain.
    The panel's own token is untouched and neither app prompts for the

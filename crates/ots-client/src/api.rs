@@ -43,7 +43,7 @@ impl Api {
         self.post_conceal("/api/v3/secret/conceal", payload, true)
     }
 
-    /// Build `POST /api/v3/guest/secret/conceal` — promotion with zero
+    /// Build `POST /api/v3/guest/secret/conceal` — concealing with zero
     /// configuration, where the server enables guest routes. Never
     /// carries credentials.
     ///
@@ -104,7 +104,7 @@ impl Api {
     }
 }
 
-/// A transport paired with the API surface: the whole promotion call in
+/// A transport paired with the API surface: the whole conceal call in
 /// one method.
 pub struct Client<T: Transport> {
     api: Api,
@@ -167,7 +167,7 @@ pub fn share_link(base_url: &str, data: &ConcealData) -> String {
 }
 
 /// Snap a cell's remaining TTL to a server-allowed value, **downward**:
-/// the promoted secret should never outlive the local intent (open
+/// the concealed secret should never outlive the local intent (open
 /// question №13). Falls back to the smallest allowed value when the
 /// remaining time is shorter than all of them; `None` only when
 /// `allowed` is empty.
