@@ -42,11 +42,11 @@ public struct TimeRailView: View {
         let projection = model.timeUnits
         let selected = Self.selectedBucket(projection: projection, selection: model.selection)
         VStack(spacing: 2) {
-            ForEach(Array(projection.units.enumerated()), id: \.element.id) { row in
+            ForEach(rows(of: projection)) { row in
                 TimeUnitTab(
-                    unit: row.element,
-                    selected: !model.showingLedger && row.element.bucket == selected,
-                    chord: Self.chord(forRowAt: row.offset, keymap: model.keymap),
+                    unit: row.unit,
+                    selected: !model.showingLedger && row.unit.bucket == selected,
+                    chord: row.chord,
                     model: model
                 )
             }
@@ -57,6 +57,19 @@ public struct TimeRailView: View {
         .padding(.vertical, 6)
         .frame(width: Self.width)
         .background(Color.panelBackground)
+    }
+
+    /// The days paired with the chords that reach them, resolved before
+    /// the list is built so the view builder stays a list rather than a
+    /// lookup. A row's place decides its chord and its day decides its
+    /// identity, which is the pairing this walk exists to make.
+    private func rows(of projection: TimeUnitProjection) -> [TimeRailRow] {
+        var rows: [TimeRailRow] = []
+        for (index, unit) in projection.units.enumerated() {
+            let chord = Self.chord(forRowAt: index, keymap: model.keymap)
+            rows.append(TimeRailRow(unit: unit, chord: chord))
+        }
+        return rows
     }
 
     /// The honesty valve for the nine-slot wall, and the instrument for
@@ -137,6 +150,21 @@ public struct TimeRailView: View {
         return "\(pages), so no day is drawn for them. Turn the time tabs off in Settings "
             + "to reach them — nothing is discarded to make room."
     }
+}
+
+/// One row of the rail, ready to draw: a day and the chord that reaches
+/// it.
+///
+/// Identified by its day and never by its place, so a day expiring out
+/// of the middle of the rail does not shuffle the identity of every row
+/// under it. At file scope rather than nested in the view because a
+/// row is a value the view happens to build, and because `Identifiable`
+/// wants an `id` no actor is holding.
+private struct TimeRailRow: Identifiable {
+    let unit: TimeUnitProjection.Unit
+    let chord: Keystroke?
+
+    var id: Int { unit.bucket }
 }
 
 /// One day on the rail: its relative label over the gauge of the page on
