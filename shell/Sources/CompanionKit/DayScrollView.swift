@@ -697,6 +697,15 @@ final class DayStackView: NSView {
         return NSPoint(x: current.x, y: current.y + insertedHeight)
     }
 
+    /// What the roll is made of, in document order: each header and the
+    /// region under it. A reading seam for the tests, in the idiom
+    /// `Coordinator.blockLabelLayout` set — the geometry is the claim
+    /// worth asserting, and it is better asserted against the parts than
+    /// against a number somebody wrote down. Nothing writes through it.
+    var laidOut: [(header: DayHeaderView, body: NSView)] {
+        rows.map { (header: $0.header, body: $0.body) }
+    }
+
     // MARK: The gutters
 
     /// The countdowns tick and the titles follow the page's first line,
@@ -743,7 +752,11 @@ final class DayHeaderView: NSView {
     private let dayField = NSTextField(labelWithString: "")
     private let titleField = NSTextField(labelWithString: "")
     private let remainingField = NSTextField(labelWithString: "")
-    private var mark: Mark = .none
+
+    /// What this header draws across its top. Readable so a test can
+    /// ask the mounted roll where its perforations are rather than
+    /// inferring them from a height.
+    private(set) var mark: Mark = .none
 
     /// The slot the verbs are addressed to, or nil for the empty Today
     /// place, which has no page and therefore nothing to rename, hold,
@@ -1049,7 +1062,14 @@ final class QuietPageView: NSTextView {
     override var needsPanelToBecomeKey: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
+        clicked(at: convert(event.locationInWindow, from: nil))
+    }
+
+    /// The click itself, in this region's own coordinates, apart from
+    /// the event that carried it — so what a click on a day does can be
+    /// asserted without a synthesized `NSEvent`, which is a fact about
+    /// AppKit rather than about this surface.
+    func clicked(at point: NSPoint) {
         onClick(page, characterIndexForInsertion(at: point))
     }
 }

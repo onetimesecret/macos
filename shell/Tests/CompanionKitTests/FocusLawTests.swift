@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import CompanionKit
@@ -272,6 +273,70 @@ final class FocusLawTests: XCTestCase {
         XCTAssertEqual(
             InkEditorView.Coordinator.pruned(table, keeping: [1, 99]),
             table
+        )
+    }
+
+    // MARK: One focusable text view in the card (issue #79)
+
+    /// The roll shows several days at once, and every one of them is a
+    /// text view. The law is that only one of them can ever hold the
+    /// keyboard: the editor. A quiet day refuses first responder, the
+    /// window refuses to hand it over, and the model's single handle —
+    /// the one every grant and every summon focuses through — names the
+    /// editor and nothing else.
+    ///
+    /// Real AppKit, because what is under test is a view's relationship
+    /// to a window, which is not a thing worth modelling twice.
+    @MainActor
+    func testTheQuietRegionsNeverTakeFirstResponder() throws {
+        let suiteName = "companion-focus-law-roll-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+        let model = isolatedModel(defaults: defaults)
+        model.showsTimeUnits = true
+        // Two pages, which a live core can only make on one day: the
+        // roll draws them as one day's two regions, joined by a hairline,
+        // and one of the two is the editor.
+        model.newPage()
+        let mounted = try XCTUnwrap(model.selectedPageID)
+        model.newPage()
+        let quietPage = try XCTUnwrap(model.selectedPageID)
+
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let scroll = DayScrollView.makeRoll(
+            model: model, coordinator: coordinator, emptyHint: "⌃⌥Space to raise the card"
+        )
+        let card = NSRect(x: 0, y: 0, width: 420, height: 320)
+        let window = NSWindow(
+            contentRect: card, styleMask: [.titled], backing: .buffered, defer: false
+        )
+        window.contentView?.addSubview(scroll)
+        scroll.frame = card
+        scroll.layoutSubtreeIfNeeded()
+        let stack = try XCTUnwrap(scroll.documentView as? DayStackView)
+        stack.update(
+            projection: TimeUnitProjection.project(
+                tabs: model.tabs, selectedPageID: mounted, unit: .day
+            ),
+            selectedPage: mounted,
+            readOnly: false
+        )
+
+        let editor = try XCTUnwrap(stack.editor)
+        XCTAssertTrue(window.makeFirstResponder(editor))
+        XCTAssertTrue(window.firstResponder === editor)
+        XCTAssertTrue(model.activeEditor === editor)
+
+        let quiet = try XCTUnwrap(stack.quietRegions[quietPage])
+        XCTAssertFalse(quiet.acceptsFirstResponder, "a rendering offered to take the keyboard")
+        XCTAssertFalse(window.makeFirstResponder(quiet))
+        XCTAssertFalse(
+            model.activeEditor === quiet,
+            "the model's one handle names a view that cannot type"
+        )
+        XCTAssertTrue(
+            model.activeEditor === editor,
+            "a grant or a summon would hand the keyboard to a day nobody can write on"
         )
     }
 }

@@ -1499,6 +1499,14 @@ public final class PageModel: ObservableObject {
         quietRenderings[id] = nil
     }
 
+    /// Which pages the editor has a storage for.
+    ///
+    /// A reading seam for the tests that assert the roll never borrows
+    /// one (issue #79): every quiet day renders over a storage of its
+    /// own, and asking `storage(for:)` whether a page has one would make
+    /// one, which is the very thing under test.
+    var pagesWithStorage: Set<UInt64> { Set(storages.keys) }
+
     /// The page's undo history, created on first use. The editor asks
     /// its delegate for a manager on every undo touch, so history
     /// simply follows the current page — no hand-off at the swap
