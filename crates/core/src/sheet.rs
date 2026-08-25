@@ -740,8 +740,10 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
 /// The local day a wall-clock stamp falls on: days since the Unix
 /// epoch, counted after the stamp has been folded through the offset
 /// the caller's clock reports. The divide is `div_euclid` rather than a
-/// truncating one so a stamp from before 1970 would still fall on the
-/// day it belongs to instead of rounding towards the epoch.
+/// truncating one because the local reading can be negative even though
+/// the stamp cannot — the first hours of 1970 read from a zone west of
+/// UTC — and truncation would round those towards zero and call them
+/// the first of January.
 ///
 /// This is the crate's only bucketing arithmetic, and it is
 /// [`placeholder_title`]'s: the `MMDD` half of the stamp a tab renders
@@ -1319,6 +1321,18 @@ mod tests {
             local_day(clock.wall_ms(), clock.local_offset_seconds()),
             utc + 1
         );
+    }
+
+    #[test]
+    fn a_local_reading_before_the_epoch_rounds_the_way_the_calendar_does() {
+        // The stamp cannot be negative, but the local reading can: the
+        // first hours of 1970 seen from eight hours west of UTC are the
+        // last day of 1969. A truncating divide would round that
+        // towards zero and call it the first of January, and the label
+        // beside it already says otherwise.
+        assert_eq!(local_day(0, -8 * 3600), -1);
+        assert_eq!(placeholder_title(0, -8 * 3600), "1231-1600");
+        assert_eq!(local_day(0, 0), 0);
     }
 
     #[test]
