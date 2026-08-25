@@ -48,7 +48,16 @@ extension PageModel {
         case .appSettings:
             onOpenSettings?()
         case .editorToggleWrap:
-            toggleWrap()
+            // ⌥Z asks the page to stop wrapping, and with the days down
+            // the side the page cannot: the roll wraps every day
+            // whatever the preference says (issue #79). One command with
+            // two readings of the same intent, the way `.pageNew` above
+            // has two — except that here the second reading is a
+            // refusal, said out loud rather than written silently into a
+            // preference the surface on screen is not honouring. The
+            // gate is here, at the dispatch, so that the stored value
+            // and the flash cannot disagree about what just happened.
+            if showsTimeUnits { flash(Self.wrapIsFixedNotice) } else { toggleWrap() }
         case .clipboardSeal, .clipboardSealSelection:
             return false
         case .pageSelect1, .pageSelect2, .pageSelect3, .pageSelect4, .pageSelect5,

@@ -449,4 +449,33 @@ final class TimeUnitModeTests: XCTestCase {
             model.selection, emptied,
             "leaving the mode fell a selection the strip draws perfectly well")
     }
+
+    // MARK: The chord the mode takes away
+
+    /// ⌥Z with the days down the side. The roll wraps every day whatever
+    /// the preference says, so the chord cannot do what it is for — and
+    /// what it must not do instead is rewrite the stored preference
+    /// under a surface that will not honour it, which would leave the
+    /// flash claiming one thing while every line went on wrapping and
+    /// hand horizontal mode back unwrapped later. It says so instead,
+    /// and the same press with the mode off still does exactly what it
+    /// always did.
+    func testTheWrapChordIsRefusedInTheModeAndLeavesThePreferenceAlone() throws {
+        let (model, defaults) = try makeModel()
+        model.loadStateIfNeeded()
+        let wrapped = model.wrapsLines
+        model.showsTimeUnits = true
+
+        model.perform(.editorToggleWrap)
+
+        XCTAssertEqual(model.wrapsLines, wrapped, "⌥Z rewrote a preference the roll does not read")
+        XCTAssertEqual(
+            isolatedModel(defaults: defaults).wrapsLines, wrapped,
+            "the stored preference moved under a surface that ignores it")
+        XCTAssertEqual(model.notice, PageModel.wrapIsFixedNotice, "the keystroke went out dead")
+
+        model.showsTimeUnits = false
+        model.perform(.editorToggleWrap)
+        XCTAssertNotEqual(model.wrapsLines, wrapped, "the chord stayed refused with the mode off")
+    }
 }

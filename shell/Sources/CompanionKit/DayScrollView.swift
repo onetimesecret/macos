@@ -614,9 +614,12 @@ final class DayStackView: NSView {
         // `wrapsLines` preference is left exactly where the user left
         // it: a line that ran off the side of one day would run off the
         // side of the roll, and a roll that scrolled in two directions
-        // would have no honest anchor. ⌥Z is inert here and the setting
-        // takes effect again the moment the mode goes off, because this
-        // passes `true` rather than the preference.
+        // would have no honest anchor. This passes `true` rather than
+        // the preference, so the setting takes effect again the moment
+        // the mode goes off — and ⌥Z changes nothing here, because the
+        // dispatch refuses it in this mode and says so rather than
+        // writing a value this surface would not honour
+        // (`PageModel.wrapIsFixedNotice`).
         coordinator.applyWrap(true)
         return built
     }

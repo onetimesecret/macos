@@ -628,9 +628,13 @@ decision that is Rust, the more of it is validated before a PR exists.
 - **No markdown styling parity on quiet regions.** A quiet day renders in
   the base ink font with chips as their non-secret face; the flatness
   against the live day is a stated gap.
-- **No unwrapped lines in the mode.** Wrap is forced on and ⌥Z is inert
-  while the mode is on; the stored `wrapsLines` preference is untouched
-  and resumes when it is off.
+- **No unwrapped lines in the mode.** Wrap is forced on and ⌥Z changes
+  nothing while the mode is on: the dispatch refuses it and says so
+  (`PageModel.wrapIsFixedNotice`) rather than leaving a dead key. The
+  stored `wrapsLines` preference is untouched and resumes when the mode
+  is off, which is why the refusal is the whole of the behaviour — a
+  preference written blind under a surface that ignores it would hand
+  horizontal mode back unwrapped.
 - **No per-page scroll memory in the mode.** The roll owns one offset.
 - **No animation, and therefore no `prefers-reduced-motion` branch.**
 - **No new `CommandID`, no keymap row, no `BundledKeymapTests` churn**;
