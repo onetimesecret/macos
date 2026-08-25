@@ -1087,7 +1087,7 @@ final class QuietPageView: NSTextView {
 /// costs nothing, where minting it would start a countdown nobody asked
 /// for.
 final class EmptyTodayView: NSView {
-    private let grant = KeyGrantingClickView()
+    private let grant = KeyGrantingClickView(frame: .zero)
     private let lead = NSTextField(labelWithString: "Empty is the resting state.")
     private let hint: NSTextField
 
