@@ -237,6 +237,30 @@ public enum QuitSaveOutcome: Equatable, Sendable {
     case unsavableWithContent
 }
 
+/// What a navigation gesture can land on (issue #79).
+///
+/// The strip has always offered exactly one kind of target, a durable
+/// slot, and ⌘1–⌘9 and ⌥⌘←/→ indexed the strip directly. With the days
+/// down the side they index days instead, and one of those days —
+/// today, which is a place whether or not a page is standing in it —
+/// answers to no slot at all. So the gestures route through this rather
+/// than forking: one path, two readings, and no new command id.
+///
+/// No new id is not a convenience. `CommandID`'s raw values are
+/// published contract, named in whatever `keymap.json` a user has
+/// written, and a binding parked in `.tabStrip` would validate, log
+/// `contextNotConsulted` and do nothing, because only `.editor` is
+/// consulted. Reinterpreting the verbs the app already has under an
+/// exclusive, default-off mode keeps the keyboard complete with no new
+/// surface at all.
+public enum SurfaceTarget: Equatable, Sendable {
+    /// A slot, by its tab id — every target the strip has ever had.
+    case tab(UInt64)
+    /// Today, holding no page yet. Selecting it takes the shipped
+    /// create path; nothing here is minted by being drawn (ADR-0017).
+    case today
+}
+
 @MainActor
 public final class PageModel: ObservableObject {
     /// What this form factor decides differently — where its Keychain
@@ -1432,6 +1456,67 @@ public final class PageModel: ObservableObject {
 
     // MARK: Navigation — the keyboard map
 
+    /// What ⌘1–⌘9 count through and ⌥⌘←/→ walk, in the order the
+    /// surface draws them (issue #79).
+    ///
+    /// With the mode off this is the strip, element for element, and a
+    /// test says exactly that
+    /// (`visibleTargetsWithTheModeOffEqualTheStripElementForElement`).
+    /// That identity is the whole evidence for "horizontal mode is
+    /// unchanged": the two modes share one routing path instead of two
+    /// that would have to be kept in step by hand, and the shared
+    /// path's value with the mode off is the array these gestures have
+    /// always indexed.
+    ///
+    /// With the mode on it is one entry per visible day, newest first,
+    /// so ⌘2 means the second day rather than the second slot. A day
+    /// holding more than one page answers with the first of them in
+    /// strip order, and only today can be a day with no page at all,
+    /// which is the single `.today` entry.
+    public var visibleTargets: [SurfaceTarget] {
+        guard showsTimeUnits else { return tabs.map { .tab($0.id) } }
+        return timeUnits.units.map { unit -> SurfaceTarget in
+            guard let tab = unit.tabIDs.first else { return .today }
+            return .tab(tab)
+        }
+    }
+
+    /// Select whatever the surface is drawing at that entry.
+    ///
+    /// Both arms are gestures the app already ships: a slot goes
+    /// through `select(_:)`, which mints into it when it holds nothing,
+    /// and today goes through `openToday()`, which selects today's page
+    /// when there is one and otherwise takes the shipped create path.
+    /// Nothing new mints here, and nothing mints at all without a
+    /// gesture asking for it (ADR-0017).
+    public func select(target: SurfaceTarget) {
+        switch target {
+        case .tab(let id):
+            select(id)
+        case .today:
+            openToday()
+        }
+    }
+
+    /// Where a ⌥⌘←/→ walk starts from.
+    ///
+    /// With the strip that is the selected slot's own entry, which is
+    /// the index the walk has always begun at. With the days down the
+    /// side it is the day the selected page was born on, which is not
+    /// always that day's first entry, because a day can hold more than
+    /// one page. A selection the surface is not drawing — a slot whose
+    /// page expired, in a mode that draws no such slot — starts the
+    /// walk at the top, where today is.
+    private func indexOfSelection(within targets: [SurfaceTarget]) -> Int {
+        guard let selection else { return 0 }
+        if showsTimeUnits, let day = timeUnits.units.firstIndex(
+            where: { $0.tabIDs.contains(selection) }
+        ) {
+            return day
+        }
+        return targets.firstIndex(of: .tab(selection)) ?? 0
+    }
+
     /// Select a tab, and open a page into it if it holds none.
     ///
     /// This is one of the three gestures that mint, and the mint is
@@ -1461,32 +1546,33 @@ public final class PageModel: ObservableObject {
         if leavingLedger || minted { refocusEditorIfKeyed() }
     }
 
-    /// ⌘1 to ⌘9: jump by visible tab order. The index is into the strip,
-    /// so ⌘3 means the third slot whether or not it holds a page, and
-    /// it means the same slot next week.
+    /// ⌘1 to ⌘9: jump by visible order. With the strip that is the
+    /// slot, so ⌘3 means the third slot whether or not it holds a page,
+    /// and it means the same slot next week. With the days down the
+    /// side it is the third day (issue #79).
     public func select(index: Int) {
-        guard tabs.indices.contains(index) else { return }
-        select(tabs[index].id)
+        let targets = visibleTargets
+        guard targets.indices.contains(index) else { return }
+        select(target: targets[index])
     }
 
     /// ⌥⌘← / ⌥⌘→. Steps slots, not pages, and mints into the slot it
-    /// lands on when that slot is empty.
+    /// lands on when that slot is empty — or steps days, when the days
+    /// are the thing on screen.
+    ///
+    /// The landing is `select`'s, and always was: the walk lands on
+    /// slots, the slot it lands on may be empty, and it carries
+    /// `select`'s hand-off for `select`'s reasons. It used to carry a
+    /// copy of that ceremony and now calls it, so a walk that both
+    /// leaves the ledger and mints still asks for the keys once, after
+    /// the mint rather than before it, and there is one place for the
+    /// rule to live rather than two that can drift.
     public func step(_ delta: Int) {
-        guard !tabs.isEmpty else { return }
-        let leavingLedger = showingLedger
-        if leavingLedger { showingLedger = false }
-        let current = tabs.firstIndex { $0.id == selection } ?? 0
-        let next = Self.steppedIndex(from: current, by: delta, within: tabs.count)
-        let landed = tabs[next].id
-        selection = landed
-        let minted = openPageIfSlotIsEmpty(landed)
-        // The walk lands on slots, and the slot it lands on may be
-        // empty, so it carries `select`'s hand-off for `select`'s
-        // reasons. One call rather than two: a walk that both leaves
-        // the ledger and mints has one editor to focus, and the focus
-        // is asked for after the mint rather than before it, so the
-        // wait is for the editor that is actually coming.
-        if leavingLedger || minted { refocusEditorIfKeyed() }
+        let targets = visibleTargets
+        guard !targets.isEmpty else { return }
+        let current = indexOfSelection(within: targets)
+        let next = Self.steppedIndex(from: current, by: delta, within: targets.count)
+        select(target: targets[next])
     }
 
     /// The mint the three selection gestures share: a page into the
