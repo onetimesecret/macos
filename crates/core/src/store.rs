@@ -17,8 +17,8 @@ use crate::clock::Clock;
 use crate::document::SheetDocument;
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
-    ChipId, ChipMeta, ItemId, Promotion, SealedChip, Segment, Sheet, SheetClock, SheetId,
-    TITLE_CAP, Tab, TabId, derive_title,
+    ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock, SheetId, TITLE_CAP,
+    Tab, TabId, derive_title,
 };
 use crate::ttl::Ttl;
 
@@ -76,13 +76,13 @@ impl std::fmt::Display for Refusal {
 
 impl std::error::Error for Refusal {}
 
-/// Why a sheet could not be assembled into a promotion payload.
+/// Why a sheet could not be assembled into a conceal payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PayloadError {
     /// No such sheet.
     UnknownSheet,
     /// The sheet holds an image chip; the v3 conceal payload is
-    /// text-shaped (open question №3 — image promotion is unresolved,
+    /// text-shaped (open question №3 — concealing an image is unresolved,
     /// so the core refuses rather than guesses).
     ImageChip,
 }
@@ -309,7 +309,7 @@ impl<C: Clock> SheetStore<C> {
     /// the slot's gesture and it is one of the two things that end a
     /// tab (ADR-0017); a gesture that names the content rather than
     /// the slot must not spend the arrangement the user built. The
-    /// burn offered after a promotion is the caller this exists for:
+    /// burn offered after a conceal is the caller this exists for:
     /// the content travelled, so the local copy may go, and the tab it
     /// travelled from is left the way an expiry leaves one.
     pub fn discard_page(&mut self, id: SheetId) -> bool {
@@ -884,7 +884,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     // -----------------------------------------------------------------
-    // Chips: copy-out, delete, promotion
+    // Chips: copy-out, delete, conceal
     // -----------------------------------------------------------------
 
     fn chip_home(&self, id: ChipId) -> Option<(SheetId, &SealedChip)> {
@@ -977,7 +977,7 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Record that a whole page's bytes left for `destination`. The
-    /// page-level twin of [`SheetStore::record_sent`]: promoting a page
+    /// page-level twin of [`SheetStore::record_sent`]: concealing a page
     /// ([`SheetStore::sheet_payload`]) is the largest egress this app
     /// performs, so it leaves the same kind of line the chip path and
     /// the pasteboard path leave. Without it the ledger's `sent` claim
@@ -1010,26 +1010,26 @@ impl<C: Clock> SheetStore<C> {
         true
     }
 
-    /// Record a successful promotion: only the receipt identifier stays
+    /// Record a successful conceal: only the receipt identifier stays
     /// on the live chip (no link, no history — doc 03 §5).
-    pub fn mark_chip_promoted(&mut self, id: ChipId, receipt_id: String) -> bool {
+    pub fn mark_chip_concealed(&mut self, id: ChipId, receipt_id: String) -> bool {
         for sheet in self.tabs.iter_mut().filter_map(|tab| tab.page.as_mut()) {
             if let Some(chip) = sheet.chips.iter_mut().find(|c| c.id == id) {
-                chip.promotion = Some(Promotion { receipt_id });
+                chip.conceal = Some(Conceal { receipt_id });
                 return true;
             }
         }
         false
     }
 
-    /// A chip's bytes for the promotion path (core → network client
+    /// A chip's bytes for the conceal path (core → network client
     /// directly, never through the UI layer — the boundary law).
     #[must_use]
     pub fn chip_payload(&self, id: ChipId) -> Option<Zeroizing<Vec<u8>>> {
         self.copy_out_chip(id).map(|(bytes, _)| bytes)
     }
 
-    /// The whole page as one promotion payload: ink verbatim, sealed
+    /// The whole page as one conceal payload: ink verbatim, sealed
     /// bytes inlined where their chips sit, in document order. Refuses
     /// pages holding image chips — the v3 conceal payload is
     /// text-shaped.
@@ -1812,13 +1812,13 @@ mod tests {
     fn discarding_a_page_leaves_its_tab_the_way_an_expiry_would() {
         let (mut store, _) = store();
         let first = store.new_tab().unwrap().1;
-        let promoted = store.new_tab().unwrap().1;
-        let tab = slot(&store, promoted);
+        let concealed = store.new_tab().unwrap().1;
+        let tab = slot(&store, concealed);
         assert!(store.set_title(tab, "payroll"));
         store.set_rung(tab, Ttl::MIN).unwrap();
-        assert!(store.sync_document(promoted, vec![Segment::Ink("the link travelled".into())]));
+        assert!(store.sync_document(concealed, vec![Segment::Ink("the link travelled".into())]));
 
-        assert!(store.discard_page(promoted));
+        assert!(store.discard_page(concealed));
 
         // The slot survives the burn: this is the gesture that names
         // content, and only a close and the cap end a tab.
@@ -1829,7 +1829,7 @@ mod tests {
         assert_eq!(tabs[1].id(), tab, "the slot is the same slot");
         assert_eq!(tabs[1].name(), Some("payroll"), "with its name");
         assert_eq!(tabs[1].rung(), Ttl::MIN, "and its rung");
-        assert!(store.sheet(promoted).is_none());
+        assert!(store.sheet(concealed).is_none());
 
         // One death record, carrying the label the strip was showing.
         let record = store.ledger().next().unwrap();
@@ -1838,7 +1838,7 @@ mod tests {
 
         // A page that is no longer standing refuses, twice over: the
         // one just discarded, and one that never existed.
-        assert!(!store.discard_page(promoted), "already gone");
+        assert!(!store.discard_page(concealed), "already gone");
         assert!(!store.discard_page(SheetId::from_raw(999)), "no such page");
 
         // The slot takes another page at the rung it kept.
@@ -2200,7 +2200,7 @@ mod tests {
     }
 
     #[test]
-    fn promoting_a_whole_page_lands_one_content_free_sent_record() {
+    fn concealing_a_whole_page_lands_one_content_free_sent_record() {
         let (mut store, _) = store();
         let id = store.new_tab().unwrap().1;
         let chip = seal(&mut store, id, TOKEN);
@@ -2563,18 +2563,18 @@ mod tests {
     }
 
     #[test]
-    fn promotion_marks_the_chip_and_keeps_only_the_receipt() {
+    fn a_conceal_marks_the_chip_and_keeps_only_the_receipt() {
         let (mut store, _) = store();
         let id = store.new_tab().unwrap().1;
-        let chip = seal(&mut store, id, "promote me");
-        assert_eq!(&**store.chip_payload(chip).unwrap(), b"promote me");
-        assert!(store.mark_chip_promoted(chip, "9f2abc".into()));
+        let chip = seal(&mut store, id, "conceal me");
+        assert_eq!(&**store.chip_payload(chip).unwrap(), b"conceal me");
+        assert!(store.mark_chip_concealed(chip, "9f2abc".into()));
         let sheet = store.sheet(id).unwrap();
         assert_eq!(
-            sheet.chip(chip).unwrap().promotion().unwrap().receipt_id,
+            sheet.chip(chip).unwrap().conceal().unwrap().receipt_id,
             "9f2abc"
         );
-        assert!(!store.mark_chip_promoted(ChipId(999), "x".into()));
+        assert!(!store.mark_chip_concealed(ChipId(999), "x".into()));
     }
 
     #[test]

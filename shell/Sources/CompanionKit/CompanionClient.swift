@@ -102,10 +102,10 @@ public struct ChipInfo: Codable, Hashable, Sendable {
     public let kind: String
     public let excerpt: String
     public let sizeLabel: String
-    public let promoted: Bool
+    public let concealed: Bool
 
     enum CodingKeys: String, CodingKey {
-        case kind, excerpt, promoted
+        case kind, excerpt, concealed
         case chipId = "chip_id"
         case sizeLabel = "size_label"
     }
@@ -240,10 +240,10 @@ public struct ConnectionInfo: Codable, Hashable, Sendable {
     }
 }
 
-/// A promotion (or connection-test) result off the seam: success, or an
+/// A conceal (or connection-test) result off the seam: success, or an
 /// inline-able error message. Never a link — on success the link is
 /// already on the clipboard, written core-side.
-public struct PromotionOutcome: Codable, Hashable, Sendable {
+public struct ConcealOutcome: Codable, Hashable, Sendable {
     public let ok: Bool
     public let receiptId: String?
     public let error: String?
@@ -260,7 +260,7 @@ public struct PromotionOutcome: Codable, Hashable, Sendable {
 ///
 /// `@unchecked Sendable`: the handle is immutable after init and every
 /// call is serialized by the core's own mutex (companion_ffi.h) — the
-/// promotion routes are *meant* to be called off the main actor, since
+/// conceal routes are *meant* to be called off the main actor, since
 /// they block for a network round-trip.
 public final class CompanionClient: @unchecked Sendable {
     private let handle: OpaquePointer
@@ -344,7 +344,7 @@ public final class CompanionClient: @unchecked Sendable {
     /// page by that id was standing.
     ///
     /// Page addressed rather than tab addressed, which is the whole
-    /// difference from `closeTab`: the burn offered after a promotion
+    /// difference from `closeTab`: the burn offered after a conceal
     /// names the content that travelled, and spending the user's
     /// arrangement on it would end a tab that only a close and the cap
     /// may end (ADR-0017).
@@ -539,9 +539,9 @@ public final class CompanionClient: @unchecked Sendable {
         companion_tab_pause_press(handle, tab)
     }
 
-    // MARK: Promotion — the exit ramp, the app's only network action
+    // MARK: Conceal — the exit ramp, an explicit user action
 
-    /// Configure where promotion goes. The token, when passed, goes
+    /// Configure where a conceal goes. The token, when passed, goes
     /// straight to the OS credential store core-side and is never
     /// retained here or in config; nil keeps the stored one, "" deletes
     /// it. Returns false on a non-https URL or malformed input.
@@ -566,51 +566,51 @@ public final class CompanionClient: @unchecked Sendable {
 
     /// The Settings "test" button: one status round-trip. **Blocks** —
     /// call off the main actor.
-    public func testConnection() -> PromotionOutcome {
-        decodeJSON(PromotionOutcome.self, from: companion_connection_test(handle))
-            ?? PromotionOutcome(ok: false, receiptId: nil, error: "no connection configured")
+    public func testConnection() -> ConcealOutcome {
+        decodeJSON(ConcealOutcome.self, from: companion_connection_test(handle))
+            ?? ConcealOutcome(ok: false, receiptId: nil, error: "no connection configured")
     }
 
-    /// Promote one sealed chip into a one-time link. The sealed bytes
+    /// Conceal one sealed chip into a one-time link. The sealed bytes
     /// travel core → client → transport and never enter this process;
     /// on success the link is on the clipboard and only the receipt id
     /// stays on the chip. **Blocks** for the round-trip — call off the
     /// main actor.
-    public func promoteChip(
+    public func concealChip(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
-    ) -> PromotionOutcome {
-        promote(id: id, ttlSecs: ttlSecs, passphrase: passphrase, recipient: recipient) {
-            companion_chip_promote($0, $1, $2)
+    ) -> ConcealOutcome {
+        conceal(id: id, ttlSecs: ttlSecs, passphrase: passphrase, recipient: recipient) {
+            companion_chip_conceal($0, $1, $2)
         }
     }
 
-    /// Promote the whole page (ink verbatim, sealed bytes inlined,
+    /// Conceal the whole page (ink verbatim, sealed bytes inlined,
     /// core-side). Refused when the page holds an image chip. **Blocks**
     /// — call off the main actor.
-    public func promoteSheet(
+    public func concealSheet(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String
-    ) -> PromotionOutcome {
-        promote(id: id, ttlSecs: ttlSecs, passphrase: passphrase, recipient: recipient) {
-            companion_sheet_promote($0, $1, $2)
+    ) -> ConcealOutcome {
+        conceal(id: id, ttlSecs: ttlSecs, passphrase: passphrase, recipient: recipient) {
+            companion_sheet_conceal($0, $1, $2)
         }
     }
 
-    private func promote(
+    private func conceal(
         id: UInt64, ttlSecs: UInt64?, passphrase: String, recipient: String,
         via route: (OpaquePointer, UInt64, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
-    ) -> PromotionOutcome {
+    ) -> ConcealOutcome {
         var object: [String: Any] = [:]
         if let ttlSecs { object["ttl_secs"] = ttlSecs }
         if !passphrase.isEmpty { object["passphrase"] = passphrase }
         if !recipient.isEmpty { object["recipient"] = recipient }
         guard let json = Self.encodeJSON(object) else {
-            return PromotionOutcome(ok: false, receiptId: nil, error: "malformed promotion options")
+            return ConcealOutcome(ok: false, receiptId: nil, error: "malformed conceal options")
         }
         let outcome = json.withCString { opts in
-            decodeJSON(PromotionOutcome.self, from: route(handle, id, opts))
+            decodeJSON(ConcealOutcome.self, from: route(handle, id, opts))
         }
         return outcome
-            ?? PromotionOutcome(ok: false, receiptId: nil, error: "the core refused the request")
+            ?? ConcealOutcome(ok: false, receiptId: nil, error: "the core refused the request")
     }
 
     private static func encodeJSON(_ object: [String: Any]) -> String? {

@@ -40,7 +40,7 @@ See the [detailed plan](plans/trustworthy-persistence.md).
 ## Documentation map
 
 - [`adr/`](adr/): accepted and proposed architectural, security, and product decisions.
-- [`dogfood/ABERRATIONS.md`](dogfood/ABERRATIONS.md): raw dogfood observations awaiting triage or promotion.
+- [`dogfood/ABERRATIONS.md`](dogfood/ABERRATIONS.md): raw dogfood observations awaiting triage or a permanent home.
 - [`dogfood/DOGFOOD.md`](dogfood/DOGFOOD.md): durable operational guidance for dogfooders and contributors.
 - [`plans/`](plans/): detailed, milestone-scoped plans. These link to GitHub issues rather than copying their status.
 - [`qa/recovery-matrix.md`](qa/recovery-matrix.md): the seven persistence lifecycle cases, what asserts each one, and when its hardware procedure last ran.

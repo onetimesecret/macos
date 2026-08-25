@@ -102,11 +102,11 @@ final class TabLifetimeTests: XCTestCase {
         )
     }
 
-    /// Burning the local copy after a promotion names the page and
+    /// Burning the local copy after a conceal names the page and
     /// nothing else. The slot it travelled from is the arrangement the
     /// user built, and only a close and the cap end a tab (ADR-0017),
     /// so the burn leaves the same empty named slot an expiry leaves.
-    func testBurningAPromotedPageLeavesItsTabNamedAndEmpty() throws {
+    func testBurningAConcealedPageLeavesItsTabNamedAndEmpty() throws {
         let model = try makeModel()
         model.loadStateIfNeeded()
         model.newPage()
@@ -117,14 +117,14 @@ final class TabLifetimeTests: XCTestCase {
             model.coreClient.syncDocument(
                 sheet: page, json: #"[{"ink": "the credentials"}]"#))
 
-        // The state a successful promotion leaves: a receipt in hand
+        // The state a successful conceal leaves: a receipt in hand
         // and the offer to be rid of the copy that travelled.
-        var draft = PromotionDraft(target: .page(page), ttlSecs: 3600)
+        var draft = ConcealDraft(target: .page(page), ttlSecs: 3600)
         draft.receiptId = "receipt-for-the-burn"
-        model.promotion = draft
-        model.burnPromotedCopy()
+        model.concealDraft = draft
+        model.burnConcealedCopy()
 
-        XCTAssertNil(model.promotion, "the offer is spent")
+        XCTAssertNil(model.concealDraft, "the offer is spent")
         XCTAssertEqual(model.tabs.count, 2, "the strip kept its width")
         XCTAssertEqual(model.selection, tab, "and its selection")
         XCTAssertFalse(try XCTUnwrap(model.tabs.last).hasPage, "the page burned")

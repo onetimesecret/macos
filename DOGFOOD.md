@@ -225,6 +225,6 @@ terminal for the one you can.
 ## Recording what you find
 
 Day-to-day surprises go in the local `ABERRATIONS.txt` first. When one
-turns out to be structural, promote it: an ADR under `docs/adr/` for a
+turns out to be structural, raise it: an ADR under `docs/adr/` for a
 decision, a section here for operational guidance, or an issue for
 something that should change.

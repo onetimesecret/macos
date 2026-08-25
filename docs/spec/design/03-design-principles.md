@@ -63,32 +63,42 @@ organization, or engagement are declined by default.
 
 *Settles:* "Electron/Chromium bundle?" — No. "Auto-update daemon always
 resident?" — No; check on launch. "Analytics to guide the roadmap?" — No
-telemetry, period. "iCloud sync of sheets?" — No.
+telemetry, period. "iCloud sync of sheets?" No: Apple's containers are
+not somewhere this content goes. Whether a first-party relay may carry a
+page between a user's own enrolled devices is a separate question,
+decided in ADR-0021 (issue #93).
 
 ## 5. Trust through legibility
 
 The user can always answer, at a glance and without a manual: what does it
 hold, when does each item die, and does anything ever leave this machine
-(only on explicit promotion, and the UI makes that boundary visible).
+(only on an explicit conceal, or to a device the user enrolled, and the
+UI makes that boundary visible).
 No hidden state, no background capture, no surprise persistence. The
 codebase is open source so every one of these claims is auditable; the
 security posture (doc 05) exists to make them true, not merely plausible.
 
 *Settles:* "Capture clipboard automatically for convenience?" — Never;
-deliberate placement is the privacy model. "Cache promoted-secret
+deliberate placement is the privacy model. "Cache concealed-secret
 metadata for a history view?" — No local record beyond the active sheet.
 "Phone home for feature flags?" — No.
 
 ## 6. Escalate deliberately
 
-Local first; remote by explicit choice. The promote-to-link CTA is
-subtle — discoverable on every chip and page, prominent on none. Promotion is the
-only network operation, it is unmistakably an action (never a side
-effect), and it composes with the lifecycle: remaining local TTL seeds the
-secret TTL, and a successful promotion offers to burn the local copy.
+Local first; remote by explicit choice. The conceal-to-link CTA is
+subtle: discoverable on every chip and page, prominent on none. Every
+destination is one the user enrolled and can see. Concealing to a link is
+an explicit action. Replication between a user's own enrolled devices is
+opt-in per page, visibly live while it is live, and carries only what that
+page's TTL still permits. What this forbids is not automatic traffic, it
+is *unaccounted* traffic: no destination the user did not enroll, no
+payload the app would not show them, no retention on a relay beyond the
+page's own expiry. It composes with the lifecycle: remaining local TTL
+seeds the secret TTL, and a successful conceal offers to burn the local
+copy.
 
 *Settles:* "Auto-create a link for large content?" — No. "Preemptively
-upload so promotion is instant?" — Absolutely not. "Require an account at
+upload so concealing is instant?" Absolutely not. "Require an account at
 install?" — No; the core loop works forever without one.
 
 ## Amendments (interaction-model revision C, 12 Jul 2026)

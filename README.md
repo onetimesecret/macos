@@ -9,12 +9,15 @@ text and images into a small edge-docked panel; each item becomes a
 **SleeperCell** with a visible, limited time-to-live. Cells exist to be
 copied back out and then forgotten — like a CPU's L1/L2 cache, the value
 is in being small, close, and evicted by policy, never in being a system
-of record. Secondarily, any cell can be promoted into a
+of record. Secondarily, any cell can be concealed into a
 [Onetime Secret](https://onetimesecret.com) link (v3 API) when the
 content needs to travel to another person or machine.
 
 The core loop (paste, hold briefly, copy out, forget) requires no account
-and no network. Promotion is the app's only outbound action.
+and no network. Concealing is the app's explicit outbound action, and any
+replication between a person's own devices is opt-in per page and visible
+while it is running. Nothing leaves the machine for a destination the
+user did not choose.
 
 ## Try the core today
 
@@ -28,7 +31,7 @@ cargo run -p companion-core --example demo
 The demo walks the whole SleeperCell lifecycle in a terminal: staging,
 masking of secret-shaped content, the draining ring, TTL cycling,
 copy-out with pasteboard hygiene, silent expiry, and a dry run of the
-promotion request (nothing is sent).
+conceal request (nothing is sent).
 
 ## Reading order
 
@@ -46,7 +49,7 @@ The spec governs; code follows it. The standing design spec lives under
 | [05-technical-direction](docs/spec/design/05-technical-direction.md) | Shell survey, security posture, a11y, frugality budget |
 | [06-open-questions](docs/spec/design/06-open-questions.md) | Everything unresolved, honestly |
 | [07-repo-skeleton](docs/spec/design/07-repo-skeleton.md) | The prescription this repository was initialized from |
-| [feature/byoe](docs/spec/feature/byoe/README.md) | Bring Your Own Encryption on the promotion path (draft feature spec) |
+| [feature/byoe](docs/spec/feature/byoe/README.md) | Bring Your Own Encryption on the conceal path (draft feature spec) |
 | [feature/background-surface](docs/spec/feature/background-surface/README.md) | The background-surface form factor, and the macOS research behind it (exploration) |
 
 Decisions land as ADRs in [docs/adr/](docs/adr/). ADR-0001 (Rust core,

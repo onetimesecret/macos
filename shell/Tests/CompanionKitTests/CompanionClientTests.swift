@@ -142,7 +142,7 @@ final class CompanionClientTests: XCTestCase {
             "kind": "text",
             "excerpt": "ghp_4kQ9…5jK7a",
             "size_label": "40 ch",
-            "promoted": false
+            "concealed": false
         }
         """
         let chip = try JSONDecoder().decode(ChipInfo.self, from: Data(json.utf8))

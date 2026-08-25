@@ -50,7 +50,7 @@ pub struct PasteboardItem {
     pub content: PasteboardContent,
     /// True when the writer marked it `org.nspasteboard.ConcealedType` —
     /// the cell must arrive masked.
-    pub concealed: bool,
+    pub nspasteboard_concealed: bool,
     /// Where the content came from, when the writer said so: the
     /// `public.url` flavor, read in the same pass as the content
     /// (ADR-0013). Treated as content by everything downstream (a URL
@@ -63,7 +63,7 @@ pub struct PasteboardItem {
 #[derive(Debug, Clone, Copy)]
 pub struct WriteOptions {
     /// Mark with [`CONCEALED_TYPE`] so clipboard managers ignore it.
-    pub concealed: bool,
+    pub nspasteboard_concealed: bool,
 }
 
 /// A pasteboard change-count observation, used to guard clear-after-copy.
@@ -126,7 +126,7 @@ pub struct MemoryPasteboard {
 struct StoredItem {
     bytes: Zeroizing<Vec<u8>>,
     kind: ContentKind,
-    concealed: bool,
+    nspasteboard_concealed: bool,
     transient: bool,
     origin_url: Option<String>,
 }
@@ -140,8 +140,8 @@ impl MemoryPasteboard {
 
     /// Place external (non-companion) content, as another app would —
     /// for exercising reads in tests and the demo.
-    pub fn put_external(&mut self, content: PasteboardContent, concealed: bool) {
-        self.put_external_with_origin(content, concealed, None);
+    pub fn put_external(&mut self, content: PasteboardContent, nspasteboard_concealed: bool) {
+        self.put_external_with_origin(content, nspasteboard_concealed, None);
     }
 
     /// [`MemoryPasteboard::put_external`] with a `public.url` origin
@@ -149,7 +149,7 @@ impl MemoryPasteboard {
     pub fn put_external_with_origin(
         &mut self,
         content: PasteboardContent,
-        concealed: bool,
+        nspasteboard_concealed: bool,
         origin_url: Option<String>,
     ) {
         self.change_count += 1;
@@ -160,7 +160,7 @@ impl MemoryPasteboard {
         self.item = Some(StoredItem {
             bytes: Zeroizing::new(bytes),
             kind,
-            concealed,
+            nspasteboard_concealed,
             transient: false,
             origin_url,
         });
@@ -183,7 +183,7 @@ impl Pasteboard for MemoryPasteboard {
                 }
                 ContentKind::Image => PasteboardContent::Image(item.bytes.to_vec()),
             },
-            concealed: item.concealed,
+            nspasteboard_concealed: item.nspasteboard_concealed,
             origin_url: item.origin_url.clone(),
         })
     }
@@ -198,7 +198,7 @@ impl Pasteboard for MemoryPasteboard {
         self.item = Some(StoredItem {
             bytes: content,
             kind,
-            concealed: options.concealed,
+            nspasteboard_concealed: options.nspasteboard_concealed,
             transient: true,
             // The companion's own writes carry no origin: provenance
             // belongs to content arriving, not content leaving.
@@ -230,11 +230,17 @@ impl Pasteboard for MemoryPasteboard {
 mod tests {
     use super::*;
 
-    fn write_text(pb: &mut MemoryPasteboard, text: &str, concealed: bool) -> ChangeCount {
+    fn write_text(
+        pb: &mut MemoryPasteboard,
+        text: &str,
+        nspasteboard_concealed: bool,
+    ) -> ChangeCount {
         pb.write(
             Zeroizing::new(text.as_bytes().to_vec()),
             ContentKind::Text,
-            WriteOptions { concealed },
+            WriteOptions {
+                nspasteboard_concealed,
+            },
         )
     }
 
@@ -244,7 +250,7 @@ mod tests {
         write_text(&mut pb, "hunter2", true);
         assert!(pb.current_is_transient());
         let item = pb.read().unwrap();
-        assert!(item.concealed);
+        assert!(item.nspasteboard_concealed);
         assert_eq!(item.content, PasteboardContent::Text("hunter2".into()));
     }
 
@@ -270,13 +276,13 @@ mod tests {
     }
 
     #[test]
-    fn inbound_concealed_mark_is_reported() {
+    fn inbound_nspasteboard_concealed_mark_is_reported() {
         let mut pb = MemoryPasteboard::new();
         pb.put_external(
             PasteboardContent::Text("from a password manager".into()),
             true,
         );
-        assert!(pb.read().unwrap().concealed);
+        assert!(pb.read().unwrap().nspasteboard_concealed);
         assert!(!pb.current_is_transient());
     }
 

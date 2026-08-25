@@ -109,7 +109,7 @@ window's contents meaningful (100% signal), and keeps the mental model
 honest: the user always knows what the app holds, because they put every
 item there.
 
-### 4. The promotion gradient
+### 4. The conceal gradient
 
 Local sheet → Onetime Secret link is a *gradient of the same idea* —
 ephemeral, view-limited content — extended from one machine to two
@@ -134,7 +134,7 @@ posture cheaply; the web app's existing open-source credibility transfers.
 2026 desktop utilities trend toward 300 MB Electron residents. A Rust
 menu-bar app that idles at near-zero CPU (no polling — TTL expiry
 scheduled, not ticked), tens of MB of memory, single-digit MB download, no
-background indexing, and no network until the user promotes something is a
+background indexing, and no network until the user conceals something is a
 felt difference on a laptop battery. Frugal also means frugal with
 *attention* (no notifications by default) and *scope* (the anti-goals in
 doc 01). See doc 03.
@@ -156,7 +156,7 @@ slogan. Details in doc 05.
 Menu-bar utilities are, as a class, keyboard-hostile and screen-reader
 opaque — drag-and-drop-only interactions, unlabelled canvases, colour-only
 state. A staging area whose every operation (add, inspect, extend, copy,
-promote, discard) is keyboard-complete and VoiceOver-legible — with
+conceal, discard) is keyboard-complete and VoiceOver-legible, with
 time-remaining exposed as an accessibility value, not just a shrinking
 ring — would be nearly alone in the category. Cheap to do from day one,
 prohibitive to retrofit. Details in doc 05.
