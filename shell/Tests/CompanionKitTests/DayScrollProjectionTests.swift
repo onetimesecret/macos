@@ -280,4 +280,165 @@ final class DayScrollProjectionTests: XCTestCase {
             "today with nothing on it is a place, and a place has only its name"
         )
     }
+
+    // MARK: A quiet day that changed anyway
+
+    /// The cache behind the quiet regions is sound only while what it
+    /// holds is what the core holds, and a page can change while the
+    /// editor is standing on another day: an edit that reached it in the
+    /// other mode, a chip burned out of it, a composition settling as
+    /// the editor left. The model therefore drops a page's reading at
+    /// the mutation rather than on the roll's way past — and the roll
+    /// re-reads on the ordinary pass, since none of those changes moves
+    /// a bucket, a page id or the selection, and so none of them
+    /// assembles anything.
+    func testAnEditThatNeverWentThroughTheRollStillReachesTheDayItChanged() throws {
+        let model = try makeModel()
+        let today = try page(in: model, saying: "today")
+        let yesterday = try page(in: model, saying: "yesterday")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: today),
+            selectedPage: today,
+            readOnly: false
+        )
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[yesterday])
+        XCTAssertEqual(quiet.textStorage?.string, "yesterday", "the fixture never reached the roll")
+
+        // The edit path a keystroke takes with the strip showing, over a
+        // page this roll is drawing quietly and never receives the
+        // editor for.
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "later, ")]))
+        model.applyOps(sheet: yesterday, opsJSON: ops)
+
+        let before = roll.stack.rebuilds
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: today),
+            selectedPage: today,
+            readOnly: false
+        )
+
+        XCTAssertEqual(roll.stack.rebuilds, before, "the day was re-read by rebuilding the roll")
+        XCTAssertTrue(
+            roll.stack.quietRegions[yesterday] === quiet,
+            "the region was replaced rather than re-read, taking its layout with it"
+        )
+        XCTAssertEqual(
+            quiet.textStorage?.string, "later, yesterday",
+            "the roll went on showing the day as it stood before the edit"
+        )
+    }
+
+    /// The same law where the user can see it fastest: a chip burned
+    /// after its page went quiet. The burn is a core delete of a chip
+    /// standing in a day the editor has left, so nothing about the roll
+    /// changes shape — and the sealed thing the user just asked to be
+    /// rid of must not go on being drawn there (ADR-0009).
+    func testAChipBurnedOutOfAQuietDayStopsBeingDrawnOnIt() throws {
+        let model = try makeModel()
+        let today = try page(in: model, saying: "today")
+        let yesterday = try page(in: model, saying: "yesterday")
+        let todayTab = try XCTUnwrap(model.tabs.first { $0.pageID == today }?.id)
+        model.select(todayTab)
+        let chip = try XCTUnwrap(
+            model.sealText("n0ts3cr3t", replacing: NSRange(location: 0, length: 0))
+        )
+        model.refresh()
+
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: yesterday),
+            selectedPage: yesterday,
+            readOnly: false
+        )
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[today])
+        XCTAssertTrue(
+            quiet.textStorage?.string.contains("\u{FFFC}") ?? false,
+            "the chip never reached the day's rendering"
+        )
+
+        // The state a promoted chip leaves: a receipt in hand and the
+        // offer to be rid of the local copy, taken while the editor is
+        // standing on another day.
+        var draft = PromotionDraft(target: .chip(chip.chipId), ttlSecs: 3600)
+        draft.receiptId = "receipt-for-the-chip"
+        model.promotion = draft
+        model.burnPromotedCopy()
+
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: yesterday),
+            selectedPage: yesterday,
+            readOnly: false
+        )
+
+        XCTAssertFalse(
+            quiet.textStorage?.string.contains("\u{FFFC}") ?? false,
+            "the burned chip is still drawn on the day it was sealed into"
+        )
+    }
+
+    /// A composition in flight is provisional text the emission gate
+    /// keeps out of the core until it settles, and the swap that settles
+    /// it used to happen after the outgoing day's rendering had already
+    /// been built. The roll therefore has to finish with the page it is
+    /// leaving before it draws it.
+    func testACompositionSettlesBeforeTheDayItWasTypedOnIsDrawn() throws {
+        let model = try makeModel()
+        let today = try page(in: model, saying: "today")
+        let yesterday = try page(in: model, saying: "yesterday")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: today),
+            selectedPage: today,
+            readOnly: false
+        )
+        let editor = try XCTUnwrap(roll.stack.editor)
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        editor.setMarkedText(
+            "ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        XCTAssertTrue(editor.hasMarkedText(), "nothing was composed, so nothing is at stake")
+
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: yesterday),
+            selectedPage: yesterday,
+            readOnly: false
+        )
+
+        XCTAssertFalse(
+            editor.hasMarkedText(),
+            "the composition crossed the perforation into another page's offsets"
+        )
+        let quiet = try XCTUnwrap(roll.stack.quietRegions[today])
+        XCTAssertTrue(
+            quiet.textStorage?.string.contains("ka") ?? false,
+            "the day was drawn before the composition it was still holding had settled"
+        )
+    }
+
+    /// The roll's very first mount is the pass that *builds* the editor,
+    /// and the factory sets `currentSheet` itself, so the swap the
+    /// invalidation used to hang off is never taken there. The page the
+    /// editor lands on must lose its quiet reading all the same: from
+    /// that moment it can be typed into.
+    func testTheDayTheEditorIsBuiltOverLosesItsQuietReading() throws {
+        let model = try makeModel()
+        let today = try page(in: model, saying: "today")
+        try page(in: model, saying: "yesterday")
+        let before = model.quietRendering(for: today)
+
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: today),
+            selectedPage: today,
+            readOnly: false
+        )
+
+        XCTAssertEqual(roll.coordinator.currentSheet, today, "the editor was never built")
+        XCTAssertFalse(
+            model.quietRendering(for: today) === before,
+            "the page the editor was built over kept the reading it had before"
+        )
+    }
 }

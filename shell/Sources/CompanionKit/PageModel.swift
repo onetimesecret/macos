@@ -528,12 +528,17 @@ public final class PageModel: ObservableObject {
     /// rebuilt per pass would ask the core for every visible day's
     /// document on every keystroke.
     ///
-    /// Sound to cache because a quiet page cannot change while it is
-    /// quiet: only the selected page is editable, and the one path that
-    /// makes a page selectable — the editor moving onto it — drops its
-    /// entry on the way past (`invalidateQuietRendering(for:)`), so the
-    /// rendering a page comes back with is built after the last edit it
-    /// took rather than before the first.
+    /// Sound to cache because every path that changes a page's document
+    /// drops that page's entry on its way through
+    /// (`invalidateQuietRendering(for:)`), so the rendering a page comes
+    /// back with is built after the last edit it took rather than before
+    /// the first. The invalidation is at the mutation — an accepted op
+    /// batch, a wholesale mirror, a chip burned out of a document — and
+    /// deliberately not at the roll's swap, because a page can change
+    /// while the roll is not the surface on screen at all, or while it
+    /// is and the editor is standing on another day. A cache invalidated
+    /// by a view's choreography is a cache that is correct only on the
+    /// paths somebody thought of.
     private var quietRenderings: [UInt64: NSAttributedString] = [:]
 
     /// The slot a selection gesture last minted a page into, and the
@@ -1517,15 +1522,19 @@ public final class PageModel: ObservableObject {
         return rendered
     }
 
-    /// Forget how a page reads quietly, because it is about to stop
-    /// being quiet.
+    /// Forget how a page reads quietly, because the page has changed.
     ///
-    /// Called by the roll as the editor moves onto a page. Everything
-    /// typed from here on lands in the editor's storage and in the core,
-    /// and this cache would otherwise still hold the page as it stood
-    /// before the visit — so the day the user just wrote on would come
-    /// back, when they moved to another one, showing what it said before
-    /// they arrived.
+    /// Called from every path in this file that moves a page's document
+    /// — an accepted op batch, a wholesale mirror, a chip burned out of
+    /// one — and by the roll as the editor lands on a page, which is the
+    /// moment a page starts being able to change. Without it this cache
+    /// would go on holding the page as it stood before, so the day the
+    /// user just wrote on would come back, when they moved to another
+    /// one, showing what it said before they arrived.
+    ///
+    /// Dropping the entry is the whole of it: the next reader rebuilds
+    /// from the core, and the roll notices because the object it gets
+    /// back is not the one its region was seeded from.
     public func invalidateQuietRendering(for id: UInt64) {
         quietRenderings[id] = nil
     }
@@ -2408,6 +2417,12 @@ public final class PageModel: ObservableObject {
     public func applyOps(sheet: UInt64, opsJSON: String) {
         let accepted = client.applyOps(sheet: sheet, json: opsJSON)
         if accepted {
+            // The page just changed, so how it reads when it is quiet
+            // changed with it (issue #79). Here rather than at the
+            // roll's swap: this is the path a keystroke takes in either
+            // mode, and the page it names is not always a page the roll
+            // is on — or a page any roll is mounted over.
+            invalidateQuietRendering(for: sheet)
             markDirty()
             refresh()
         } else {
@@ -2439,7 +2454,12 @@ public final class PageModel: ObservableObject {
         if !accepted {
             logger.error("the recovery mirror itself was refused; core and editor disagree")
         }
-        if accepted { markDirty() }
+        if accepted {
+            // A wholesale rewrite is the largest change a page can take,
+            // so the roll's reading of it is the most wrong (issue #79).
+            invalidateQuietRendering(for: sheet)
+            markDirty()
+        }
         refresh()
     }
 
@@ -2602,7 +2622,15 @@ public final class PageModel: ObservableObject {
     /// so it runs under the emission guard rather than travelling back
     /// as an op.
     private func removeChipFromDocument(_ chipId: UInt64) {
+        // Which page owns the chip has to be asked before the delete
+        // takes the answer away, and asked of the core rather than of
+        // the storages below (issue #79). A chip can be standing on a
+        // day the editor has never visited: that page has a rendering on
+        // the roll and no storage at all, so the loop would find nothing
+        // and the burned chip would go on being drawn there.
+        let host = livePageIDs.first { chipIds(onSheet: $0).contains(chipId) }
         _ = client.deleteChip(id: chipId)
+        if let host { invalidateQuietRendering(for: host) }
         for (sheet, storage) in storages {
             var found: NSRange?
             storage.enumerateAttribute(

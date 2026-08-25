@@ -330,10 +330,21 @@ final class DayStackView: NSView {
             // changed, but nothing is assembled.
             if let editor, coordinator.currentSheet != nil { model.activeEditor = editor }
             refreshGutters()
+            refreshQuietRegions()
             relayout()
             editor?.isEditable = !readOnly
             return
         }
+        // The page the editor is leaving has to be finished with before
+        // it is drawn. A composition in flight is provisional text the
+        // emission gate deliberately keeps out of the core, so a
+        // rendering built for the outgoing day while it is still marked
+        // would show that day without the sentence just typed into it —
+        // and the swap below, which is what settles the composition,
+        // happens after the rows are assembled. So settle first: the
+        // assembly reads the core, and the core has to be told before it
+        // is read.
+        settleComposition(before: selectedPage)
         // A row appearing above the viewport must not move what the
         // reader is looking at, so where the topmost page stands is
         // remembered across the assembly and answered for afterwards.
@@ -477,16 +488,62 @@ final class DayStackView: NSView {
     }
 
     /// The rendering of a day the editor is not standing on, built once
-    /// per page and kept for as long as the projection holds it.
+    /// per page and kept for as long as the projection holds it — and
+    /// re-read whenever the model has rebuilt it underneath.
     private func quietRegion(for page: UInt64) -> QuietPageView {
-        if let existing = quietRegions[page] { return existing }
+        let rendering = model.quietRendering(for: page)
+        if let existing = quietRegions[page] {
+            existing.reseed(with: rendering)
+            return existing
+        }
         let region = QuietPageView(
-            page: page, rendering: model.quietRendering(for: page)
+            page: page, rendering: rendering
         ) { [weak self] clicked, index in
             self?.promote(page: clicked, caretAt: index)
         }
         quietRegions[page] = region
         return region
+    }
+
+    /// Take every quiet day's ink again wherever the model has rebuilt
+    /// it since the region was seeded.
+    ///
+    /// An assembly is not the only moment a day the roll is drawing can
+    /// change. A chip burned out of an older page, an edit that landed
+    /// through the strip while this roll was unmounted, a composition
+    /// settling as the editor leaves — none of those moves a bucket, a
+    /// page id or the selection, so none of them changes the signature
+    /// and none of them assembles anything. This is how the roll notices
+    /// them, and it is why a region's contents can be trusted without
+    /// the view having to know which of those happened.
+    ///
+    /// It costs one dictionary lookup per visible day on a pass that is
+    /// already re-reading every gutter, and it copies nothing while
+    /// nothing has changed: the model hands back the very object each
+    /// region was seeded from, and identity is the whole test.
+    ///
+    /// Every key here belongs to the projection the roll last assembled,
+    /// and this runs only on a pass whose signature matched that one, so
+    /// no page named here has left the projection since.
+    private func refreshQuietRegions() {
+        for (page, region) in quietRegions {
+            region.reseed(with: model.quietRendering(for: page))
+        }
+    }
+
+    /// Settle whatever the input method has provisionally placed, when
+    /// the editor is about to move off the page it was placed on.
+    ///
+    /// `moveEditor` does this too, as its first statement, and that is
+    /// the one that matters for the storage swap. This one is about the
+    /// *reading*: the composition has to be in the core before the
+    /// outgoing day's rendering is built out of it. A view with nothing
+    /// marked is left alone, so the common pass pays a `hasMarkedText`
+    /// and no more.
+    private func settleComposition(before page: UInt64?) {
+        guard let editor, coordinator.currentSheet != nil, coordinator.currentSheet != page
+        else { return }
+        InkEditorView.discardComposition(in: editor)
     }
 
     // MARK: The one editor
@@ -508,6 +565,15 @@ final class DayStackView: NSView {
         }
         let mounted = editorView(for: page)
         model.activeEditor = mounted
+        // Above the guard, because the guard is taken on the pass that
+        // *builds* the editor: `makeInkTextView` sets `currentSheet`
+        // itself, so a fresh mount looks to the line below like a page
+        // the editor was already standing on. From here on this page can
+        // change, and what it says when it goes quiet again must be read
+        // after those changes rather than before them — the model drops
+        // the reading at every mutation now, and this covers the moment
+        // before there has been one.
+        model.invalidateQuietRendering(for: page)
         guard coordinator.currentSheet != page else {
             placeCaretIfPending(on: page, in: mounted)
             return
@@ -516,13 +582,6 @@ final class DayStackView: NSView {
             mounted, to: page,
             storage: model.storage(for: page), restoringScrollIn: nil
         )
-        // Belt to the braces above: the quiet region for this page was
-        // taken out before the swap, and the swap sheds any manager left
-        // on the incoming storage anyway. The rendering is dropped
-        // because from here on this page can change, and what it says
-        // when it goes quiet again must be read after those changes
-        // rather than before them.
-        model.invalidateQuietRendering(for: page)
         placeCaretIfPending(on: page, in: mounted)
         model.refocusEditorIfKeyed()
     }
@@ -1045,9 +1104,21 @@ final class QuietPageView: NSTextView {
     /// end: it is this view's and the model never learns of it.
     private let storage: NSTextStorage
 
+    /// The model's rendering this region was last seeded from, kept so
+    /// that "has this day changed since?" is an identity comparison
+    /// rather than a walk over two attributed strings.
+    ///
+    /// A second hold on the plaintext, and deliberately not a widening
+    /// of it: the storage above already carries the same ink for exactly
+    /// as long as this view lives, so what this keeps alive is a copy
+    /// that is legible in this region anyway. It is dropped the moment
+    /// the day is re-read.
+    private var seeded: NSAttributedString
+
     init(page: UInt64, rendering: NSAttributedString, onClick: @escaping (UInt64, Int) -> Void) {
         self.page = page
         self.onClick = onClick
+        self.seeded = rendering
         let storage = NSTextStorage()
         storage.setAttributedString(rendering)
         self.storage = storage
@@ -1082,6 +1153,26 @@ final class QuietPageView: NSTextView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("the roll's quiet days are never unarchived")
+    }
+
+    /// Take the day's ink again, because the model has rebuilt it.
+    ///
+    /// A quiet day can change without the editor ever standing on it: a
+    /// chip burned out of it, an edit that reached it through the strip,
+    /// a composition settling as the editor left. The model drops its
+    /// reading at each of those, so the object it hands back afterwards
+    /// is a different one — and that, rather than a comparison of the
+    /// text, is the signal. An unchanged day hands back the very string
+    /// this was seeded from and nothing is copied at all.
+    ///
+    /// The storage is re-filled rather than the view re-made: a region
+    /// rebuilt under the roll would take its layout, its measured height
+    /// and its place in the stack down with it, for a day whose only
+    /// news is a word.
+    func reseed(with rendering: NSAttributedString) {
+        guard rendering !== seeded else { return }
+        seeded = rendering
+        storage.setAttributedString(rendering)
     }
 
     /// One focusable text view in the card, always. The editor is it.
