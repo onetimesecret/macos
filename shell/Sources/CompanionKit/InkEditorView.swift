@@ -33,9 +33,6 @@ public struct InkEditorView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
-        // Explicit TextKit 1 stack: chips render through
-        // NSTextAttachmentCell, and swapping pages swaps the storage
-        // under one layout manager (`replaceTextStorage`).
         // A fresh editor mount follows a teardown: a ledger round trip,
         // or the empty state, which since ADR-0017 is reached whenever
         // the selected tab holds no page and not only when the last
@@ -44,56 +41,15 @@ public struct InkEditorView: NSViewRepresentable {
         // registers its own, so ⌘Z rewrites live text instead of firing
         // at a zombie (issue #23).
         model.discardUndoHistory()
-        let layoutManager = NSLayoutManager()
-        let container = NSTextContainer(size: NSSize(
-            width: 0, height: CGFloat.greatestFiniteMagnitude
-        ))
-        container.widthTracksTextView = true
-        let storage = model.storage(for: sheetID)
-        // The page's storage outlives any one editor instance — the
-        // ledger and the empty state unmount the editor, even though
-        // page↔page switches no longer do (ADR-0006). Detach layout
-        // managers a torn-down editor left behind so exactly one
-        // drives this storage.
-        Coordinator.shedLayoutManagers(from: storage, keeping: nil)
-        storage.addLayoutManager(layoutManager)
-        layoutManager.addTextContainer(container)
-        // Only the mounted page's storage carries the coordinator as
-        // its delegate, so ops are emitted for the page on screen and
-        // never for a background storage a programmatic write touches.
-        storage.delegate = context.coordinator
-
-        let textView = InkTextView(frame: .zero, textContainer: container)
-        // Rich text stays on so chip attachments survive editing; the
-        // user-facing surface is still plain — ⌘V pastes plain text and
-        // no ruler/font UI exists. Styling is ours alone (restyle()).
-        textView.isRichText = true
-        textView.isEditable = !readOnly
-        textView.allowsUndo = true
-        Self.enableFinding(on: textView)
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.drawsBackground = false
-        textView.textContainerInset = NSSize(
-            width: 12, height: Coordinator.topInset
+        let textView = Self.makeInkTextView(
+            model: model, sheetID: sheetID, coordinator: context.coordinator
         )
-        textView.typingAttributes = [
-            .font: InkStyle.baseFont,
-            .foregroundColor: NSColor.labelColor,
-        ]
-        textView.delegate = context.coordinator
-        textView.coordinator = context.coordinator
-        context.coordinator.textView = textView
-        context.coordinator.currentSheet = sheetID
-        context.coordinator.restyle()
-        model.activeEditor = textView
-        // The summon-time offer's button takes the same road as ⇧⌘V,
-        // so the chip lands at the caret and consent stays a gesture
-        // aimed at this page (ADR-0007 Amendment 1).
-        model.performSealedPaste = { [weak coordinator = context.coordinator] in
-            coordinator?.sealedPaste()
-        }
+        // Whether the page accepts typing is the stance's business and
+        // not the editor's, which is why it is set here rather than in
+        // the building: `updateNSView` re-gates it on every pass, since
+        // resting and raising change what the editor accepts without
+        // changing the editor.
+        textView.isEditable = !readOnly
 
         let scroll = Self.scrollStack(for: textView)
         context.coordinator.observeClip(of: scroll)
@@ -122,6 +78,85 @@ public struct InkEditorView: NSViewRepresentable {
         guard let textView = scroll.documentView as? InkTextView,
               coordinator.model.activeEditor === textView else { return }
         coordinator.model.activeEditor = nil
+    }
+
+    /// The one editor, built: a TextKit 1 stack over the page's storage,
+    /// wired to the coordinator that speaks for it.
+    ///
+    /// Explicit TextKit 1, because chips render through
+    /// `NSTextAttachmentCell` and swapping pages swaps the storage under
+    /// one layout manager (`replaceTextStorage`).
+    ///
+    /// Built apart from `scrollStack(for:)` because a scroller of its own
+    /// is only one of the places this editor can stand. A surface that
+    /// rolls several days past a single clip needs the same editor —
+    /// the same first responder, the same coordinator, the same
+    /// `activeEditor` handle, the same `performSealedPaste` — mounted
+    /// inside a stack rather than inside a scroll view (ADR-0020), and a
+    /// second copy of this wiring is exactly how the two surfaces would
+    /// quietly stop agreeing about what the one editor is. Everything a
+    /// mount decides for itself stays with the mount: the caller grants
+    /// editing, wraps the view in whatever it is going to live in, and
+    /// sheds the undo history a teardown left behind.
+    ///
+    /// Main-actor by hand rather than by inference: everything it wires
+    /// belongs to the main thread — the model, the styling, the view —
+    /// and a builder called from somewhere other than a representable's
+    /// own lifecycle should say so at its declaration.
+    @MainActor
+    static func makeInkTextView(
+        model: PageModel, sheetID: UInt64, coordinator: Coordinator
+    ) -> InkTextView {
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(
+            width: 0, height: CGFloat.greatestFiniteMagnitude
+        ))
+        container.widthTracksTextView = true
+        let storage = model.storage(for: sheetID)
+        // The page's storage outlives any one editor instance — the
+        // ledger and the empty state unmount the editor, even though
+        // page↔page switches no longer do (ADR-0006). Detach layout
+        // managers a torn-down editor left behind so exactly one
+        // drives this storage.
+        Coordinator.shedLayoutManagers(from: storage, keeping: nil)
+        storage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(container)
+        // Only the mounted page's storage carries the coordinator as
+        // its delegate, so ops are emitted for the page on screen and
+        // never for a background storage a programmatic write touches.
+        storage.delegate = coordinator
+
+        let textView = InkTextView(frame: .zero, textContainer: container)
+        // Rich text stays on so chip attachments survive editing; the
+        // user-facing surface is still plain — ⌘V pastes plain text and
+        // no ruler/font UI exists. Styling is ours alone (restyle()).
+        textView.isRichText = true
+        textView.allowsUndo = true
+        Self.enableFinding(on: textView)
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.drawsBackground = false
+        textView.textContainerInset = NSSize(
+            width: 12, height: Coordinator.topInset
+        )
+        textView.typingAttributes = [
+            .font: InkStyle.baseFont,
+            .foregroundColor: NSColor.labelColor,
+        ]
+        textView.delegate = coordinator
+        textView.coordinator = coordinator
+        coordinator.textView = textView
+        coordinator.currentSheet = sheetID
+        coordinator.restyle()
+        model.activeEditor = textView
+        // The summon-time offer's button takes the same road as ⇧⌘V,
+        // so the chip lands at the caret and consent stays a gesture
+        // aimed at this page (ADR-0007 Amendment 1).
+        model.performSealedPaste = { [weak coordinator] in
+            coordinator?.sealedPaste()
+        }
+        return textView
     }
 
     /// The page inside its scroller: a text view free to grow as tall as
