@@ -1906,6 +1906,11 @@ public final class PageModel: ObservableObject {
     /// lands. Nothing calls it from `refresh()`, from a mount or from
     /// the toggle: what is displayed is not thereby minted (ADR-0017).
     public func openToday() {
+        // Bucket 0 is today and there is exactly one of it: the
+        // projection folds a page stamped ahead of now into today rather
+        // than giving it a bucket of its own, so this cannot find an
+        // empty Today standing above a peopled one and mint beside a
+        // page already on screen (`TimeUnit.bucket(dayOffset:)`).
         if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first {
             select(tab)
             return
