@@ -318,34 +318,13 @@ struct SheetTab: View {
 
     /// The rename gesture lives here because double-click is already
     /// the pause gesture: a tab that renamed on double-click could not
-    /// hold its own clock. An NSAlert with a text field rather than a
-    /// SwiftUI alert, since the SwiftUI form of this takes a text field
-    /// only from macOS 14 and both apps ship to 13.
-    ///
-    /// Submitting an empty field is meaningful, not a cancel: it drops
-    /// the override and lets the title derive from the page again.
+    /// hold its own clock. The prompt itself is shared
+    /// (`TabRenamePrompt`), since the roll's day headers offer the same
+    /// verb on the same slots (issue #79) and two alerts explaining one
+    /// rule would eventually explain it differently.
     private func promptForRename() {
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "Rename this tab"
-        alert.informativeText =
-            "The name shows on the tab and is frozen into each ledger record "
-            + "the tab's pages produce, so keep the secret itself out of it. It "
-            + "outlives every page the tab holds, and only closing the tab ends "
-            + "it. Leave the field empty to let the label follow the page's own "
-            + "first line again."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.stringValue = sheet.title
-        field.placeholderString = "empty derives the title from the page"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        // An accessory app's alert would otherwise open behind whatever
-        // is frontmost.
-        NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        model.renameTab(sheet.id, to: field.stringValue)
+        guard let name = TabRenamePrompt.newName(for: sheet.title) else { return }
+        model.renameTab(sheet.id, to: name)
     }
 
     private var accessibilityDescription: String {
@@ -358,6 +337,51 @@ struct SheetTab: View {
             description += sheet.holdToppedUp ? ", clock held, topped up" : ", clock held"
         }
         return description
+    }
+}
+
+/// Asking for a tab's new name, wherever the asking is done from.
+///
+/// An `NSAlert` with a text field rather than a SwiftUI alert, since the
+/// SwiftUI form of this takes a text field only from macOS 14 and both
+/// apps ship to 13. It answers with the string the user submitted and
+/// nothing else — the caller renames — so the one surface that owns a
+/// tab's identity stays the model.
+///
+/// Submitting an empty field is meaningful, not a cancel: it drops the
+/// override and lets the title derive from the page again. Cancelling is
+/// nil, and nil means nothing happened at all.
+///
+/// Shared because the strip is no longer the only place the verb is
+/// offered. The roll carries rename on each page's own day-header gutter
+/// (issue #79), and the informative text below is a rule about what a
+/// tab name *is* — it outlives every page, it is frozen into every
+/// ledger record, so the secret must stay out of it — which is a rule
+/// the app should state once.
+@MainActor
+enum TabRenamePrompt {
+    static func newName(for currentTitle: String) -> String? {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Rename this tab"
+        alert.informativeText =
+            "The name shows on the tab and is frozen into each ledger record "
+            + "the tab's pages produce, so keep the secret itself out of it. It "
+            + "outlives every page the tab holds, and only closing the tab ends "
+            + "it. Leave the field empty to let the label follow the page's own "
+            + "first line again."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = currentTitle
+        field.placeholderString = "empty derives the title from the page"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        // An accessory app's alert would otherwise open behind whatever
+        // is frontmost.
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        return field.stringValue
     }
 }
 
