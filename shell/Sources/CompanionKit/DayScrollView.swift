@@ -335,6 +335,13 @@ final class DayStackView: NSView {
             editor?.isEditable = !readOnly
             return
         }
+        // Building the editor gives it a frame, and a frame change is
+        // one of the two things that call `relayout`. Hold the pass shut
+        // until the rows it would be laying out are the new ones — and
+        // shut it before the composition settles below, because settling
+        // one puts characters in the editor and a text view that grows
+        // posts a frame change like any other.
+        isLayingOut = true
         // The page the editor is leaving has to be finished with before
         // it is drawn. A composition in flight is provisional text the
         // emission gate deliberately keeps out of the core, so a
@@ -350,10 +357,6 @@ final class DayStackView: NSView {
         // remembered across the assembly and answered for afterwards.
         let anchor = topmostPageAnchor()
         rendered = signature
-        // Building the editor gives it a frame, and a frame change is
-        // one of the two things that call `relayout`. Hold the pass shut
-        // until the rows it would be laying out are the new ones.
-        isLayingOut = true
         assembleRows(projection: projection, selectedPage: selectedPage)
         settleEditor(on: selectedPage)
         isLayingOut = false
