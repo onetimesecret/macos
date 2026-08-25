@@ -1,6 +1,6 @@
 [package]
 name = "companion-pasteboard"
-version = "0.2.0"
+version = "0.3.0"
 description = "Pasteboard adapter for the Onetime Secret macOS companion: NSPasteboard on macOS, plus the hygiene vocabulary (ConcealedType, transient, clear-after-copy) shared by every implementation."
 publish = false
 edition.workspace = true

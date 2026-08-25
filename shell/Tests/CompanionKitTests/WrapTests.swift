@@ -219,7 +219,7 @@ final class WrapTests: XCTestCase {
             with: InkEditorView.Coordinator.chipString(
                 ChipInfo(
                     chipId: 1, kind: "text", excerpt: "to…en",
-                    sizeLabel: "5 ch", promoted: false
+                    sizeLabel: "5 ch", concealed: false
                 )
             )
         )

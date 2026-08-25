@@ -8,7 +8,8 @@
 //! - [`KeychainStore`] — macOS Keychain via `security-framework`,
 //!   compiled only on macOS (the platform CI lane validates it). This is
 //!   the legacy file based login keychain, and it stays the home of the
-//!   API token: its ACL prompt path is the token's promotion story.
+//!   API token: its ACL prompt path is the story the conceal action
+//!   tells.
 //! - [`DataProtectionKeychainStore`]: the modern data protection
 //!   keychain (`kSecUseDataProtectionKeychain`,
 //!   `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`), reached through
@@ -503,7 +504,7 @@ impl CredentialStore for KeychainStore {
         // Attributes only: the query matches the item but never asks the
         // Keychain to decrypt it, so it stays below the ACL prompt. A hit
         // means the token is stored; the read that actually needs it
-        // (promotion) is where the prompt belongs.
+        // (the conceal call) is where the prompt belongs.
         secitem::exists(secitem::Keychain::DefaultFile, &self.service, account)
             .map_err(Self::backend)
     }
