@@ -299,4 +299,59 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertEqual(model.tabs.count, 2, "the fall minted or closed something")
         XCTAssertFalse(model.tabs[1].hasPage, "the fall minted into the slot it left")
     }
+
+    /// And the fall applies at the mode's own entrance, not only on the
+    /// next refresh to happen along. Turning the toggle on from a
+    /// selection standing on an emptied slot is the likeliest flip there
+    /// is — the page died overnight — and it used to open the mode with
+    /// nothing selected, no editor mounted and no row lit.
+    func testTurningTheModeOnFallsASelectionTheRailWouldNotDraw() throws {
+        let (model, _) = try makeModel()
+        model.loadStateIfNeeded()
+        model.newPage()
+        model.coreClient.setRung(tab: model.tabs[1].id, rung: .oneHour)
+        model.coreClient.ageForTests(byMs: 2 * 60 * 60 * 1_000)
+        model.coreClient.expireDue()
+        model.refresh()
+        model.selection = model.tabs[1].id
+        XCTAssertNil(model.selectedPageID, "the fixture wanted a selection on an emptied slot")
+        let marks = model.dirtyMarks
+
+        model.showsTimeUnits = true
+
+        XCTAssertEqual(
+            model.selection, model.tabs[0].id,
+            "the mode opened on a slot it draws no row for")
+        XCTAssertEqual(model.tabs.count, 2, "the toggle minted or closed something")
+        XCTAssertFalse(model.tabs[1].hasPage, "the toggle minted into the slot it left")
+        XCTAssertEqual(
+            model.dirtyMarks, marks,
+            "a presentation preference armed a ciphertext write (ADR-0016 section 6)")
+    }
+
+    /// The other two directions, which must not move: a selection the
+    /// rail does draw is left exactly where it is, and leaving the mode
+    /// falls nothing at all, because the strip draws every slot — the
+    /// emptied ones included, which is its own deliberate rule.
+    func testTheToggleMovesNoSelectionTheSurfaceCanShow() throws {
+        let (model, _) = try makeModel()
+        model.loadStateIfNeeded()
+        model.newPage()
+        model.coreClient.setRung(tab: model.tabs[1].id, rung: .oneHour)
+        model.coreClient.ageForTests(byMs: 2 * 60 * 60 * 1_000)
+        model.coreClient.expireDue()
+        model.refresh()
+        let emptied = model.tabs[1].id
+        let peopled = model.tabs[0].id
+
+        model.selection = peopled
+        model.showsTimeUnits = true
+        XCTAssertEqual(model.selection, peopled, "the toggle moved a selection the rail draws")
+
+        model.selection = emptied
+        model.showsTimeUnits = false
+        XCTAssertEqual(
+            model.selection, emptied,
+            "leaving the mode fell a selection the strip draws perfectly well")
+    }
 }
