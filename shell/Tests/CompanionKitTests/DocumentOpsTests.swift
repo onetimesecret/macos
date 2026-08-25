@@ -454,6 +454,72 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertEqual(coordinator.blockLabelLayout.last?.range.location, 14)
     }
 
+    /// A fence typed line by line is one block per line core-side, but
+    /// the eye reads the fence as one slab, so the display coalesces
+    /// the region under a single stamp above the opening rule.
+    func testAFenceTypedLineByLineCarriesOneLabel() {
+        makeEditor()
+        type("```", "\n", "let x = 1", "\n", "```")
+        XCTAssertEqual(labelFields().count, 1, "one stamp for the whole fence region")
+        let layout = coordinator.blockLabelLayout
+        XCTAssertEqual(layout.count, 1)
+        XCTAssertEqual(
+            layout[0].range, NSRange(location: 0, length: 4),
+            "the stamp sits above the opening rule, not above every line"
+        )
+    }
+
+    /// The closing rule ends the region: what the reader types after it
+    /// is prose again, stamped on its own.
+    func testABlockAfterTheClosingFenceStampsSeparately() {
+        makeEditor()
+        type("```", "\n", "code", "\n", "```", "\n", "after")
+        XCTAssertEqual(labelFields().count, 2, "the fence is one stamp, the prose after another")
+        XCTAssertEqual(
+            coordinator.blockLabelLayout.last?.range.location, 13,
+            "the second stamp belongs to the line below the closing rule"
+        )
+    }
+
+    /// A fence left open holds to the last line of the page, exactly as
+    /// the styling already reads it: the region, and its single stamp,
+    /// run to the end.
+    func testAnUnclosedFenceStillCoalescesToOneLabel() {
+        makeEditor()
+        type("```", "\n", "still code", "\n", "more code")
+        XCTAssertEqual(labelFields().count, 1)
+        XCTAssertEqual(coordinator.blockLabelLayout.first?.range.location, 0)
+    }
+
+    /// The region's stamp spans the blocks it covers: earliest created
+    /// to latest touch, rendered through the same collapse rule a lone
+    /// block's label follows. The wiring above cannot hold the clock
+    /// still, so the span math is asserted on the pure function.
+    func testAFenceRegionLabelSpansEarliestToLatest() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.fenceRegionLabel(stamps: [
+                (createdS: 2_000, modifiedS: nil),
+                (createdS: 1_000, modifiedS: 1_000),
+                (createdS: 3_000, modifiedS: 9_000),
+            ]),
+            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 9_000)
+        )
+        // Created counts as the latest touch for a block never modified.
+        XCTAssertEqual(
+            InkEditorView.Coordinator.fenceRegionLabel(stamps: [
+                (createdS: 1_000, modifiedS: nil),
+                (createdS: 5_000, modifiedS: nil),
+            ]),
+            InkEditorView.Coordinator.blockLabel(createdS: 1_000, modifiedS: 5_000)
+        )
+        // A region with no committed content wears nothing.
+        XCTAssertNil(
+            InkEditorView.Coordinator.fenceRegionLabel(stamps: [
+                (createdS: nil, modifiedS: nil)
+            ])
+        )
+    }
+
     /// The gap a labeled block reserves is above its own first line, so
     /// the label has to land inside that gap. Placing it against the
     /// line fragment rect instead drops it onto the previous

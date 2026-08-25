@@ -989,14 +989,14 @@ public struct InkEditorView: NSViewRepresentable {
             guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
             let text = storage.string as NSString
             let metas = model.coreClient.blocks(sheet: sheet)
-            var displays: [BlockDisplay] = []
-            storage.beginEditing()
+            // First pass: walk the page block by block and classify
+            // every paragraph. One scanner serves the whole page, since
+            // a fence opened in one block goes on holding the lines of
+            // the blocks after it: what a line means depends on
+            // everything above it (issue #75).
+            var walks: [BlockWalk] = []
             var location = 0
             var block = 0
-            // One scanner for the whole page, since a fence opened in
-            // one block goes on holding the lines of the blocks after
-            // it: what a line means depends on everything above it
-            // (issue #75).
             var scanner = InkStyle.FenceScanner()
             while location < text.length {
                 let meta = block < metas.count ? metas[block] : nil
@@ -1008,40 +1008,71 @@ public struct InkEditorView: NSViewRepresentable {
                 let extent = Self.blockRange(
                     from: location, paragraphs: meta?.paragraphs ?? 1, of: text
                 )
-                // A blank block is spacing, not writing: it carries a
-                // stamp in the core but shows none, so a page of empty
-                // paragraphs no longer stacks a column of identical
-                // times down the margin.
-                let blank = Self.isBlank(extent, of: text)
-                let createdS = blank ? nil : meta?.createdS
+                // A block that begins inside an open fence belongs to
+                // the fence region the blocks above it started: the core
+                // splits a typed fence into one block per line, but the
+                // eye reads the fence as one slab, so those blocks stamp
+                // together (and an unterminated fence carries the region
+                // to the end of the page, the same reading the styling
+                // gives its lines).
+                let joinsPrevious = scanner.insideFence
                 var head = extent
+                var paragraphs: [(range: NSRange, kind: InkStyle.LineKind)] = []
                 var paragraphStart = location
                 while paragraphStart < NSMaxRange(extent) {
                     let paragraph = text.paragraphRange(
                         for: NSRange(location: paragraphStart, length: 0)
                     )
-                    // Only the block's first line reserves the gap the
-                    // label sits in; the rest of a pasted passage runs on
-                    // at ordinary spacing.
-                    let leads = paragraphStart == location
-                    if leads { head = paragraph }
-                    styleParagraph(
-                        paragraph, of: storage,
-                        kind: scanner.classify(text.substring(with: paragraph)),
-                        labeled: createdS != nil && leads
+                    if paragraphStart == location { head = paragraph }
+                    paragraphs.append(
+                        (paragraph, scanner.classify(text.substring(with: paragraph)))
                     )
                     if paragraph.length == 0 { break }
                     paragraphStart = NSMaxRange(paragraph)
                 }
-                if let createdS {
-                    displays.append(BlockDisplay(
-                        range: head,
-                        text: Self.blockLabel(createdS: createdS, modifiedS: meta?.modifiedS)
-                    ))
-                }
+                walks.append(BlockWalk(
+                    head: head, meta: meta,
+                    // A blank block is spacing, not writing: it carries a
+                    // stamp in the core but shows none, so a page of
+                    // empty paragraphs no longer stacks a column of
+                    // identical times down the margin.
+                    blank: Self.isBlank(extent, of: text),
+                    paragraphs: paragraphs, joinsPrevious: joinsPrevious
+                ))
                 block += 1
                 if extent.length == 0 { break }
                 location = NSMaxRange(extent)
+            }
+            // Second pass: lay the attributes down group by group,
+            // where a group is one ordinary block or the run of blocks
+            // a fence region spans, and stamp each group once at its
+            // first line, earliest created to latest modified. Interior
+            // blocks of a region get neither label nor the reserved
+            // gap, so the fence renders as contiguous lines.
+            var displays: [BlockDisplay] = []
+            storage.beginEditing()
+            var lower = 0
+            while lower < walks.count {
+                var upper = lower + 1
+                while upper < walks.count, walks[upper].joinsPrevious { upper += 1 }
+                let group = Array(walks[lower..<upper])
+                let label = Self.groupLabel(for: group)
+                for (position, walk) in group.enumerated() {
+                    for (index, paragraph) in walk.paragraphs.enumerated() {
+                        // Only the group's very first line reserves the
+                        // gap the label sits in; the rest of a pasted
+                        // passage or a fence region runs on at ordinary
+                        // spacing.
+                        styleParagraph(
+                            paragraph.range, of: storage, kind: paragraph.kind,
+                            labeled: label != nil && position == 0 && index == 0
+                        )
+                    }
+                }
+                if let label, let head = group.first?.head {
+                    displays.append(BlockDisplay(range: head, text: label))
+                }
+                lower = upper
             }
             storage.endEditing()
             blockDisplays = displays
@@ -1153,6 +1184,48 @@ public struct InkEditorView: NSViewRepresentable {
         private struct BlockDisplay {
             let range: NSRange
             let text: String
+        }
+
+        /// One core block as the first restyle pass read it: where it
+        /// starts, what it carries, and whether it began inside a fence
+        /// another block opened — the fact the second pass groups by.
+        private struct BlockWalk {
+            let head: NSRange
+            let meta: BlockInfo?
+            let blank: Bool
+            let paragraphs: [(range: NSRange, kind: InkStyle.LineKind)]
+            let joinsPrevious: Bool
+        }
+
+        /// The stamp a group renders, or nil for a group with nothing
+        /// to say. A lone block keeps the original reading — blank is
+        /// spacing and shows nothing. A fence region typed line by line
+        /// is many core blocks the eye reads as one slab, so it takes
+        /// one stamp spanning them: earliest created to latest touch,
+        /// and the branch of `blockLabel` that collapses an identical
+        /// pair still applies.
+        private static func groupLabel(for group: [BlockWalk]) -> String? {
+            if group.count == 1, let walk = group.first {
+                guard !walk.blank, let createdS = walk.meta?.createdS else { return nil }
+                return blockLabel(createdS: createdS, modifiedS: walk.meta?.modifiedS)
+            }
+            return fenceRegionLabel(
+                stamps: group.compactMap(\.meta).map { ($0.createdS, $0.modifiedS) }
+            )
+        }
+
+        /// The stamp a fence region wears: earliest created to latest
+        /// touch across every block the region spans, since the lines
+        /// were typed over a stretch of time but read as one slab. A
+        /// block that was touched but never modified counts its created
+        /// stamp as its latest, and a region with no committed content
+        /// at all wears nothing.
+        static func fenceRegionLabel(
+            stamps: [(createdS: Int64?, modifiedS: Int64?)]
+        ) -> String? {
+            guard let created = stamps.compactMap({ $0.createdS }).min() else { return nil }
+            let modified = stamps.compactMap { $0.modifiedS ?? $0.createdS }.max()
+            return blockLabel(createdS: created, modifiedS: modified)
         }
 
         private var blockDisplays: [BlockDisplay] = []

@@ -257,6 +257,16 @@ wash, so it reads as one slab of code. An unterminated fence holds to
 the last line of the page, which is the reading a writer mid-paste
 would expect.
 
+**A fence region stamps once** (ADR-0022). A fence typed line by line is
+one core block per line — the block model (ADR-0013) is untouched — but
+the display treats the run of blocks from the opening rule to the rule
+that answers it as one labeled unit: a single created/modified stamp
+above the opening rule, spanning the earliest creation and the latest
+touch across the blocks the region covers, and no label gap above the
+interior lines, so the slab renders contiguous. An unterminated fence
+carries the region to the end of the page, the same reading the styling
+gives its lines.
+
 ## The keyboard map, complete
 
 | Keys | Action |

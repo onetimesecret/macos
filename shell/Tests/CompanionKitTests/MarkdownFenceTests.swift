@@ -186,6 +186,32 @@ final class FenceRenderingTests: XCTestCase {
         attributes(ofLine: index)[.foregroundColor] as? NSColor
     }
 
+    /// The visual seam between blocks is the reserved label gap, so a
+    /// fence typed line by line — one core block per line — must not
+    /// reserve it anywhere but above the opening rule: the interior
+    /// lines run at ordinary spacing and the slab reads as contiguous.
+    func testAFenceTypedLineByLineReservesNoInteriorGaps() {
+        makeEditor()
+        for piece in ["```", "\n", "echo hi", "\n", "```", "\n", "after"] {
+            textView.insertText(piece, replacementRange: NSRange(location: NSNotFound, length: 0))
+        }
+        coordinator.restyle()
+        for line in 1...2 {
+            let style = attributes(ofLine: line)[.paragraphStyle] as? NSParagraphStyle
+            XCTAssertEqual(
+                style?.paragraphSpacingBefore, 0,
+                "line \(line) reserved a label gap inside the fence"
+            )
+        }
+        // The prose below the closing rule is its own block again, and
+        // its stamp gets its gap back.
+        let after = attributes(ofLine: 3)[.paragraphStyle] as? NSParagraphStyle
+        XCTAssertEqual(
+            after?.paragraphSpacingBefore,
+            InkEditorView.Coordinator.blockLabelReserve
+        )
+    }
+
     func testAHashInsideAFenceStaysPlainInk() {
         makeEditor()
         paste(

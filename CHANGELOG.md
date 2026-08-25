@@ -489,6 +489,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its first commit printed `Tue 13:30 → Tue 13:30`. The collapse now
   compares the rendered stamps: identical stamps read as one, and the
   arrow appears only once the range would actually say something.
+- **A fence typed line by line carries one stamp, not one per line**
+  (ADR-0022, `docs/spec/design/04-interaction-model.md`). The core
+  commits each typed line as its own block, so a fenced code block
+  entered by hand arrived as a stack of blocks and the page stood a
+  created/modified label between every line of the slab. The restyle
+  pass, which already reads the page through one fence scanner, now
+  treats the run of blocks from an opening rule to the rule that
+  answers it — or to the end of the page for a fence left open — as one
+  labeled unit: a single stamp above the opening rule, spanning the
+  earliest created and the latest modified across the region, and no
+  reserved label gap above the interior lines, so the fence renders as
+  the contiguous slab it reads as. Display only: the core's block model
+  and every stamp in it are untouched.
 - **Markdown inside a fenced code block is inert** (issue #75). The page
   read every line on its own, so a `# comment` pasted inside a fence
   rendered at heading weight with its hashes dimmed, which reads as the
