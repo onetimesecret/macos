@@ -14,3 +14,4 @@
 - [Issue #79 day seam](project_issue79_day_seam.md): one `local_day` for every day bucket, `Sheet::has_content` is the ledger's bar, and a new non-optional Codable field breaks the four summary fixtures in CompanionClientTests
 - [Issue #79 day projection](project_issue79_projection.md): every law of the day mode lives in `TimeUnitProjection.project`, `timeUnits` must stay computed, and no Swift test can move a page across a local midnight
 - [Issue #79 editor factoring](project_issue79_editor_factoring.md): `makeInkTextView` builds the one editor without a scroller, `moveEditor` holds the swap, editing stays with the mount and a nil scroll view skips only the scroll leg
+- [Issue #79 time rail](project_issue79_time_rail.md): the rail's targets must equal `visibleTargets`', the card's two content rows are written out in full, and a View type's statics are main-actor isolated so `map` wants a closure
