@@ -24,8 +24,10 @@ The durable answer makes a day an object the app creates, names, orders
 and reaps. Every version of it trips something already settled. A
 tab-per-day meets `DEFAULT_SHEET_CAP = 9`
 (crates/core/src/store.rs:31), which is refuse-don't-evict by design and
-which `restore` enforces on the way in as well, and it makes the
-calendar a second lifetime mechanism for a durable slot — the condition
+which `restore` enforces on the way in as well, refusing a file that
+claims more tabs than the cap as `Malformed`
+(crates/core/src/persist.rs:252), and it makes the calendar a second
+lifetime mechanism for a durable slot — the condition
 ADR-0017 names in as many words as its own eject trigger, which reopens
 that ADR and ADR-0016 or does not ship. A persisted day object needs a
 field in the snapshot, and the framing rule buys only *appended,
@@ -42,10 +44,11 @@ without any content-loss engineering at all.
 Two further constraints bound the mechanism rather than the model. Doc
 05's frugality budget targets ~0% idle CPU with no periodic wakeups and
 expiry scheduled rather than polled, and the shell arms exactly one
-timer, from `companion_next_event_ms`, which folds page deadlines and
-hold lapses and nothing else; a relative label that changes at local
-midnight must therefore not become a second timer or a new arm on the
-first. And doc 05 commits to `prefers-reduced-motion` swapping animation
+timer, from `companion_next_event_ms`
+(shell/Sources/CompanionKit/PageModel.swift:2345), which folds page
+deadlines and hold lapses and nothing else; a relative label that
+changes at local midnight must therefore not become a second timer or a
+new arm on the first. And doc 05 commits to `prefers-reduced-motion` swapping animation
 for stepped states, with no parallax and no bounce, which the issue's
 word "autoscroll" has to be read against.
 
