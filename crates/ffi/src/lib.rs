@@ -62,6 +62,15 @@
 
 mod conceal;
 mod diagnostics;
+// Public on purpose, unlike its siblings: the sync session layer that
+// will drive it is not built yet (issues #97–#99), and the GOP key
+// chain must meanwhile be reachable by the tests and callers that
+// prove its contract rather than sitting dead in the crate.
+pub mod gop;
+// Public for the same reason as `gop`: the session layer that will
+// drive the ceremony arrives with issues #98–#99, and until then the
+// pairing contract lives here with the tests that prove it.
+pub mod pairing;
 mod persist;
 
 use diagnostics::diag_fault;

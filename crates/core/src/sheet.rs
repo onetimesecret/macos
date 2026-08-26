@@ -318,6 +318,34 @@ pub(crate) enum SheetClock {
     },
 }
 
+/// How a page's compaction ceremony runs (ADR-0013, issue #101).
+/// Solo is the default and the restored state: a rung transition
+/// compacts inline, exactly as it always has. A page attached to a
+/// sync channel is marked deferred by the session layer, and a
+/// transition then leaves the history standing — the ceremony becomes
+/// a proposal ([`crate::sync::PageChannel`]), performed only once
+/// every attached device confirms
+/// ([`SheetStore::perform_ceremony`]). Never persisted: a sync
+/// session does not survive a restart, so a restore comes back
+/// immediate and the engine re-defers on attach.
+///
+/// [`SheetStore::perform_ceremony`]: crate::store::SheetStore::perform_ceremony
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CeremonyState {
+    /// No peer is attached: compaction runs inline at the transition.
+    Immediate,
+    /// Peers are attached: transitions mark the ceremony due instead
+    /// of compacting, and the history stands until the channel
+    /// confirms. Keeping the trail one more rung is recoverable;
+    /// splitting devices across a half-run boundary is not.
+    Deferred {
+        /// Whether a transition has come due since the last ceremony,
+        /// which is what tells the session layer this device should
+        /// propose.
+        due: bool,
+    },
+}
+
 /// A sheet: the operation-logged body, the chips it owns, and one
 /// countdown. Not `Debug` — it holds [`SealedChip`]s.
 ///
@@ -353,6 +381,11 @@ pub struct Sheet {
     /// Held time from holds that have already lapsed; the live hold's
     /// span is added on normalization (open question №8 accounting).
     pub(crate) total_held: Duration,
+    /// Whether compaction runs inline or waits for the channel
+    /// (issue #101). [`CeremonyState::Immediate`] until a sync session
+    /// says otherwise, so a page never touched by sync behaves exactly
+    /// as it always has.
+    pub(crate) ceremony: CeremonyState,
 }
 
 /// A derived title is a page property, not a projection: it is
@@ -428,6 +461,20 @@ impl Sheet {
         self.document.compact();
         self.rebuild_segments();
         self.settle_blocks();
+    }
+
+    /// What a rung transition does to the history: compact now when the
+    /// page is solo, or mark the ceremony due and leave the trail
+    /// standing when peers are attached (issue #101). Every transition
+    /// site calls this instead of [`Sheet::compact`] directly, so the
+    /// two behaviours cannot drift apart.
+    pub(crate) fn compact_or_defer(&mut self) {
+        match self.ceremony {
+            CeremonyState::Immediate => self.compact(),
+            CeremonyState::Deferred { .. } => {
+                self.ceremony = CeremonyState::Deferred { due: true };
+            }
+        }
     }
 
     /// Per-block provenance, in document order: each paragraph's
@@ -1230,6 +1277,7 @@ mod tests {
                 deadline: Instant::now(),
             },
             total_held: Duration::ZERO,
+            ceremony: CeremonyState::Immediate,
         }
     }
 

@@ -14,12 +14,13 @@ use zeroize::Zeroizing;
 
 use crate::blocks::BlockIndex;
 use crate::clock::Clock;
-use crate::document::SheetDocument;
+use crate::document::{SheetDocument, UpdateRefusal};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
-    ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock, SheetId, TITLE_CAP,
-    Tab, TabId, derive_title,
+    CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
+    SheetId, TITLE_CAP, Tab, TabId, derive_title,
 };
+use crate::sync::{ExpiryPolicy, HoldRegister};
 use crate::ttl::Ttl;
 
 /// The sheet cap: 9, the natural limit of the keyboard map (⌘1–⌘9;
@@ -100,6 +101,54 @@ impl std::fmt::Display for PayloadError {
 }
 
 impl std::error::Error for PayloadError {}
+
+/// Why a remote update or key frame was refused. Every arm leaves the
+/// page exactly as it was: refusal is whole, the same discipline the
+/// restore path applies to a damaged file, because a remote edit does
+/// not get a looser contract than a snapshot (issue #96).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteRefusal {
+    /// No such page.
+    UnknownSheet,
+    /// The bytes do not decode as an update batch or key frame.
+    Malformed,
+    /// The update depends on operations this page's document does not
+    /// hold: the sender is across a ceremony boundary, or this device
+    /// was away for longer than one GOP. The recovery is to rejoin at
+    /// the current key frame ([`SheetStore::adopt_key_frame`]), never
+    /// to ask for history (ADR-0013, ADR-0021 section 1).
+    MissingHistory,
+    /// The update would stand a chip sentinel this page does not own,
+    /// or stand one twice. The protocol delivers a chip's sealed bytes
+    /// before the delta that references it, or the delta waits.
+    ChipRoster,
+    /// A key frame was offered to a page whose document already holds
+    /// history. Joining is only ever from a fresh page: merging a key
+    /// frame over standing ops would duplicate the body rather than
+    /// replace it, and a device carrying pre-ceremony history drops it
+    /// (a fresh page) before it rejoins (ADR-0021 sections 1 and 5).
+    NotFresh,
+}
+
+impl std::fmt::Display for RemoteRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RemoteRefusal::UnknownSheet => write!(f, "no such page"),
+            RemoteRefusal::Malformed => write!(f, "the update does not decode"),
+            RemoteRefusal::MissingHistory => {
+                write!(f, "the update depends on history this page does not hold")
+            }
+            RemoteRefusal::ChipRoster => {
+                write!(f, "the update references a chip this page does not own")
+            }
+            RemoteRefusal::NotFresh => {
+                write!(f, "a key frame lands only on a fresh page")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RemoteRefusal {}
 
 /// One edit against a sheet's body (ADR-0013): the operation shape the
 /// shell sends instead of a whole-document snapshot. Every position and
@@ -261,6 +310,7 @@ impl<C: Clock> SheetStore<C> {
                 deadline: now + rung.duration(),
             },
             total_held: Duration::ZERO,
+            ceremony: CeremonyState::Immediate,
         });
         // The slot names itself the moment it exists, so no record can
         // ever reach the ledger without a label already resolved.
@@ -874,6 +924,359 @@ impl<C: Clock> SheetStore<C> {
         }
     }
 
+    // -----------------------------------------------------------------
+    // The delta seam: what sync puts on a wire (issue #96, ADR-0021 §1)
+    // -----------------------------------------------------------------
+
+    /// A page's sync frontier, as opaque bytes: the cursor a peer hands
+    /// back to [`SheetStore::export_document_updates`] to ask for what
+    /// it has not seen. Opaque on purpose — nothing above the document
+    /// module may read a peer identity out of it (issue #96). `None`
+    /// for an unknown page.
+    #[must_use]
+    pub fn document_version(&self, id: SheetId) -> Option<Vec<u8>> {
+        Some(self.sheet(id)?.document.version())
+    }
+
+    /// The operations a page's document holds beyond `since`: the
+    /// delta a peer at that frontier needs, ADR-0013's P-frames,
+    /// plaintext here and sealed by the seam above before any wire
+    /// (ADR-0021 section 2). `None` for an unknown page or a frontier
+    /// that does not decode. A stale frontier from across a ceremony
+    /// boundary is well-formed and yields the whole current GOP.
+    #[must_use]
+    pub fn export_document_updates(&self, id: SheetId, since: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+        self.sheet(id)?.document.export_updates_since(since)
+    }
+
+    /// Apply a peer's update batch to a page, refusing it whole unless
+    /// it lands cleanly: decodable, no missing dependencies, and every
+    /// chip sentinel resolving one-to-one against the chips this page
+    /// owns. An accepted batch then settles exactly as a local edit
+    /// does ([`SheetStore::settle_document`]): the projection rebuilds,
+    /// the title re-derives, and a chip whose sentinel a peer deleted
+    /// dies here with the same `Discarded` record ⌫ writes. The block
+    /// index was not narrated op by op, so it rebuilds with fresh
+    /// identities, which is the standing fallback for any unnarrated
+    /// mutation rather than a new rule.
+    pub fn apply_remote_update(&mut self, id: SheetId, bytes: &[u8]) -> Result<(), RemoteRefusal> {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return Err(RemoteRefusal::UnknownSheet);
+        };
+        let owned: Vec<ItemId> = sheet.chips.iter().map(|chip| chip.uuid).collect();
+        sheet
+            .document
+            .import_update(bytes, &owned)
+            .map_err(refusal_from)?;
+        self.settle_document(id);
+        Ok(())
+    }
+
+    /// Join a page to a channel's current key frame: the whole sealed
+    /// state a device adopts instead of the history it structurally
+    /// never receives (ADR-0013, ADR-0021 section 5). Only a fresh
+    /// page — one whose document holds no operations — may adopt, so a
+    /// device carrying pre-ceremony history drops it first and rejoins
+    /// empty; anything else is refused whole. The same chip-roster
+    /// discipline applies: a key frame referencing chips this page does
+    /// not own waits for the protocol to deliver them.
+    ///
+    /// `page` is the page's cross-device identity, and the adopting
+    /// sheet takes it over its own minted one: two devices holding one
+    /// page hold it under one [`ItemId`], which is what lets a peer's
+    /// expiry, hold and terminal marker name it, and what makes two
+    /// ledgers' records of one death describe the same page (ADR-0021
+    /// section 6).
+    pub fn adopt_key_frame(
+        &mut self,
+        id: SheetId,
+        page: ItemId,
+        frame: &[u8],
+    ) -> Result<(), RemoteRefusal> {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return Err(RemoteRefusal::UnknownSheet);
+        };
+        if !sheet.document.is_pristine() {
+            return Err(RemoteRefusal::NotFresh);
+        }
+        let owned: Vec<ItemId> = sheet.chips.iter().map(|chip| chip.uuid).collect();
+        sheet
+            .document
+            .import_update(frame, &owned)
+            .map_err(refusal_from)?;
+        sheet.uuid = page;
+        self.settle_document(id);
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------
+    // The coordinated ceremony (issue #101, ADR-0021 §2)
+    // -----------------------------------------------------------------
+
+    /// Mark a page's compaction as deferred to its sync channel, or
+    /// return it to solo behaviour. Deferred is what the session layer
+    /// sets while peers are attached: a rung transition then marks the
+    /// ceremony due instead of compacting, and the history stands
+    /// until [`SheetStore::perform_ceremony`] runs on the channel's
+    /// confirmation. Returning to solo with a ceremony still due — the
+    /// last peer detached mid-proposal — performs the compaction on
+    /// the spot, because a solo device answers to nobody and a due
+    /// boundary must not be forgotten. Returns whether the page
+    /// existed.
+    pub fn set_compaction_deferred(&mut self, id: SheetId, deferred: bool) -> bool {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return false;
+        };
+        match (deferred, sheet.ceremony) {
+            (true, CeremonyState::Immediate) => {
+                sheet.ceremony = CeremonyState::Deferred { due: false };
+            }
+            (false, CeremonyState::Deferred { due }) => {
+                sheet.ceremony = CeremonyState::Immediate;
+                if due {
+                    sheet.compact();
+                }
+            }
+            _ => {}
+        }
+        true
+    }
+
+    /// Whether a deferred page has a transition waiting on its
+    /// ceremony: the signal that this device should propose one to the
+    /// channel.
+    #[must_use]
+    pub fn ceremony_due(&self, id: SheetId) -> bool {
+        self.sheet(id)
+            .is_some_and(|sheet| sheet.ceremony == CeremonyState::Deferred { due: true })
+    }
+
+    /// Perform a confirmed ceremony on a deferred page: graduate and
+    /// compact exactly as a solo transition does, clear the due mark,
+    /// and hand back the fresh key frame for the channel — the sealed
+    /// state a joining device adopts and the frame that supersedes its
+    /// predecessor on the relay (ADR-0021 sections 1 and 5). `None`
+    /// for an unknown page or one that is not deferred: a solo page's
+    /// ceremonies run inline at the transition, and this seam must
+    /// not offer a second door to the same event.
+    ///
+    /// The caller runs this only on a confirmed ballot
+    /// ([`crate::sync::PageChannel::ceremony_confirmed`]), and pairs
+    /// it with the GOP key rotation: the rebuild here and the rotation
+    /// above the seam are two halves of one event, sequenced by the
+    /// caller so that neither is left half done — the frame this
+    /// returns is sealed under the incoming key, and the outgoing key
+    /// dies only after both halves landed.
+    pub fn perform_ceremony(&mut self, id: SheetId) -> Option<Zeroizing<Vec<u8>>> {
+        let sheet = self.sheet_mut(id)?;
+        if !matches!(sheet.ceremony, CeremonyState::Deferred { .. }) {
+            return None;
+        }
+        sheet.compact();
+        sheet.ceremony = CeremonyState::Deferred { due: false };
+        Some(sheet.document.export_snapshot())
+    }
+
+    // -----------------------------------------------------------------
+    // Whose clock expires a page (issue #100, ADR-0021 §6)
+    // -----------------------------------------------------------------
+
+    /// The expiry policy a device publishes for a page: the wall-clock
+    /// pair, never the deadline (ADR-0021 section 6). Read off the
+    /// live countdown — anchor now, ttl the remaining life — so the
+    /// sum names the same instant the local monotonic deadline does,
+    /// translated onto the one clock two machines share. `None` for an
+    /// unknown page or one under a live hold, whose countdown is
+    /// suspended: the hold register speaks for it instead
+    /// ([`SheetStore::hold_register`]).
+    #[must_use]
+    pub fn expiry_policy(&self, id: SheetId) -> Option<ExpiryPolicy> {
+        let now = self.clock.now();
+        let sheet = self.sheet(id)?;
+        if sheet.is_held(now) {
+            return None;
+        }
+        Some(ExpiryPolicy {
+            anchor_wall_ms: self.clock.wall_ms(),
+            ttl_ms: millis(sheet.remaining(now)),
+        })
+    }
+
+    /// Apply a peer's published expiry to the page it names: the
+    /// minimum rule. The candidate deadline is computed on this
+    /// device's own wall clock and can only ever shorten the local
+    /// one — the same never-extend arithmetic the restart gap follows,
+    /// with skew accepted in the one direction that is recoverable. A
+    /// candidate already in the past shortens the page to due, and the
+    /// armed timer reaps it. A page under a live hold ignores every
+    /// candidate: the hold is the user's instruction, not a clock, and
+    /// it wins (ADR-0021 section 6). Returns whether the deadline
+    /// moved.
+    pub fn observe_peer_expiry(&mut self, page: ItemId, policy: ExpiryPolicy) -> bool {
+        let now = self.clock.now();
+        let wall = self.clock.wall_ms();
+        let Some(sheet) = self.sheet_mut_by_uuid(page) else {
+            return false;
+        };
+        normalize(sheet, now);
+        let SheetClock::Running { deadline } = sheet.clock else {
+            return false; // held: the hold wins
+        };
+        let remaining = deadline.saturating_duration_since(now);
+        let candidate_ms = policy.deadline_wall_ms().saturating_sub(wall);
+        if u128::from(candidate_ms) >= remaining.as_millis() {
+            return false; // a peer can never extend a life
+        }
+        sheet.clock = SheetClock::Running {
+            deadline: now + Duration::from_millis(candidate_ms),
+        };
+        true
+    }
+
+    /// The pause machine's state as it replicates: what this device
+    /// publishes for a page's hold register. `None` for an unknown
+    /// page; a lapsed hold reads as released, exactly as it
+    /// normalizes.
+    #[must_use]
+    pub fn hold_register(&self, id: SheetId) -> Option<HoldRegister> {
+        let now = self.clock.now();
+        let wall = self.clock.wall_ms();
+        let sheet = self.sheet(id)?;
+        Some(match sheet.clock {
+            SheetClock::Held {
+                until,
+                frozen_remaining,
+                topped_up,
+                ..
+            } if now < until => HoldRegister::Held {
+                until_wall_ms: wall.saturating_add(millis(until.saturating_duration_since(now))),
+                frozen_ms: millis(frozen_remaining),
+                topped_up,
+            },
+            _ => HoldRegister::Released,
+        })
+    }
+
+    /// Apply a peer's hold register to the page it names: a live hold
+    /// suspends the countdown here exactly as it suspends it there,
+    /// and a release resumes it (ADR-0021 section 6). The register
+    /// extends the *hold*, never the *life*: the hold span is bounded
+    /// by the same ceiling the gesture would have applied — one hour
+    /// untopped, twenty-four topped up, the restore path's discipline
+    /// (ADR-0016 section 8) — and the frozen remaining life can only
+    /// come down, never up, from what this device already believes. A
+    /// due page refuses, as the gesture would: zero means zeroized.
+    /// Returns whether the clock changed.
+    pub fn observe_peer_hold(&mut self, page: ItemId, register: HoldRegister) -> bool {
+        let now = self.clock.now();
+        let wall = self.clock.wall_ms();
+        let Some(sheet) = self.sheet_mut_by_uuid(page) else {
+            return false;
+        };
+        normalize(sheet, now);
+        let settled = match (register, sheet.clock) {
+            (
+                HoldRegister::Held {
+                    until_wall_ms,
+                    frozen_ms,
+                    topped_up,
+                },
+                SheetClock::Running { deadline },
+            ) => {
+                let remaining = deadline.saturating_duration_since(now);
+                if remaining.is_zero() {
+                    return false; // due; the timer will reap it
+                }
+                let ceiling = if topped_up { HOLD_TOPUP } else { HOLD_FIRST };
+                SheetClock::Held {
+                    until: now
+                        + Duration::from_millis(until_wall_ms.saturating_sub(wall)).min(ceiling),
+                    frozen_remaining: Duration::from_millis(frozen_ms).min(remaining),
+                    started: now,
+                    topped_up,
+                }
+            }
+            (
+                HoldRegister::Held {
+                    until_wall_ms,
+                    frozen_ms,
+                    topped_up,
+                },
+                SheetClock::Held {
+                    frozen_remaining,
+                    started,
+                    ..
+                },
+            ) => {
+                // The channel re-states the hold — a top-up pressed
+                // elsewhere, usually. Adopt its span under the ceiling
+                // and keep the smaller frozen life.
+                let ceiling = if topped_up { HOLD_TOPUP } else { HOLD_FIRST };
+                SheetClock::Held {
+                    until: now
+                        + Duration::from_millis(until_wall_ms.saturating_sub(wall)).min(ceiling),
+                    frozen_remaining: Duration::from_millis(frozen_ms).min(frozen_remaining),
+                    started,
+                    topped_up,
+                }
+            }
+            (
+                HoldRegister::Released,
+                SheetClock::Held {
+                    frozen_remaining,
+                    started,
+                    ..
+                },
+            ) => {
+                // A release elsewhere releases here: the held span
+                // closes into the running total exactly as the third
+                // press closes it.
+                sheet.total_held += now.saturating_duration_since(started);
+                SheetClock::Running {
+                    deadline: now + frozen_remaining,
+                }
+            }
+            (HoldRegister::Released, clock @ SheetClock::Running { .. }) => clock,
+        };
+        let changed = sheet.clock != settled;
+        sheet.clock = settled;
+        changed
+    }
+
+    /// A peer's terminal marker for a page: the death is agreed, so
+    /// this device entombs its copy now — sealed bytes zeroized, one
+    /// `Expired` record in its own ledger, the tab left standing —
+    /// whatever its own clock still believed. Two wall-stamped ledgers
+    /// describing one death is expected and correct (ADR-0021 section
+    /// 6). Returns the dead page's local id, or `None` when no page by
+    /// that identity stands, which is the ordinary case of a marker
+    /// arriving after this device's own countdown already fired.
+    pub fn observe_terminal(&mut self, page: ItemId) -> Option<SheetId> {
+        let offset = self.clock.local_offset_seconds();
+        let (dead, label, id) = self.tabs.iter_mut().find_map(|tab| {
+            if tab.page.as_ref().is_some_and(|held| held.uuid == page) {
+                let label = tab.label(offset);
+                let held = tab.page.take().expect("checked a line above");
+                let id = held.id;
+                Some((held, label, id))
+            } else {
+                None
+            }
+        })?;
+        self.entomb(dead, label, LedgerEvent::Expired);
+        Some(id)
+    }
+
+    /// A page by its cross-device identity, mutably: the only address
+    /// a peer can name a page by, since local ids never leave the
+    /// process.
+    fn sheet_mut_by_uuid(&mut self, page: ItemId) -> Option<&mut Sheet> {
+        self.tabs
+            .iter_mut()
+            .filter_map(|tab| tab.page.as_mut())
+            .find(|sheet| sheet.uuid == page)
+    }
+
     /// Name a tab. An empty or all-whitespace submission clears the
     /// name; anything else is capped at 80 characters and outlives
     /// every later edit, and every page the slot goes on to hold.
@@ -1123,11 +1526,13 @@ impl<C: Clock> SheetStore<C> {
         // A rung transition is the compaction boundary (ADR-0013): the
         // ceremony runs on the same clockwork as everything else, after
         // the transition is accepted, so a due page's refusal above
-        // means compaction can never race the reap.
+        // means compaction can never race the reap. With peers
+        // attached the boundary becomes a proposal instead
+        // (issue #101), and the gesture itself is not held up.
         tab.page
             .as_mut()
             .expect("the tab holds the page found")
-            .compact();
+            .compact_or_defer();
         Some(rung)
     }
 
@@ -1149,11 +1554,12 @@ impl<C: Clock> SheetStore<C> {
         }
         set_clock(tab, rung, now);
         // The same boundary as [`SheetStore::cycle_rung`]: any accepted
-        // rung transition sheds the history.
+        // rung transition sheds the history, or proposes to, when
+        // peers are attached.
         tab.page
             .as_mut()
             .expect("the tab holds the page found")
-            .compact();
+            .compact_or_defer();
         Some(rung)
     }
 
@@ -1209,8 +1615,8 @@ impl<C: Clock> SheetStore<C> {
                 // repeated pauses are how a page outlives its rung
                 // without ever transitioning, and a page kept alive
                 // that way must still shed its history on the same
-                // clockwork.
-                sheet.compact();
+                // clockwork — or propose to, when peers are attached.
+                sheet.compact_or_defer();
             }
             SheetClock::Held {
                 frozen_remaining,
@@ -1406,6 +1812,25 @@ impl<C: Clock> SheetStore<C> {
     }
 }
 
+/// A duration as whole milliseconds, saturating at the top instead of
+/// silently truncating: every span here is bounded by the ladder and
+/// the hold ceilings, so the saturation is belt to those braces.
+fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+/// The document module's refusal, restated in the store's vocabulary.
+/// A plain `From` impl would do it, but the mapping is spelled out so
+/// the two enums cannot drift apart silently: a new arm on either side
+/// is a compile error here.
+fn refusal_from(refusal: UpdateRefusal) -> RemoteRefusal {
+    match refusal {
+        UpdateRefusal::Malformed => RemoteRefusal::Malformed,
+        UpdateRefusal::MissingHistory => RemoteRefusal::MissingHistory,
+        UpdateRefusal::ChipRoster => RemoteRefusal::ChipRoster,
+    }
+}
+
 /// A lapsed hold becomes a regular page again — no notification, no
 /// state to clean up (doc 04). The held span is added to the page's
 /// total (open question №8 accounting).
@@ -1529,6 +1954,7 @@ mod tests {
     use super::*;
     use crate::clock::ManualClock;
     use crate::ledger::LEDGER_RETENTION_MS;
+    use crate::sync::PageChannel;
 
     fn store() -> (SheetStore<ManualClock>, ManualClock) {
         let clock = ManualClock::new();
@@ -3451,5 +3877,601 @@ mod tests {
         // and the record of the page's end carries none of it.
         assert!(store.close_tab(slot(&store, id)));
         assert_content_free(&store);
+    }
+
+    // ------------------------------------------------------------------
+    // The delta seam at the store (issue #96, ADR-0021 §1)
+    // ------------------------------------------------------------------
+
+    /// Ship every update `from` holds beyond `mirror`'s frontier into
+    /// `mirror`: the round one publish-and-fetch cycle performs, minus
+    /// the wire.
+    fn ship(
+        from: &SheetStore<ManualClock>,
+        from_page: SheetId,
+        mirror: &mut SheetStore<ManualClock>,
+        mirror_page: SheetId,
+    ) -> Result<(), RemoteRefusal> {
+        let frontier = mirror.document_version(mirror_page).unwrap();
+        let delta = from.export_document_updates(from_page, &frontier).unwrap();
+        mirror.apply_remote_update(mirror_page, &delta)
+    }
+
+    #[test]
+    fn a_peers_updates_land_and_settle_like_local_edits() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "Shared title\nand a body".into(),
+            }],
+        ));
+        ship(&alpha, a, &mut beta, b).unwrap();
+        assert_eq!(
+            beta.sheet(b).unwrap().segments(),
+            alpha.sheet(a).unwrap().segments()
+        );
+        // The settle ran: the mirrored page derived the same title.
+        assert_eq!(beta.sheet(b).unwrap().derived_title(), Some("Shared title"));
+
+        // Deltas are incremental: a second edit ships alone and lands
+        // on top of the first.
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Delete {
+                pos_u16: 0,
+                len_u16: 7,
+            }],
+        ));
+        ship(&alpha, a, &mut beta, b).unwrap();
+        assert_eq!(
+            beta.sheet(b).unwrap().segments(),
+            alpha.sheet(a).unwrap().segments()
+        );
+        assert_eq!(beta.sheet(b).unwrap().derived_title(), Some("title"));
+    }
+
+    #[test]
+    fn a_remote_chip_the_page_does_not_own_refuses_whole() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "ink".into(),
+            }],
+        ));
+        alpha.seal_text_at(a, "sealed bytes", 0, 0).unwrap();
+
+        let before = beta.sheet(b).unwrap().segments().to_vec();
+        assert_eq!(
+            ship(&alpha, a, &mut beta, b),
+            Err(RemoteRefusal::ChipRoster)
+        );
+        // Refused whole: not even the ink landed.
+        assert_eq!(beta.sheet(b).unwrap().segments(), &before[..]);
+    }
+
+    #[test]
+    fn a_chip_delivered_first_lets_its_sentinel_land_and_die() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "before after".into(),
+            }],
+        ));
+        let chip = alpha.seal_text_at(a, "the secret", 7, 0).unwrap();
+        let uuid = alpha.sheet(a).unwrap().chip(chip).unwrap().uuid();
+
+        // Simulate the protocol delivering the chip's sealed bytes
+        // ahead of the delta (the ChipRoster contract): the mirror owns
+        // a chip under the same identity before the sentinel arrives.
+        {
+            let sheet = beta.sheet_mut(b).unwrap();
+            let id = ChipId(9001);
+            sheet
+                .chips
+                .push(SealedChip::text_with_uuid(id, uuid, "the secret"));
+        }
+        ship(&alpha, a, &mut beta, b).unwrap();
+        assert_eq!(beta.sheet(b).unwrap().chip_count(), 1);
+        let mirrored: Vec<Segment> = beta.sheet(b).unwrap().segments().to_vec();
+        assert!(matches!(mirrored[1], Segment::Chip(_)));
+
+        // A peer deleting the sentinel kills the mirror's chip through
+        // the same settle a local ⌫ takes, Discarded record included.
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Delete {
+                pos_u16: 7,
+                len_u16: 1,
+            }],
+        ));
+        ship(&alpha, a, &mut beta, b).unwrap();
+        assert_eq!(beta.sheet(b).unwrap().chip_count(), 0);
+        assert!(
+            beta.ledger()
+                .any(|record| record.event == LedgerEvent::Discarded && record.item == uuid),
+            "the remote deletion left no Discarded record"
+        );
+    }
+
+    #[test]
+    fn a_device_across_the_boundary_rejoins_at_the_key_frame() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+
+        // The mirror follows for a while…
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "early DOOMED words".into(),
+            }],
+        ));
+        ship(&alpha, a, &mut beta, b).unwrap();
+
+        // …then sleeps through a ceremony.
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Delete {
+                pos_u16: 5,
+                len_u16: 7,
+            }],
+        ));
+        alpha.cycle_rung(slot(&alpha, a)).unwrap();
+
+        // Its stale frontier is answered with the whole current GOP,
+        // which its pre-ceremony history cannot accept…
+        let refusal = ship(&alpha, a, &mut beta, b);
+        assert!(
+            matches!(
+                refusal,
+                Err(RemoteRefusal::MissingHistory | RemoteRefusal::ChipRoster)
+            ) || {
+                // A post-ceremony full export has no dependency on the
+                // old history, so the import may also land as a merge —
+                // which would duplicate the body. Either way the mirror
+                // must not end up agreeing silently; assert it did not.
+                beta.sheet(b).unwrap().segments() != alpha.sheet(a).unwrap().segments()
+            },
+            "a stale mirror must never silently agree across a ceremony"
+        );
+
+        // …so it drops what it holds and rejoins at the key frame: a
+        // fresh page adopting the channel's current state whole, under
+        // the channel's page identity.
+        let uuid = alpha.sheet(a).unwrap().uuid();
+        let frame = alpha.sheet(a).unwrap().document.export_snapshot();
+        let tab = slot(&beta, b);
+        assert!(beta.discard_page(b));
+        let fresh = beta.open_page(tab).unwrap();
+        beta.adopt_key_frame(fresh, uuid, &frame).unwrap();
+        assert_eq!(beta.sheet(fresh).unwrap().uuid(), uuid);
+        assert_eq!(
+            beta.sheet(fresh).unwrap().segments(),
+            alpha.sheet(a).unwrap().segments()
+        );
+
+        // And the frame it adopted carries nothing from behind the
+        // boundary.
+        assert!(!contains(&frame, b"DOOMED"));
+    }
+
+    #[test]
+    fn a_key_frame_lands_only_on_a_fresh_page() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "the channel state".into(),
+            }],
+        ));
+        let frame = alpha.sheet(a).unwrap().document.export_snapshot();
+
+        assert!(beta.apply_ops(
+            b,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "standing history".into(),
+            }],
+        ));
+        assert_eq!(
+            beta.adopt_key_frame(b, alpha.sheet(a).unwrap().uuid(), &frame),
+            Err(RemoteRefusal::NotFresh)
+        );
+        assert_eq!(
+            beta.sheet(b).unwrap().derived_title(),
+            Some("standing history")
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Whose clock expires a page (issue #100, ADR-0021 §6)
+    // ------------------------------------------------------------------
+
+    /// A wall-clock anchor for the skew tests, distinct from the
+    /// manual clock's default so nothing accidentally relies on it.
+    const WALL: u64 = 1_600_000_000_000;
+
+    /// Two stores holding one page: `beta` adopts `alpha`'s page whole
+    /// — key frame and cross-device identity — with `skew_ms` added to
+    /// beta's wall clock. Returns both stores, both page ids, and the
+    /// shared identity.
+    fn shared_page(
+        skew_ms: u64,
+    ) -> (
+        SheetStore<ManualClock>,
+        SheetStore<ManualClock>,
+        SheetId,
+        SheetId,
+        ItemId,
+        ManualClock,
+        ManualClock,
+    ) {
+        let alpha_clock = ManualClock::new().with_wall_ms(WALL);
+        let beta_clock = ManualClock::new().with_wall_ms(WALL + skew_ms);
+        let mut alpha = SheetStore::new(alpha_clock.clone());
+        let mut beta = SheetStore::new(beta_clock.clone());
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "the shared page".into(),
+            }],
+        ));
+        let uuid = alpha.sheet(a).unwrap().uuid();
+        let frame = alpha.sheet(a).unwrap().document.export_snapshot();
+        beta.adopt_key_frame(b, uuid, &frame).unwrap();
+        (alpha, beta, a, b, uuid, alpha_clock, beta_clock)
+    }
+
+    // The first test ADR-0021 section 6 names: two stores driven
+    // through a shared expiry, and the earlier deadline is the one
+    // that fires — on both devices.
+    #[test]
+    fn two_stores_share_an_expiry_and_the_earlier_deadline_fires() {
+        const SKEW: Duration = Duration::from_secs(600);
+        let (mut alpha, mut beta, a, b, uuid, alpha_clock, beta_clock) = shared_page(millis(SKEW));
+
+        // Each device publishes the policy pair and observes the
+        // other's. Beta's clock runs ten minutes fast, so alpha reads
+        // beta's candidate as later and ignores it, while beta reads
+        // alpha's as earlier and shortens: the minimum rule, working
+        // in the one direction failure is allowed to point.
+        let from_alpha = alpha.expiry_policy(a).unwrap();
+        let from_beta = beta.expiry_policy(b).unwrap();
+        assert!(!alpha.observe_peer_expiry(uuid, from_beta));
+        assert!(beta.observe_peer_expiry(uuid, from_alpha));
+
+        // The earlier reading fires first: beta's page dies a skew
+        // early by its own clock…
+        let to_early_deadline = Ttl::default().duration() - SKEW;
+        alpha_clock.advance(to_early_deadline);
+        beta_clock.advance(to_early_deadline);
+        assert_eq!(beta.expire_due(), vec![b]);
+        assert!(
+            alpha.expire_due().is_empty(),
+            "alpha still believes in ten more minutes"
+        );
+
+        // …and its terminal marker carries the death to alpha, whose
+        // own clock had life left. Dying early is recoverable; living
+        // long is the failure this app exists to prevent.
+        assert_eq!(alpha.observe_terminal(uuid), Some(a));
+        assert!(alpha.sheet(a).is_none());
+        for store in [&alpha, &beta] {
+            assert!(
+                store
+                    .ledger()
+                    .any(|record| record.event == LedgerEvent::Expired && record.item == uuid),
+                "each device writes its own record of the one death"
+            );
+        }
+    }
+
+    // The second test ADR-0021 section 6 names: a hold on one store
+    // survives the other's offline deadline, and the returning store
+    // rejoins the still-live page rather than killing it.
+    #[test]
+    fn a_hold_survives_a_peers_offline_deadline_and_the_returner_rejoins() {
+        let (mut alpha, mut beta, a, b, uuid, alpha_clock, beta_clock) = shared_page(0);
+        let rung = Ttl::default().duration();
+
+        // One hour before the shared deadline, alpha holds the page.
+        // Beta is offline: the register never reaches it, and its view
+        // of the channel is not current.
+        let to_last_hour = rung - HOUR;
+        alpha_clock.advance(to_last_hour);
+        beta_clock.advance(to_last_hour);
+        assert!(alpha.pause_press(slot(&alpha, a)));
+        assert_eq!(
+            alpha.expiry_policy(a),
+            None,
+            "a held page publishes its register, not a countdown"
+        );
+        let mut beta_channel = PageChannel::new();
+
+        // Beta sits out the original deadline. It entombs its own copy
+        // on its own clock — its plaintext does not outlive its own
+        // belief — and writes its own Expired record…
+        alpha_clock.advance(HOUR + Duration::from_secs(60));
+        beta_clock.advance(HOUR + Duration::from_secs(60));
+        assert_eq!(beta.expire_due(), vec![b]);
+        assert!(
+            beta.ledger()
+                .any(|record| record.event == LedgerEvent::Expired && record.item == uuid)
+        );
+
+        // …but it may not publish the terminal marker: its view of the
+        // hold register was not current with the channel, so it cannot
+        // know whether a hold it never saw is keeping the page alive.
+        assert!(!beta_channel.may_publish_terminal());
+
+        // And one is: the holder's page survives its original
+        // deadline. The hold lapsed after its hour and the frozen
+        // remaining hour resumed, so the page is alive with life left.
+        assert!(alpha.expire_due().is_empty(), "the hold wins");
+        let held = alpha.sheet(a).unwrap();
+        assert!(held.remaining(alpha.now()) > Duration::ZERO);
+
+        // Beta reconnects, drains the channel, and finds the page
+        // alive: it rejoins at the current key frame under the same
+        // identity, and adopts the channel's earlier-of-all deadline.
+        beta_channel.set_current(true);
+        beta_channel.note_hold(alpha.hold_register(a).unwrap());
+        let frame = alpha.sheet(a).unwrap().document.export_snapshot();
+        let tab = slot_of_empty_tab(&beta);
+        let fresh = beta.open_page(tab).unwrap();
+        beta.adopt_key_frame(fresh, uuid, &frame).unwrap();
+        assert!(beta.observe_peer_expiry(uuid, alpha.expiry_policy(a).unwrap()));
+        assert_eq!(
+            beta.sheet(fresh).unwrap().segments(),
+            alpha.sheet(a).unwrap().segments()
+        );
+
+        // The page's total life is its TTL plus the held hour, which
+        // is what the pause gesture already means on one device: both
+        // stores now expire it on the shared, hold-extended reading.
+        let to_extended_deadline = HOUR - Duration::from_secs(120);
+        alpha_clock.advance(to_extended_deadline);
+        beta_clock.advance(to_extended_deadline);
+        assert!(alpha.expire_due().is_empty());
+        assert!(beta.expire_due().is_empty());
+        alpha_clock.advance(Duration::from_secs(180));
+        beta_clock.advance(Duration::from_secs(180));
+        assert_eq!(alpha.expire_due(), vec![a]);
+        assert_eq!(beta.expire_due(), vec![fresh]);
+    }
+
+    /// The one tab in `store` holding no page — where the entombed
+    /// page used to stand.
+    fn slot_of_empty_tab(store: &SheetStore<ManualClock>) -> TabId {
+        store
+            .tabs()
+            .find(|tab| tab.page().is_none())
+            .expect("an entombed page leaves its tab standing")
+            .id()
+    }
+
+    #[test]
+    fn a_live_hold_suspends_the_countdown_on_every_device() {
+        let (mut alpha, mut beta, a, _b, uuid, alpha_clock, beta_clock) = shared_page(0);
+        let b = beta.sheets().next().unwrap().id();
+
+        // Alpha holds; the register replicates; beta freezes exactly
+        // as alpha did.
+        assert!(alpha.pause_press(slot(&alpha, a)));
+        let register = alpha.hold_register(a).unwrap();
+        assert!(matches!(register, HoldRegister::Held { .. }));
+        assert!(beta.observe_peer_hold(uuid, register));
+        let frozen = beta.sheet(b).unwrap().remaining(beta.now());
+        beta_clock.advance(Duration::from_secs(30 * 60));
+        alpha_clock.advance(Duration::from_secs(30 * 60));
+        assert_eq!(
+            beta.sheet(b).unwrap().remaining(beta.now()),
+            frozen,
+            "a live hold suspends the countdown here exactly as there"
+        );
+
+        // A release elsewhere releases here, resuming from the frozen
+        // remaining life.
+        assert!(beta.observe_peer_hold(uuid, HoldRegister::Released));
+        assert_eq!(beta.sheet(b).unwrap().remaining(beta.now()), frozen);
+        beta_clock.advance(Duration::from_secs(60));
+        assert_eq!(
+            beta.sheet(b).unwrap().remaining(beta.now()),
+            frozen - Duration::from_secs(60)
+        );
+    }
+
+    #[test]
+    fn a_peer_register_extends_the_hold_never_the_life() {
+        let (_, mut beta, _a, b, uuid, _, beta_clock) = shared_page(0);
+        let remaining = beta.sheet(b).unwrap().remaining(beta.now());
+
+        // A register claiming more frozen life than this device
+        // believes in is capped at the local belief: a hold suspends a
+        // countdown, it never refills one. The hold span itself is
+        // bounded by the gesture's own ceiling.
+        assert!(beta.observe_peer_hold(
+            uuid,
+            HoldRegister::Held {
+                until_wall_ms: u64::MAX,
+                frozen_ms: u64::MAX,
+                topped_up: false,
+            }
+        ));
+        let sheet = beta.sheet(b).unwrap();
+        assert!(sheet.is_held(beta.now()));
+        assert_eq!(
+            sheet.hold_remaining(beta.now()),
+            HOLD_FIRST,
+            "an untopped hold is bounded by the first-press hour"
+        );
+        beta_clock.advance(HOLD_FIRST);
+        assert_eq!(
+            beta.sheet(b).unwrap().remaining(beta.now()),
+            remaining,
+            "the lapse resumes exactly the life this device already believed in"
+        );
+    }
+
+    #[test]
+    fn a_peer_expiry_can_only_shorten_and_the_hold_ignores_it() {
+        let (mut alpha, _, a, _b, uuid, _, _) = shared_page(0);
+
+        // A candidate later than the local deadline is ignored…
+        let later = ExpiryPolicy {
+            anchor_wall_ms: WALL,
+            ttl_ms: millis(Ttl::default().duration()) + 1_000_000,
+        };
+        assert!(!alpha.observe_peer_expiry(uuid, later));
+
+        // …an earlier one shortens…
+        let earlier = ExpiryPolicy {
+            anchor_wall_ms: WALL,
+            ttl_ms: millis(HOUR),
+        };
+        assert!(alpha.observe_peer_expiry(uuid, earlier));
+        assert_eq!(alpha.sheet(a).unwrap().remaining(alpha.now()), HOUR);
+
+        // …and a held page ignores every candidate: the hold is the
+        // user's instruction, not a clock.
+        assert!(alpha.pause_press(slot(&alpha, a)));
+        assert!(!alpha.observe_peer_expiry(
+            uuid,
+            ExpiryPolicy {
+                anchor_wall_ms: WALL,
+                ttl_ms: 1,
+            }
+        ));
+        assert!(alpha.sheet(a).unwrap().is_held(alpha.now()));
+    }
+
+    // ------------------------------------------------------------------
+    // The coordinated ceremony at the store (issue #101)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn a_solo_page_compacts_at_the_transition_exactly_as_before() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "solo".into(),
+            }],
+        ));
+        let before = store.sheet(id).unwrap().document.peer_id();
+        assert!(!store.ceremony_due(id));
+        store.cycle_rung(slot(&store, id)).unwrap();
+        assert_ne!(
+            store.sheet(id).unwrap().document.peer_id(),
+            before,
+            "with no peer attached the transition compacts inline, exactly as it always has"
+        );
+        assert!(!store.ceremony_due(id));
+    }
+
+    #[test]
+    fn a_deferred_page_keeps_its_history_until_the_ceremony_performs() {
+        let (mut alpha, _) = store();
+        let (mut joiner, _) = store();
+        let id = alpha.new_tab().unwrap().1;
+        assert!(alpha.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "keep DOOMED".into(),
+            }],
+        ));
+        assert!(alpha.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 4,
+                len_u16: 7,
+            }],
+        ));
+        assert!(alpha.set_compaction_deferred(id, true));
+
+        // The transition applies — the rung moves — but the boundary
+        // becomes a proposal: the history stands, and the due mark
+        // tells the session layer to propose.
+        let before = alpha.sheet(id).unwrap().document.peer_id();
+        alpha.cycle_rung(slot(&alpha, id)).unwrap();
+        assert_eq!(alpha.sheet(id).unwrap().document.peer_id(), before);
+        assert!(alpha.ceremony_due(id));
+        assert!(contains(
+            &alpha.sheet(id).unwrap().document.export_snapshot(),
+            b"DOOMED"
+        ));
+
+        // Solo pages have no door here: the ceremony seam refuses one.
+        let solo = alpha.new_tab().unwrap().1;
+        assert!(alpha.perform_ceremony(solo).is_none());
+
+        // Confirmation performs both halves' store half: the rebuild
+        // sheds the trail and the fresh key frame comes back for the
+        // channel, adoptable by a joiner.
+        let frame = alpha.perform_ceremony(id).unwrap();
+        assert!(!alpha.ceremony_due(id));
+        assert_ne!(alpha.sheet(id).unwrap().document.peer_id(), before);
+        assert!(!contains(&frame, b"DOOMED"));
+        let j = joiner.new_tab().unwrap().1;
+        let uuid = alpha.sheet(id).unwrap().uuid();
+        joiner.adopt_key_frame(j, uuid, &frame).unwrap();
+        assert_eq!(
+            joiner.sheet(j).unwrap().segments(),
+            alpha.sheet(id).unwrap().segments()
+        );
+    }
+
+    #[test]
+    fn returning_to_solo_with_a_ceremony_due_compacts_on_the_spot() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "left behind".into(),
+            }],
+        ));
+        assert!(store.set_compaction_deferred(id, true));
+        let before = store.sheet(id).unwrap().document.peer_id();
+        store.cycle_rung(slot(&store, id)).unwrap();
+        assert!(store.ceremony_due(id));
+
+        // The last peer detached: a solo device answers to nobody, and
+        // the due boundary runs rather than being forgotten.
+        assert!(store.set_compaction_deferred(id, false));
+        assert!(!store.ceremony_due(id));
+        assert_ne!(store.sheet(id).unwrap().document.peer_id(), before);
     }
 }

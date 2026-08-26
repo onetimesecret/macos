@@ -108,6 +108,27 @@
 //! record that died with the content it describes would not be an audit
 //! record. Rotation must never touch it.
 //!
+//! # The per GOP transport key is a third derivation, and it dies at the ceremony
+//!
+//! Added 2026-08-26 (ADR-0021 section 2, issue #95). Sync deltas and
+//! key frames are sealed under a **per GOP transport key**, derived
+//! under [`GOP_KEY_INFO`] — the third versioned info string beside
+//! [`CONTENT_KEY_INFO`] and [`FILE_HALF_NAME_INFO`] — and rotated at
+//! every compaction ceremony ([`crate::gop`]). It deliberately does
+//! **not** descend from the content key: the content key never leaves
+//! its device at all (ADR-0021 section 8), while the transport key
+//! must be shared by every paired device, a device that has never held
+//! a page included, so its root is the channel secret the pairing
+//! ceremony establishes (issue #97) and nothing this module stores.
+//! Rotation mixes ceremony-fresh entropy into the outgoing key and
+//! destroys it, so relay ciphertext retained past the boundary — by
+//! bug, by backup or by malice — is undecryptable by anyone, the
+//! devices that wrote it included. That derivation, not any promise
+//! about a server's disk, is the purge (ADR-0021 section 2). The
+//! ledger key's exception holds here with extra force: a GOP rotation
+//! runs entirely outside the credential store and must never touch
+//! `ledger-key` or the content halves.
+//!
 //! Each envelope's magic is its own AEAD associated data, so a ledger
 //! file presented as a state file (or the reverse) fails authentication
 //! rather than misparsing.
@@ -196,7 +217,7 @@ const STATE_KEY_ACCOUNT: &str = "state-key";
 const LEDGER_KEY_ACCOUNT: &str = "ledger-key";
 
 /// ChaCha20-Poly1305 key length, and the length of each key half.
-const KEY_LEN: usize = 32;
+pub(crate) const KEY_LEN: usize = 32;
 
 /// Versioned HKDF info string for the content key. A change here
 /// derives a different key from the same halves, which discards every
@@ -225,6 +246,30 @@ const FILE_HALF_NAME_SALT: &[u8] = b"ots-companion-boot-half-name-salt-v1";
 /// enough to make a collision between two form factors impossible in
 /// practice, and short enough to read in a directory listing.
 const FILE_HALF_TAG_LEN: usize = 16;
+
+/// Versioned HKDF info string for the per GOP transport key, the third
+/// derivation branch beside [`CONTENT_KEY_INFO`] and
+/// [`FILE_HALF_NAME_INFO`] (ADR-0021 section 2, issue #95). Both the
+/// root derivation from the pairing ceremony's channel secret and
+/// every rotation at a compaction ceremony expand under this string
+/// ([`crate::gop::GopKeyChain`]); a change here strands every sealed
+/// delta and key frame in flight, which is why it is versioned like
+/// its two siblings.
+pub(crate) const GOP_KEY_INFO: &[u8] = b"ots-companion-gop-transport-key-v1";
+
+/// The salt for the root GOP derivation. The channel secret cannot
+/// salt itself, so the root gets a constant, exactly as the filename
+/// tag does; rotations salt with the outgoing key instead, which is
+/// what chains the epochs and what makes the outgoing key's
+/// destruction final.
+pub(crate) const GOP_ROOT_SALT: &[u8] = b"ots-companion-gop-root-salt-v1";
+
+/// Magic + version prefix of a sealed GOP payload — a delta or a key
+/// frame on its way to or from the relay. Distinct from every file
+/// magic above for the same reason those are distinct from each other:
+/// the prefix is associated data, so a relay payload presented as a
+/// file, or the reverse, fails authentication rather than misparsing.
+pub(crate) const GOP_MAGIC: &[u8; 8] = b"OTSGOPD1";
 
 /// Filename prefix of the file half inside the state directory. It
 /// names what the file is now rather than when it dies, since nothing
@@ -455,7 +500,7 @@ fn derive_content_key(keychain_half: &[u8], file_half: &[u8]) -> Option<Zeroizin
 /// number so the length is fixed before expansion; this is the plain
 /// "give me n bytes" case.
 #[derive(Clone, Copy)]
-struct Bytes(usize);
+pub(crate) struct Bytes(pub(crate) usize);
 
 impl KeyType for Bytes {
     fn len(&self) -> usize {
@@ -540,7 +585,7 @@ pub(crate) fn load_ledger_key(credentials: &dyn CredentialStore) -> Option<Zeroi
 /// path. The exact capacity matters for the same reason. A growth would
 /// copy the plaintext into a new allocation and strand the old one
 /// unwiped.
-fn seal_body(key: &[u8], aad: &[u8], plaintext: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn seal_body(key: &[u8], aad: &[u8], plaintext: &[u8]) -> Option<Vec<u8>> {
     let key = aead_key(key)?;
     let mut nonce_bytes = [0u8; NONCE_LEN];
     SystemRandom::new().fill(&mut nonce_bytes).ok()?;
@@ -576,7 +621,7 @@ fn work_buffer(plaintext: &[u8]) -> Zeroizing<Vec<u8>> {
 /// authenticated against `aad`. The returned buffer wipes on drop;
 /// `None` for anything that was not sealed under this key with these
 /// associated bytes, bit for bit.
-fn open_body(key: &[u8], aad: &[u8], body: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+pub(crate) fn open_body(key: &[u8], aad: &[u8], body: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
     let key = aead_key(key)?;
     if body.len() < NONCE_LEN {
         return None;

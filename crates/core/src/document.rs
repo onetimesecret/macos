@@ -16,7 +16,7 @@
 use loro::cursor::{Cursor, PosType, Side};
 use loro::{
     CommitOptions, ContainerTrait as _, ExpandType, ExportMode, LoroDoc, LoroText, LoroValue,
-    StyleConfig, StyleConfigMap, TextDelta,
+    StyleConfig, StyleConfigMap, TextDelta, VersionVector,
 };
 use zeroize::Zeroizing;
 
@@ -47,6 +47,35 @@ pub(crate) enum DocRun {
 /// the fail-closed answer to a wire offset that stopped being true.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct InvalidRange;
+
+/// Why a remote update was refused. Every arm leaves the document
+/// exactly as it was: the update is validated against a fork first
+/// ([`SheetDocument::import_update`]), so refusal is whole by
+/// construction, the same discipline [`SheetDocument::import_snapshot`]
+/// applies to a snapshot that does not read back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UpdateRefusal {
+    /// The bytes do not decode as an update batch. Damage, never
+    /// partially applied.
+    Malformed,
+    /// The update depends on operations this document does not hold.
+    /// Under the broadcast rules (ADR-0013, ADR-0021 section 1) that
+    /// means the sender is across a ceremony boundary from this
+    /// document, or this device was away for longer than one GOP;
+    /// either way the recovery is to rejoin at the current key frame,
+    /// never to ask for history. The pending half is refused rather
+    /// than queued, because a queue of undecodable-until-later ops is
+    /// a history archive this crate must not keep.
+    MissingHistory,
+    /// The update would stand a chip sentinel whose identity is not in
+    /// the sheet's roster, or stand one identity twice. The chip roster
+    /// and the document's marks stay in one-to-one agreement on every
+    /// path — restore treats a mismatch as damage
+    /// ([`crate::persist`]), and a remote edit does not get a looser
+    /// contract than a file. The protocol delivers a chip's sealed
+    /// bytes before the delta that references it, or the delta waits.
+    ChipRoster,
+}
 
 /// What the operation log can still prove about a span: the earliest
 /// and latest change stamps, and the persisted message of the earliest
@@ -85,7 +114,12 @@ impl SheetDocument {
         // seventeen minutes stale. Provenance is the point of the
         // timestamps (ADR-0013), so every commit stays its own change.
         // The op log grows faster for it; the compaction ceremony is
-        // what bounds that growth.
+        // what bounds that growth. Sync inherits the chattiness and
+        // keeps the zero anyway (issue #96's decision): a delta batch
+        // that mirrored commit boundaries would publish typing rhythm
+        // at keystroke grade, so the protocol batches on a clock
+        // instead, and the number belongs to the protocol, not to this
+        // interval (ADR-0021 section 4).
         doc.set_change_merge_interval(0);
         let mut styles = StyleConfigMap::new();
         styles.insert(
@@ -229,10 +263,91 @@ impl SheetDocument {
             .map_err(|_| RestoreError::Malformed)
     }
 
+    /// This document's sync frontier: the version vector of everything
+    /// it holds, as opaque bytes. Opaque on purpose (issue #96's
+    /// decision, recorded here): the frontier is a cursor a peer hands
+    /// back to [`SheetDocument::export_updates_since`], not a value
+    /// anything above this module may interpret, exactly as block
+    /// anchors are opaque cursor bytes decoded only by
+    /// [`SheetDocument::resolve_anchor`]. Structured JSON would invite
+    /// the seam above to read peer ids out of it, and a peer id is an
+    /// identity this module deliberately never exports.
+    pub(crate) fn version(&self) -> Vec<u8> {
+        self.doc.oplog_vv().encode()
+    }
+
+    /// The operations this document holds beyond `version`: the delta a
+    /// peer at that frontier needs to catch up, ADR-0013's P-frames.
+    /// `None` when the frontier bytes do not decode; a frontier naming
+    /// peers this document has never heard of (a peer across a ceremony
+    /// boundary asking with a stale cursor) is well-formed and simply
+    /// yields everything this document has, which is the whole current
+    /// GOP. Zeroizing because an update batch carries the ops
+    /// themselves, deleted text included.
+    pub(crate) fn export_updates_since(&self, version: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+        let from = VersionVector::decode(version).ok()?;
+        Some(Zeroizing::new(
+            self.doc
+                .export(ExportMode::updates(&from))
+                .expect("an updates export since a decoded frontier has no refusable input"),
+        ))
+    }
+
+    /// Apply a remote update batch, refusing it whole unless every
+    /// check passes. The batch is imported into a fork first; only a
+    /// fork that comes out clean — decodable, no missing dependencies,
+    /// and every chip sentinel resolving one-to-one against `owned` —
+    /// admits the same bytes into this document. The fork costs one
+    /// page-sized copy and buys the reject-whole discipline
+    /// [`SheetDocument::import_snapshot`] already promises: a refused
+    /// update leaves no trace, not even a pending op inside the
+    /// library.
+    pub(crate) fn import_update(
+        &self,
+        bytes: &[u8],
+        owned: &[ItemId],
+    ) -> Result<(), UpdateRefusal> {
+        let doc = self.doc.fork();
+        let body = doc.get_text("body");
+        let trial = Self { doc, body };
+        let status = trial
+            .doc
+            .import(bytes)
+            .map_err(|_| UpdateRefusal::Malformed)?;
+        if status.pending.is_some() {
+            return Err(UpdateRefusal::MissingHistory);
+        }
+        let mut seen: Vec<ItemId> = Vec::new();
+        for id in trial.live_chips() {
+            if !owned.contains(&id) || seen.contains(&id) {
+                return Err(UpdateRefusal::ChipRoster);
+            }
+            seen.push(id);
+        }
+        let status = self
+            .doc
+            .import(bytes)
+            .expect("the same bytes imported cleanly into a fork a moment ago");
+        debug_assert!(
+            status.pending.is_none(),
+            "a batch the fork applied whole cannot leave pending ops here"
+        );
+        Ok(())
+    }
+
     /// The body's length in UTF-16 code units, the only length the wire
     /// is allowed to reason about.
     pub(crate) fn utf16_len(&self) -> usize {
         self.body.len_utf16()
+    }
+
+    /// Whether this document has recorded no operations at all: a page
+    /// as [`SheetDocument::new`] minted it, never yet typed in or
+    /// imported into. This is the one state that may adopt a key frame,
+    /// because a merge over standing ops would duplicate the body
+    /// rather than replace it.
+    pub(crate) fn is_pristine(&self) -> bool {
+        self.doc.oplog_frontiers().is_empty()
     }
 
     /// A block's stable position as encoded cursor bytes: opaque to
@@ -721,6 +836,128 @@ mod tests {
         doc.commit_at(5_000);
         assert_eq!(doc.latest_timestamp(), Some(5_000));
         assert_eq!(doc.span_timestamps(0, 1), Some((5_000, 5_000)));
+    }
+
+    // ------------------------------------------------------------------
+    // The delta seam (issue #96, ADR-0021 section 1)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn deltas_alone_reconstruct_one_document_from_another() {
+        let source = SheetDocument::new();
+        let mirror = SheetDocument::new();
+        let chip = ItemId::random();
+
+        // First delta: everything beyond the mirror's empty frontier.
+        source.insert(0, "first words \u{1F600}").unwrap();
+        source.commit(Some("seed"));
+        let frontier = mirror.version();
+        let delta = source.export_updates_since(&frontier).unwrap();
+        mirror.import_update(&delta, &[chip]).unwrap();
+        assert_eq!(mirror.runs(), source.runs());
+
+        // Second delta: only what the mirror has not seen, edits and a
+        // chip alike, applied on top of the first.
+        source.insert_chip(5, chip).unwrap();
+        source.delete(0, 5).unwrap();
+        source.commit(None);
+        let frontier = mirror.version();
+        let delta = source.export_updates_since(&frontier).unwrap();
+        mirror.import_update(&delta, &[chip]).unwrap();
+        assert_eq!(mirror.runs(), source.runs());
+        assert_eq!(mirror.live_chips(), vec![chip]);
+        assert_eq!(mirror.utf16_len(), source.utf16_len());
+    }
+
+    #[test]
+    fn an_undecodable_frontier_and_a_garbage_delta_both_refuse() {
+        let doc = SheetDocument::new();
+        doc.insert(0, "standing").unwrap();
+        doc.commit(None);
+        assert!(doc.export_updates_since(b"not a frontier").is_none());
+        assert_eq!(
+            doc.import_update(b"not an update batch", &[]),
+            Err(UpdateRefusal::Malformed)
+        );
+        assert_eq!(doc.runs(), vec![DocRun::Ink("standing".to_string())]);
+    }
+
+    #[test]
+    fn a_delta_breaking_the_chip_roster_is_refused_whole() {
+        let source = SheetDocument::new();
+        let mirror = SheetDocument::new();
+        let foreign = ItemId::random();
+
+        mirror.insert(0, "local").unwrap();
+        mirror.commit(None);
+        let before_runs = mirror.runs();
+        let before_version = mirror.version();
+
+        source.insert(0, "ink").unwrap();
+        source.insert_chip(0, foreign).unwrap();
+        source.commit(None);
+        let delta = source.export_updates_since(&mirror.version()).unwrap();
+
+        // The mirror owns no chip by that identity, so the whole batch
+        // refuses: not even the ink lands, and the frontier is
+        // untouched.
+        assert_eq!(
+            mirror.import_update(&delta, &[]),
+            Err(UpdateRefusal::ChipRoster)
+        );
+        assert_eq!(mirror.runs(), before_runs);
+        assert_eq!(mirror.version(), before_version);
+    }
+
+    #[test]
+    fn a_delta_missing_its_dependencies_is_refused_not_queued() {
+        let source = SheetDocument::new();
+        let mirror = SheetDocument::new();
+
+        source.insert(0, "one").unwrap();
+        source.commit(None);
+        let after_one = source.version();
+        source.insert(3, " two").unwrap();
+        source.commit(None);
+
+        // The second change alone, offered to a mirror that never saw
+        // the first: the dependency is missing, and the refusal is
+        // whole rather than a pending queue inside the library.
+        let tail = source.export_updates_since(&after_one).unwrap();
+        assert_eq!(
+            mirror.import_update(&tail, &[]),
+            Err(UpdateRefusal::MissingHistory)
+        );
+        assert_eq!(mirror.runs(), Vec::<DocRun>::new());
+
+        // The same tail lands once the base has: recovery is catching
+        // up from a frontier the source recognizes, never a queue.
+        let base = source.export_updates_since(&mirror.version()).unwrap();
+        mirror.import_update(&base, &[]).unwrap();
+        assert_eq!(mirror.runs(), source.runs());
+    }
+
+    #[test]
+    fn no_peer_id_crosses_a_ceremony_boundary_in_a_delta() {
+        let mut doc = SheetDocument::new();
+        let old_peer = doc.peer_id();
+        doc.insert(0, "alpha DOOMED keep").unwrap();
+        doc.delete(6, 7).unwrap();
+        doc.commit(Some("first"));
+
+        doc.compact();
+
+        // Everything the compacted document can ever put on a wire —
+        // the full delta from an empty frontier — carries neither the
+        // old actor id nor the deleted fragment. The ceremony boundary
+        // holds for deltas exactly as the rebuild's own export test
+        // proves it for snapshots.
+        let empty = SheetDocument::new();
+        let full = doc.export_updates_since(&empty.version()).unwrap();
+        assert!(contains(&full, b"alpha keep"), "the control: live ink");
+        assert!(!contains(&full, b"DOOMED"));
+        assert!(!contains(&full, &old_peer.to_le_bytes()));
+        assert_ne!(doc.peer_id(), old_peer);
     }
 
     /// A peer id guaranteed to differ from `not`, minted from the same

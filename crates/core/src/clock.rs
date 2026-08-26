@@ -9,6 +9,23 @@
 //! [`SystemClock`] anchors itself to a sleep-inclusive OS clock instead
 //! — the `libc` calls below are the crate's one unsafe carve-out beyond
 //! `secret.rs`/`harden.rs`, each a plain syscall with a SAFETY note.
+//!
+//! Amended 2026-08-26 (ADR-0021 section 6). The monotonic discipline
+//! survives for every locally observed interval: nothing a running
+//! session measures leaves this clock, and an `Instant` still never
+//! crosses a boot session, let alone a machine. What changed is that
+//! the restart gap (ADR-0016 section 4) is no longer the only
+//! wall-clock reader of a deadline. The replicated expiry policy is
+//! the second: a synced page publishes `(anchor_wall_ms, ttl_ms)` and
+//! every device computes its own deadline from the pair on its own
+//! wall clock, because the calendar is the one clock two machines
+//! share. Both readers obey the same never-extend arithmetic — a
+//! restore only ever subtracts, and a peer's candidate only ever
+//! shortens ([`SheetStore::observe_peer_expiry`]) — so a stepped or
+//! skewed wall clock can kill a page early, which is recoverable, and
+//! can never grant one life, which would not be.
+//!
+//! [`SheetStore::observe_peer_expiry`]: crate::store::SheetStore::observe_peer_expiry
 #![allow(unsafe_code)]
 
 use std::sync::{Arc, Mutex, OnceLock};
@@ -20,9 +37,12 @@ pub trait Clock {
     /// The current monotonic instant.
     fn now(&self) -> Instant;
 
-    /// Unix epoch milliseconds. Never used for expiry math (that stays
-    /// monotonic, see the module doc); only for stamping records a human
-    /// reads and for the creation-time title placeholder.
+    /// Unix epoch milliseconds. Local expiry math stays monotonic (see
+    /// the module doc); this reading stamps records a human reads,
+    /// anchors the creation-time title placeholder, and — amended
+    /// 2026-08-26, ADR-0021 section 6 — carries a deadline across
+    /// machines as the replicated expiry policy, under the same
+    /// never-extend arithmetic the restart gap uses.
     fn wall_ms(&self) -> u64;
 
     /// Seconds east of UTC for the user's current locale, so a placeholder
