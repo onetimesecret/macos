@@ -67,6 +67,10 @@ mod diagnostics;
 // chain must meanwhile be reachable by the tests and callers that
 // prove its contract rather than sitting dead in the crate.
 pub mod gop;
+// Public for the same reason as `gop`: the session layer that will
+// drive the ceremony arrives with issues #98–#99, and until then the
+// pairing contract lives here with the tests that prove it.
+pub mod pairing;
 mod persist;
 
 use diagnostics::diag_fault;
