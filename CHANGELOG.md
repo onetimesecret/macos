@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The groundwork for sync between your own devices** (issues #95,
+  #96, #97, #100, #101; ADR-0021, PR #117). Nothing changes in the app
+  yet: sync has no switch, no network and no surface, and the pad with
+  this release is indistinguishable from the pad without it. What lands
+  is the machinery the feature will stand on, built so its promises
+  hold before any byte moves. A page's edits can leave as deltas that
+  another device applies whole or not at all. Everything that will
+  cross the wire is sealed under a key that dies at each compaction
+  ceremony, so whatever a relay kept past that boundary stays
+  unreadable forever, to the devices that wrote it included — the purge
+  is arithmetic, not a promise about a server's disk. Two devices will
+  trust each other only after a person compares a six-digit string on
+  both screens, and can walk away; a lost device is left behind by the
+  next ceremony's key rotation. And two devices holding one page agree
+  on its death the safe way around: the earlier deadline wins, a
+  paused page stays paused everywhere until it is unpaused, and a
+  page's death is final. The relay protocol and the account sign-in
+  flow are written down (docs/spec/feature/sync/) before any of their
+  code exists, which is the order the milestone requires.
+
 ### Changed
 
 - **The word for the exit ramp is conceal** (issue #105). "Promotion"
