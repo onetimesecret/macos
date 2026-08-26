@@ -40,6 +40,7 @@ pub mod persist;
 pub mod secret;
 pub mod sheet;
 pub mod store;
+pub mod sync;
 pub mod ttl;
 
 pub use blocks::BlockMeta;
@@ -52,4 +53,7 @@ pub use sheet::{
     ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetId, Tab, TabId, local_day,
 };
 pub use store::{DEFAULT_SHEET_CAP, EditOp, PayloadError, Refusal, RemoteRefusal, SheetStore};
+pub use sync::{
+    CeremonyBallot, DeltaAdmission, ExpiryPolicy, HoldRegister, PageChannel, TerminalMarker,
+};
 pub use ttl::{TTL_LADDER, Ttl};

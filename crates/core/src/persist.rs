@@ -83,8 +83,8 @@ use crate::clock::Clock;
 use crate::document::{DocRun, SheetDocument};
 use crate::ledger::{DestinationClass, LedgerEvent, LedgerRecord, SizeClass, evict_expired};
 use crate::sheet::{
-    ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock, SheetId, TITLE_CAP,
-    Tab, TabId, derive_title,
+    CeremonyState, ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetClock,
+    SheetId, TITLE_CAP, Tab, TabId, derive_title,
 };
 use crate::store::{HOLD_FIRST, HOLD_TOPUP, SheetStore};
 use crate::ttl::Ttl;
@@ -987,6 +987,10 @@ fn read_page(
         chips,
         clock,
         total_held,
+        // Never persisted: a sync session does not survive a restart,
+        // so every restored page compacts inline until the engine
+        // re-defers it on attach (issue #101).
+        ceremony: CeremonyState::Immediate,
     })
 }
 
