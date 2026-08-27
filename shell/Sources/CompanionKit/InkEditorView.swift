@@ -1041,6 +1041,15 @@ public struct InkEditorView: NSViewRepresentable {
             var location = 0
             var block = 0
             var scanner = InkStyle.FenceScanner()
+            // The tokenizer stands beside the scanner because it has
+            // the same shape of memory: an open `/*` or an open `"""`
+            // means the next line is not what it locally looks like,
+            // exactly as an open fence means the next line is not
+            // prose. Cross-line state lives where cross-line state
+            // already lives, and one linear scan of the page serves
+            // both. Nothing is tokenized until a fence names a
+            // language, so the tokenizer starts knowing none.
+            var tokenizer = CodeInk.Tokenizer(language: nil)
             while location < text.length {
                 let meta = block < metas.count ? metas[block] : nil
                 // A block is usually one paragraph and sometimes several
@@ -1060,15 +1069,40 @@ public struct InkEditorView: NSViewRepresentable {
                 // gives its lines).
                 let joinsPrevious = scanner.insideFence
                 var head = extent
-                var paragraphs: [(range: NSRange, kind: InkStyle.LineKind)] = []
+                var paragraphs: [WalkedParagraph] = []
                 var paragraphStart = location
                 while paragraphStart < NSMaxRange(extent) {
                     let paragraph = text.paragraphRange(
                         for: NSRange(location: paragraphStart, length: 0)
                     )
                     if paragraphStart == location { head = paragraph }
+                    let line = text.substring(with: paragraph)
+                    // Whether the scanner was already holding a fence
+                    // open is what tells an opening rule from a closing
+                    // one, and only the opening rule declares a
+                    // language.
+                    let wasInsideFence = scanner.insideFence
+                    let kind = scanner.classify(line)
+                    var tokens: [CodeInk.Token] = []
+                    switch kind {
+                    case .fenceRule where !wasInsideFence:
+                        // A fresh tokenizer at every opening rule: it
+                        // takes the language the rule names and carries
+                        // nothing the block above left open, which is
+                        // the boundary the spec asks tokenizer state
+                        // never to cross.
+                        tokenizer = CodeInk.Tokenizer(language: scanner.fenceLanguage)
+                    case .code:
+                        // The line without its separator. A newline is
+                        // not part of anything the tokenizer colors,
+                        // and every offset it returns counts from the
+                        // paragraph's first character either way.
+                        tokens = tokenizer.tokens(in: line.trimmingCharacters(in: .newlines))
+                    default:
+                        break
+                    }
                     paragraphs.append(
-                        (paragraph, scanner.classify(text.substring(with: paragraph)))
+                        WalkedParagraph(range: paragraph, kind: kind, tokens: tokens)
                     )
                     if paragraph.length == 0 { break }
                     paragraphStart = NSMaxRange(paragraph)
@@ -1108,6 +1142,7 @@ public struct InkEditorView: NSViewRepresentable {
                         // spacing.
                         styleParagraph(
                             paragraph.range, of: storage, kind: paragraph.kind,
+                            tokens: paragraph.tokens,
                             labeled: label != nil && position == 0 && index == 0
                         )
                     }
@@ -1127,6 +1162,7 @@ public struct InkEditorView: NSViewRepresentable {
             // hugging the glyph runs; drawn once per region it is the
             // contiguous rectangle the eye expects.
             let paragraphs = walks.flatMap(\.paragraphs)
+                .map { (range: $0.range, kind: $0.kind) }
             fenceRegions = Self.fenceRegions(of: paragraphs)
             // The same reading, kept rather than dropped, so the
             // keystroke path can consult it (ADR-0024: automation
@@ -1178,7 +1214,7 @@ public struct InkEditorView: NSViewRepresentable {
 
         private func styleParagraph(
             _ range: NSRange, of storage: NSTextStorage,
-            kind: InkStyle.LineKind, labeled: Bool
+            kind: InkStyle.LineKind, tokens: [CodeInk.Token], labeled: Bool
         ) {
             guard range.length > 0 else { return }
             let paragraphStyle = NSMutableParagraphStyle()
@@ -1258,7 +1294,32 @@ public struct InkEditorView: NSViewRepresentable {
                 // as a heading and nothing is dimmed. The wash behind
                 // it belongs to the whole fence region and is painted
                 // by the layout manager, not laid down per line.
-                break
+                //
+                // Color goes on last, over base ink that is already
+                // laid down, and color is all it is: the font, the
+                // paragraph style and every byte of the line are the
+                // ones a bare fence would have given, so wrapping and
+                // the slab's geometry cannot move because a keyword
+                // turned purple (ADR-0024, amendment C). A fence with
+                // no language, or one the table does not know, hands
+                // over no tokens and this loop does nothing.
+                for token in tokens {
+                    let span = NSRange(
+                        location: range.location + token.range.location,
+                        length: token.range.length
+                    )
+                    // A token is read from the line and laid down on
+                    // the paragraph, so a span that would run past the
+                    // paragraph's end could only come of the two
+                    // disagreeing. Nothing is colored on a disagreement
+                    // rather than something wrong being colored.
+                    guard token.range.location >= 0, token.range.length > 0,
+                          NSMaxRange(span) <= NSMaxRange(range)
+                    else { continue }
+                    storage.addAttribute(
+                        .foregroundColor, value: InkStyle.tokenColor(token.kind), range: span
+                    )
+                }
             }
         }
 
@@ -1315,8 +1376,22 @@ public struct InkEditorView: NSViewRepresentable {
             let head: NSRange
             let meta: BlockInfo?
             let blank: Bool
-            let paragraphs: [(range: NSRange, kind: InkStyle.LineKind)]
+            let paragraphs: [WalkedParagraph]
             let joinsPrevious: Bool
+        }
+
+        /// One paragraph as the first pass read it: where it sits, what
+        /// it is, and the spans of it that are keyword, string, comment
+        /// or number. The tokens travel with the classification because
+        /// neither can be recovered from the paragraph alone: both are
+        /// answers the walk could only give having read the page down
+        /// to this line. They are consumed by the styling pass and kept
+        /// nowhere, the way the classification was before the keystroke
+        /// path needed it.
+        private struct WalkedParagraph {
+            let range: NSRange
+            let kind: InkStyle.LineKind
+            let tokens: [CodeInk.Token]
         }
 
         /// The stamp a group renders, or nil for a group with nothing
@@ -2146,6 +2221,22 @@ public enum InkStyle {
     /// into a document of boxes.
     public static let codeBackground = NSColor.quaternaryLabelColor
 
+    /// What each kind of token wears inside a fence, and the only place
+    /// these four colors are written down, so a test can assert them and
+    /// dark mode costs nothing: every one is a system color that already
+    /// knows both appearances. Color is the whole of the styling. The
+    /// font stays `baseFont`, so metrics, wrapping and the wash geometry
+    /// are exactly what they were before a line was colored, and the
+    /// bytes are untouched (ADR-0024, amendment C: display only).
+    public nonisolated static func tokenColor(_ kind: CodeInk.TokenKind) -> NSColor {
+        switch kind {
+        case .keyword: NSColor.systemPurple
+        case .string: NSColor.systemRed
+        case .comment: NSColor.secondaryLabelColor
+        case .number: NSColor.systemBlue
+        }
+    }
+
     /// One link a body line carries: the whole construct's range, the
     /// URL a ⌘-click would open, and whichever spans of the construct
     /// are markdown syntax rather than reading matter — dimmed on
@@ -2266,8 +2357,13 @@ public enum InkStyle {
         case fenceRule
         /// A line held inside a fence, whatever it happens to look
         /// like. `# comment` here is a comment, not a heading, and `- x`
-        /// is a flag, not a bullet (issue #75).
-        case code
+        /// is a flag, not a bullet (issue #75). The language is the one
+        /// the opening rule named, read through CodeInk's alias table,
+        /// and nil for a bare fence or for a language the table has
+        /// never heard of. It rides on every line of the block because
+        /// the rule that declared it may be a long way above: a line of
+        /// code can no more be colored alone than classified alone.
+        case code(language: String?)
         /// A body line that opens with a list marker: how many leading
         /// units stand before its content, which is both the width its
         /// wrapped lines hang from and the span the empty-item branch
@@ -2283,10 +2379,13 @@ public enum InkStyle {
     /// same `# comment` is a heading above the fence and a comment
     /// below it.
     public struct FenceScanner {
-        /// The fence currently open, if one is: its character and how
+        /// The fence currently open, if one is: its character, how
         /// long its opening run was, since a closing fence has to be at
-        /// least as long as the fence it answers.
-        private var open: (marker: Character, length: Int)?
+        /// least as long as the fence it answers, and the language its
+        /// info string named. The info string was always parsed; until
+        /// highlighting arrived only its emptiness was consulted, and
+        /// the language it carried was read and dropped.
+        private var open: (marker: Character, length: Int, language: String?)?
 
         public init() {}
 
@@ -2296,11 +2395,20 @@ public enum InkStyle {
         /// which is the reading a writer mid-paste would expect.
         public var insideFence: Bool { open != nil }
 
+        /// The language of the fence currently open, if the table knows
+        /// it. The restyle walk reads this at the opening rule, which is
+        /// the one place a language is declared and therefore the one
+        /// place a tokenizer for the lines below can be made.
+        public var fenceLanguage: String? { open?.language }
+
         public mutating func classify(_ line: String) -> LineKind {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if let run = Self.fenceRun(of: trimmed) {
                 guard let open else {
-                    self.open = (run.marker, run.length)
+                    self.open = (
+                        run.marker, run.length,
+                        CodeInk.canonicalLanguage(ofInfoString: run.info)
+                    )
                     return .fenceRule
                 }
                 // A closing fence answers its opener: the same
@@ -2309,12 +2417,12 @@ public enum InkStyle {
                 // — a ``` line inside a ~~~ block is text about code,
                 // not the end of the block.
                 guard run.marker == open.marker, run.length >= open.length, run.info.isEmpty else {
-                    return .code
+                    return .code(language: open.language)
                 }
                 self.open = nil
                 return .fenceRule
             }
-            if open != nil { return .code }
+            if let open { return .code(language: open.language) }
             if let marker = headingMarker(of: line) {
                 return .heading(level: marker.level, markerLength: marker.length)
             }

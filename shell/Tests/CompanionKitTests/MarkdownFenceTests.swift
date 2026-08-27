@@ -29,7 +29,13 @@ final class FenceScannerTests: XCTestCase {
         )
         XCTAssertEqual(
             kinds,
-            [.fenceRule, .code, .code, .code, .fenceRule]
+            [
+                .fenceRule,
+                .code(language: nil),
+                .code(language: nil),
+                .code(language: nil),
+                .fenceRule,
+            ]
         )
     }
 
@@ -53,7 +59,7 @@ final class FenceScannerTests: XCTestCase {
             [
                 .heading(level: 1, markerLength: 2),
                 .fenceRule,
-                .code,
+                .code(language: "shell"),
                 .fenceRule,
                 .heading(level: 1, markerLength: 2),
             ]
@@ -71,7 +77,10 @@ final class FenceScannerTests: XCTestCase {
             ## still code
             """
         )
-        XCTAssertEqual(kinds, [.fenceRule, .code, .code])
+        XCTAssertEqual(
+            kinds,
+            [.fenceRule, .code(language: nil), .code(language: nil)]
+        )
     }
 
     func testTheInfoStringDoesNotCloseTheFenceItOpens() {
@@ -94,7 +103,7 @@ final class FenceScannerTests: XCTestCase {
                 ~~~
                 """
             ),
-            [.fenceRule, .code, .code, .fenceRule]
+            [.fenceRule, .code(language: nil), .code(language: nil), .fenceRule]
         )
         XCTAssertEqual(
             kinds(
@@ -104,7 +113,7 @@ final class FenceScannerTests: XCTestCase {
                 ````
                 """
             ),
-            [.fenceRule, .code, .fenceRule]
+            [.fenceRule, .code(language: nil), .fenceRule]
         )
     }
 
@@ -114,7 +123,7 @@ final class FenceScannerTests: XCTestCase {
     }
 
     func testAnIndentedRuleStillOpensAFence() {
-        XCTAssertEqual(kinds("  ```\n  # comment"), [.fenceRule, .code])
+        XCTAssertEqual(kinds("  ```\n  # comment"), [.fenceRule, .code(language: nil)])
     }
 }
 
@@ -345,7 +354,7 @@ final class FenceRegionFoldTests: XCTestCase {
         let paragraphs: [Paragraph] = [
             (NSRange(location: 0, length: 8), .heading(level: 1, markerLength: 2)),
             (NSRange(location: 8, length: 4), .fenceRule),
-            (NSRange(location: 12, length: 10), .code),
+            (NSRange(location: 12, length: 10), .code(language: nil)),
             (NSRange(location: 22, length: 4), .fenceRule),
             (NSRange(location: 26, length: 5), .body),
         ]
@@ -358,7 +367,7 @@ final class FenceRegionFoldTests: XCTestCase {
     func testAnOpenFenceRunsToTheLastParagraph() {
         let paragraphs: [Paragraph] = [
             (NSRange(location: 0, length: 4), .fenceRule),
-            (NSRange(location: 4, length: 6), .code),
+            (NSRange(location: 4, length: 6), .code(language: nil)),
         ]
         XCTAssertEqual(
             InkEditorView.Coordinator.fenceRegions(of: paragraphs),

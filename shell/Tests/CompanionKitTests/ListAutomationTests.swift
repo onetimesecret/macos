@@ -167,9 +167,9 @@ final class ListClassificationTests: XCTestCase {
             [
                 .list(markerLength: 2),
                 .fenceRule,
-                .code,
-                .code,
-                .code,
+                .code(language: "shell"),
+                .code(language: "shell"),
+                .code(language: "shell"),
                 .fenceRule,
                 .list(markerLength: 2),
             ]
