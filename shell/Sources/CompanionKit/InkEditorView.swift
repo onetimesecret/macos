@@ -1858,6 +1858,139 @@ final class InkTextView: NSTextView {
         undo?.endUndoGrouping()
     }
 
+    /// Tab, on a line the page reads as a list item, with the caret in
+    /// the item's marker region: two spaces at the line's start, and
+    /// the item hangs one level deeper.
+    ///
+    /// Two spaces rather than a tab because the page is monospaced and
+    /// the hanging indent is measured in cells (`styleParagraph` gives
+    /// `.list` a head indent of the prefix's own width): a tab's width
+    /// would be the layout manager's opinion, and the marker's would be
+    /// the parser's. Nothing about the marker itself changes on a depth
+    /// change; a nested `-` is still a `-`, because substituting a
+    /// glyph is rewriting a line the writer typed (docs/spec/04).
+    ///
+    /// Anywhere else on the line Tab stays the literal tab it has
+    /// always been, which is what makes this safe to add: the gesture
+    /// only means depth where a depth reading is unambiguous.
+    override func insertTab(_ sender: Any?) {
+        guard let target = listDepthTarget() else { return super.insertTab(sender) }
+        let start = NSRange(location: target.paragraph.location, length: 0)
+        guard nudgeDepth(replacing: start, with: "  ", caret: target.caret) else {
+            return super.insertTab(sender)
+        }
+    }
+
+    /// ⇧Tab, the same gesture read backwards: up to two leading spaces
+    /// come off the line's start, or one leading tab if that is what
+    /// the depth was spelled in. An item hanging from nothing has
+    /// nothing to give back and is left exactly as it stands.
+    ///
+    /// The spec says only that ⇧Tab removes the indent Tab added, and
+    /// leaves open whether it should also fire from the item's content.
+    /// The reading taken here is the symmetric one: ⇧Tab is gated to
+    /// the marker region exactly as Tab is, which is how doc 04 words
+    /// the pair ("Tab and Shift-Tab nudge an item's depth while the
+    /// caret sits in the marker"). One region, one rule, and no line
+    /// where the two halves of a single gesture disagree about whether
+    /// this keystroke is about depth at all.
+    ///
+    /// An item with no indent swallows the keystroke rather than
+    /// deferring: AppKit's own backtab walks the key view loop, and
+    /// pulling the focus out of the page because an outdent had nothing
+    /// to remove is a worse surprise than doing nothing.
+    override func insertBacktab(_ sender: Any?) {
+        guard let target = listDepthTarget() else { return super.insertBacktab(sender) }
+        let removable = Self.outdentWidth(of: target.item.indent)
+        guard removable > 0 else { return }
+        let head = NSRange(location: target.paragraph.location, length: removable)
+        guard nudgeDepth(replacing: head, with: "", caret: target.caret) else {
+            return super.insertBacktab(sender)
+        }
+    }
+
+    /// How much of an item's indent one outdent takes back: one tab if
+    /// the depth was spelled with a tab, otherwise up to the two spaces
+    /// Tab would have put there. Never more than one level per press,
+    /// so the gesture is as reversible as it is repeatable.
+    nonisolated static func outdentWidth(of indent: String) -> Int {
+        guard let first = indent.first else { return 0 }
+        if first == "\t" { return 1 }
+        return indent.prefix(2).prefix { $0 == " " }.count
+    }
+
+    /// The line a depth nudge is allowed to touch, or nil when this
+    /// keystroke is an ordinary tab after all.
+    ///
+    /// Every gate `insertNewline` stands behind stands here too, and
+    /// for the same reasons: no automation under a live composition
+    /// (ADR-0013), and the classification restyle already computed
+    /// rather than a fresh read, so a `- x` inside a fence stays the
+    /// flag it is and display and automation can never disagree about
+    /// which it is (issue #75).
+    ///
+    /// The bare caret is the last gate and the one this method has to
+    /// argue for itself. A selection spanning lines has no single
+    /// caret line, and indenting every line it covers would be writing
+    /// where the caret is not, which is the one thing ADR-0024 forbids
+    /// outright. Rather than take half the selection's meaning, the
+    /// keystroke falls through to the ordinary tab, which replaces the
+    /// selection exactly as it does in every other text view on the
+    /// machine. Block reindent is a real gesture and it can be argued
+    /// for on its own terms later; it is not this keystroke.
+    private func listDepthTarget()
+        -> (paragraph: NSRange, caret: NSRange, item: InkStyle.ListItem)? {
+        guard !hasMarkedText() else { return nil }
+        let caret = selectedRange()
+        guard caret.length == 0, let storage = textStorage else { return nil }
+        let text = storage.string as NSString
+        let paragraph = text.paragraphRange(for: caret)
+        guard let kind = coordinator?.classifiedKind(ofParagraphAt: paragraph.location),
+              case .list = kind
+        else { return nil }
+        let line = text.substring(with: paragraph).trimmingCharacters(in: .newlines)
+        guard let item = InkStyle.listMarker(of: line) else { return nil }
+        // The marker region runs from the line's start through the
+        // first character of content, boundary included, because the
+        // commonest nesting gesture of all is typing `- ` and reaching
+        // straight for Tab: the caret sits exactly at the marker's end
+        // there, and an exclusive reading would answer that gesture
+        // with a literal tab.
+        guard caret.location <= paragraph.location + item.length else { return nil }
+        return (paragraph, caret, item)
+    }
+
+    /// One depth nudge, and the only place either direction writes.
+    ///
+    /// The edit travels the ordinary route (`shouldChangeText`, the
+    /// edit, `didChangeText`), so the core sees an ordinary op and
+    /// ADR-0013's provenance holds with no special case, and the
+    /// coalescing is broken on both sides so one keystroke is one undo
+    /// step. False when the delegate refuses, which leaves the
+    /// keystroke to the ordinary tab rather than swallowing it.
+    private func nudgeDepth(
+        replacing range: NSRange, with replacement: String, caret: NSRange
+    ) -> Bool {
+        guard let storage = textStorage else { return false }
+        breakUndoCoalescing()
+        guard shouldChangeText(in: range, replacementString: replacement) else { return false }
+        storage.replaceCharacters(in: range, with: replacement)
+        didChangeText()
+        breakUndoCoalescing()
+        // Where the caret lands is the whole of whether the gesture
+        // repeats. It keeps its place relative to the line's content,
+        // so after a nudge it is still in the marker region and a
+        // second press nudges again; an outdent that eats the ground
+        // under it leaves it at the line's start, which is inside the
+        // region too.
+        let width = (replacement as NSString).length
+        let landing = caret.location >= NSMaxRange(range)
+            ? caret.location - range.length + width
+            : range.location + width
+        setSelectedRange(NSRange(location: landing, length: 0))
+        return true
+    }
+
     // MARK: Find (the one route that could reach a chip)
 
     /// Every other finder action works on ranges the finder matched, and

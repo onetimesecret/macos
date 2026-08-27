@@ -448,6 +448,175 @@ final class ListKeystrokeTests: XCTestCase {
         XCTAssertEqual(storage.string, "- milk\n- ")
     }
 
+    // MARK: Depth
+
+    /// The nudge is two spaces at the line's start and nothing else:
+    /// the marker keeps its own glyph, because a depth change is not a
+    /// licence to restyle a character the writer typed.
+    func testTabInTheMarkerRegionDeepensByExactlyTwoSpaces() {
+        makeEditor()
+        write("- milk")
+        caret(to: 2)
+
+        textView.insertTab(nil)
+
+        XCTAssertEqual(storage.string, "  - milk")
+        XCTAssertEqual(
+            textView.selectedRange(), NSRange(location: 4, length: 0),
+            "the caret left the marker region, so a second Tab would not deepen again"
+        )
+    }
+
+    /// The commonest nesting gesture there is: type the marker, reach
+    /// for Tab before any content exists. The caret sits exactly at the
+    /// marker's end, and the region has to include that boundary or the
+    /// gesture answers with a literal tab.
+    func testTabAtTheMarkersEndDeepensAnItemWithNoContentYet() {
+        makeEditor()
+        write("- ")
+
+        textView.insertTab(nil)
+
+        XCTAssertEqual(storage.string, "  - ")
+    }
+
+    func testTabTwiceDeepensTwice() {
+        makeEditor()
+        write("- milk")
+        caret(to: 2)
+
+        textView.insertTab(nil)
+        textView.insertTab(nil)
+
+        XCTAssertEqual(storage.string, "    - milk")
+    }
+
+    /// Anywhere else on the line Tab is the character it has always
+    /// been. The depth reading is only unambiguous in the marker.
+    func testTabInAnItemsContentStaysALiteralTab() {
+        makeEditor()
+        write("- milk")
+
+        textView.insertTab(nil)
+
+        XCTAssertEqual(storage.string, "- milk\t")
+    }
+
+    func testShiftTabTakesBackTwoSpaces() {
+        makeEditor()
+        write("  - milk")
+        caret(to: 4)
+
+        textView.insertBacktab(nil)
+
+        XCTAssertEqual(storage.string, "- milk")
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 2, length: 0))
+    }
+
+    /// Depth spelled with a tab comes back one tab at a time: the
+    /// outdent takes back a level, never a measurement of its own.
+    func testShiftTabTakesBackOneTab() {
+        makeEditor()
+        write("\t- milk")
+        caret(to: 3)
+
+        textView.insertBacktab(nil)
+
+        XCTAssertEqual(storage.string, "- milk")
+    }
+
+    /// An item hanging from nothing has nothing to give back, and the
+    /// keystroke stops there rather than walking the key view loop and
+    /// taking the focus out of the page with it.
+    func testShiftTabOnAnUnindentedItemLeavesItAlone() {
+        makeEditor()
+        write("- milk")
+        caret(to: 2)
+
+        textView.insertBacktab(nil)
+
+        XCTAssertEqual(storage.string, "- milk")
+        XCTAssertEqual(batches, [], "an outdent with nothing to remove still reached the core")
+    }
+
+    /// A selection spanning lines has no single caret line, and
+    /// deepening every line it covers would be writing where the caret
+    /// is not, which is the one thing ADR-0024 forbids outright. The
+    /// keystroke falls through to the ordinary tab.
+    func testASelectionAcrossLinesFallsThroughToTheOrdinaryTab() {
+        makeEditor()
+        write("- milk\n- eggs")
+        textView.setSelectedRange(NSRange(location: 0, length: 13))
+
+        textView.insertTab(nil)
+
+        XCTAssertEqual(storage.string, "\t")
+    }
+
+    // MARK: The gates, again
+
+    func testNoDepthChangeInsideAFence() {
+        makeEditor()
+        write("```sh\n- x")
+        caret(to: 6)
+
+        textView.insertTab(nil)
+
+        XCTAssertEqual(
+            storage.string, "```sh\n\t- x",
+            "a flag inside a fence was nudged as if it had depth (issue #75)"
+        )
+    }
+
+    func testNoDepthChangeWhileAnImeIsComposing() {
+        makeEditor()
+        write("- ")
+        caret(to: 2)
+        textView.setMarkedText(
+            "ka", selectedRange: NSRange(location: 2, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+
+        textView.insertTab(nil)
+
+        XCTAssertFalse(
+            storage.string.hasPrefix("  "),
+            "the line was deepened under a live composition"
+        )
+    }
+
+    /// One keystroke, one undo step, for the nudge exactly as for the
+    /// continuation: ⌘Z takes back the depth and none of the words
+    /// typed before it.
+    func testOneUndoReversesOneNudge() {
+        makeEditor()
+        write("- milk")
+        caret(to: 2)
+        textView.insertTab(nil)
+        XCTAssertEqual(storage.string, "  - milk")
+
+        textView.undoManager?.undo()
+
+        XCTAssertEqual(storage.string, "- milk")
+    }
+
+    /// The nudge is an ordinary insert and the outdent an ordinary
+    /// delete, so the core sees what typing would have sent it and
+    /// ADR-0013's provenance needs no special case.
+    func testTheDepthNudgeCrossesTheSeamAsAnOrdinaryEdit() {
+        makeEditor()
+        write("- milk")
+        caret(to: 2)
+        textView.insertTab(nil)
+        XCTAssertEqual(batches, [[.ins(at: 0, text: "  ")]])
+
+        coordinator.restyle()
+        settleUndo()
+        batches = []
+        textView.insertBacktab(nil)
+        XCTAssertEqual(batches, [[.del(at: 0, len: 2)]])
+    }
+
     // MARK: Display
 
     /// The marker is the thing the eye scans for: it keeps its own
