@@ -310,8 +310,10 @@ exactly as it does today; a guessed language is worse than plain ink.
 Nothing but the foreground color moves. Same font, same metrics, same
 wash, and the bytes are untouched, so select-all-copy still returns
 exactly what was typed and sealing a colored line seals the markup. The
-color lives on the editable page alone: chips, the ledger and the resting
-glance stay uncolored. The fence boundary holds in both directions,
+color lives where the page itself lives. Chips, the ledger and the roll's
+quiet renderings stay uncolored, because each of them renders a page
+rather than mounts one; the resting glance mounts the page, read only,
+and so carries color exactly as it already carries heading weight. The fence boundary holds in both directions,
 which is what keeps the reading above true: automation stops at it going
 in, and color stops at it coming out.
 

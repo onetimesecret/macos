@@ -1169,7 +1169,7 @@ public struct InkEditorView: NSViewRepresentable {
             // decides from the classification, never from a second
             // scan that might disagree with the first).
             lineKinds = paragraphs
-            lineKindsLength = text.length
+            lineKindsStamp = text.hash
             lineKindsSheet = sheet
             if let layoutManager = textView?.layoutManager as? InkLayoutManager {
                 layoutManager.fenceRegions = fenceRegions
@@ -1447,8 +1447,18 @@ public struct InkEditorView: NSViewRepresentable {
         /// would be reading a page that no longer exists. Then the
         /// cache answers nothing, and nothing means no automation:
         /// a plain newline is always the safe answer.
+        ///
+        /// The stamp is the page's own content and not its length,
+        /// because what a line means depends on every line above it: a
+        /// backtick typed over a letter somewhere higher up opens a
+        /// fence and turns the caret's bullet into a flag (issue #75)
+        /// without moving a single character. A length would call that
+        /// page unchanged. Hashing a little text file on a keystroke
+        /// costs nothing worth measuring, and the guarantee stops
+        /// resting on the arithmetic of the edits that happen to
+        /// reach us.
         private var lineKinds: [(range: NSRange, kind: InkStyle.LineKind)] = []
-        private var lineKindsLength = 0
+        private var lineKindsStamp = 0
         private var lineKindsSheet: UInt64?
 
         /// The classification of the paragraph beginning exactly at
@@ -1457,7 +1467,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// paragraph the walk has not seen yet.
         func classifiedKind(ofParagraphAt location: Int) -> InkStyle.LineKind? {
             guard let storage = textView?.textStorage,
-                  storage.length == lineKindsLength,
+                  (storage.string as NSString).hash == lineKindsStamp,
                   let sheet = currentSheet, sheet == lineKindsSheet
             else { return nil }
             return lineKinds.first { $0.range.location == location }?.kind
@@ -1813,6 +1823,16 @@ final class InkTextView: NSTextView {
             return super.insertNewline(sender)
         }
 
+        // Only a Return at the end of a line is about the list at all,
+        // and this guard governs both branches below. A Return in the
+        // middle of an item would push the text to its right under a
+        // marker the writer never typed, and a Return at the head of a
+        // bare marker is a writer asking for a line above it, not for
+        // the marker to vanish. Both split plainly. Start strict,
+        // loosen if dogfooding asks.
+        guard caret.location == paragraph.location + line.utf16.count else {
+            return super.insertNewline(sender)
+        }
         if line.utf16.count == item.length {
             // An empty item: the marker and nothing after its space.
             // Return takes the marker off and inserts no newline at
@@ -1832,14 +1852,6 @@ final class InkTextView: NSTextView {
             didChangeText()
             setSelectedRange(NSRange(location: paragraph.location, length: 0))
             return
-        }
-        // Mid-line, the split stays a plain split. Only a Return at the
-        // end of an item asks for the next item; a Return in the middle
-        // of one would push the text to its right under a marker the
-        // writer never typed, which leans against the law's spirit.
-        // Start strict, loosen if dogfooding asks.
-        guard caret.location == paragraph.location + line.utf16.count else {
-            return super.insertNewline(sender)
         }
         // One keystroke, one undo step: the coalescing that would
         // otherwise fold this into the words typed before it is broken
@@ -2131,7 +2143,13 @@ public enum InkStyle {
             case .bullet(let character):
                 indent + String(character) + " "
             case .ordered(let number, let delimiter):
-                indent + String(number + 1) + String(delimiter) + " "
+                // Clamped to the ceiling the parser reads, so the
+                // marker written here is always one the parser will
+                // read back. A tenth digit would classify as body ink:
+                // no hanging indent, no continuation, no way to end the
+                // list with one Return. The last item repeats its
+                // number instead, which is a list the user can fix.
+                indent + String(min(number + 1, 999_999_999)) + String(delimiter) + " "
             case .task:
                 indent + "- [ ] "
             }
