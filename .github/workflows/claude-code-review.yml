@@ -37,11 +37,14 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-          # The action's built-in default is a retired model id, which 404s
-          # before the review starts. Set the ANTHROPIC_MODEL repo variable
-          # to change models without a PR; the literal is the floor, so an
-          # unset or cleared variable still lands on a live model.
-          model: ${{ vars.ANTHROPIC_MODEL || 'claude-opus-5' }}
+          # Model selection. The action's own default is a retired id that 404s
+          # before the review starts, so this must always resolve to something
+          # live. v1 has no `model` input -- it must be a CLI flag in
+          # claude_args, or it is silently ignored. 'opus' is an alias the
+          # pinned CLI resolves at run time, so a model retirement needs no edit
+          # here. Set the ANTHROPIC_MODEL repo variable to override; the literal
+          # is the floor, so an unset or cleared variable stays harmless.
+          claude_args: --model ${{ vars.ANTHROPIC_MODEL || 'opus' }}
 
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
