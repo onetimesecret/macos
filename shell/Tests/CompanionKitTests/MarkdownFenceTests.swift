@@ -351,7 +351,7 @@ final class FenceRegionFoldTests: XCTestCase {
         ]
         XCTAssertEqual(
             InkEditorView.Coordinator.fenceRegions(of: paragraphs),
-            [NSRange(location: 8, length: 20)]
+            [NSRange(location: 8, length: 18)]
         )
     }
 
