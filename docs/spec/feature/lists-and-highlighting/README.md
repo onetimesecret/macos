@@ -3,7 +3,7 @@
 
 # Feature: list automation and code highlighting on the page
 
-Status: **phase 1 landed** (doctrine); phases 2 to 5 planned · 2026-08-27
+Status: **landed**, all five phases · 2026-08-27
 Scope: two additions to the ink editor, independent of each other and
 shippable separately. One, automatic list behaviour: Return continues a
 list item, Return on an empty item ends the list, Tab and Shift-Tab
@@ -35,22 +35,19 @@ the friction:
   clients and GitHub: type `- `, press Return, expect the next bullet.
   The page gives them a bare newline.
 - **Code blocks read as prose with a wash.** The whole page is already
-  monospaced (`InkStyle.baseFont`, `InkEditorView.swift:1851`), so a
-  fenced block differs from a paragraph only by the slab the layout
-  manager paints (`InkStyle.codeBackground`, declared at
-  `InkEditorView.swift:1878` and drawn per region at
-  `InkEditorView.swift:1522`). The styling switch for a code line does
-  nothing at all: `case .code` at `InkEditorView.swift:1230` is a
-  comment and a `break`. The `FenceScanner` already parses the info
-  string (`swift` in ` ```swift `, `fenceRun` at
-  `InkEditorView.swift:2049`), and `classify` already reads it once, to
-  refuse a closing rule that carries text. What it discards is the
-  language on the opening rule. The field exists and has a caller; the
-  language it carries has none.
+  monospaced (`InkStyle.baseFont`), so a fenced block differed from a
+  paragraph only by the slab the layout manager paints
+  (`InkStyle.codeBackground`). The styling switch for a code line did
+  nothing at all: `case .code` was a comment and a `break`. The
+  `FenceScanner` already parsed the info string (`swift` in
+  ` ```swift `, `fenceRun`), and `classify` already read it once, to
+  refuse a closing rule that carries text. What it discarded was the
+  language on the opening rule. The field existed and had a caller; the
+  language it carried had none.
 
 One prior confusion to close: colored code seen in screenshots of other
 tools is theirs, not ours, and nothing colored can arrive by paste
-because ⌘V is forced plain (`paste(_:)` at `InkEditorView.swift:1640`).
+because ⌘V is forced plain (`paste(_:)` at `InkEditorView.swift:1791`).
 That stays.
 
 ## Doctrine: what has to be argued before code
@@ -118,7 +115,7 @@ space   = one space
 
 Recognition is a pure, nonisolated static parser
 (`InkStyle.listMarker(of:)`, mirroring `headingMarker(of:)` at
-`InkEditorView.swift:1864`), returning indent, marker kind and marker
+`InkEditorView.swift:2237`), returning indent, marker kind and marker
 length, testable without a view.
 
 ### Behaviour
@@ -156,8 +153,8 @@ same classification `restyle` computed, so the two can never disagree.
 
 - A new `LineKind` case, `.list(markerLength: Int)`, produced by
   `FenceScanner.classify` for body lines that parse as items
-  (`InkEditorView.swift:2023`). Additive; existing cases untouched.
-- `styleParagraph` (`InkEditorView.swift:1173`) gives `.list` a hanging
+  (`InkEditorView.swift:2566`). Additive; existing cases untouched.
+- `styleParagraph` (`InkEditorView.swift:1226`) gives `.list` a hanging
   indent: `headIndent` set so wrapped lines align under the content, not
   under the marker. Monospaced page makes the width exact: (indent +
   marker + space) × the base font's advancement.
@@ -168,7 +165,7 @@ same classification `restyle` computed, so the two can never disagree.
 
 ### Where it hooks
 
-`InkTextView` (`InkEditorView.swift:1557`) already owns the keyboard
+`InkTextView` (`InkEditorView.swift:1708`) already owns the keyboard
 seam (`keyDown`, `performKeyEquivalent`, `insertText`). Add:
 
 - `override func insertNewline(_:)`: read the caret's paragraph, ask the
@@ -238,7 +235,7 @@ In `InkStyle`, semantic and theme-adaptive by construction:
 Fixed in one place so tests can assert them and dark mode costs
 nothing. Font never changes: color only, on `baseFont`, so metrics,
 wrapping and the wash geometry (`slabRect`,
-`InkEditorView.swift:1536`) are untouched.
+`InkEditorView.swift:1687`) are untouched.
 
 ### Where it hooks
 
@@ -246,7 +243,7 @@ wrapping and the wash geometry (`slabRect`,
   in document order with the scanner; the tokenizer runs beside it,
   attaching each paragraph's tokens to the walk tuple. Cross-line
   tokenizer state lives where cross-line fence state already lives.
-- `styleParagraph`'s `case .code` (`InkEditorView.swift:1230`) stops
+- `styleParagraph`'s `case .code` (`InkEditorView.swift:1302`) stops
   being `break`: after the base attributes, lay each token's
   `foregroundColor` down. Fence rules stay dimmed
   `tertiaryLabelColor`; the info string on the opening rule is part of
@@ -302,6 +299,41 @@ each other.
 - **Unchanged by construction, asserted anyway**: select-all-copy
   returns bytes exactly as typed with a colored fence on screen; ⌘V
   stays plain; sealing a list line seals the markup.
+
+## What landed differently from this plan
+
+Written down because the next reader of this file will otherwise
+believe the plan rather than the code.
+
+- **Amendment C's scope was wrong about the resting glance.** The plan
+  said chips, the ledger and the resting glance stay uncolored. The
+  resting card mounts the editable page itself, read only (ADR-0006),
+  so it carries fenced color exactly as it has carried heading weight
+  and link color since amendment B. The docs now say where color
+  really stops: chips, the ledger and the roll's quiet renderings,
+  each of which renders a page rather than mounts one.
+- **`LineKind.list` carries only the marker length.** The marker itself
+  comes from the pure parser at the moment a keystroke needs it, which
+  keeps the enum something a reader can hold in view.
+- **Tokens ride in a named struct, not in the walk tuple.** Adding a
+  third element to the tuple would have changed `fenceRegions(of:)`'s
+  pure signature and its tests. The styling pass maps back down to the
+  pair, so a `BlockWalk` means what it always meant.
+- **A fresh tokenizer at each opening rule, rather than `reset()`.** An
+  opening rule can change the language, and a reset keeps the old one.
+- **The classification cache is stamped with the page's content, not
+  its length.** A backtick typed over a letter above the caret opens a
+  fence and changes what the caret's line means without moving a
+  character, and a length stamp calls that page unchanged.
+- **Three cases the behaviour table did not name**, each settled in
+  code and in a test: Return over a selection splits plainly, Return at
+  the head of a bare marker splits plainly (only the end of a line is
+  about the list at all), and an ordered successor is clamped to the
+  nine digits the parser reads rather than writing a marker nothing can
+  read back.
+- **Shift-Tab is gated to the marker region and swallowed when there is
+  nothing to outdent**, because AppKit's backtab otherwise walks the
+  key view loop and pulls focus off the page.
 
 ## Out of scope, deliberately
 
