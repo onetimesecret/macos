@@ -23,6 +23,11 @@ pub enum ControlPayload {
     Propose {
         /// The ballot this proposal opens.
         ballot_id: String,
+        /// The page whose transition proposed the compaction — named
+        /// on the wire so a follower joins the right ballot instead of
+        /// inferring the channel's one busy page (the #99 follow-up;
+        /// every enrolled page still compacts, §2).
+        page: String,
         /// Per-device sealed entropy, keyed by identity fingerprint.
         /// A `BTreeMap` so the encoding is deterministic.
         entropy_sealed: BTreeMap<String, ByteBlob>,
@@ -152,6 +157,7 @@ mod tests {
             DeltaEnvelope::Control {
                 payload: ControlPayload::Propose {
                     ballot_id: "ballot-1".into(),
+                    page: "page-1".into(),
                     entropy_sealed: entropy,
                 },
             },

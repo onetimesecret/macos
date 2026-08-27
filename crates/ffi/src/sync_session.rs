@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use companion_core::{
     Clock, DeltaAdmission, ExpiryPolicy, HoldRegister, ItemId, PageChannel, SheetId, SheetStore,
 };
-use companion_sync::relay::{FrameAnswer, RelayApi, RelayRefusal};
+use companion_sync::relay::{FrameAnswer, PeerAttachment, RelayApi, RelayRefusal};
 use companion_sync::{ByteBlob, ControlPayload, DeltaEnvelope, TokenKeeper, pad};
 use ots_client::{BearerAuth, HttpRequest, HttpResponse};
 use ring::hkdf::{HKDF_SHA256, Salt};
@@ -273,6 +273,19 @@ pub struct SyncSession {
     /// The sealed key frame a committed ceremony produced, waiting for
     /// [`SyncSession::take_frame`] and the frame publish.
     pending_frame: Option<Vec<u8>>,
+    /// The last absorbed attach answer: where the channel stands and
+    /// who else is on it. `None` until an attach lands.
+    attach: Option<AttachSnapshot>,
+}
+
+/// What an attach answer leaves behind: the channel position the
+/// relay reported, and the roster of peers with the key package each
+/// published (the #99 follow-up) — the raw material for
+/// [`SyncSession::ceremony_peers`] and issue #102's device list.
+struct AttachSnapshot {
+    epoch: u64,
+    frame_present: bool,
+    peers: Vec<PeerAttachment>,
 }
 
 impl SyncSession {
@@ -293,6 +306,7 @@ impl SyncSession {
             received_entropy: None,
             ballot_scope: None,
             pending_frame: None,
+            attach: None,
         }
     }
 
@@ -354,7 +368,8 @@ impl SyncSession {
         )
     }
 
-    /// Absorb the attach answer: adopt the relay's cursor.
+    /// Absorb the attach answer: adopt the relay's cursor, and keep
+    /// where the channel stands and who else is on it.
     ///
     /// # Errors
     ///
@@ -363,7 +378,67 @@ impl SyncSession {
     pub fn absorb_attach(&mut self, response: &HttpResponse) -> Result<(), RelayRefusal> {
         let answer = RelayApi::parse_attach(response)?;
         self.next_seq = answer.next_seq;
+        self.attach = Some(AttachSnapshot {
+            epoch: answer.epoch,
+            frame_present: answer.frame_present,
+            peers: answer.peers,
+        });
         Ok(())
+    }
+
+    /// Whether an attach has landed this session.
+    #[must_use]
+    pub fn attached(&self) -> bool {
+        self.attach.is_some()
+    }
+
+    /// The channel epoch the last attach reported. The chain, not this
+    /// echo, is what opens anything; a skew shows up as `409`/`410` or
+    /// blobs that refuse to open.
+    #[must_use]
+    pub fn attach_epoch(&self) -> Option<u64> {
+        self.attach.as_ref().map(|attach| attach.epoch)
+    }
+
+    /// Whether the relay held a key frame at the last attach — the
+    /// difference between "rejoin has something to adopt" and issue
+    /// #94's device waiting with no peer awake.
+    #[must_use]
+    pub fn frame_present(&self) -> Option<bool> {
+        self.attach.as_ref().map(|attach| attach.frame_present)
+    }
+
+    /// The peers the last attach reported, key packages included.
+    /// Attach-list truth, not device trust: pairing records decide who
+    /// anything is ever sealed to ([`SyncSession::ceremony_peers`]).
+    #[must_use]
+    pub fn attach_roster(&self) -> &[PeerAttachment] {
+        self.attach
+            .as_ref()
+            .map_or(&[], |attach| attach.peers.as_slice())
+    }
+
+    /// The ceremony peers this device may seal entropy to: the attach
+    /// roster filtered through the pairing records. `identities` maps
+    /// fingerprint → Ed25519 identity public key from those records; a
+    /// roster entry with no record, or whose package fails its
+    /// identity's signature, is dropped — a relay that substitutes a
+    /// package wins ciphertext nobody will cause to be opened, and a
+    /// revoked device drops out by having no record left.
+    #[must_use]
+    pub fn ceremony_peers(&self, identities: &[(String, Vec<u8>)]) -> Vec<CeremonyPeer> {
+        self.attach_roster()
+            .iter()
+            .filter(|peer| peer.device != self.device_fingerprint)
+            .filter_map(|peer| {
+                let (_, identity) = identities.iter().find(|(fp, _)| *fp == peer.device)?;
+                let package = KeyPackage::decode(&peer.key_package)?;
+                package.verify(identity).then(|| CeremonyPeer {
+                    fingerprint: peer.device.clone(),
+                    package,
+                })
+            })
+            .collect()
     }
 
     // -----------------------------------------------------------------
@@ -645,6 +720,7 @@ impl SyncSession {
         match payload {
             ControlPayload::Propose {
                 ballot_id,
+                page,
                 entropy_sealed,
             } => {
                 // A publish comes back around on the stream: this
@@ -655,6 +731,29 @@ impl SyncSession {
                     held.as_ref().is_some_and(|(id, _)| *id == ballot_id)
                 };
                 if already_held(&self.proposed_entropy) || already_held(&self.received_entropy) {
+                    return;
+                }
+                // One ballot at a time channel-wide (§5): a second
+                // proposal while one is in flight goes unanswered, and
+                // the unconfirmed ballot abandons on its patience.
+                if self.ballot_scope.is_some() {
+                    return;
+                }
+                // The proposal names its page on the wire (the #99
+                // follow-up). Resolve everything before the one-shot
+                // key is spent: a device that cannot join — an unknown
+                // wire id, a page it does not hold, a page already
+                // terminal — stays out at no cost, never accepts, and
+                // the ballot fails as §5's all-attached rule requires.
+                let Some(page) = page_from_wire(&page) else {
+                    return;
+                };
+                if sheet_of(store, page).is_none()
+                    || self
+                        .channels
+                        .get(&page)
+                        .is_some_and(PageChannel::is_terminal)
+                {
                     return;
                 }
                 // Open this device's entry; a proposal not naming us is
@@ -671,24 +770,11 @@ impl SyncSession {
                 // arrives on the stream like anyone's.
                 let attached: Vec<ItemId> =
                     entropy_sealed.keys().map(|fp| ballot_token(fp)).collect();
-                let Some((page, _)) = self.ballot_scope.or_else(|| {
-                    // A joiner learns the scope from the proposal: one
-                    // ballot at a time channel-wide, and the channel's
-                    // one non-terminal page under compaction pressure
-                    // is the proposer's page. Until multi-page wiring
-                    // (#102) the session tracks a single ballot scope.
-                    self.channels
-                        .iter()
-                        .find(|(_, ch)| !ch.is_terminal())
-                        .map(|(page, _)| (*page, now_ms))
-                }) else {
-                    return;
-                };
-                self.ballot_scope = Some((page, now_ms));
                 let channel = self.channels.entry(page).or_default();
                 if !channel.propose_ceremony(&attached) {
                     return;
                 }
+                self.ballot_scope = Some((page, now_ms));
                 self.received_entropy = Some((ballot_id.clone(), entropy));
                 // Queue the acceptance; it is *counted* only when it
                 // comes back on the stream. The relay totally orders
@@ -794,6 +880,7 @@ impl SyncSession {
         self.outbox.push(DeltaEnvelope::Control {
             payload: ControlPayload::Propose {
                 ballot_id: ballot_id.clone(),
+                page: page_wire_id(page),
                 entropy_sealed,
             },
         });
@@ -1235,6 +1322,102 @@ mod tests {
         relay.epoch = 1;
         let request = a.publish_frame_request(&chain_a, &frame).unwrap();
         assert!(request.url.ends_with("/channel/frame"));
+    }
+
+    #[test]
+    fn the_attach_roster_becomes_ceremony_peers_only_through_the_pairing_records() {
+        let mut session = session("fp-a");
+        let (pkcs8_b, identity_b) = identity();
+        let (_, wrong_identity) = identity();
+        let keeper_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
+        let package_value = serde_json::to_value(ByteBlob(keeper_b.package().encode())).unwrap();
+        let body = serde_json::json!({
+            "epoch": 2,
+            "frame_present": false,
+            "next_seq": 0,
+            "peers": [
+                {"device": "fp-b", "key_package": package_value, "attached_ms": 1_000},
+            ],
+        });
+        session
+            .absorb_attach(&HttpResponse {
+                status: 200,
+                body: body.to_string().into_bytes(),
+            })
+            .unwrap();
+        assert!(session.attached());
+        assert_eq!(session.attach_epoch(), Some(2));
+        assert_eq!(session.frame_present(), Some(false));
+        assert_eq!(session.attach_roster().len(), 1);
+
+        // The roster alone admits nobody: no pairing record, no peer.
+        assert!(session.ceremony_peers(&[]).is_empty());
+        // A package that fails its recorded identity is dropped — the
+        // relay-substitution shape.
+        assert!(
+            session
+                .ceremony_peers(&[("fp-b".into(), wrong_identity)])
+                .is_empty()
+        );
+        // The recorded identity admits it.
+        let peers = session.ceremony_peers(&[("fp-b".into(), identity_b)]);
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].fingerprint, "fp-b");
+    }
+
+    #[test]
+    fn a_proposal_for_a_page_this_device_does_not_hold_spends_nothing() {
+        let clock = ManualClock::new();
+        let mut store_a = SheetStore::new(clock.clone());
+        let page_a = store_a.new_tab().unwrap().1;
+        let uuid = store_a.sheet(page_a).unwrap().uuid();
+        // B never adopted A's page; its store holds only its own.
+        let mut store_b = SheetStore::new(clock.clone());
+        let _ = store_b.new_tab().unwrap();
+
+        let chain_a = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut chain_b = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut a = session("fp-a");
+        let mut b = session("fp-b");
+        let (pkcs8_a, _) = identity();
+        let (pkcs8_b, _) = identity();
+        let packages_a = KeyPackageKeeper::mint(&pkcs8_a).unwrap();
+        let mut packages_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
+        let mut relay = FakeRelay::default();
+
+        assert!(a.propose_ceremony(
+            uuid,
+            &[CeremonyPeer {
+                fingerprint: "fp-b".into(),
+                package: packages_b.package().clone(),
+            }],
+            &packages_a.package().clone(),
+            0,
+        ));
+        let request = a.publish_request(0, &chain_a).unwrap();
+        a.absorb_publish(&relay.accept_publish(&request)).unwrap();
+
+        // B drains the proposal for a page it does not hold: it stays
+        // out — no acceptance queued, so the ballot will fail — and
+        // the one-shot key package is not spent on a ballot it could
+        // never commit.
+        b.absorb_deltas(
+            &relay.serve_fetch(0),
+            &mut store_b,
+            &mut chain_b,
+            &mut packages_b,
+            0,
+        )
+        .unwrap();
+        assert!(
+            b.publish_request(2_000, &chain_b).is_none(),
+            "nothing to publish: no acceptance was queued"
+        );
+        let sealed = packages_b.package().seal_entropy(b"still mine").unwrap();
+        assert_eq!(
+            packages_b.open_entropy(&sealed).unwrap().as_slice(),
+            b"still mine"
+        );
     }
 
     #[test]

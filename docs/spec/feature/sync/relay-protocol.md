@@ -73,7 +73,9 @@ Per channel, the relay holds, and is allowed to hold, exactly:
    is dropped when the pairing completes, is abandoned, or ages out
    after one hour.
 5. **Attachment metadata**: which account, which device fingerprints,
-   when each attached — the admission of ADR-0021 §4, not a new
+   when each attached, and the key package each device published at
+   attach (§6 — public material, served back in the attach answer;
+   amended 2026-08-27) — the admission of ADR-0021 §4, not a new
    channel.
 
 It holds nothing else, and it never holds a content key, a GOP key, a
@@ -106,7 +108,7 @@ bodies are JSON; every sealed blob travels base64.
 
 | Message | Shape | Answer |
 | --- | --- | --- |
-| Attach | `POST /channel/attach` `{device, key_package}` | `{epoch, frame_present, next_seq}` |
+| Attach | `POST /channel/attach` `{device, key_package}` | `{epoch, frame_present, next_seq, peers: [{device, key_package, attached_ms}]}` |
 | Fetch frame | `GET /channel/frame` | `{epoch, frame}` or `404` |
 | Publish frame | `PUT /channel/frame` `{epoch, frame}` | `204`; `409` unless `epoch` is exactly current+1 |
 | Publish deltas | `POST /channel/deltas` `{epoch, blobs[]}` | `{seq}`; `409` on epoch mismatch; `413 ceremony_required` at the cap |
@@ -121,6 +123,17 @@ Rules the shapes encode:
   `device` is the Ed25519 identity fingerprint; `key_package` is the
   signed static X25519 key of §6. A device that has passed account auth
   but not pairing fetches blobs it cannot open (ADR-0021 §5).
+- **The attach answer serves the roster** (amended 2026-08-27, the
+  first #99 follow-up): every other device the relay knows on the
+  channel, with the key package each published at its own attach and
+  the attach time — the metadata §3 item 5 already admits, echoed to
+  the channel's own devices. This is what a proposer seals ceremony
+  entropy to (§5) without an out-of-band delivery, and what issue
+  #102's device list renders. Key packages are public material (§6);
+  the roster is attach-list truth, never device trust — a client seals
+  to a served package only after verifying it against its pairing
+  records, so a relay that substitutes one wins ciphertext it cannot
+  cause to be opened.
 - **The frame supersession is the purge.** Accepting a frame at epoch
   n+1 atomically drops the old frame and every delta of epoch ≤ n.
   There is no separate purge message, so there is no state in which the
@@ -145,13 +158,19 @@ Rules the shapes encode:
 A proposal is a sealed control payload in the delta stream:
 
 ```
-propose  { ballot_id, entropy_sealed: {device_fingerprint: blob, …} }
+propose  { ballot_id, page, entropy_sealed: {device_fingerprint: blob, …} }
 accept   { ballot_id, device_fingerprint }
 ```
 
 The proposer mints the ceremony entropy and seals it per surviving
 device to that device's static key package (§6) — never under the
-current GOP key, which a just-revoked device still holds. Acceptance
+current GOP key, which a just-revoked device still holds. `page` names
+the page whose transition proposed the compaction (amended 2026-08-27,
+the second #99 follow-up: the shape shipped without it while one page
+was ever in play, and a follower had to infer the scope); every
+enrolled page still compacts (§2), and a follower that does not hold
+the named page stays out, which fails the ballot as the all-attached
+rule requires. Acceptance
 rides the same stream. When every attached device has accepted
 (`PageChannel::ceremony_confirmed`; attachment per §4's attach list at
 proposal time), each device runs the one event — compact, advance,
@@ -234,7 +253,9 @@ the onetimesecret repo implements this section against the message
 table in §4.
 
 1. Authenticate attach against the account (issue #98) and scope every
-   route to the account's one channel.
+   route to the account's one channel; answer attach with the channel
+   position and the roster of §4 — each known device's fingerprint,
+   key package, and attach time (amended 2026-08-27).
 2. Store blobs; never parse one. There is nothing to parse: every
    payload is ciphertext by §4.
 3. Sequence deltas per channel; serve `since`; answer pre-buffer

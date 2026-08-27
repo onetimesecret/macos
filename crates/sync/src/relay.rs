@@ -57,6 +57,26 @@ pub struct AttachAnswer {
     pub frame_present: bool,
     /// The sequence number the next delta fetch should ask from.
     pub next_seq: u64,
+    /// The other devices the relay knows on this channel, with the key
+    /// package each published at its own attach (the #99 follow-up):
+    /// what a proposer seals ceremony entropy to, without an
+    /// out-of-band delivery. Key packages are public material (§6);
+    /// each is verified against the pairing records before anything is
+    /// sealed to it, so the relay substituting one wins ciphertext it
+    /// cannot cause to be opened.
+    pub peers: Vec<PeerAttachment>,
+}
+
+/// One peer in the attach answer's roster.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerAttachment {
+    /// The peer's Ed25519 identity fingerprint.
+    pub device: String,
+    /// The signed static X25519 key package it attached with (§6).
+    pub key_package: Vec<u8>,
+    /// Unix epoch ms the peer attached — the one time the metadata
+    /// admission lets the relay hold (ADR-0021 §4).
+    pub attached_ms: u64,
 }
 
 /// The frame fetch answer.
@@ -162,6 +182,20 @@ impl RelayApi {
     /// [`RelayRefusal`] on any non-2xx status or a malformed body.
     pub fn parse_attach(response: &HttpResponse) -> Result<AttachAnswer, RelayRefusal> {
         let value = ok_json(response)?;
+        let peers = value
+            .get("peers")
+            .and_then(Value::as_array)
+            .ok_or(RelayRefusal::Protocol(response.status))?
+            .iter()
+            .map(|peer| {
+                Some(PeerAttachment {
+                    device: peer.get("device")?.as_str()?.to_owned(),
+                    key_package: b64::decode(peer.get("key_package")?.as_str()?)?,
+                    attached_ms: peer.get("attached_ms")?.as_u64()?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or(RelayRefusal::Protocol(response.status))?;
         Ok(AttachAnswer {
             epoch: field_u64(&value, "epoch")?,
             frame_present: value
@@ -169,6 +203,7 @@ impl RelayApi {
                 .and_then(Value::as_bool)
                 .ok_or(RelayRefusal::Protocol(response.status))?,
             next_seq: field_u64(&value, "next_seq")?,
+            peers,
         })
     }
 
@@ -380,10 +415,15 @@ mod tests {
     }
 
     #[test]
-    fn parse_attach_reads_the_channel_position() {
+    fn parse_attach_reads_the_channel_position_and_the_roster() {
+        let body = format!(
+            r#"{{"epoch":3,"frame_present":true,"next_seq":17,
+                "peers":[{{"device":"fp-2","key_package":"{}","attached_ms":1000}}]}}"#,
+            b64::encode(b"kp-2")
+        );
         let answer = RelayApi::parse_attach(&HttpResponse {
             status: 200,
-            body: br#"{"epoch":3,"frame_present":true,"next_seq":17}"#.to_vec(),
+            body: body.into_bytes(),
         })
         .unwrap();
         assert_eq!(
@@ -391,9 +431,23 @@ mod tests {
             AttachAnswer {
                 epoch: 3,
                 frame_present: true,
-                next_seq: 17
+                next_seq: 17,
+                peers: vec![PeerAttachment {
+                    device: "fp-2".into(),
+                    key_package: b"kp-2".to_vec(),
+                    attached_ms: 1000,
+                }],
             }
         );
+    }
+
+    #[test]
+    fn an_attach_answer_without_a_roster_is_refused_not_guessed() {
+        let refused = RelayApi::parse_attach(&HttpResponse {
+            status: 200,
+            body: br#"{"epoch":3,"frame_present":true,"next_seq":17}"#.to_vec(),
+        });
+        assert_eq!(refused, Err(RelayRefusal::Protocol(200)));
     }
 
     #[test]
