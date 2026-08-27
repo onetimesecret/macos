@@ -29,9 +29,9 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-transport --all-targets -- -D warnings
+        run: cargo clippy -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-sync -p companion-transport --all-targets -- -D warnings
       - name: Test
-        run: cargo test -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-transport
+        run: cargo test -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-sync -p companion-transport
       # cargo test enables no features on its own (cargo issue 2911),
       # so the gated test seams (ADR-0018) are exercised by name here
       # and stay absent from every run above.
