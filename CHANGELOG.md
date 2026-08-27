@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Sync gets its switch, its sign-in, and its surface** (issues #98
+  and #102; PR #121). Off by default, and off means nothing: no
+  account, no network, no behaviour change — the pad with sync off is
+  the pad from before sync existed, down to an unchanged tab menu.
+  Turned on, Settings gains one section and the app gains no second
+  surface: sign in through your own browser, never a web view inside
+  the app; pair a device by comparing six digits on both screens,
+  with "they don't match" always on offer, because a comparison that
+  cannot fail verifies nothing; and see every device on the channel —
+  including one that attached with your account but was never paired,
+  named as exactly that — with revocation one confirmed click that
+  says what it does and does not undo. Which pages travel at all is
+  each page's own choice, on its tab's menu. Every degraded state has
+  its own sentence and none of them is silent: sync signed out with
+  the pad unaffected, a relay that cannot be reached, a pad that fell
+  behind a key rotation, a pad whose pages wait for another device to
+  wake. And one honest caveat, said by the app itself: the relay this
+  all speaks to is still being built (onetimesecret/onetimesecret
+  #4303), no relay address ships by default, and until one is
+  configured the switch reports that nothing leaves this Mac.
+
+### Changed
+
+- **The relay protocol folded in what building its client taught, and
+  ADR-0021 decided how a sleeping device catches up** (issues #99 and
+  #94; ADR-0021 Amendment 1, flagged for ratification). A ceremony
+  proposal now names the page it compacts instead of leaving followers
+  to infer it, and the attach answer serves every device's key package
+  and attach time, so sealing to peers needs no out-of-band delivery
+  and the device list has something true to show. The amendment
+  settles the harder question underneath: a device that sleeps through
+  a ceremony wakes behind a key it cannot derive, so the published
+  frame will travel with a welcome — the new epoch's key sealed to
+  each enrolled device individually, revocation staying omission — and
+  each device's chain position will rest in its own Keychain so a mere
+  relaunch stops being a stranding. The narrowing this trades is
+  admitted in the amendment rather than papered over, priced the way
+  RFC 9420 prices the same shape.
+
+### Added
+
 - **The groundwork for sync between your own devices** (issues #95,
   #96, #97, #100, #101; ADR-0021, PR #117). Nothing changes in the app
   yet: sync has no switch, no network and no surface, and the pad with
