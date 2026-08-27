@@ -143,9 +143,12 @@ the editable page**, as display-only styling under amendment B's
 contract. Color is the only attribute that changes; the font, the
 metrics and the fence's wash are untouched, the bytes of the page never
 change, and select-all-copy returns exactly what was typed. §3 keeps its
-force where it was aimed: chips, the ledger, the resting glance and every
-other recognition surface stay uncolored, and nothing outside a fence
-region is colored at all. ADR-0013's editable-surface rule is the
+force where it was aimed: chips, the ledger and the roll's quiet
+renderings stay uncolored, and nothing outside a fence region is colored
+at all. The resting glance is not one of those surfaces. It mounts the
+editable page itself, read only (ADR-0006), and has carried heading
+weight and link color since amendment B; a page at rest is already
+legible in full, so color there shows nothing the glance did not. ADR-0013's editable-surface rule is the
 license, stated there plainly: a text file with syntax highlighting is
 still a text file. A page the user deliberately fenced code into is
 allowed to show that it is code. The language comes only from the fence's
