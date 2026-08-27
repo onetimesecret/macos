@@ -285,6 +285,102 @@ public struct ConcealOutcome: Codable, Hashable, Sendable {
     }
 }
 
+/// Sync's standing state as Settings may render it (companion_ffi.h):
+/// existence checks and in-memory reads core-side — never a token, and
+/// never a network wait.
+public struct SyncStatus: Codable, Hashable, Sendable {
+    public let configured: Bool
+    public let signedIn: Bool
+    public let signinPending: Bool
+    public let attached: Bool
+    public let epoch: UInt64?
+    public let framePresent: Bool?
+    public let enrolled: Int
+    public let pairing: String?
+
+    enum CodingKeys: String, CodingKey {
+        case configured, attached, epoch, enrolled, pairing
+        case signedIn = "signed_in"
+        case signinPending = "signin_pending"
+        case framePresent = "frame_present"
+    }
+}
+
+/// One row of the device list: a peer a human verified here, this
+/// device itself, or an attached stranger no pairing vouches for —
+/// each labelled as what it is.
+public struct SyncDevice: Codable, Hashable, Sendable, Identifiable {
+    public let fingerprint: String
+    public let label: String
+    public let thisDevice: Bool
+    public let verified: Bool
+    public let pairedWallMs: UInt64?
+    public let attachedMs: UInt64?
+
+    public var id: String { fingerprint }
+
+    enum CodingKeys: String, CodingKey {
+        case fingerprint, label, verified
+        case thisDevice = "this_device"
+        case pairedWallMs = "paired_wall_ms"
+        case attachedMs = "attached_ms"
+    }
+}
+
+/// The envelope the device list arrives in.
+struct SyncDeviceList: Codable {
+    let devices: [SyncDevice]
+}
+
+/// A sync action's result off the seam: ok, or a machine reason the
+/// surface owns a sentence for. Begin carries the authorize URL;
+/// attach carries where the channel stands.
+public struct SyncOutcome: Codable, Hashable, Sendable {
+    public let ok: Bool
+    public let reason: String?
+    public let authorizeUrl: String?
+    public let epoch: UInt64?
+    public let framePresent: Bool?
+    public let peers: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case ok, reason, epoch, peers
+        case authorizeUrl = "authorize_url"
+        case framePresent = "frame_present"
+    }
+
+    static func refused(_ reason: String) -> SyncOutcome {
+        SyncOutcome(
+            ok: false, reason: reason, authorizeUrl: nil, epoch: nil, framePresent: nil,
+            peers: nil)
+    }
+}
+
+/// One engine-loop turn's outcome: what happened (machine kinds, the
+/// surface owns the sentences) and where sync now stands.
+public struct SyncPumpOutcome: Codable, Hashable, Sendable {
+    public let ok: Bool
+    public let reason: String?
+    public let events: [SyncPumpEvent]
+    public let state: SyncStatus?
+}
+
+/// One pump event: a machine kind and, where one is concerned, the
+/// page's wire id.
+public struct SyncPumpEvent: Codable, Hashable, Sendable {
+    public let kind: String
+    public let page: String?
+}
+
+/// The pairing ceremony's stage, polled while the enrolment sheet is
+/// open: `waiting`, `sas` (show the digits), `confirmed`, `done`,
+/// `failed`, `idle`.
+public struct SyncPairingStage: Codable, Hashable, Sendable {
+    public let stage: String
+    public let sas: String?
+    public let reason: String?
+}
+
 /// A thin, memory-safe Swift wrapper over the C ABI. Owns the opaque
 /// handle for its lifetime and only ever sees ids, non-secret summaries,
 /// excerpts, and booleans. Sealed-byte movement runs inside the core.
@@ -647,6 +743,134 @@ public final class CompanionClient: @unchecked Sendable {
     private static func encodeJSON(_ object: [String: Any]) -> String? {
         guard let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    // MARK: Sync — the relay channel (issues #98 and #102)
+
+    /// Configure sync's endpoints and client identity. Not persisted
+    /// core-side — re-sent at launch like the conceal connection — but
+    /// configuring resumes the persisted sign-in from the Keychain.
+    /// False on a missing field or a non-https URL.
+    @discardableResult
+    public func syncConfigure(
+        relayUrl: String, authorizeUrl: String, tokenUrl: String, clientId: String
+    ) -> Bool {
+        let object: [String: String] = [
+            "relay_url": relayUrl,
+            "authorize_url": authorizeUrl,
+            "token_url": tokenUrl,
+            "client_id": clientId,
+        ]
+        guard let json = Self.encodeJSON(object) else { return false }
+        return json.withCString { companion_sync_configure(handle, $0) }
+    }
+
+    /// Sync's standing state for Settings — existence checks only,
+    /// never a decrypt and never a network wait.
+    public func syncStatus() -> SyncStatus? {
+        decodeJSON(SyncStatus.self, from: companion_sync_status_json(handle))
+    }
+
+    /// Begin the sign-in ceremony: the result's `authorizeUrl` opens in
+    /// the system browser — never a web view — and the finish call
+    /// waits out the consent screen.
+    public func syncSigninBegin() -> SyncOutcome {
+        decodeJSON(SyncOutcome.self, from: companion_sync_signin_begin(handle))
+            ?? .refused("no_ceremony")
+    }
+
+    /// Finish the sign-in ceremony: wait for the browser's one
+    /// redirect and persist the rotated refresh token. **Blocks** for
+    /// up to the whole patience — call off the main actor.
+    public func syncSigninFinish(patienceMs: UInt64) -> SyncOutcome {
+        decodeJSON(SyncOutcome.self, from: companion_sync_signin_finish(handle, patienceMs))
+            ?? .refused("no_ceremony")
+    }
+
+    /// Forget a begun, unfinished sign-in ceremony.
+    @discardableResult
+    public func syncSigninCancel() -> Bool {
+        companion_sync_signin_cancel(handle)
+    }
+
+    /// Sign sync out: exactly one Keychain account goes; the pad is
+    /// unaffected.
+    @discardableResult
+    public func syncSignout() -> Bool {
+        companion_sync_signout(handle)
+    }
+
+    /// Enrol a page into the channel or withdraw it — per page, off by
+    /// default. `id` is the PAGE id.
+    @discardableResult
+    public func syncEnrolPage(id: UInt64, enrolled: Bool) -> Bool {
+        companion_sync_enrol_page(handle, id, enrolled)
+    }
+
+    /// Attach to the account's channel. **Blocks** for the round-trips
+    /// — call off the main actor.
+    public func syncAttach() -> SyncOutcome {
+        decodeJSON(SyncOutcome.self, from: companion_sync_attach(handle))
+            ?? .refused("not_configured")
+    }
+
+    /// Detach and dissolve the engine, keeping the sign-in. **Blocks**
+    /// briefly — call off the main actor.
+    @discardableResult
+    public func syncDetach() -> Bool {
+        companion_sync_detach(handle)
+    }
+
+    /// One turn of the engine loop: sweep, publish, long-poll, walk
+    /// the ballot patience, publish a committed frame. **Blocks** for
+    /// up to the whole long-poll — call off the main actor, in the
+    /// loop that runs while sync is on.
+    public func syncPump(waitSeconds: UInt32) -> SyncPumpOutcome? {
+        decodeJSON(SyncPumpOutcome.self, from: companion_sync_pump(handle, waitSeconds))
+    }
+
+    /// The device list for Settings.
+    public func syncDevices() -> [SyncDevice] {
+        decodeJSON(SyncDeviceList.self, from: companion_sync_devices_json(handle))?.devices ?? []
+    }
+
+    /// Revoke a paired peer: nothing is ever sealed to it again, and
+    /// the chain leaves it behind at the next ceremony at the latest.
+    @discardableResult
+    public func syncRevokePeer(fingerprint: String) -> Bool {
+        fingerprint.withCString { companion_sync_revoke_peer(handle, $0) }
+    }
+
+    /// Begin inviting a new device into the channel; then poll.
+    public func syncInviteBegin() -> SyncOutcome {
+        decodeJSON(SyncOutcome.self, from: companion_sync_invite_begin(handle))
+            ?? .refused("not_attached")
+    }
+
+    /// Begin joining a channel from this new device; then poll.
+    public func syncJoinBegin() -> SyncOutcome {
+        decodeJSON(SyncOutcome.self, from: companion_sync_join_begin(handle))
+            ?? .refused("not_attached")
+    }
+
+    /// One mailbox round of the pairing ceremony. **Blocks** for the
+    /// round-trips — call off the main actor, on a timer while the
+    /// enrolment sheet is open.
+    public func syncPairingPoll() -> SyncPairingStage? {
+        decodeJSON(SyncPairingStage.self, from: companion_sync_pairing_poll(handle))
+    }
+
+    /// The human's verdict on the six digits: a match moves the
+    /// ceremony forward, a mismatch aborts it whole with nothing
+    /// stored.
+    public func syncPairingConfirm(matched: Bool) -> SyncPairingStage? {
+        decodeJSON(SyncPairingStage.self, from: companion_sync_pairing_confirm(handle, matched))
+    }
+
+    /// Forget the pairing ceremony in flight, at any stage.
+    @discardableResult
+    public func syncPairingCancel() -> Bool {
+        companion_sync_pairing_cancel(handle)
     }
 
     // MARK: The ledger

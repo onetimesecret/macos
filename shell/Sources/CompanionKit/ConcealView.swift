@@ -56,7 +56,7 @@ public struct ConcealView: View {
             Text(destination)
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.tertiary)
-                .help("The app's one outbound destination")
+                .help("The server this conceal goes to")
             Button {
                 model.dismissConceal()
             } label: {

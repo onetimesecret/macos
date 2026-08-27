@@ -261,6 +261,15 @@ struct SheetTab: View {
             Button(holdMenuTitle) { model.pause(sheet.id) }
                 .disabled(!sheet.hasPage)
             Button(Self.rungMenuTitle(hasPage: sheet.hasPage)) { model.cycleRung(sheet.id) }
+            // Present only while the sync switch is on: with it off the
+            // menu is exactly yesterday's menu, which is the
+            // indistinguishability issue #102 promises. Per page,
+            // because enrolment is (relay protocol §1).
+            if model.sync.enabled, let pageID = sheet.pageID {
+                Button(Self.syncMenuTitle(enrolled: model.sync.isEnrolled(pageID))) {
+                    model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
+                }
+            }
             Button("Close tab", role: .destructive) { model.close(sheet.id) }
         }
     }
@@ -287,6 +296,14 @@ struct SheetTab: View {
     /// what it will actually do (ADR-0017).
     static func rungMenuTitle(hasPage: Bool) -> String {
         hasPage ? "Shorten the countdown" : "Shorten the next page's countdown"
+    }
+
+    /// The sync item's label: what the click will do, both ways. Pure,
+    /// like its neighbours, so the offer at each state is testable
+    /// without a menu — nonisolated because nothing about it needs
+    /// the view's actor, and the tests call it from off it.
+    nonisolated static func syncMenuTitle(enrolled: Bool) -> String {
+        enrolled ? "Stop syncing this page" : "Sync this page to your devices"
     }
 
     /// The tooltip: the tier in words, since the dash carries it only

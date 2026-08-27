@@ -31,4 +31,6 @@ mod b64;
 
 pub use envelope::{ByteBlob, ControlPayload, DeltaEnvelope};
 pub use oauth::{AuthCeremony, SyncAuthError, TokenGrant, TokenKeeper};
-pub use relay::{AttachAnswer, DeltaBatch, FrameAnswer, PublishAnswer, RelayApi, RelayRefusal};
+pub use relay::{
+    AttachAnswer, DeltaBatch, FrameAnswer, PeerAttachment, PublishAnswer, RelayApi, RelayRefusal,
+};

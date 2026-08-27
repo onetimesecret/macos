@@ -276,6 +276,40 @@ pub(crate) const GOP_MAGIC: &[u8; 8] = b"OTSGOPD1";
 /// about it is per-boot any more.
 const FILE_HALF_PREFIX: &str = "ots-companion-key-half-";
 
+/// The domain-separated message an Ed25519 identity signature covers:
+/// `context ‖ payload`. The one identity key signs in several protocol
+/// roles — pairing transcripts, key packages, terminal markers — and
+/// without a context a signature published in one role could verify
+/// in another whose payload shares its shape (a 32-byte transcript
+/// hash is also a plausible 32-byte X25519 public key). Each role
+/// signs under its own versioned context, so a signature proves the
+/// role it was minted for and nothing else.
+pub(crate) fn signing_domain(context: &[u8], payload: &[u8]) -> Vec<u8> {
+    let mut message = Vec::with_capacity(context.len() + payload.len());
+    message.extend_from_slice(context);
+    message.extend_from_slice(payload);
+    message
+}
+
+/// Lowercase hex, the encoding public key material and fingerprints
+/// travel in on the sync wire and in the peer records — public
+/// material only, never a secret.
+pub(crate) fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Decode lowercase (or upper; hex is hex) pairs; `None` refuses odd
+/// lengths and non-hex bytes whole.
+pub(crate) fn hex_decode(text: &str) -> Option<Vec<u8>> {
+    if !text.len().is_multiple_of(2) {
+        return None;
+    }
+    text.as_bytes()
+        .chunks(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok())
+        .collect()
+}
+
 /// The authenticated state header: `magic[8] ‖ sealed_wall_ms[8]`.
 /// Fixed length, and every byte of it is associated data.
 pub(crate) const STATE_HEADER_LEN: usize = 8 + 8;

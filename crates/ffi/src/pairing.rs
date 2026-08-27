@@ -80,6 +80,13 @@ const DEVICE_IDENTITY_ACCOUNT: &str = "sync-device-identity";
 /// (ADR-0016 section 3, ADR-0021 section 8).
 const CHANNEL_SECRET_ACCOUNT: &str = "sync-channel-secret";
 
+/// Versioned signing context for transcript signatures: the identity
+/// key signs `context ‖ transcript`, never the bare 32-byte hash —
+/// which is also a plausible X25519 public key, and an uncontexted
+/// signature over it would double as a key package's
+/// ([`crate::sync_session::KeyPackage`]).
+const TRANSCRIPT_SIGN_CONTEXT: &[u8] = b"ots-companion-pairing-transcript-v1";
+
 /// Versioned HKDF info string for the short authentication string.
 const PAIRING_SAS_INFO: &[u8] = b"ots-companion-pairing-sas-v1";
 
@@ -199,7 +206,14 @@ impl Inviter {
             derive_sas_and_wrap(shared, &transcript)
         })
         .ok()??;
-        let transcript_sig = self.identity.sign(&transcript).as_ref().to_vec();
+        let transcript_sig = self
+            .identity
+            .sign(&persist::signing_domain(
+                TRANSCRIPT_SIGN_CONTEXT,
+                &transcript,
+            ))
+            .as_ref()
+            .to_vec();
         Some((
             Settled {
                 sas,
@@ -268,14 +282,24 @@ impl Joiner {
             &self.eph_pub,
         );
         UnparsedPublicKey::new(&ED25519, &reveal.identity_pub)
-            .verify(&transcript, &reveal.transcript_sig)
+            .verify(
+                &persist::signing_domain(TRANSCRIPT_SIGN_CONTEXT, &transcript),
+                &reveal.transcript_sig,
+            )
             .ok()?;
         let peer = agreement::UnparsedPublicKey::new(&agreement::X25519, &reveal.eph_pub);
         let (sas, wrap_key) = agreement::agree_ephemeral(self.eph, &peer, |shared| {
             derive_sas_and_wrap(shared, &transcript)
         })
         .ok()??;
-        let transcript_sig = self.identity.sign(&transcript).as_ref().to_vec();
+        let transcript_sig = self
+            .identity
+            .sign(&persist::signing_domain(
+                TRANSCRIPT_SIGN_CONTEXT,
+                &transcript,
+            ))
+            .as_ref()
+            .to_vec();
         Some((
             Settled {
                 sas,
@@ -311,7 +335,10 @@ impl Settled {
     #[must_use]
     pub fn verify_acceptance(&self, acceptance: &Acceptance) -> bool {
         UnparsedPublicKey::new(&ED25519, &self.peer_identity_pub)
-            .verify(&self.transcript, &acceptance.transcript_sig)
+            .verify(
+                &persist::signing_domain(TRANSCRIPT_SIGN_CONTEXT, &self.transcript),
+                &acceptance.transcript_sig,
+            )
             .is_ok()
     }
 
@@ -454,18 +481,268 @@ pub fn store_channel_secret(credentials: &dyn CredentialStore, secret: &[u8]) ->
             .is_ok()
 }
 
-/// Clear this device's pairing: the identity key and the channel
-/// secret, both accounts, nothing else. The conceal credentials — the
-/// API token — and the content and ledger keys are other accounts and
-/// are never touched here, exactly as clearing them never touches
-/// these: sync trust and conceal trust are revoked independently
-/// (ADR-0021 section 3). Returns whether both deletes were accepted.
+/// Clear this device's pairing: the identity key, the channel secret,
+/// and the peer records — the pairing accounts, nothing else. The
+/// conceal credentials — the API token — and the content and ledger
+/// keys are other accounts and are never touched here, exactly as
+/// clearing them never touches these: sync trust and conceal trust
+/// are revoked independently (ADR-0021 section 3). Returns whether
+/// every delete was accepted.
 #[must_use]
 pub fn clear_pairing(credentials: &dyn CredentialStore) -> bool {
     let keys = credentials.key_material_store();
     let identity = keys.delete(DEVICE_IDENTITY_ACCOUNT).is_ok();
     let channel = keys.delete(CHANNEL_SECRET_ACCOUNT).is_ok();
-    identity && channel
+    let records = keys.delete(PEER_RECORDS_ACCOUNT).is_ok();
+    identity && channel && records
+}
+
+/// A device's identity fingerprint: lowercase hex SHA-256 of its
+/// Ed25519 identity public key — the `device` value everywhere the
+/// protocol names one (attach, the ceremony maps, revocation).
+#[must_use]
+pub fn identity_fingerprint(identity_pub: &[u8]) -> String {
+    persist::hex_encode(digest::digest(&digest::SHA256, identity_pub).as_ref())
+}
+
+/// This device's own fingerprint, from the identity at rest — minted
+/// on first use like the identity itself. `None` when the identity
+/// cannot be read or persisted.
+#[must_use]
+pub fn device_fingerprint(credentials: &dyn CredentialStore) -> Option<String> {
+    let pkcs8 = ensure_device_identity(credentials)?;
+    let pair = Ed25519KeyPair::from_pkcs8(&pkcs8).ok()?;
+    Some(identity_fingerprint(pair.public_key().as_ref()))
+}
+
+/// The Ed25519 identity public keys whose signed claims this device
+/// honors: its own, and each paired peer's from the records — the
+/// set a terminal marker must verify under. A revoked peer's key is
+/// gone from the records and so from this set, which is what makes
+/// revocation bite on the one destructive claim a peer can publish.
+#[must_use]
+pub fn trusted_identities(credentials: &dyn CredentialStore) -> Vec<Vec<u8>> {
+    let mut keys: Vec<Vec<u8>> = Vec::new();
+    if let Some(pkcs8) = ensure_device_identity(credentials)
+        && let Ok(pair) = Ed25519KeyPair::from_pkcs8(&pkcs8)
+    {
+        keys.push(pair.public_key().as_ref().to_vec());
+    }
+    for record in peer_records(credentials) {
+        keys.push(record.identity_pub);
+    }
+    keys
+}
+
+/// The fingerprint of the identity already at rest, minting nothing:
+/// the read a Settings render may perform. `None` while no identity
+/// exists — a device that never enabled sync.
+#[must_use]
+pub fn stored_device_fingerprint(credentials: &dyn CredentialStore) -> Option<String> {
+    let pkcs8 = credentials
+        .key_material_store()
+        .load(DEVICE_IDENTITY_ACCOUNT)
+        .ok()?;
+    let pair = Ed25519KeyPair::from_pkcs8(&pkcs8).ok()?;
+    Some(identity_fingerprint(pair.public_key().as_ref()))
+}
+
+// ---------------------------------------------------------------------
+// Peer records: the devices a human verified here (issue #102)
+// ---------------------------------------------------------------------
+
+/// The credential-store account holding the peer records. Public key
+/// material, but a trust anchor: whoever can write this list decides
+/// which key packages ceremony entropy is ever sealed to, so it rests
+/// in the key-material store with the keys it vouches for, and it is
+/// cleared with the pairing.
+const PEER_RECORDS_ACCOUNT: &str = "sync-peer-records";
+
+/// One peer a human verified on this device: what
+/// [`Settled::peer_identity`] handed over at the ceremony's end, and
+/// what a revocation later removes. Removal is the revocation: a
+/// device with no record gets nothing sealed to it at the next
+/// ceremony, and the chain leaves it behind at that boundary
+/// ([`crate::gop::GopKeyChain::advance`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerRecord {
+    /// [`identity_fingerprint`] of the identity below.
+    pub fingerprint: String,
+    /// The peer's Ed25519 identity public key, as the ceremony bound
+    /// it.
+    pub identity_pub: Vec<u8>,
+    /// A name the user gave the device; may be empty.
+    pub label: String,
+    /// Unix epoch ms the human verified the pairing.
+    pub paired_wall_ms: u64,
+}
+
+/// Record a verified peer, replacing any record with the same
+/// fingerprint — pairing again refreshes the record rather than
+/// duplicating it.
+#[must_use]
+pub fn record_peer(
+    credentials: &dyn CredentialStore,
+    identity_pub: &[u8],
+    label: &str,
+    paired_wall_ms: u64,
+) -> bool {
+    let fingerprint = identity_fingerprint(identity_pub);
+    let mut records = peer_records(credentials);
+    records.retain(|record| record.fingerprint != fingerprint);
+    records.push(PeerRecord {
+        fingerprint,
+        identity_pub: identity_pub.to_vec(),
+        label: label.to_owned(),
+        paired_wall_ms,
+    });
+    store_peer_records(credentials, &records)
+}
+
+/// Every peer verified on this device, oldest pairing first. An
+/// unreadable or malformed account reads as no peers: fail closed —
+/// nobody gets sealed to on a guess.
+#[must_use]
+pub fn peer_records(credentials: &dyn CredentialStore) -> Vec<PeerRecord> {
+    let Ok(bytes) = credentials.key_material_store().load(PEER_RECORDS_ACCOUNT) else {
+        return Vec::new();
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return Vec::new();
+    };
+    let Some(entries) = value.as_array() else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| {
+            Some(PeerRecord {
+                fingerprint: entry.get("fingerprint")?.as_str()?.to_owned(),
+                identity_pub: persist::hex_decode(entry.get("identity_pub")?.as_str()?)?,
+                label: entry.get("label")?.as_str()?.to_owned(),
+                paired_wall_ms: entry.get("paired_wall_ms")?.as_u64()?,
+            })
+        })
+        .collect()
+}
+
+/// Remove one peer's record: the revocation gesture. True when the
+/// fingerprint was recorded and the removal was stored; the device
+/// loses access at the next ceremony at the latest.
+#[must_use]
+pub fn revoke_peer(credentials: &dyn CredentialStore, fingerprint: &str) -> bool {
+    let mut records = peer_records(credentials);
+    let held = records.len();
+    records.retain(|record| record.fingerprint != fingerprint);
+    records.len() < held && store_peer_records(credentials, &records)
+}
+
+fn store_peer_records(credentials: &dyn CredentialStore, records: &[PeerRecord]) -> bool {
+    let entries: Vec<serde_json::Value> = records
+        .iter()
+        .map(|record| {
+            serde_json::json!({
+                "fingerprint": record.fingerprint,
+                "identity_pub": persist::hex_encode(&record.identity_pub),
+                "label": record.label,
+                "paired_wall_ms": record.paired_wall_ms,
+            })
+        })
+        .collect();
+    credentials
+        .key_material_store()
+        .store(
+            PEER_RECORDS_ACCOUNT,
+            serde_json::Value::Array(entries).to_string().as_bytes(),
+        )
+        .is_ok()
+}
+
+// ---------------------------------------------------------------------
+// The mailbox wire form (relay protocol §7)
+// ---------------------------------------------------------------------
+
+/// A ceremony message as it rides the relay's pairing mailbox: tagged
+/// JSON with hex fields. Everything in it is public-key material,
+/// commitments, signatures, or AEAD ciphertext sealed to the exchange
+/// — the byte-scan test covers the wire form too, and the human SAS
+/// comparison is what defeats a relay that substitutes messages.
+#[derive(Clone)]
+pub enum MailboxMessage {
+    /// Step 1, inviter → mailbox.
+    Commitment(Commitment),
+    /// Step 2, joiner → mailbox.
+    Offer(Offer),
+    /// Step 3, inviter → mailbox.
+    Reveal(Reveal),
+    /// Step 5, joiner → mailbox, after its human confirmed the SAS.
+    Acceptance(Acceptance),
+    /// Step 6, inviter → mailbox, after its human confirmed the SAS.
+    Grant(Grant),
+}
+
+impl MailboxMessage {
+    /// The JSON body for `POST /channel/pairing`.
+    #[must_use]
+    pub fn encode(&self) -> serde_json::Value {
+        let hex = |bytes: &[u8]| serde_json::Value::String(persist::hex_encode(bytes));
+        match self {
+            Self::Commitment(commitment) => serde_json::json!({
+                "kind": "commitment",
+                "commit": hex(&commitment.commit),
+            }),
+            Self::Offer(offer) => serde_json::json!({
+                "kind": "offer",
+                "identity_pub": hex(&offer.identity_pub),
+                "eph_pub": hex(&offer.eph_pub),
+            }),
+            Self::Reveal(reveal) => serde_json::json!({
+                "kind": "reveal",
+                "identity_pub": hex(&reveal.identity_pub),
+                "eph_pub": hex(&reveal.eph_pub),
+                "blind": hex(&reveal.blind),
+                "transcript_sig": hex(&reveal.transcript_sig),
+            }),
+            Self::Acceptance(acceptance) => serde_json::json!({
+                "kind": "acceptance",
+                "transcript_sig": hex(&acceptance.transcript_sig),
+            }),
+            Self::Grant(grant) => serde_json::json!({
+                "kind": "grant",
+                "sealed_channel_secret": hex(&grant.sealed_channel_secret),
+            }),
+        }
+    }
+
+    /// Decode one mailbox body. `None` refuses an unknown kind or a
+    /// malformed field whole — a mailbox this build cannot read is a
+    /// ceremony it stays out of.
+    #[must_use]
+    pub fn decode(value: &serde_json::Value) -> Option<Self> {
+        let bytes = |name: &str| persist::hex_decode(value.get(name)?.as_str()?);
+        match value.get("kind")?.as_str()? {
+            "commitment" => Some(Self::Commitment(Commitment {
+                commit: bytes("commit")?.try_into().ok()?,
+            })),
+            "offer" => Some(Self::Offer(Offer {
+                identity_pub: bytes("identity_pub")?,
+                eph_pub: bytes("eph_pub")?,
+            })),
+            "reveal" => Some(Self::Reveal(Reveal {
+                identity_pub: bytes("identity_pub")?,
+                eph_pub: bytes("eph_pub")?,
+                blind: bytes("blind")?.try_into().ok()?,
+                transcript_sig: bytes("transcript_sig")?,
+            })),
+            "acceptance" => Some(Self::Acceptance(Acceptance {
+                transcript_sig: bytes("transcript_sig")?,
+            })),
+            "grant" => Some(Self::Grant(Grant {
+                sealed_channel_secret: bytes("sealed_channel_secret")?,
+            })),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -532,6 +809,33 @@ mod tests {
         let joined = GopKeyChain::root(&delivered).unwrap();
         let sealed = founder.seal(b"first delta").unwrap();
         assert_eq!(joined.open(&sealed).unwrap().as_slice(), b"first delta");
+    }
+
+    #[test]
+    fn a_transcript_signature_cannot_pose_as_a_key_package() {
+        // The mailbox publishes transcript signatures in the clear,
+        // and a 32-byte transcript hash is also a plausible X25519
+        // public key. Were the identity key to sign both roles
+        // uncontexted, a relay could assemble a "key package" for a
+        // paired identity from an observed pairing alone — and jam
+        // every ceremony that seals entropy to it. The signing
+        // contexts keep the roles apart.
+        let (inviter, commitment) = Inviter::begin(&identity()).unwrap();
+        let (joiner, offer) = Joiner::accept(&identity(), &commitment).unwrap();
+        let (inviter_settled, reveal) = inviter.settle(&offer).unwrap();
+        let forged = crate::sync_session::KeyPackage::decode(
+            &[
+                inviter_settled.transcript.as_slice(),
+                reveal.transcript_sig.as_slice(),
+            ]
+            .concat(),
+        )
+        .unwrap();
+        assert!(
+            !forged.verify(&reveal.identity_pub),
+            "a pairing signature must prove pairing and nothing else"
+        );
+        let _ = joiner;
     }
 
     #[test]
@@ -631,12 +935,20 @@ mod tests {
         // …and the pairing secrets, in their own accounts.
         let identity_key = ensure_device_identity(&credentials).unwrap();
         let channel = ensure_channel_secret(&credentials, true).unwrap();
+        assert!(record_peer(
+            &credentials,
+            b"a peer identity",
+            "laptop",
+            1_000
+        ));
 
-        // Clearing pairing clears exactly pairing.
+        // Clearing pairing clears exactly pairing — the peer records
+        // with it, since a record is trust this device granted.
         assert!(clear_pairing(&credentials));
         let keys = credentials.key_material_store();
         assert!(!keys.exists(DEVICE_IDENTITY_ACCOUNT).unwrap());
         assert!(!keys.exists(CHANNEL_SECRET_ACCOUNT).unwrap());
+        assert!(peer_records(&credentials).is_empty());
         assert_eq!(
             credentials.load("api-token").unwrap().as_slice(),
             b"a conceal token"
@@ -662,5 +974,111 @@ mod tests {
         assert!(keys.exists(DEVICE_IDENTITY_ACCOUNT).unwrap());
         assert!(keys.exists(CHANNEL_SECRET_ACCOUNT).unwrap());
         let _ = channel;
+    }
+
+    #[test]
+    fn a_recorded_peer_lists_by_fingerprint_and_a_revocation_removes_it() {
+        let credentials = InMemoryCredentialStore::default();
+        assert!(record_peer(&credentials, b"identity-a", "laptop", 1_000));
+        assert!(record_peer(&credentials, b"identity-b", "desktop", 2_000));
+        // Pairing again refreshes, never duplicates.
+        assert!(record_peer(
+            &credentials,
+            b"identity-a",
+            "laptop again",
+            3_000
+        ));
+
+        let records = peer_records(&credentials);
+        assert_eq!(records.len(), 2);
+        let a = records
+            .iter()
+            .find(|record| record.identity_pub == b"identity-a")
+            .unwrap();
+        assert_eq!(a.fingerprint, identity_fingerprint(b"identity-a"));
+        assert_eq!(a.label, "laptop again");
+        assert_eq!(a.paired_wall_ms, 3_000);
+
+        assert!(revoke_peer(&credentials, &a.fingerprint.clone()));
+        assert!(
+            !revoke_peer(&credentials, &identity_fingerprint(b"identity-a")),
+            "a second revocation has nothing to remove"
+        );
+        let records = peer_records(&credentials);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].identity_pub, b"identity-b");
+    }
+
+    #[test]
+    fn the_ceremony_survives_the_mailbox_wire_form() {
+        // The same honest ceremony, but every message crosses as the
+        // tagged JSON the relay mailbox carries — proving the wire
+        // form loses nothing the ceremony needs.
+        let credentials = InMemoryCredentialStore::default();
+        let secret = ensure_channel_secret(&credentials, true).unwrap();
+        let through = |message: MailboxMessage| {
+            MailboxMessage::decode(&message.encode()).expect("own encoding decodes")
+        };
+
+        let (inviter, commitment) = Inviter::begin(&identity()).unwrap();
+        let MailboxMessage::Commitment(commitment) =
+            through(MailboxMessage::Commitment(commitment))
+        else {
+            panic!("kind survives");
+        };
+        let (joiner, offer) = Joiner::accept(&identity(), &commitment).unwrap();
+        let MailboxMessage::Offer(offer) = through(MailboxMessage::Offer(offer)) else {
+            panic!("kind survives");
+        };
+        let (inviter, reveal) = inviter.settle(&offer).unwrap();
+        let MailboxMessage::Reveal(reveal) = through(MailboxMessage::Reveal(reveal)) else {
+            panic!("kind survives");
+        };
+        let (joiner, acceptance) = joiner.settle(&reveal).unwrap();
+        let MailboxMessage::Acceptance(acceptance) =
+            through(MailboxMessage::Acceptance(acceptance))
+        else {
+            panic!("kind survives");
+        };
+        assert_eq!(inviter.sas(), joiner.sas());
+        assert!(inviter.verify_acceptance(&acceptance));
+        let grant = inviter.grant(&secret).unwrap();
+        let MailboxMessage::Grant(grant) = through(MailboxMessage::Grant(grant)) else {
+            panic!("kind survives");
+        };
+        assert_eq!(*joiner.receive(&grant).unwrap(), *secret);
+
+        assert!(MailboxMessage::decode(&serde_json::json!({"kind": "future"})).is_none());
+        assert!(MailboxMessage::decode(&serde_json::json!({"kind": "grant"})).is_none());
+    }
+
+    #[test]
+    fn the_wire_form_carries_no_secret_either() {
+        // The raw-byte scan above covers the structs; the mailbox
+        // carries hex, so scan the hex too: the channel secret and
+        // both identities must not appear hex-encoded in any message.
+        let credentials = InMemoryCredentialStore::default();
+        let secret = ensure_channel_secret(&credentials, true).unwrap();
+        let inviter_id = identity();
+        let joiner_id = identity();
+
+        let (inviter, commitment) = Inviter::begin(&inviter_id).unwrap();
+        let (joiner, offer) = Joiner::accept(&joiner_id, &commitment).unwrap();
+        let (inviter, reveal) = inviter.settle(&offer).unwrap();
+        let (_, acceptance) = joiner.settle(&reveal).unwrap();
+        let grant = inviter.grant(&secret).unwrap();
+        let wire = [
+            MailboxMessage::Commitment(commitment).encode(),
+            MailboxMessage::Offer(offer).encode(),
+            MailboxMessage::Reveal(reveal).encode(),
+            MailboxMessage::Acceptance(acceptance).encode(),
+            MailboxMessage::Grant(grant).encode(),
+        ]
+        .map(|value| value.to_string())
+        .join("");
+
+        assert!(!wire.contains(&persist::hex_encode(&secret)));
+        assert!(!wire.contains(&persist::hex_encode(&inviter_id)));
+        assert!(!wire.contains(&persist::hex_encode(&joiner_id)));
     }
 }

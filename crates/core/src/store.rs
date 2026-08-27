@@ -938,6 +938,15 @@ impl<C: Clock> SheetStore<C> {
         Some(self.sheet(id)?.document.version())
     }
 
+    /// The frontier before anything: the cursor that asks
+    /// [`SheetStore::export_document_updates`] for a page's whole
+    /// current GOP — what the session layer starts from at enrolment.
+    /// A constant of the encoding, page-independent.
+    #[must_use]
+    pub fn pristine_document_version() -> Vec<u8> {
+        crate::document::SheetDocument::pristine_version()
+    }
+
     /// The operations a page's document holds beyond `since`: the
     /// delta a peer at that frontier needs, ADR-0013's P-frames,
     /// plaintext here and sealed by the seam above before any wire

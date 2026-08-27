@@ -482,3 +482,153 @@ establishing that the account is not the device.
 - The purge argument appears anywhere phrased as a server-side promise.
   That is a violation of section 2 and ADR-0007, not a drift to
   accommodate.
+
+## Amendment 1: the frame carries a welcome, and the chain rests
+
+- **Status:** proposed — flagged for ratification, as the original
+  draft's two items were (both decided in PR #113)
+- **Date:** 2026-08-27
+
+### The question
+
+Section 5 decided how a device joins when no peer is awake, and
+section 2 decided that the key rotation, not the relay's deletion, is
+the purge. Building the session engine (PR #119) surfaced the case the
+two sections point at and neither resolves: **a device that slept
+through a ceremony entirely.** The sealed entropy that would have
+advanced its chain was purged with the superseded deltas — that purge
+is the design working — and the frame it wakes to is sealed under the
+incoming GOP key, which is exactly the key it lacks.
+
+Three facts sharpen the question before any answer:
+
+1. **Entropy cannot catch a device up.** The chain salts each incoming
+   key with the outgoing one (`crates/ffi/src/gop.rs:104-116`), so
+   entropy for epoch n is useless without the key for epoch n−1.
+   Re-delivering entropy helps only a device exactly one step behind
+   that also held the outgoing key — which is nobody the question is
+   about.
+2. **Re-pairing, as built, does not recover either.** The pairing
+   grant delivers the channel secret
+   (`crates/ffi/src/pairing.rs:322-327`), and the chain roots from it
+   at epoch zero (`gop.rs:82-88`). After the channel's first ceremony
+   no root derivation reaches the current epoch. Worse, the chain
+   state lives only in memory: a mere relaunch strands a device the
+   same way, and the only recovery the built pieces actually offer is
+   every device clearing its pairing and founding the channel again.
+3. **A proposer can now reach every enrolled device.** The attach
+   answer serves each device's key package (relay protocol §4, amended
+   2026-08-27), and the pairing records tie fingerprints to
+   identities — the same per-device sealed-delivery shape §5 of the
+   protocol already uses for ceremony entropy.
+
+### Decision
+
+Three moves, one per fact.
+
+**The chain state rests beside the other keys.** Each device persists
+its chain position — the current GOP key and its epoch — in the
+key-material store, `ThisDeviceOnly` like everything there (section
+8), overwritten at each advance so the outgoing key's destruction
+stays the rotation's own act. A relaunch is then a non-event instead
+of a stranding. The account sits beside `sync-channel-secret` and is
+cleared with the pairing; the ledger key and content halves stay as
+untouched by this as by every other rotation.
+
+**The published frame carries a welcome.** Beside the sealed frame —
+never inside it, since a device that could open the frame would not
+need a welcome — travels a per-device map in the shape §5's
+`entropy_sealed` already has: keyed by identity fingerprint, one entry
+per enrolled device, each entry sealing the **incoming epoch's GOP
+key** to that device's verified key package (protocol §6). The key and
+not the entropy, because the welcome exists precisely for the device
+the chain math has left behind (fact 1). Enrolment, not attachment,
+draws the map's boundary: every device the pairing records name and
+the roster serves gets an entry, and revocation stays what the
+protocol's §5 made it — omission. This is RFC 9420's Welcome object arriving at
+one-channel scale, the same standard section 5 already borrowed for
+external commits.
+
+**Recovery is adoption, never derivation.** The sleeper wakes to
+`410 rejoin` or to blobs that refuse to open, fetches the frame, opens
+its own welcome entry, adopts the epoch and key, opens the frame,
+and rejoins at it (`SheetStore::adopt_key_frame`,
+`PageChannel::rejoin_at_epoch`) — its pre-ceremony history dropped,
+never merged, exactly as section 5 requires. The external-commit
+property survives: a welcome hands a device the epoch it joins and
+nothing behind it, because HKDF's one-wayness keeps every earlier key
+out of reach of the current one. A device with no openable entry — it
+restarted and its published package went stale, or it was revoked —
+waits for the next ceremony, whose welcome will name its freshly
+attached package, or re-pairs; the waiting is issue #94's sentence,
+owed by issue #102's surface, and a revoked device waits forever,
+which is revocation working.
+
+### What this admits
+
+Stated plainly, per ADR-0007, because the welcome narrows section 2's
+claim. "Whatever ciphertext the relay retains after the boundary is
+undecryptable by anyone" becomes: undecryptable by anyone **whose key
+package has rotated since**. A retained superseded frame plus a later
+compromise of one device's still-unspent package half opens that
+frame's welcome entry, its epoch key, and with it that one epoch's
+retained deltas. The window is bounded and symmetric: a package spends
+and re-mints at every ceremony its device participates in, so what a
+stolen key opens is exactly the epochs its device slept through — the
+same material the welcome exists to hand that device. Recoverability
+for the sleeper and exposure of the sleeper's key are one decision,
+priced together, and the standard shape (MLS Welcome) prices it the
+same way. Section 4's admission widens, but by no new channel: item 2
+widens in kind as well as grain — attach (protocol §4) hands the relay
+each device's identity fingerprint and published key package, held for
+the attachment's life and served in the roster, a durable per-device
+identifier §4's original list never named — and the welcome shows the
+enrolled fingerprints and count again at each ceremony rather than
+only at attach; the frame's bucketed size now scales with device
+count (item 6).
+
+**Rejected: sealing the welcome under the channel secret.** Every
+paired device could open it — including a just-revoked one, which
+still holds the secret. That breaks the exclusion property the
+per-GOP chain exists to provide (section 2), for the convenience of
+skipping key packages.
+
+**Rejected: an entropy archive.** Retaining every epoch's sealed
+entropy so a sleeper can replay the chain forward is the archive
+relay of section 1, one derivation removed: a store that can catch
+anyone up can catch an adversary up.
+
+**Rejected: durable key-package private halves.** Persisting the
+static X25519 half would let a restarted sleeper open a welcome
+minted before its restart, saving it one ceremony of waiting. It
+costs a second durable secret in the keychain and a dependency the
+one-shot API deliberately resists, to shave a wait the next ceremony
+heals unattended. Declined; the restart case takes the waiting
+sentence.
+
+### Required work
+
+- `GopKeyChain::adopt(epoch, key)` and the persisted chain position
+  (a `sync-gop-chain` account in the key-material store), with the
+  rotation-never-touches tests extended to it.
+- The welcome map built in `gop::ceremony_commit` from the ceremony's
+  peers, and walked in `SyncSession::absorb_frame` before the chain
+  opens the frame. Issue #102's driver shipped without this half: the
+  driver surfaces `rejoin_required` honestly but fetches and adopts
+  nothing yet, so it needs its own issue alongside the server's
+  (onetimesecret#4303).
+- The coordinated commit leaves each participant its own independent
+  rebuild; the frame supersession then picks one canonically (the
+  publish the relay accepted — a `409` told the others a peer's copy
+  won). Every losing participant must take the same rejoin path the
+  sleeper takes, adopting the winning frame over its own rebuild —
+  without that adoption, two rebuilds share no history and the
+  winner's later deltas are refused on the losers.
+- Protocol: `PUT`/`GET /channel/frame` gain `welcome` beside `frame`
+  (relay-protocol.md §4-5, amended 2026-08-27); the server stores it
+  opaquely and supersedes it with the frame
+  (onetimesecret/onetimesecret#4303).
+- Issue #94 keeps two details: the waiting sentence for a device
+  whose welcome has not arrived yet, and whether a behind device may
+  itself propose the ceremony that rescues it (the size-triggered
+  precedent in protocol §3 suggests yes; decided there, not here).

@@ -773,6 +773,188 @@ char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
 char *companion_sheet_conceal(CompanionHandle *handle, uint64_t sheet,
                               const char *opts_json);
 
+/* ------------------------------------------------------------------ */
+/* Sync sign-in (issue #98): account auth for the relay channel       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Configure sync's endpoints and client identity. json (non-secret):
+ *   { "relay_url": "https://…",      // required, https only
+ *     "authorize_url": "https://…",  // required, https only
+ *     "token_url": "https://…",      // required, https only
+ *     "client_id": "…" }             // required, non-empty
+ * Like the conceal connection this is not persisted core-side — the
+ * shell re-sends it at launch — but configuring resumes the persisted
+ * sign-in: the refresh token loads from its own Keychain account, so a
+ * relaunch is signed in without a browser. Returns false on malformed
+ * JSON, a missing field, or a non-https URL.
+ */
+bool companion_sync_configure(CompanionHandle *handle, const char *json);
+
+/*
+ * Sync's standing state for Settings: {"configured", "signed_in",
+ * "signin_pending", "attached", "epoch", "frame_present", "enrolled",
+ * "pairing"}. Existence checks and in-memory reads only — rendering
+ * Settings never decrypts a credential, wedges on the Keychain, or
+ * waits on the network. Free with companion_string_free().
+ */
+char *companion_sync_status_json(CompanionHandle *handle);
+
+/*
+ * Begin the sign-in ceremony (account-auth.md section 1): bind the
+ * one-shot loopback listener, mint the PKCE material, and return
+ * {"ok": true, "authorize_url"} for the shell to open in the SYSTEM
+ * browser — never a web view. Then call companion_sync_signin_finish
+ * from a background queue. {"ok": false, "reason"} with "busy" while a
+ * ceremony already waits, "not_configured", "port" (the listener could
+ * not bind), or "no_entropy". Free with companion_string_free().
+ */
+char *companion_sync_signin_begin(CompanionHandle *handle);
+
+/*
+ * Finish the sign-in ceremony: wait for the browser's one redirect,
+ * redeem the code, and persist the rotated refresh token in its own
+ * Keychain account. BLOCKS for up to patience_ms — call from a
+ * background queue; account-auth.md section 5 budgets five minutes,
+ * because the user is reading a consent screen. The core mutex is held
+ * only at the edges; the pad never waits on this. Returns {"ok": true}
+ * or {"ok": false, "reason"} with the section-5 tokens: "abandoned",
+ * "state_mismatch", "no_code", "unreachable", "refused",
+ * "no_ceremony", "keychain". Every failure leaves nothing stored;
+ * retry is a fresh begin. Free with companion_string_free().
+ */
+char *companion_sync_signin_finish(CompanionHandle *handle,
+                                   uint64_t patience_ms);
+
+/*
+ * Forget a begun, unfinished sign-in ceremony: the listener closes and
+ * the PKCE material drops. True when there was one to forget. A finish
+ * already blocking is not interrupted — it owns the listener by then.
+ */
+bool companion_sync_signin_cancel(CompanionHandle *handle);
+
+/*
+ * Sign sync out: drop the held tokens and delete the persisted refresh
+ * token — exactly one Keychain account. The conceal token, the content
+ * and ledger keys, and the pairing accounts all stand; the pad is
+ * unaffected, which is the point. True when the delete was accepted.
+ */
+bool companion_sync_signout(CompanionHandle *handle);
+
+/* ------------------------------------------------------------------ */
+/* Sync engine (issue #102): enrolment, the pump, and pairing         */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Enrol a page into the sync channel, or withdraw it — per page and
+ * off by default (relay protocol section 1). Enrolling defers the
+ * page's compaction to the coordinated ceremony and starts its delta
+ * cursor at the beginning, so the first publish carries the whole
+ * page; withdrawing returns it to solo behaviour, performing any due
+ * ceremony on the spot. page is the PAGE id.
+ */
+bool companion_sync_enrol_page(CompanionHandle *handle, uint64_t page,
+                               bool enrolled);
+
+/*
+ * Attach to the account's channel: ensure the device identity and
+ * channel secret (the first device to enable sync founds the channel;
+ * a joiner's secret arrives by pairing and overwrites), mint and
+ * publish a fresh key package, adopt the relay's cursor. BLOCKS for
+ * the round-trips — call from a background queue. Returns
+ * {"ok": true, "epoch", "frame_present", "peers"} or
+ * {"ok": false, "reason"}: "not_configured", "signed_out",
+ * "keychain", "unreachable", "refused". Free with
+ * companion_string_free().
+ */
+char *companion_sync_attach(CompanionHandle *handle);
+
+/*
+ * Detach: tell the relay (best effort; idle attachments age out
+ * regardless) and dissolve the engine, keeping the sign-in. BLOCKS
+ * briefly — call from a background queue. True when there was an
+ * engine to dissolve.
+ */
+bool companion_sync_detach(CompanionHandle *handle);
+
+/*
+ * One turn of the engine loop, run repeatedly from a background queue
+ * while sync is on: sweep the enrolled pages into the outbox, publish
+ * what the 2-second clock owes, long-poll the delta stream for up to
+ * wait_seconds (section 8 budgets 25), walk the ballot patience, and
+ * publish a committed ceremony's frame. BLOCKS for up to the whole
+ * long-poll; the core mutex is held only between round-trips, so the
+ * pad never waits on the network. Returns {"ok", "reason"?, "events":
+ * [{"kind", "page"?}, ...], "state"} — kinds: applied,
+ * countdown_moved, terminal, rejoin_required, ceremony_proposed,
+ * ceremony_committed, ceremony_required, epoch_conflict, unauthorized,
+ * unreachable, protocol, signed_out. States, never sentences — the
+ * surface owns the words. Free with companion_string_free().
+ */
+char *companion_sync_pump(CompanionHandle *handle, uint32_t wait_seconds);
+
+/*
+ * The device list for Settings: every peer a human verified here,
+ * joined with the attach roster's times, plus this device and any
+ * attached-but-unverified stranger, labelled as exactly that.
+ * {"devices": [{"fingerprint", "label", "this_device", "verified",
+ * "paired_wall_ms", "attached_ms"}, ...]}. Free with
+ * companion_string_free().
+ */
+char *companion_sync_devices_json(CompanionHandle *handle);
+
+/*
+ * Revoke a paired peer by fingerprint: its record goes, nothing is
+ * ever sealed to it again, and the chain leaves it behind at the next
+ * ceremony at the latest. True when the fingerprint was recorded and
+ * the removal stored.
+ */
+bool companion_sync_revoke_peer(CompanionHandle *handle,
+                                const char *fingerprint);
+
+/*
+ * Begin inviting a new device into the channel (the pairing ceremony
+ * over the relay mailbox): this side holds the channel and will grant
+ * it after the human comparison. {"ok": true} or
+ * {"ok": false, "reason"}: "not_attached", "busy", "keychain",
+ * "no_entropy". Then poll. Free with companion_string_free().
+ */
+char *companion_sync_invite_begin(CompanionHandle *handle);
+
+/*
+ * Begin joining a channel from this new device: waits for an
+ * inviter's ceremony. Result shape as companion_sync_invite_begin;
+ * then poll.
+ */
+char *companion_sync_join_begin(CompanionHandle *handle);
+
+/*
+ * One mailbox round of the pairing ceremony: post what is queued,
+ * fetch the tail, advance, report. BLOCKS for the round-trips — call
+ * from a background queue, on a timer while the enrolment sheet is
+ * open. Returns {"stage", "sas"?, "reason"?}: "waiting" (keep
+ * polling), "sas" (show the six digits, ask the human, call confirm),
+ * "confirmed" (this side confirmed; waiting for the peer), "done",
+ * "failed", "idle" (no ceremony). Free with companion_string_free().
+ */
+char *companion_sync_pairing_poll(CompanionHandle *handle);
+
+/*
+ * The human's verdict on the short authentication string. A match
+ * moves the ceremony forward; a mismatch aborts it whole with nothing
+ * stored on this device — failing must always be possible. Returns
+ * the stage as companion_sync_pairing_poll does. Free with
+ * companion_string_free().
+ */
+char *companion_sync_pairing_confirm(CompanionHandle *handle, bool matched);
+
+/*
+ * Forget the pairing ceremony in flight, at any stage — a finished or
+ * failed one whose sheet is being dismissed included. True when there
+ * was one.
+ */
+bool companion_sync_pairing_cancel(CompanionHandle *handle);
+
 /* Free a string returned by this library. Null is a no-op. */
 void companion_string_free(char *s);
 

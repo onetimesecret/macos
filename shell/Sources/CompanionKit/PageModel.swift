@@ -506,6 +506,14 @@ public final class PageModel: ObservableObject {
     private let client: CompanionClient
     private let defaults: UserDefaults
 
+    /// The sync driver (issues #98 and #102): the off switch, the
+    /// sign-in ceremony, the engine loop and the pairing flow, over
+    /// the same seam client. Off by default, and started only after
+    /// the restore (`loadStateIfNeeded`), so sync never races the
+    /// pages it would publish. Its own `ObservableObject`, observed
+    /// directly by the views that render it.
+    public let sync: SyncController
+
     /// Test-only visibility onto the seam client, so parity between
     /// the projection and the core's document can be asserted from
     /// outside without a second handle.
@@ -773,6 +781,15 @@ public final class PageModel: ObservableObject {
             token: nil
         )
         connection = self.client.connectionInfo()
+        sync = SyncController(client: client, defaults: defaults)
+        sync.serverUrlProvider = { [weak self] in self?.connection?.serverUrl ?? "" }
+        // A peer's edit both shows and persists: the refresh redraws
+        // what the core now holds, and the dirty mark schedules the
+        // sealed write exactly as a local keystroke would.
+        sync.onRemoteChange = { [weak self] in
+            self?.markDirty()
+            self?.refresh()
+        }
     }
 
     /// Whether the first reveal has run — restore is attempted once.
@@ -902,6 +919,10 @@ public final class PageModel: ObservableObject {
         // The load is settled, mint included: what happens from here is
         // the user's work, and only that arms the quit warning.
         mutatedSinceLoad = false
+        // Sync starts only now, after the restore, so the engine never
+        // sweeps a store the load is still filling. Off — the default —
+        // this is a no-op with no side effect of any kind.
+        sync.start()
     }
 
     /// The licence's truth table. The core folds "no file yet" and

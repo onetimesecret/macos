@@ -221,6 +221,16 @@ impl TokenKeeper {
         self.access.as_deref().map(String::as_str)
     }
 
+    /// The relay refused the held access token mid-session: drop it,
+    /// whatever a local clock thinks — the `401` is the only expiry
+    /// authority (§2). Dropping it is what makes the next
+    /// [`TokenKeeper::refresh_request`] actually run; a kept stale
+    /// token would answer "signed in" while every request loops on
+    /// the same dead bearer.
+    pub fn clear_access(&mut self) {
+        self.access = None;
+    }
+
     /// The relay answered `401`: drop the access token and build the
     /// one refresh request. `Err(SignedOut)` when no refresh token is
     /// held — sync stops and says so, the pad keeps working.
@@ -241,25 +251,31 @@ impl TokenKeeper {
     }
 
     /// Absorb the refresh answer. On success the rotated refresh token
-    /// is returned for persisting; on refusal the keeper signs out —
-    /// both tokens dropped — and the caller surfaces issue #102's
-    /// sentence: "Sync is signed out; the pad is unaffected."
+    /// is returned for persisting. Only the token endpoint's own
+    /// refusal — a `4xx`, the server saying this grant is dead — signs
+    /// the keeper out with both tokens dropped, for the caller to
+    /// surface issue #102's sentence: "Sync is signed out; the pad is
+    /// unaffected." Anything else (a `5xx`, a gateway mangling the
+    /// body) is the endpoint being unwell, not the grant being
+    /// revoked: the refresh token is kept and the next pump retries.
     ///
     /// # Errors
     ///
-    /// [`SyncAuthError::SignedOut`] on any refusal; the keeper holds no
-    /// tokens afterwards.
+    /// [`SyncAuthError::SignedOut`] on the endpoint's refusal (no
+    /// tokens held afterwards); [`SyncAuthError::Refused`] with the
+    /// status on a transient failure (the refresh token still held).
     pub fn absorb_refresh(
         &mut self,
         response: &HttpResponse,
     ) -> Result<Zeroizing<String>, SyncAuthError> {
         match parse_token_response(response) {
             Ok(grant) => Ok(self.absorb(grant)),
-            Err(_) => {
+            Err(_) if (400..500).contains(&response.status) => {
                 self.access = None;
                 self.refresh = None;
                 Err(SyncAuthError::SignedOut)
             }
+            Err(_) => Err(SyncAuthError::Refused(response.status)),
         }
     }
 
@@ -421,6 +437,30 @@ mod tests {
             keeper.refresh_request().unwrap_err(),
             SyncAuthError::SignedOut
         );
+    }
+
+    #[test]
+    fn an_unwell_token_endpoint_does_not_sign_the_keeper_out() {
+        let mut keeper = TokenKeeper::new(
+            "https://eu.onetimesecret.com/auth/token",
+            "companion-macos",
+            Some(Zeroizing::new("rt-0".into())),
+        );
+        let _ = keeper.refresh_request().unwrap();
+        let outage = HttpResponse {
+            status: 503,
+            body: b"upstream unavailable".to_vec(),
+        };
+        assert_eq!(
+            keeper.absorb_refresh(&outage).unwrap_err(),
+            SyncAuthError::Refused(503)
+        );
+        // The grant was never pronounced dead: the refresh token
+        // stands, and the next pump retries with it.
+        assert!(keeper.signed_in());
+        let request = keeper.refresh_request().unwrap();
+        let body = String::from_utf8(request.body.unwrap().to_vec()).unwrap();
+        assert!(body.contains("refresh_token=rt-0"));
     }
 
     #[test]

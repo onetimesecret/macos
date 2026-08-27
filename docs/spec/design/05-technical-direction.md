@@ -105,13 +105,16 @@ The claims in docs 02–03, made implementable:
   be fully hardened. Note this guarantee is macOS-specific — it does not
   transfer to a Linux/Windows sibling (doc 06 §15).
 - **Network boundary.** At most two outbound destinations, TLS-only,
-  and no others. Today there is one: the configured OTS server, reached
-  only on an explicit conceal. The second, a sync relay reached only for
-  a page the user has shared to their own enrolled devices, is decided
-  in ADR-0021 (issue #93) and is not built. When it lands it sees
-  ciphertext only, is opt-in per page, and holds nothing past that
-  page's own TTL. No telemetry, no update pings beyond a launch-time
-  check against the release feed. `crates/transport` is where the
+  and no others: the configured OTS server, reached only on an explicit
+  conceal, and the sync relay, reached only for a page the user has
+  shared to their own enrolled devices (ADR-0021, issue #93; the client
+  is built, the server side rides onetimesecret#4303). The relay sees
+  ciphertext only, is opt-in per page, and is bounded by key rotation:
+  an expired page's sealed deltas can outlive the page in the relay's
+  buffer until the next ceremony's rotation orphans them
+  (relay-protocol.md §3), which is the honest per-page bound. No
+  telemetry, no update pings beyond a launch-time check against the
+  release feed. `crates/transport` is where the
   boundary is enforced, and the enforcement stays: its allowlist widens
   from one entry to two rather than being removed.
 - **Credential storage.** API token in the macOS Keychain, never in

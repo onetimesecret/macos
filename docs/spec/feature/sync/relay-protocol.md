@@ -64,7 +64,11 @@ Per channel, the relay holds, and is allowed to hold, exactly:
    interprets beyond "a frame at epoch n+1 supersedes everything at
    epoch n".
 2. **One sealed key frame**, the composite of §2, written at each
-   ceremony, superseding its predecessor (ADR-0021 §1, §5).
+   ceremony, superseding its predecessor (ADR-0021 §1, §5) — and
+   beside it the frame's **welcome map** (amended 2026-08-27,
+   ADR-0021 Amendment 1): one sealed entry per enrolled device, keyed
+   by identity fingerprint, superseded with the frame it belongs to.
+   The relay parses neither.
 3. **The sealed deltas published since that frame**, in arrival order
    under a per-channel sequence number: one GOP and never more.
 4. **The pairing mailbox** (§7): the ceremony messages of at most one
@@ -73,8 +77,10 @@ Per channel, the relay holds, and is allowed to hold, exactly:
    is dropped when the pairing completes, is abandoned, or ages out
    after one hour.
 5. **Attachment metadata**: which account, which device fingerprints,
-   when each attached — the admission of ADR-0021 §4, not a new
-   channel.
+   when each attached, and the key package each device published at
+   attach (§6 — public material, served back in the attach answer;
+   amended 2026-08-27) — ADR-0021 §4 item 2 as widened by Amendment 1,
+   not a new channel.
 
 It holds nothing else, and it never holds a content key, a GOP key, a
 pairing secret, or anything it could merge, compact or read. Bounds and
@@ -90,11 +96,15 @@ lifetimes:
   8 days (the 7-day ceiling rung plus the 24-hour hold ceiling) is
   dropped whole — frame, deltas, mailbox. A page kept alive longer than
   that is being kept alive by a device that is awake, and a device that
-  is awake writes. This is hygiene under §2's rule that the security
-  boundary is key rotation, and it is what makes "holds nothing past
-  the page's own TTL"
-  (`docs/spec/design/05-technical-direction.md:107-117`) true at the
-  relay without trusting it.
+  is awake writes. This drop is hygiene under §2's rule that the
+  security boundary is key rotation — never the argument itself: while
+  every device sleeps, an expired page's sealed deltas remain in the
+  buffer, ciphertext still, but ciphertext the unrotated GOP key would
+  open, until a waking device publishes the terminal marker and its
+  ceremony purges (§5, ADR-0021 §6) or the channel ages out. The
+  derivable per-page bound is the next ceremony, not the page's own
+  TTL (`docs/spec/design/05-technical-direction.md:107-117` states the
+  per-device story this bound approximates).
 
 ## 4. The message set
 
@@ -106,9 +116,9 @@ bodies are JSON; every sealed blob travels base64.
 
 | Message | Shape | Answer |
 | --- | --- | --- |
-| Attach | `POST /channel/attach` `{device, key_package}` | `{epoch, frame_present, next_seq}` |
-| Fetch frame | `GET /channel/frame` | `{epoch, frame}` or `404` |
-| Publish frame | `PUT /channel/frame` `{epoch, frame}` | `204`; `409` unless `epoch` is exactly current+1 |
+| Attach | `POST /channel/attach` `{device, key_package}` | `{epoch, frame_present, next_seq, peers: [{device, key_package, attached_ms}]}` |
+| Fetch frame | `GET /channel/frame` | `{epoch, frame, welcome}` or `404` |
+| Publish frame | `PUT /channel/frame` `{epoch, frame, welcome}` | `204`; `409` unless `epoch` is exactly current+1 |
 | Publish deltas | `POST /channel/deltas` `{epoch, blobs[]}` | `{seq}`; `409` on epoch mismatch; `413 ceremony_required` at the cap |
 | Fetch deltas | `GET /channel/deltas?since=seq&wait=25` | `{epoch, blobs[], next_seq}`, long-polling up to `wait` seconds; `410 rejoin` when `since` predates the buffer |
 | Pairing | `POST /channel/pairing`, `GET /channel/pairing?since=` | the mailbox of §7 |
@@ -121,6 +131,17 @@ Rules the shapes encode:
   `device` is the Ed25519 identity fingerprint; `key_package` is the
   signed static X25519 key of §6. A device that has passed account auth
   but not pairing fetches blobs it cannot open (ADR-0021 §5).
+- **The attach answer serves the roster** (amended 2026-08-27, the
+  first #99 follow-up): every other device the relay knows on the
+  channel, with the key package each published at its own attach and
+  the attach time — the metadata §3 item 5 already admits, echoed to
+  the channel's own devices. This is what a proposer seals ceremony
+  entropy to (§5) without an out-of-band delivery, and what issue
+  #102's device list renders. Key packages are public material (§6);
+  the roster is attach-list truth, never device trust — a client seals
+  to a served package only after verifying it against its pairing
+  records, so a relay that substitutes one wins ciphertext it cannot
+  cause to be opened.
 - **The frame supersession is the purge.** Accepting a frame at epoch
   n+1 atomically drops the old frame and every delta of epoch ≤ n.
   There is no separate purge message, so there is no state in which the
@@ -134,6 +155,12 @@ Rules the shapes encode:
   adopts the current frame (`SheetStore::adopt_key_frame`,
   `PageChannel::rejoin_at_epoch`). It never asks for history, and the
   relay has none to give (ADR-0021 §1).
+- **`welcome` is amendment-pending on the client** (ADR-0021
+  Amendment 1). Servers implement both frame fields now, but MUST
+  accept a `PUT /channel/frame` without `welcome` and may serve a
+  frame without one: the shipped client sends `{epoch, frame}` only
+  and does not yet read the welcome or walk the rejoin fetch — that
+  half rides the amendment's required work.
 - **Everything inside a delta blob is sealed**: the page id, the ops
   (`SheetStore::export_document_updates`), the expiry policy and hold
   register (`crates/core/src/sync.rs`), terminal markers, and the
@@ -145,13 +172,19 @@ Rules the shapes encode:
 A proposal is a sealed control payload in the delta stream:
 
 ```
-propose  { ballot_id, entropy_sealed: {device_fingerprint: blob, …} }
+propose  { ballot_id, page, entropy_sealed: {device_fingerprint: blob, …} }
 accept   { ballot_id, device_fingerprint }
 ```
 
 The proposer mints the ceremony entropy and seals it per surviving
 device to that device's static key package (§6) — never under the
-current GOP key, which a just-revoked device still holds. Acceptance
+current GOP key, which a just-revoked device still holds. `page` names
+the page whose transition proposed the compaction (amended 2026-08-27,
+the second #99 follow-up: the shape shipped without it while one page
+was ever in play, and a follower had to infer the scope); every
+enrolled page still compacts (§2), and a follower that does not hold
+the named page stays out, which fails the ballot as the all-attached
+rule requires. Acceptance
 rides the same stream. When every attached device has accepted
 (`PageChannel::ceremony_confirmed`; attachment per §4's attach list at
 proposal time), each device runs the one event — compact, advance,
@@ -166,6 +199,24 @@ epoch. A device that slept through the proposal entirely wakes to
 `410 rejoin` or to blobs it cannot open, and takes the rejoin path;
 its pre-ceremony history is dropped, never merged
 (`RemoteRefusal::NotFresh` is the store refusing the alternative).
+
+**The frame travels with its welcome** (amended 2026-08-27, ADR-0021
+Amendment 1). Beside the sealed frame — outside the GOP seal, since a
+device that could open the frame would not need it — rides `welcome`,
+a map in `entropy_sealed`'s shape: keyed by identity fingerprint, one
+entry per enrolled device, each entry sealing the incoming epoch's
+GOP key to that device's verified key package (§6). The key and not
+the entropy: the chain salts each key with its predecessor, so
+entropy cannot catch up a device that is behind. The rejoin path
+reads it: fetch the frame, open your own entry, adopt the epoch and
+key, open the frame. A device with no openable entry waits for the
+next ceremony's welcome or re-pairs — and a revoked device, omitted
+from the map, waits forever, which is revocation working. The welcome
+is specified ahead of its client (§4's amendment-pending rule): the
+shipped client neither builds nor reads it yet, so until that half
+lands, a device on the rejoin path surfaces "behind" and stays there
+— which the shell says honestly rather than promising a recovery the
+code cannot deliver.
 
 **Terminal markers propose.** After publishing a page's signed terminal
 marker (ADR-0021 §6), the publisher immediately proposes a ceremony, so
@@ -191,8 +242,12 @@ cannot cause to be opened.
 The pairing ceremony (`crates/ffi/src/pairing.rs`, issue #97) needs a
 rendezvous before the joiner can read the channel; the mailbox is that
 rendezvous and nothing more. Commitment, offer, reveal, acceptance and
-grant travel as `POST /channel/pairing` bodies, fetched by polling
-`GET /channel/pairing?since=`. Every field is public-key material,
+grant travel as `POST /channel/pairing` bodies — tagged JSON with hex
+fields, `MailboxMessage` in `pairing.rs` — fetched by polling
+`GET /channel/pairing?since=`, which answers
+`{messages: [body, …], next_seq}`: every stored body since the cursor,
+verbatim and unparsed, in arrival order (shape pinned 2026-08-27, with
+the client that reads it). Every field is public-key material,
 commitments, signatures, or AEAD ciphertext sealed to the exchange; the
 byte-scan test in `pairing.rs` is the standing proof, and the human SAS
 comparison is what defeats a relay that substitutes messages. The
@@ -207,9 +262,16 @@ would hand the relay typing rhythm at keystroke grade. ADR-0021 §4
 requires batching on a clock, and this document owns the number:
 
 - **Publish at most every 2 seconds** per channel, coalescing
-  everything since the last publish into one `blobs[]` entry per page
-  touched. An idle page publishes nothing: no keepalives, no
-  heartbeats, matching the no-polling frugality discipline
+  everything since the last publish into one request. Within it, each
+  queued envelope — a page's ops batch, an expiry move, a hold change,
+  a terminal marker, a ceremony message — seals as its own padded
+  blob: the relay sees the request's blob count, never which kind or
+  whose page any blob is, because page ids ride inside the seal and
+  control shares the stream (§4). Coalescing a page's several
+  envelopes into one blob is a narrowing the client may adopt later;
+  until then the per-publish blob count is a grain the admission below
+  names. An idle page publishes nothing: no keepalives, no heartbeats,
+  matching the no-polling frugality discipline
   (`crates/core/src/store.rs`).
 - **Pad every sealed blob** to the next power-of-two size, 256 bytes
   minimum, 64 KiB maximum bucket — the ledger's `SizeClass` discipline
@@ -220,12 +282,18 @@ requires batching on a clock, and this document owns the number:
   bounded by the publish clock, not the poll.
 
 Checked against ADR-0021 §4 as specified, not as imagined: the relay
-learns account identity (attach), device count and attachment times
-(attach list), delta timing at 2-second grain (publish clock), delta
+learns account identity (attach), device count, identity fingerprints,
+key packages and attachment times (attach list — §4 item 2 as
+Amendment 1 widened it), delta timing at 2-second grain and per-publish
+blob count (publish clock and the per-envelope sealing above), delta
 sizes in buckets (padding), ceremony times (frame supersessions), and
-the frame's existence and bucketed size. That is the six-channel
-admission exactly; nothing here adds a seventh, and page count stays
-structurally unlearnable because §1 put every page behind one seal.
+the frame's existence and bucketed size. The welcome map (amended
+2026-08-27) shows the enrolled fingerprints and count at each ceremony
+rather than only at attach, and scales the frame's size with device
+count — channels 2 and 6 at a finer grain, per ADR-0021 Amendment 1.
+That is the six-channel admission exactly; nothing here adds a
+seventh, and page count stays structurally unlearnable because §1 put
+every page behind one seal.
 
 ## 9. What the server implements
 
@@ -234,13 +302,18 @@ the onetimesecret repo implements this section against the message
 table in §4.
 
 1. Authenticate attach against the account (issue #98) and scope every
-   route to the account's one channel.
+   route to the account's one channel; answer attach with the channel
+   position and the roster of §4 — each known device's fingerprint,
+   key package, and attach time (amended 2026-08-27).
 2. Store blobs; never parse one. There is nothing to parse: every
    payload is ciphertext by §4.
 3. Sequence deltas per channel; serve `since`; answer pre-buffer
    `since` with `410 rejoin`.
 4. Accept a frame only at epoch current+1, atomically superseding the
-   old frame and dropping every older delta.
+   old frame — its welcome with it, stored opaquely beside it and
+   never parsed, and tolerated absent while the client half of the
+   welcome is pending (§4; amended 2026-08-27) — and dropping every
+   older delta.
 5. Refuse publishes past the §3 cap with `413 ceremony_required`.
 6. Drop the channel whole after 8 idle days.
 7. Hold the pairing mailbox of §7, one pairing at a time, one hour at

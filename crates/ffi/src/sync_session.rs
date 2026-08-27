@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use companion_core::{
     Clock, DeltaAdmission, ExpiryPolicy, HoldRegister, ItemId, PageChannel, SheetId, SheetStore,
 };
-use companion_sync::relay::{FrameAnswer, RelayApi, RelayRefusal};
+use companion_sync::relay::{FrameAnswer, PeerAttachment, RelayApi, RelayRefusal};
 use companion_sync::{ByteBlob, ControlPayload, DeltaEnvelope, TokenKeeper, pad};
 use ots_client::{BearerAuth, HttpRequest, HttpResponse};
 use ring::hkdf::{HKDF_SHA256, Salt};
@@ -50,6 +50,19 @@ pub const LONG_POLL_WAIT_S: u32 = 25;
 /// §5's ballot patience: a ceremony not confirmed within this window
 /// is abandoned, every device staying on the old GOP.
 pub const BALLOT_PATIENCE_MS: u64 = 60_000;
+
+/// Versioned signing context for key packages: the identity key signs
+/// `context ‖ x25519_pub`, never the bare 32 bytes — a bare 32-byte
+/// signature payload is exactly the shape of a pairing transcript
+/// hash, and the mailbox publishes transcript signatures in the
+/// clear, so an uncontexted package signature could be forged from
+/// one.
+const KEY_PACKAGE_SIGN_CONTEXT: &[u8] = b"ots-companion-key-package-v1";
+
+/// Versioned signing context for terminal markers: the identity key
+/// signs `context ‖ page_id ‖ wall_ms`, one role among the several
+/// the one key serves.
+pub(crate) const TERMINAL_SIGN_CONTEXT: &[u8] = b"ots-companion-terminal-v1";
 
 /// Versioned HKDF info string for entropy sealed to a key package.
 const ENTROPY_WRAP_INFO: &[u8] = b"ots-companion-entropy-wrap-v1";
@@ -97,7 +110,10 @@ impl KeyPackage {
     #[must_use]
     pub fn verify(&self, identity_pub: &[u8]) -> bool {
         UnparsedPublicKey::new(&ED25519, identity_pub)
-            .verify(&self.x25519_pub, &self.signature)
+            .verify(
+                &persist::signing_domain(KEY_PACKAGE_SIGN_CONTEXT, &self.x25519_pub),
+                &self.signature,
+            )
             .is_ok()
     }
 
@@ -150,7 +166,13 @@ impl KeyPackageKeeper {
         let private = agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng).ok()?;
         let x25519_pub = private.compute_public_key().ok()?.as_ref().to_vec();
         let identity = Ed25519KeyPair::from_pkcs8(identity_pkcs8).ok()?;
-        let signature = identity.sign(&x25519_pub).as_ref().to_vec();
+        let signature = identity
+            .sign(&persist::signing_domain(
+                KEY_PACKAGE_SIGN_CONTEXT,
+                &x25519_pub,
+            ))
+            .as_ref()
+            .to_vec();
         Some(Self {
             private: Some(private),
             package: KeyPackage {
@@ -195,7 +217,7 @@ fn ballot_token(fingerprint: &str) -> ItemId {
 }
 
 /// The wire form of a page id: the [`ItemId`]'s bytes, lowercase hex.
-fn page_wire_id(page: ItemId) -> String {
+pub(crate) fn page_wire_id(page: ItemId) -> String {
     page.as_bytes().iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -273,6 +295,19 @@ pub struct SyncSession {
     /// The sealed key frame a committed ceremony produced, waiting for
     /// [`SyncSession::take_frame`] and the frame publish.
     pending_frame: Option<Vec<u8>>,
+    /// The last absorbed attach answer: where the channel stands and
+    /// who else is on it. `None` until an attach lands.
+    attach: Option<AttachSnapshot>,
+}
+
+/// What an attach answer leaves behind: the channel position the
+/// relay reported, and the roster of peers with the key package each
+/// published (the #99 follow-up) — the raw material for
+/// [`SyncSession::ceremony_peers`] and issue #102's device list.
+struct AttachSnapshot {
+    epoch: u64,
+    frame_present: bool,
+    peers: Vec<PeerAttachment>,
 }
 
 impl SyncSession {
@@ -293,6 +328,7 @@ impl SyncSession {
             received_entropy: None,
             ballot_scope: None,
             pending_frame: None,
+            attach: None,
         }
     }
 
@@ -311,6 +347,19 @@ impl SyncSession {
     /// grants into.
     pub fn keeper_mut(&mut self) -> &mut TokenKeeper {
         &mut self.keeper
+    }
+
+    /// Whether the keeper holds anything to authenticate with.
+    #[must_use]
+    pub fn signed_in(&self) -> bool {
+        self.keeper.signed_in()
+    }
+
+    /// Dissolve the session, handing the keeper back — a detach keeps
+    /// the sign-in it did not revoke.
+    #[must_use]
+    pub fn into_keeper(self) -> TokenKeeper {
+        self.keeper
     }
 
     fn auth(&self) -> Option<BearerAuth> {
@@ -354,16 +403,99 @@ impl SyncSession {
         )
     }
 
-    /// Absorb the attach answer: adopt the relay's cursor.
+    /// Absorb the attach answer: adopt the relay's cursor on a first
+    /// attach, and keep where the channel stands and who else is on
+    /// it. A re-attach — the fresh-package republish after a ceremony
+    /// — keeps the live cursor: adopting the relay's tail mid-stream
+    /// would skip whatever peers published since the last drain, and
+    /// a skipped CRDT batch leaves every later delta refused for its
+    /// missing history.
     ///
     /// # Errors
     ///
     /// [`RelayRefusal`] passed through; `Unauthorized` means refresh
     /// and retry the one request.
     pub fn absorb_attach(&mut self, response: &HttpResponse) -> Result<(), RelayRefusal> {
-        let answer = RelayApi::parse_attach(response)?;
-        self.next_seq = answer.next_seq;
+        let answer = match RelayApi::parse_attach(response) {
+            Ok(answer) => answer,
+            Err(refusal) => return Err(self.note_refusal(refusal)),
+        };
+        if self.attach.is_none() {
+            self.next_seq = answer.next_seq;
+        }
+        self.attach = Some(AttachSnapshot {
+            epoch: answer.epoch,
+            frame_present: answer.frame_present,
+            peers: answer.peers,
+        });
         Ok(())
+    }
+
+    /// Every refusal passes through here on its way out: a `401`
+    /// means the relay pronounced the held access token dead, and the
+    /// keeper must drop it or every recovery path would rebuild the
+    /// same request around the same stale bearer (§2: the `401` is
+    /// the only expiry authority).
+    fn note_refusal(&mut self, refusal: RelayRefusal) -> RelayRefusal {
+        if matches!(refusal, RelayRefusal::Unauthorized) {
+            self.keeper.clear_access();
+        }
+        refusal
+    }
+
+    /// Whether an attach has landed this session.
+    #[must_use]
+    pub fn attached(&self) -> bool {
+        self.attach.is_some()
+    }
+
+    /// The channel epoch the last attach reported. The chain, not this
+    /// echo, is what opens anything; a skew shows up as `409`/`410` or
+    /// blobs that refuse to open.
+    #[must_use]
+    pub fn attach_epoch(&self) -> Option<u64> {
+        self.attach.as_ref().map(|attach| attach.epoch)
+    }
+
+    /// Whether the relay held a key frame at the last attach — the
+    /// difference between "rejoin has something to adopt" and issue
+    /// #94's device waiting with no peer awake.
+    #[must_use]
+    pub fn frame_present(&self) -> Option<bool> {
+        self.attach.as_ref().map(|attach| attach.frame_present)
+    }
+
+    /// The peers the last attach reported, key packages included.
+    /// Attach-list truth, not device trust: pairing records decide who
+    /// anything is ever sealed to ([`SyncSession::ceremony_peers`]).
+    #[must_use]
+    pub fn attach_roster(&self) -> &[PeerAttachment] {
+        self.attach
+            .as_ref()
+            .map_or(&[], |attach| attach.peers.as_slice())
+    }
+
+    /// The ceremony peers this device may seal entropy to: the attach
+    /// roster filtered through the pairing records. `identities` maps
+    /// fingerprint → Ed25519 identity public key from those records; a
+    /// roster entry with no record, or whose package fails its
+    /// identity's signature, is dropped — a relay that substitutes a
+    /// package wins ciphertext nobody will cause to be opened, and a
+    /// revoked device drops out by having no record left.
+    #[must_use]
+    pub fn ceremony_peers(&self, identities: &[(String, Vec<u8>)]) -> Vec<CeremonyPeer> {
+        self.attach_roster()
+            .iter()
+            .filter(|peer| peer.device != self.device_fingerprint)
+            .filter_map(|peer| {
+                let (_, identity) = identities.iter().find(|(fp, _)| *fp == peer.device)?;
+                let package = KeyPackage::decode(&peer.key_package)?;
+                package.verify(identity).then(|| CeremonyPeer {
+                    fingerprint: peer.device.clone(),
+                    package,
+                })
+            })
+            .collect()
     }
 
     // -----------------------------------------------------------------
@@ -461,10 +593,12 @@ impl SyncSession {
     }
 
     /// Absorb the publish answer. `Ok` clears the batch; a `401`
-    /// keeps it for one retry after refresh; a `409` or `410` drops it
-    /// — the epoch moved underneath, and pre-ceremony history is
-    /// dropped, never merged; a `413` keeps the batch and tells the
-    /// caller to propose a ceremony.
+    /// keeps it for one retry after refresh — and reopens the publish
+    /// clock, because that retry is the same round, not a new
+    /// publish; a `409` or `410` drops it — the epoch moved
+    /// underneath, and pre-ceremony history is dropped, never merged;
+    /// a `413` keeps the batch and tells the caller to propose a
+    /// ceremony.
     ///
     /// # Errors
     ///
@@ -479,7 +613,10 @@ impl SyncSession {
                 if matches!(refusal, RelayRefusal::EpochConflict | RelayRefusal::Rejoin) {
                     self.in_flight = None;
                 }
-                Err(refusal)
+                if matches!(refusal, RelayRefusal::Unauthorized) {
+                    self.last_publish_ms = None;
+                }
+                Err(self.note_refusal(refusal))
             }
         }
     }
@@ -502,8 +639,11 @@ impl SyncSession {
     /// Absorb one long-poll's worth of deltas: open, unpad, decode and
     /// dispatch each blob to the seam it belongs to. A blob that does
     /// not open is skipped — sealed under another epoch, it is just
-    /// ciphertext now, which is the purge working. Returns the events
-    /// the shell reacts to; a `410` comes back as
+    /// ciphertext now, which is the purge working. `trusted` is the
+    /// Ed25519 identity public keys whose terminal markers this
+    /// device honors: its own and its paired peers' — a marker signed
+    /// by nobody on that list kills nothing. Returns the events the
+    /// shell reacts to; a `410` comes back as
     /// [`SyncEvent::RejoinRequired`] rather than an error, because it
     /// is the protocol's whole recovery story, not a failure.
     ///
@@ -511,18 +651,20 @@ impl SyncSession {
     ///
     /// Other [`RelayRefusal`]s passed through (`Unauthorized`: refresh
     /// and retry).
+    #[allow(clippy::too_many_arguments)]
     pub fn absorb_deltas<C: Clock>(
         &mut self,
         response: &HttpResponse,
         store: &mut SheetStore<C>,
         chain: &mut crate::gop::GopKeyChain,
         packages: &mut KeyPackageKeeper,
+        trusted: &[Vec<u8>],
         now_ms: u64,
     ) -> Result<Vec<SyncEvent>, RelayRefusal> {
         let batch = match RelayApi::parse_deltas(response) {
             Ok(batch) => batch,
             Err(RelayRefusal::Rejoin) => return Ok(vec![SyncEvent::RejoinRequired]),
-            Err(refusal) => return Err(refusal),
+            Err(refusal) => return Err(self.note_refusal(refusal)),
         };
         self.next_seq = batch.next_seq;
         let mut events = Vec::new();
@@ -542,9 +684,24 @@ impl SyncSession {
                 store,
                 chain,
                 packages,
+                trusted,
                 now_ms,
                 &mut events,
             );
+        }
+        // A batch sealed at an epoch ahead of this chain means the
+        // channel rotated past this device: blobs it cannot open, the
+        // spec's second rejoin trigger (relay-protocol.md §5).
+        // Checked after the loop, so a commit inside this very batch
+        // that advanced the chain still counts as caught up — and
+        // strictly "ahead", because a relay still serving the old
+        // epoch while this device's own frame is en route is behind
+        // us, not the other way around. The currency flags stay
+        // unset, keeping the terminal gate closed on a view that was
+        // discarded unread.
+        if batch.epoch > chain.epoch() {
+            events.push(SyncEvent::RejoinRequired);
+            return Ok(events);
         }
         // Draining to the frontier is what makes this device's view
         // current — the register currency the terminal gate reads.
@@ -562,6 +719,7 @@ impl SyncSession {
         store: &mut SheetStore<C>,
         chain: &mut crate::gop::GopKeyChain,
         packages: &mut KeyPackageKeeper,
+        trusted: &[Vec<u8>],
         now_ms: u64,
         events: &mut Vec<SyncEvent>,
     ) {
@@ -619,10 +777,20 @@ impl SyncSession {
                     events.push(SyncEvent::CountdownMoved(page));
                 }
             }
-            DeltaEnvelope::Terminal { page, .. } => {
+            DeltaEnvelope::Terminal { page, marker } => {
                 let Some(page) = page_from_wire(&page) else {
                     return;
                 };
+                // Terminal is absorbing and destructive, so the
+                // signature minted at publish is checked here before
+                // anything dies: the claim must be exactly the page
+                // id and wall stamp, name the page the envelope
+                // names, and verify under a trusted identity. A
+                // revoked device's record is gone from that list,
+                // which is what the signature exists for.
+                if !marker_trusted(&marker.0, page, trusted) {
+                    return;
+                }
                 self.channels.entry(page).or_default().note_terminal();
                 store.observe_terminal(page);
                 events.push(SyncEvent::Terminal(page));
@@ -645,6 +813,7 @@ impl SyncSession {
         match payload {
             ControlPayload::Propose {
                 ballot_id,
+                page,
                 entropy_sealed,
             } => {
                 // A publish comes back around on the stream: this
@@ -655,6 +824,29 @@ impl SyncSession {
                     held.as_ref().is_some_and(|(id, _)| *id == ballot_id)
                 };
                 if already_held(&self.proposed_entropy) || already_held(&self.received_entropy) {
+                    return;
+                }
+                // One ballot at a time channel-wide (§5): a second
+                // proposal while one is in flight goes unanswered, and
+                // the unconfirmed ballot abandons on its patience.
+                if self.ballot_scope.is_some() {
+                    return;
+                }
+                // The proposal names its page on the wire (the #99
+                // follow-up). Resolve everything before the one-shot
+                // key is spent: a device that cannot join — an unknown
+                // wire id, a page it does not hold, a page already
+                // terminal — stays out at no cost, never accepts, and
+                // the ballot fails as §5's all-attached rule requires.
+                let Some(page) = page_from_wire(&page) else {
+                    return;
+                };
+                if sheet_of(store, page).is_none()
+                    || self
+                        .channels
+                        .get(&page)
+                        .is_some_and(PageChannel::is_terminal)
+                {
                     return;
                 }
                 // Open this device's entry; a proposal not naming us is
@@ -671,24 +863,11 @@ impl SyncSession {
                 // arrives on the stream like anyone's.
                 let attached: Vec<ItemId> =
                     entropy_sealed.keys().map(|fp| ballot_token(fp)).collect();
-                let Some((page, _)) = self.ballot_scope.or_else(|| {
-                    // A joiner learns the scope from the proposal: one
-                    // ballot at a time channel-wide, and the channel's
-                    // one non-terminal page under compaction pressure
-                    // is the proposer's page. Until multi-page wiring
-                    // (#102) the session tracks a single ballot scope.
-                    self.channels
-                        .iter()
-                        .find(|(_, ch)| !ch.is_terminal())
-                        .map(|(page, _)| (*page, now_ms))
-                }) else {
-                    return;
-                };
-                self.ballot_scope = Some((page, now_ms));
                 let channel = self.channels.entry(page).or_default();
                 if !channel.propose_ceremony(&attached) {
                     return;
                 }
+                self.ballot_scope = Some((page, now_ms));
                 self.received_entropy = Some((ballot_id.clone(), entropy));
                 // Queue the acceptance; it is *counted* only when it
                 // comes back on the stream. The relay totally orders
@@ -738,6 +917,14 @@ impl SyncSession {
                         crate::gop::ceremony_commit(store, sheet_id, chain, &entropy)
                         && channel.complete_ceremony()
                     {
+                        // The chain is channel-wide: every page's
+                        // channel adopts the new epoch, exactly as
+                        // the solo ceremony does — a channel left at
+                        // the old number would refuse every later
+                        // delta for its page as a spurious rejoin.
+                        for other in self.channels.values_mut() {
+                            other.rejoin_at_epoch(chain.epoch());
+                        }
                         self.pending_frame = Some(frame);
                         self.ballot_scope = None;
                         events.push(SyncEvent::CeremonyCommitted(page));
@@ -794,6 +981,7 @@ impl SyncSession {
         self.outbox.push(DeltaEnvelope::Control {
             payload: ControlPayload::Propose {
                 ballot_id: ballot_id.clone(),
+                page: page_wire_id(page),
                 entropy_sealed,
             },
         });
@@ -807,6 +995,60 @@ impl SyncSession {
             },
         });
         true
+    }
+
+    /// A ceremony with an empty room: no verified peer is attached,
+    /// and a due boundary must not wait on one. Compact, advance,
+    /// reseal — the one event, ballot-free because §5's all-attached
+    /// set is this device alone — and stage the frame exactly as a
+    /// confirmed ballot would; its publication at the relay is still
+    /// the purge. Every channel adopts the new epoch, since the chain
+    /// is channel-wide. False when a ballot is in flight, the page is
+    /// unknown or not deferred, or the RNG refuses.
+    pub fn solo_ceremony<C: Clock>(
+        &mut self,
+        page: ItemId,
+        store: &mut SheetStore<C>,
+        chain: &mut crate::gop::GopKeyChain,
+    ) -> bool {
+        if self.ballot_scope.is_some() {
+            return false;
+        }
+        let mut entropy = Zeroizing::new(vec![0u8; KEY_LEN]);
+        if SystemRandom::new().fill(&mut entropy).is_err() {
+            return false;
+        }
+        let Some(sheet) = sheet_of(store, page) else {
+            return false;
+        };
+        let Some(frame) = crate::gop::ceremony_commit(store, sheet, chain, &entropy) else {
+            return false;
+        };
+        for channel in self.channels.values_mut() {
+            channel.rejoin_at_epoch(chain.epoch());
+        }
+        self.channels
+            .entry(page)
+            .or_default()
+            .rejoin_at_epoch(chain.epoch());
+        self.pending_frame = Some(frame);
+        true
+    }
+
+    /// `POST /channel/pairing` — one §7 mailbox message, already in
+    /// its wire form. `None` when no access token is held.
+    #[must_use]
+    pub fn post_pairing_request(&self, message: serde_json::Value) -> Option<HttpRequest> {
+        let auth = self.auth()?;
+        Some(self.api.post_pairing_request(message, &auth))
+    }
+
+    /// `GET /channel/pairing?since=` — the mailbox tail. `None` when
+    /// no access token is held.
+    #[must_use]
+    pub fn fetch_pairing_request(&self, since: u64) -> Option<HttpRequest> {
+        let auth = self.auth()?;
+        Some(self.api.fetch_pairing_request(since, &auth))
     }
 
     /// Abandon a ballot that outlived §5's patience: every device
@@ -882,11 +1124,32 @@ impl SyncSession {
 }
 
 /// The sheet currently holding `page`'s cross-device identity.
-fn sheet_of<C: Clock>(store: &SheetStore<C>, page: ItemId) -> Option<SheetId> {
+pub(crate) fn sheet_of<C: Clock>(store: &SheetStore<C>, page: ItemId) -> Option<SheetId> {
     store
         .sheets()
         .find(|sheet| sheet.uuid() == page)
         .map(companion_core::Sheet::id)
+}
+
+/// Whether `marker` is a well-formed terminal claim for `page` under
+/// one of the `trusted` Ed25519 identity public keys. The claim is
+/// `page_id(16) ‖ wall_ms(8)` and the signature covers exactly those
+/// bytes (the mint is the driver's `signed_terminal_marker`); binding
+/// the id inside the signature to the envelope's page keeps a real
+/// signature from being replayed against a different page.
+fn marker_trusted(marker: &[u8], page: ItemId, trusted: &[Vec<u8>]) -> bool {
+    const CLAIM_LEN: usize = 16 + 8;
+    const SIG_LEN: usize = 64;
+    if marker.len() != CLAIM_LEN + SIG_LEN || marker[..16] != page.as_bytes()[..] {
+        return false;
+    }
+    let (claim, signature) = marker.split_at(CLAIM_LEN);
+    let message = persist::signing_domain(TERMINAL_SIGN_CONTEXT, claim);
+    trusted.iter().any(|key| {
+        UnparsedPublicKey::new(&ED25519, key)
+            .verify(&message, signature)
+            .is_ok()
+    })
 }
 
 #[cfg(test)]
@@ -1011,8 +1274,19 @@ mod tests {
             session.absorb_publish(&unauthorized).unwrap_err(),
             RelayRefusal::Unauthorized
         );
-        // The batch is still there: the retry after refresh republishes it.
-        assert!(session.publish_request(2_000, &chain).is_some());
+        // The 401 pronounced the access token dead — the keeper drops
+        // it, so nothing publishes until a refresh lands. The batch
+        // itself survives for the retry, and the retry does not wait
+        // out the publish clock: it is the same round, not a new one.
+        assert!(
+            session.publish_request(1, &chain).is_none(),
+            "no publish rides a token the relay refused"
+        );
+        session.keeper_mut().absorb(companion_sync::TokenGrant {
+            access: Zeroizing::new("access-2".into()),
+            refresh: Zeroizing::new("refresh-2".into()),
+        });
+        assert!(session.publish_request(1, &chain).is_some());
         let conflict = HttpResponse {
             status: 409,
             body: Vec::new(),
@@ -1071,7 +1345,7 @@ mod tests {
         let mut chain_b = GopKeyChain::root(CHANNEL_SECRET).unwrap();
         let mut a = session("fp-a");
         let mut b = session("fp-b");
-        let (pkcs8_b, _) = identity();
+        let (pkcs8_b, identity_b) = identity();
         let mut packages_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
         let mut relay = FakeRelay::default();
 
@@ -1085,6 +1359,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &[],
                 0,
             )
             .unwrap();
@@ -1092,11 +1367,20 @@ mod tests {
 
         // Draining to the frontier made B's view current: the terminal
         // gate opens. A fresh session that never drained stays quiet.
-        assert!(b.queue_terminal(uuid, b"signed marker"));
+        // The marker is the driver's mint: page id, wall stamp, and
+        // the identity's signature over exactly those bytes.
+        let signer = Ed25519KeyPair::from_pkcs8(&pkcs8_b).unwrap();
+        let mut marker = uuid.as_bytes().to_vec();
+        marker.extend_from_slice(&7_000_u64.to_be_bytes());
+        let message = persist::signing_domain(TERMINAL_SIGN_CONTEXT, &marker);
+        marker.extend_from_slice(signer.sign(&message).as_ref());
+        assert!(b.queue_terminal(uuid, &marker));
         let mut never_drained = session("fp-c");
-        assert!(!never_drained.queue_terminal(uuid, b"signed marker"));
+        assert!(!never_drained.queue_terminal(uuid, &marker));
 
-        // B's marker lands on A as the page's death.
+        // B's marker kills the page on A only under B's trusted
+        // identity: the same blob served to a device that does not
+        // trust the signer refuses it, and the page lives on there.
         let request = b.publish_request(0, &chain_b).unwrap();
         b.absorb_publish(&relay.accept_publish(&request)).unwrap();
         let (pkcs8_a, _) = identity();
@@ -1107,12 +1391,27 @@ mod tests {
                 &mut store_a,
                 &mut chain_a,
                 &mut packages_a,
+                &[],
+                0,
+            )
+            .unwrap();
+        assert!(
+            !events.iter().any(|e| matches!(e, SyncEvent::Terminal(_))),
+            "an untrusted marker must kill nothing"
+        );
+        let events = a
+            .absorb_deltas(
+                &relay.serve_fetch(1),
+                &mut store_a,
+                &mut chain_a,
+                &mut packages_a,
+                std::slice::from_ref(&identity_b),
                 0,
             )
             .unwrap();
         assert!(events.contains(&SyncEvent::Terminal(uuid)));
         // Absorbing: nothing lands on the page again.
-        assert!(!a.queue_terminal(uuid, b"again"));
+        assert!(!a.queue_terminal(uuid, &marker));
     }
 
     #[test]
@@ -1167,6 +1466,7 @@ mod tests {
             &mut store_b,
             &mut chain_b,
             &mut packages_b,
+            &[],
             0,
         )
         .unwrap();
@@ -1192,6 +1492,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &[],
                 0,
             )
             .unwrap();
@@ -1208,6 +1509,7 @@ mod tests {
                 &mut store_a,
                 &mut chain_a,
                 &mut packages_a,
+                &[],
                 0,
             )
             .unwrap();
@@ -1218,6 +1520,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &[],
                 0,
             )
             .unwrap();
@@ -1235,6 +1538,103 @@ mod tests {
         relay.epoch = 1;
         let request = a.publish_frame_request(&chain_a, &frame).unwrap();
         assert!(request.url.ends_with("/channel/frame"));
+    }
+
+    #[test]
+    fn the_attach_roster_becomes_ceremony_peers_only_through_the_pairing_records() {
+        let mut session = session("fp-a");
+        let (pkcs8_b, identity_b) = identity();
+        let (_, wrong_identity) = identity();
+        let keeper_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
+        let package_value = serde_json::to_value(ByteBlob(keeper_b.package().encode())).unwrap();
+        let body = serde_json::json!({
+            "epoch": 2,
+            "frame_present": false,
+            "next_seq": 0,
+            "peers": [
+                {"device": "fp-b", "key_package": package_value, "attached_ms": 1_000},
+            ],
+        });
+        session
+            .absorb_attach(&HttpResponse {
+                status: 200,
+                body: body.to_string().into_bytes(),
+            })
+            .unwrap();
+        assert!(session.attached());
+        assert_eq!(session.attach_epoch(), Some(2));
+        assert_eq!(session.frame_present(), Some(false));
+        assert_eq!(session.attach_roster().len(), 1);
+
+        // The roster alone admits nobody: no pairing record, no peer.
+        assert!(session.ceremony_peers(&[]).is_empty());
+        // A package that fails its recorded identity is dropped — the
+        // relay-substitution shape.
+        assert!(
+            session
+                .ceremony_peers(&[("fp-b".into(), wrong_identity)])
+                .is_empty()
+        );
+        // The recorded identity admits it.
+        let peers = session.ceremony_peers(&[("fp-b".into(), identity_b)]);
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].fingerprint, "fp-b");
+    }
+
+    #[test]
+    fn a_proposal_for_a_page_this_device_does_not_hold_spends_nothing() {
+        let clock = ManualClock::new();
+        let mut store_a = SheetStore::new(clock.clone());
+        let page_a = store_a.new_tab().unwrap().1;
+        let uuid = store_a.sheet(page_a).unwrap().uuid();
+        // B never adopted A's page; its store holds only its own.
+        let mut store_b = SheetStore::new(clock.clone());
+        let _ = store_b.new_tab().unwrap();
+
+        let chain_a = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut chain_b = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut a = session("fp-a");
+        let mut b = session("fp-b");
+        let (pkcs8_a, _) = identity();
+        let (pkcs8_b, _) = identity();
+        let packages_a = KeyPackageKeeper::mint(&pkcs8_a).unwrap();
+        let mut packages_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
+        let mut relay = FakeRelay::default();
+
+        assert!(a.propose_ceremony(
+            uuid,
+            &[CeremonyPeer {
+                fingerprint: "fp-b".into(),
+                package: packages_b.package().clone(),
+            }],
+            &packages_a.package().clone(),
+            0,
+        ));
+        let request = a.publish_request(0, &chain_a).unwrap();
+        a.absorb_publish(&relay.accept_publish(&request)).unwrap();
+
+        // B drains the proposal for a page it does not hold: it stays
+        // out — no acceptance queued, so the ballot will fail — and
+        // the one-shot key package is not spent on a ballot it could
+        // never commit.
+        b.absorb_deltas(
+            &relay.serve_fetch(0),
+            &mut store_b,
+            &mut chain_b,
+            &mut packages_b,
+            &[],
+            0,
+        )
+        .unwrap();
+        assert!(
+            b.publish_request(2_000, &chain_b).is_none(),
+            "nothing to publish: no acceptance was queued"
+        );
+        let sealed = packages_b.package().seal_entropy(b"still mine").unwrap();
+        assert_eq!(
+            packages_b.open_entropy(&sealed).unwrap().as_slice(),
+            b"still mine"
+        );
     }
 
     #[test]

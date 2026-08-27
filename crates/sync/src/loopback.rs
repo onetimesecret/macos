@@ -35,57 +35,80 @@ impl OneShotListener {
         self.listener.local_addr().map(|a| a.port()).unwrap_or(0)
     }
 
-    /// Accept one connection, answer it, and return the redirect's raw
-    /// query string (the part after `?`). Blocks up to `patience` — the
-    /// user is in a browser consent screen, so minutes, not seconds —
-    /// then gives up with `None`, which abandons the ceremony. The
-    /// listener is consumed either way: one redirect, then gone.
+    /// Accept connections until the redirect lands, answer it, and
+    /// return the redirect's raw query string (the part after `?`).
+    /// Blocks up to `patience` — the user is in a browser consent
+    /// screen, so minutes, not seconds — then gives up with `None`,
+    /// which abandons the ceremony. A stray connection meanwhile (a
+    /// speculative preflight, a favicon probe, a port scan finding
+    /// the ephemeral port) is answered `404` and does not consume the
+    /// ceremony: only the `/callback` redirect or the deadline ends
+    /// the wait. The listener is consumed either way: one redirect,
+    /// then gone.
     #[must_use]
     pub fn accept_redirect(self, patience: Duration) -> Option<String> {
-        self.listener.set_nonblocking(false).ok()?;
-        // Bound the whole exchange: accept has no native timeout, so
-        // poll with the read timeout carrying the budget once a
-        // connection lands.
         let deadline = std::time::Instant::now() + patience;
         self.listener.set_nonblocking(true).ok()?;
-        let (mut stream, _) = loop {
-            match self.listener.accept() {
-                Ok(pair) => break pair,
+        loop {
+            let mut stream = match self.listener.accept() {
+                Ok((stream, _)) => stream,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     if std::time::Instant::now() >= deadline {
                         return None;
                     }
                     std::thread::sleep(Duration::from_millis(50));
+                    continue;
                 }
                 Err(_) => return None,
+            };
+            if let Some(query) = Self::serve(&mut stream) {
+                return Some(query);
             }
-        };
-        stream.set_nonblocking(false).ok()?;
-        stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
+            if std::time::Instant::now() >= deadline {
+                return None;
+            }
+        }
+    }
+
+    /// Answer one connection: the callback's query when this is the
+    /// redirect, `None` — after a `404` — for anything else.
+    fn serve(stream: &mut std::net::TcpStream) -> Option<String> {
+        if stream.set_nonblocking(false).is_err()
+            || stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .is_err()
+        {
+            return None;
+        }
         // The request line is all that matters; read until its end.
         let mut buffer = Vec::with_capacity(1024);
         let mut chunk = [0u8; 512];
         while !buffer.windows(2).any(|w| w == b"\r\n") && buffer.len() < 8192 {
-            let n = stream.read(&mut chunk).ok()?;
+            let Ok(n) = stream.read(&mut chunk) else {
+                break;
+            };
             if n == 0 {
                 break;
             }
             buffer.extend_from_slice(&chunk[..n]);
         }
-        let request_line = std::str::from_utf8(&buffer)
-            .ok()?
-            .lines()
-            .next()?
-            .to_owned();
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{ANSWER_PAGE}",
-            ANSWER_PAGE.len(),
-        );
-        let _ = stream.write_all(response.as_bytes());
         // GET /callback?code=…&state=… HTTP/1.1
-        let target = request_line.split_whitespace().nth(1)?;
-        let (path, query) = target.split_once('?')?;
-        (path == "/callback").then(|| query.to_owned())
+        let query = std::str::from_utf8(&buffer)
+            .ok()
+            .and_then(|text| text.lines().next())
+            .and_then(|line| line.split_whitespace().nth(1))
+            .and_then(|target| target.split_once('?'))
+            .and_then(|(path, query)| (path == "/callback").then(|| query.to_owned()));
+        let response = if query.is_some() {
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{ANSWER_PAGE}",
+                ANSWER_PAGE.len(),
+            )
+        } else {
+            "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned()
+        };
+        let _ = stream.write_all(response.as_bytes());
+        query
     }
 }
 
@@ -127,8 +150,42 @@ mod tests {
                 .unwrap();
             let mut sink = String::new();
             let _ = stream.read_to_string(&mut sink);
+            sink
         });
-        assert!(listener.accept_redirect(Duration::from_secs(5)).is_none());
-        browser.join().unwrap();
+        assert!(
+            listener
+                .accept_redirect(Duration::from_millis(300))
+                .is_none()
+        );
+        let answer = browser.join().unwrap();
+        assert!(answer.starts_with("HTTP/1.1 404"));
+    }
+
+    #[test]
+    fn a_stray_connection_does_not_consume_the_ceremony() {
+        let listener = OneShotListener::bind().unwrap();
+        let port = listener.port();
+        let browser = std::thread::spawn(move || {
+            // A port scan lands first: connects, sends nothing the
+            // ceremony recognizes, and goes away.
+            let mut stray = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+            stray
+                .write_all(b"GET /favicon.ico HTTP/1.1\r\n\r\n")
+                .unwrap();
+            let mut sink = String::new();
+            let _ = stray.read_to_string(&mut sink);
+            // The real redirect follows and must still be served.
+            let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+            stream
+                .write_all(b"GET /callback?code=abc&state=xyz HTTP/1.1\r\nHost: x\r\n\r\n")
+                .unwrap();
+            let mut answer = String::new();
+            let _ = stream.read_to_string(&mut answer);
+            answer
+        });
+        let query = listener.accept_redirect(Duration::from_secs(5)).unwrap();
+        assert_eq!(query, "code=abc&state=xyz");
+        let answer = browser.join().unwrap();
+        assert!(answer.starts_with("HTTP/1.1 200"));
     }
 }
