@@ -72,6 +72,7 @@ pub mod gop;
 // pairing contract lives here with the tests that prove it.
 pub mod pairing;
 mod persist;
+mod sync_driver;
 pub mod sync_session;
 
 use diagnostics::diag_fault;
@@ -241,6 +242,10 @@ struct Companion {
     /// in-memory store in tests and off macOS. The token itself never
     /// sits in `connection`.
     credentials: Arc<dyn CredentialStore>,
+    /// Everything sync holds (issues #98 and #102). Default is
+    /// all-off: a handle that never configures sync behaves
+    /// bit-for-bit like one built before sync existed.
+    sync: sync_driver::SyncState,
 }
 
 /// The credential-store account holding the API token (scoped by the
@@ -396,6 +401,7 @@ fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
         last_write: None,
         connection: None,
         credentials,
+        sync: sync_driver::SyncState::default(),
     };
     Box::into_raw(Box::new(CompanionHandle {
         inner: Mutex::new(companion),
@@ -2378,6 +2384,213 @@ fn conceal_error(message: &str) -> *mut c_char {
     into_c_string(serde_json::json!({ "ok": false, "error": message }).to_string())
 }
 
+// ---------------------------------------------------------------------------
+// Sync sign-in (issue #98): account auth for the relay channel
+// ---------------------------------------------------------------------------
+
+/// A `{"ok": false, "reason"}` result. Reasons are the stable machine
+/// tokens of `account-auth.md` §5 — the shell maps them to issue
+/// #102's sentences; nothing here is user-facing prose, and nothing
+/// here carries secret material.
+fn sync_refusal(reason: &str) -> *mut c_char {
+    into_c_string(serde_json::json!({ "ok": false, "reason": reason }).to_string())
+}
+
+/// Configure sync's endpoints and client identity: JSON
+/// `{"relay_url", "authorize_url", "token_url", "client_id"}`, all
+/// required, the three URLs refused unless `https://` (the network
+/// boundary, answered before a socket could open). Like the conceal
+/// connection this is not persisted core-side — the shell re-sends it
+/// at launch — but configuring resumes the persisted sign-in: the
+/// token keeper loads the refresh token from its own Keychain account,
+/// so a relaunch is signed in without a browser. Returns whether the
+/// configuration was accepted.
+///
+/// # Safety
+/// `handle` must be a valid handle; `json` a valid, NUL-terminated
+/// UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_configure(
+    handle: *mut CompanionHandle,
+    json: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(config) = unsafe { cstr(json) }.and_then(sync_driver::SyncConfig::parse) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.sync.keeper = Some(sync_driver::keeper_for(&config, &*guard.credentials));
+    guard.sync.config = Some(config);
+    true
+}
+
+/// Sync's standing state for the Settings surface:
+/// `{"configured", "signed_in", "signin_pending"}`. Existence checks
+/// only — rendering Settings must never decrypt a credential or wedge
+/// on the Keychain, the `companion_connection_json` rule. Free with
+/// [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_status_json(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let signed_in = guard.sync.keeper.as_ref().map_or_else(
+        || sync_driver::signed_in(&*guard.credentials),
+        companion_sync::TokenKeeper::signed_in,
+    );
+    into_c_string(
+        serde_json::json!({
+            "configured": guard.sync.config.is_some(),
+            "signed_in": signed_in,
+            "signin_pending": guard.sync.pending_signin.is_some(),
+        })
+        .to_string(),
+    )
+}
+
+/// Begin the sign-in ceremony (account-auth.md §1): bind the one-shot
+/// loopback listener, mint the PKCE material, and return
+/// `{"ok": true, "authorize_url"}` for the shell to open in the
+/// system browser — never a web view. The ceremony then waits for
+/// [`companion_sync_signin_finish`]; a second begin while one waits
+/// answers `{"ok": false, "reason": "busy"}`.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_signin_begin(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    match sync_driver::signin_begin(&mut guard.sync) {
+        Ok(authorize_url) => into_c_string(
+            serde_json::json!({ "ok": true, "authorize_url": authorize_url }).to_string(),
+        ),
+        Err(reason) => sync_refusal(reason),
+    }
+}
+
+/// Finish the sign-in ceremony: wait up to `patience_ms` for the
+/// browser's one redirect, redeem the code, exchange it, and persist
+/// the rotated refresh token in its own Keychain account.
+/// **Blocks for up to the whole patience** — call from a background
+/// queue, never the main thread; account-auth.md §5 budgets five
+/// minutes, because the user is reading a consent screen. The core
+/// mutex is held only to take the pending ceremony and to absorb the
+/// grant; the pad never waits on this. Returns `{"ok": true}` or
+/// `{"ok": false, "reason"}` with §5's tokens: `abandoned`,
+/// `state_mismatch`, `no_code`, `unreachable`, `refused`,
+/// `no_ceremony`, `keychain`. Every failure leaves nothing stored;
+/// retry is a fresh begin. Free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_signin_finish(
+    handle: *mut CompanionHandle,
+    patience_ms: u64,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    // Under the lock: take the ceremony and build the bounded
+    // transport, then let go — the redirect wait must not block a
+    // summon.
+    let staged = {
+        let Ok(mut guard) = handle.inner.lock() else {
+            return ptr::null_mut();
+        };
+        let transport = guard
+            .sync
+            .config
+            .as_ref()
+            .map(sync_driver::SyncConfig::transport);
+        guard.sync.pending_signin.take().zip(transport)
+    };
+    let Some((pending, transport)) = staged else {
+        return sync_refusal("no_ceremony");
+    };
+    let grant =
+        match sync_driver::signin_finish(pending, Duration::from_millis(patience_ms), &transport) {
+            Ok(grant) => grant,
+            Err(reason) => return sync_refusal(reason),
+        };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    // Persist first, absorb second: a keeper holding tokens the store
+    // refused would sign in for one session and silently sign out at
+    // relaunch.
+    if !sync_driver::store_refresh(&*guard.credentials, &grant.refresh) {
+        diag_fault!("the credential store refused the sync refresh token; sync stays signed out");
+        return sync_refusal("keychain");
+    }
+    let Some(keeper) = guard.sync.keeper.as_mut() else {
+        return sync_refusal("not_configured");
+    };
+    let _rotated = keeper.absorb(grant);
+    into_c_string(serde_json::json!({ "ok": true }).to_string())
+}
+
+/// Forget a begun, unfinished sign-in ceremony: the listener closes
+/// and the PKCE material drops. True when there was one to forget. A
+/// finish already blocking on the redirect is not interrupted — its
+/// listener left the state when the finish took it; this clears only
+/// a ceremony still waiting for its finish call.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_signin_cancel(handle: *mut CompanionHandle) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.sync.pending_signin.take().is_some()
+}
+
+/// Sign sync out: drop the held tokens and delete the persisted
+/// refresh token — exactly one account; the conceal token, the content
+/// and ledger keys, and the pairing accounts all stand (ADR-0021 §3).
+/// The pad is unaffected, which is the whole point. True when the
+/// delete was accepted.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_signout(handle: *mut CompanionHandle) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.sync.pending_signin = None;
+    if let Some(config) = &guard.sync.config {
+        guard.sync.keeper = Some(companion_sync::TokenKeeper::new(
+            &config.token_url,
+            &config.client_id,
+            None,
+        ));
+    }
+    sync_driver::clear_refresh(&*guard.credentials)
+}
+
 /// Free a string returned by this library. Passing null is a no-op.
 ///
 /// # Safety
@@ -2651,6 +2864,7 @@ mod tests {
             last_write: None,
             connection: None,
             credentials,
+            sync: sync_driver::SyncState::default(),
         };
         Box::into_raw(Box::new(CompanionHandle {
             inner: Mutex::new(companion),
@@ -5612,8 +5826,91 @@ mod tests {
                 1,
                 cstring("[]").as_ptr()
             ));
+            assert!(!companion_sync_configure(
+                ptr::null_mut(),
+                cstring("{}").as_ptr()
+            ));
+            assert!(companion_sync_status_json(ptr::null_mut()).is_null());
+            assert!(companion_sync_signin_begin(ptr::null_mut()).is_null());
+            assert!(companion_sync_signin_finish(ptr::null_mut(), 0).is_null());
+            assert!(!companion_sync_signin_cancel(ptr::null_mut()));
+            assert!(!companion_sync_signout(ptr::null_mut()));
             companion_free(ptr::null_mut()); // no-op
             companion_string_free(ptr::null_mut()); // no-op
+        }
+    }
+
+    /// The sign-in surface through the seam itself: configure resumes
+    /// the persisted sign-in, begin parks a ceremony, cancel forgets
+    /// it, and sign-out deletes the one account — status telling the
+    /// truth at every step.
+    #[test]
+    fn the_sync_routes_report_configure_begin_cancel_and_signout() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        credentials
+            .key_material_store()
+            .store("sync-oauth-refresh", b"rt-persisted")
+            .unwrap();
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            let status: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_status_json(handle))).unwrap();
+            assert_eq!(status["configured"], false);
+            assert_eq!(
+                status["signed_in"], true,
+                "existence check before configure"
+            );
+
+            let unconfigured: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
+            assert_eq!(unconfigured["reason"], "not_configured");
+            let config = cstring(
+                r#"{"relay_url":"https://relay.example",
+                    "authorize_url":"https://eu.example/oauth/authorize",
+                    "token_url":"https://eu.example/oauth/token",
+                    "client_id":"companion"}"#,
+            );
+            assert!(companion_sync_configure(handle, config.as_ptr()));
+            let status: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_status_json(handle))).unwrap();
+            assert_eq!(status["configured"], true);
+            assert_eq!(status["signed_in"], true, "the keeper resumed the token");
+
+            let begun: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
+            assert_eq!(begun["ok"], true);
+            let authorize_url = begun["authorize_url"].as_str().unwrap();
+            assert!(authorize_url.starts_with("https://eu.example/oauth/authorize?"));
+            assert!(authorize_url.contains("code_challenge_method=S256"));
+            let busy: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
+            assert_eq!(busy["reason"], "busy");
+            assert!(companion_sync_signin_cancel(handle));
+            assert!(
+                !companion_sync_signin_cancel(handle),
+                "nothing left to forget"
+            );
+
+            // A finish with no pending ceremony refuses by name.
+            let finished: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_signin_finish(handle, 0))).unwrap();
+            assert_eq!(finished["reason"], "no_ceremony");
+
+            assert!(companion_sync_signout(handle));
+            let status: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_status_json(handle))).unwrap();
+            assert_eq!(status["signed_in"], false);
+            assert!(
+                matches!(
+                    credentials
+                        .key_material_store()
+                        .exists("sync-oauth-refresh"),
+                    Ok(false)
+                ),
+                "sign-out deleted the persisted token"
+            );
+            companion_free(handle);
         }
     }
 

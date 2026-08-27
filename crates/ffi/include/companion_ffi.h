@@ -773,6 +773,72 @@ char *companion_chip_conceal(CompanionHandle *handle, uint64_t chip,
 char *companion_sheet_conceal(CompanionHandle *handle, uint64_t sheet,
                               const char *opts_json);
 
+/* ------------------------------------------------------------------ */
+/* Sync sign-in (issue #98): account auth for the relay channel       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Configure sync's endpoints and client identity. json (non-secret):
+ *   { "relay_url": "https://…",      // required, https only
+ *     "authorize_url": "https://…",  // required, https only
+ *     "token_url": "https://…",      // required, https only
+ *     "client_id": "…" }             // required, non-empty
+ * Like the conceal connection this is not persisted core-side — the
+ * shell re-sends it at launch — but configuring resumes the persisted
+ * sign-in: the refresh token loads from its own Keychain account, so a
+ * relaunch is signed in without a browser. Returns false on malformed
+ * JSON, a missing field, or a non-https URL.
+ */
+bool companion_sync_configure(CompanionHandle *handle, const char *json);
+
+/*
+ * Sync's standing state for Settings: {"configured", "signed_in",
+ * "signin_pending"}. Existence checks only — rendering Settings never
+ * decrypts a credential. Free with companion_string_free().
+ */
+char *companion_sync_status_json(CompanionHandle *handle);
+
+/*
+ * Begin the sign-in ceremony (account-auth.md section 1): bind the
+ * one-shot loopback listener, mint the PKCE material, and return
+ * {"ok": true, "authorize_url"} for the shell to open in the SYSTEM
+ * browser — never a web view. Then call companion_sync_signin_finish
+ * from a background queue. {"ok": false, "reason"} with "busy" while a
+ * ceremony already waits, "not_configured", "port" (the listener could
+ * not bind), or "no_entropy". Free with companion_string_free().
+ */
+char *companion_sync_signin_begin(CompanionHandle *handle);
+
+/*
+ * Finish the sign-in ceremony: wait for the browser's one redirect,
+ * redeem the code, and persist the rotated refresh token in its own
+ * Keychain account. BLOCKS for up to patience_ms — call from a
+ * background queue; account-auth.md section 5 budgets five minutes,
+ * because the user is reading a consent screen. The core mutex is held
+ * only at the edges; the pad never waits on this. Returns {"ok": true}
+ * or {"ok": false, "reason"} with the section-5 tokens: "abandoned",
+ * "state_mismatch", "no_code", "unreachable", "refused",
+ * "no_ceremony", "keychain". Every failure leaves nothing stored;
+ * retry is a fresh begin. Free with companion_string_free().
+ */
+char *companion_sync_signin_finish(CompanionHandle *handle,
+                                   uint64_t patience_ms);
+
+/*
+ * Forget a begun, unfinished sign-in ceremony: the listener closes and
+ * the PKCE material drops. True when there was one to forget. A finish
+ * already blocking is not interrupted — it owns the listener by then.
+ */
+bool companion_sync_signin_cancel(CompanionHandle *handle);
+
+/*
+ * Sign sync out: drop the held tokens and delete the persisted refresh
+ * token — exactly one Keychain account. The conceal token, the content
+ * and ledger keys, and the pairing accounts all stand; the pad is
+ * unaffected, which is the point. True when the delete was accepted.
+ */
+bool companion_sync_signout(CompanionHandle *handle);
+
 /* Free a string returned by this library. Null is a no-op. */
 void companion_string_free(char *s);
 
