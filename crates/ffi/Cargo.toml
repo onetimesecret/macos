@@ -29,6 +29,7 @@ test-util = []
 companion-core = { path = "../core" }
 companion-credentials = { path = "../credentials" }
 companion-pasteboard = { path = "../pasteboard" }
+companion-sync = { path = "../sync" }
 companion-transport = { path = "../transport" }
 ots-client = { path = "../ots-client" }
 # State-file encryption (ChaCha20-Poly1305, src/persist.rs). Already in

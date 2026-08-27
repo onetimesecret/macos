@@ -163,6 +163,7 @@ dependencies = [
  "companion-core",
  "companion-credentials",
  "companion-pasteboard",
+ "companion-sync",
  "companion-transport",
  "libc",
  "ots-client",
@@ -178,6 +179,17 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "zeroize",
+]
+
+[[package]]
+name = "companion-sync"
+version = "0.1.0"
+dependencies = [
+ "ots-client",
+ "ring",
+ "serde",
+ "serde_json",
  "zeroize",
 ]
 
