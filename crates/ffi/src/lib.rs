@@ -72,6 +72,7 @@ pub mod gop;
 // pairing contract lives here with the tests that prove it.
 pub mod pairing;
 mod persist;
+pub mod sync_session;
 
 use diagnostics::diag_fault;
 

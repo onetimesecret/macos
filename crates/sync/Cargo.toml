@@ -1,0 +1,22 @@
+[package]
+name = "companion-sync"
+version = "0.1.0"
+description = "The sync channel's client half: OAuth PKCE account auth (docs/spec/feature/sync/account-auth.md) and the relay message set (docs/spec/feature/sync/relay-protocol.md §4), sans-IO over ots-client's transport seam."
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ots-client = { path = "../ots-client" }
+# PKCE's S256 challenge and the ceremony-grade randomness the verifier
+# and state need. Already in the tree via companion-ffi: no new supply
+# chain.
+ring = "0.17"
+serde = { workspace = true }
+serde_json = { workspace = true }
+zeroize = { workspace = true }

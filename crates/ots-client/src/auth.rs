@@ -42,6 +42,32 @@ impl AuthStrategy for BasicAuth {
     }
 }
 
+/// Bearer tokens: the sync relay's scheme (docs/spec/feature/sync/
+/// account-auth.md), and the shape phase-2 PASETO conceal auth will
+/// reuse. The token is opaque here on purpose — the server owns its
+/// encoding, this strategy only carries it.
+pub struct BearerAuth {
+    token: Zeroizing<String>,
+}
+
+impl BearerAuth {
+    /// A bearer token as the server issued it, scheme not included.
+    #[must_use]
+    pub fn new(token: impl Into<String>) -> Self {
+        Self {
+            token: Zeroizing::new(token.into()),
+        }
+    }
+}
+
+impl AuthStrategy for BearerAuth {
+    fn apply(&self, request: &mut HttpRequest) {
+        request
+            .headers
+            .push(("Authorization".into(), format!("Bearer {}", *self.token)));
+    }
+}
+
 /// No credentials — guest routes, where the server enables them.
 pub struct NoAuth;
 
@@ -61,6 +87,13 @@ mod tests {
             req.header("authorization"),
             Some("Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==")
         );
+    }
+
+    #[test]
+    fn bearer_auth_sets_rfc6750_header() {
+        let mut req = HttpRequest::new("GET", "https://example.com".into());
+        BearerAuth::new("mF_9.B5f-4.1JqM").apply(&mut req);
+        assert_eq!(req.header("authorization"), Some("Bearer mF_9.B5f-4.1JqM"));
     }
 
     #[test]

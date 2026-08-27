@@ -18,6 +18,12 @@ use ureq::Agent;
 #[derive(Debug, Clone)]
 pub struct UreqTransport {
     agent: Agent,
+    /// The outbound allowlist (doc 05): when set, requests to any
+    /// other host are refused before a socket opens. At most two
+    /// entries — the configured OTS server and the sync relay — and
+    /// the cap is structural: [`UreqTransport::bounded`] is the only
+    /// way to set it.
+    allowed_hosts: Option<[String; 2]>,
 }
 
 impl Default for UreqTransport {
@@ -33,8 +39,33 @@ impl UreqTransport {
         let config = Agent::config_builder().http_status_as_error(false).build();
         Self {
             agent: config.into(),
+            allowed_hosts: None,
         }
     }
+
+    /// A transport bounded to exactly the network boundary of doc 05:
+    /// the configured OTS server and the sync relay, and no third
+    /// destination — the allowlist widened from one entry to two
+    /// rather than removed (ADR-0021). Hosts are compared exactly
+    /// (case-insensitive), port included when the URL carries one.
+    #[must_use]
+    pub fn bounded(server_host: &str, relay_host: &str) -> Self {
+        let mut transport = Self::new();
+        transport.allowed_hosts = Some([
+            server_host.to_ascii_lowercase(),
+            relay_host.to_ascii_lowercase(),
+        ]);
+        transport
+    }
+}
+
+/// The `host[:port]` part of an `https://` URL, lowercased; `None` for
+/// anything unparseable, which the caller refuses.
+fn host_of(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("https://")?;
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let host = &rest[..end];
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
 }
 
 impl Transport for UreqTransport {
@@ -46,6 +77,16 @@ impl Transport for UreqTransport {
                 "refusing a non-TLS request to {} (network boundary, docs/spec/05)",
                 request.url
             )));
+        }
+        if let Some(allowed) = &self.allowed_hosts {
+            let host = host_of(&request.url).ok_or_else(|| {
+                TransportError(format!("unparseable request URL {}", request.url))
+            })?;
+            if !allowed.contains(&host) {
+                return Err(TransportError(format!(
+                    "refusing a request to {host}: not in the two-destination allowlist (network boundary, docs/spec/05)"
+                )));
+            }
         }
 
         let mut builder = ureq::http::Request::builder()
@@ -84,5 +125,24 @@ mod tests {
         let request = Api::new("http://insecure.example", Box::new(NoAuth)).status_request();
         let err = transport.send(request).unwrap_err();
         assert!(err.0.contains("non-TLS"));
+    }
+
+    #[test]
+    fn bounded_refuses_a_third_destination_before_any_socket_opens() {
+        let transport = UreqTransport::bounded("eu.onetimesecret.com", "relay.onetimesecret.com");
+        let request = Api::new("https://elsewhere.example", Box::new(NoAuth)).status_request();
+        let err = transport.send(request).unwrap_err();
+        assert!(err.0.contains("allowlist"), "{}", err.0);
+    }
+
+    #[test]
+    fn bounded_compares_hosts_not_prefixes() {
+        let transport = UreqTransport::bounded("eu.onetimesecret.com", "relay.onetimesecret.com");
+        let request = Api::new(
+            "https://eu.onetimesecret.com.evil.example",
+            Box::new(NoAuth),
+        )
+        .status_request();
+        assert!(transport.send(request).is_err());
     }
 }
