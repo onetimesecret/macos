@@ -227,8 +227,12 @@ cannot cause to be opened.
 The pairing ceremony (`crates/ffi/src/pairing.rs`, issue #97) needs a
 rendezvous before the joiner can read the channel; the mailbox is that
 rendezvous and nothing more. Commitment, offer, reveal, acceptance and
-grant travel as `POST /channel/pairing` bodies, fetched by polling
-`GET /channel/pairing?since=`. Every field is public-key material,
+grant travel as `POST /channel/pairing` bodies — tagged JSON with hex
+fields, `MailboxMessage` in `pairing.rs` — fetched by polling
+`GET /channel/pairing?since=`, which answers
+`{messages: [body, …], next_seq}`: every stored body since the cursor,
+verbatim and unparsed, in arrival order (shape pinned 2026-08-27, with
+the client that reads it). Every field is public-key material,
 commitments, signatures, or AEAD ciphertext sealed to the exchange; the
 byte-scan test in `pairing.rs` is the standing proof, and the human SAS
 comparison is what defeats a relay that substitutes messages. The

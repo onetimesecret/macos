@@ -12,14 +12,24 @@
 //! the engine hands up states, and issue #102's surface owns the
 //! words.
 
-use std::time::Duration;
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use companion_core::{HoldRegister, ItemId, SheetId};
 use companion_credentials::CredentialStore;
 use companion_sync::TokenKeeper;
 use companion_sync::loopback::OneShotListener;
 use companion_sync::oauth::{AuthCeremony, SyncAuthError, TokenGrant, parse_token_response};
-use ots_client::Transport;
+use companion_sync::relay::RelayRefusal;
+use ots_client::{HttpResponse, Transport};
+use ring::signature::Ed25519KeyPair;
 use zeroize::Zeroizing;
+
+use crate::diagnostics::diag_fault;
+use crate::gop::GopKeyChain;
+use crate::pairing::{self, MailboxMessage};
+use crate::sync_session::{KeyPackageKeeper, SyncEvent, SyncSession, sheet_of};
+use crate::{Companion, CompanionHandle};
 
 /// Where the sync refresh token rests: its own account in the
 /// key-material store (account-auth.md §3, ADR-0021 §3), beside — and
@@ -88,17 +98,88 @@ fn host_of(url: &str) -> &str {
 /// Everything sync holds behind the handle. Default is all-off: a
 /// handle that never configures sync is bit-for-bit today's app
 /// (issue #102's first criterion).
-#[derive(Default)]
 pub(crate) struct SyncState {
     /// Endpoints and client id; `None` until the shell configures.
     pub config: Option<SyncConfig>,
     /// The token keeper, built at configure from the persisted refresh
-    /// token — a relaunch resumes signed in without a browser.
+    /// token — a relaunch resumes signed in without a browser. Moves
+    /// into the session at attach and comes back at detach.
     pub keeper: Option<TokenKeeper>,
     /// A sign-in ceremony begun and not yet finished: the PKCE state
     /// and the bound listener, waiting for the finish call to take
     /// them off-lock and block on the redirect.
     pub pending_signin: Option<PendingSignin>,
+    /// The attached engine: session, chain, and key packages. `None`
+    /// while sync is off or detached.
+    pub engine: Option<EngineState>,
+    /// The pages the user shares to this channel, with the cursor and
+    /// last-published policy state per page. Enrolment is per page and
+    /// off by default (relay protocol §1).
+    pub enrolled: BTreeMap<ItemId, PageTracking>,
+    /// A pairing ceremony in flight over the relay mailbox.
+    pub pairing: Option<PairingState>,
+    /// Where the engine's relative clock starts: monotonic, so the
+    /// publish and ballot windows cannot jump with the wall clock.
+    origin: Instant,
+}
+
+impl Default for SyncState {
+    fn default() -> Self {
+        Self {
+            config: None,
+            keeper: None,
+            pending_signin: None,
+            engine: None,
+            enrolled: BTreeMap::new(),
+            pairing: None,
+            origin: Instant::now(),
+        }
+    }
+}
+
+impl SyncState {
+    /// Milliseconds on the engine's own monotonic clock.
+    pub(crate) fn now_ms(&self) -> u64 {
+        u64::try_from(self.origin.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+}
+
+/// The attached engine: what exists between an attach and a detach.
+pub(crate) struct EngineState {
+    pub session: SyncSession,
+    pub chain: GopKeyChain,
+    pub packages: KeyPackageKeeper,
+    /// A committed ceremony's frame the relay has not yet accepted:
+    /// kept until a 2xx or 409, so a dropped round retries.
+    pub unpublished_frame: Option<Vec<u8>>,
+}
+
+/// Per enrolled page: the delta cursor and what was last published for
+/// it, so the sweep queues changes and only changes.
+pub(crate) struct PageTracking {
+    /// The frontier the last export left; the pristine cursor at
+    /// enrolment, so the first publish carries the whole page.
+    pub frontier: Vec<u8>,
+    /// The deadline the last published expiry policy named.
+    pub deadline_wall_ms: Option<u64>,
+    /// The hold register as last published.
+    pub hold: Option<HoldRegister>,
+    /// Whether this device already published the page's terminal
+    /// marker.
+    pub terminal_sent: bool,
+}
+
+impl PageTracking {
+    fn at_enrolment() -> Self {
+        Self {
+            frontier:
+                companion_core::SheetStore::<companion_core::SystemClock>::pristine_document_version(
+                ),
+            deadline_wall_ms: None,
+            hold: None,
+            terminal_sent: false,
+        }
+    }
 }
 
 /// A begun sign-in ceremony: consumed whole by the finish, dropped
@@ -214,11 +295,1144 @@ pub(crate) fn signed_in(credentials: &dyn CredentialStore) -> bool {
         .unwrap_or(false)
 }
 
+// ---------------------------------------------------------------------
+// The engine driver (issue #102): enrolment, attach, and the pump
+// ---------------------------------------------------------------------
+
+/// Tolerance under which a re-read expiry deadline counts as the one
+/// already published: `anchor + remaining` is constant while nothing
+/// touches the page, modulo the milliseconds the two clock reads
+/// straddle.
+const DEADLINE_JITTER_MS: u64 = 1_000;
+
+/// Unix epoch milliseconds, for the wall stamps peers read (pairing
+/// times, terminal markers). Never an input to expiry math — that
+/// stays the store's clock discipline.
+fn wall_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
+/// Enrol a page into the channel, or withdraw it. Enrolling defers
+/// its compaction to the coordinated ceremony and starts its cursor
+/// at the pristine frontier, so the first publish carries the whole
+/// page; withdrawing returns it to solo behaviour, performing any due
+/// ceremony on the spot (`SheetStore::set_compaction_deferred`).
+pub(crate) fn enrol_page(companion: &mut Companion, sheet: SheetId, enrolled: bool) -> bool {
+    let Some(page) = companion
+        .store
+        .sheet(sheet)
+        .map(companion_core::Sheet::uuid)
+    else {
+        return false;
+    };
+    if enrolled {
+        if !companion.store.set_compaction_deferred(sheet, true) {
+            return false;
+        }
+        companion
+            .sync
+            .enrolled
+            .entry(page)
+            .or_insert_with(PageTracking::at_enrolment);
+    } else {
+        let _ = companion.store.set_compaction_deferred(sheet, false);
+        companion.sync.enrolled.remove(&page);
+    }
+    true
+}
+
+/// The reasons an attach can refuse, as machine tokens.
+type Refusal = &'static str;
+
+/// Attach to the channel, building the engine if none stands:
+/// identity and channel secret ensured (the first device to enable
+/// sync founds the channel; a joiner's secret arrives by pairing and
+/// overwrites), a fresh key package minted and published. Blocking —
+/// the caller runs it off the main thread. Re-attaching with an
+/// engine standing keeps the session and chain and republishes a
+/// fresh package, which is the move after a ceremony spends one.
+pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
+    if let Err(reason) = ensure_engine(handle) {
+        return serde_json::json!({ "ok": false, "reason": reason });
+    }
+    if let Err(reason) = ensure_access(handle) {
+        return serde_json::json!({ "ok": false, "reason": reason });
+    }
+    // Build the attach request under the lock, send it off-lock, and
+    // absorb; one refresh-and-retry on a 401, per account-auth.md §2.
+    for retry in [false, true] {
+        let staged = {
+            let Ok(mut guard) = handle.inner.lock() else {
+                return serde_json::json!({ "ok": false, "reason": "poisoned" });
+            };
+            let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
+            let Some(engine) = guard.sync.engine.as_mut() else {
+                return serde_json::json!({ "ok": false, "reason": "not_attached" });
+            };
+            engine
+                .session
+                .attach_request(&engine.packages.package().clone())
+                .zip(transport)
+        };
+        let Some((request, transport)) = staged else {
+            return serde_json::json!({ "ok": false, "reason": "signed_out" });
+        };
+        let Ok(response) = transport.send(request) else {
+            return serde_json::json!({ "ok": false, "reason": "unreachable" });
+        };
+        let Ok(mut guard) = handle.inner.lock() else {
+            return serde_json::json!({ "ok": false, "reason": "poisoned" });
+        };
+        let Some(engine) = guard.sync.engine.as_mut() else {
+            return serde_json::json!({ "ok": false, "reason": "not_attached" });
+        };
+        match engine.session.absorb_attach(&response) {
+            Ok(()) => {
+                return serde_json::json!({
+                    "ok": true,
+                    "epoch": engine.session.attach_epoch(),
+                    "frame_present": engine.session.frame_present(),
+                    "peers": engine.session.attach_roster().len(),
+                });
+            }
+            Err(RelayRefusal::Unauthorized) if !retry => {
+                drop(guard);
+                if let Err(reason) = ensure_access(handle) {
+                    return serde_json::json!({ "ok": false, "reason": reason });
+                }
+            }
+            Err(RelayRefusal::Unauthorized) => {
+                return serde_json::json!({ "ok": false, "reason": "signed_out" });
+            }
+            Err(_) => return serde_json::json!({ "ok": false, "reason": "refused" }),
+        }
+    }
+    serde_json::json!({ "ok": false, "reason": "refused" })
+}
+
+/// Detach: tell the relay (best effort — attachments age out
+/// regardless, §3) and dissolve the engine, handing the keeper back
+/// so the sign-in survives. Blocking for the one round-trip.
+pub(crate) fn detach(handle: &CompanionHandle) -> bool {
+    let staged = {
+        let Ok(mut guard) = handle.inner.lock() else {
+            return false;
+        };
+        let Some(engine) = guard.sync.engine.take() else {
+            return false;
+        };
+        guard.sync.pairing = None;
+        let keeper = engine.session.into_keeper();
+        let request = keeper.access().map(|access| {
+            let relay_url = guard
+                .sync
+                .config
+                .as_ref()
+                .map_or(String::new(), |config| config.relay_url.clone());
+            companion_sync::RelayApi::new(relay_url)
+                .detach_request(&ots_client::BearerAuth::new(access))
+        });
+        let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
+        guard.sync.keeper = Some(keeper);
+        request.zip(transport)
+    };
+    if let Some((request, transport)) = staged {
+        let _ = transport.send(request);
+    }
+    true
+}
+
+/// Build the engine if none stands. Requires configuration and a
+/// sign-in; mints what pairing has not delivered — the founder path.
+fn ensure_engine(handle: &CompanionHandle) -> Result<(), Refusal> {
+    let Ok(mut guard) = handle.inner.lock() else {
+        return Err("poisoned");
+    };
+    let Some(config) = &guard.sync.config else {
+        return Err("not_configured");
+    };
+    let relay_url = config.relay_url.clone();
+    let credentials = &*guard.credentials;
+    let Some(pkcs8) = pairing::ensure_device_identity(credentials) else {
+        return Err("keychain");
+    };
+    let Some(fingerprint) = pairing::device_fingerprint(credentials) else {
+        return Err("keychain");
+    };
+    let Some(secret) = pairing::ensure_channel_secret(credentials, true) else {
+        return Err("keychain");
+    };
+    let Some(packages) = KeyPackageKeeper::mint(&pkcs8) else {
+        return Err("keychain");
+    };
+    if let Some(engine) = guard.sync.engine.as_mut() {
+        // Re-attach: fresh package, standing session and chain.
+        engine.packages = packages;
+        return Ok(());
+    }
+    let Some(keeper) = guard.sync.keeper.take() else {
+        return Err("not_configured");
+    };
+    if !keeper.signed_in() {
+        guard.sync.keeper = Some(keeper);
+        return Err("signed_out");
+    }
+    let Some(chain) = GopKeyChain::root(&secret) else {
+        guard.sync.keeper = Some(keeper);
+        return Err("keychain");
+    };
+    let session = SyncSession::new(&relay_url, keeper, &fingerprint);
+    guard.sync.engine = Some(EngineState {
+        session,
+        chain,
+        packages,
+        unpublished_frame: None,
+    });
+    Ok(())
+}
+
+/// Make sure an access token is held, refreshing over the wire if
+/// not. `Err("signed_out")` performs the sign-out: the persisted
+/// refresh token is deleted and the engine dissolved, because a
+/// refused refresh means re-enrolment is the only way back
+/// (account-auth.md §2).
+fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
+    let staged = {
+        let Ok(mut guard) = handle.inner.lock() else {
+            return Err("poisoned");
+        };
+        let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
+        let Some(engine) = guard.sync.engine.as_mut() else {
+            return Err("not_attached");
+        };
+        if engine.session.keeper_mut().access().is_some() {
+            return Ok(());
+        }
+        match engine.session.refresh_request() {
+            Ok(request) => {
+                let Some(transport) = transport else {
+                    return Err("not_configured");
+                };
+                (request, transport)
+            }
+            Err(_) => {
+                sign_out_locked(&mut guard);
+                return Err("signed_out");
+            }
+        }
+    };
+    let (request, transport) = staged;
+    let Ok(response) = transport.send(request) else {
+        return Err("unreachable");
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return Err("poisoned");
+    };
+    let Some(engine) = guard.sync.engine.as_mut() else {
+        return Err("not_attached");
+    };
+    match engine.session.absorb_refresh(&response) {
+        Ok(rotated) => {
+            if !store_refresh(&*guard.credentials, &rotated) {
+                diag_fault!("the credential store refused the rotated sync refresh token");
+            }
+            Ok(())
+        }
+        Err(_) => {
+            sign_out_locked(&mut guard);
+            Err("signed_out")
+        }
+    }
+}
+
+/// The sign-out that a refused refresh performs: delete the persisted
+/// token, dissolve the engine, and leave a signed-out keeper so
+/// status tells the truth. The pad is unaffected.
+fn sign_out_locked(companion: &mut Companion) {
+    let _ = clear_refresh(&*companion.credentials);
+    companion.sync.engine = None;
+    companion.sync.pairing = None;
+    if let Some(config) = &companion.sync.config {
+        companion.sync.keeper = Some(TokenKeeper::new(&config.token_url, &config.client_id, None));
+    }
+}
+
+/// One outbound sweep over the enrolled pages, under the lock and off
+/// the network: queue fresh document deltas past each cursor, the
+/// expiry policy when its deadline moved (the sum is constant while
+/// nothing touches the page, so a move is a gesture), the hold
+/// register when it changed, and the terminal marker once for a page
+/// that died here. A due ceremony — a deferred rung transition, or
+/// the proposal a terminal marker owes (§5) — rotates the channel:
+/// a ballot to the verified attached peers, or solo when the room is
+/// empty.
+pub(crate) fn sweep_outbound(
+    companion: &mut Companion,
+    now_ms: u64,
+    events: &mut Vec<serde_json::Value>,
+) {
+    let wall_ms = companion.store.wall_ms();
+    let Companion {
+        store,
+        sync,
+        credentials,
+        ..
+    } = companion;
+    let SyncState {
+        engine, enrolled, ..
+    } = sync;
+    let Some(engine) = engine.as_mut() else {
+        return;
+    };
+    let mut rotate = false;
+    let mut target: Option<ItemId> = None;
+    for (page, tracking) in enrolled.iter_mut() {
+        match sheet_of(store, *page) {
+            Some(sheet) => {
+                if let Some(version) = store.document_version(sheet)
+                    && version != tracking.frontier
+                    && let Some(update) = store.export_document_updates(sheet, &tracking.frontier)
+                {
+                    engine.session.queue_ops(*page, &update);
+                    tracking.frontier = version;
+                }
+                if let Some(policy) = store.expiry_policy(sheet) {
+                    let deadline = policy.deadline_wall_ms();
+                    let moved = tracking
+                        .deadline_wall_ms
+                        .is_none_or(|last| deadline.abs_diff(last) > DEADLINE_JITTER_MS);
+                    if moved {
+                        engine.session.queue_expiry(*page, policy);
+                        tracking.deadline_wall_ms = Some(deadline);
+                    }
+                }
+                if let Some(register) = store.hold_register(sheet)
+                    && tracking.hold != Some(register)
+                {
+                    engine.session.queue_hold(*page, register);
+                    tracking.hold = Some(register);
+                }
+                if store.ceremony_due(sheet) {
+                    rotate = true;
+                    target = target.or(Some(*page));
+                } else if target.is_none() {
+                    target = Some(*page);
+                }
+            }
+            None => {
+                // The page died here. Publish its signed terminal
+                // marker once — the gate refuses until this device's
+                // view is current with the channel, and while a hold
+                // stands elsewhere — then propose the ceremony §5 says
+                // follows a marker, so the dead page's ciphertext
+                // stops opening at the earliest boundary.
+                if !tracking.terminal_sent
+                    && let Some(marker) = signed_terminal_marker(&**credentials, *page, wall_ms)
+                    && engine.session.queue_terminal(*page, &marker)
+                {
+                    tracking.terminal_sent = true;
+                    rotate = true;
+                }
+            }
+        }
+    }
+    if rotate && let Some(target) = target {
+        rotate_channel(store, engine, &**credentials, target, now_ms, events);
+    }
+}
+
+/// Rotate the channel at `target`: a ballot to the verified attached
+/// peers when any are in the room, the solo one-event otherwise. The
+/// attach roster admits nobody without a pairing record
+/// ([`SyncSession::ceremony_peers`]), so a revoked device is left
+/// behind by construction.
+fn rotate_channel(
+    store: &mut companion_core::SheetStore<companion_core::SystemClock>,
+    engine: &mut EngineState,
+    credentials: &dyn CredentialStore,
+    target: ItemId,
+    now_ms: u64,
+    events: &mut Vec<serde_json::Value>,
+) {
+    let identities: Vec<(String, Vec<u8>)> = pairing::peer_records(credentials)
+        .into_iter()
+        .map(|record| (record.fingerprint, record.identity_pub))
+        .collect();
+    let peers = engine.session.ceremony_peers(&identities);
+    let page = crate::sync_session::page_wire_id(target);
+    if peers.is_empty() {
+        if engine
+            .session
+            .solo_ceremony(target, store, &mut engine.chain)
+        {
+            events.push(serde_json::json!({ "kind": "ceremony_committed", "page": page }));
+        }
+    } else {
+        let own = engine.packages.package().clone();
+        if engine
+            .session
+            .propose_ceremony(target, &peers, &own, now_ms)
+        {
+            events.push(serde_json::json!({ "kind": "ceremony_proposed", "page": page }));
+        }
+    }
+}
+
+/// A terminal marker this device may publish: the page id and the
+/// wall stamp, signed by the device identity — the seam owns the
+/// signature, the core owns the claim (`companion_core::TerminalMarker`).
+fn signed_terminal_marker(
+    credentials: &dyn CredentialStore,
+    page: ItemId,
+    at_wall_ms: u64,
+) -> Option<Vec<u8>> {
+    let pkcs8 = pairing::ensure_device_identity(credentials)?;
+    let identity = Ed25519KeyPair::from_pkcs8(&pkcs8).ok()?;
+    let mut marker = page.as_bytes().to_vec();
+    marker.extend_from_slice(&at_wall_ms.to_be_bytes());
+    let signature = identity.sign(&marker);
+    marker.extend_from_slice(signature.as_ref());
+    Some(marker)
+}
+
+/// One pump: the engine loop's whole body, run from a background
+/// queue on the shell's cadence. Sweeps the enrolled pages, publishes
+/// what the 2-second clock owes, long-polls the delta stream for up
+/// to `wait_seconds`, walks the ballot patience, and publishes a
+/// committed ceremony's frame. Blocking for up to the whole
+/// long-poll; the core mutex is held only between round-trips, so
+/// the pad never waits on the network.
+pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::Value {
+    let mut events: Vec<serde_json::Value> = Vec::new();
+    if let Err(reason) = ensure_access(handle) {
+        return pump_result(handle, Some(reason), &events);
+    }
+
+    // Outbound: sweep, ballot patience, and the publish batch.
+    let staged = {
+        let Ok(mut guard) = handle.inner.lock() else {
+            return pump_result(handle, Some("poisoned"), &events);
+        };
+        let now = guard.sync.now_ms();
+        sweep_outbound(&mut guard, now, &mut events);
+        let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
+        let Some(engine) = guard.sync.engine.as_mut() else {
+            return pump_result(handle, Some("not_attached"), &events);
+        };
+        engine.session.tick(now);
+        let publish = engine
+            .session
+            .publish_due(now)
+            .then(|| {
+                let EngineState { session, chain, .. } = engine;
+                session.publish_request(now, chain)
+            })
+            .flatten();
+        publish.zip(transport)
+    };
+    if let Some((request, transport)) = staged {
+        publish_round(handle, &transport, request, &mut events);
+    }
+
+    // Inbound: the long poll.
+    let staged = {
+        let Ok(guard) = handle.inner.lock() else {
+            return pump_result(handle, Some("poisoned"), &events);
+        };
+        let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
+        guard
+            .sync
+            .engine
+            .as_ref()
+            .and_then(|engine| engine.session.fetch_request(wait_seconds))
+            .zip(transport)
+    };
+    let mut committed = false;
+    if let Some((request, transport)) = staged {
+        match transport.send(request) {
+            Err(_) => events.push(serde_json::json!({ "kind": "unreachable" })),
+            Ok(response) => {
+                let Ok(mut guard) = handle.inner.lock() else {
+                    return pump_result(handle, Some("poisoned"), &events);
+                };
+                let now = guard.sync.now_ms();
+                let Companion { store, sync, .. } = &mut *guard;
+                if let Some(engine) = sync.engine.as_mut() {
+                    let EngineState {
+                        session,
+                        chain,
+                        packages,
+                        ..
+                    } = engine;
+                    match session.absorb_deltas(&response, store, chain, packages, now) {
+                        Ok(absorbed) => {
+                            committed = absorbed
+                                .iter()
+                                .any(|event| matches!(event, SyncEvent::CeremonyCommitted(_)));
+                            events.extend(absorbed.iter().map(event_json));
+                        }
+                        // A 401 here refreshes at the next pump's top.
+                        Err(RelayRefusal::Unauthorized) => {}
+                        Err(refusal) => events.push(refusal_json(&refusal)),
+                    }
+                }
+            }
+        }
+    }
+
+    // A committed ceremony spent the one-shot key package (on the
+    // follower side) — republish a fresh one so the next proposal can
+    // reach this device.
+    if committed {
+        let _ = attach(handle);
+    }
+
+    // A committed ceremony's frame supersedes at the relay: that
+    // acceptance is the purge. Kept until a 2xx (or a 409 — a peer's
+    // copy won, equally final) so a dropped round retries next pump.
+    let staged = {
+        let Ok(mut guard) = handle.inner.lock() else {
+            return pump_result(handle, Some("poisoned"), &events);
+        };
+        let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
+        guard
+            .sync
+            .engine
+            .as_mut()
+            .and_then(|engine| {
+                if let Some(frame) = engine.session.take_frame() {
+                    engine.unpublished_frame = Some(frame);
+                }
+                let frame = engine.unpublished_frame.as_deref()?;
+                let EngineState { session, chain, .. } = engine;
+                session.publish_frame_request(chain, frame)
+            })
+            .zip(transport)
+    };
+    if let Some((request, transport)) = staged
+        && let Ok(response) = transport.send(request)
+        && (response.status == 409 || (200..300).contains(&response.status))
+    {
+        let Ok(mut guard) = handle.inner.lock() else {
+            return pump_result(handle, Some("poisoned"), &events);
+        };
+        if let Some(engine) = guard.sync.engine.as_mut() {
+            engine.unpublished_frame = None;
+        }
+    }
+
+    pump_result(handle, None, &events)
+}
+
+/// Send one publish batch, absorbing the answer; a `401` refreshes
+/// and retries the one request, everything else is an event.
+fn publish_round(
+    handle: &CompanionHandle,
+    transport: &companion_transport::UreqTransport,
+    request: ots_client::HttpRequest,
+    events: &mut Vec<serde_json::Value>,
+) {
+    let Ok(response) = transport.send(request) else {
+        events.push(serde_json::json!({ "kind": "unreachable" }));
+        return;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return;
+    };
+    let Some(engine) = guard.sync.engine.as_mut() else {
+        return;
+    };
+    match engine.session.absorb_publish(&response) {
+        Ok(()) => {}
+        Err(RelayRefusal::Unauthorized) => {
+            drop(guard);
+            if ensure_access(handle).is_err() {
+                return;
+            }
+            // The batch is still in flight; rebuild its request at the
+            // now-refreshed auth and send the one retry §2 allows.
+            let staged = {
+                let Ok(mut guard) = handle.inner.lock() else {
+                    return;
+                };
+                let now = guard.sync.now_ms();
+                let Some(engine) = guard.sync.engine.as_mut() else {
+                    return;
+                };
+                let EngineState { session, chain, .. } = engine;
+                session.publish_request(now, chain)
+            };
+            let Some(rebuilt) = staged else {
+                return;
+            };
+            let Ok(response) = transport.send(rebuilt) else {
+                events.push(serde_json::json!({ "kind": "unreachable" }));
+                return;
+            };
+            let Ok(mut guard) = handle.inner.lock() else {
+                return;
+            };
+            if let Some(engine) = guard.sync.engine.as_mut()
+                && let Err(refusal) = engine.session.absorb_publish(&response)
+            {
+                events.push(refusal_json(&refusal));
+            }
+        }
+        Err(refusal) => {
+            if matches!(refusal, RelayRefusal::CeremonyRequired) {
+                // The §3 cap: nothing publishes until a ceremony
+                // compacts, so rotate now rather than on the next
+                // transition.
+                let now = guard.sync.now_ms();
+                let Companion {
+                    store,
+                    sync,
+                    credentials,
+                    ..
+                } = &mut *guard;
+                let SyncState {
+                    engine, enrolled, ..
+                } = sync;
+                if let Some(engine) = engine.as_mut()
+                    && let Some(target) = enrolled.keys().next().copied()
+                {
+                    rotate_channel(store, engine, &**credentials, target, now, events);
+                }
+            }
+            events.push(refusal_json(&refusal));
+        }
+    }
+}
+
+fn event_json(event: &SyncEvent) -> serde_json::Value {
+    let page = |page: &ItemId| crate::sync_session::page_wire_id(*page);
+    match event {
+        SyncEvent::Applied(id) => serde_json::json!({ "kind": "applied", "page": page(id) }),
+        SyncEvent::CountdownMoved(id) => {
+            serde_json::json!({ "kind": "countdown_moved", "page": page(id) })
+        }
+        SyncEvent::Terminal(id) => serde_json::json!({ "kind": "terminal", "page": page(id) }),
+        SyncEvent::RejoinRequired => serde_json::json!({ "kind": "rejoin_required" }),
+        SyncEvent::CeremonyCommitted(id) => {
+            serde_json::json!({ "kind": "ceremony_committed", "page": page(id) })
+        }
+        SyncEvent::SignedOut => serde_json::json!({ "kind": "signed_out" }),
+    }
+}
+
+fn refusal_json(refusal: &RelayRefusal) -> serde_json::Value {
+    let kind = match refusal {
+        RelayRefusal::Unauthorized => "unauthorized",
+        RelayRefusal::EpochConflict => "epoch_conflict",
+        RelayRefusal::Rejoin => "rejoin_required",
+        RelayRefusal::CeremonyRequired => "ceremony_required",
+        RelayRefusal::Protocol(_) => "protocol",
+    };
+    serde_json::json!({ "kind": kind })
+}
+
+/// The pump's result: what happened and where sync now stands, one
+/// JSON for the shell's status surface.
+fn pump_result(
+    handle: &CompanionHandle,
+    reason: Option<&'static str>,
+    events: &[serde_json::Value],
+) -> serde_json::Value {
+    let state = handle
+        .inner
+        .lock()
+        .map_or(serde_json::Value::Null, |guard| status_json(&guard));
+    serde_json::json!({
+        "ok": reason.is_none(),
+        "reason": reason,
+        "events": events,
+        "state": state,
+    })
+}
+
+/// Sync's standing state: existence checks and in-memory reads only,
+/// so rendering Settings never decrypts a credential or waits on the
+/// network.
+pub(crate) fn status_json(companion: &Companion) -> serde_json::Value {
+    let sync = &companion.sync;
+    let signed_in = sync.engine.as_ref().map_or_else(
+        || {
+            sync.keeper.as_ref().map_or_else(
+                || signed_in(&*companion.credentials),
+                TokenKeeper::signed_in,
+            )
+        },
+        |engine| engine.session.signed_in(),
+    );
+    serde_json::json!({
+        "configured": sync.config.is_some(),
+        "signed_in": signed_in,
+        "signin_pending": sync.pending_signin.is_some(),
+        "attached": sync.engine.as_ref().is_some_and(|engine| engine.session.attached()),
+        "epoch": sync.engine.as_ref().map(|engine| engine.chain.epoch()),
+        "frame_present": sync.engine.as_ref().and_then(|engine| engine.session.frame_present()),
+        "enrolled": sync.enrolled.len(),
+        "pairing": sync.pairing.as_ref().map(|flow| stage_word(&flow.step)),
+    })
+}
+
+/// The device list: every peer a human verified here, joined with the
+/// attach roster's times, plus this device and any attached-but-
+/// unverified stranger — attach-list truth and pairing truth, each
+/// labelled as what it is.
+pub(crate) fn devices_json(companion: &Companion) -> serde_json::Value {
+    let records = pairing::peer_records(&*companion.credentials);
+    let roster = companion
+        .sync
+        .engine
+        .as_ref()
+        .map_or(&[][..], |engine| engine.session.attach_roster());
+    let own = pairing::stored_device_fingerprint(&*companion.credentials);
+    let mut devices: Vec<serde_json::Value> = Vec::new();
+    if let Some(fingerprint) = &own {
+        devices.push(serde_json::json!({
+            "fingerprint": fingerprint,
+            "label": "",
+            "this_device": true,
+            "verified": true,
+            "paired_wall_ms": null,
+            "attached_ms": null,
+        }));
+    }
+    for record in &records {
+        let attached_ms = roster
+            .iter()
+            .find(|peer| peer.device == record.fingerprint)
+            .map(|peer| peer.attached_ms);
+        devices.push(serde_json::json!({
+            "fingerprint": record.fingerprint,
+            "label": record.label,
+            "this_device": false,
+            "verified": true,
+            "paired_wall_ms": record.paired_wall_ms,
+            "attached_ms": attached_ms,
+        }));
+    }
+    for peer in roster {
+        let known = Some(&peer.device) == own.as_ref()
+            || records
+                .iter()
+                .any(|record| record.fingerprint == peer.device);
+        if !known {
+            devices.push(serde_json::json!({
+                "fingerprint": peer.device,
+                "label": "",
+                "this_device": false,
+                "verified": false,
+                "paired_wall_ms": null,
+                "attached_ms": peer.attached_ms,
+            }));
+        }
+    }
+    serde_json::json!({ "devices": devices })
+}
+
+// ---------------------------------------------------------------------
+// Pairing over the mailbox (issue #97's ceremony, §7's rendezvous)
+// ---------------------------------------------------------------------
+
+/// A pairing ceremony in flight: the state machine between mailbox
+/// polls. One at a time — the mailbox holds one pairing, and so does
+/// this.
+pub(crate) struct PairingState {
+    /// Mailbox cursor for the next fetch.
+    since: u64,
+    /// Wire messages queued for posting, drained by the poll and kept
+    /// on a transport failure so the next poll retries.
+    outgoing: Vec<serde_json::Value>,
+    step: PairingStep,
+}
+
+enum PairingStep {
+    /// Inviter: commitment posted, waiting for the joiner's offer.
+    InviterWaitOffer(pairing::Inviter),
+    /// Inviter settled: the SAS is on screen; the grant waits for the
+    /// joiner's acceptance signature AND this human's confirmation,
+    /// in either order.
+    InviterWaitAcceptance {
+        settled: pairing::Settled,
+        acceptance_ok: bool,
+        human_confirmed: bool,
+    },
+    /// Joiner: waiting for a commitment to answer.
+    JoinerWaitCommitment { pkcs8: Zeroizing<Vec<u8>> },
+    /// Joiner: offer posted, waiting for the reveal.
+    JoinerWaitReveal(pairing::Joiner),
+    /// Joiner settled: the SAS is on screen; the acceptance posts
+    /// only after this human confirms.
+    JoinerSasConfirm {
+        settled: pairing::Settled,
+        acceptance: pairing::Acceptance,
+    },
+    /// Joiner confirmed: waiting for the grant.
+    JoinerWaitGrant { settled: pairing::Settled },
+    /// The ceremony completed; the record is written.
+    Done,
+    /// The ceremony failed; nothing was stored.
+    Failed(&'static str),
+}
+
+fn stage_word(step: &PairingStep) -> &'static str {
+    match step {
+        PairingStep::InviterWaitOffer(_)
+        | PairingStep::JoinerWaitCommitment { .. }
+        | PairingStep::JoinerWaitReveal(_) => "waiting",
+        PairingStep::InviterWaitAcceptance {
+            human_confirmed: false,
+            ..
+        }
+        | PairingStep::JoinerSasConfirm { .. } => "sas",
+        PairingStep::InviterWaitAcceptance { .. } | PairingStep::JoinerWaitGrant { .. } => {
+            "confirmed"
+        }
+        PairingStep::Done => "done",
+        PairingStep::Failed(_) => "failed",
+    }
+}
+
+fn stage_json(flow: &PairingState) -> serde_json::Value {
+    let sas = match &flow.step {
+        PairingStep::InviterWaitAcceptance {
+            settled,
+            human_confirmed: false,
+            ..
+        }
+        | PairingStep::JoinerSasConfirm { settled, .. } => Some(settled.sas().to_owned()),
+        _ => None,
+    };
+    let reason = match flow.step {
+        PairingStep::Failed(reason) => Some(reason),
+        _ => None,
+    };
+    serde_json::json!({
+        "stage": stage_word(&flow.step),
+        "sas": sas,
+        "reason": reason,
+    })
+}
+
+/// Begin inviting: this attached, paired-or-founding device offers
+/// the channel to a new one. Posts the commitment on the next poll.
+pub(crate) fn invite_begin(companion: &mut Companion) -> Result<(), Refusal> {
+    pairing_begin(companion, true)
+}
+
+/// Begin joining: this signed-in, attached device waits for an
+/// inviter's commitment.
+pub(crate) fn join_begin(companion: &mut Companion) -> Result<(), Refusal> {
+    pairing_begin(companion, false)
+}
+
+fn pairing_begin(companion: &mut Companion, inviter: bool) -> Result<(), Refusal> {
+    if companion.sync.engine.is_none() {
+        return Err("not_attached");
+    }
+    if companion.sync.pairing.is_some() {
+        return Err("busy");
+    }
+    let Some(pkcs8) = pairing::ensure_device_identity(&*companion.credentials) else {
+        return Err("keychain");
+    };
+    let (outgoing, step) = if inviter {
+        let Some((state, commitment)) = pairing::Inviter::begin(&pkcs8) else {
+            return Err("no_entropy");
+        };
+        (
+            vec![MailboxMessage::Commitment(commitment).encode()],
+            PairingStep::InviterWaitOffer(state),
+        )
+    } else {
+        (Vec::new(), PairingStep::JoinerWaitCommitment { pkcs8 })
+    };
+    companion.sync.pairing = Some(PairingState {
+        since: 0,
+        outgoing,
+        step,
+    });
+    Ok(())
+}
+
+/// Advance the machine with one mailbox message. Unexpected kinds —
+/// this device's own posts echoed back included — change nothing.
+/// Returns whether a grant just landed (the joiner's chain must then
+/// re-root from the delivered secret).
+fn advance_pairing(
+    flow: &mut PairingState,
+    message: MailboxMessage,
+    credentials: &dyn CredentialStore,
+) -> bool {
+    let step = std::mem::replace(&mut flow.step, PairingStep::Failed("torn"));
+    let mut joined = false;
+    flow.step = match (step, message) {
+        (PairingStep::InviterWaitOffer(inviter), MailboxMessage::Offer(offer)) => {
+            match inviter.settle(&offer) {
+                Some((settled, reveal)) => {
+                    flow.outgoing.push(MailboxMessage::Reveal(reveal).encode());
+                    PairingStep::InviterWaitAcceptance {
+                        settled,
+                        acceptance_ok: false,
+                        human_confirmed: false,
+                    }
+                }
+                None => PairingStep::Failed("offer"),
+            }
+        }
+        (
+            PairingStep::InviterWaitAcceptance {
+                settled,
+                human_confirmed,
+                ..
+            },
+            MailboxMessage::Acceptance(acceptance),
+        ) => {
+            if settled.verify_acceptance(&acceptance) {
+                maybe_grant(
+                    PairingStep::InviterWaitAcceptance {
+                        settled,
+                        acceptance_ok: true,
+                        human_confirmed,
+                    },
+                    &mut flow.outgoing,
+                    credentials,
+                )
+            } else {
+                PairingStep::Failed("acceptance")
+            }
+        }
+        (PairingStep::JoinerWaitCommitment { pkcs8 }, MailboxMessage::Commitment(commitment)) => {
+            match pairing::Joiner::accept(&pkcs8, &commitment) {
+                Some((joiner, offer)) => {
+                    flow.outgoing.push(MailboxMessage::Offer(offer).encode());
+                    PairingStep::JoinerWaitReveal(joiner)
+                }
+                None => PairingStep::Failed("commitment"),
+            }
+        }
+        (PairingStep::JoinerWaitReveal(joiner), MailboxMessage::Reveal(reveal)) => {
+            match joiner.settle(&reveal) {
+                Some((settled, acceptance)) => PairingStep::JoinerSasConfirm {
+                    settled,
+                    acceptance,
+                },
+                None => PairingStep::Failed("reveal"),
+            }
+        }
+        (PairingStep::JoinerWaitGrant { settled }, MailboxMessage::Grant(grant)) => {
+            match settled.receive(&grant) {
+                Some(secret) if pairing::store_channel_secret(credentials, &secret) => {
+                    let _ = pairing::record_peer(
+                        credentials,
+                        settled.peer_identity(),
+                        "",
+                        wall_now_ms(),
+                    );
+                    joined = true;
+                    PairingStep::Done
+                }
+                _ => PairingStep::Failed("grant"),
+            }
+        }
+        (step, _) => step,
+    };
+    joined
+}
+
+/// When the acceptance verified AND the human confirmed, the grant
+/// goes out and the peer is recorded; until both, the step stands.
+fn maybe_grant(
+    step: PairingStep,
+    outgoing: &mut Vec<serde_json::Value>,
+    credentials: &dyn CredentialStore,
+) -> PairingStep {
+    let PairingStep::InviterWaitAcceptance {
+        settled,
+        acceptance_ok: true,
+        human_confirmed: true,
+    } = step
+    else {
+        return step;
+    };
+    let Some(secret) = pairing::ensure_channel_secret(credentials, true) else {
+        return PairingStep::Failed("keychain");
+    };
+    let Some(grant) = settled.grant(&secret) else {
+        return PairingStep::Failed("keychain");
+    };
+    outgoing.push(MailboxMessage::Grant(grant).encode());
+    let _ = pairing::record_peer(credentials, settled.peer_identity(), "", wall_now_ms());
+    PairingStep::Done
+}
+
+/// The human's verdict on the SAS. A mismatch aborts the whole
+/// ceremony — both sides walk away with nothing stored, which is the
+/// property the pairing tests pin.
+pub(crate) fn pairing_confirm(companion: &mut Companion, matched: bool) -> serde_json::Value {
+    let Some(mut flow) = companion.sync.pairing.take() else {
+        return serde_json::json!({ "stage": "idle" });
+    };
+    if !matched {
+        // Dropped whole: the ceremony state, the queued posts, all of
+        // it. The peer times out on its own patience.
+        return serde_json::json!({ "stage": "failed", "reason": "mismatch" });
+    }
+    let step = std::mem::replace(&mut flow.step, PairingStep::Failed("torn"));
+    flow.step = match step {
+        PairingStep::InviterWaitAcceptance {
+            settled,
+            acceptance_ok,
+            ..
+        } => maybe_grant(
+            PairingStep::InviterWaitAcceptance {
+                settled,
+                acceptance_ok,
+                human_confirmed: true,
+            },
+            &mut flow.outgoing,
+            &*companion.credentials,
+        ),
+        PairingStep::JoinerSasConfirm {
+            settled,
+            acceptance,
+        } => {
+            flow.outgoing
+                .push(MailboxMessage::Acceptance(acceptance).encode());
+            PairingStep::JoinerWaitGrant { settled }
+        }
+        step => step,
+    };
+    let stage = stage_json(&flow);
+    companion.sync.pairing = Some(flow);
+    stage
+}
+
+/// One mailbox round: drain the queued posts, fetch the tail, advance
+/// the machine, and report the stage. Blocking for the round-trips —
+/// background queue only. The shell polls this while its enrolment
+/// sheet is open.
+pub(crate) fn pairing_poll(handle: &CompanionHandle) -> serde_json::Value {
+    match ensure_access(handle) {
+        Ok(()) => {}
+        Err("unreachable") => return serde_json::json!({ "stage": "waiting" }),
+        Err(reason) => return serde_json::json!({ "stage": "failed", "reason": reason }),
+    }
+    // Drain the outgoing posts, one at a time; a transport failure
+    // leaves the rest queued for the next poll.
+    loop {
+        let staged = {
+            let Ok(guard) = handle.inner.lock() else {
+                return serde_json::json!({ "stage": "failed", "reason": "poisoned" });
+            };
+            let Some(flow) = guard.sync.pairing.as_ref() else {
+                return serde_json::json!({ "stage": "idle" });
+            };
+            let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
+            flow.outgoing.first().cloned().map(|message| {
+                guard
+                    .sync
+                    .engine
+                    .as_ref()
+                    .and_then(|engine| engine.session.post_pairing_request(message))
+                    .zip(transport)
+            })
+        };
+        match staged {
+            None => break,
+            Some(None) => return serde_json::json!({ "stage": "failed", "reason": "signed_out" }),
+            Some(Some((request, transport))) => match transport.send(request) {
+                Ok(response) if (200..300).contains(&response.status) => {
+                    if let Ok(mut guard) = handle.inner.lock()
+                        && let Some(flow) = guard.sync.pairing.as_mut()
+                    {
+                        flow.outgoing.remove(0);
+                    }
+                }
+                _ => break,
+            },
+        }
+    }
+    // Fetch the tail and advance.
+    let staged = {
+        let Ok(guard) = handle.inner.lock() else {
+            return serde_json::json!({ "stage": "failed", "reason": "poisoned" });
+        };
+        let since = guard.sync.pairing.as_ref().map(|flow| flow.since);
+        let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
+        since
+            .and_then(|since| {
+                guard
+                    .sync
+                    .engine
+                    .as_ref()
+                    .and_then(|engine| engine.session.fetch_pairing_request(since))
+            })
+            .zip(transport)
+    };
+    if let Some((request, transport)) = staged
+        && let Ok(response) = transport.send(request)
+        && (200..300).contains(&response.status)
+        && let Ok(mut guard) = handle.inner.lock()
+    {
+        absorb_mailbox(&mut guard, &response);
+    }
+    let Ok(guard) = handle.inner.lock() else {
+        return serde_json::json!({ "stage": "failed", "reason": "poisoned" });
+    };
+    guard
+        .sync
+        .pairing
+        .as_ref()
+        .map_or(serde_json::json!({ "stage": "idle" }), stage_json)
+}
+
+/// Absorb one mailbox answer: `{"messages": […], "next_seq"}` (§7's
+/// answer shape), each entry one wire message; unknown shapes are
+/// skipped, never guessed at. A grant landing re-roots the chain from
+/// the delivered secret.
+pub(crate) fn absorb_mailbox(companion: &mut Companion, response: &HttpResponse) {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&response.body) else {
+        return;
+    };
+    let Some(flow) = companion.sync.pairing.as_mut() else {
+        return;
+    };
+    if let Some(next) = value.get("next_seq").and_then(serde_json::Value::as_u64) {
+        flow.since = next;
+    }
+    let mut joined = false;
+    if let Some(messages) = value.get("messages").and_then(serde_json::Value::as_array) {
+        for entry in messages {
+            if let Some(message) = MailboxMessage::decode(entry) {
+                joined |= advance_pairing(flow, message, &*companion.credentials);
+            }
+        }
+    }
+    if joined
+        && let Some(secret) = pairing::ensure_channel_secret(&*companion.credentials, false)
+        && let Some(chain) = GopKeyChain::root(&secret)
+        && let Some(engine) = companion.sync.engine.as_mut()
+    {
+        // The delivered secret replaces whatever this device founded
+        // for itself: the chain re-roots, and the rejoin path carries
+        // it to the channel's current epoch.
+        engine.chain = chain;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
     use std::io::{Read as _, Write as _};
     use std::net::TcpStream;
+    use std::sync::Arc;
 
     use companion_credentials::InMemoryCredentialStore;
     use ots_client::{HttpRequest, HttpResponse, TransportError};
@@ -262,8 +1476,7 @@ mod tests {
                     "token_url":"https://eu.example/oauth/token",
                     "client_id":"companion"}"#,
             ),
-            keeper: None,
-            pending_signin: None,
+            ..SyncState::default()
         }
     }
 
@@ -394,6 +1607,335 @@ mod tests {
         credentials.delete("api-token").unwrap();
         assert!(crate::pairing::clear_pairing(&credentials));
         assert!(signed_in(&credentials));
+    }
+
+    fn store_companion(credentials: Arc<dyn CredentialStore>) -> Companion {
+        Companion {
+            store: companion_core::SheetStore::new(companion_core::SystemClock),
+            pasteboard: crate::Board::Memory(companion_pasteboard::MemoryPasteboard::new()),
+            last_write: None,
+            connection: None,
+            credentials,
+            sync: SyncState::default(),
+        }
+    }
+
+    fn attached_engine(credentials: &dyn CredentialStore) -> EngineState {
+        let pkcs8 = pairing::ensure_device_identity(credentials).unwrap();
+        let secret = pairing::ensure_channel_secret(credentials, true).unwrap();
+        let mut keeper = TokenKeeper::new("https://eu.example/oauth/token", "companion", None);
+        let _ = keeper.absorb(TokenGrant {
+            access: Zeroizing::new("at".into()),
+            refresh: Zeroizing::new("rt".into()),
+        });
+        EngineState {
+            session: SyncSession::new(
+                "https://relay.example",
+                keeper,
+                &pairing::device_fingerprint(credentials).unwrap(),
+            ),
+            chain: GopKeyChain::root(&secret).unwrap(),
+            packages: KeyPackageKeeper::mint(&pkcs8).unwrap(),
+            unpublished_frame: None,
+        }
+    }
+
+    fn inked_page(companion: &mut Companion, text: &str) -> SheetId {
+        let page = companion.store.new_tab().unwrap().1;
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Insert {
+                pos_u16: 0,
+                text: text.into(),
+            }],
+        ));
+        page
+    }
+
+    #[test]
+    fn enrolment_sweeps_the_whole_page_once_and_then_only_changes() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "shared ink");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(engine.session.publish_due(0), "the whole page is owed");
+        let EngineState { session, chain, .. } = engine;
+        let _ = session.publish_request(0, chain).unwrap();
+        session
+            .absorb_publish(&HttpResponse {
+                status: 200,
+                body: br#"{"seq":1}"#.to_vec(),
+            })
+            .unwrap();
+
+        // Nothing changed: the next sweep owes nothing.
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(!engine.session.publish_due(2_000));
+
+        // An edit owes exactly the delta past the cursor.
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Insert {
+                pos_u16: 0,
+                text: "more ".into(),
+            }],
+        ));
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(engine.session.publish_due(4_000));
+    }
+
+    #[test]
+    fn a_due_transition_with_an_empty_room_rotates_the_channel_solo() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "keep DOOMED");
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Delete {
+                pos_u16: 4,
+                len_u16: 7,
+            }],
+        ));
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let tab = companion.store.tabs().next().unwrap().id();
+        companion.store.cycle_rung(tab).unwrap();
+
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert_eq!(engine.chain.epoch(), 1, "the boundary did not wait");
+        assert!(
+            events
+                .iter()
+                .any(|event| event["kind"] == "ceremony_committed")
+        );
+        let frame = engine.session.take_frame().expect("a frame to publish");
+        let opened = engine.chain.open(&frame).unwrap();
+        let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
+        assert!(!contains(&opened, b"DOOMED"));
+    }
+
+    #[test]
+    fn a_page_that_died_here_publishes_its_marker_once_the_view_is_current() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let page = inked_page(&mut companion, "short lived");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        assert!(companion.store.discard_page(page));
+
+        // The first sweep keeps quiet: the channel view is not
+        // current, and a device that has drained nothing may not kill
+        // a page for everyone.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(!engine.session.publish_due(0), "the gate held");
+
+        // One drain — even empty — makes the view current; the next
+        // sweep publishes the marker and asks for the ceremony §5
+        // owes. With an empty room, that rotation has no live page to
+        // compact, so the epoch stands until one exists.
+        let empty = HttpResponse {
+            status: 200,
+            body: br#"{"epoch":0,"blobs":[],"next_seq":0}"#.to_vec(),
+        };
+        {
+            let Companion { store, sync, .. } = &mut companion;
+            let engine = sync.engine.as_mut().unwrap();
+            let EngineState {
+                session,
+                chain,
+                packages,
+                ..
+            } = engine;
+            session
+                .absorb_deltas(&empty, store, chain, packages, 0)
+                .unwrap();
+        }
+        sweep_outbound(&mut companion, 2_000, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(engine.session.publish_due(2_000), "the marker is owed");
+
+        // And once only.
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        let tracking = companion.sync.enrolled.values().next().unwrap();
+        assert!(tracking.terminal_sent);
+    }
+
+    fn mailbox_response(messages: &[serde_json::Value], next_seq: u64) -> HttpResponse {
+        HttpResponse {
+            status: 200,
+            body: serde_json::json!({ "messages": messages, "next_seq": next_seq })
+                .to_string()
+                .into_bytes(),
+        }
+    }
+
+    fn take_outgoing(companion: &mut Companion) -> Vec<serde_json::Value> {
+        std::mem::take(&mut companion.sync.pairing.as_mut().unwrap().outgoing)
+    }
+
+    fn stage_of(companion: &Companion) -> serde_json::Value {
+        stage_json(companion.sync.pairing.as_ref().unwrap())
+    }
+
+    #[test]
+    fn two_devices_pair_over_the_mailbox_and_the_grant_lands() {
+        let creds_a: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let creds_b: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut a = store_companion(Arc::clone(&creds_a));
+        let mut b = store_companion(Arc::clone(&creds_b));
+        a.sync.engine = Some(attached_engine(&*creds_a));
+        // B attached before pairing and founded a secret of its own —
+        // the grant must overwrite it and re-root B's chain.
+        b.sync.engine = Some(attached_engine(&*creds_b));
+        let founded_b = pairing::ensure_channel_secret(&*creds_b, false).unwrap();
+
+        invite_begin(&mut a).unwrap();
+        join_begin(&mut b).unwrap();
+
+        // Commitment → offer → reveal, through the mailbox shapes.
+        let posts = take_outgoing(&mut a);
+        absorb_mailbox(&mut b, &mailbox_response(&posts, 1));
+        let posts = take_outgoing(&mut b);
+        absorb_mailbox(&mut a, &mailbox_response(&posts, 2));
+        let posts = take_outgoing(&mut a);
+        absorb_mailbox(&mut b, &mailbox_response(&posts, 3));
+
+        // One string on both screens.
+        let stage_a = stage_of(&a);
+        let stage_b = stage_of(&b);
+        assert_eq!(stage_a["stage"], "sas");
+        assert_eq!(stage_b["stage"], "sas");
+        assert_eq!(stage_a["sas"], stage_b["sas"]);
+
+        // The joiner's human confirms; its acceptance crosses; the
+        // inviter's human confirms; the grant crosses.
+        pairing_confirm(&mut b, true);
+        let posts = take_outgoing(&mut b);
+        absorb_mailbox(&mut a, &mailbox_response(&posts, 4));
+        pairing_confirm(&mut a, true);
+        assert_eq!(stage_of(&a)["stage"], "done");
+        let posts = take_outgoing(&mut a);
+        absorb_mailbox(&mut b, &mailbox_response(&posts, 5));
+        assert_eq!(stage_of(&b)["stage"], "done");
+
+        // The grant delivered A's secret over B's founded one, and
+        // both sides recorded each other.
+        let secret_a = pairing::ensure_channel_secret(&*creds_a, false).unwrap();
+        let secret_b = pairing::ensure_channel_secret(&*creds_b, false).unwrap();
+        assert_eq!(*secret_a, *secret_b);
+        assert_ne!(*secret_b, *founded_b);
+        let fp_a = pairing::device_fingerprint(&*creds_a).unwrap();
+        let fp_b = pairing::device_fingerprint(&*creds_b).unwrap();
+        assert!(
+            pairing::peer_records(&*creds_a)
+                .iter()
+                .any(|record| record.fingerprint == fp_b)
+        );
+        assert!(
+            pairing::peer_records(&*creds_b)
+                .iter()
+                .any(|record| record.fingerprint == fp_a)
+        );
+        // B's chain re-rooted from the delivered secret: it opens what
+        // A seals.
+        let sealed = a
+            .sync
+            .engine
+            .as_ref()
+            .unwrap()
+            .chain
+            .seal(b"hello")
+            .unwrap();
+        let opened = b.sync.engine.as_ref().unwrap().chain.open(&sealed).unwrap();
+        assert_eq!(opened.as_slice(), b"hello");
+    }
+
+    #[test]
+    fn a_failed_comparison_aborts_with_nothing_recorded() {
+        let creds_a: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let creds_b: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut a = store_companion(Arc::clone(&creds_a));
+        let mut b = store_companion(Arc::clone(&creds_b));
+        a.sync.engine = Some(attached_engine(&*creds_a));
+        b.sync.engine = Some(attached_engine(&*creds_b));
+        invite_begin(&mut a).unwrap();
+        join_begin(&mut b).unwrap();
+        let posts = take_outgoing(&mut a);
+        absorb_mailbox(&mut b, &mailbox_response(&posts, 1));
+        let posts = take_outgoing(&mut b);
+        absorb_mailbox(&mut a, &mailbox_response(&posts, 2));
+        let posts = take_outgoing(&mut a);
+        absorb_mailbox(&mut b, &mailbox_response(&posts, 3));
+
+        let refused = pairing_confirm(&mut b, false);
+        assert_eq!(refused["stage"], "failed");
+        assert!(b.sync.pairing.is_none(), "the ceremony is gone whole");
+        assert!(pairing::peer_records(&*creds_b).is_empty());
+        assert!(pairing::peer_records(&*creds_a).is_empty());
+    }
+
+    #[test]
+    fn the_device_list_tells_verified_from_attached() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(pairing::record_peer(
+            &*credentials,
+            b"peer identity",
+            "laptop",
+            1_000
+        ));
+        let paired_fp = pairing::identity_fingerprint(b"peer identity");
+        // The roster reports the paired peer attached, plus a stranger
+        // that attached with a token but never paired.
+        let package = serde_json::to_value(companion_sync::ByteBlob(vec![1; 96])).unwrap();
+        let body = serde_json::json!({
+            "epoch": 0, "frame_present": false, "next_seq": 0,
+            "peers": [
+                {"device": paired_fp, "key_package": package, "attached_ms": 5_000},
+                {"device": "stranger", "key_package": package, "attached_ms": 6_000},
+            ],
+        });
+        companion
+            .sync
+            .engine
+            .as_mut()
+            .unwrap()
+            .session
+            .absorb_attach(&HttpResponse {
+                status: 200,
+                body: body.to_string().into_bytes(),
+            })
+            .unwrap();
+
+        let devices = devices_json(&companion);
+        let devices = devices["devices"].as_array().unwrap();
+        let own = devices.iter().find(|d| d["this_device"] == true).unwrap();
+        assert_eq!(own["verified"], true);
+        let paired = devices
+            .iter()
+            .find(|d| d["fingerprint"] == paired_fp.as_str())
+            .unwrap();
+        assert_eq!(paired["verified"], true);
+        assert_eq!(paired["label"], "laptop");
+        assert_eq!(paired["attached_ms"], 5_000);
+        let stranger = devices
+            .iter()
+            .find(|d| d["fingerprint"] == "stranger")
+            .unwrap();
+        assert_eq!(stranger["verified"], false);
+        assert_eq!(stranger["attached_ms"], 6_000);
     }
 
     #[test]

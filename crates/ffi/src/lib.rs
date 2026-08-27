@@ -2429,9 +2429,11 @@ pub unsafe extern "C" fn companion_sync_configure(
 }
 
 /// Sync's standing state for the Settings surface:
-/// `{"configured", "signed_in", "signin_pending"}`. Existence checks
-/// only — rendering Settings must never decrypt a credential or wedge
-/// on the Keychain, the `companion_connection_json` rule. Free with
+/// `{"configured", "signed_in", "signin_pending", "attached",
+/// "epoch", "frame_present", "enrolled", "pairing"}`. Existence
+/// checks and in-memory reads only — rendering Settings must never
+/// decrypt a credential, wedge on the Keychain, or wait on the
+/// network, the `companion_connection_json` rule. Free with
 /// [`companion_string_free`].
 ///
 /// # Safety
@@ -2444,18 +2446,7 @@ pub unsafe extern "C" fn companion_sync_status_json(handle: *mut CompanionHandle
     let Ok(guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
-    let signed_in = guard.sync.keeper.as_ref().map_or_else(
-        || sync_driver::signed_in(&*guard.credentials),
-        companion_sync::TokenKeeper::signed_in,
-    );
-    into_c_string(
-        serde_json::json!({
-            "configured": guard.sync.config.is_some(),
-            "signed_in": signed_in,
-            "signin_pending": guard.sync.pending_signin.is_some(),
-        })
-        .to_string(),
-    )
+    into_c_string(sync_driver::status_json(&guard).to_string())
 }
 
 /// Begin the sign-in ceremony (account-auth.md §1): bind the one-shot
@@ -2581,6 +2572,8 @@ pub unsafe extern "C" fn companion_sync_signout(handle: *mut CompanionHandle) ->
         return false;
     };
     guard.sync.pending_signin = None;
+    guard.sync.engine = None;
+    guard.sync.pairing = None;
     if let Some(config) = &guard.sync.config {
         guard.sync.keeper = Some(companion_sync::TokenKeeper::new(
             &config.token_url,
@@ -2589,6 +2582,241 @@ pub unsafe extern "C" fn companion_sync_signout(handle: *mut CompanionHandle) ->
         ));
     }
     sync_driver::clear_refresh(&*guard.credentials)
+}
+
+/// Enrol a page into the sync channel, or withdraw it — per page and
+/// off by default (relay protocol §1). Enrolling defers the page's
+/// compaction to the coordinated ceremony and starts its delta cursor
+/// at the beginning, so the first publish carries the whole page;
+/// withdrawing returns it to solo behaviour, performing any due
+/// ceremony on the spot. `page` is the PAGE id.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_enrol_page(
+    handle: *mut CompanionHandle,
+    page: u64,
+    enrolled: bool,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    sync_driver::enrol_page(&mut guard, SheetId::from_raw(page), enrolled)
+}
+
+/// Attach to the account's channel: ensure the device identity and
+/// channel secret (the first device to enable sync founds the
+/// channel; a joiner's secret arrives by pairing and overwrites),
+/// mint and publish a fresh key package, and adopt the relay's
+/// cursor. **Blocks for the round-trips** — call from a background
+/// queue. Returns `{"ok": true, "epoch", "frame_present", "peers"}`
+/// or `{"ok": false, "reason"}` (`not_configured`, `signed_out`,
+/// `keychain`, `unreachable`, `refused`). Free with
+/// [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_attach(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    into_c_string(sync_driver::attach(handle).to_string())
+}
+
+/// Detach from the channel: tell the relay (best effort — idle
+/// attachments age out regardless) and dissolve the engine, keeping
+/// the sign-in. **Blocks briefly** for the one round-trip — call from
+/// a background queue. True when there was an engine to dissolve.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_detach(handle: *mut CompanionHandle) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    sync_driver::detach(handle)
+}
+
+/// One turn of the engine loop, run from a background queue while
+/// sync is on: sweep the enrolled pages into the outbox, publish what
+/// the 2-second clock owes, long-poll the delta stream for up to
+/// `wait_seconds` (§8 budgets 25), walk the ballot patience, and
+/// publish a committed ceremony's frame. **Blocks for up to the whole
+/// long-poll**; the core mutex is held only between round-trips, so
+/// the pad never waits on the network. Returns
+/// `{"ok", "reason"?, "events": [{"kind", "page"?}, …], "state"}` —
+/// event kinds: `applied`, `countdown_moved`, `terminal`,
+/// `rejoin_required`, `ceremony_proposed`, `ceremony_committed`,
+/// `ceremony_required`, `epoch_conflict`, `unauthorized`,
+/// `unreachable`, `protocol`, `signed_out`. States, never sentences —
+/// the surface owns the words (issue #102). Free with
+/// [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_pump(
+    handle: *mut CompanionHandle,
+    wait_seconds: u32,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    into_c_string(sync_driver::pump(handle, wait_seconds).to_string())
+}
+
+/// The device list for Settings: every peer a human verified here
+/// (fingerprint, label, when paired), joined with the attach
+/// roster's attach times, plus this device and any
+/// attached-but-unverified stranger, labelled as exactly that.
+/// `{"devices": [{"fingerprint", "label", "this_device", "verified",
+/// "paired_wall_ms", "attached_ms"}, …]}`. Free with
+/// [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_devices_json(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    into_c_string(sync_driver::devices_json(&guard).to_string())
+}
+
+/// Revoke a paired peer by fingerprint: its record goes, nothing is
+/// ever sealed to it again, and the chain leaves it behind at the
+/// next ceremony at the latest (ADR-0021 §2). True when the
+/// fingerprint was recorded and the removal stored.
+///
+/// # Safety
+/// `handle` must be a valid handle; `fingerprint` a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_revoke_peer(
+    handle: *mut CompanionHandle,
+    fingerprint: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(fingerprint) = (unsafe { cstr(fingerprint) }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    pairing::revoke_peer(&*guard.credentials, fingerprint)
+}
+
+/// Begin inviting a new device into the channel (issue #97's
+/// ceremony over §7's mailbox): this side holds the channel and will
+/// grant it after the human comparison. Returns `{"ok": true}` or
+/// `{"ok": false, "reason"}` (`not_attached`, `busy`, `keychain`,
+/// `no_entropy`). Then poll. Free with [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_invite_begin(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    match sync_driver::invite_begin(&mut guard) {
+        Ok(()) => into_c_string(serde_json::json!({ "ok": true }).to_string()),
+        Err(reason) => sync_refusal(reason),
+    }
+}
+
+/// Begin joining a channel from this new device: waits for an
+/// inviter's ceremony. Same result shape as
+/// [`companion_sync_invite_begin`]; then poll.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_join_begin(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    match sync_driver::join_begin(&mut guard) {
+        Ok(()) => into_c_string(serde_json::json!({ "ok": true }).to_string()),
+        Err(reason) => sync_refusal(reason),
+    }
+}
+
+/// One mailbox round of the pairing ceremony: post what is queued,
+/// fetch the tail, advance, and report. **Blocks for the
+/// round-trips** — call from a background queue, on a timer while the
+/// enrolment sheet is open. Returns `{"stage", "sas"?, "reason"?}`:
+/// `waiting` (keep polling), `sas` (show the six digits; call
+/// confirm), `confirmed` (this human confirmed; waiting for the
+/// peer), `done`, `failed`, `idle` (no ceremony). Free with
+/// [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_pairing_poll(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    into_c_string(sync_driver::pairing_poll(handle).to_string())
+}
+
+/// The human's verdict on the short authentication string. A match
+/// moves the ceremony forward (the joiner posts its acceptance; the
+/// inviter grants once the acceptance also verified); a mismatch
+/// aborts the whole ceremony with nothing stored on this device —
+/// failing must always be possible (ADR-0021 §3). Returns the stage
+/// as [`companion_sync_pairing_poll`] does. Free with
+/// [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_pairing_confirm(
+    handle: *mut CompanionHandle,
+    matched: bool,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    into_c_string(sync_driver::pairing_confirm(&mut guard, matched).to_string())
+}
+
+/// Forget the pairing ceremony in flight, at any stage — including a
+/// finished or failed one whose sheet is being dismissed. True when
+/// there was one.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_pairing_cancel(handle: *mut CompanionHandle) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.sync.pairing.take().is_some()
 }
 
 /// Free a string returned by this library. Passing null is a no-op.
@@ -5835,6 +6063,20 @@ mod tests {
             assert!(companion_sync_signin_finish(ptr::null_mut(), 0).is_null());
             assert!(!companion_sync_signin_cancel(ptr::null_mut()));
             assert!(!companion_sync_signout(ptr::null_mut()));
+            assert!(!companion_sync_enrol_page(ptr::null_mut(), 1, true));
+            assert!(companion_sync_attach(ptr::null_mut()).is_null());
+            assert!(!companion_sync_detach(ptr::null_mut()));
+            assert!(companion_sync_pump(ptr::null_mut(), 0).is_null());
+            assert!(companion_sync_devices_json(ptr::null_mut()).is_null());
+            assert!(!companion_sync_revoke_peer(
+                ptr::null_mut(),
+                cstring("fp").as_ptr()
+            ));
+            assert!(companion_sync_invite_begin(ptr::null_mut()).is_null());
+            assert!(companion_sync_join_begin(ptr::null_mut()).is_null());
+            assert!(companion_sync_pairing_poll(ptr::null_mut()).is_null());
+            assert!(companion_sync_pairing_confirm(ptr::null_mut(), true).is_null());
+            assert!(!companion_sync_pairing_cancel(ptr::null_mut()));
             companion_free(ptr::null_mut()); // no-op
             companion_string_free(ptr::null_mut()); // no-op
         }

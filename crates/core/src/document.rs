@@ -284,6 +284,15 @@ impl SheetDocument {
     /// yields everything this document has, which is the whole current
     /// GOP. Zeroizing because an update batch carries the ops
     /// themselves, deleted text included.
+    /// The frontier of a document that has seen nothing: what asks
+    /// [`SheetDocument::export_updates_since`] for everything.
+    /// `VersionVector::decode` refuses empty bytes, so the empty
+    /// cursor has to be spelled in the encoding, and only this module
+    /// may spell it.
+    pub(crate) fn pristine_version() -> Vec<u8> {
+        VersionVector::default().encode()
+    }
+
     pub(crate) fn export_updates_since(&self, version: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         let from = VersionVector::decode(version).ok()?;
         Some(Zeroizing::new(

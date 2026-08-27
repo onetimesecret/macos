@@ -195,7 +195,7 @@ fn ballot_token(fingerprint: &str) -> ItemId {
 }
 
 /// The wire form of a page id: the [`ItemId`]'s bytes, lowercase hex.
-fn page_wire_id(page: ItemId) -> String {
+pub(crate) fn page_wire_id(page: ItemId) -> String {
     page.as_bytes().iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -325,6 +325,19 @@ impl SyncSession {
     /// grants into.
     pub fn keeper_mut(&mut self) -> &mut TokenKeeper {
         &mut self.keeper
+    }
+
+    /// Whether the keeper holds anything to authenticate with.
+    #[must_use]
+    pub fn signed_in(&self) -> bool {
+        self.keeper.signed_in()
+    }
+
+    /// Dissolve the session, handing the keeper back — a detach keeps
+    /// the sign-in it did not revoke.
+    #[must_use]
+    pub fn into_keeper(self) -> TokenKeeper {
+        self.keeper
     }
 
     fn auth(&self) -> Option<BearerAuth> {
@@ -896,6 +909,60 @@ impl SyncSession {
         true
     }
 
+    /// A ceremony with an empty room: no verified peer is attached,
+    /// and a due boundary must not wait on one. Compact, advance,
+    /// reseal — the one event, ballot-free because §5's all-attached
+    /// set is this device alone — and stage the frame exactly as a
+    /// confirmed ballot would; its publication at the relay is still
+    /// the purge. Every channel adopts the new epoch, since the chain
+    /// is channel-wide. False when a ballot is in flight, the page is
+    /// unknown or not deferred, or the RNG refuses.
+    pub fn solo_ceremony<C: Clock>(
+        &mut self,
+        page: ItemId,
+        store: &mut SheetStore<C>,
+        chain: &mut crate::gop::GopKeyChain,
+    ) -> bool {
+        if self.ballot_scope.is_some() {
+            return false;
+        }
+        let mut entropy = Zeroizing::new(vec![0u8; KEY_LEN]);
+        if SystemRandom::new().fill(&mut entropy).is_err() {
+            return false;
+        }
+        let Some(sheet) = sheet_of(store, page) else {
+            return false;
+        };
+        let Some(frame) = crate::gop::ceremony_commit(store, sheet, chain, &entropy) else {
+            return false;
+        };
+        for channel in self.channels.values_mut() {
+            channel.rejoin_at_epoch(chain.epoch());
+        }
+        self.channels
+            .entry(page)
+            .or_default()
+            .rejoin_at_epoch(chain.epoch());
+        self.pending_frame = Some(frame);
+        true
+    }
+
+    /// `POST /channel/pairing` — one §7 mailbox message, already in
+    /// its wire form. `None` when no access token is held.
+    #[must_use]
+    pub fn post_pairing_request(&self, message: serde_json::Value) -> Option<HttpRequest> {
+        let auth = self.auth()?;
+        Some(self.api.post_pairing_request(message, &auth))
+    }
+
+    /// `GET /channel/pairing?since=` — the mailbox tail. `None` when
+    /// no access token is held.
+    #[must_use]
+    pub fn fetch_pairing_request(&self, since: u64) -> Option<HttpRequest> {
+        let auth = self.auth()?;
+        Some(self.api.fetch_pairing_request(since, &auth))
+    }
+
     /// Abandon a ballot that outlived §5's patience: every device
     /// stays on the old GOP, and the next transition proposes again.
     /// Call on the runloop's own clock; a no-op while no ballot is in
@@ -969,7 +1036,7 @@ impl SyncSession {
 }
 
 /// The sheet currently holding `page`'s cross-device identity.
-fn sheet_of<C: Clock>(store: &SheetStore<C>, page: ItemId) -> Option<SheetId> {
+pub(crate) fn sheet_of<C: Clock>(store: &SheetStore<C>, page: ItemId) -> Option<SheetId> {
     store
         .sheets()
         .find(|sheet| sheet.uuid() == page)

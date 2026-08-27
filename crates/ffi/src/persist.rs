@@ -276,6 +276,25 @@ pub(crate) const GOP_MAGIC: &[u8; 8] = b"OTSGOPD1";
 /// about it is per-boot any more.
 const FILE_HALF_PREFIX: &str = "ots-companion-key-half-";
 
+/// Lowercase hex, the encoding public key material and fingerprints
+/// travel in on the sync wire and in the peer records — public
+/// material only, never a secret.
+pub(crate) fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Decode lowercase (or upper; hex is hex) pairs; `None` refuses odd
+/// lengths and non-hex bytes whole.
+pub(crate) fn hex_decode(text: &str) -> Option<Vec<u8>> {
+    if !text.len().is_multiple_of(2) {
+        return None;
+    }
+    text.as_bytes()
+        .chunks(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok())
+        .collect()
+}
+
 /// The authenticated state header: `magic[8] ‖ sealed_wall_ms[8]`.
 /// Fixed length, and every byte of it is associated data.
 pub(crate) const STATE_HEADER_LEN: usize = 8 + 8;
