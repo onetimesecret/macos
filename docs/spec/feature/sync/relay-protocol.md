@@ -197,21 +197,35 @@ A device that accepted and then slept still holds the sealed entropy in
 its fetched stream: on waking it advances its chain and opens the new
 epoch. A device that slept through the proposal entirely wakes to
 `410 rejoin` or to blobs it cannot open, and takes the rejoin path;
-its pre-ceremony history is dropped, never merged
-(`RemoteRefusal::NotFresh` is the store refusing the alternative).
+its pre-ceremony replicated history is dropped, never merged
+(`RemoteRefusal::NotFresh` is the store refusing the alternative) —
+its own unpublished edits are not history and follow the welcome
+paragraph's rule below.
 
 **The frame travels with its welcome** (amended 2026-08-27, ADR-0021
 Amendment 1). Beside the sealed frame — outside the GOP seal, since a
 device that could open the frame would not need it — rides `welcome`,
 a map in `entropy_sealed`'s shape: keyed by identity fingerprint, one
 entry per enrolled device, each entry sealing the incoming epoch's
-GOP key to that device's verified key package (§6). The key and not
-the entropy: the chain salts each key with its predecessor, so
-entropy cannot catch up a device that is behind. The rejoin path
-reads it: fetch the frame, open your own entry, adopt the epoch and
-key, open the frame. A device with no openable entry waits for the
-next ceremony's welcome or re-pairs — and a revoked device, omitted
-from the map, waits forever, which is revocation working. The welcome
+GOP key to that device's verified key package (§6) — bound and signed
+inside the seal: the epoch, the frame's hash, the recipient, the
+protocol version, under the issuer's identity key, so a client adopts
+nothing it has not verified against the frame it actually fetched
+(ADR-0021 Amendment 1 owns the entry shape; the relay parses neither
+field). The key and not the entropy: the chain salts each key with
+its predecessor, so entropy cannot catch up a device that is behind.
+Because the welcome travels only inside the frame `PUT`, §4's
+supersession doubles as its activation gate: no candidate's welcome
+is served or honored unless its frame won the epoch, and a proposer
+answered `409` destroys its candidate key and welcome and takes the
+rejoin path itself (RFC 9420 §14's sequencing rule at one-channel
+scale). The rejoin path reads it: fetch the frame, open and verify
+your own entry, adopt the epoch and key, open the frame — then
+re-enter any unpublished local edits on the adopted document, per the
+amendment's no-silent-loss rule. A device with no openable entry
+waits for the next ceremony's welcome or re-pairs — and a revoked
+device, omitted from the map, waits forever, which is revocation
+working. The welcome
 is specified ahead of its client (§4's amendment-pending rule): the
 shipped client neither builds nor reads it yet, so until that half
 lands, a device on the rejoin path surfaces "behind" and stays there

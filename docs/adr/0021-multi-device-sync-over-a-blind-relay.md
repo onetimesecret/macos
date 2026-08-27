@@ -486,7 +486,8 @@ establishing that the account is not the device.
 ## Amendment 1: the frame carries a welcome, and the chain rests
 
 - **Status:** proposed — flagged for ratification, as the original
-  draft's two items were (both decided in PR #113)
+  draft's two items were (both decided in PR #113); revised the same
+  day to meet the ratification review's conditions (PR #121)
 - **Date:** 2026-08-27
 
 ### The question
@@ -535,6 +536,23 @@ of a stranding. The account sits beside `sync-channel-secret` and is
 cleared with the pairing; the ledger key and content halves stay as
 untouched by this as by every other rotation.
 
+What the store is asked to hold is exactly what it is built for — one
+small secret — and nothing more: document state stays where it lives,
+and the keychain is not asked to be a transactional database or to
+make two stores advance together. The atomicity is an ordering rule
+instead: **the advanced position persists before the first ciphertext
+under it publishes.** A crash between the two leaves the device
+behind its own channel, never ahead of its own persisted state — and
+behind is the case this amendment exists to handle. Nor does the
+store defend against a restored backup rolling the position back; no
+local store can, and the device cannot always tell a rollback from a
+sleep — both read as a persisted epoch behind the relay's, and both
+land on the adoption path, where the welcome's bindings, not the
+stale state, decide what is adopted. What a rollback *implies* — a
+copy of this device's state existed outside it — is the second
+door's case in the decision below, and its cure belongs to the user,
+not to forensics the design cannot honestly claim.
+
 **The published frame carries a welcome.** Beside the sealed frame —
 never inside it, since a device that could open the frame would not
 need a welcome — travels a per-device map in the shape §5's
@@ -549,20 +567,101 @@ protocol's §5 made it — omission. This is RFC 9420's Welcome object arriving 
 one-channel scale, the same standard section 5 already borrowed for
 external commits.
 
-**Recovery is adoption, never derivation.** The sleeper wakes to
-`410 rejoin` or to blobs that refuse to open, fetches the frame, opens
-its own welcome entry, adopts the epoch and key, opens the frame,
-and rejoins at it (`SheetStore::adopt_key_frame`,
-`PageChannel::rejoin_at_epoch`) — its pre-ceremony history dropped,
-never merged, exactly as section 5 requires. The external-commit
-property survives: a welcome hands a device the epoch it joins and
-nothing behind it, because HKDF's one-wayness keeps every earlier key
-out of reach of the current one. A device with no openable entry — it
-restarted and its published package went stale, or it was revoked —
-waits for the next ceremony, whose welcome will name its freshly
-attached package, or re-pairs; the waiting is issue #94's sentence,
-owed by issue #102's surface, and a revoked device waits forever,
-which is revocation working.
+An entry is not a bare key. Inside each sealed entry, beside the key,
+ride the claims that make adopting it safe: the channel epoch the key
+opens, the hash of the frame it belongs to, the recipient's own
+fingerprint, and the protocol version — the whole entry signed by the
+proposing device's identity key under its own versioned signing
+context, the discipline every other signature in this design follows
+(PR #121). The recipient verifies the issuer against its pairing
+records and every binding against the frame it actually fetched
+before adopting anything, so a replayed or transplanted welcome — an
+old entry served beside a different frame, an epoch that does not
+match — fails closed, and a forged one fails the signature. Binding
+the frame's hash binds the snapshot too: the frame *is* the document
+state the epoch opens, so no separate frontier claim travels. And the
+sealed key is the epoch's root secret, not an any-purpose key: its
+one purpose today is sealing the channel's blobs, and any second
+purpose derives from it under its own info tag (`persist.rs`'s
+derivation discipline), never by reuse. All of this rides inside the
+sealed entries, so section 4's admission gains nothing new by it.
+
+**Recovery is adoption, never derivation — and adoption is three
+doors, not one.** The rule, stated carefully: a device that cannot
+authenticate and process the intervening chain transition adopts an
+authenticated current checkpoint; it never derives missed epoch
+secrets from old state; and after adoption, keys derive normally
+again. Which door a device takes depends on what it still holds:
+
+- **The sleeper, state intact.** It wakes to `410 rejoin` or to blobs
+  that refuse to open, fetches the frame, opens its own welcome
+  entry, verifies the issuer and every binding above, adopts the
+  epoch and key, opens the frame, and rejoins at it
+  (`SheetStore::adopt_key_frame`, `PageChannel::rejoin_at_epoch`).
+  This is the ordinary catch-up, and in this design it *is*
+  processing the intervening transition: the chain's entropy never
+  travels except sealed per device, so the welcome is the
+  authenticated form the transition takes for a device that missed
+  it live.
+- **The device whose state was lost — or may have escaped.** A
+  cleared keychain proves nothing; a restored backup proves worse: a
+  copy of the identity key and channel secret existed outside the
+  device, and resealing to that identity preserves whatever access
+  the copy's holder gained. Recovery here is **a fresh incarnation**:
+  re-pair under a fresh identity key, let the next ceremony's welcome
+  name the fresh package, and revoke the stale fingerprint — struck
+  from the pairing records, therefore omitted from every future
+  welcome, which is what revocation already is. Because the device
+  cannot always tell this door from the first, the door is also the
+  user's: the device list names every incarnation, and revoking the
+  stale one is one confirmed click (issue #102). The one justified
+  reuse of an existing identity is the benign restart with the
+  keychain intact: nothing was lost, the persisted chain position is
+  the proof — and even then the memory-only package half (rejected
+  below as a durable secret) means every welcome such a device opens
+  from now on was sealed to a package it minted fresh after the
+  restart.
+- **The never-enrolled device.** Section 5's external join,
+  unchanged: it adopts the current frame and learns nothing behind
+  it.
+
+The external-commit property survives every door: a welcome hands a
+device the epoch it joins and nothing behind it, because HKDF's
+one-wayness keeps every earlier key out of reach of the current one.
+A still-trusted device with no openable entry — it restarted and its
+published package went stale — waits for the next ceremony, whose
+welcome will name its freshly attached package; the waiting is issue
+#94's sentence, owed by issue #102's surface. A revoked device waits
+forever, which is revocation working.
+
+**The frame is canonical; the user's words are not up for election.**
+What supersession elects is the cryptographic rebuild — one frame,
+one epoch, one document identity — and what an adopting device drops
+is exactly the replicated history the winning frame supersedes, as
+section 5 requires (`RemoteRefusal::NotFresh` is the store refusing
+the alternative). Its **unpublished local edits are a different
+thing**: they exist in no frame, they are the user's work, and
+adoption is not licensed to discard them silently. After adopting the
+winning frame, a device re-enters what it alone held as new
+operations on the adopted document — content-level reconciliation,
+since disjoint rebuilds share no history to merge — or, where
+re-entry cannot be made safe, preserves them for explicit user
+recovery. Convergence without silent loss is the CRDT contract this
+feature rides on, and the shell's "edits stay local until this pad
+rejoins" is this rule said to the user: local until rejoined, then
+carried across, never dropped.
+
+**A welcome exists only beside the frame that won.** Candidate
+rebuilds stay provisional until the relay's compare-and-set accepts
+exactly one (`PUT /channel/frame`, `409` unless the epoch is exactly
+current+1 — protocol §4, the CAS against the expected parent frame):
+the welcome travels only inside that `PUT`, so no candidate's welcome
+is ever served, honored, or even visible unless its frame became
+canonical. A proposer whose `PUT` is refused destroys its candidate
+epoch key and welcome map on the spot and takes the adoption path
+itself. This is RFC 9420 §14's sequencing rule at one-channel scale:
+conflicting commits do not both activate, and the losers join the
+epoch they lost to.
 
 ### What this admits
 
@@ -610,20 +709,39 @@ sentence.
 
 - `GopKeyChain::adopt(epoch, key)` and the persisted chain position
   (a `sync-gop-chain` account in the key-material store), with the
-  rotation-never-touches tests extended to it.
+  rotation-never-touches tests extended to it — and a test pinning
+  the ordering rule: the advanced position persists before the first
+  publish under it.
 - The welcome map built in `gop::ceremony_commit` from the ceremony's
-  peers, and walked in `SyncSession::absorb_frame` before the chain
-  opens the frame. Issue #102's driver shipped without this half: the
-  driver surfaces `rejoin_required` honestly but fetches and adopts
-  nothing yet, so it needs its own issue alongside the server's
+  peers — each entry carrying its bindings (epoch, frame hash,
+  recipient fingerprint, protocol version) and the issuer's signature
+  under a new versioned context beside `KEY_PACKAGE_SIGN_CONTEXT` and
+  its siblings — and walked, verify-before-adopt, in
+  `SyncSession::absorb_frame` before the chain opens the frame. Issue
+  #102's driver shipped without this half: the driver surfaces
+  `rejoin_required` honestly but fetches and adopts nothing yet, so
+  it needs its own issue alongside the server's
   (onetimesecret#4303).
 - The coordinated commit leaves each participant its own independent
   rebuild; the frame supersession then picks one canonically (the
   publish the relay accepted — a `409` told the others a peer's copy
-  won). Every losing participant must take the same rejoin path the
-  sleeper takes, adopting the winning frame over its own rebuild —
-  without that adoption, two rebuilds share no history and the
-  winner's later deltas are refused on the losers.
+  won). Every losing participant destroys its candidate epoch key and
+  welcome map on the `409` and takes the same adoption path the
+  sleeper takes — without that adoption, two rebuilds share no
+  history and the winner's later deltas are refused on the losers —
+  and then re-enters its unpublished edits on the adopted document,
+  per the no-silent-loss rule above.
+- The fresh-incarnation path: a device recovering from lost or
+  rolled-back state re-pairs under a fresh identity, and the stale
+  fingerprint it abandons must leave the peers' pairing records — the
+  existing revocation gesture, or the re-pair flow offering it — so
+  omission by the records, not habit, decides its welcome entries.
+  Which surface owns that offer is issue #102's question. And
+  revocation advances the epoch rather than waiting for one: the
+  revoking device proposes a ceremony promptly, the terminal-marker
+  precedent (protocol §5), so the stale incarnation's access ends at
+  the earliest boundary the channel can reach instead of at whenever
+  the next rotation happens to fall.
 - Protocol: `PUT`/`GET /channel/frame` gain `welcome` beside `frame`
   (relay-protocol.md §4-5, amended 2026-08-27); the server stores it
   opaquely and supersedes it with the frame
