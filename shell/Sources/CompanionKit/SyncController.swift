@@ -106,11 +106,14 @@ public final class SyncController: ObservableObject {
         case behind
     }
 
-    static let enabledKey = "sync.enabled"
-    static let relayKey = "sync.relayURL"
-    static let authorizeKey = "sync.authorizeURL"
-    static let tokenKey = "sync.tokenURL"
-    static let clientKey = "sync.clientID"
+    // `nonisolated` so the pure endpoint resolution above can read
+    // them without hopping to the main actor; they are immutable
+    // strings, so isolation buys nothing.
+    nonisolated static let enabledKey = "sync.enabled"
+    nonisolated static let relayKey = "sync.relayURL"
+    nonisolated static let authorizeKey = "sync.authorizeURL"
+    nonisolated static let tokenKey = "sync.tokenURL"
+    nonisolated static let clientKey = "sync.clientID"
 
     private let client: CompanionClient
     private let defaults: UserDefaults
