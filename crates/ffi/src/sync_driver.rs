@@ -640,8 +640,31 @@ pub(crate) fn sweep_outbound(
             }
         }
     }
-    if rotate && let Some(target) = target {
-        rotate_channel(store, engine, &**credentials, target, now_ms, events);
+    if rotate
+        && let Some(target) = target
+        && rotate_channel(store, engine, &**credentials, target, now_ms, events)
+    {
+        settle_frontier(store, enrolled, target);
+    }
+}
+
+/// Move a page's export cursor to its document's own current version
+/// without exporting anything: the move after a ceremony compacts the
+/// page. The rebuilt body travels as the sealed key frame, never as a
+/// delta — an export from the stale cursor would name peers the
+/// rebuilt document has never heard of and so republish the whole
+/// body, which a peer holding its own rebuild would merge as a second
+/// copy of the text rather than recognize as its own.
+fn settle_frontier(
+    store: &companion_core::SheetStore<companion_core::SystemClock>,
+    enrolled: &mut BTreeMap<ItemId, PageTracking>,
+    page: ItemId,
+) {
+    if let Some(tracking) = enrolled.get_mut(&page)
+        && let Some(sheet) = sheet_of(store, page)
+        && let Some(version) = store.document_version(sheet)
+    {
+        tracking.frontier = version;
     }
 }
 
@@ -649,7 +672,8 @@ pub(crate) fn sweep_outbound(
 /// peers when any are in the room, the solo one-event otherwise. The
 /// attach roster admits nobody without a pairing record
 /// ([`SyncSession::ceremony_peers`]), so a revoked device is left
-/// behind by construction.
+/// behind by construction. True when the ceremony committed on the
+/// spot — the solo path, whose caller owes the page a settled cursor.
 fn rotate_channel(
     store: &mut companion_core::SheetStore<companion_core::SystemClock>,
     engine: &mut EngineState,
@@ -657,7 +681,7 @@ fn rotate_channel(
     target: ItemId,
     now_ms: u64,
     events: &mut Vec<serde_json::Value>,
-) {
+) -> bool {
     let identities: Vec<(String, Vec<u8>)> = pairing::peer_records(credentials)
         .into_iter()
         .map(|record| (record.fingerprint, record.identity_pub))
@@ -670,6 +694,7 @@ fn rotate_channel(
             .solo_ceremony(target, store, &mut engine.chain)
         {
             events.push(serde_json::json!({ "kind": "ceremony_committed", "page": page }));
+            return true;
         }
     } else {
         let own = engine.packages.package().clone();
@@ -680,6 +705,7 @@ fn rotate_channel(
             events.push(serde_json::json!({ "kind": "ceremony_proposed", "page": page }));
         }
     }
+    false
 }
 
 /// A terminal marker this device may publish: the page id and the
@@ -774,6 +800,14 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                                 .iter()
                                 .any(|event| matches!(event, SyncEvent::CeremonyCommitted(_)));
                             events.extend(absorbed.iter().map(event_json));
+                            // A drained commit compacted the page here;
+                            // its cursor settles so the rebuild travels
+                            // only as the frame.
+                            for event in &absorbed {
+                                if let SyncEvent::CeremonyCommitted(page) = event {
+                                    settle_frontier(store, &mut sync.enrolled, *page);
+                                }
+                            }
                         }
                         // A 401 here refreshes at the next pump's top.
                         Err(RelayRefusal::Unauthorized) => {}
@@ -1721,6 +1755,27 @@ mod tests {
         let opened = engine.chain.open(&frame).unwrap();
         let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
         assert!(!contains(&opened, b"DOOMED"));
+
+        // The rebuilt body travels only as that frame. The cursor
+        // settled at the rebuilt document's own version, so once the
+        // pre-ceremony batch drains, the next sweep owes nothing — an
+        // unsettled cursor would republish the whole rebuild as a
+        // delta, which a peer holding its own rebuild would merge as
+        // a second copy of the text.
+        let EngineState { session, chain, .. } = engine;
+        let _ = session.publish_request(0, chain).unwrap();
+        session
+            .absorb_publish(&HttpResponse {
+                status: 200,
+                body: br#"{"seq":1}"#.to_vec(),
+            })
+            .unwrap();
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(
+            !engine.session.publish_due(4_000),
+            "the rebuild must not be republished as a delta"
+        );
     }
 
     #[test]
