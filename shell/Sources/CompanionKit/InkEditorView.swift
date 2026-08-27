@@ -1093,11 +1093,22 @@ public struct InkEditorView: NSViewRepresentable {
                         // never to cross.
                         tokenizer = CodeInk.Tokenizer(language: scanner.fenceLanguage)
                     case .code:
-                        // The line without its separator. A newline is
-                        // not part of anything the tokenizer colors,
-                        // and every offset it returns counts from the
-                        // paragraph's first character either way.
-                        tokens = tokenizer.tokens(in: line.trimmingCharacters(in: .newlines))
+                        // The line without its separator, taken off the
+                        // tail alone. Trimming both ends would move
+                        // every offset the tokenizer returns whenever a
+                        // line opens with something Foundation calls a
+                        // newline but `paragraphRange` does not break
+                        // on: a form feed at the head of a line, which
+                        // older sources carry as a page break and a
+                        // plain paste lands verbatim, shifted the whole
+                        // line's color one unit left. A token's offsets
+                        // count from the paragraph's first character,
+                        // so the first character must not move.
+                        var content = Substring(line)
+                        while let last = content.last, last.isNewline {
+                            content = content.dropLast()
+                        }
+                        tokens = tokenizer.tokens(in: String(content))
                     default:
                         break
                     }
