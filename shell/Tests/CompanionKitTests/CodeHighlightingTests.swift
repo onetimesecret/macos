@@ -222,6 +222,21 @@ final class CodeHighlightingRenderingTests: XCTestCase {
         XCTAssertEqual(foreground(of: "```swift"), NSColor.tertiaryLabelColor)
     }
 
+    /// A form feed is a newline to Foundation and is not a paragraph
+    /// break to `paragraphRange`, so a line that opens with one is one
+    /// line as far as the page is concerned. Trimming it off the head
+    /// before tokenizing would move every offset on that line and paint
+    /// the color one character to the left. Older sources carry page
+    /// breaks like this and a plain paste lands the byte verbatim.
+    func testAControlCharacterAtTheHeadOfALineDoesNotShiftItsColor() {
+        makeEditor()
+        paste("```swift\n\u{0C}let name = 1\n```")
+        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "\u{0C}"), NSColor.labelColor)
+        XCTAssertEqual(foreground(of: "1"), NSColor.systemBlue)
+        XCTAssertEqual(foreground(of: "name"), NSColor.labelColor)
+    }
+
     /// A block that names no language renders exactly as it did before
     /// highlighting existed. `let` here is a word in a note.
     func testABareFenceStaysPlainInk() {

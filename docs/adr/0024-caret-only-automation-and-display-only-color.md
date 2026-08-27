@@ -21,8 +21,8 @@ later from bug reports.
 Syntax coloring runs into §3 of the design principles: "no rich previews,
 no syntax highlighting, no image zoom. Recognition, not consumption."
 Read in its own context that rule governs the recognition surfaces:
-chips, the ledger, the resting glance, anything a shoulder surfer might
-catch. The editable page is a different surface, already carved out of
+chips, the ledger, the roll's quiet renderings, anything that shows a
+page without being the page. The editable page is a different surface, already carved out of
 §3's absolutism for headings by amendment B, and ADR-0013's
 editable-surface rule states the license plainly: "A text file with
 syntax highlighting is still a text file."
@@ -39,8 +39,16 @@ response to that keystroke, and never anywhere else in the document.
 **Display-only color.** Syntax coloring inside fenced code blocks on the
 editable page is display-only styling under amendment B's contract: the
 bytes never change, select-all-copy returns exactly what was typed, and
-chips, the ledger and every other recognition surface stay uncolored.
+chips, the ledger and the roll's quiet renderings stay uncolored.
 Recorded against §3 as amendment C.
+
+The resting glance is deliberately not on that list. ADR-0006 gives the
+backdrop no second view over the storage: at rest the card mounts the
+same editor, read only, so it has shown heading weight and link color
+since amendment B and it shows this color too. Nothing is revealed by
+that, because the ink at rest is already legible in full; if a glance
+should show less, the answer is to show less of the page, not to
+selectively uncolor it.
 
 ## Consequences
 
