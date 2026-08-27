@@ -5249,9 +5249,11 @@ mod tests {
             std::fs::set_permissions(half, std::fs::Permissions::from_mode(0o400)).unwrap();
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
             let resealed = companion_persist_rotate_and_save(handle, c_path.as_ptr());
-            let untouched = std::fs::metadata(half).unwrap().len() == 32;
+            // Absent counts as touched: under root the rotation zeroes
+            // and unlinks this half despite the modes.
+            let untouched = std::fs::metadata(half).is_ok_and(|m| m.len() == 32);
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-            std::fs::set_permissions(half, std::fs::Permissions::from_mode(0o600)).unwrap();
+            let _ = std::fs::set_permissions(half, std::fs::Permissions::from_mode(0o600));
 
             // Running as root, or on a filesystem that ignores the
             // modes, the branch under test is unreachable and the
@@ -5404,9 +5406,11 @@ mod tests {
             std::fs::set_permissions(half, std::fs::Permissions::from_mode(0o400)).unwrap();
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
             let dropped = companion_persist_erase(handle, c_path.as_ptr());
-            let untouched = std::fs::metadata(half).unwrap().len() == 32;
+            // Absent counts as touched: under root the erase zeroes and
+            // unlinks this half despite the modes.
+            let untouched = std::fs::metadata(half).is_ok_and(|m| m.len() == 32);
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-            std::fs::set_permissions(half, std::fs::Permissions::from_mode(0o600)).unwrap();
+            let _ = std::fs::set_permissions(half, std::fs::Permissions::from_mode(0o600));
 
             // Running as root, or on a filesystem that ignores the
             // modes, the branch under test is unreachable and the erase
