@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stay local until this pad rejoins — instead of prescribing a
   recovery that still rides Amendment 1's pending welcome.
 
+- **Amendment 1 absorbed its ratification review** (PR #121).
+  Recovery is now three named doors, not one: a sleeper with intact
+  state catches up through its welcome, lost or rolled-back state
+  means a fresh device identity with the stale one revoked, and a new
+  device still joins empty. A welcome entry binds and signs
+  everything it hands over — epoch, frame hash, recipient, version,
+  issuer — so nothing is adopted unverified; no candidate welcome
+  survives losing the frame race; the chain position persists before
+  anything publishes under it; and adopting the winning frame may
+  never silently drop edits only the adopting device holds.
+
 ### Changed
 
 - **The relay protocol folded in what building its client taught, and
