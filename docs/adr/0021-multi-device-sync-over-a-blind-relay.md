@@ -544,8 +544,8 @@ key** to that device's verified key package (protocol §6). The key and
 not the entropy, because the welcome exists precisely for the device
 the chain math has left behind (fact 1). Enrolment, not attachment,
 draws the map's boundary: every device the pairing records name and
-the roster serves gets an entry, and revocation stays what section 2
-made it — omission. This is RFC 9420's Welcome object arriving at
+the roster serves gets an entry, and revocation stays what the
+protocol's §5 made it — omission. This is RFC 9420's Welcome object arriving at
 one-channel scale, the same standard section 5 already borrowed for
 external commits.
 
@@ -578,10 +578,14 @@ stolen key opens is exactly the epochs its device slept through — the
 same material the welcome exists to hand that device. Recoverability
 for the sleeper and exposure of the sleeper's key are one decision,
 priced together, and the standard shape (MLS Welcome) prices it the
-same way. Section 4's admission widens by grain, not by channel: the
-welcome shows the relay the enrolled-device fingerprints and count at
-each ceremony rather than only at attach (item 2), and the frame's
-bucketed size now scales with device count (item 6).
+same way. Section 4's admission widens, but by no new channel: item 2
+widens in kind as well as grain — attach (protocol §4) hands the relay
+each device's identity fingerprint and published key package, held for
+the attachment's life and served in the roster, a durable per-device
+identifier §4's original list never named — and the welcome shows the
+enrolled fingerprints and count again at each ceremony rather than
+only at attach; the frame's bucketed size now scales with device
+count (item 6).
 
 **Rejected: sealing the welcome under the channel secret.** Every
 paired device could open it — including a just-revoked one, which
@@ -609,7 +613,17 @@ sentence.
   rotation-never-touches tests extended to it.
 - The welcome map built in `gop::ceremony_commit` from the ceremony's
   peers, and walked in `SyncSession::absorb_frame` before the chain
-  opens the frame. Rides issue #102's driver wiring.
+  opens the frame. Issue #102's driver shipped without this half: the
+  driver surfaces `rejoin_required` honestly but fetches and adopts
+  nothing yet, so it needs its own issue alongside the server's
+  (onetimesecret#4303).
+- The coordinated commit leaves each participant its own independent
+  rebuild; the frame supersession then picks one canonically (the
+  publish the relay accepted — a `409` told the others a peer's copy
+  won). Every losing participant must take the same rejoin path the
+  sleeper takes, adopting the winning frame over its own rebuild —
+  without that adoption, two rebuilds share no history and the
+  winner's later deltas are refused on the losers.
 - Protocol: `PUT`/`GET /channel/frame` gain `welcome` beside `frame`
   (relay-protocol.md §4-5, amended 2026-08-27); the server stores it
   opaquely and supersedes it with the frame

@@ -1,9 +1,13 @@
 # Account auth for the relay channel
 
-**Status:** decided on paper, not built — which is the order issue
+**Status:** built, spec first — the order issue
 [#98](https://github.com/onetimesecret/macos/issues/98)'s acceptance
-criteria require: the flow, its failure modes and the reasons written
-down before any client code. The one job this document covers is
+criteria require: the flow, its failure modes and the reasons were
+written down before any client code, and the client now implements
+them (`crates/sync/src/oauth.rs` for §1's ceremony and §2's lifetimes,
+`crates/sync/src/loopback.rs` for the redirect, `BearerAuth` in
+`crates/ots-client` for §3, driven by `crates/ffi/src/sync_driver.rs`
+and `SyncController.swift`). The one job this document covers is
 ADR-0021 §3's first gate: prove to the relay that the attaching client
 belongs to the account, and nothing else. Device trust is pairing
 (issue #97, `crates/ffi/src/pairing.rs`) and is not renegotiated here.
@@ -97,8 +101,9 @@ background act as powerful as the deliberate one (ADR-0021 §3).
   already test (`crates/ffi/src/pairing.rs`,
   `pairing_secrets_are_separate_from_the_conceal_credentials`), and
   the sync-auth implementation extends that test to its account.
-- When the swap lands in code it is additive: a second `AuthStrategy`
-  implementation for bearer tokens, with Basic untouched.
+- The swap landed additively: `BearerAuth`
+  (`crates/ots-client/src/auth.rs`) is a second `AuthStrategy`
+  implementation, with Basic untouched.
 
 ## 4. Offline grace
 

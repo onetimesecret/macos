@@ -81,9 +81,10 @@ struct SyncSettingsSection: View {
     }
 
     private var devicesCaption: String {
-        "Devices on this channel. Revoking one stops anything new from being readable "
-            + "to it after the next key rotation; each page's context menu chooses which "
-            + "pages travel at all."
+        "Devices on this channel. Revoking one removes this Mac's trust in it: key "
+            + "rotations this Mac starts seal nothing new to it. A device paired from "
+            + "more than one Mac must be revoked on each; each page's context menu "
+            + "chooses which pages travel at all."
     }
 }
 
@@ -122,7 +123,7 @@ private struct SyncDeviceRow: View {
                         Button("Cancel", role: .cancel) {}
                     } message: {
                         Text(
-                            "Nothing new becomes readable to it after the next key rotation. What it already holds, it holds."
+                            "This Mac stops sealing anything new to it at the next key rotation this Mac starts. If it was also paired from another Mac, revoke it there too. What it already holds, it holds."
                         )
                     }
             }

@@ -300,8 +300,9 @@ struct SheetTab: View {
 
     /// The sync item's label: what the click will do, both ways. Pure,
     /// like its neighbours, so the offer at each state is testable
-    /// without a menu.
-    static func syncMenuTitle(enrolled: Bool) -> String {
+    /// without a menu — nonisolated because nothing about it needs
+    /// the view's actor, and the tests call it from off it.
+    nonisolated static func syncMenuTitle(enrolled: Bool) -> String {
         enrolled ? "Stop syncing this page" : "Sync this page to your devices"
     }
 

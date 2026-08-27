@@ -191,6 +191,10 @@ public final class SyncController: ObservableObject {
 
     private func settleSignin(_ outcome: SyncOutcome) {
         status = client.syncStatus()
+        // The switch may have gone off while the browser consent was
+        // open; off means silent and detached — no attach, and no
+        // failure sentence either.
+        guard enabled else { return }
         guard outcome.ok else {
             signinFailure = Self.signinSentence(reason: outcome.reason ?? "refused")
             return
@@ -244,7 +248,10 @@ public final class SyncController: ObservableObject {
         pairingStage = nil
         pairingTimer?.invalidate()
         retryTimer?.invalidate()
-        enrolledPages.removeAll()
+        // The enrolment mirror stays: the core keeps its enrolment
+        // across detach and re-configure, so clearing only the mirror
+        // would leave pages syncing while the menu says they don't.
+        // The menu is hidden while the switch is off either way.
         guard wasAttached else {
             refreshState()
             return
@@ -481,7 +488,7 @@ public final class SyncController: ObservableObject {
         case .unreachable:
             return "the relay cannot be reached; edits stay local and sync retries"
         case .behind:
-            return "sync fell behind a key rotation; pairing again rejoins this pad"
+            return "sync fell behind a key rotation; edits stay local until this pad rejoins"
         case nil:
             break
         }

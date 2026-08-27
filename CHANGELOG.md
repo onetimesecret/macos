@@ -30,6 +30,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   #4303), no relay address ships by default, and until one is
   configured the switch reports that nothing leaves this Mac.
 
+- **The review of that surface hardened what it found** (PR #121). A
+  page's death now demands proof: a terminal marker only counts when
+  its signature verifies under a device this Mac trusts — its own or a
+  paired peer's — so revoking a device revokes the one destructive
+  claim it could still publish. Every signature the device identity
+  makes now says what it is for, so a signature published in one role
+  (a pairing, public on the relay) can never pass as another (a key
+  package). A sign-in no longer dies to a stray connection probing the
+  ephemeral port, an expired access token no longer wedges sync until
+  relaunch, and a token server having a bad day no longer signs you
+  out — only the server actually refusing the grant does. And the
+  "fell behind" sentence now says what the app can deliver — edits
+  stay local until this pad rejoins — instead of prescribing a
+  recovery that still rides Amendment 1's pending welcome.
+
 ### Changed
 
 - **The relay protocol folded in what building its client taught, and

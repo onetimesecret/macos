@@ -20,9 +20,9 @@ use ots_client::{
 };
 use zeroize::Zeroizing;
 
-/// Where a conceal goes: the app's one outbound destination plus the
-/// Basic-auth username half. Non-secret — the API token never sits
-/// here; it lives in the credential store and is loaded per call.
+/// Where a conceal goes: the conceal server plus the Basic-auth
+/// username half. Non-secret — the API token never sits here; it
+/// lives in the credential store and is loaded per call.
 #[derive(Clone)]
 pub(crate) struct Connection {
     /// Server base URL, `https://` only (the network boundary).

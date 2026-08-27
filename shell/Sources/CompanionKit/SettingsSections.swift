@@ -86,7 +86,7 @@ public struct ConnectionSettingsView: View {
                 TextField("Server URL", text: $serverUrl, prompt: Text("https://eu.onetimesecret.com"))
                 TextField("Share domain", text: $shareDomain, prompt: Text("optional — defaults to the server's host"))
             } header: {
-                Text("Where a conceal goes — the app's one outbound destination, https only.")
+                Text("Where a conceal goes — https only.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -79,8 +79,8 @@ Per channel, the relay holds, and is allowed to hold, exactly:
 5. **Attachment metadata**: which account, which device fingerprints,
    when each attached, and the key package each device published at
    attach (§6 — public material, served back in the attach answer;
-   amended 2026-08-27) — the admission of ADR-0021 §4, not a new
-   channel.
+   amended 2026-08-27) — ADR-0021 §4 item 2 as widened by Amendment 1,
+   not a new channel.
 
 It holds nothing else, and it never holds a content key, a GOP key, a
 pairing secret, or anything it could merge, compact or read. Bounds and
@@ -96,11 +96,15 @@ lifetimes:
   8 days (the 7-day ceiling rung plus the 24-hour hold ceiling) is
   dropped whole — frame, deltas, mailbox. A page kept alive longer than
   that is being kept alive by a device that is awake, and a device that
-  is awake writes. This is hygiene under §2's rule that the security
-  boundary is key rotation, and it is what makes "holds nothing past
-  the page's own TTL"
-  (`docs/spec/design/05-technical-direction.md:107-117`) true at the
-  relay without trusting it.
+  is awake writes. This drop is hygiene under §2's rule that the
+  security boundary is key rotation — never the argument itself: while
+  every device sleeps, an expired page's sealed deltas remain in the
+  buffer, ciphertext still, but ciphertext the unrotated GOP key would
+  open, until a waking device publishes the terminal marker and its
+  ceremony purges (§5, ADR-0021 §6) or the channel ages out. The
+  derivable per-page bound is the next ceremony, not the page's own
+  TTL (`docs/spec/design/05-technical-direction.md:107-117` states the
+  per-device story this bound approximates).
 
 ## 4. The message set
 
@@ -151,6 +155,12 @@ Rules the shapes encode:
   adopts the current frame (`SheetStore::adopt_key_frame`,
   `PageChannel::rejoin_at_epoch`). It never asks for history, and the
   relay has none to give (ADR-0021 §1).
+- **`welcome` is amendment-pending on the client** (ADR-0021
+  Amendment 1). Servers implement both frame fields now, but MUST
+  accept a `PUT /channel/frame` without `welcome` and may serve a
+  frame without one: the shipped client sends `{epoch, frame}` only
+  and does not yet read the welcome or walk the rejoin fetch — that
+  half rides the amendment's required work.
 - **Everything inside a delta blob is sealed**: the page id, the ops
   (`SheetStore::export_document_updates`), the expiry policy and hold
   register (`crates/core/src/sync.rs`), terminal markers, and the
@@ -201,7 +211,12 @@ entropy cannot catch up a device that is behind. The rejoin path
 reads it: fetch the frame, open your own entry, adopt the epoch and
 key, open the frame. A device with no openable entry waits for the
 next ceremony's welcome or re-pairs — and a revoked device, omitted
-from the map, waits forever, which is revocation working.
+from the map, waits forever, which is revocation working. The welcome
+is specified ahead of its client (§4's amendment-pending rule): the
+shipped client neither builds nor reads it yet, so until that half
+lands, a device on the rejoin path surfaces "behind" and stays there
+— which the shell says honestly rather than promising a recovery the
+code cannot deliver.
 
 **Terminal markers propose.** After publishing a page's signed terminal
 marker (ADR-0021 §6), the publisher immediately proposes a ceremony, so
@@ -247,9 +262,16 @@ would hand the relay typing rhythm at keystroke grade. ADR-0021 §4
 requires batching on a clock, and this document owns the number:
 
 - **Publish at most every 2 seconds** per channel, coalescing
-  everything since the last publish into one `blobs[]` entry per page
-  touched. An idle page publishes nothing: no keepalives, no
-  heartbeats, matching the no-polling frugality discipline
+  everything since the last publish into one request. Within it, each
+  queued envelope — a page's ops batch, an expiry move, a hold change,
+  a terminal marker, a ceremony message — seals as its own padded
+  blob: the relay sees the request's blob count, never which kind or
+  whose page any blob is, because page ids ride inside the seal and
+  control shares the stream (§4). Coalescing a page's several
+  envelopes into one blob is a narrowing the client may adopt later;
+  until then the per-publish blob count is a grain the admission below
+  names. An idle page publishes nothing: no keepalives, no heartbeats,
+  matching the no-polling frugality discipline
   (`crates/core/src/store.rs`).
 - **Pad every sealed blob** to the next power-of-two size, 256 bytes
   minimum, 64 KiB maximum bucket — the ledger's `SizeClass` discipline
@@ -260,8 +282,10 @@ requires batching on a clock, and this document owns the number:
   bounded by the publish clock, not the poll.
 
 Checked against ADR-0021 §4 as specified, not as imagined: the relay
-learns account identity (attach), device count and attachment times
-(attach list), delta timing at 2-second grain (publish clock), delta
+learns account identity (attach), device count, identity fingerprints,
+key packages and attachment times (attach list — §4 item 2 as
+Amendment 1 widened it), delta timing at 2-second grain and per-publish
+blob count (publish clock and the per-envelope sealing above), delta
 sizes in buckets (padding), ceremony times (frame supersessions), and
 the frame's existence and bucketed size. The welcome map (amended
 2026-08-27) shows the enrolled fingerprints and count at each ceremony
@@ -287,8 +311,9 @@ table in §4.
    `since` with `410 rejoin`.
 4. Accept a frame only at epoch current+1, atomically superseding the
    old frame — its welcome with it, stored opaquely beside it and
-   never parsed (amended 2026-08-27) — and dropping every older
-   delta.
+   never parsed, and tolerated absent while the client half of the
+   welcome is pending (§4; amended 2026-08-27) — and dropping every
+   older delta.
 5. Refuse publishes past the §3 cap with `413 ceremony_required`.
 6. Drop the channel whole after 8 idle days.
 7. Hold the pairing mailbox of §7, one pairing at a time, one hour at

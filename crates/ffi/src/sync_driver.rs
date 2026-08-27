@@ -1511,8 +1511,11 @@ pub(crate) fn absorb_mailbox(companion: &mut Companion, response: &HttpResponse)
         && let Some(engine) = companion.sync.engine.as_mut()
     {
         // The delivered secret replaces whatever this device founded
-        // for itself: the chain re-roots, and the rejoin path carries
-        // it to the channel's current epoch.
+        // for itself: the chain re-roots at epoch zero. That is the
+        // whole story today — catching a joiner up to a channel that
+        // has already rotated is ADR-0021 Amendment 1's welcome, not
+        // yet built on either side of the wire — so a joiner landing
+        // on a rotated channel sees rejoin_required, honestly.
         engine.chain = chain;
     }
 }
