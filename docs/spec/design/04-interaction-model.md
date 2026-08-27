@@ -284,6 +284,37 @@ ink. Nothing inside a fence is a link — a URL there is code — and the
 system's automatic link detection is off: what counts as a link is the
 restyle pass's one conservative reading, not the OS's.
 
+**Lists continue themselves, and nothing else** (ADR-0024). Return at the
+end of a list item starts the next one: the same indent, a bullet
+repeating itself, an ordered marker incremented with its delimiter kept
+(`3.` becomes `4.`, `3)` becomes `4)`), a task box continuing unchecked.
+Return on an item that is empty strips the marker and leaves a plain
+line, the one keystroke every chat client has trained people to expect
+for ending a list. Tab and Shift-Tab nudge an item's depth while the
+caret sits in the marker; anywhere else on the line Tab is still a tab.
+What the page never does is renumber: inserting an item mid-list leaves
+every number below it exactly as typed, because automation may write only
+on the caret's line, or the line the keystroke creates, and never
+anywhere else in the document. Nor is any glyph substituted: a `-` stays
+a `-` on screen, at full weight, because the marker is the thing the eye
+scans for. Inside a fence none of it happens, and it is the same walk
+that decides the styling which decides the automation, so the two can
+never read a line differently.
+
+**Fenced code carries color, and only color** (ADR-0024, recorded as
+amendment C to doc 03 §3). A fence whose opening rule names a language
+colors four kinds of token inside the block: keywords, strings, comments
+and numbers. The language comes from that info string and from nowhere
+else, so an unknown language, an unlisted one, or a bare ` ``` ` renders
+exactly as it does today; a guessed language is worse than plain ink.
+Nothing but the foreground color moves. Same font, same metrics, same
+wash, and the bytes are untouched, so select-all-copy still returns
+exactly what was typed and sealing a colored line seals the markup. The
+color lives on the editable page alone: chips, the ledger and the resting
+glance stay uncolored. The fence boundary holds in both directions,
+which is what keeps the reading above true: automation stops at it going
+in, and color stops at it coming out.
+
 ## The keyboard map, complete
 
 | Keys | Action |
