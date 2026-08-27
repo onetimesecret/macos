@@ -100,6 +100,17 @@ final class ListMarkerTests: XCTestCase {
         XCTAssertEqual(InkStyle.listMarker(of: "\t9. ninth")?.successor, "\t10. ")
     }
 
+    /// The parser reads nine digits at most, so the successor has to
+    /// stop there too: a tenth digit would be a marker the page could
+    /// not read back, with no hanging indent and no way to end the list
+    /// with one Return. The number repeats instead, and a repeated
+    /// number is the writer's to fix.
+    func testTheNinthDigitRepeatsRatherThanWriteAMarkerNothingCanRead() {
+        XCTAssertEqual(InkStyle.listMarker(of: "999999998. penultimate")?.successor, "999999999. ")
+        XCTAssertEqual(InkStyle.listMarker(of: "999999999. last")?.successor, "999999999. ")
+        XCTAssertNil(InkStyle.listMarker(of: "1000000000. tenth digit"))
+    }
+
     /// The next thing to do has not been done yet, so a checked item
     /// begets an unchecked one.
     func testATaskItemContinuesUnchecked() {
@@ -347,6 +358,19 @@ final class ListKeystrokeTests: XCTestCase {
         XCTAssertEqual(storage.string, "- milk \nand eggs")
     }
 
+    /// A caret at the head of a bare marker is a writer asking for a
+    /// line above the item, not for the marker to disappear. Only a
+    /// Return at the end of a line is about the list at all, and that
+    /// governs the ending branch exactly as it governs this one.
+    func testReturnAtTheHeadOfABareMarkerSplitsPlainly() {
+        makeEditor()
+        write("- milk\n- ")
+        caret(to: 7)
+        textView.insertNewline(nil)
+        XCTAssertEqual(storage.string, "- milk\n\n- ")
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 8, length: 0))
+    }
+
     /// ⇧Return is the hard wrap inside an item, and it stays exactly
     /// that: the escape hatch has to keep working.
     func testShiftReturnStaysAPlainLineBreak() {
@@ -370,6 +394,30 @@ final class ListKeystrokeTests: XCTestCase {
         XCTAssertEqual(
             storage.string, "```sh\n- x\n",
             "a flag inside a fence was continued as a bullet (issue #75)"
+        )
+    }
+
+    /// The stamp on the cached reading is the page's content and not
+    /// its length, because a backtick typed over a letter above the
+    /// caret opens a fence and changes what the caret's line means
+    /// without moving a single character. A stamp that counted
+    /// characters would call that page unchanged and write a bullet on
+    /// a line the page now reads as code (issue #75).
+    func testAnEqualLengthEditAboveTheCaretRetiresTheReading() {
+        makeEditor()
+        write("``x\n- milk")
+        // The edit reaches the storage without the walk that normally
+        // follows it, which is the only moment the stamp is load
+        // bearing.
+        storage.replaceCharacters(in: NSRange(location: 2, length: 1), with: "`")
+        XCTAssertEqual(storage.string, "```\n- milk")
+        caret(to: storage.length)
+
+        textView.insertNewline(nil)
+
+        XCTAssertEqual(
+            storage.string, "```\n- milk\n",
+            "a bullet was written on a line the page had already turned into code"
         )
     }
 
