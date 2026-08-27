@@ -26,4 +26,7 @@ The client seams these documents drive are in the tree: the delta seam
 state (`crates/core/src/sync.rs`, issues #100 and #101), the per GOP
 transport key (`crates/ffi/src/gop.rs`, issue #95), and device pairing
 (`crates/ffi/src/pairing.rs`, issue #97). The session layer that joins
-them to a wire, and the settings surface (issue #102), are not built.
+them to a wire is built too (`companion-sync` and
+`crates/ffi/src/sync_session.rs`, PR #119); what remains is the shell
+surface and its C ABI (issue #102) and the server side
+(onetimesecret/onetimesecret#4303).

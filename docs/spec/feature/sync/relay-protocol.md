@@ -64,7 +64,11 @@ Per channel, the relay holds, and is allowed to hold, exactly:
    interprets beyond "a frame at epoch n+1 supersedes everything at
    epoch n".
 2. **One sealed key frame**, the composite of §2, written at each
-   ceremony, superseding its predecessor (ADR-0021 §1, §5).
+   ceremony, superseding its predecessor (ADR-0021 §1, §5) — and
+   beside it the frame's **welcome map** (amended 2026-08-27,
+   ADR-0021 Amendment 1): one sealed entry per enrolled device, keyed
+   by identity fingerprint, superseded with the frame it belongs to.
+   The relay parses neither.
 3. **The sealed deltas published since that frame**, in arrival order
    under a per-channel sequence number: one GOP and never more.
 4. **The pairing mailbox** (§7): the ceremony messages of at most one
@@ -109,8 +113,8 @@ bodies are JSON; every sealed blob travels base64.
 | Message | Shape | Answer |
 | --- | --- | --- |
 | Attach | `POST /channel/attach` `{device, key_package}` | `{epoch, frame_present, next_seq, peers: [{device, key_package, attached_ms}]}` |
-| Fetch frame | `GET /channel/frame` | `{epoch, frame}` or `404` |
-| Publish frame | `PUT /channel/frame` `{epoch, frame}` | `204`; `409` unless `epoch` is exactly current+1 |
+| Fetch frame | `GET /channel/frame` | `{epoch, frame, welcome}` or `404` |
+| Publish frame | `PUT /channel/frame` `{epoch, frame, welcome}` | `204`; `409` unless `epoch` is exactly current+1 |
 | Publish deltas | `POST /channel/deltas` `{epoch, blobs[]}` | `{seq}`; `409` on epoch mismatch; `413 ceremony_required` at the cap |
 | Fetch deltas | `GET /channel/deltas?since=seq&wait=25` | `{epoch, blobs[], next_seq}`, long-polling up to `wait` seconds; `410 rejoin` when `since` predates the buffer |
 | Pairing | `POST /channel/pairing`, `GET /channel/pairing?since=` | the mailbox of §7 |
@@ -186,6 +190,19 @@ epoch. A device that slept through the proposal entirely wakes to
 its pre-ceremony history is dropped, never merged
 (`RemoteRefusal::NotFresh` is the store refusing the alternative).
 
+**The frame travels with its welcome** (amended 2026-08-27, ADR-0021
+Amendment 1). Beside the sealed frame — outside the GOP seal, since a
+device that could open the frame would not need it — rides `welcome`,
+a map in `entropy_sealed`'s shape: keyed by identity fingerprint, one
+entry per enrolled device, each entry sealing the incoming epoch's
+GOP key to that device's verified key package (§6). The key and not
+the entropy: the chain salts each key with its predecessor, so
+entropy cannot catch up a device that is behind. The rejoin path
+reads it: fetch the frame, open your own entry, adopt the epoch and
+key, open the frame. A device with no openable entry waits for the
+next ceremony's welcome or re-pairs — and a revoked device, omitted
+from the map, waits forever, which is revocation working.
+
 **Terminal markers propose.** After publishing a page's signed terminal
 marker (ADR-0021 §6), the publisher immediately proposes a ceremony, so
 the dead page's ciphertext in the relay buffer stops being decryptable
@@ -242,9 +259,13 @@ Checked against ADR-0021 §4 as specified, not as imagined: the relay
 learns account identity (attach), device count and attachment times
 (attach list), delta timing at 2-second grain (publish clock), delta
 sizes in buckets (padding), ceremony times (frame supersessions), and
-the frame's existence and bucketed size. That is the six-channel
-admission exactly; nothing here adds a seventh, and page count stays
-structurally unlearnable because §1 put every page behind one seal.
+the frame's existence and bucketed size. The welcome map (amended
+2026-08-27) shows the enrolled fingerprints and count at each ceremony
+rather than only at attach, and scales the frame's size with device
+count — channels 2 and 6 at a finer grain, per ADR-0021 Amendment 1.
+That is the six-channel admission exactly; nothing here adds a
+seventh, and page count stays structurally unlearnable because §1 put
+every page behind one seal.
 
 ## 9. What the server implements
 
@@ -261,7 +282,9 @@ table in §4.
 3. Sequence deltas per channel; serve `since`; answer pre-buffer
    `since` with `410 rejoin`.
 4. Accept a frame only at epoch current+1, atomically superseding the
-   old frame and dropping every older delta.
+   old frame — its welcome with it, stored opaquely beside it and
+   never parsed (amended 2026-08-27) — and dropping every older
+   delta.
 5. Refuse publishes past the §3 cap with `413 ceremony_required`.
 6. Drop the channel whole after 8 idle days.
 7. Hold the pairing mailbox of §7, one pairing at a time, one hour at
