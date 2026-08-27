@@ -542,10 +542,14 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
             }
             Ok(())
         }
-        Err(_) => {
+        Err(SyncAuthError::SignedOut) => {
             sign_out_locked(&mut guard);
             Err("signed_out")
         }
+        // The token endpoint being unwell (a 5xx, a mangled body) is
+        // not the grant being revoked: the refresh token stands and
+        // the next pump retries, exactly as an unreachable host would.
+        Err(_) => Err("unreachable"),
     }
 }
 
@@ -589,7 +593,8 @@ pub(crate) fn sweep_outbound(
         return;
     };
     let mut rotate = false;
-    let mut target: Option<ItemId> = None;
+    let mut due_target: Option<ItemId> = None;
+    let mut fallback: Option<ItemId> = None;
     for (page, tracking) in enrolled.iter_mut() {
         match sheet_of(store, *page) {
             Some(sheet) => {
@@ -611,16 +616,20 @@ pub(crate) fn sweep_outbound(
                     }
                 }
                 if let Some(register) = store.hold_register(sheet)
-                    && tracking.hold != Some(register)
+                    && hold_moved(tracking.hold, register)
                 {
                     engine.session.queue_hold(*page, register);
                     tracking.hold = Some(register);
                 }
+                // A page whose transition waits on its ceremony is
+                // the rotation's target, whatever order the map walks
+                // — a live page without one is only the fallback
+                // anchor for the rotation a terminal marker owes.
                 if store.ceremony_due(sheet) {
                     rotate = true;
-                    target = target.or(Some(*page));
-                } else if target.is_none() {
-                    target = Some(*page);
+                    due_target = due_target.or(Some(*page));
+                } else {
+                    fallback = fallback.or(Some(*page));
                 }
             }
             None => {
@@ -641,10 +650,39 @@ pub(crate) fn sweep_outbound(
         }
     }
     if rotate
-        && let Some(target) = target
+        && let Some(target) = due_target.or(fallback)
         && rotate_channel(store, engine, &**credentials, target, now_ms, events)
     {
         settle_frontier(store, enrolled, target);
+    }
+}
+
+/// Whether a re-read hold register is a new fact rather than the one
+/// already published. Any change of shape or substance counts, but
+/// `until_wall_ms` — recomputed as wall-now-plus-remaining on every
+/// read — is allowed the same clock-straddle jitter the expiry
+/// deadline is, or a held page would republish its hold every sweep.
+fn hold_moved(last: Option<HoldRegister>, next: HoldRegister) -> bool {
+    match (last, next) {
+        (Some(HoldRegister::Released), HoldRegister::Released) => false,
+        (
+            Some(HoldRegister::Held {
+                until_wall_ms: last_until,
+                frozen_ms: last_frozen,
+                topped_up: last_topped,
+            }),
+            HoldRegister::Held {
+                until_wall_ms,
+                frozen_ms,
+                topped_up,
+            },
+        ) => {
+            last_frozen != frozen_ms
+                || last_topped != topped_up
+                || until_wall_ms.abs_diff(last_until) > DEADLINE_JITTER_MS
+        }
+        // Nothing published yet, or the register changed shape.
+        _ => true,
     }
 }
 
@@ -720,7 +758,10 @@ fn signed_terminal_marker(
     let identity = Ed25519KeyPair::from_pkcs8(&pkcs8).ok()?;
     let mut marker = page.as_bytes().to_vec();
     marker.extend_from_slice(&at_wall_ms.to_be_bytes());
-    let signature = identity.sign(&marker);
+    let signature = identity.sign(&crate::persist::signing_domain(
+        crate::sync_session::TERMINAL_SIGN_CONTEXT,
+        &marker,
+    ));
     marker.extend_from_slice(signature.as_ref());
     Some(marker)
 }
@@ -786,7 +827,13 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                     return pump_result(handle, Some("poisoned"), &events);
                 };
                 let now = guard.sync.now_ms();
-                let Companion { store, sync, .. } = &mut *guard;
+                let Companion {
+                    store,
+                    sync,
+                    credentials,
+                    ..
+                } = &mut *guard;
+                let trusted = pairing::trusted_identities(&**credentials);
                 if let Some(engine) = sync.engine.as_mut() {
                     let EngineState {
                         session,
@@ -794,7 +841,7 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                         packages,
                         ..
                     } = engine;
-                    match session.absorb_deltas(&response, store, chain, packages, now) {
+                    match session.absorb_deltas(&response, store, chain, packages, &trusted, now) {
                         Ok(absorbed) => {
                             committed = absorbed
                                 .iter()
@@ -1370,21 +1417,30 @@ pub(crate) fn pairing_poll(handle: &CompanionHandle) -> serde_json::Value {
             };
             let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
             flow.outgoing.first().cloned().map(|message| {
+                let sent = message.clone();
                 guard
                     .sync
                     .engine
                     .as_ref()
                     .and_then(|engine| engine.session.post_pairing_request(message))
                     .zip(transport)
+                    .map(|(request, transport)| (sent, request, transport))
             })
         };
         match staged {
             None => break,
             Some(None) => return serde_json::json!({ "stage": "failed", "reason": "signed_out" }),
-            Some(Some((request, transport))) => match transport.send(request) {
+            Some(Some((sent, request, transport))) => match transport.send(request) {
                 Ok(response) if (200..300).contains(&response.status) => {
+                    // The head is removed only if it is still the
+                    // message this round posted: the lock was released
+                    // for the send, and a cancel, a fresh ceremony, or
+                    // a concurrent poll may have moved the queue —
+                    // blind removal would drop someone else's message
+                    // or panic on an emptied one.
                     if let Ok(mut guard) = handle.inner.lock()
                         && let Some(flow) = guard.sync.pairing.as_mut()
+                        && flow.outgoing.first() == Some(&sent)
                     {
                         flow.outgoing.remove(0);
                     }
@@ -1779,6 +1835,47 @@ mod tests {
     }
 
     #[test]
+    fn the_rotation_targets_the_page_whose_ceremony_is_due() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        let (tab_a, page_a) = companion.store.new_tab().unwrap();
+        let (tab_b, page_b) = companion.store.new_tab().unwrap();
+        for page in [page_a, page_b] {
+            assert!(companion.store.apply_ops(
+                page,
+                &[companion_core::EditOp::Insert {
+                    pos_u16: 0,
+                    text: "ink".into(),
+                }],
+            ));
+        }
+        // Make the due page the one the enrolment map iterates last,
+        // so an order-blind target would have settled on the calm
+        // page and compacted the wrong one, looping the rotation.
+        let uuid =
+            |companion: &Companion, sheet: SheetId| companion.store.sheet(sheet).unwrap().uuid();
+        let (due_tab, due_page) = if uuid(&companion, page_a) > uuid(&companion, page_b) {
+            (tab_a, page_a)
+        } else {
+            (tab_b, page_b)
+        };
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page_a, true));
+        assert!(enrol_page(&mut companion, page_b, true));
+        companion.store.cycle_rung(due_tab).unwrap();
+        assert!(companion.store.ceremony_due(due_page));
+
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(
+            !companion.store.ceremony_due(due_page),
+            "the due page, not the first-iterated one, must compact"
+        );
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert_eq!(engine.chain.epoch(), 1, "one boundary, at the due page");
+    }
+
+    #[test]
     fn a_page_that_died_here_publishes_its_marker_once_the_view_is_current() {
         let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
         let mut companion = store_companion(Arc::clone(&credentials));
@@ -1813,7 +1910,7 @@ mod tests {
                 ..
             } = engine;
             session
-                .absorb_deltas(&empty, store, chain, packages, 0)
+                .absorb_deltas(&empty, store, chain, packages, &[], 0)
                 .unwrap();
         }
         sweep_outbound(&mut companion, 2_000, &mut events);

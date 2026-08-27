@@ -276,6 +276,21 @@ pub(crate) const GOP_MAGIC: &[u8; 8] = b"OTSGOPD1";
 /// about it is per-boot any more.
 const FILE_HALF_PREFIX: &str = "ots-companion-key-half-";
 
+/// The domain-separated message an Ed25519 identity signature covers:
+/// `context ‖ payload`. The one identity key signs in several protocol
+/// roles — pairing transcripts, key packages, terminal markers — and
+/// without a context a signature published in one role could verify
+/// in another whose payload shares its shape (a 32-byte transcript
+/// hash is also a plausible 32-byte X25519 public key). Each role
+/// signs under its own versioned context, so a signature proves the
+/// role it was minted for and nothing else.
+pub(crate) fn signing_domain(context: &[u8], payload: &[u8]) -> Vec<u8> {
+    let mut message = Vec::with_capacity(context.len() + payload.len());
+    message.extend_from_slice(context);
+    message.extend_from_slice(payload);
+    message
+}
+
 /// Lowercase hex, the encoding public key material and fingerprints
 /// travel in on the sync wire and in the peer records — public
 /// material only, never a secret.

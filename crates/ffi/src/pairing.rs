@@ -80,6 +80,13 @@ const DEVICE_IDENTITY_ACCOUNT: &str = "sync-device-identity";
 /// (ADR-0016 section 3, ADR-0021 section 8).
 const CHANNEL_SECRET_ACCOUNT: &str = "sync-channel-secret";
 
+/// Versioned signing context for transcript signatures: the identity
+/// key signs `context ‖ transcript`, never the bare 32-byte hash —
+/// which is also a plausible X25519 public key, and an uncontexted
+/// signature over it would double as a key package's
+/// ([`crate::sync_session::KeyPackage`]).
+const TRANSCRIPT_SIGN_CONTEXT: &[u8] = b"ots-companion-pairing-transcript-v1";
+
 /// Versioned HKDF info string for the short authentication string.
 const PAIRING_SAS_INFO: &[u8] = b"ots-companion-pairing-sas-v1";
 
@@ -199,7 +206,14 @@ impl Inviter {
             derive_sas_and_wrap(shared, &transcript)
         })
         .ok()??;
-        let transcript_sig = self.identity.sign(&transcript).as_ref().to_vec();
+        let transcript_sig = self
+            .identity
+            .sign(&persist::signing_domain(
+                TRANSCRIPT_SIGN_CONTEXT,
+                &transcript,
+            ))
+            .as_ref()
+            .to_vec();
         Some((
             Settled {
                 sas,
@@ -268,14 +282,24 @@ impl Joiner {
             &self.eph_pub,
         );
         UnparsedPublicKey::new(&ED25519, &reveal.identity_pub)
-            .verify(&transcript, &reveal.transcript_sig)
+            .verify(
+                &persist::signing_domain(TRANSCRIPT_SIGN_CONTEXT, &transcript),
+                &reveal.transcript_sig,
+            )
             .ok()?;
         let peer = agreement::UnparsedPublicKey::new(&agreement::X25519, &reveal.eph_pub);
         let (sas, wrap_key) = agreement::agree_ephemeral(self.eph, &peer, |shared| {
             derive_sas_and_wrap(shared, &transcript)
         })
         .ok()??;
-        let transcript_sig = self.identity.sign(&transcript).as_ref().to_vec();
+        let transcript_sig = self
+            .identity
+            .sign(&persist::signing_domain(
+                TRANSCRIPT_SIGN_CONTEXT,
+                &transcript,
+            ))
+            .as_ref()
+            .to_vec();
         Some((
             Settled {
                 sas,
@@ -311,7 +335,10 @@ impl Settled {
     #[must_use]
     pub fn verify_acceptance(&self, acceptance: &Acceptance) -> bool {
         UnparsedPublicKey::new(&ED25519, &self.peer_identity_pub)
-            .verify(&self.transcript, &acceptance.transcript_sig)
+            .verify(
+                &persist::signing_domain(TRANSCRIPT_SIGN_CONTEXT, &self.transcript),
+                &acceptance.transcript_sig,
+            )
             .is_ok()
     }
 
@@ -486,6 +513,25 @@ pub fn device_fingerprint(credentials: &dyn CredentialStore) -> Option<String> {
     let pkcs8 = ensure_device_identity(credentials)?;
     let pair = Ed25519KeyPair::from_pkcs8(&pkcs8).ok()?;
     Some(identity_fingerprint(pair.public_key().as_ref()))
+}
+
+/// The Ed25519 identity public keys whose signed claims this device
+/// honors: its own, and each paired peer's from the records — the
+/// set a terminal marker must verify under. A revoked peer's key is
+/// gone from the records and so from this set, which is what makes
+/// revocation bite on the one destructive claim a peer can publish.
+#[must_use]
+pub fn trusted_identities(credentials: &dyn CredentialStore) -> Vec<Vec<u8>> {
+    let mut keys: Vec<Vec<u8>> = Vec::new();
+    if let Some(pkcs8) = ensure_device_identity(credentials)
+        && let Ok(pair) = Ed25519KeyPair::from_pkcs8(&pkcs8)
+    {
+        keys.push(pair.public_key().as_ref().to_vec());
+    }
+    for record in peer_records(credentials) {
+        keys.push(record.identity_pub);
+    }
+    keys
 }
 
 /// The fingerprint of the identity already at rest, minting nothing:
@@ -763,6 +809,33 @@ mod tests {
         let joined = GopKeyChain::root(&delivered).unwrap();
         let sealed = founder.seal(b"first delta").unwrap();
         assert_eq!(joined.open(&sealed).unwrap().as_slice(), b"first delta");
+    }
+
+    #[test]
+    fn a_transcript_signature_cannot_pose_as_a_key_package() {
+        // The mailbox publishes transcript signatures in the clear,
+        // and a 32-byte transcript hash is also a plausible X25519
+        // public key. Were the identity key to sign both roles
+        // uncontexted, a relay could assemble a "key package" for a
+        // paired identity from an observed pairing alone — and jam
+        // every ceremony that seals entropy to it. The signing
+        // contexts keep the roles apart.
+        let (inviter, commitment) = Inviter::begin(&identity()).unwrap();
+        let (joiner, offer) = Joiner::accept(&identity(), &commitment).unwrap();
+        let (inviter_settled, reveal) = inviter.settle(&offer).unwrap();
+        let forged = crate::sync_session::KeyPackage::decode(
+            &[
+                inviter_settled.transcript.as_slice(),
+                reveal.transcript_sig.as_slice(),
+            ]
+            .concat(),
+        )
+        .unwrap();
+        assert!(
+            !forged.verify(&reveal.identity_pub),
+            "a pairing signature must prove pairing and nothing else"
+        );
+        let _ = joiner;
     }
 
     #[test]

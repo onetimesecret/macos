@@ -51,6 +51,19 @@ pub const LONG_POLL_WAIT_S: u32 = 25;
 /// is abandoned, every device staying on the old GOP.
 pub const BALLOT_PATIENCE_MS: u64 = 60_000;
 
+/// Versioned signing context for key packages: the identity key signs
+/// `context ‖ x25519_pub`, never the bare 32 bytes — a bare 32-byte
+/// signature payload is exactly the shape of a pairing transcript
+/// hash, and the mailbox publishes transcript signatures in the
+/// clear, so an uncontexted package signature could be forged from
+/// one.
+const KEY_PACKAGE_SIGN_CONTEXT: &[u8] = b"ots-companion-key-package-v1";
+
+/// Versioned signing context for terminal markers: the identity key
+/// signs `context ‖ page_id ‖ wall_ms`, one role among the several
+/// the one key serves.
+pub(crate) const TERMINAL_SIGN_CONTEXT: &[u8] = b"ots-companion-terminal-v1";
+
 /// Versioned HKDF info string for entropy sealed to a key package.
 const ENTROPY_WRAP_INFO: &[u8] = b"ots-companion-entropy-wrap-v1";
 
@@ -97,7 +110,10 @@ impl KeyPackage {
     #[must_use]
     pub fn verify(&self, identity_pub: &[u8]) -> bool {
         UnparsedPublicKey::new(&ED25519, identity_pub)
-            .verify(&self.x25519_pub, &self.signature)
+            .verify(
+                &persist::signing_domain(KEY_PACKAGE_SIGN_CONTEXT, &self.x25519_pub),
+                &self.signature,
+            )
             .is_ok()
     }
 
@@ -150,7 +166,13 @@ impl KeyPackageKeeper {
         let private = agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng).ok()?;
         let x25519_pub = private.compute_public_key().ok()?.as_ref().to_vec();
         let identity = Ed25519KeyPair::from_pkcs8(identity_pkcs8).ok()?;
-        let signature = identity.sign(&x25519_pub).as_ref().to_vec();
+        let signature = identity
+            .sign(&persist::signing_domain(
+                KEY_PACKAGE_SIGN_CONTEXT,
+                &x25519_pub,
+            ))
+            .as_ref()
+            .to_vec();
         Some(Self {
             private: Some(private),
             package: KeyPackage {
@@ -381,22 +403,44 @@ impl SyncSession {
         )
     }
 
-    /// Absorb the attach answer: adopt the relay's cursor, and keep
-    /// where the channel stands and who else is on it.
+    /// Absorb the attach answer: adopt the relay's cursor on a first
+    /// attach, and keep where the channel stands and who else is on
+    /// it. A re-attach — the fresh-package republish after a ceremony
+    /// — keeps the live cursor: adopting the relay's tail mid-stream
+    /// would skip whatever peers published since the last drain, and
+    /// a skipped CRDT batch leaves every later delta refused for its
+    /// missing history.
     ///
     /// # Errors
     ///
     /// [`RelayRefusal`] passed through; `Unauthorized` means refresh
     /// and retry the one request.
     pub fn absorb_attach(&mut self, response: &HttpResponse) -> Result<(), RelayRefusal> {
-        let answer = RelayApi::parse_attach(response)?;
-        self.next_seq = answer.next_seq;
+        let answer = match RelayApi::parse_attach(response) {
+            Ok(answer) => answer,
+            Err(refusal) => return Err(self.note_refusal(refusal)),
+        };
+        if self.attach.is_none() {
+            self.next_seq = answer.next_seq;
+        }
         self.attach = Some(AttachSnapshot {
             epoch: answer.epoch,
             frame_present: answer.frame_present,
             peers: answer.peers,
         });
         Ok(())
+    }
+
+    /// Every refusal passes through here on its way out: a `401`
+    /// means the relay pronounced the held access token dead, and the
+    /// keeper must drop it or every recovery path would rebuild the
+    /// same request around the same stale bearer (§2: the `401` is
+    /// the only expiry authority).
+    fn note_refusal(&mut self, refusal: RelayRefusal) -> RelayRefusal {
+        if matches!(refusal, RelayRefusal::Unauthorized) {
+            self.keeper.clear_access();
+        }
+        refusal
     }
 
     /// Whether an attach has landed this session.
@@ -549,10 +593,12 @@ impl SyncSession {
     }
 
     /// Absorb the publish answer. `Ok` clears the batch; a `401`
-    /// keeps it for one retry after refresh; a `409` or `410` drops it
-    /// — the epoch moved underneath, and pre-ceremony history is
-    /// dropped, never merged; a `413` keeps the batch and tells the
-    /// caller to propose a ceremony.
+    /// keeps it for one retry after refresh — and reopens the publish
+    /// clock, because that retry is the same round, not a new
+    /// publish; a `409` or `410` drops it — the epoch moved
+    /// underneath, and pre-ceremony history is dropped, never merged;
+    /// a `413` keeps the batch and tells the caller to propose a
+    /// ceremony.
     ///
     /// # Errors
     ///
@@ -567,7 +613,10 @@ impl SyncSession {
                 if matches!(refusal, RelayRefusal::EpochConflict | RelayRefusal::Rejoin) {
                     self.in_flight = None;
                 }
-                Err(refusal)
+                if matches!(refusal, RelayRefusal::Unauthorized) {
+                    self.last_publish_ms = None;
+                }
+                Err(self.note_refusal(refusal))
             }
         }
     }
@@ -590,8 +639,11 @@ impl SyncSession {
     /// Absorb one long-poll's worth of deltas: open, unpad, decode and
     /// dispatch each blob to the seam it belongs to. A blob that does
     /// not open is skipped — sealed under another epoch, it is just
-    /// ciphertext now, which is the purge working. Returns the events
-    /// the shell reacts to; a `410` comes back as
+    /// ciphertext now, which is the purge working. `trusted` is the
+    /// Ed25519 identity public keys whose terminal markers this
+    /// device honors: its own and its paired peers' — a marker signed
+    /// by nobody on that list kills nothing. Returns the events the
+    /// shell reacts to; a `410` comes back as
     /// [`SyncEvent::RejoinRequired`] rather than an error, because it
     /// is the protocol's whole recovery story, not a failure.
     ///
@@ -599,18 +651,20 @@ impl SyncSession {
     ///
     /// Other [`RelayRefusal`]s passed through (`Unauthorized`: refresh
     /// and retry).
+    #[allow(clippy::too_many_arguments)]
     pub fn absorb_deltas<C: Clock>(
         &mut self,
         response: &HttpResponse,
         store: &mut SheetStore<C>,
         chain: &mut crate::gop::GopKeyChain,
         packages: &mut KeyPackageKeeper,
+        trusted: &[Vec<u8>],
         now_ms: u64,
     ) -> Result<Vec<SyncEvent>, RelayRefusal> {
         let batch = match RelayApi::parse_deltas(response) {
             Ok(batch) => batch,
             Err(RelayRefusal::Rejoin) => return Ok(vec![SyncEvent::RejoinRequired]),
-            Err(refusal) => return Err(refusal),
+            Err(refusal) => return Err(self.note_refusal(refusal)),
         };
         self.next_seq = batch.next_seq;
         let mut events = Vec::new();
@@ -630,9 +684,24 @@ impl SyncSession {
                 store,
                 chain,
                 packages,
+                trusted,
                 now_ms,
                 &mut events,
             );
+        }
+        // A batch sealed at an epoch ahead of this chain means the
+        // channel rotated past this device: blobs it cannot open, the
+        // spec's second rejoin trigger (relay-protocol.md §5).
+        // Checked after the loop, so a commit inside this very batch
+        // that advanced the chain still counts as caught up — and
+        // strictly "ahead", because a relay still serving the old
+        // epoch while this device's own frame is en route is behind
+        // us, not the other way around. The currency flags stay
+        // unset, keeping the terminal gate closed on a view that was
+        // discarded unread.
+        if batch.epoch > chain.epoch() {
+            events.push(SyncEvent::RejoinRequired);
+            return Ok(events);
         }
         // Draining to the frontier is what makes this device's view
         // current — the register currency the terminal gate reads.
@@ -650,6 +719,7 @@ impl SyncSession {
         store: &mut SheetStore<C>,
         chain: &mut crate::gop::GopKeyChain,
         packages: &mut KeyPackageKeeper,
+        trusted: &[Vec<u8>],
         now_ms: u64,
         events: &mut Vec<SyncEvent>,
     ) {
@@ -707,10 +777,20 @@ impl SyncSession {
                     events.push(SyncEvent::CountdownMoved(page));
                 }
             }
-            DeltaEnvelope::Terminal { page, .. } => {
+            DeltaEnvelope::Terminal { page, marker } => {
                 let Some(page) = page_from_wire(&page) else {
                     return;
                 };
+                // Terminal is absorbing and destructive, so the
+                // signature minted at publish is checked here before
+                // anything dies: the claim must be exactly the page
+                // id and wall stamp, name the page the envelope
+                // names, and verify under a trusted identity. A
+                // revoked device's record is gone from that list,
+                // which is what the signature exists for.
+                if !marker_trusted(&marker.0, page, trusted) {
+                    return;
+                }
                 self.channels.entry(page).or_default().note_terminal();
                 store.observe_terminal(page);
                 events.push(SyncEvent::Terminal(page));
@@ -837,6 +917,14 @@ impl SyncSession {
                         crate::gop::ceremony_commit(store, sheet_id, chain, &entropy)
                         && channel.complete_ceremony()
                     {
+                        // The chain is channel-wide: every page's
+                        // channel adopts the new epoch, exactly as
+                        // the solo ceremony does — a channel left at
+                        // the old number would refuse every later
+                        // delta for its page as a spurious rejoin.
+                        for other in self.channels.values_mut() {
+                            other.rejoin_at_epoch(chain.epoch());
+                        }
                         self.pending_frame = Some(frame);
                         self.ballot_scope = None;
                         events.push(SyncEvent::CeremonyCommitted(page));
@@ -1043,6 +1131,27 @@ pub(crate) fn sheet_of<C: Clock>(store: &SheetStore<C>, page: ItemId) -> Option<
         .map(companion_core::Sheet::id)
 }
 
+/// Whether `marker` is a well-formed terminal claim for `page` under
+/// one of the `trusted` Ed25519 identity public keys. The claim is
+/// `page_id(16) ‖ wall_ms(8)` and the signature covers exactly those
+/// bytes (the mint is the driver's `signed_terminal_marker`); binding
+/// the id inside the signature to the envelope's page keeps a real
+/// signature from being replayed against a different page.
+fn marker_trusted(marker: &[u8], page: ItemId, trusted: &[Vec<u8>]) -> bool {
+    const CLAIM_LEN: usize = 16 + 8;
+    const SIG_LEN: usize = 64;
+    if marker.len() != CLAIM_LEN + SIG_LEN || marker[..16] != page.as_bytes()[..] {
+        return false;
+    }
+    let (claim, signature) = marker.split_at(CLAIM_LEN);
+    let message = persist::signing_domain(TERMINAL_SIGN_CONTEXT, claim);
+    trusted.iter().any(|key| {
+        UnparsedPublicKey::new(&ED25519, key)
+            .verify(&message, signature)
+            .is_ok()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use companion_core::{EditOp, ManualClock};
@@ -1165,8 +1274,19 @@ mod tests {
             session.absorb_publish(&unauthorized).unwrap_err(),
             RelayRefusal::Unauthorized
         );
-        // The batch is still there: the retry after refresh republishes it.
-        assert!(session.publish_request(2_000, &chain).is_some());
+        // The 401 pronounced the access token dead — the keeper drops
+        // it, so nothing publishes until a refresh lands. The batch
+        // itself survives for the retry, and the retry does not wait
+        // out the publish clock: it is the same round, not a new one.
+        assert!(
+            session.publish_request(1, &chain).is_none(),
+            "no publish rides a token the relay refused"
+        );
+        session.keeper_mut().absorb(companion_sync::TokenGrant {
+            access: Zeroizing::new("access-2".into()),
+            refresh: Zeroizing::new("refresh-2".into()),
+        });
+        assert!(session.publish_request(1, &chain).is_some());
         let conflict = HttpResponse {
             status: 409,
             body: Vec::new(),
@@ -1225,7 +1345,7 @@ mod tests {
         let mut chain_b = GopKeyChain::root(CHANNEL_SECRET).unwrap();
         let mut a = session("fp-a");
         let mut b = session("fp-b");
-        let (pkcs8_b, _) = identity();
+        let (pkcs8_b, identity_b) = identity();
         let mut packages_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
         let mut relay = FakeRelay::default();
 
@@ -1239,6 +1359,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &[],
                 0,
             )
             .unwrap();
@@ -1246,11 +1367,20 @@ mod tests {
 
         // Draining to the frontier made B's view current: the terminal
         // gate opens. A fresh session that never drained stays quiet.
-        assert!(b.queue_terminal(uuid, b"signed marker"));
+        // The marker is the driver's mint: page id, wall stamp, and
+        // the identity's signature over exactly those bytes.
+        let signer = Ed25519KeyPair::from_pkcs8(&pkcs8_b).unwrap();
+        let mut marker = uuid.as_bytes().to_vec();
+        marker.extend_from_slice(&7_000_u64.to_be_bytes());
+        let message = persist::signing_domain(TERMINAL_SIGN_CONTEXT, &marker);
+        marker.extend_from_slice(signer.sign(&message).as_ref());
+        assert!(b.queue_terminal(uuid, &marker));
         let mut never_drained = session("fp-c");
-        assert!(!never_drained.queue_terminal(uuid, b"signed marker"));
+        assert!(!never_drained.queue_terminal(uuid, &marker));
 
-        // B's marker lands on A as the page's death.
+        // B's marker kills the page on A only under B's trusted
+        // identity: the same blob served to a device that does not
+        // trust the signer refuses it, and the page lives on there.
         let request = b.publish_request(0, &chain_b).unwrap();
         b.absorb_publish(&relay.accept_publish(&request)).unwrap();
         let (pkcs8_a, _) = identity();
@@ -1261,12 +1391,27 @@ mod tests {
                 &mut store_a,
                 &mut chain_a,
                 &mut packages_a,
+                &[],
+                0,
+            )
+            .unwrap();
+        assert!(
+            !events.iter().any(|e| matches!(e, SyncEvent::Terminal(_))),
+            "an untrusted marker must kill nothing"
+        );
+        let events = a
+            .absorb_deltas(
+                &relay.serve_fetch(1),
+                &mut store_a,
+                &mut chain_a,
+                &mut packages_a,
+                std::slice::from_ref(&identity_b),
                 0,
             )
             .unwrap();
         assert!(events.contains(&SyncEvent::Terminal(uuid)));
         // Absorbing: nothing lands on the page again.
-        assert!(!a.queue_terminal(uuid, b"again"));
+        assert!(!a.queue_terminal(uuid, &marker));
     }
 
     #[test]
@@ -1321,6 +1466,7 @@ mod tests {
             &mut store_b,
             &mut chain_b,
             &mut packages_b,
+            &[],
             0,
         )
         .unwrap();
@@ -1346,6 +1492,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &[],
                 0,
             )
             .unwrap();
@@ -1362,6 +1509,7 @@ mod tests {
                 &mut store_a,
                 &mut chain_a,
                 &mut packages_a,
+                &[],
                 0,
             )
             .unwrap();
@@ -1372,6 +1520,7 @@ mod tests {
                 &mut store_b,
                 &mut chain_b,
                 &mut packages_b,
+                &[],
                 0,
             )
             .unwrap();
@@ -1473,6 +1622,7 @@ mod tests {
             &mut store_b,
             &mut chain_b,
             &mut packages_b,
+            &[],
             0,
         )
         .unwrap();
