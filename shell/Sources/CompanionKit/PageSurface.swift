@@ -96,9 +96,14 @@ public struct PageContentView: View {
 /// none of them and the layout does not reserve their room.
 public struct PageStatusStack: View {
     @ObservedObject var model: PageModel
+    /// Observed directly: the controller is its own `ObservableObject`,
+    /// and a nested object's changes do not republish through the
+    /// model.
+    @ObservedObject var sync: SyncController
 
     public init(model: PageModel) {
         self.model = model
+        _sync = ObservedObject(wrappedValue: model.sync)
     }
 
     public var body: some View {
@@ -134,6 +139,18 @@ public struct PageStatusStack: View {
             // recording on this and every later launch until the user
             // clears the ledger in Settings.
             Text("the audit trail would not open and is not recording; clear the ledger in Settings to start a new trail")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(Color.ember)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        if let sentence = sync.standingSentence {
+            // Sync's one standing line (issue #102): present only while
+            // sync is on AND degraded — off is silence, and quiet-and-
+            // well is too. Each condition is its own sentence, ember
+            // because every one of them names something to act on.
+            Text(sentence)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(Color.ember)
                 .padding(.horizontal, 12)
