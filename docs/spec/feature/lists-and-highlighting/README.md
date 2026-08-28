@@ -59,8 +59,8 @@ That stays.
 
 §3 says "no rich previews, no syntax highlighting, no image zoom.
 Recognition, not consumption." Read in context that rule governs the
-recognition surfaces: chips, the resting glance, anything a shoulder
-surfer might see. Amendment B already carved the editable page out of
+recognition surfaces: chips, the ledger, anything that shows a page
+without being the page. Amendment B already carved the editable page out of
 §3's absolutism for headings (display-only, markup-preserving), and
 ADR-0013's editable-surface rule states the license plainly: "A text
 file with syntax highlighting is still a text file."
@@ -68,8 +68,10 @@ file with syntax highlighting is still a text file."
 Phase 1 adds **amendment C** to doc 03: syntax coloring inside fenced
 blocks on the editable page is display-only styling under amendment B's
 contract. The bytes never change, select-all-copy returns exactly what
-was typed, and chips, the ledger and every recognition surface remain
-uncolored. `docs/design-brief.md:32` is left as written; the principles
+was typed, and chips, the ledger and the roll's quiet renderings remain
+uncolored. The resting glance is not among them: it mounts the editable
+page itself, read only (ADR-0006), so it carries this color exactly as
+it has carried heading weight since amendment B. `docs/design-brief.md:32` is left as written; the principles
 doc is where amendments are recorded, per its own header.
 
 ### The caret-only automation law (ADR-0024)
