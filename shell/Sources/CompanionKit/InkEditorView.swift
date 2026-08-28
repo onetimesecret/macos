@@ -665,6 +665,12 @@ public struct InkEditorView: NSViewRepresentable {
             changeInLength delta: Int
         ) {
             guard editedMask.contains(.editedCharacters) else { return }
+            // Bumped before every guard below, projection writes and
+            // compositions included, because this counter answers one
+            // question only: has anything at all changed since the walk
+            // that filled the classification cache. An edit this method
+            // declines to emit still moves the page under that reading.
+            generation &+= 1
             guard !model.isApplyingProjection else { return }
             guard let sheet = currentSheet else { return }
             if markedTextInFlight || (textView?.hasMarkedText() ?? false) {
@@ -1133,7 +1139,7 @@ public struct InkEditorView: NSViewRepresentable {
             // decides from the classification, never from a second
             // scan that might disagree with the first).
             lineKinds = paragraphs
-            lineKindsStamp = text.hash
+            lineKindsStamp = generation
             lineKindsSheet = sheet
             if let layoutManager = textView?.layoutManager as? InkLayoutManager {
                 layoutManager.fenceRegions = fenceRegions
@@ -1373,17 +1379,23 @@ public struct InkEditorView: NSViewRepresentable {
         /// cache answers nothing, and nothing means no automation:
         /// a plain newline is always the safe answer.
         ///
-        /// The stamp is the page's own content and not its length,
+        /// The stamp counts edits rather than measuring the page,
         /// because what a line means depends on every line above it: a
         /// backtick typed over a letter somewhere higher up opens a
         /// fence and turns the caret's bullet into a flag (issue #75)
         /// without moving a single character. A length would call that
-        /// page unchanged. Hashing a little text file on a keystroke
-        /// costs nothing worth measuring, and the guarantee stops
-        /// resting on the arithmetic of the edits that happen to
-        /// reach us.
+        /// page unchanged, and so would a string hash: Foundation's
+        /// samples ninety six characters and the length, so on any page
+        /// worth the name most of it is never read. A counter bumped on
+        /// every character edit is exact at any size, and the guarantee
+        /// stops resting on which edits happen to change the
+        /// arithmetic.
         private var lineKinds: [(range: NSRange, kind: InkStyle.LineKind)] = []
-        private var lineKindsStamp = 0
+        /// How many character edits this coordinator has seen, ever.
+        /// The classification cache records the value it was built at,
+        /// so any edit since retires the reading.
+        private var generation = 0
+        private var lineKindsStamp = -1
         private var lineKindsSheet: UInt64?
 
         /// The classification of the paragraph beginning exactly at
@@ -1392,7 +1404,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// paragraph the walk has not seen yet.
         func classifiedKind(ofParagraphAt location: Int) -> InkStyle.LineKind? {
             guard let storage = textView?.textStorage,
-                  (storage.string as NSString).hash == lineKindsStamp,
+                  generation == lineKindsStamp,
                   let sheet = currentSheet, sheet == lineKindsSheet
             else { return nil }
             return lineKinds.first { $0.range.location == location }?.kind
@@ -1708,6 +1720,32 @@ final class InkTextView: NSTextView {
 
     // MARK: Lists (ADR-0024: automation only on the caret's line)
 
+    /// A paragraph's text without the separator at its end, taken off
+    /// the tail alone. Every offset a caller compares counts from the
+    /// paragraph's first character, so the head must not move.
+    ///
+    /// Only the characters `paragraphRange` actually breaks on come
+    /// off. `Character.isNewline` is a wider set than that: it holds
+    /// the form feed and the vertical tab, which the page treats as
+    /// ordinary characters sitting inside a line. Trimming one of those
+    /// would put the end of the line before the writer's own character,
+    /// and a Return there would read as a Return at the end of an item.
+    nonisolated static func lineWithoutSeparator(_ paragraph: String) -> String {
+        var line = Substring(paragraph)
+        while let last = line.last, last == "\n" || last == "\r" || last == "\u{2029}" {
+            line = line.dropLast()
+        }
+        return String(line)
+    }
+
+    /// True when everything after a marker is whitespace: an item with
+    /// nothing in it, however many spaces the writer left behind.
+    nonisolated static func contentIsBlank(of line: String, after markerLength: Int) -> Bool {
+        let units = Array(line.utf16)
+        guard units.count >= markerLength else { return false }
+        return units.dropFirst(markerLength).allSatisfy { $0 == 32 || $0 == 9 }
+    }
+
     /// Return, on a line the page reads as a list item.
     ///
     /// This is the first place the editor writes ink the user did not
@@ -1743,7 +1781,13 @@ final class InkTextView: NSTextView {
         guard let kind = coordinator?.classifiedKind(ofParagraphAt: paragraph.location),
               case .list = kind
         else { return super.insertNewline(sender) }
-        let line = text.substring(with: paragraph).trimmingCharacters(in: .newlines)
+        // The tail alone, never the head. `CharacterSet.newlines`
+        // holds characters `paragraphRange` does not break on, a form
+        // feed among them, so a line can carry one before its
+        // separator; trimming both ends would put the end of the line
+        // one unit short of where it really is, and a Return before
+        // that character would read as a Return at the end of an item.
+        let line = Self.lineWithoutSeparator(text.substring(with: paragraph))
         guard let item = InkStyle.listMarker(of: line) else {
             return super.insertNewline(sender)
         }
@@ -1758,14 +1802,18 @@ final class InkTextView: NSTextView {
         guard caret.location == paragraph.location + line.utf16.count else {
             return super.insertNewline(sender)
         }
-        if line.utf16.count == item.length {
-            // An empty item: the marker and nothing after its space.
+        if Self.contentIsBlank(of: line, after: item.length) {
+            // An empty item: the marker and nothing after its space
+            // that a reader would call content. One stray space is no
+            // reason for "one Return ends the list" to stop being true,
+            // so the marker and the blank behind it go together and
+            // leave a plain empty line.
             // Return takes the marker off and inserts no newline at
             // all, which is the reading every chat client has trained
             // people to expect: one Return ends the list. The removal
             // travels the ordinary edit route, so the core sees an
             // ordinary delete and provenance holds (ADR-0013).
-            let prefix = NSRange(location: paragraph.location, length: item.length)
+            let prefix = NSRange(location: paragraph.location, length: line.utf16.count)
             breakUndoCoalescing()
             // A refused edit is not a keystroke to swallow: the page
             // falls back to the newline it would have given before any
