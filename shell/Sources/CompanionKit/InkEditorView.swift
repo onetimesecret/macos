@@ -1489,7 +1489,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// say about it. Exact, because a paragraph that has moved is a
         /// paragraph the walk has not seen yet.
         func classifiedKind(ofParagraphAt location: Int) -> InkStyle.LineKind? {
-            guard let storage = textView?.textStorage,
+            guard textView?.textStorage != nil,
                   generation == lineKindsStamp,
                   let sheet = currentSheet, sheet == lineKindsSheet
             else { return nil }
