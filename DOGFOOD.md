@@ -4,6 +4,16 @@ This is the guide for running OnetimePad as a real daily tool, not a
 dev build you launch from the repo. It replaces the ad hoc habit of
 keeping quick snippets in Vivaldi Notes.
 
+
+## Writing and Editing
+
+
+It might be interesting to track block versions. So if I go back a couple days later and fix spelling or add another sentence etc, right now we update the modified time so the block timestamp -- created -> modified -- is updated. If we kept track of versions of a block that blick timestamp could be a clickable element that reveals the versions.
+
+When it loses focus and switches to backdrop UI, it should blend in a bit better and also blur the content slightly so that it's not readily visible. This should be a 0-100 types setting, along with opacity.
+
+
+
 ## Install and update
 
 ```sh
