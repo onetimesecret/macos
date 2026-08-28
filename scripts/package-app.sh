@@ -155,8 +155,20 @@ if [[ -z "$ICON" ]]; then
   scripts/build-icons.sh
   ICON="dist/icons/OnetimePad.icns"
 fi
-echo "==> App icon: $ICON"
-cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
+# Finder and the Dock cache icons by bundle metadata. Replacing the
+# contents of a fixed AppIcon.icns does not reliably invalidate that
+# cache, especially when the app version did not change. Give each
+# distinct payload a stable content-addressed resource name and make
+# the copied plist point at it, so icon-only builds are observable.
+ICON_DIGEST="$(shasum -a 256 "$ICON" | awk '{print $1}')"
+if [[ -z "$ICON_DIGEST" ]]; then
+  echo "could not hash app icon: $ICON" >&2
+  exit 1
+fi
+ICON_BASENAME="AppIcon-$ICON_DIGEST"
+echo "==> App icon: $ICON ($ICON_BASENAME)"
+cp "$ICON" "$APP/Contents/Resources/$ICON_BASENAME.icns"
+plutil -replace CFBundleIconFile -string "$ICON_BASENAME" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$VERSION" "$APP/Contents/Info.plist"
 
 # Dogfood builds carry the commit in CFBundleVersion so "which build am

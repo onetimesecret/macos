@@ -111,6 +111,17 @@ install_bundle() { # <app name>
   echo "==> Installing dist/$name.app -> $dest"
   rm -rf "$dest"
   ditto "dist/$name.app" "$dest"
+  # `open` normally registers the bundle itself, but the explicit refresh
+  # makes icon-only updates visible to LaunchServices without restarting
+  # Finder or the Dock. package-app.sh gives changed icon payloads distinct
+  # names for the same reason.
+  local lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  if [[ -x "$lsregister" ]]; then
+    echo "==> Refreshing LaunchServices registration"
+    "$lsregister" -f "$dest"
+  else
+    echo "warning: LaunchServices registration tool is unavailable; icon refresh may wait for cache expiry." >&2
+  fi
   local version
   version="$(plutil -extract CFBundleShortVersionString raw "$dest/Contents/Info.plist")"
   echo "Installed $name.app $version"
