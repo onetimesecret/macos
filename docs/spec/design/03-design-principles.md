@@ -8,10 +8,11 @@ Every one traces back to the problem restatement (doc 01) or an overlooked
 opportunity (doc 02). When two principles conflict, the earlier-numbered
 one wins.
 
-Still binding as of interaction-model revision C (doc 04), with two
+Still binding as of interaction-model revision C (doc 04), with three
 narrow, argued amendments recorded at the end of this document rather
-than silently edited into the principles: the ledger (amending §1) and
-markdown headings (amending §3).
+than silently edited into the principles: the ledger (amending §1),
+markdown headings (amending §3) and fenced code color (amending §3
+again).
 
 ## 1. Comfortable being temporary
 
@@ -48,10 +49,12 @@ keep it readable. No rich previews, no syntax highlighting, no image
 zoom. Recognition, not consumption.
 
 *Settles:* "Markdown rendering?" — No rich text, no rewriting. *(Amended
-by rev C: heading lines are styled display-only with the markup kept
-visible — see amendment B below.)* "Expandable preview?" — At most a
-quick-look-style peek; never an editor. "Show full text on hover?" — No;
-hover reveals actions, not content (shoulder-surfing surface).
+twice, both display-only and both on the editable page alone: heading
+lines are styled with the markup kept visible, see amendment B below;
+fenced code carries color, see amendment C.)* "Expandable preview?" — At
+most a quick-look-style peek; never an editor. "Show full text on
+hover?" — No; hover reveals actions, not content (shoulder-surfing
+surface).
 
 ## 4. Frugal
 
@@ -103,9 +106,11 @@ install?" — No; the core loop works forever without one.
 
 ## Amendments (interaction-model revision C, 12 Jul 2026)
 
-Two places where lived experience with the prototype overruled a
-principle's absolutism. Both are recorded here deliberately — an amended
-law argued in the open is stronger than a quietly rewritten one.
+Three places where lived experience with the prototype overruled a
+principle's absolutism. All are recorded here deliberately, because an
+amended law argued in the open is stronger than a quietly rewritten one.
+A and B arrived with revision C; the third followed in August 2026, once
+dogfooding put real code on the page.
 
 ### A. The ledger (amends §1, "Comfortable being temporary")
 
@@ -129,6 +134,26 @@ was typed. The principle's substance — no rich previews, no in-place
 reformatting, recognition over consumption — stands; a sheet the user
 deliberately typed structure into is allowed to show that structure.
 Inline emphasis stays out (doc 06).
+
+### C. Fenced code color (amends §3, "Content plays second fiddle")
+
+§3 also settled "no syntax highlighting" with a flat no. ADR-0024 amends
+this for one surface only: **syntax coloring inside fenced code blocks on
+the editable page**, as display-only styling under amendment B's
+contract. Color is the only attribute that changes; the font, the
+metrics and the fence's wash are untouched, the bytes of the page never
+change, and select-all-copy returns exactly what was typed. §3 keeps its
+force where it was aimed: chips, the ledger and the roll's quiet
+renderings stay uncolored, and nothing outside a fence region is colored
+at all. The resting glance is not one of those surfaces. It mounts the
+editable page itself, read only (ADR-0006), and has carried heading
+weight and link color since amendment B; a page at rest is already
+legible in full, so color there shows nothing the glance did not. ADR-0013's editable-surface rule is the
+license, stated there plainly: a text file with syntax highlighting is
+still a text file. A page the user deliberately fenced code into is
+allowed to show that it is code. The language comes only from the fence's
+own info string; an unknown or absent language renders exactly as it does
+today.
 
 ## Tone
 

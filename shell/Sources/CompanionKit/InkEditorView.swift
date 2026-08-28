@@ -665,6 +665,12 @@ public struct InkEditorView: NSViewRepresentable {
             changeInLength delta: Int
         ) {
             guard editedMask.contains(.editedCharacters) else { return }
+            // Bumped before every guard below, projection writes and
+            // compositions included, because this counter answers one
+            // question only: has anything at all changed since the walk
+            // that filled the classification cache. An edit this method
+            // declines to emit still moves the page under that reading.
+            generation &+= 1
             guard !model.isApplyingProjection else { return }
             guard let sheet = currentSheet else { return }
             if markedTextInFlight || (textView?.hasMarkedText() ?? false) {
@@ -1041,6 +1047,15 @@ public struct InkEditorView: NSViewRepresentable {
             var location = 0
             var block = 0
             var scanner = InkStyle.FenceScanner()
+            // The tokenizer stands beside the scanner because it has
+            // the same shape of memory: an open `/*` or an open `"""`
+            // means the next line is not what it locally looks like,
+            // exactly as an open fence means the next line is not
+            // prose. Cross-line state lives where cross-line state
+            // already lives, and one linear scan of the page serves
+            // both. Nothing is tokenized until a fence names a
+            // language, so the tokenizer starts knowing none.
+            var tokenizer = CodeInk.Tokenizer(language: nil)
             while location < text.length {
                 let meta = block < metas.count ? metas[block] : nil
                 // A block is usually one paragraph and sometimes several
@@ -1060,15 +1075,51 @@ public struct InkEditorView: NSViewRepresentable {
                 // gives its lines).
                 let joinsPrevious = scanner.insideFence
                 var head = extent
-                var paragraphs: [(range: NSRange, kind: InkStyle.LineKind)] = []
+                var paragraphs: [WalkedParagraph] = []
                 var paragraphStart = location
                 while paragraphStart < NSMaxRange(extent) {
                     let paragraph = text.paragraphRange(
                         for: NSRange(location: paragraphStart, length: 0)
                     )
                     if paragraphStart == location { head = paragraph }
+                    let line = text.substring(with: paragraph)
+                    // Whether the scanner was already holding a fence
+                    // open is what tells an opening rule from a closing
+                    // one, and only the opening rule declares a
+                    // language.
+                    let wasInsideFence = scanner.insideFence
+                    let kind = scanner.classify(line)
+                    var tokens: [CodeInk.Token] = []
+                    switch kind {
+                    case .fenceRule where !wasInsideFence:
+                        // A fresh tokenizer at every opening rule: it
+                        // takes the language the rule names and carries
+                        // nothing the block above left open, which is
+                        // the boundary the spec asks tokenizer state
+                        // never to cross.
+                        tokenizer = CodeInk.Tokenizer(language: scanner.fenceLanguage)
+                    case .code:
+                        // The line without its separator, taken off the
+                        // tail alone. Trimming both ends would move
+                        // every offset the tokenizer returns whenever a
+                        // line opens with something Foundation calls a
+                        // newline but `paragraphRange` does not break
+                        // on: a form feed at the head of a line, which
+                        // older sources carry as a page break and a
+                        // plain paste lands verbatim, shifted the whole
+                        // line's color one unit left. A token's offsets
+                        // count from the paragraph's first character,
+                        // so the first character must not move.
+                        var content = Substring(line)
+                        while let last = content.last, last.isNewline {
+                            content = content.dropLast()
+                        }
+                        tokens = tokenizer.tokens(in: String(content))
+                    default:
+                        break
+                    }
                     paragraphs.append(
-                        (paragraph, scanner.classify(text.substring(with: paragraph)))
+                        WalkedParagraph(range: paragraph, kind: kind, tokens: tokens)
                     )
                     if paragraph.length == 0 { break }
                     paragraphStart = NSMaxRange(paragraph)
@@ -1108,6 +1159,7 @@ public struct InkEditorView: NSViewRepresentable {
                         // spacing.
                         styleParagraph(
                             paragraph.range, of: storage, kind: paragraph.kind,
+                            tokens: paragraph.tokens,
                             labeled: label != nil && position == 0 && index == 0
                         )
                     }
@@ -1126,9 +1178,16 @@ public struct InkEditorView: NSViewRepresentable {
             // `.backgroundColor`, which rendered as per-line stripes
             // hugging the glyph runs; drawn once per region it is the
             // contiguous rectangle the eye expects.
-            fenceRegions = Self.fenceRegions(
-                of: walks.flatMap(\.paragraphs)
-            )
+            let paragraphs = walks.flatMap(\.paragraphs)
+                .map { (range: $0.range, kind: $0.kind) }
+            fenceRegions = Self.fenceRegions(of: paragraphs)
+            // The same reading, kept rather than dropped, so the
+            // keystroke path can consult it (ADR-0024: automation
+            // decides from the classification, never from a second
+            // scan that might disagree with the first).
+            lineKinds = paragraphs
+            lineKindsStamp = generation
+            lineKindsSheet = sheet
             if let layoutManager = textView?.layoutManager as? InkLayoutManager {
                 layoutManager.fenceRegions = fenceRegions
                 textView?.needsDisplay = true
@@ -1172,7 +1231,7 @@ public struct InkEditorView: NSViewRepresentable {
 
         private func styleParagraph(
             _ range: NSRange, of storage: NSTextStorage,
-            kind: InkStyle.LineKind, labeled: Bool
+            kind: InkStyle.LineKind, tokens: [CodeInk.Token], labeled: Bool
         ) {
             guard range.length > 0 else { return }
             let paragraphStyle = NSMutableParagraphStyle()
@@ -1180,6 +1239,14 @@ public struct InkEditorView: NSViewRepresentable {
             // one will actually render: an untouched block carries no
             // stamp and gets no gap.
             paragraphStyle.paragraphSpacingBefore = labeled ? Self.blockLabelReserve : 0
+            // A list item hangs from its content: an item long enough
+            // to wrap keeps its second line under the words rather than
+            // under the bullet, so the marker column stays a column.
+            // The page is monospaced, so the width is exact arithmetic
+            // and never a measured layout.
+            if case .list(let markerLength) = kind {
+                paragraphStyle.headIndent = InkStyle.hangingIndent(markerLength: markerLength)
+            }
             // Every line is laid back down to plain ink first, because
             // a line that was code a keystroke ago has to be able to
             // stop being code when the fence above it closes or is
@@ -1202,6 +1269,17 @@ public struct InkEditorView: NSViewRepresentable {
             storage.removeAttribute(.underlineStyle, range: range)
             switch kind {
             case .body:
+                styleLinks(in: range, of: storage)
+            case .list:
+                // The marker keeps full `labelColor` and its own glyph.
+                // A heading's hashes dim because the name beside them
+                // gains weight in compensation; a list marker is the
+                // thing the eye scans a page for, and dimming it (or
+                // swapping `-` for `•`) would bury the structure the
+                // writer typed. The hanging indent above is the whole
+                // of the styling. An item is otherwise ordinary ink,
+                // links and all: "- see https://…" is the commonest
+                // line in a working note.
                 styleLinks(in: range, of: storage)
             case .heading(let level, let markerLength):
                 storage.addAttribute(
@@ -1233,7 +1311,32 @@ public struct InkEditorView: NSViewRepresentable {
                 // as a heading and nothing is dimmed. The wash behind
                 // it belongs to the whole fence region and is painted
                 // by the layout manager, not laid down per line.
-                break
+                //
+                // Color goes on last, over base ink that is already
+                // laid down, and color is all it is: the font, the
+                // paragraph style and every byte of the line are the
+                // ones a bare fence would have given, so wrapping and
+                // the slab's geometry cannot move because a keyword
+                // turned purple (ADR-0024, amendment C). A fence with
+                // no language, or one the table does not know, hands
+                // over no tokens and this loop does nothing.
+                for token in tokens {
+                    let span = NSRange(
+                        location: range.location + token.range.location,
+                        length: token.range.length
+                    )
+                    // A token is read from the line and laid down on
+                    // the paragraph, so a span that would run past the
+                    // paragraph's end could only come of the two
+                    // disagreeing. Nothing is colored on a disagreement
+                    // rather than something wrong being colored.
+                    guard token.range.location >= 0, token.range.length > 0,
+                          NSMaxRange(span) <= NSMaxRange(range)
+                    else { continue }
+                    storage.addAttribute(
+                        .foregroundColor, value: InkStyle.tokenColor(token.kind), range: span
+                    )
+                }
             }
         }
 
@@ -1290,8 +1393,22 @@ public struct InkEditorView: NSViewRepresentable {
             let head: NSRange
             let meta: BlockInfo?
             let blank: Bool
-            let paragraphs: [(range: NSRange, kind: InkStyle.LineKind)]
+            let paragraphs: [WalkedParagraph]
             let joinsPrevious: Bool
+        }
+
+        /// One paragraph as the first pass read it: where it sits, what
+        /// it is, and the spans of it that are keyword, string, comment
+        /// or number. The tokens travel with the classification because
+        /// neither can be recovered from the paragraph alone: both are
+        /// answers the walk could only give having read the page down
+        /// to this line. They are consumed by the styling pass and kept
+        /// nowhere, the way the classification was before the keystroke
+        /// path needed it.
+        private struct WalkedParagraph {
+            let range: NSRange
+            let kind: InkStyle.LineKind
+            let tokens: [CodeInk.Token]
         }
 
         /// The stamp a group renders, or nil for a group with nothing
@@ -1333,6 +1450,52 @@ public struct InkEditorView: NSViewRepresentable {
         /// without a drawing pass.
         private(set) var fenceRegions: [NSRange] = []
 
+        /// What the last restyle walk decided each paragraph was, keyed
+        /// by the paragraph's own range, together with the page and the
+        /// storage length that walk read. The keystroke path asks here
+        /// instead of scanning the page again, which is the only way
+        /// display and automation can be guaranteed to agree about
+        /// whether a line is inside a fence (issue #75).
+        ///
+        /// The stamp is what keeps the cache honest. Restyle runs on
+        /// every change, so the reading is normally a keystroke old,
+        /// but a keystroke that arrives before the walk has caught up,
+        /// or after the editor has moved to another page (ADR-0006),
+        /// would be reading a page that no longer exists. Then the
+        /// cache answers nothing, and nothing means no automation:
+        /// a plain newline is always the safe answer.
+        ///
+        /// The stamp counts edits rather than measuring the page,
+        /// because what a line means depends on every line above it: a
+        /// backtick typed over a letter somewhere higher up opens a
+        /// fence and turns the caret's bullet into a flag (issue #75)
+        /// without moving a single character. A length would call that
+        /// page unchanged, and so would a string hash: Foundation's
+        /// samples ninety six characters and the length, so on any page
+        /// worth the name most of it is never read. A counter bumped on
+        /// every character edit is exact at any size, and the guarantee
+        /// stops resting on which edits happen to change the
+        /// arithmetic.
+        private var lineKinds: [(range: NSRange, kind: InkStyle.LineKind)] = []
+        /// How many character edits this coordinator has seen, ever.
+        /// The classification cache records the value it was built at,
+        /// so any edit since retires the reading.
+        private var generation = 0
+        private var lineKindsStamp = -1
+        private var lineKindsSheet: UInt64?
+
+        /// The classification of the paragraph beginning exactly at
+        /// `location`, or nil when the walk has nothing trustworthy to
+        /// say about it. Exact, because a paragraph that has moved is a
+        /// paragraph the walk has not seen yet.
+        func classifiedKind(ofParagraphAt location: Int) -> InkStyle.LineKind? {
+            guard let storage = textView?.textStorage,
+                  generation == lineKindsStamp,
+                  let sheet = currentSheet, sheet == lineKindsSheet
+            else { return nil }
+            return lineKinds.first { $0.range.location == location }?.kind
+        }
+
         /// Folds a page's classified paragraphs into fence regions. The
         /// classification already carries the scanner's whole-page
         /// reading, so this is a plain fold: a rule met outside a region
@@ -1356,7 +1519,7 @@ public struct InkEditorView: NSViewRepresentable {
                     }
                 case .code:
                     if let region = open { open = NSUnionRange(region, paragraph.range) }
-                case .body, .heading:
+                case .body, .heading, .list:
                     break
                 }
             }
@@ -1641,6 +1804,272 @@ final class InkTextView: NSTextView {
         pasteAsPlainText(sender)
     }
 
+    // MARK: Lists (ADR-0024: automation only on the caret's line)
+
+    /// A paragraph's text without the separator at its end, taken off
+    /// the tail alone. Every offset a caller compares counts from the
+    /// paragraph's first character, so the head must not move.
+    ///
+    /// Only the characters `paragraphRange` actually breaks on come
+    /// off. `Character.isNewline` is a wider set than that: it holds
+    /// the form feed and the vertical tab, which the page treats as
+    /// ordinary characters sitting inside a line. Trimming one of those
+    /// would put the end of the line before the writer's own character,
+    /// and a Return there would read as a Return at the end of an item.
+    nonisolated static func lineWithoutSeparator(_ paragraph: String) -> String {
+        var line = Substring(paragraph)
+        while let last = line.last, last == "\n" || last == "\r" || last == "\u{2029}" {
+            line = line.dropLast()
+        }
+        return String(line)
+    }
+
+    /// True when everything after a marker is whitespace: an item with
+    /// nothing in it, however many spaces the writer left behind.
+    nonisolated static func contentIsBlank(of line: String, after markerLength: Int) -> Bool {
+        let units = Array(line.utf16)
+        guard units.count >= markerLength else { return false }
+        return units.dropFirst(markerLength).allSatisfy { $0 == 32 || $0 == 9 }
+    }
+
+    /// Return, on a line the page reads as a list item.
+    ///
+    /// This is the first place the editor writes ink the user did not
+    /// type, and the law that keeps it honest is that it may only ever
+    /// touch the caret's own line and the line that keystroke creates.
+    /// Nothing below is renumbered: an item inserted in the middle of a
+    /// numbered list leaves the numbers under it exactly as typed,
+    /// because "styled, never rewritten" has to keep its meaning for
+    /// every line the caret is not on (docs/spec/04).
+    ///
+    /// Three gates stand before the automation, and every one of them
+    /// falls through to the ordinary newline rather than guessing. The
+    /// read-only stance never arrives here at all: `isEditable` is
+    /// already false and AppKit does not offer the keystroke.
+    override func insertNewline(_ sender: Any?) {
+        // An IME is mid-composition: the marked text is not yet the
+        // user's word, and writing a marker underneath it would resolve
+        // a composition nobody finished (the ADR-0013 gate).
+        guard !hasMarkedText() else { return super.insertNewline(sender) }
+        // A bare caret only. Return over a selection replaces what is
+        // selected, and continuing the marker of a line whose content
+        // is going away is not the gesture that was asked for.
+        let caret = selectedRange()
+        guard caret.length == 0, let storage = textStorage else {
+            return super.insertNewline(sender)
+        }
+        let text = storage.string as NSString
+        let paragraph = text.paragraphRange(for: caret)
+        // The classification restyle already computed, never a fresh
+        // read of the line: inside a fence `- x` is a flag and not a
+        // bullet (issue #75), and consulting the one reading is what
+        // keeps the styling and the keystroke from ever disagreeing.
+        guard let kind = coordinator?.classifiedKind(ofParagraphAt: paragraph.location),
+              case .list = kind
+        else { return super.insertNewline(sender) }
+        // The tail alone, never the head. `CharacterSet.newlines`
+        // holds characters `paragraphRange` does not break on, a form
+        // feed among them, so a line can carry one before its
+        // separator; trimming both ends would put the end of the line
+        // one unit short of where it really is, and a Return before
+        // that character would read as a Return at the end of an item.
+        let line = Self.lineWithoutSeparator(text.substring(with: paragraph))
+        guard let item = InkStyle.listMarker(of: line) else {
+            return super.insertNewline(sender)
+        }
+
+        // Only a Return at the end of a line is about the list at all,
+        // and this guard governs both branches below. A Return in the
+        // middle of an item would push the text to its right under a
+        // marker the writer never typed, and a Return at the head of a
+        // bare marker is a writer asking for a line above it, not for
+        // the marker to vanish. Both split plainly. Start strict,
+        // loosen if dogfooding asks.
+        guard caret.location == paragraph.location + line.utf16.count else {
+            return super.insertNewline(sender)
+        }
+        if Self.contentIsBlank(of: line, after: item.length) {
+            // An empty item: the marker and nothing after its space
+            // that a reader would call content. One stray space is no
+            // reason for "one Return ends the list" to stop being true,
+            // so the marker and the blank behind it go together and
+            // leave a plain empty line.
+            // Return takes the marker off and inserts no newline at
+            // all, which is the reading every chat client has trained
+            // people to expect: one Return ends the list. The removal
+            // travels the ordinary edit route, so the core sees an
+            // ordinary delete and provenance holds (ADR-0013).
+            let prefix = NSRange(location: paragraph.location, length: line.utf16.count)
+            breakUndoCoalescing()
+            // A refused edit is not a keystroke to swallow: the page
+            // falls back to the newline it would have given before any
+            // of this existed.
+            guard shouldChangeText(in: prefix, replacementString: "") else {
+                return super.insertNewline(sender)
+            }
+            storage.replaceCharacters(in: prefix, with: "")
+            didChangeText()
+            setSelectedRange(NSRange(location: paragraph.location, length: 0))
+            return
+        }
+        // One keystroke, one undo step: the coalescing that would
+        // otherwise fold this into the words typed before it is broken
+        // on both sides, so a single ⌘Z puts the caret back with no
+        // orphaned marker left behind. The newline and the marker go
+        // down as one `insertText`, the ordinary route every other
+        // character takes.
+        breakUndoCoalescing()
+        // Held in hand rather than asked for twice: the manager arrives
+        // from the delegate, one per page (ADR-0006), and a group has
+        // to be closed on the same manager it was opened on.
+        let undo = undoManager
+        undo?.beginUndoGrouping()
+        insertText("\n" + item.successor, replacementRange: caret)
+        breakUndoCoalescing()
+        undo?.endUndoGrouping()
+    }
+
+    /// Tab, on a line the page reads as a list item, with the caret in
+    /// the item's marker region: two spaces at the line's start, and
+    /// the item hangs one level deeper.
+    ///
+    /// Two spaces rather than a tab because the page is monospaced and
+    /// the hanging indent is measured in cells (`styleParagraph` gives
+    /// `.list` a head indent of the prefix's own width): a tab's width
+    /// would be the layout manager's opinion, and the marker's would be
+    /// the parser's. Nothing about the marker itself changes on a depth
+    /// change; a nested `-` is still a `-`, because substituting a
+    /// glyph is rewriting a line the writer typed (docs/spec/04).
+    ///
+    /// Anywhere else on the line Tab stays the literal tab it has
+    /// always been, which is what makes this safe to add: the gesture
+    /// only means depth where a depth reading is unambiguous.
+    override func insertTab(_ sender: Any?) {
+        guard let target = listDepthTarget() else { return super.insertTab(sender) }
+        let start = NSRange(location: target.paragraph.location, length: 0)
+        guard nudgeDepth(replacing: start, with: "  ", caret: target.caret) else {
+            return super.insertTab(sender)
+        }
+    }
+
+    /// ⇧Tab, the same gesture read backwards: up to two leading spaces
+    /// come off the line's start, or one leading tab if that is what
+    /// the depth was spelled in. An item hanging from nothing has
+    /// nothing to give back and is left exactly as it stands.
+    ///
+    /// The spec says only that ⇧Tab removes the indent Tab added, and
+    /// leaves open whether it should also fire from the item's content.
+    /// The reading taken here is the symmetric one: ⇧Tab is gated to
+    /// the marker region exactly as Tab is, which is how doc 04 words
+    /// the pair ("Tab and Shift-Tab nudge an item's depth while the
+    /// caret sits in the marker"). One region, one rule, and no line
+    /// where the two halves of a single gesture disagree about whether
+    /// this keystroke is about depth at all.
+    ///
+    /// An item with no indent swallows the keystroke rather than
+    /// deferring. An outdent with nothing to give back has nothing to
+    /// say, and the depth gesture is answered on the line it was aimed
+    /// at or not at all; handing the keystroke on would make ⇧Tab mean
+    /// one thing at depth and another at the margin. (A probe found
+    /// that `super.insertBacktab` does not in fact move the first
+    /// responder here, so this is a choice about the gesture rather
+    /// than a guard against AppKit.)
+    override func insertBacktab(_ sender: Any?) {
+        guard let target = listDepthTarget() else { return super.insertBacktab(sender) }
+        let removable = Self.outdentWidth(of: target.item.indent)
+        guard removable > 0 else { return }
+        let head = NSRange(location: target.paragraph.location, length: removable)
+        guard nudgeDepth(replacing: head, with: "", caret: target.caret) else {
+            return super.insertBacktab(sender)
+        }
+    }
+
+    /// How much of an item's indent one outdent takes back: one tab if
+    /// the depth was spelled with a tab, otherwise up to the two spaces
+    /// Tab would have put there. Never more than one level per press,
+    /// so the gesture is as reversible as it is repeatable.
+    nonisolated static func outdentWidth(of indent: String) -> Int {
+        guard let first = indent.first else { return 0 }
+        if first == "\t" { return 1 }
+        return indent.prefix(2).prefix { $0 == " " }.count
+    }
+
+    /// The line a depth nudge is allowed to touch, or nil when this
+    /// keystroke is an ordinary tab after all.
+    ///
+    /// Every gate `insertNewline` stands behind stands here too, and
+    /// for the same reasons: no automation under a live composition
+    /// (ADR-0013), and the classification restyle already computed
+    /// rather than a fresh read, so a `- x` inside a fence stays the
+    /// flag it is and display and automation can never disagree about
+    /// which it is (issue #75).
+    ///
+    /// The bare caret is the last gate and the one this method has to
+    /// argue for itself. A selection spanning lines has no single
+    /// caret line, and indenting every line it covers would be writing
+    /// where the caret is not, which is the one thing ADR-0024 forbids
+    /// outright. Rather than take half the selection's meaning, the
+    /// keystroke falls through to the ordinary tab, which replaces the
+    /// selection exactly as it does in every other text view on the
+    /// machine. Block reindent is a real gesture and it can be argued
+    /// for on its own terms later; it is not this keystroke.
+    private func listDepthTarget()
+        -> (paragraph: NSRange, caret: NSRange, item: InkStyle.ListItem)? {
+        guard !hasMarkedText() else { return nil }
+        let caret = selectedRange()
+        guard caret.length == 0, let storage = textStorage else { return nil }
+        let text = storage.string as NSString
+        let paragraph = text.paragraphRange(for: caret)
+        guard let kind = coordinator?.classifiedKind(ofParagraphAt: paragraph.location),
+              case .list = kind
+        else { return nil }
+        // The tail alone, and only the separators the page breaks on,
+        // for the reason `insertNewline` takes the same care: a form
+        // feed sits inside a line, and trimming it would move the
+        // marker region's far edge away from where the caret sees it.
+        let line = Self.lineWithoutSeparator(text.substring(with: paragraph))
+        guard let item = InkStyle.listMarker(of: line) else { return nil }
+        // The marker region runs from the line's start through the
+        // first character of content, boundary included, because the
+        // commonest nesting gesture of all is typing `- ` and reaching
+        // straight for Tab: the caret sits exactly at the marker's end
+        // there, and an exclusive reading would answer that gesture
+        // with a literal tab.
+        guard caret.location <= paragraph.location + item.length else { return nil }
+        return (paragraph, caret, item)
+    }
+
+    /// One depth nudge, and the only place either direction writes.
+    ///
+    /// The edit travels the ordinary route (`shouldChangeText`, the
+    /// edit, `didChangeText`), so the core sees an ordinary op and
+    /// ADR-0013's provenance holds with no special case, and the
+    /// coalescing is broken on both sides so one keystroke is one undo
+    /// step. False when the delegate refuses, which leaves the
+    /// keystroke to the ordinary tab rather than swallowing it.
+    private func nudgeDepth(
+        replacing range: NSRange, with replacement: String, caret: NSRange
+    ) -> Bool {
+        guard let storage = textStorage else { return false }
+        breakUndoCoalescing()
+        guard shouldChangeText(in: range, replacementString: replacement) else { return false }
+        storage.replaceCharacters(in: range, with: replacement)
+        didChangeText()
+        breakUndoCoalescing()
+        // Where the caret lands is the whole of whether the gesture
+        // repeats. It keeps its place relative to the line's content,
+        // so after a nudge it is still in the marker region and a
+        // second press nudges again; an outdent that eats the ground
+        // under it leaves it at the line's start, which is inside the
+        // region too.
+        let width = (replacement as NSString).length
+        let landing = caret.location >= NSMaxRange(range)
+            ? caret.location - range.length + width
+            : range.location + width
+        setSelectedRange(NSRange(location: landing, length: 0))
+        return true
+    }
+
     // MARK: Find (the one route that could reach a chip)
 
     /// Every other finder action works on ranges the finder matched, and
@@ -1872,10 +2301,159 @@ public enum InkStyle {
         return (level, level + 1)
     }
 
+    /// What a list line counts with: the character a bullet repeats,
+    /// the number and delimiter an ordered item carries, or the box a
+    /// checklist wears. The task box is a variant of the `-` bullet
+    /// rather than a kind of its own, which is how markdown spells it
+    /// and how it continues (`- [x] done` begets `- [ ] `).
+    public enum ListMarker: Equatable {
+        case bullet(Character)
+        case ordered(number: Int, delimiter: Character)
+        case task(checked: Bool)
+    }
+
+    /// A list item as the page reads it: the whitespace it hangs from,
+    /// the marker it wears, and how many UTF-16 units stand between the
+    /// line's start and its content. That last number is the whole of
+    /// what display needs, since the page is monospaced and a prefix's
+    /// width on screen is exactly its character count.
+    public struct ListItem: Equatable {
+        public let indent: String
+        public let marker: ListMarker
+        public let length: Int
+
+        public init(indent: String, marker: ListMarker, length: Int) {
+            self.indent = indent
+            self.marker = marker
+            self.length = length
+        }
+
+        /// The prefix the item below this one wears, per ADR-0024's
+        /// behaviour table: a bullet repeats itself, an ordered item
+        /// counts one on and keeps the delimiter it was typed with, and
+        /// a task continues unchecked, because the next thing to do has
+        /// not been done. The indent is carried over verbatim, tabs and
+        /// all, so a nested item stays at the depth its author chose.
+        ///
+        /// Nothing here renumbers anything: the successor is previous
+        /// plus one and the lines below are the user's, exactly as they
+        /// stand in a plain text file (the caret-only law).
+        public var successor: String {
+            switch marker {
+            case .bullet(let character):
+                indent + String(character) + " "
+            case .ordered(let number, let delimiter):
+                // Clamped to the ceiling the parser reads, so the
+                // marker written here is always one the parser will
+                // read back. A tenth digit would classify as body ink:
+                // no hanging indent, no continuation, no way to end the
+                // list with one Return. The last item repeats its
+                // number instead, which is a list the user can fix.
+                indent + String(min(number + 1, 999_999_999)) + String(delimiter) + " "
+            case .task:
+                indent + "- [ ] "
+            }
+        }
+    }
+
+    /// `  1. buy milk` → (indent "  ", ordered 1 with ".", length 5).
+    /// Pure and nonisolated, the shape `headingMarker(of:)` set, so the
+    /// reading is testable without a text view and the keystroke path
+    /// and the styling path can never be looking at different grammars.
+    ///
+    /// The marker must be followed by exactly one space, which is the
+    /// rule that rejects everything a reader would not call a list:
+    /// `-x` is a word, `1.5` is a number, `*emphasis*` is prose. An
+    /// item with nothing after that space is an empty item, and saying
+    /// so is the caller's business (the length is where content would
+    /// begin).
+    public nonisolated static func listMarker(of line: String) -> ListItem? {
+        var index = line.startIndex
+        while index < line.endIndex, line[index] == " " || line[index] == "\t" {
+            index = line.index(after: index)
+        }
+        let indent = String(line[line.startIndex..<index])
+        let rest = line[index...]
+        guard let first = rest.first else { return nil }
+        let prefix = { (marker: Int) in indent.utf16.count + marker + 1 }
+
+        // The task box is read before the bullet it is built on: `- [ ]
+        // milk` also parses as a `-` bullet whose content happens to
+        // start with a bracket, and the checklist is the more specific
+        // reading of the two.
+        if let checked = taskBox(of: rest) {
+            return ListItem(indent: indent, marker: .task(checked: checked), length: prefix(5))
+        }
+        if first == "-" || first == "*" || first == "+" {
+            guard rest.dropFirst().first == " " else { return nil }
+            return ListItem(indent: indent, marker: .bullet(first), length: prefix(1))
+        }
+        // Nine digits is CommonMark's own ceiling for an ordered
+        // marker, and keeping it here means the successor's arithmetic
+        // can never overflow the number it counts on.
+        let digits = rest.prefix { $0.isASCII && $0.isNumber }
+        guard !digits.isEmpty, digits.count <= 9, let number = Int(digits) else { return nil }
+        let after = rest.dropFirst(digits.count)
+        guard let delimiter = after.first, delimiter == "." || delimiter == ")",
+              after.dropFirst().first == " "
+        else { return nil }
+        return ListItem(
+            indent: indent,
+            marker: .ordered(number: number, delimiter: delimiter),
+            length: prefix(digits.count + 1)
+        )
+    }
+
+    /// True for `- [x] `, false for `- [ ] `, nil for anything that is
+    /// not a task box. The trailing space is part of the box for the
+    /// same reason it is part of every other marker: without it the
+    /// line is a bullet whose content begins with a bracket.
+    private nonisolated static func taskBox(of rest: Substring) -> Bool? {
+        let head = Array(rest.prefix(6))
+        guard head.count == 6, head[0] == "-", head[1] == " ", head[2] == "[",
+              head[4] == "]", head[5] == " "
+        else { return nil }
+        switch head[3] {
+        case " ": return false
+        case "x", "X": return true
+        default: return nil
+        }
+    }
+
+    /// One monospaced cell, measured once. The page is a single
+    /// fixed-pitch font, so the width of a marker is arithmetic rather
+    /// than a layout question.
+    public static let cellWidth: CGFloat = NSAttributedString(
+        string: "0", attributes: [.font: baseFont]
+    ).size().width
+
+    /// Where a list item's wrapped lines hang from: under the content,
+    /// never under the marker, so a bullet that runs past the edge
+    /// still reads as one item.
+    public static func hangingIndent(markerLength: Int) -> CGFloat {
+        CGFloat(markerLength) * cellWidth
+    }
+
     /// The wash behind a fenced block: a shade off the page, enough
     /// that a slab of code reads as one thing without turning the page
     /// into a document of boxes.
     public static let codeBackground = NSColor.quaternaryLabelColor
+
+    /// What each kind of token wears inside a fence, and the only place
+    /// these four colors are written down, so a test can assert them and
+    /// dark mode costs nothing: every one is a system color that already
+    /// knows both appearances. Color is the whole of the styling. The
+    /// font stays `baseFont`, so metrics, wrapping and the wash geometry
+    /// are exactly what they were before a line was colored, and the
+    /// bytes are untouched (ADR-0024, amendment C: display only).
+    public nonisolated static func tokenColor(_ kind: CodeInk.TokenKind) -> NSColor {
+        switch kind {
+        case .keyword: NSColor.systemPurple
+        case .string: NSColor.systemRed
+        case .comment: NSColor.secondaryLabelColor
+        case .number: NSColor.systemBlue
+        }
+    }
 
     /// One link a body line carries: the whole construct's range, the
     /// URL a ⌘-click would open, and whichever spans of the construct
@@ -1997,8 +2575,20 @@ public enum InkStyle {
         case fenceRule
         /// A line held inside a fence, whatever it happens to look
         /// like. `# comment` here is a comment, not a heading, and `- x`
-        /// is a flag, not a bullet (issue #75).
-        case code
+        /// is a flag, not a bullet (issue #75). The language is the one
+        /// the opening rule named, read through CodeInk's alias table,
+        /// and nil for a bare fence or for a language the table has
+        /// never heard of. It rides on every line of the block because
+        /// the rule that declared it may be a long way above: a line of
+        /// code can no more be colored alone than classified alone.
+        case code(language: String?)
+        /// A body line that opens with a list marker: how many leading
+        /// units stand before its content, which is both the width its
+        /// wrapped lines hang from and the span the empty-item branch
+        /// takes off. Nothing inside a fence ever reaches this case,
+        /// which is what lets the keystroke path trust the same reading
+        /// the styling used.
+        case list(markerLength: Int)
     }
 
     /// Reads a page's lines in document order and says what each one
@@ -2007,10 +2597,13 @@ public enum InkStyle {
     /// same `# comment` is a heading above the fence and a comment
     /// below it.
     public struct FenceScanner {
-        /// The fence currently open, if one is: its character and how
+        /// The fence currently open, if one is: its character, how
         /// long its opening run was, since a closing fence has to be at
-        /// least as long as the fence it answers.
-        private var open: (marker: Character, length: Int)?
+        /// least as long as the fence it answers, and the language its
+        /// info string named. The info string was always parsed; until
+        /// highlighting arrived only its emptiness was consulted, and
+        /// the language it carried was read and dropped.
+        private var open: (marker: Character, length: Int, language: String?)?
 
         public init() {}
 
@@ -2020,11 +2613,20 @@ public enum InkStyle {
         /// which is the reading a writer mid-paste would expect.
         public var insideFence: Bool { open != nil }
 
+        /// The language of the fence currently open, if the table knows
+        /// it. The restyle walk reads this at the opening rule, which is
+        /// the one place a language is declared and therefore the one
+        /// place a tokenizer for the lines below can be made.
+        public var fenceLanguage: String? { open?.language }
+
         public mutating func classify(_ line: String) -> LineKind {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if let run = Self.fenceRun(of: trimmed) {
                 guard let open else {
-                    self.open = (run.marker, run.length)
+                    self.open = (
+                        run.marker, run.length,
+                        CodeInk.canonicalLanguage(ofInfoString: run.info)
+                    )
                     return .fenceRule
                 }
                 // A closing fence answers its opener: the same
@@ -2033,14 +2635,22 @@ public enum InkStyle {
                 // — a ``` line inside a ~~~ block is text about code,
                 // not the end of the block.
                 guard run.marker == open.marker, run.length >= open.length, run.info.isEmpty else {
-                    return .code
+                    return .code(language: open.language)
                 }
                 self.open = nil
                 return .fenceRule
             }
-            if open != nil { return .code }
-            guard let marker = headingMarker(of: line) else { return .body }
-            return .heading(level: marker.level, markerLength: marker.length)
+            if let open { return .code(language: open.language) }
+            if let marker = headingMarker(of: line) {
+                return .heading(level: marker.level, markerLength: marker.length)
+            }
+            // Read after the fence and after the heading, and only ever
+            // on a body line: this is the single place that decides a
+            // line is a list, so display and automation cannot come to
+            // different answers about the `- x` in a shell snippet
+            // (issue #75).
+            if let item = listMarker(of: line) { return .list(markerLength: item.length) }
+            return .body
         }
 
         /// The delimiter run a line opens with, if it opens with one:

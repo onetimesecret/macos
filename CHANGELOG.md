@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lists continue themselves, and nothing else** (ADR-0024). Return
+  at the end of a list item starts the next one: the same indent, a
+  bullet repeating itself, an ordered marker counting on with the
+  delimiter it was typed with, a task box continuing unchecked. Return
+  on an item that is empty takes the marker off and leaves a plain
+  line, the single keystroke every chat client has trained people to
+  expect for ending a list. Tab and Shift-Tab nudge an item's depth
+  while the caret sits in the marker, and anywhere else on the line Tab
+  is still a tab. What the page never does is renumber: an item
+  inserted mid-list leaves every number below it exactly as typed,
+  because automation may write only on the caret's line, or the line
+  the keystroke creates, and never anywhere else in the document. No
+  glyph is substituted either, so a `-` stays a `-` at full weight,
+  since the marker is the thing the eye scans a page for. Inside a
+  fence none of it happens, and it is the same walk that decides the
+  styling which decides the automation, so the two can never read a
+  line differently.
+
+- **Fenced code carries color, and only color** (ADR-0024, recorded as
+  amendment C to the design principles). A fence whose opening rule
+  names a language colors four kinds of token inside the block:
+  keywords, strings, comments and numbers. Twelve languages ship as
+  table entries rather than as code, with no dependency behind them,
+  because a grammar engine is megabytes and a supply chain taken on for
+  four colors. The language comes from the info string and from nowhere
+  else, so a bare fence, or one naming a language the table has never
+  heard of, renders exactly as it did before: a guessed language is a
+  confident lie where plain ink is merely plain. Nothing but the
+  foreground color moves. Same font, same metrics, same wash, and the
+  bytes are untouched, so select-all-copy still returns exactly what
+  was typed and sealing a colored line seals the markup. The color
+  lives on the editable page alone; chips, the ledger and the resting
+  glance stay uncolored.
+
 - **Sync gets its switch, its sign-in, and its surface** (issues #98
   and #102; PR #121). Off by default, and off means nothing: no
   account, no network, no behaviour change — the pad with sync off is
