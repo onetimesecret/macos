@@ -344,6 +344,16 @@ final class ListKeystrokeTests: XCTestCase {
         XCTAssertEqual(storage.string, "")
     }
 
+    /// One stray space is no reason for "one Return ends the list" to
+    /// stop being true. An item whose content is only whitespace is an
+    /// empty item, and the marker leaves with the blank behind it.
+    func testAMarkerFollowedOnlyByWhitespaceStillEndsTheList() {
+        makeEditor()
+        write("- milk\n-   ")
+        textView.insertNewline(nil)
+        XCTAssertEqual(storage.string, "- milk\n")
+    }
+
     // MARK: Splitting
 
     /// A Return in the middle of an item splits the line as it always
@@ -369,6 +379,21 @@ final class ListKeystrokeTests: XCTestCase {
         textView.insertNewline(nil)
         XCTAssertEqual(storage.string, "- milk\n\n- ")
         XCTAssertEqual(textView.selectedRange(), NSRange(location: 8, length: 0))
+    }
+
+    /// A form feed is a newline to Foundation and not a paragraph break
+    /// to `paragraphRange`, so a line can carry one before its
+    /// separator. Trimming both ends would put the end of the line one
+    /// unit short of where it really is, and this Return, which is
+    /// before the writer's own character, would read as a Return at the
+    /// end of the item and push that character onto a marker line the
+    /// app wrote.
+    func testReturnBeforeATrailingControlCharacterSplitsPlainly() {
+        makeEditor()
+        write("- milk\u{0C}\nnext")
+        caret(to: 6)
+        textView.insertNewline(nil)
+        XCTAssertEqual(storage.string, "- milk\n\u{0C}\nnext")
     }
 
     /// ⇧Return is the hard wrap inside an item, and it stays exactly
@@ -418,6 +443,30 @@ final class ListKeystrokeTests: XCTestCase {
         XCTAssertEqual(
             storage.string, "```\n- milk\n",
             "a bullet was written on a line the page had already turned into code"
+        )
+    }
+
+    /// The same scenario on a page long enough that no digest could
+    /// stand in for it. Foundation's string hash samples ninety six
+    /// characters and the length, so on a page of any size most of it
+    /// is never read and an equal length edit in the unsampled middle
+    /// passes for no edit at all. The stamp counts edits instead, which
+    /// is exact whatever the page weighs.
+    func testAnEqualLengthEditOnALongPageRetiresTheReading() {
+        makeEditor()
+        let filler = String(repeating: "note about the errand\n", count: 20)
+        write(filler + "``x\n- milk")
+        let backtick = (storage.string as NSString).range(of: "``x")
+        storage.replaceCharacters(
+            in: NSRange(location: backtick.location + 2, length: 1), with: "`"
+        )
+        caret(to: storage.length)
+
+        textView.insertNewline(nil)
+
+        XCTAssertTrue(
+            storage.string.hasSuffix("```\n- milk\n"),
+            "a bullet was written inside a fence the page had already opened"
         )
     }
 
