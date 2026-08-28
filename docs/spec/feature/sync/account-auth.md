@@ -12,6 +12,13 @@ ADR-0021 §3's first gate: prove to the relay that the attaching client
 belongs to the account, and nothing else. Device trust is pairing
 (issue #97, `crates/ffi/src/pairing.rs`) and is not renegotiated here.
 
+The authorization server is OTS itself. onetimesecret.dev, the v0.27
+staging that adds OAuth via rodauth-oauth, issues the codes and the
+access and refresh tokens this flow consumes; the relay validates what
+OTS issued and mints nothing of its own. Everything below is the
+client's side of that arrangement, and the token lifetimes in §2 are
+the server's to set.
+
 ## 1. The flow: authorization code + PKCE in the system browser
 
 The app authenticates with **OAuth 2.0 authorization code + PKCE, in
