@@ -1,6 +1,6 @@
 [package]
 name = "ots-client"
-version = "0.1.0"
+version = "0.2.0"
 description = "Rust client for the Onetime Secret v3 API: conceal secrets into one-time links. Sans-IO core with pluggable transport and auth strategies."
 # Written as if it will be published someday (doc 07); not published yet.
 publish = false
