@@ -88,16 +88,14 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // feature spec's open question №7.
         NSApp.setActivationPolicy(.regular)
 
-        // The ㊙️ maruhi ("secret"): the Dock icon and the ⌘Tab card
-        // both draw from `applicationIconImage`, so one colour
-        // rendering serves both. Only for a bare
-        // `swift run`, which has no bundle: the bundled app carries
-        // AppIcon.icns (scripts/build-icons.sh), and this override
-        // would shadow it. The menu-bar item gets the monochrome
+        // The Dock and the ⌘Tab card draw from `applicationIconImage`.
+        // Re-publish the bundled icon here rather than leaving AppKit to
+        // resolve CFBundleIconFile, because LaunchServices can otherwise
+        // keep the previous image in the switcher after an icon-only
+        // update. A bare `swift run` has no bundle icon, so it keeps the
+        // coloured maruhi fallback. The menu-bar item gets the monochrome
         // template below either way.
-        if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil {
-            NSApp.applicationIconImage = Self.maruhiColorImage(side: 256)
-        }
+        NSApp.applicationIconImage = Self.bundledIconImage() ?? Self.maruhiColorImage(side: 256)
 
         let controller = BackdropWindowController(model: model)
         self.controller = controller
@@ -356,6 +354,19 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// CFBundleDisplayName in shell/OnetimePad-Info.plist, and the two
     /// must agree. Neither is the bundle id, which never changes.
     static let productName = "OnetimePad"
+
+    /// Loads the icon named by CFBundleIconFile, which package-app.sh
+    /// changes when the rendered artwork changes. Assigning this image to
+    /// NSApp at launch keeps the current process's ⌘Tab presentation in
+    /// step with Finder's bundle icon.
+    private static func bundledIconImage() -> NSImage? {
+        guard let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String,
+              let url = Bundle.main.url(forResource: name, withExtension: "icns")
+        else {
+            return nil
+        }
+        return NSImage(contentsOf: url)
+    }
 
     /// What sits in the menu bar: the onetimesecret.com logo mark, the
     /// same art the app icon is built from, so the tray and the Dock
