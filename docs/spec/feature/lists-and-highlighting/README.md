@@ -323,10 +323,13 @@ believe the plan rather than the code.
   pair, so a `BlockWalk` means what it always meant.
 - **A fresh tokenizer at each opening rule, rather than `reset()`.** An
   opening rule can change the language, and a reset keeps the old one.
-- **The classification cache is stamped with the page's content, not
-  its length.** A backtick typed over a letter above the caret opens a
-  fence and changes what the caret's line means without moving a
-  character, and a length stamp calls that page unchanged.
+- **The classification cache is stamped with a count of edits, not
+  with a measurement of the page.** A backtick typed over a letter
+  above the caret opens a fence and changes what the caret's line means
+  without moving a character, so a length stamp calls that page
+  unchanged; so does a string hash, which reads ninety six characters
+  and the length however long the page is. A counter bumped on every
+  character edit is exact at any size.
 - **Three cases the behaviour table did not name**, each settled in
   code and in a test: Return over a selection splits plainly, Return at
   the head of a bare marker splits plainly (only the end of a line is

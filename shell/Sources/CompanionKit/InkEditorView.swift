@@ -1967,9 +1967,13 @@ final class InkTextView: NSTextView {
     /// this keystroke is about depth at all.
     ///
     /// An item with no indent swallows the keystroke rather than
-    /// deferring: AppKit's own backtab walks the key view loop, and
-    /// pulling the focus out of the page because an outdent had nothing
-    /// to remove is a worse surprise than doing nothing.
+    /// deferring. An outdent with nothing to give back has nothing to
+    /// say, and the depth gesture is answered on the line it was aimed
+    /// at or not at all; handing the keystroke on would make ⇧Tab mean
+    /// one thing at depth and another at the margin. (A probe found
+    /// that `super.insertBacktab` does not in fact move the first
+    /// responder here, so this is a choice about the gesture rather
+    /// than a guard against AppKit.)
     override func insertBacktab(_ sender: Any?) {
         guard let target = listDepthTarget() else { return super.insertBacktab(sender) }
         let removable = Self.outdentWidth(of: target.item.indent)
@@ -2019,7 +2023,11 @@ final class InkTextView: NSTextView {
         guard let kind = coordinator?.classifiedKind(ofParagraphAt: paragraph.location),
               case .list = kind
         else { return nil }
-        let line = text.substring(with: paragraph).trimmingCharacters(in: .newlines)
+        // The tail alone, and only the separators the page breaks on,
+        // for the reason `insertNewline` takes the same care: a form
+        // feed sits inside a line, and trimming it would move the
+        // marker region's far edge away from where the caret sees it.
+        let line = Self.lineWithoutSeparator(text.substring(with: paragraph))
         guard let item = InkStyle.listMarker(of: line) else { return nil }
         // The marker region runs from the line's start through the
         // first character of content, boundary included, because the
