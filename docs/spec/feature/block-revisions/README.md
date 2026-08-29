@@ -23,6 +23,9 @@ Side doc:
 [`2026-0828-research-reconciliation.md`](2026-0828-research-reconciliation.md)
 (the research corpus compared against this concept, with
 dispositions),
+[`2026-0829-loro-reconciliation.md`](2026-0829-loro-reconciliation.md)
+(the Loro concepts report verified against the pinned crate and the
+core's actual usage, with dispositions),
 [`2026-0828-page-lens.md`](2026-0828-page-lens.md)
 (page history as a second projection of the same log; concept only,
 unscheduled).
