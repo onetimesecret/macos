@@ -1,11 +1,17 @@
 ABERRATIONS
 
-Local, informal, gitignored (matches the *.txt rule). A running log of
-surprising or non-obvious runtime behavior found while building or
-dogfooding the app: things a naive mental model gets wrong. Not a bug
-tracker and not a spec. When one of these turns out to be structural,
-graduate it: an ADR if it is a decision, README/DOGFOOD.md if it is
-operational guidance other people need, an issue if it should be fixed.
+Informal but tracked. This started as a local ABERRATIONS.txt, which
+the *.txt rule in .gitignore kept out of the repo; it is now a markdown
+file committed alongside the rest of the docs, so what goes in it is
+readable by anyone with the repo. Write accordingly: no secrets, no
+page content, no key material.
+
+A running log of surprising or non-obvious runtime behavior found while
+building or dogfooding the app: things a naive mental model gets wrong.
+Still not a bug tracker and not a spec, and entries are not expected to
+be tidy. When one of these turns out to be structural, graduate it: an
+ADR if it is a decision, DOGFOOD.md if it is operational guidance other
+people need, an issue if it should be fixed.
 
 ---
 
