@@ -31,23 +31,67 @@ paradigm as they are by the existing day view. Flipping paradigms
 loses nothing, for the same reason flipping the Settings toggle
 loses nothing.
 
-## The tension worth recording now: the TTL ceiling
+## The TTL ladder is the daily paradigm's instance
+(updated 2026-08-29 after re-reading `docs/tenets.md`)
 
-The paradigm changes the lens; it must not change what lives. The
-TTL ladder tops out at 7 days ("there is no forever", ADR-0011), so
-a **weekly** paradigm shows at most two meaningful buckets and a
-**monthly** paradigm optimizes for pages that mostly cannot exist.
-Two honest resolutions, and the choice is a retention argument for
-an ADR, not a UI knob:
+An earlier version of this note ended the argument with "the lens
+never outreaches the ladder." That is the move tenet №3 forbids:
+citing the ladder instead of letting the idea argue against it. Run
+through the tenets, the paradigm concept wins the argument, and the
+ladder is what modifies.
 
-- Paradigms stop at weekly, and monthly is out of scope while the
-  ceiling stands.
-- The ceiling becomes paradigm-aware, which reopens ADR-0011's
-  "no forever" reasoning and has to be argued there in retention
-  terms, not smuggled in as a view preference.
+The case in tenet terms. ADR-0011 (still a draft) grounds the ladder
+in intuition, not in retention doctrine: a rung must be a duration
+the user can rationalize ("will I need this next week at this day
+and time"), padded with grace the way an alarm set for "tomorrow"
+forgives midnight. That question is tempo-relative. "Will I need
+this next week" is the daily paradigm's question; a slow-roll
+project asks "will I need this next month," and an hourly
+note-taker asks something shorter than the current bottom rung. A
+monthly-tempo page dying at 7 days is forgetting against the user's
+schedule, which is precisely tenet №1's "one misunderstanding away
+from feeling like loss." The 7-day ceiling is not "no forever"
+doctrine; it is the daily paradigm's intuitive horizon.
 
-The default answer until someone makes that argument: the lens never
-outreaches the ladder.
+The necessary modifications to the ladder, when paradigms build:
+
+- **One ladder per paradigm, rungs intuitive at that tempo.** The
+  existing 1h to 7d ladder is unchanged as the daily instance. An
+  hourly ladder reaches shorter; a weekly or monthly ladder reaches
+  longer (order of 2 weeks, 1 month, a quarter as its ceiling).
+  Rungs stay a fixed legible set, never arbitrary durations, and
+  ADR-0011's grace padding (a unit plus a forgiving fraction) keeps
+  its shape at every tempo.
+- **"No forever" survives as the invariant that does generalize.**
+  Every paradigm's ladder has a ceiling of roughly a few
+  paradigm-units. What was wrong was reading the daily ceiling as
+  the product's ceiling.
+- **The click mechanics are per-ladder invariants.** Same rung
+  count, same wrap, same five-clicks-to-the-cliff distance
+  (`ttl.rs` tests this today), so the gesture's muscle memory
+  survives a paradigm switch.
+- **The default rung is paradigm-relative.** 8h ("a working day")
+  is the daily default; each ladder names its own.
+- **Switching paradigms rewrites no living page.** Tenet №1's
+  "never by accident": existing pages keep the rung they were
+  given; new pages take the new paradigm's default; a rung that is
+  off the current ladder still displays honestly as the duration it
+  is, because a rung is a duration on the page, and only the
+  *click ladder* is paradigm-relative. This also keeps sync sound:
+  devices on different paradigms exchange pages carrying plain
+  durations, and ADR-0021's expiry-clock rules are untouched.
+- **The artifact's contract scales, and must be checked, not
+  assumed** (tenet №2). Nothing in the at-rest story (ADR-0012 key
+  lifecycle, crypto erasure, refusal at next open) is
+  duration-dependent in principle, but a month-long page holds its
+  keys and, under ADR-0025, its history for a month; the op-log
+  size budget is the named bound and gets measured against
+  month-scale pages before a long ladder ships.
+
+Where this graduates: ADR-0011 is the home for the principle (rungs
+are intuitive durations at the surface's tempo; the current ladder
+is the daily instance), and it is a draft, so the restatement is an
+edit, not an amendment ceremony.
 
 ## Open questions, parked with the concept
 
@@ -55,10 +99,6 @@ outreaches the ladder.
   pages per day means more tab churn against the existing cap, and
   it may want the bucket anchored to now (rolling hours) rather than
   to clock hours.
-- Whether a paradigm tunes defaults, for example the default TTL
-  rung (8h, "a working day") reading differently under an hourly
-  tempo than a weekly one. Tuning defaults touches retention and
-  gets decided deliberately if at all.
 - Whether the paradigm is one global setting or per-surface. The
   spec's existing toggle is global; start there.
 - What the marker vocabulary is per paradigm (now / -1h / -2h,
