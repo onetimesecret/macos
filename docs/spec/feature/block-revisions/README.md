@@ -17,6 +17,15 @@ unforgivable, №3 do not wag the dog),
 (the join-at-key-frame law).
 Decision:
 [ADR-0025](../../../adr/0025-block-revision-history.md) (proposed).
+Side doc:
+[`2026-0828-where-kept-things-live.md`](2026-0828-where-kept-things-live.md)
+(the keep-gesture design space and each candidate's disposition),
+[`2026-0828-research-reconciliation.md`](2026-0828-research-reconciliation.md)
+(the research corpus compared against this concept, with
+dispositions),
+[`2026-0828-page-lens.md`](2026-0828-page-lens.md)
+(page history as a second projection of the same log; concept only,
+unscheduled).
 Issue: not yet filed. Origin: DOGFOOD.md, commit `2e58158`.
 
 ## Why now
