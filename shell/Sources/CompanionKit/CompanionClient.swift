@@ -560,7 +560,7 @@ public final class CompanionClient: @unchecked Sendable {
     /// Drop-to-seal: the core reads the drag pasteboard itself while
     /// the drag session's data is still on it — dropped bytes never
     /// transit this process (the drag boundary decision,
-    /// docs/hardware-verification.md). `at`/`length` name the drop
+    /// docs/qa/hardware-verification.md). `at`/`length` name the drop
     /// point as a UTF-16 range the sentinel replaces, core-side; a
     /// plain drop is a zero-length range at the insertion index.
     /// Returns the new chip's face, or nil when nothing readable was

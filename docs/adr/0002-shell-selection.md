@@ -111,7 +111,7 @@ panel with a real movable, resizable, non-activating window plus
 bottom-edge tabs. Every finding above applies at least as strongly to
 that surface, so rev C strengthens rather than reopens this decision.
 
-The VoiceOver hardware runbook (docs/hardware-verification.md, section
+The VoiceOver hardware runbook (docs/qa/hardware-verification.md, section
 B) remains open as *verification* of the native-a11y premise, not as a
 gate: its failure modes are eject triggers below, not blockers to
 proceeding.

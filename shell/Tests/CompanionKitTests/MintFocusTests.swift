@@ -14,7 +14,7 @@ import XCTest
 /// What a test can see of that is the asking, not the landing: the
 /// landing wants a key window with a mounted editor in it, which is
 /// AppKit first-responder timing and stays a hardware step
-/// (`docs/hardware-verification.md` §F). The asking is a model
+/// (`docs/qa/hardware-verification.md` §F). The asking is a model
 /// decision, and these are the cases it has to get right.
 ///
 /// Nothing here touches a real state file or the login Keychain: every

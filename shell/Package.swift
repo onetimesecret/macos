@@ -33,7 +33,7 @@ let package = Package(
         // The shared code's tests, which is now every unit-testable
         // decision the app makes. The executable target keeps only
         // AppKit plumbing, which the project tests by hand on hardware
-        // (docs/hardware-verification.md) rather than by mocking.
+        // (docs/qa/hardware-verification.md) rather than by mocking.
         // CompanionCore is a direct dependency because the suite calls
         // `companion_new_ephemeral` itself (EphemeralClient.swift): the
         // seam exists only in test-util builds of the core (ADR-0018),

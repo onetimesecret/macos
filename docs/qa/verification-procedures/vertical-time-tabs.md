@@ -41,7 +41,7 @@ suite structurally cannot reach it.
   are.
 - **The stance.** Resting, raising and the summon anchor are window
   plumbing, which this project verifies by hand rather than by mocking
-  (`docs/hardware-verification.md`).
+  (`docs/qa/hardware-verification.md`).
 - **Reading it.** Whether a perforation reads as "a day ago" rather than
   as a bug is not a thing a test can hold an opinion about.
 
