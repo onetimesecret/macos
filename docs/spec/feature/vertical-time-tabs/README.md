@@ -25,6 +25,10 @@ Decision: [ADR-0020](../../../adr/0020-a-day-is-a-projection-of-live-pages.md),
 **proposed**.
 Issue: #79, labelled `decision` and `prototype`, milestone "Dogfood
 fixes".
+Side doc:
+[`2026-0828-paradigms.md`](2026-0828-paradigms.md)
+(paradigms, the duration the UI optimizes for; concept only,
+unscheduled).
 
 ## The shape #79 asks for
 
