@@ -1,172 +1,198 @@
-# ADR-0025: Block revision history is a projection of the op log
+# ADR-0025: Block revisions, and history dies with its page
 
 - **Status:** proposed
 - **Date:** 2026-08-28
 
+Serves the capability spec at
+`docs/spec/feature/block-revisions/README.md`. This ADR decides the
+mechanism behind the automatic memory, the retention class of the
+deliberate objects (checkpoints, variants), and, the load-bearing
+part, where history dies. That last decision amends accepted
+ADR-0013 and needs maintainer ratification before anything ships.
+
 ## Context
 
-The dogfood wish (DOGFOOD.md, commit `2e58158`): the created and
-modified stamp above a block should be a clickable element that
-reveals the block's prior versions. The motivating workflow is
-wording work, iterating on a prompt or the text of an email, where
-the thing you want back is a phrasing you had an hour ago and edited
-away.
+The spec asks that a block never lose a state by accident
+(capability 1) and that no move on the revision surface lose work
+(capability 5), citing tenet №1: losing work is unforgivable, even
+here. The op log already remembers what those capabilities need.
+Every commit is its own change with its own timestamp (merging
+disabled), provenance is derived from ops
+(`SheetDocument::span_provenance`), and the history survives restart
+inside the sealed snapshot. The memory exists; the questions are when
+it dies and what sits on top of it.
 
-Everything this feature needs to read already exists, and the reason
-it exists is ADR-0013. The document is a Loro op log with change
-merging disabled, so every commit is its own change with its own
-timestamp; created and modified are derived from the ops
-(`SheetDocument::span_provenance`), not stored. The log is bounded by
-the compaction ceremony: at every accepted rung transition and hold
-top-up the block summaries graduate to materialized fields, the
-document is reborn from its runs under a fresh peer identity, and the
-trail dies (`Sheet::compact`, `SheetDocument::compact`). With peers
-attached the ceremony defers to the sync channel and runs as a
-coordinated event (issue #101, ADR-0021).
+ADR-0013 answered the first question for an invisible memory: the
+compaction ceremony graduates block summaries and destroys the trail,
+"on the same clockwork as everything else, at rung transitions." Two
+things have changed since that answer was given.
 
-So the tension is not whether prior versions are recoverable. Inside
-the horizon they already are; the device remembers them today,
-invisibly. The tension is that a prior version of a block is exactly
-the "reconstructible record of deleted content" that ADR-0013's
-security claim promises does not exist past the compaction boundary.
-Any design that stores version snapshots outside the op log, to make
-history survive the ceremony, is the retention smuggling ADR-0013
-warns about: a second, weaker retention story that quietly breaks the
-claim. The feature is only honest if it shows what the op log holds
-and nothing else.
+First, the delivered bound was never really a rung of wall time. The
+ceremony's production triggers are all user gestures: cycling or
+setting the TTL rung (`SheetStore::cycle_rung`,
+`SheetStore::set_rung`) and the hold top-up, plus the coordinated
+ceremony those gestures mark due when peers are attached
+(issue #101). No timer compacts. A page whose TTL is never touched
+carries its full history to the grave already; a page whose owner
+fiddles with the rung sheds repeatedly. The security claim "what this
+device remembers is bounded by one rung" describes the schedule's
+intent, not its behavior.
+
+Second, the memory is about to become visible. Once the stamp opens a
+revision surface, shedding history as a side effect of an unrelated
+gesture becomes a trap: choosing a longer TTL, or pausing a page,
+would silently destroy the very states the panel taught the user to
+rely on. Pausing a page is a gesture of keeping; having it destroy
+the block's memory is exactly tenet №1's "one misunderstanding away
+from feeling like loss." An invisible memory could afford an
+incidental schedule. A visible one cannot.
 
 ## Decision
 
-Block revision history is a read-time projection of the operation
-log, bounded by the compaction horizon, storing nothing. The stamp
-above a block opens a read-only panel of that block's prior texts,
-derived on demand from the ops. Recovery is an ordinary edit.
-History that the ceremony has destroyed is gone from the panel too;
-that is the design, not a gap.
+Three parts.
 
-Concretely:
+### 1. Automatic history is a projection of the op log
 
-**A revision is a distinct past text of the block at a quiet
-moment.** Candidate boundaries are idle gaps in the page's change
-log: successive changes separated by more than a gap threshold close
-one revision and open the next. At each boundary the block's text is
-reconstructed by forking the document at that frontier
-(`LoroDoc::fork_at`) and resolving the block's anchor in the fork;
-consecutive identical texts collapse into one revision, so a boundary
-that did not touch this block contributes nothing. A frontier where
-the anchor does not resolve predates the block, and the list simply
-starts later. The gap threshold is a display parameter applied at
-read time, not recorded anywhere, so it can be tuned freely without
-touching stored state.
+Revisions are derived at read time and stored nowhere. Opening a
+block's history walks the log once: candidate boundaries are idle
+gaps between changes, plus a forced boundary immediately before any
+change whose deletion exceeds a threshold, so the state just ahead of
+a destructive edit is always reachable (the rescue case, spec
+capability 1). At each boundary the block's text is reconstructed by
+forking the document at that frontier (`LoroDoc::fork_at`, verified
+present in the pinned loro 1.13.9) and resolving the block's anchor
+in the fork; consecutive identical texts collapse. Both thresholds
+are read-time display parameters, tunable with no migration.
 
-**Derivation is read-time and click-driven.** Nothing is computed or
-cached while typing. Opening the panel walks the log once and forks
-per candidate boundary; the cost lands on the click, scales with the
-number of revisions, and evaporates when the panel closes.
+The surface follows the spec: in-place preview by scrubbing (a
+read-only projection under ADR-0013's editable-surface rule, editing
+suspended while showing), word-level deltas rendered first-class, and
+taking a state back as one ordinary commit at the block's real
+position, undoable, stamping modified now. The current text becomes
+the newest recoverable state the moment it is replaced, so restore is
+nondestructive by construction. Revision text is content and crosses
+one deliberate read surface to the editor, the same trust domain as
+the page's own text: never the ledger, never the blocks JSON, origin
+messages never alongside.
 
-**The panel is a read-only projection** in the sense of ADR-0013's
-editable-surface rule, the same tier as search results or an
-importance lens. It lists revisions newest first, each under its
-`DDD HH:mm` stamp. Two actions, both ordinary edits performed on the
-in-order sheet, both undoable, both stamping modified now:
+### 2. The page is history's retention unit (amends ADR-0013)
 
-- **Restore** replaces the block's current text with the revision's
-  text, as one commit. A restore is a new edit whose content happens
-  to be old. It does not rewind stamps or rewrite history; like a
-  manual retype, it replaces every character, so the block's derived
-  created stamp moves to the restore until compaction graduates the
-  summary. The materialized created, once graduated, is unaffected.
-- **Insert below** lands the revision's text as a new block after the
-  current one, for holding two phrasings side by side. This is the
-  compare workflow: the sheet is where variants live, visibly, not a
-  hidden slot.
+A block's history lives exactly as long as its page and dies with it:
+at TTL expiry, at deliberate page deletion, and at no other automatic
+moment. Rung transitions and hold top-ups stop being compaction
+boundaries. The ceremony itself, graduate then discard
+(`Sheet::compact`), is unchanged; what changes is its schedule. It
+runs on:
 
-**No pinning, no keep gesture.** A "keep this version" affordance
-that survives compaction would be a hidden durable copy of deleted
-content, precisely what the ceremony exists to destroy. The product
-already has a keeping mechanism: the page. A phrasing worth keeping
-is worth a visible paragraph (insert below); everything else is
-subject to the clockwork like all content.
+- **A deliberate shed.** The revision surface offers "shed history
+  now" for the page. This is the control the rung side effect only
+  pretended to give: forgetting on purpose, at the moment the user
+  means it, one gesture from the place where they can see what will
+  be forgotten. Like the seal gestures it is deliberate and not
+  undoable, and the surface says so.
+- **A size budget.** Op-log growth crossing a measured budget on a
+  real page triggers a ceremony, the remedy ADR-0013 already named in
+  its eject triggers. This bounds the sealed file, not the user's
+  memory of their own words.
+- **The coordinated sync ceremony**, where ADR-0021's mechanics
+  require one, exactly as issue #101 built it. Join-at-key-frame is
+  untouched: a peer still never receives ops behind the current key
+  frame, so history still never crosses devices (the spec records
+  cross-device history as the want that lost).
 
-**History is per-device and never syncs.** ADR-0021's broadcast rules
-already decide this: a joining peer starts at the current key frame
-and structurally never receives the ops behind it, so a second device
-can only ever show revisions since its own join. Peer edits that
-arrive as deltas enter the local log with their own changes and
-timestamps and appear in the panel like any others. The panel makes
-no cross-device claim and requests nothing from anywhere.
+The security claim rescopes from "bounded by one rung" to: **a
+block's history never outlives its page, never survives a shed, and
+never crosses a key frame to another device.** The honesty section
+below is what that trades away.
 
-**Version content crosses one new read surface, deliberately.** The
-blocks JSON stays content-free (identities, stamps, paragraph spans,
-per ADR-0013). Revision text is content and reaches the shell through
-its own FFI call, the same trust domain as the editor's text itself:
-vended to the panel, never persisted, never in the ledger, buffers
-zeroized like every other content path. Origin messages do not ride
-along; ADR-0013 is explicit that origin crosses no read surface, and
-a revision panel does not change that.
+### 3. Checkpoints and variants are deliberate content, not history
 
-## The panel is the honest window
+A checkpoint ("this one works", optionally named) and a variant (two
+or three live candidates of one block, flip which shows, settle) are
+created by gesture, visible on demand, and die with their page. They
+are chip-shaped: identity-bearing objects sealed beside the document,
+deliberate to create and deliberate to delete (ADR-0009), not part of
+the automatic memory and therefore unaffected by a shed. This is not
+the retention smuggling ADR-0013 warns about, because that warning
+targets automatic, invisible retention; a checkpoint is the user
+keeping something, in a different slot than the visible stream, the
+way a chip already keeps sealed bytes. Their surface details (where a
+variant's non-showing text may appear, how flipping commits) belong
+to the spec's follow-on design, under the same rule as everything
+else: kept things are deliberate things.
 
-A side effect worth naming: today the op log's memory is invisible,
-and the compaction ceremony destroys something the user never saw.
-The panel makes the retention story legible. What it shows is exactly
-what the device remembers, which is exactly what ADR-0013 already
-committed to remembering; when the ceremony runs, the panel visibly
-empties back to the boundary. The horizon stops being doctrine and
-becomes observable product behavior. Nothing about the threat model
-changes, because no new data exists, but the standing history is now
-one click away instead of forensic, so the pad's existing conceal
-behavior (blur and drop at backdrop, panel dies with focus) is
-load-bearing for this surface exactly as it is for the sheet.
+## What this trades away, said plainly
+
+Under the old schedule's intent, deleted content inside a live page
+was recoverable only until the next rung event. Under this decision
+it is recoverable until the page dies or the user sheds, which for a
+seven-day page can be seven days. Mitigations, in order of weight:
+
+- At rest the history was always inside the sealed file, under the
+  same keychain-bound encryption and crypto erasure as the content it
+  describes (ADR-0012). The at-rest story does not change at all.
+- The memory becomes visible instead of forensic. The panel is the
+  honest window: what it shows is what the device remembers, and the
+  shed gesture stands right next to it. Before this ADR the same
+  history sat invisibly in the op log with no way to inspect it and
+  only accidental ways to destroy it.
+- Secrets have a vehicle that never enters the op log's plain text:
+  chips. A pasted secret that should not linger belongs in a chip or
+  behind a shed, and the surface can say so.
+- The bound that mattered to sync, one GOP at the relay and nothing
+  behind the key frame for a joiner, is a property of ADR-0021's
+  protocol, not of local compaction, and stands unchanged.
 
 ## Consequences
 
-- The core gains a revision derivation (`fork_at` walk, anchor
-  resolution in forks, distinct-text collapse) and one FFI read call,
-  roughly `block_revisions(sheet, block) -> [{stamp_s, text}]`. No
-  new stored state, no migration, no snapshot format change.
-- The shell's stamp labels (`InkEditorView.Coordinator.restyle()`
-  positions non-interactive `NSTextField`s today) become clickable,
-  and a panel view appears. The panel is display; restore and insert
-  below go through the ordinary edit path and need nothing new from
-  the model.
-- The wording workflow gets what it actually needs: see the phrasing
-  from an hour ago, take it back whole, or park it beside the current
-  attempt. Multi-day archaeology is out of scope by doctrine; an
-  intervening ceremony sheds it, and the stamp still answers from the
-  materialized summary.
-- Restore's effect on the derived created stamp (it moves, until the
-  graduated summary answers) is inherited from derivation, not
-  introduced here; a manual retype does the same today.
-- Deferred ceremonies (peers attached) mean history can outlive a
-  rung transition until the coordinated ceremony completes, so the
-  panel may show more on a synced page than on a solo one. No special
-  handling; the panel shows the log, and the log is what it is.
+- Part 1 is additive: a derivation walk and one FFI read call,
+  roughly `block_revisions(sheet, block) -> [{stamp_s, text}]`, plus
+  the shell surface (the stamp labels in
+  `InkEditorView.Coordinator.restyle()` become interactive). No
+  stored state, no migration, no snapshot format change.
+- Part 2 removes the `compact_or_defer` calls from the rung and
+  top-up paths in `store.rs` and adds the shed entry point and the
+  size trigger. The ceremony code, the deferred state machine, and
+  the graduation all survive as-is. ADR-0013's ceremony section needs
+  an amendment note pointing here once ratified.
+- Part 3 is new design work (object model beside chips, panel
+  treatment) and can land after parts 1 and 2; nothing in them
+  forecloses it.
+- The panel carries the legibility footer (spec capability 8): what
+  is reachable, and that history sheds with the page, on shed, or
+  over budget.
+- ADR-0011 (TTL rungs) is untouched; rungs keep governing page life.
+  What they stop governing is the memory inside a living page.
 
 ## What would settle this
 
-- The gap threshold. Something in the minutes (5 to 30) matches how
-  wording work actually pauses; since it is a read-time parameter,
-  dogfood can tune it by feel with no migration.
-- Measured fork cost on a real page. `fork_at` per boundary is
-  assumed cheap at handful-of-revisions scale; measure on a page with
-  a day of typing before committing to derive-on-click with no cache.
-- Whether the panel wants a word-level diff between adjacent
-  revisions. For wording work the delta is often the value. Display
-  styling only, phase 2 if the plain list proves insufficient.
-- Whether restore should be refused on a block whose text equals the
-  revision (a no-op edit that would still move modified), or simply
-  allowed as harmless.
+- Maintainer ratification of part 2, since it amends accepted
+  ADR-0013 and rescopes a security claim.
+- The two derivation thresholds (idle gap, destructive deletion
+  size), tuned by dogfood feel; both read-time, no migration.
+- Measured `fork_at` cost on a page with a day of real typing, before
+  committing to derive-on-click with no cache.
+- Verification in the #95/#96 work that key-frame emission never
+  forces a local discard, so a synced page's history keeps page
+  lifetime too; if the mechanics disagree, the sync case falls back
+  to ceremony-bounded history and the panel's footer says so for
+  synced pages.
+- Whether shed is ever wanted at block grain rather than page grain.
+  Per-block retention knobs were rejected once already (per-block TTL,
+  ADR-0013); the default answer is no, one shed for the page.
 
 ## Eject triggers
 
-- Loro's `fork_at` or cursor resolution in forks proves unable to
+- The size budget fires often on real pages, meaning page-lifetime
+  history does not fit the sealed-file envelope in practice, which
+  would force the schedule argument to reopen with data.
+- Provenance appears in a threat model as an asset in its own right
+  (carried forward from ADR-0013), which would argue the schedule
+  back toward aggressive shedding.
+- Loro's `fork_at` or anchor resolution in forks proves unable to
   reconstruct block extents reliably, which would force either stored
   revision markers (a retention decision this ADR refuses) or
-  shelving the feature.
-- A user-facing want for history past the ceremony appears and
-  survives the doctrine argument, which would reopen ADR-0013's
-  horizon as a product question, not a UI one.
-- Sync grows a requirement for cross-device history, which would
-  contradict ADR-0021's join-at-key-frame law and must be argued
-  there first.
+  shelving the projection design.
+- Sync's mechanics turn out to require local discard at GOP
+  boundaries after all, which would make part 2's claim unkeepable
+  for synced pages and demand an amendment, not a quiet exception.
