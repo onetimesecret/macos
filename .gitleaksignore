@@ -32,7 +32,10 @@ e058e59d500a1ad669461e3978954de0081518c2:crates/ffi/src/lib.rs:github-pat:521
 # prototype's seeded sheets carry a deliberately fake GitHub PAT (note
 # "dEMOnly" embedded in it) and the bundled design-system demo uses a
 # made-up Stripe-shaped payload string (same literal, two sites). Docs
-# assets, never wired to anything.
+# assets, never wired to anything. The paths below are the ones that
+# existed at commit e5a4d02, which is what pins them; the same files now
+# live under docs/archive/airlock-prototype/ and must not be rewritten
+# here, or the fingerprints stop matching.
 e5a4d02f43db3f6f1be307b504c05f2bb6964056:docs/Airlock Prototype/Airlock Prototype.dc.html:github-pat:289
 e5a4d02f43db3f6f1be307b504c05f2bb6964056:docs/Airlock Prototype/_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/_ds_bundle.js:stripe-access-token:893
 e5a4d02f43db3f6f1be307b504c05f2bb6964056:docs/Airlock Prototype/_ds/onetime-secret-design-system-822862bd-6ec5-47cc-aa90-ee1a09cb2222/_ds_bundle.js:stripe-access-token:1371

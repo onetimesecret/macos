@@ -40,7 +40,8 @@ Two prior results stand and are not re-run here:
 
 **Owner:** delano.
 
-Open `docs/Airlock Prototype/Airlock Prototype.dc.html` in a browser
+Open `docs/archive/airlock-prototype/Airlock Prototype.dc.html` in a
+browser
 beside the app. The
 prototype is the script; the app is under test. Walk every gesture in
 both and note any divergence in feel, not just function:
