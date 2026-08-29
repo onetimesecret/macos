@@ -16,8 +16,10 @@ The spec asks that a block never lose a state by accident
 (capability 1) and that no move on the revision surface lose work
 (capability 5), citing tenet №1: losing work is unforgivable, even
 here. The op log already remembers what those capabilities need.
-Every commit is its own change with its own timestamp (merging
-disabled), provenance is derived from ops
+Every commit lands as its own change with its own timestamp (the
+merge interval is zero; same-second commits sharing a message still
+coalesce, far below any boundary this ADR derives), provenance is
+derived from ops
 (`SheetDocument::span_provenance`), and the history survives restart
 inside the sealed snapshot. The memory exists; the questions are when
 it dies and what sits on top of it.
@@ -58,10 +60,13 @@ block's history walks the log once: candidate boundaries are idle
 gaps between changes, plus a forced boundary immediately before any
 change whose deletion exceeds a threshold, so the state just ahead of
 a destructive edit is always reachable (the rescue case, spec
-capability 1). At each boundary the block's text is reconstructed by
-forking the document at that frontier (`LoroDoc::fork_at`, verified
-present in the pinned loro 1.13.9) and resolving the block's anchor
-in the fork; consecutive identical texts collapse. Both thresholds
+capability 1). At each boundary the block's text is reconstructed in a
+scratch copy of the document: fork once, check the fork out
+read-only at the boundary's frontier, and resolve the block's anchor
+there (`LoroDoc::fork` and `checkout`, both verified in the pinned
+loro 1.13.9; `fork_at` per boundary is ruled out, each call being a
+full snapshot export and re-import); consecutive identical texts
+collapse. Both thresholds
 are read-time display parameters, tunable with no migration.
 
 The surface follows the spec: in-place preview by scrubbing (a
@@ -170,8 +175,10 @@ seven-day page can be seven days. Mitigations, in order of weight:
   ADR-0013 and rescopes a security claim.
 - The two derivation thresholds (idle gap, destructive deletion
   size), tuned by dogfood feel; both read-time, no migration.
-- Measured `fork_at` cost on a page with a day of real typing, before
-  committing to derive-on-click with no cache.
+- Measured cost of the fork-then-checkout walk on a page with a day
+  of real typing, before committing to derive-on-click with no cache
+  (`fork_at` per boundary is already ruled out: each call is a full
+  snapshot round trip).
 - Verification in the #95/#96 work that key-frame emission never
   forces a local discard, so a synced page's history keeps page
   lifetime too; if the mechanics disagree, the sync case falls back
@@ -189,7 +196,7 @@ seven-day page can be seven days. Mitigations, in order of weight:
 - Provenance appears in a threat model as an asset in its own right
   (carried forward from ADR-0013), which would argue the schedule
   back toward aggressive shedding.
-- Loro's `fork_at` or anchor resolution in forks proves unable to
+- Loro's checkout or anchor resolution in forks proves unable to
   reconstruct block extents reliably, which would force either stored
   revision markers (a retention decision this ADR refuses) or
   shelving the projection design.
