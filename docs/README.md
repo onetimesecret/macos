@@ -1,0 +1,94 @@
+# docs/
+
+A map of this tree: what lives in each directory now, and what belongs
+there in future. The status of record for execution is GitHub issues and
+milestones; these documents are the reasoning around that status, not a
+replacement for it.
+
+## Identity documents (this directory)
+
+- [ROADMAP.md](ROADMAP.md): where the product is going, milestone by milestone.
+- [tenets.md](tenets.md): the commitments that decide arguments when two good options conflict.
+- [purpose-aspirations-and-peers.md](purpose-aspirations-and-peers.md): why the app exists and which software it wants to be measured against.
+- [design-brief.md](design-brief.md): the original brief for the menu-bar companion.
+
+Read these first, and amend them rather than fork them when the shape of
+the product changes.
+
+## adr/
+
+Numbered architecture decision records, ADR-0001 upward, plus
+[template.md](adr/template.md). One decision per file, named
+`NNNN-slug.md`. An ADR is an argument with a context and consequences,
+not a veto: an idea that cuts against one reopens it rather than being
+cancelled by it. New decisions take the next free number.
+
+## archive/
+
+Superseded documents kept for the record, not to build from. The
+pre-milestone-1 spec lives here, and so does `airlock-prototype/`, the
+design canvas from the Airlock era with its artboards, design system
+bundle, and screenshots. Documents move here when they are replaced.
+
+## development/
+
+Implementation notes on specific components, written for whoever next
+touches one: the keymap, the status item, the text area. One file per
+component, named `about-the-<thing>.md`. The how of a shipped part goes
+here; the why goes in an ADR.
+
+## dogfood/
+
+[DOGFOOD.md](dogfood/DOGFOOD.md) is the guide to running OnetimePad as a
+real daily tool rather than a dev build.
+[ABERRATIONS.md](dogfood/ABERRATIONS.md) is the running log of raw,
+surprising, or unresolved observations from doing so. An observation
+starts in ABERRATIONS and graduates into DOGFOOD, an issue, or an ADR
+once it is understood.
+
+## plans/
+
+Routes to a milestone: what has to happen, in what order, to get
+somewhere specific. Some are milestone plans, some are scoped to a
+single issue and its review. A plan is superseded by the work landing,
+so plans age out to archive rather than being kept current.
+
+## qa/
+
+Verification runbooks for what CI cannot reach. The
+[recovery matrix](qa/recovery-matrix.md) inventories the lifecycle cases
+and what covers each one,
+[hardware-verification.md](qa/hardware-verification.md) is the session
+runbook, and `verification-procedures/` holds one procedure per
+scenario, each written to be run by hand and reported against.
+
+## research/
+
+Dated reports on the external landscape and on techniques the app might
+adopt: what other software does, what a technique costs, what is true
+rather than assumed. Findings feed specs and ADRs; a report stays as
+written and is not edited to match a later conclusion.
+
+## soto/
+
+State of the Onion notes: dated snapshots of what shipped, what is in
+flight, and what is coming. One file per entry, and a later entry
+corrects an earlier one rather than editing it in place. See
+[soto/README.md](soto/README.md) for the convention.
+
+## spec/
+
+The design work. `spec/design/` is the numbered milestone-1 series, from
+problem space through to open questions. `spec/feature/` holds one
+directory per feature, each with a README and whatever side documents
+the design needed. `spec/icon/` covers icon and identity work. A feature
+directory is the home for a design in progress; conclusions firm enough
+to constrain later work move into an ADR.
+
+## Conventions
+
+- Kebab-case filenames for new documents.
+- Dated prefixes, `YYYY-MMDD`, for research reports and for side documents inside a feature spec. SOTO entries use `YYYY-MM-DD` per their own convention.
+- Archive rather than delete. A superseded document keeps its history and its links.
+- ADRs follow [the template](adr/template.md) and can be reopened by a good argument.
+- Relative links between documents, so the tree reads the same on disk and on GitHub.
