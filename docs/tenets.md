@@ -6,7 +6,7 @@ Tenets are beliefs; ADRs are commitments. A tenet says what we hold true about p
 
 ## What are they?
 
-Hardy thoughts: durable priors that shape decisions but are not
+Tenets are hardy thoughts: durable priors that shape decisions but are not
 themselves decisions. A tenet sits upstream of the ADRs. When a
 proposal and an ADR collide, the tenets are part of how we judge
 whether the proposal is wrong or the ADR is due for revisiting. This
