@@ -1,0 +1,362 @@
+<html><head><!-- frame-runtime --><base href="/_f/1787973121-3424/"><script>window.__FRAME_PREAMBLE={"v":1,"capabilities":{"artifact":"artifact.D_F1mx8d.js","assets":"assets.8Gk803W0.js","comments":"comments.GLuHR3zP.js","db":"db.h-3sndFg.js","downloads":"downloads.C3GSvEDP.js","embed":"embed.CxGAyc-v.js","mcp":"mcp.Bvma3qD7.js","network":"network.B5UA9Su4.js","notifications":"notifications.ssU4jy7G.js","permissions":"permissions.BNySkLV5.js","room":"room.BMMoe2BY.js","sample":"sample.BW2Uysoh.js","self":"artifact.D_F1mx8d.js","user":"user.BpKav-Rf.js"},"transforms":"_transforms.DSB5x63f.js","comments":"_comments.BoakUwmM.js","translate":"_translate.5HCW4BJh.js"}</script><script>(function(){"use strict";var te=["light","dark","system"],re=/^[A-Za-z0-9_-]{1,64}$/,$=/^[a-zA-Z_:][a-zA-Z0-9_:.-]{0,127}$/,ne=new Set(["class","hidden","value","checked","style","title","alt","placeholder","lang","dir","role","tabindex","disabled","readonly","contenteditable","open","colspan","rowspan"]);function oe(e){const t=e.toLowerCase();return t.startsWith("data-")||t.startsWith("aria-")||ne.has(t)}var Be="http://www.w3.org/1999/xhtml",se="http://www.w3.org/2000/svg",ae=new Set(["script","style","iframe","noscript","noframes","noembed","xmp","plaintext","template","title","textarea","object","embed"]),ie=new Set(["script","style"]);function ce(e){const t=e.localName.toLowerCase();return e.namespaceURI==="http://www.w3.org/1999/xhtml"?!ae.has(t):e.namespaceURI===se?!ie.has(t):!1}function M(e,t){return e===t||(e===160||e===32)&&(t===160||t===32)}function le(e,t){const r=e.length,n=t.length;let s=0;for(;s<r&&s<n&&M(e.charCodeAt(s),t.charCodeAt(s));)s++;let o=0;for(;o<r-s&&o<n-s&&M(e.charCodeAt(r-1-o),t.charCodeAt(n-1-o));)o++;return{p:s,s:o}}function ue(e,t){const r=e.firstChild;if(e.childNodes.length!==1||r===null||r.nodeType!==Node.TEXT_NODE){e.textContent=t;return}const n=r.data,s=n.length,o=t.length,{p:i,s:c}=le(n,t);i===s&&c===0&&s===o||r.replaceData(i,s-i-c,t.slice(i,o-c));const h=r.data,p=e.ownerDocument.getSelection?.()??null,w=p!==null&&p.rangeCount>0&&(p.anchorNode===r||p.focusNode===r)?{anchor:p.anchorNode,anchorOffset:p.anchorOffset,focus:p.focusNode,focusOffset:p.focusOffset}:null;let m=-1,g=-1;for(let f=0;f<h.length&&f<t.length;f++){const v=h.charCodeAt(f),b=t.charCodeAt(f);v!==b&&M(v,b)&&(m<0&&(m=f),g=f)}const a=m>=0;if(a&&r.replaceData(m,g-m+1,t.slice(m,g+1)),a&&w!==null&&w.anchor!==null&&w.focus!==null)try{p.setBaseAndExtent(w.anchor,w.anchorOffset,w.focus,w.focusOffset)}catch{}}var fe=new Set(["html","head","body","frameset"]);function de(e){return e.namespaceURI==="http://www.w3.org/1999/xhtml"&&fe.has(e.localName)}function pe(e){if(e===null||typeof e!="object")return!1;const t=e;if(typeof t.target!="string"||!re.test(t.target)||t.text!==void 0&&typeof t.text!="string")return!1;if(t.attrsSet!==void 0){if(t.attrsSet===null||typeof t.attrsSet!="object")return!1;for(const[r,n]of Object.entries(t.attrsSet))if(!$.test(r)||typeof n!="string")return!1}if(t.attrsRemoved!==void 0){if(!Array.isArray(t.attrsRemoved))return!1;for(const r of t.attrsRemoved)if(typeof r!="string"||!$.test(r))return!1}return!0}function me(e,t){if(e===null||typeof e!="object")return!1;const{seq:r,elements:n}=e;if(typeof r!="number"||!Number.isSafeInteger(r)||!Array.isArray(n)||n.length===0||n.length>64)return!1;for(let s=0;s<n.length;s++)if(!t(n[s]))return!1;return!0}function he(e){return e===null||typeof e!="object"?!1:me(e.__frame_patch,pe)}function _e(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_init;return t!==null&&typeof t=="object"}function ve(e){return e!==null&&typeof e=="object"&&e.__frame_size_poke===!0}function ye(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_theme;if(t===null||typeof t!="object")return!1;const r=t.theme;return typeof r=="string"&&te.includes(r)}var A=/^[\w.-]+\.js$/;function we(e,t,r){return r?"inert":typeof t=="string"&&A.test(t)?e?[t]:"inert":e?"inert":"framed"}function ge(){return{post(e,t){parent.postMessage(e,t)},on(e){const t=r=>{r.source===parent&&e(r.data,r.origin,r.isTrusted)};return addEventListener("message",t),()=>removeEventListener("message",t)}}}function be(){return{post:()=>{},on:()=>()=>{}}}var j="__frame_scroll",Ee=150,Ae=310,Se=160,Te=3e4;function ke(){let e=0,t=!1,r=!1,n=!1,s=0,o=null;const i=l=>{try{sessionStorage.setItem(j,JSON.stringify({y:l}))}catch{}},c=()=>{if(clearTimeout(e),o===null)return;const l=o;o=null,i(l)},h=()=>{if(t){t=!1;return}r=!0,o=scrollY,clearTimeout(e),e=setTimeout(c,Ee)};try{addEventListener("scroll",h,{passive:!0}),addEventListener("pagehide",c)}catch{}const p=()=>{let l;try{l=sessionStorage.getItem(j)}catch{return null}if(l===null)return null;let _;try{_=JSON.parse(l)}catch{_=null}const d=_?.y;if(!(typeof d=="number"&&Number.isFinite(d)&&d>=0)){try{sessionStorage.removeItem(j)}catch{}return null}return d};let w=!1;const m=l=>{try{const _=scrollY;scrollTo({top:l,left:0,behavior:"instant"}),s=l,n=!0,clearTimeout(e),o=null,i(l);const d=scrollY;d!==_&&(t=!0),d!==l&&!w&&(w=!0,addEventListener("load",()=>{try{if(scrollY===d){const T=p();m(T!==null?T:s)}}catch{}},{once:!0}))}catch{}},g=()=>{try{return!!location.hash}catch{return!0}};let a=!1;const f=()=>{try{if(a||innerWidth>Ae||innerHeight>Se)return;a=!0;const l=Date.now(),_=()=>{try{removeEventListener("resize",_)}catch{}if(Date.now()-l>Te||r||g())return;const d=p();m(d!==null?d:s)};addEventListener("resize",_)}catch{}};let v=!1,b=!1;return{restore(){if(v||(v=!0,g()))return;const l=p();l!==null&&(m(l),f())},promoted(){if(b||(b=!0,g()))return;const l=p();l!==null?(m(l),f()):n&&m(s)}}}function Re(e,t,r,n){let s=null;try{s=window.trustedTypes?.createPolicy("frame-runtime",{createScriptURL:h=>h})??null}catch{}const o=window.Worker,i=o?.prototype,c=Object.freeze({Worker:o,workerOn:i?.addEventListener,workerPost:i?.postMessage,workerTerminate:i?.terminate,fetch:window.fetch.bind(window),preventDefault:Event.prototype.preventDefault,policy:s,origins:t});r(e).then(h=>h?.bootTopLevel?h.bootTopLevel(c,n):n.settle()).catch(()=>n.settle())}var De="modulepreload",Ie=function(e){return"/"+e},Ue={},Le=function(t,r,n){let s=Promise.resolve();function o(i){const c=new Event("vite:preloadError",{cancelable:!0});if(c.payload=i,window.dispatchEvent(c),!c.defaultPrevented)throw i}return s.then(i=>{for(const c of i||[])c.status==="rejected"&&o(c.reason);return t().catch(o)})},Oe=window===top,q=Object.getOwnPropertyDescriptor(window,"claude"),k=we(Oe,window.__FRAME_PREAMBLE?.topLevel,q?.writable===!1),N=typeof k=="object"&&k[0],y=N?be():ge();(function(){const e=Object.defineProperty,t=globalThis,r=["RTCPeerConnection","webkitRTCPeerConnection","RTCDataChannel","RTCIceCandidate","RTCSessionDescription","RTCRtpSender","RTCRtpReceiver"];let n=0;for(let s=0;s<r.length;s++){const o=r[s];try{e(t,o,{value:void 0,writable:!1,configurable:!1})}catch{try{delete t[o]}catch{}try{e(t,o,{value:void 0,writable:!1,configurable:!0})}catch{}}typeof t[o]=="function"&&n++}if(n&&k==="framed")try{y.post({__frame_rtc_lockdown_failed:n},"*")}catch{}})();var Pe=1e4,Y=Object.freeze([...window.__FRAME_PREAMBLE?.origins??["https://claude.ai","https://preview.claude.ai"]]);function X(e){for(const t of Y)if(t.endsWith(":*"))try{const r=new URL(e);if(`${r.protocol}//${r.hostname}:*`===t)return!0}catch{}else if(e===t)return!0;return!1}var R=Object.freeze({...window.__FRAME_PREAMBLE?.capabilities}),B=window.__FRAME_PREAMBLE?.transforms,D=window.__FRAME_PREAMBLE?.comments,I=window.__FRAME_PREAMBLE?.translate;function S(e){return Le(()=>import("/_runtime/"+e),void 0)}function G(e,t){return{contract:e.contract,changes:new Set(e.changes??[]),flags:new Set(e.flags??[]),capabilities:e.capabilities??{},capBudgets:e.capBudgets??{},transforms:new Map,shellOrigin:t,mount:x,hooks:O,pipe:()=>({wrap:(r,n)=>(...s)=>{try{return n(...s)}catch(o){return Promise.reject(o)}}})}}var L=null,E=null;function V(e,t,r){try{Object.defineProperty(e,t,{value:r,writable:!1,configurable:!1,enumerable:!0})}catch{try{Object.defineProperty(e,t,{value:r,writable:!1,configurable:!0,enumerable:!0})}catch{}}}var U=!1,O={editBefore:null,edit:null};function Ce(e,t,r=!1){const n=[];let s;if(r)try{O.editBefore?.(e)}catch{}for(const o of e.elements){const i=document.querySelector(`[data-id="${o.target}"]`);if(!i){s=o.target;break}if([...Object.keys(o.attrsSet??{}),...o.attrsRemoved??[]].some(c=>!oe(c))){s=o.target;break}if(o.text!==void 0&&(!ce(i)||de(i))){s=o.target;break}for(const[c,h]of Object.entries(o.attrsSet??{}))if(!J(i,c)){try{i.setAttribute(c,h)}catch{}Z(i,c,h)}for(const c of o.attrsRemoved??[])J(i,c)||(i.removeAttribute(c),Z(i,c,null));typeof o.text=="string"&&ue(i,o.text),n.push(o.target)}if(r)try{O.edit?.(e.seq,n,s)}catch{}if(s!==void 0){y.post({__frame_patch_miss:{seq:e.seq}},t);return}try{document.dispatchEvent(new CustomEvent("claude:edit",{detail:{seq:e.seq,targets:n}}))}catch{}}function Z(e,t,r){if(!(e instanceof HTMLInputElement))return;const n=t.toLowerCase();n==="checked"?e.checked=r!==null:n==="value"&&e.type!=="file"&&(e.value=r??"")}function J(e,t){const r=t.toLowerCase(),n=e;return r==="data-id"||(r==="value"||r==="checked")&&(n.__artifactSecret===!0||/^(password|hidden|file)$/.test(n.type??"")||/(^|\s)(cc-|one-time-code|current-password|new-password)/i.test(`${e.getAttribute("autocomplete")??""} ${n.autocomplete??""}`))}function Q(e){const t=document.documentElement;e==="light"||e==="dark"?(t.dataset.theme=e,t.style.colorScheme=e,U=!0):U&&(delete t.dataset.theme,t.style.colorScheme="",U=!1)}var P=new Map;function Me(){let e;const t={u:new Promise(r=>{e=r}),r:r=>{t.done=!0,e(r)},done:!1,nulled:!1};return t}function F(){for(const e of P.values())e.done||(e.nulled=!0,e.r(null))}var je=Object.freeze(Object.assign(Object.create(null),{call:Function.prototype.call,apply:Function.prototype.apply,bind:Function.prototype.bind})),x=(e,t)=>{const r=P.get(e);if(!r||r.done){r?.nulled&&E&&y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:e}},E);return}const n=typeof t=="function"?Object.setPrototypeOf(t,je):Object.assign(Object.create(null),t);typeof n.then=="function"&&delete n.then,r.r(Object.freeze(n))};function ee(){const e=q?.value??{};V(window,"claude",e);for(const t of Object.keys(R)){if(e[t]!==void 0){V(e,t,e[t]);continue}P.set(t,Me())}if(e.use===void 0){const t=r=>{if(typeof r!="string"||!Object.hasOwn(R,r))return Promise.resolve(null);const n=P.get(r);return n?n.u:Promise.resolve(e[r]??null)};try{Object.defineProperty(e,"use",{value:t,writable:!0,configurable:!0,enumerable:!1})}catch{}}}if(k==="framed"){const e=B&&A.test(B)?S(B).catch(()=>{}):Promise.resolve(void 0),t=a=>{if(a.type==="auxclick"&&a.button!==1)return;const f=a.target,v=f&&f.closest?f.closest("a[href],area[href]"):null;if(!v)return;const b=v.getAttribute("href");if(!b)return;let l;try{l=new URL(b,document.baseURI)}catch{return}if((l.protocol==="http:"||l.protocol==="https:")&&l.origin!==location.origin){a.preventDefault();const _=(v.getAttribute("target")??"").toLowerCase(),d=a.type==="auxclick"||a.metaKey||a.ctrlKey||a.shiftKey||a.altKey||!["","_self","_top","_parent"].includes(_);y.post({__frame_nav:!0,url:l.href,newTab:d},"*")}};addEventListener("click",t,!0),addEventListener("auxclick",t,!0);const r={},n=a=>{a.isTrusted&&(r.pointer=!0)},s=a=>{a.isTrusted&&(r.click=!0)};addEventListener("pointermove",n,{capture:!0,passive:!0}),addEventListener("click",s,{capture:!0,passive:!0}),e.then(a=>{a?.wireNav&&(a.wireNav(),removeEventListener("click",t,!0),removeEventListener("auxclick",t,!0),removeEventListener("pointermove",n,!0),removeEventListener("click",s,!0),a.wireEngagement?.(r))});let o=null;try{o=ke()}catch{}ee();let i=null,c=null,h=0;const p=y.on((a,f)=>{X(f)&&_e(a)&&(i=a.__frame_init,E=f,p(),clearTimeout(h),c?.())});y.post({__frame_connect:!0},"*");const w=new Promise(a=>{c=a,h=setTimeout(()=>{p(),a()},Pe)}),m=document.readyState==="loading"?new Promise(a=>document.addEventListener("DOMContentLoaded",()=>a(),{once:!0})):Promise.resolve();m.then(()=>{try{o?.restore()}catch{}});const g={cb:null};y.on((a,f)=>{if(X(f)&&ve(a)){try{o?.promoted()}catch{}g.cb?.()}}),w.then(async()=>{if(!i||!E){F();return}Q(i.theme);const a=E;let f=!1,v=!1;y.on((u,z,C)=>{if(z!==a)return;ye(u)&&Q(u.__frame_theme.theme),he(u)&&Ce(u.__frame_patch,a,C);const H=u?.__fc_mode;H&&typeof H=="object"&&!f&&D&&A.test(D)&&(f=!0,S(D).then(K=>K.install?.(a,H.on===!0)).catch(()=>{}));const W=u?.__ft_cmd;W&&typeof W=="object"&&!v&&I&&A.test(I)&&(v=!0,S(I).then(K=>K.install?.(a,W)).catch(()=>{}))});const b=Object.keys(i.capabilities??{}).filter(u=>Object.hasOwn(R,u)).map(u=>[u,R[u]]).filter(u=>typeof u[1]=="string"&&A.test(u[1])),l=await Promise.allSettled(b.map(([,u])=>S(u))),_=await e,d=E;if(_?.buildBoot||y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:"_transforms"}},d),_?.buildBoot)try{L=_.buildBoot(i,_.TRANSFORMS??{},{shellOrigin:d,mount:x,hooks:O},u=>y.post({__frame_cap_telemetry:u},d))}catch{y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:"_transforms"}},d),L=G(i,d)}else L=G(i,d);const T=u=>y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:u}},d),Ne=L;l.forEach((u,z)=>{const C=b[z][0];if(u.status!=="fulfilled"){T(C);return}try{u.value?.install?.(Ne)}catch{T(C)}}),F(),await m,y.post({__frame_ready:!0},E),e.then(u=>u?.installSizeReporter?.(d,g))})}else N&&(ee(),Re(N,Y,S,{settle:F,mount:x}))})();</script><!-- /frame-runtime --><meta charset="utf8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found]){display:none!important}</style></head><body>
+<title>Loro Concepts, Applied</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+:root{
+  --ground:#F6F7F3; --surface:#FDFDFB; --ink:#22281F; --ink-soft:#5A6153;
+  --rule:#DBDFD1; --accent:#1E7A50; --accent-ink:#16603F;
+  --classic:#4E5F8B; --conv:#8A6836;
+  --chip-classic:#E7EBF6; --chip-conv:#F3EAD8; --chip-novel:#DFF0E5;
+  --code-bg:#EDEFE6;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#131713; --surface:#1B211B; --ink:#E3E8DC; --ink-soft:#9BA394;
+    --rule:#2C332B; --accent:#5FC492; --accent-ink:#7BD3A6;
+    --classic:#9DAEE0; --conv:#CFA55E;
+    --chip-classic:#232B3D; --chip-conv:#33291A; --chip-novel:#1B3327;
+    --code-bg:#232921;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#131713; --surface:#1B211B; --ink:#E3E8DC; --ink-soft:#9BA394;
+  --rule:#2C332B; --accent:#5FC492; --accent-ink:#7BD3A6;
+  --classic:#9DAEE0; --conv:#CFA55E;
+  --chip-classic:#232B3D; --chip-conv:#33291A; --chip-novel:#1B3327;
+  --code-bg:#232921;
+}
+*{box-sizing:border-box}
+body{background:var(--ground); color:var(--ink); margin:0;
+  font-family:"Source Serif 4", Georgia, "Times New Roman", serif;
+  font-size:17px; line-height:1.62;}
+.wrap{max-width:46rem; margin:0 auto; padding:3.5rem 1.25rem 5rem;}
+h1,h2,h3,.eyebrow,.uselab,.navlist a{font-family:"Archivo","Helvetica Neue",Arial,sans-serif;}
+h1{font-size:clamp(2rem,6vw,3.1rem); font-weight:800; line-height:1.05; letter-spacing:-.02em; margin:.4rem 0 .8rem; text-wrap:balance;}
+h2{font-size:1.45rem; font-weight:700; letter-spacing:-.01em; margin:3rem 0 .8rem; text-wrap:balance;}
+h3{font-size:1.08rem; font-weight:700; margin:2.2rem 0 .4rem;}
+p{margin:.7rem 0;}
+a{color:var(--accent-ink); text-decoration-color:color-mix(in srgb,var(--accent) 45%,transparent);}
+.eyebrow{display:block; font-size:.72rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--accent);}
+.dek{font-size:1.12rem; color:var(--ink-soft); font-style:italic; margin:0 0 1rem;}
+.methodline{font-size:.85rem; color:var(--ink-soft); border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); padding:.6rem 0; margin:1.4rem 0 0;}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace; font-size:.86em;}
+code{background:var(--code-bg); padding:.08em .35em; border-radius:3px;}
+.navlist{display:flex; flex-wrap:wrap; gap:.4rem .5rem; padding:0; margin:1rem 0 0; list-style:none;}
+.navlist a{font-size:.74rem; font-weight:600; letter-spacing:.02em; text-decoration:none; color:var(--ink);
+  border:1px solid var(--rule); background:var(--surface); border-radius:999px; padding:.28rem .65rem;}
+.navlist a:hover,.navlist a:focus-visible{border-color:var(--accent); color:var(--accent-ink); outline:none;}
+.finding{display:grid; grid-template-columns:2.2rem 1fr; gap:.6rem; margin:1rem 0; align-items:baseline;}
+.finding .fnum{font-family:"Archivo",sans-serif; font-weight:800; color:var(--accent); font-size:1rem;}
+.finding p{margin:0;}
+.grouphead{margin-top:3.2rem; border-top:2px solid var(--ink); padding-top:.5rem;}
+.grouphead .eyebrow{color:var(--ink-soft);}
+.concept{background:var(--surface); border:1px solid var(--rule); border-radius:6px; padding:1.15rem 1.25rem 1.05rem; margin:1.3rem 0;}
+.concept h3{margin:0 0 .15rem; display:flex; gap:.55rem; align-items:baseline;}
+.concept h3 .cnum{color:var(--ink-soft); font-weight:600; font-size:.82rem;}
+.digest{color:var(--ink-soft); font-size:.95rem; margin:.3rem 0 .9rem;}
+.uses{display:grid; gap:.55rem; margin:0; padding:0;}
+.use{display:grid; grid-template-columns:6.6rem 1fr; gap:.7rem; align-items:start;}
+.uselab{font-size:.66rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; border-radius:3px; text-align:center; padding:.22rem .3rem; margin-top:.25rem;}
+.lab-classic{color:var(--classic); background:var(--chip-classic);}
+.lab-conv{color:var(--conv); background:var(--chip-conv);}
+.lab-novel{color:var(--accent-ink); background:var(--chip-novel);}
+.use p{margin:0; font-size:.97rem;}
+.tablewrap{overflow-x:auto; margin:1rem 0;}
+table{border-collapse:collapse; width:100%; font-size:.88rem; font-variant-numeric:tabular-nums;}
+th{font-family:"Archivo",sans-serif; font-size:.72rem; letter-spacing:.06em; text-transform:uppercase; text-align:left; color:var(--ink-soft);}
+th,td{padding:.45rem .7rem .45rem 0; border-bottom:1px solid var(--rule); vertical-align:top;}
+td.num,th.num{text-align:right; font-family:"IBM Plex Mono",monospace; font-size:.84rem;}
+.opp{margin:1.1rem 0; padding-left:1rem; border-left:3px solid var(--accent);}
+.opp h3{margin:0 0 .2rem;}
+.opp .ev{font-size:.83rem; color:var(--ink-soft);}
+.smallnote{font-size:.85rem; color:var(--ink-soft);}
+.srcgroup{font-size:.85rem;}
+.srcgroup h3{margin-bottom:.3rem;}
+.srcgroup ul{margin:.2rem 0 .8rem; padding-left:1.1rem;}
+.srcgroup li{margin:.15rem 0;}
+mark.unv{background:none; color:var(--conv); font-size:.8em; font-family:"Archivo",sans-serif; font-weight:600; letter-spacing:.04em;}
+@media (max-width:560px){ .use{grid-template-columns:1fr;} .uselab{justify-self:start; padding:.22rem .5rem;} }
+@media (prefers-reduced-motion: no-preference){ .navlist a{transition:border-color .15s,color .15s;} }
+</style>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">Research outing · 29 Aug 2026</span>
+  <h1>Loro Concepts, Applied</h1>
+  <p class="dek">The fifteen concepts in Loro's documentation, read closely, then turned toward how people actually behave inside writing applications.</p>
+  <p class="methodline">All fifteen pages under <a href="https://loro.dev/docs">loro.dev/docs</a> → Concepts were read on 29 Aug 2026, plus the Undo/Redo and Document Size pages for numbers the concepts lean on. The writing-behavior grounding comes from this project's earlier survey of version history across ~100 products ("Undo That Survives Closing," same date). Nothing here is invented; where a figure could not be re-verified it is marked <mark class="unv">unverified</mark>.</p>
+  <nav aria-label="Concepts">
+    <ul class="navlist">
+      <li><a href="#c1">1 CRDTs</a></li><li><a href="#c2">2 Container</a></li><li><a href="#c3">3 Attached/Detached</a></li><li><a href="#c4">4 OpLog/DocState</a></li><li><a href="#c5">5 Ops &amp; Changes</a></li><li><a href="#c6">6 Transactions</a></li><li><a href="#c7">7 Frontiers</a></li><li><a href="#c8">8 Version Vector</a></li><li><a href="#c9">9 Cursor</a></li><li><a href="#c10">10 Import Status</a></li><li><a href="#c11">11 PeerID</a></li><li><a href="#c12">12 Eg-Walker</a></li><li><a href="#c13">13 Shallow Snapshots</a></li><li><a href="#c14">14 Choosing Types</a></li><li><a href="#c15">15 When Not CRDTs</a></li>
+    </ul>
+  </nav>
+</header>
+
+<h2>How to read "classic, conventional, novel"</h2>
+<p><strong>Classic</strong> is the distributed-systems use the concept was born for — what a CRDT textbook or sync-server author would do with it. <strong>Conventional</strong> is how a mainstream writing product (a Google-Docs-, Notion-, or iA-Writer-shaped app) would employ it today. <strong>Novel</strong> is a use the concept supports but few or no surveyed products ship — each one anchored to an observed behavior or documented pain from real writing tools, not to speculation about users.</p>
+
+<h2>The grounding: how people actually use writing apps</h2>
+<p>Five patterns from the incumbent survey do most of the work in this report.</p>
+<p><strong>Writing is mostly a party of one.</strong> The bulk of surveyed writing tools are single-user apps with sync (Obsidian, Ulysses, Drafts, Scrivener, iA Writer…), not co-editors. The commonest "collaboration" is a person with two devices — and that is exactly where things break: conflicted-copy dialogs (Standard Notes ships a conflict diff), lowest-device-wins retention (Joplin), and cross-device draft reverts (a recurring Gmail complaint thread). The concurrency machinery below matters to solo writers first.</p>
+<p><strong>History is hand-rolled at session granularity.</strong> Where incumbents keep versions at all, they build timers: Standard Notes ≥5 min apart, Joplin and HackMD every 10 min, Word AutoRecover 10 min, Dropbox Paper "≥30 min old and &gt;500 chars changed," Figma 30-min checkpoints. People evidently think in sittings, not keystrokes.</p>
+<p><strong>Restore is feared because it destroys.</strong> Dropbox Paper's rollback is destructive; Cursor's checkpoint restore wipes redo; Zed had an undo-wipes-restored-buffer bug. Several apps only dare offer restore-as-copy (Joplin, Reflect, Mem's append-on-restore).</p>
+<p><strong>Undo dies at the window.</strong> Apple Notes, Bear, Heynote, and every major email client ship no draft history at all; closing the window is the cliff. This was the largest single gap the earlier outing found.</p>
+<p><strong>Provenance is becoming a feature.</strong> iA Writer's Authorship annotations and Linear's per-span author attribution (Jul 2026) mark a shift: readers of a draft increasingly want to know <em>who — or what —</em> wrote each span.</p>
+
+<h2>Findings</h2>
+<div class="finding"><span class="fnum">F1</span><p><strong>Loro's architecture already contains, as substrate, the entire feature set incumbents hand-roll on top.</strong> OpLog + checkout + frontiers is version history, named versions, preview-before-restore, and a diff base in one mechanism — the features the surveyed apps build with timers, copy files, and SQLite sidecars.</p></div>
+<div class="finding"><span class="fnum">F2</span><p><strong>The economics of "keep everything" now work.</strong> On the standard Automerge-paper trace (259,778 single-character ops → 104,852-char document), Loro's full history exports at 251 KB raw / 106 KB compressed — about 0.97 and 0.41 bytes per keystroke-level operation. Full history costs roughly the same as the final text itself.</p></div>
+<div class="finding"><span class="fnum">F3</span><p><strong>Change merging natively produces the "session" units apps build by hand.</strong> Consecutive same-peer ops merge into one Change, split by imports, differing commit messages, or a timestamp gap (docs state a 1000-second default window when timestamps are on) — nearly the same shape as Standard Notes' ≥5-min and Joplin's 10-min hand-rolled sessions.</p></div>
+<div class="finding"><span class="fnum">F4</span><p><strong>Undo is local-by-design, and that is the collaborative-UX best practice.</strong> <code>UndoManager</code> (default 100 steps; the merge interval defaults to 0, every commit its own step until configured) reverts only the current peer's operations, with cursor save/restore hooks — the semantics ProseMirror and Quill converged on, here at the document layer.</p></div>
+<div class="finding"><span class="fnum">F5</span><p><strong>Shallow snapshots give writing apps a capability almost none of the ~100 surveyed products has: truly deleting something from history.</strong> Delete the sensitive text, export <code>shallow-snapshot</code>, and prior operations are permanently gone ("typically 70–90% smaller"; the benchmark shows −76.8%).</p></div>
+<div class="finding"><span class="fnum">F6</span><p><strong>Two of the fifteen concepts are warnings, not features.</strong> "How to Choose the Right CRDT Types" and "When Not to Rely on CRDTs" both say the same thing from different sides: merge semantics are a product decision per field, and anything needing global agreement (locks, uniqueness, publishing) still needs an authority.</p></div>
+<div class="finding"><span class="fnum">F7</span><p><strong>Named versions become effectively free.</strong> A Frontier is 1–2 operation IDs regardless of collaborator count, so bookmarking a version at every export, send, or long pause costs bytes — where incumbents ration named versions (HackMD: 10 on the free plan).</p></div>
+
+<section class="grouphead">
+  <span class="eyebrow">Concepts 1–2</span>
+  <h2 style="margin-top:.2rem">Foundations</h2>
+</section>
+
+<div class="concept" id="c1">
+  <h3><span class="cnum">01</span>What are CRDTs</h3>
+  <p class="digest">Replicated data structures whose replicas can be updated independently and in parallel, converging without coordination. Loro's page frames it as the CAP trade: availability + partition-tolerance + strong eventual consistency, at the cost of larger documents and harder intent-preservation than OT.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Real-time co-editing and peer-to-peer sync without a central server — the Google-Docs-competitor scenario the literature was written for.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>What Anytype already does: a notes app whose sync layer is CRDT-based, so multi-device edits merge instead of forking. Collaboration cursors and shared workspaces sit on top.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>Treat <em>yourself on two devices</em> as the primary concurrency case. The survey's real pain was never "two authors, one sentence" — it was conflicted copies, lowest-device-wins version pruning, and cross-device draft reverts. A writing app can adopt CRDTs purely to make the phone-edit-on-the-train merge silently into the laptop draft, with co-editing as a side effect it may never enable.</p></div>
+  </div>
+</div>
+
+<div class="concept" id="c2">
+  <h3><span class="cnum">02</span>Container</h3>
+  <p class="digest">Typed building blocks — Map, List, MovableList, Text, Tree, Counter — addressed by deterministic ContainerIDs. Concurrent <code>setContainer()</code> at the same key keeps only one winner; the <code>ensureMergeable*</code> methods derive identity from logical position so peers converge on one shared child instead.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Model app state: a root Map of document metadata holding a Text body, a List of comments, a Tree for folder structure.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>Block-based documents à la Notion: each block a container, giving per-block merge behavior and per-block events, with the page as a list of block containers.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>Date-keyed <code>ensureMergeableText("2026-08-29")</code> for daily-notes apps: two offline devices both "creating today's note" converge to one note instead of duplicates (a failure mode the daily-note pattern in Roam/Logseq-style tools invites; scenario, not a cited bug report). Same trick for per-scene containers in a Scrivener-style manuscript — history, merge, and restore then operate at the scene level writers actually think in.</p></div>
+  </div>
+</div>
+
+<section class="grouphead">
+  <span class="eyebrow">Concepts 3–6</span>
+  <h2 style="margin-top:.2rem">State and history</h2>
+</section>
+
+<div class="concept" id="c3">
+  <h3><span class="cnum">03</span>Attached vs Detached States</h3>
+  <p class="digest">Two orthogonal ideas share the words: a <em>document</em> is detached when <code>checkout(frontiers)</code> points its state at a historical version (editing disabled by default; <code>attach()</code> returns to latest), and a <em>container</em> is detached when built standalone (<code>new LoroMap()</code>) before insertion gives back an attached copy.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Time travel: check out any historical frontier for inspection, then re-attach — version control semantics inside the document.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>A read-only version-preview pane, Google-Docs style: the history view is a detached checkout, so "look at Tuesday's version" never risks the live document.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>Fix the restore problem the survey kept finding (Dropbox Paper's destructive rollback; Cursor's restore-destroys-redo). Because checkout is non-destructive and the OpLog keeps everything, "restore" can be recast as <em>preview, then either copy text forward or apply a reverse diff as new operations</em> — the old version and the redo path both survive. Detached is also the natural read-mode for a Simplenote-style scrub slider.</p></div>
+  </div>
+</div>
+
+<div class="concept" id="c4">
+  <h3><span class="cnum">04</span>OpLog and DocState Separation</h3>
+  <p class="digest">The append-only history (OpLog) and the materialized current document (DocState) are architecturally separate, each with its own version pointer. Export modes span the split: <code>update</code> (history only), <code>snapshot</code> (both), <code>shallow-snapshot</code> (state plus trimmed history).</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Relay/sync servers hold and forward the OpLog without ever materializing the document; clients load a snapshot fast and fetch history lazily.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>Fast app launch from a snapshot, with the full revision timeline streamed in when the user opens the history panel — the Notion/Google-Docs loading pattern without the server doing bespoke work.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>This separation <em>is</em> the answer to the earlier outing's title problem, "undo that survives closing." Every zero-history app surveyed (Apple Notes, Bear, Heynote, Gmail/Outlook drafts) conflates state with history, so closing the buffer discards the past. With an OpLog, keystroke-level history is a property of the storage format — and Draftback-style writing replay, pause analytics, and "what did I cut yesterday" queries become reads over data the app already has.</p></div>
+  </div>
+</div>
+
+<div class="concept" id="c5">
+  <h3><span class="cnum">05</span>Operations and Changes</h3>
+  <p class="digest">Operations are atomic edits identified by <code>(peerId, counter)</code>; Changes are batches of consecutive same-peer operations plus metadata (timestamp, dependencies, optional commit message). Merging is automatic and splits on imports, differing commit messages, or timestamp gaps — the docs give a 1000-second default window when timestamps are enabled.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Compression of sync metadata: a burst of typing travels as one Change, not thousands of individually-stamped ops.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>Change boundaries as the revision-list entries in a history UI, with commit messages as edit summaries — the Wikipedia/Git idiom applied to a document.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>The survey showed every incumbent hand-rolling "session" granularity with timers (≥5 min, 10 min, 30 min). Change-merge windows produce those units natively — and writing-process research (Wengelin; Van Waes &amp; Leijten) finds that pauses mark cognitive boundaries. Committing on pause, with the pause length tuned like a debounce, would make history units coincide with units of thought rather than units of wall-clock.</p></div>
+  </div>
+</div>
+
+<div class="concept" id="c6">
+  <h3><span class="cnum">06</span>Transaction Model</h3>
+  <p class="digest">Explicitly not ACID: a Loro "transaction" is an event-emission and grouping boundary. Pending local ops emit one event and form one Change at <code>commit()</code>; import/export/checkout commit implicitly. No rollback exists.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Batch a compound edit (set title + insert body + tag) into one event so observers re-render once, coherently.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>One transaction per user gesture — paste, drag, find-and-replace — so the events feeding the UI and the sync layer match what the user did.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>Transaction boundaries are undo boundaries. When an AI assistant rewrites three paragraphs across two containers, wrapping it in one commit (plus <code>UndoManager</code>'s <code>groupStart/groupEnd</code>) makes "reject the suggestion" a single gesture — the exact ergonomics AI-writing tools currently fumble. The caveat cuts the other way: with no rollback, "cancel this draft edit" must be built from checkout or reverse ops, not from the transaction model.</p></div>
+  </div>
+</div>
+
+<section class="grouphead">
+  <span class="eyebrow">Concepts 7–8</span>
+  <h2 style="margin-top:.2rem">Naming versions</h2>
+</section>
+
+<div class="concept" id="c7">
+  <h3><span class="cnum">07</span>Frontiers</h3>
+  <p class="digest">A version named by its leaf operations — the ops with no successors — implicitly including all ancestors. Typically 1–2 elements regardless of peer count. Best where the history is at hand (checkout targets, checkpoints); convertible via <code>frontiersToVV()</code> / <code>vvToFrontiers()</code>.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Compact checkout targets and DAG bookmarks — the commit-hash of the CRDT world.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>Named versions à la Scrivener snapshots or HackMD: store a frontier plus a label, jump back on demand. At a few bytes each, no plan-gated rationing needed.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>Auto-bookmark the moments writers actually return to: every export, print, paste-into-email, or send-to-editor stamps a frontier ("the version I submitted"). None of the ~40 writing tools surveyed versions on <em>share</em> — yet "what did I send them?" is the question a version list is opened to answer. <mark class="unv">absence verified only across the surveyed set</mark></p></div>
+  </div>
+</div>
+
+<div class="concept" id="c8">
+  <h3><span class="cnum">08</span>Version Vector</h3>
+  <p class="digest">A map from peerID to operation count — self-contained, comparable, O(peers) in size. The synchronization counterpart to Frontiers: it can answer "what are you missing?" without access to the other side's history.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Delta sync negotiation: exchange vectors, send exactly the missing ops.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>Efficient multi-device sync in a notes app — each device pulls precisely the operations it lacks, over any transport.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>Surface it. The cross-device pains in the survey (Gmail draft reverts, Joplin's lowest-device-wins) are invisible-divergence problems. A status line computed from version vectors — "phone is 132 edits behind; last merged 2h ago" — turns sync from an article of faith into something inspectable, which is what backup-anxious writers keep asking forums about.</p></div>
+  </div>
+</div>
+
+<section class="grouphead">
+  <span class="eyebrow">Concepts 9–11</span>
+  <h2 style="margin-top:.2rem">Positions, delivery, identity</h2>
+</section>
+
+<div class="concept" id="c9">
+  <h3><span class="cnum">09</span>Cursor and Stable Positions</h3>
+  <p class="digest">Positions anchored to operation IDs rather than indices (<code>getCursor(index, side)</code> / <code>getCursorPos()</code>, with Before/Middle/After sides), so they stay meaningful as concurrent edits move the text around them.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Live collaborator carets and selections that don't jump when someone else types above them.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>Comment and annotation anchoring that survives edits — the thing Google Docs comments do well and most Markdown-file-based tools cannot do at all.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>Solo uses incumbents lack: a "where I left off" position that syncs across devices; TODO/⚠ markers pinned inside a draft that survive heavy revision; AI suggestion anchors that stay attached to the right sentence while the human keeps typing above. Also the docs' own subtle one: saving cursors in <code>UndoManager</code>'s <code>onPush</code> so undo restores the selection too — polish that distinguishes editors people trust.</p></div>
+  </div>
+</div>
+
+<div class="concept" id="c10">
+  <h3><span class="cnum">10</span>Import Status and Pending Operations</h3>
+  <p class="digest"><code>import()</code> returns which operation ranges applied and which are <em>pending</em> on missing causal dependencies; pending ops apply automatically once their prerequisites arrive. Silent incompleteness is possible if the status is never checked.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Correctness under out-of-order, at-least-once message delivery — the reality of every real network transport.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>Robust sync over flaky links: mobile radios, background tabs, resumed laptops. Batch import for catching up after a week offline.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>Transport-agnostic writing sync: because updates are just bytes that can arrive in any order, a draft can sync via email attachment, AirDrop, a USB stick, or a static file host — no vendor sync service. For the local-first, files-on-disk audience (Obsidian's constituency), that is the difference between "our cloud" and "your channel." The pending set doubles as an honest UI: "waiting on 1 update from your laptop."</p></div>
+  </div>
+</div>
+
+<div class="concept" id="c11">
+  <h3><span class="cnum">11</span>PeerID Management</h3>
+  <p class="digest">Every editing session gets a 64-bit peerID; ops are <code>(peerId, counter)</code>. Fresh random IDs per session are the safe default; the page's sharpest warnings are against reuse — never a user ID (users have multiple devices), and reuse only with persisted local state loaded first.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Globally unique operation identity without coordination — the substrate everything above sits on.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>Session identity mapped (externally) to accounts for presence and audit — "Dana is editing" — while the CRDT layer keeps its own IDs.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>Give the AI assistant its own peer. Every AI-written span is then attributable at the operation level for free — the iA Writer Authorship / Linear per-span-attribution feature, derived rather than built, and ready for provenance-disclosure demands. Per-device peers likewise make "written on my phone" a filterable dimension of history. <mark class="unv">no surveyed product ships op-level AI attribution</mark></p></div>
+  </div>
+</div>
+
+<section class="grouphead">
+  <span class="eyebrow">Concepts 12–13</span>
+  <h2 style="margin-top:.2rem">The engine and its economics</h2>
+</section>
+
+<div class="concept" id="c12">
+  <h3><span class="cnum">12</span>Event Graph Walker (Eg-Walker)</h3>
+  <p class="digest">Instead of storing heavy CRDT metadata per op, record plain index-based edits and <em>replay</em> the concurrent slice of the DAG when merging. Local edits stay O(1)/O(log n); replay cost is bounded by concurrency, not document size; fully-synced tombstones become garbage-collectable. Loro is "heavily inspired by" Eg-Walker atop Fugue, not a strict implementation.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Make long-lived documents viable: keep years of history without the per-op metadata tax that sank earlier CRDTs.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>Invisible speed — instant open, small files, cheap merges. Users never see the algorithm; they see that history-everything doesn't slow the app down.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>Replay as a product surface. The merge already computes how two branches interleave — expose it, and a fork of chapter 3 edited for two weeks merges back with a track-changes-style account of what interleaved where. Long-lived forks are exactly what Scrivener-class writers simulate today with "Draft 2 (copy) FINAL-v3.docx" files.</p></div>
+  </div>
+</div>
+
+<div class="concept" id="c13">
+  <h3><span class="cnum">13</span>Shallow Snapshots and Redaction</h3>
+  <p class="digest">Git-shallow-clone for documents: export current state with history trimmed at a frontier — "typically 70–90% smaller" — and, by deleting sensitive text first, make it permanently absent from the exported history. Hard limit: peers can only sync from versions after the trim point. A sibling API, <code>redact</code>, blanks op payloads in exported updates (text becomes U+FFFD) while preserving the DAG, timestamps, and convergence with unredacted peers: shallow export kills history, redact anonymizes it.</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Storage GC and fast cold-start for documents with years of operations.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>Retention policy as an export policy: Notion's 7/30/90/unlimited-day history tiers, or Joplin's 90-day default, become "how far back do we shallow-trim," implemented in one mechanism per plan.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>True deletion — near-absent across the surveyed set, where history either doesn't exist or can't forget. Three grounded shapes: journaling apps that honor "I need this gone" (and GDPR erasure) into history, not just current text; "share a clean copy" that hands a collaborator the document without your drafting process (the discomfort Draftback exposed about keystroke replay); unpublishing a pasted secret from a shared doc's history. The sync-boundary caveat means this is a deliberate ceremony, not a routine save.</p></div>
+  </div>
+</div>
+
+<section class="grouphead">
+  <span class="eyebrow">Concepts 14–15</span>
+  <h2 style="margin-top:.2rem">Judgment calls</h2>
+</section>
+
+<div class="concept" id="c14">
+  <h3><span class="cnum">14</span>How to Choose the Right CRDT Types</h3>
+  <p class="digest">The same field can be modeled multiple valid ways with different concurrent outcomes: a Map string value is last-write-wins; a Text container merges everyone's edits; Lists can resurrect "deleted" elements; mergeable child containers converge where <code>setContainer</code> overwrites. "Choosing the right CRDT type means understanding their potential behavior in concurrent editing situations."</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Schema design: pick the container whose merge behavior preserves invariants (Map for coordinates, not a 2-element List).</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>The document defaults most apps want: Text CRDT for the body (merge prose), LWW values for title, URL, and settings (one winner is correct — nobody wants two titles interleaved).</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>Treat merge semantics as per-field <em>editorial policy</em>: Tree for a manuscript's binder so concurrent scene-moves stay a move, not a duplicate; MovableList for chapter order; LWW for "status: draft/final" where a merge would be meaningless. The concept reframes a technical menu as the product spec for what happens when a writer's two selves disagree.</p></div>
+  </div>
+</div>
+
+<div class="concept" id="c15">
+  <h3><span class="cnum">15</span>When Not to Rely on CRDTs</h3>
+  <p class="digest">"CRDTs merge; they do not reject." No cross-replica locks or transactions, so exclusive resources, financial invariants, uniqueness, and authorization need a transactional authority or consensus — with CRDTs kept for the collaborative surface (text, lists, comments, drafts).</p>
+  <div class="uses">
+    <div class="use"><span class="uselab lab-classic">Classic</span><p>Don't build booking systems or ledgers on merge; both $60 withdrawals succeed locally and the merge overdrafts.</p></div>
+    <div class="use"><span class="uselab lab-conv">Conventional</span><p>In a writing product: prose merges via CRDT, while publish actions, permissions, billing, and share links stay server-authoritative.</p></div>
+    <div class="use"><span class="uselab lab-novel">Novel</span><p>The writing-specific reading: some editorial acts are exclusivity claims, not edits. "I'm restructuring chapter 2 tonight — hands off," a wiki slug that must be unique, "exactly one editor accepts this suggestion." A mature writing app pairs the merge layer with lightweight authority for those — soft locks as advisory presence, hard ones at the server — instead of pretending merge is agreement.</p></div>
+  </div>
+</div>
+
+<h2>The arithmetic</h2>
+<p>From Loro's own Document Size benchmark (the Automerge-paper editing trace: 182,315 insertions + 77,463 deletions = 259,778 single-character operations, final document 104,852 characters). Derived columns re-computed independently; they match the source figures.</p>
+<div class="tablewrap">
+<table>
+  <tbody><tr><th>Export</th><th class="num">Raw (bytes)</th><th class="num">Compressed</th><th class="num">B/op (compressed)</th><th class="num">× final text size</th></tr>
+  <tr><td>Update (full history)</td><td class="num">251,352</td><td class="num">105,724</td><td class="num">0.41</td><td class="num">1.01</td></tr>
+  <tr><td>Snapshot (history + state)</td><td class="num">273,561</td><td class="num">132,459</td><td class="num">—</td><td class="num">2.61 raw</td></tr>
+  <tr><td>Shallow snapshot</td><td class="num">63,352</td><td class="num">54,517</td><td class="num">—</td><td class="num">0.60 raw</td></tr>
+</tbody></table>
+</div>
+<p class="smallnote">So: shallow is 76.8% smaller than the full snapshot raw (58.8% compressed) — inside the docs' "typically 70–90%" claim. Rule of thumb for a writing app, assuming roughly linear scaling with ops (assumption, not measured): keeping <em>every keystroke</em> of a document's life costs on the order of the document's own size once compressed — a 400 KB novel's complete history is megabytes, not gigabytes. Comparators from the earlier outing: Yjs update 91,777 B / Automerge 129,062 B compressed on the same trace.</p>
+
+<h2>Holes and opportunities, ranked by evidence</h2>
+<div class="opp">
+  <h3>1 · Undo that survives closing, as a storage property</h3>
+  <p>The strongest-evidenced gap: entire categories (system notes apps, all email drafts) ship zero history, and users notice. OpLog + DocState (04) means persistent, keystroke-grade history is the file format, with Changes (05) giving it human-sized entries. <span class="ev">Evidence: strong — many products, documented complaints, benchmark economics.</span></p>
+</div>
+<div class="opp">
+  <h3>2 · Non-destructive restore built on checkout + fork</h3>
+  <p>Preview any version detached (03), restore by copy-forward or reverse-ops, never lose redo. Directly answers documented incumbent failures (destructive rollback, restore-destroys-redo). <span class="ev">Evidence: strong — named product failures to fix.</span></p>
+</div>
+<div class="opp">
+  <h3>3 · AI as a peer: provenance and one-gesture reject</h3>
+  <p>PeerIDs (11) + transactions (06) + local undo (F4) make AI edits attributable, filterable, and rejectable as a unit. The attribution trend (iA, Linear) says the market is moving here. <span class="ev">Evidence: medium-strong — trend documented, op-level implementation unshipped anywhere surveyed.</span></p>
+</div>
+<div class="opp">
+  <h3>4 · Session versioning tuned to pauses, not timers</h3>
+  <p>Change-merge windows (05) reproduce incumbents' hand-rolled intervals; writing-process research suggests pause-based boundaries would fit cognition better. <span class="ev">Evidence: medium — intervals verified, pause-boundary benefit is inference from research literature.</span></p>
+</div>
+<div class="opp">
+  <h3>5 · True forgetting: redaction and clean sharing</h3>
+  <p>Shallow snapshots (13) enable erasure-into-history and process-free sharing that essentially no surveyed product offers. Demand is inferred from privacy norms and the Draftback discomfort, not from a complaint corpus. <span class="ev">Evidence: medium — capability gap verified, demand less documented.</span></p>
+</div>
+<div class="opp">
+  <h3>6 · Sync you can see</h3>
+  <p>Version vectors (08) and import status (10) as UI: which device is behind, what's pending, over any transport. Aims at the conflicted-copy/draft-revert pain cluster. <span class="ev">Evidence: medium — pain documented, UI treatment unproven.</span></p>
+</div>
+<div class="opp">
+  <h3>7 · Selective / regional undo</h3>
+  <p>Loro's UndoManager is linear and local; "undo just this paragraph's changes" (Azurite; Yu et al.'s CRDT selective undo) is not offered and remains a research-grade build on the OpLog. <span class="ev">Evidence: exploratory.</span></p>
+</div>
+
+<h2>Method and caveats</h2>
+<p>Pages were fetched and digested on 29 Aug 2026; digests are machine-summarized, then the load-bearing figures were re-fetched and quoted (undo defaults; the 70–90% and sync-boundary claims on the shallow-snapshot page; the full Document Size table) and the derived ratios recomputed in Python. The 1000-second Change-merge window was subsequently verified against the Rust sources at loro 1.13.9 (<code>set_change_merge_interval</code>, plain seconds; the JS binding's units differ). The same verification pass refuted one figure: <code>UndoManager</code>'s merge interval defaults to 0, not 1000&nbsp;ms, and F4 is corrected accordingly. The behavioral grounding reuses the same-day incumbent survey rather than new fieldwork; items that survey marked unverified stay unverified. "Most writing is solo" is stated as a framing premise consistent with the surveyed tool population, not a measured statistic. Concept pages beyond the fifteen (tutorials, advanced, performance) were read only where cited.</p>
+
+<h2>Sources</h2>
+<div class="srcgroup">
+  <h3>The fifteen concept pages</h3>
+  <ul>
+    <li><a href="https://loro.dev/docs/concepts/crdt">What are CRDTs</a> · <a href="https://loro.dev/docs/concepts/container">Container</a> · <a href="https://loro.dev/docs/concepts/attached_detached">Attached vs Detached</a> · <a href="https://loro.dev/docs/concepts/oplog_docstate">OpLog and DocState</a> · <a href="https://loro.dev/docs/concepts/operations_changes">Operations and Changes</a></li>
+    <li><a href="https://loro.dev/docs/concepts/transaction_model">Transaction Model</a> · <a href="https://loro.dev/docs/concepts/frontiers">Frontiers</a> · <a href="https://loro.dev/docs/concepts/version_vector">Version Vector</a> · <a href="https://loro.dev/docs/concepts/cursor_stable_positions">Cursor and Stable Positions</a> · <a href="https://loro.dev/docs/concepts/import_status">Import Status</a></li>
+    <li><a href="https://loro.dev/docs/concepts/peerid_management">PeerID Management</a> · <a href="https://loro.dev/docs/concepts/event_graph_walker">Event Graph Walker</a> · <a href="https://loro.dev/docs/concepts/shallow_snapshots">Shallow Snapshots and Redaction</a> · <a href="https://loro.dev/docs/concepts/choose_crdt_type">Choosing CRDT Types</a> · <a href="https://loro.dev/docs/concepts/when_not_crdt">When Not to Rely on CRDTs</a></li>
+  </ul>
+  <h3>Supporting Loro pages</h3>
+  <ul>
+    <li><a href="https://loro.dev/docs/advanced/undo">Undo/Redo</a> — UndoManager defaults, cursor restoration, local-only semantics</li>
+    <li><a href="https://loro.dev/docs/performance/docsize">Document Size</a> — all benchmark bytes in the arithmetic section</li>
+  </ul>
+  <h3>Behavioral grounding</h3>
+  <ul>
+    <li>"Undo That Survives Closing" incumbent set (this project, 29 Aug 2026) — product behaviors cited by name above: Standard Notes, Joplin, HackMD, Dropbox Paper, Word, Figma, Notion, Cursor, Zed, Reflect, Mem, Anytype, iA Writer, Linear, Draftback, Gmail, Scrivener, Yjs, Automerge; plus Wengelin 2006 / Van Waes &amp; Leijten pause research, Azurite (Yoon &amp; Myers 2015), Yu et al. 2015.</li>
+  </ul>
+</div>
+</div>
+
+
+
+</body></html>

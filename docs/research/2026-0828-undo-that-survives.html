@@ -1,0 +1,415 @@
+<html><head><!-- frame-runtime --><base href="/_f/1787968350-0611/"><script>window.__FRAME_PREAMBLE={"v":1,"capabilities":{"artifact":"artifact.D_F1mx8d.js","assets":"assets.8Gk803W0.js","comments":"comments.GLuHR3zP.js","db":"db.h-3sndFg.js","downloads":"downloads.C3GSvEDP.js","embed":"embed.CxGAyc-v.js","mcp":"mcp.Bvma3qD7.js","network":"network.B5UA9Su4.js","notifications":"notifications.ssU4jy7G.js","permissions":"permissions.BNySkLV5.js","room":"room.BMMoe2BY.js","sample":"sample.BW2Uysoh.js","self":"artifact.D_F1mx8d.js","user":"user.BpKav-Rf.js"},"transforms":"_transforms.DSB5x63f.js","comments":"_comments.BoakUwmM.js","translate":"_translate.5HCW4BJh.js"}</script><script>(function(){"use strict";var te=["light","dark","system"],re=/^[A-Za-z0-9_-]{1,64}$/,$=/^[a-zA-Z_:][a-zA-Z0-9_:.-]{0,127}$/,ne=new Set(["class","hidden","value","checked","style","title","alt","placeholder","lang","dir","role","tabindex","disabled","readonly","contenteditable","open","colspan","rowspan"]);function oe(e){const t=e.toLowerCase();return t.startsWith("data-")||t.startsWith("aria-")||ne.has(t)}var Be="http://www.w3.org/1999/xhtml",se="http://www.w3.org/2000/svg",ae=new Set(["script","style","iframe","noscript","noframes","noembed","xmp","plaintext","template","title","textarea","object","embed"]),ie=new Set(["script","style"]);function ce(e){const t=e.localName.toLowerCase();return e.namespaceURI==="http://www.w3.org/1999/xhtml"?!ae.has(t):e.namespaceURI===se?!ie.has(t):!1}function M(e,t){return e===t||(e===160||e===32)&&(t===160||t===32)}function le(e,t){const r=e.length,n=t.length;let s=0;for(;s<r&&s<n&&M(e.charCodeAt(s),t.charCodeAt(s));)s++;let o=0;for(;o<r-s&&o<n-s&&M(e.charCodeAt(r-1-o),t.charCodeAt(n-1-o));)o++;return{p:s,s:o}}function ue(e,t){const r=e.firstChild;if(e.childNodes.length!==1||r===null||r.nodeType!==Node.TEXT_NODE){e.textContent=t;return}const n=r.data,s=n.length,o=t.length,{p:i,s:c}=le(n,t);i===s&&c===0&&s===o||r.replaceData(i,s-i-c,t.slice(i,o-c));const h=r.data,p=e.ownerDocument.getSelection?.()??null,w=p!==null&&p.rangeCount>0&&(p.anchorNode===r||p.focusNode===r)?{anchor:p.anchorNode,anchorOffset:p.anchorOffset,focus:p.focusNode,focusOffset:p.focusOffset}:null;let m=-1,g=-1;for(let f=0;f<h.length&&f<t.length;f++){const v=h.charCodeAt(f),b=t.charCodeAt(f);v!==b&&M(v,b)&&(m<0&&(m=f),g=f)}const a=m>=0;if(a&&r.replaceData(m,g-m+1,t.slice(m,g+1)),a&&w!==null&&w.anchor!==null&&w.focus!==null)try{p.setBaseAndExtent(w.anchor,w.anchorOffset,w.focus,w.focusOffset)}catch{}}var fe=new Set(["html","head","body","frameset"]);function de(e){return e.namespaceURI==="http://www.w3.org/1999/xhtml"&&fe.has(e.localName)}function pe(e){if(e===null||typeof e!="object")return!1;const t=e;if(typeof t.target!="string"||!re.test(t.target)||t.text!==void 0&&typeof t.text!="string")return!1;if(t.attrsSet!==void 0){if(t.attrsSet===null||typeof t.attrsSet!="object")return!1;for(const[r,n]of Object.entries(t.attrsSet))if(!$.test(r)||typeof n!="string")return!1}if(t.attrsRemoved!==void 0){if(!Array.isArray(t.attrsRemoved))return!1;for(const r of t.attrsRemoved)if(typeof r!="string"||!$.test(r))return!1}return!0}function me(e,t){if(e===null||typeof e!="object")return!1;const{seq:r,elements:n}=e;if(typeof r!="number"||!Number.isSafeInteger(r)||!Array.isArray(n)||n.length===0||n.length>64)return!1;for(let s=0;s<n.length;s++)if(!t(n[s]))return!1;return!0}function he(e){return e===null||typeof e!="object"?!1:me(e.__frame_patch,pe)}function _e(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_init;return t!==null&&typeof t=="object"}function ve(e){return e!==null&&typeof e=="object"&&e.__frame_size_poke===!0}function ye(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_theme;if(t===null||typeof t!="object")return!1;const r=t.theme;return typeof r=="string"&&te.includes(r)}var A=/^[\w.-]+\.js$/;function we(e,t,r){return r?"inert":typeof t=="string"&&A.test(t)?e?[t]:"inert":e?"inert":"framed"}function ge(){return{post(e,t){parent.postMessage(e,t)},on(e){const t=r=>{r.source===parent&&e(r.data,r.origin,r.isTrusted)};return addEventListener("message",t),()=>removeEventListener("message",t)}}}function be(){return{post:()=>{},on:()=>()=>{}}}var j="__frame_scroll",Ee=150,Ae=310,Se=160,Te=3e4;function ke(){let e=0,t=!1,r=!1,n=!1,s=0,o=null;const i=l=>{try{sessionStorage.setItem(j,JSON.stringify({y:l}))}catch{}},c=()=>{if(clearTimeout(e),o===null)return;const l=o;o=null,i(l)},h=()=>{if(t){t=!1;return}r=!0,o=scrollY,clearTimeout(e),e=setTimeout(c,Ee)};try{addEventListener("scroll",h,{passive:!0}),addEventListener("pagehide",c)}catch{}const p=()=>{let l;try{l=sessionStorage.getItem(j)}catch{return null}if(l===null)return null;let _;try{_=JSON.parse(l)}catch{_=null}const d=_?.y;if(!(typeof d=="number"&&Number.isFinite(d)&&d>=0)){try{sessionStorage.removeItem(j)}catch{}return null}return d};let w=!1;const m=l=>{try{const _=scrollY;scrollTo({top:l,left:0,behavior:"instant"}),s=l,n=!0,clearTimeout(e),o=null,i(l);const d=scrollY;d!==_&&(t=!0),d!==l&&!w&&(w=!0,addEventListener("load",()=>{try{if(scrollY===d){const T=p();m(T!==null?T:s)}}catch{}},{once:!0}))}catch{}},g=()=>{try{return!!location.hash}catch{return!0}};let a=!1;const f=()=>{try{if(a||innerWidth>Ae||innerHeight>Se)return;a=!0;const l=Date.now(),_=()=>{try{removeEventListener("resize",_)}catch{}if(Date.now()-l>Te||r||g())return;const d=p();m(d!==null?d:s)};addEventListener("resize",_)}catch{}};let v=!1,b=!1;return{restore(){if(v||(v=!0,g()))return;const l=p();l!==null&&(m(l),f())},promoted(){if(b||(b=!0,g()))return;const l=p();l!==null?(m(l),f()):n&&m(s)}}}function Re(e,t,r,n){let s=null;try{s=window.trustedTypes?.createPolicy("frame-runtime",{createScriptURL:h=>h})??null}catch{}const o=window.Worker,i=o?.prototype,c=Object.freeze({Worker:o,workerOn:i?.addEventListener,workerPost:i?.postMessage,workerTerminate:i?.terminate,fetch:window.fetch.bind(window),preventDefault:Event.prototype.preventDefault,policy:s,origins:t});r(e).then(h=>h?.bootTopLevel?h.bootTopLevel(c,n):n.settle()).catch(()=>n.settle())}var De="modulepreload",Ie=function(e){return"/"+e},Ue={},Le=function(t,r,n){let s=Promise.resolve();function o(i){const c=new Event("vite:preloadError",{cancelable:!0});if(c.payload=i,window.dispatchEvent(c),!c.defaultPrevented)throw i}return s.then(i=>{for(const c of i||[])c.status==="rejected"&&o(c.reason);return t().catch(o)})},Oe=window===top,q=Object.getOwnPropertyDescriptor(window,"claude"),k=we(Oe,window.__FRAME_PREAMBLE?.topLevel,q?.writable===!1),N=typeof k=="object"&&k[0],y=N?be():ge();(function(){const e=Object.defineProperty,t=globalThis,r=["RTCPeerConnection","webkitRTCPeerConnection","RTCDataChannel","RTCIceCandidate","RTCSessionDescription","RTCRtpSender","RTCRtpReceiver"];let n=0;for(let s=0;s<r.length;s++){const o=r[s];try{e(t,o,{value:void 0,writable:!1,configurable:!1})}catch{try{delete t[o]}catch{}try{e(t,o,{value:void 0,writable:!1,configurable:!0})}catch{}}typeof t[o]=="function"&&n++}if(n&&k==="framed")try{y.post({__frame_rtc_lockdown_failed:n},"*")}catch{}})();var Pe=1e4,Y=Object.freeze([...window.__FRAME_PREAMBLE?.origins??["https://*","http://*"]]);function X(e){for(const t of Y)if(t.endsWith(":*"))try{const r=new URL(e);if(`${r.protocol}//${r.hostname}:*`===t)return!0}catch{}else if(e===t)return!0;return!1}var R=Object.freeze({...window.__FRAME_PREAMBLE?.capabilities}),B=window.__FRAME_PREAMBLE?.transforms,D=window.__FRAME_PREAMBLE?.comments,I=window.__FRAME_PREAMBLE?.translate;function S(e){return Le(()=>import("/_runtime/"+e),void 0)}function G(e,t){return{contract:e.contract,changes:new Set(e.changes??[]),flags:new Set(e.flags??[]),capabilities:e.capabilities??{},capBudgets:e.capBudgets??{},transforms:new Map,shellOrigin:t,mount:x,hooks:O,pipe:()=>({wrap:(r,n)=>(...s)=>{try{return n(...s)}catch(o){return Promise.reject(o)}}})}}var L=null,E=null;function V(e,t,r){try{Object.defineProperty(e,t,{value:r,writable:!1,configurable:!1,enumerable:!0})}catch{try{Object.defineProperty(e,t,{value:r,writable:!1,configurable:!0,enumerable:!0})}catch{}}}var U=!1,O={editBefore:null,edit:null};function Ce(e,t,r=!1){const n=[];let s;if(r)try{O.editBefore?.(e)}catch{}for(const o of e.elements){const i=document.querySelector(`[data-id="${o.target}"]`);if(!i){s=o.target;break}if([...Object.keys(o.attrsSet??{}),...o.attrsRemoved??[]].some(c=>!oe(c))){s=o.target;break}if(o.text!==void 0&&(!ce(i)||de(i))){s=o.target;break}for(const[c,h]of Object.entries(o.attrsSet??{}))if(!J(i,c)){try{i.setAttribute(c,h)}catch{}Z(i,c,h)}for(const c of o.attrsRemoved??[])J(i,c)||(i.removeAttribute(c),Z(i,c,null));typeof o.text=="string"&&ue(i,o.text),n.push(o.target)}if(r)try{O.edit?.(e.seq,n,s)}catch{}if(s!==void 0){y.post({__frame_patch_miss:{seq:e.seq}},t);return}try{document.dispatchEvent(new CustomEvent("claude:edit",{detail:{seq:e.seq,targets:n}}))}catch{}}function Z(e,t,r){if(!(e instanceof HTMLInputElement))return;const n=t.toLowerCase();n==="checked"?e.checked=r!==null:n==="value"&&e.type!=="file"&&(e.value=r??"")}function J(e,t){const r=t.toLowerCase(),n=e;return r==="data-id"||(r==="value"||r==="checked")&&(n.__artifactSecret===!0||/^(password|hidden|file)$/.test(n.type??"")||/(^|\s)(cc-|one-time-code|current-password|new-password)/i.test(`${e.getAttribute("autocomplete")??""} ${n.autocomplete??""}`))}function Q(e){const t=document.documentElement;e==="light"||e==="dark"?(t.dataset.theme=e,t.style.colorScheme=e,U=!0):U&&(delete t.dataset.theme,t.style.colorScheme="",U=!1)}var P=new Map;function Me(){let e;const t={u:new Promise(r=>{e=r}),r:r=>{t.done=!0,e(r)},done:!1,nulled:!1};return t}function F(){for(const e of P.values())e.done||(e.nulled=!0,e.r(null))}var je=Object.freeze(Object.assign(Object.create(null),{call:Function.prototype.call,apply:Function.prototype.apply,bind:Function.prototype.bind})),x=(e,t)=>{const r=P.get(e);if(!r||r.done){r?.nulled&&E&&y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:e}},E);return}const n=typeof t=="function"?Object.setPrototypeOf(t,je):Object.assign(Object.create(null),t);typeof n.then=="function"&&delete n.then,r.r(Object.freeze(n))};function ee(){const e=q?.value??{};V(window,"claude",e);for(const t of Object.keys(R)){if(e[t]!==void 0){V(e,t,e[t]);continue}P.set(t,Me())}if(e.use===void 0){const t=r=>{if(typeof r!="string"||!Object.hasOwn(R,r))return Promise.resolve(null);const n=P.get(r);return n?n.u:Promise.resolve(e[r]??null)};try{Object.defineProperty(e,"use",{value:t,writable:!0,configurable:!0,enumerable:!1})}catch{}}}if(k==="framed"){const e=B&&A.test(B)?S(B).catch(()=>{}):Promise.resolve(void 0),t=a=>{if(a.type==="auxclick"&&a.button!==1)return;const f=a.target,v=f&&f.closest?f.closest("a[href],area[href]"):null;if(!v)return;const b=v.getAttribute("href");if(!b)return;let l;try{l=new URL(b,document.baseURI)}catch{return}if((l.protocol==="http:"||l.protocol==="https:")&&l.origin!==location.origin){a.preventDefault();const _=(v.getAttribute("target")??"").toLowerCase(),d=a.type==="auxclick"||a.metaKey||a.ctrlKey||a.shiftKey||a.altKey||!["","_self","_top","_parent"].includes(_);y.post({__frame_nav:!0,url:l.href,newTab:d},"*")}};addEventListener("click",t,!0),addEventListener("auxclick",t,!0);const r={},n=a=>{a.isTrusted&&(r.pointer=!0)},s=a=>{a.isTrusted&&(r.click=!0)};addEventListener("pointermove",n,{capture:!0,passive:!0}),addEventListener("click",s,{capture:!0,passive:!0}),e.then(a=>{a?.wireNav&&(a.wireNav(),removeEventListener("click",t,!0),removeEventListener("auxclick",t,!0),removeEventListener("pointermove",n,!0),removeEventListener("click",s,!0),a.wireEngagement?.(r))});let o=null;try{o=ke()}catch{}ee();let i=null,c=null,h=0;const p=y.on((a,f)=>{X(f)&&_e(a)&&(i=a.__frame_init,E=f,p(),clearTimeout(h),c?.())});y.post({__frame_connect:!0},"*");const w=new Promise(a=>{c=a,h=setTimeout(()=>{p(),a()},Pe)}),m=document.readyState==="loading"?new Promise(a=>document.addEventListener("DOMContentLoaded",()=>a(),{once:!0})):Promise.resolve();m.then(()=>{try{o?.restore()}catch{}});const g={cb:null};y.on((a,f)=>{if(X(f)&&ve(a)){try{o?.promoted()}catch{}g.cb?.()}}),w.then(async()=>{if(!i||!E){F();return}Q(i.theme);const a=E;let f=!1,v=!1;y.on((u,z,C)=>{if(z!==a)return;ye(u)&&Q(u.__frame_theme.theme),he(u)&&Ce(u.__frame_patch,a,C);const H=u?.__fc_mode;H&&typeof H=="object"&&!f&&D&&A.test(D)&&(f=!0,S(D).then(K=>K.install?.(a,H.on===!0)).catch(()=>{}));const W=u?.__ft_cmd;W&&typeof W=="object"&&!v&&I&&A.test(I)&&(v=!0,S(I).then(K=>K.install?.(a,W)).catch(()=>{}))});const b=Object.keys(i.capabilities??{}).filter(u=>Object.hasOwn(R,u)).map(u=>[u,R[u]]).filter(u=>typeof u[1]=="string"&&A.test(u[1])),l=await Promise.allSettled(b.map(([,u])=>S(u))),_=await e,d=E;if(_?.buildBoot||y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:"_transforms"}},d),_?.buildBoot)try{L=_.buildBoot(i,_.TRANSFORMS??{},{shellOrigin:d,mount:x,hooks:O},u=>y.post({__frame_cap_telemetry:u},d))}catch{y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:"_transforms"}},d),L=G(i,d)}else L=G(i,d);const T=u=>y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:u}},d),Ne=L;l.forEach((u,z)=>{const C=b[z][0];if(u.status!=="fulfilled"){T(C);return}try{u.value?.install?.(Ne)}catch{T(C)}}),F(),await m,y.post({__frame_ready:!0},E),e.then(u=>u?.installSizeReporter?.(d,g))})}else N&&(ee(),Re(N,Y,S,{settle:F,mount:x}))})();</script><!-- /frame-runtime --><meta charset="utf8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found]){display:none!important}</style></head><body>
+<title>Undo That Survives Closing (Copy)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&amp;family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+:root{
+  --bg:#F6F7F5; --bg-2:#ECEFEB; --ink:#1B222C; --ink-2:#4A5563; --ink-3:#7B8794;
+  --rule:#D5DAD3; --accent:#1F6B6E; --accent-soft:#D9E9E7;
+  --ins:#2E7D4F; --ins-bg:#DFF0E4; --del:#B0433B; --del-bg:#F6E0DD;
+  --warn:#8A5A10; --warn-bg:#F5E9CF; --code-bg:#E9EDE8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14181C; --bg-2:#1C2126; --ink:#E5E9EA; --ink-2:#AEB7BD; --ink-3:#7E8991;
+    --rule:#2E353B; --accent:#6FC3C4; --accent-soft:#1E3436;
+    --ins:#7FD39A; --ins-bg:#1C3226; --del:#F09088; --del-bg:#3A2220;
+    --warn:#E3B45A; --warn-bg:#33291A; --code-bg:#1F262B;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14181C; --bg-2:#1C2126; --ink:#E5E9EA; --ink-2:#AEB7BD; --ink-3:#7E8991;
+  --rule:#2E353B; --accent:#6FC3C4; --accent-soft:#1E3436;
+  --ins:#7FD39A; --ins-bg:#1C3226; --del:#F09088; --del-bg:#3A2220;
+  --warn:#E3B45A; --warn-bg:#33291A; --code-bg:#1F262B;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 24px 96px;display:grid;grid-template-columns:200px minmax(0,1fr);gap:56px}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr);gap:24px}}
+nav.idx{position:sticky;top:24px;align-self:start;font-size:13px;line-height:1.5}
+@media (max-width:900px){nav.idx{position:static;border-bottom:1px solid var(--rule);padding-bottom:16px}}
+nav.idx .lbl{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px}
+nav.idx a{display:block;color:var(--ink-2);text-decoration:none;padding:3px 0;border-left:2px solid transparent;padding-left:10px;margin-left:-12px}
+nav.idx a:hover,nav.idx a:focus-visible{color:var(--accent);border-left-color:var(--accent);outline:none}
+main{min-width:0}
+.prose{max-width:68ch}
+h1{font-family:"Newsreader",Georgia,serif;font-weight:500;font-size:clamp(34px,4.6vw,52px);line-height:1.08;letter-spacing:-.01em;margin:0 0 14px;text-wrap:balance}
+.dek{font-family:"Newsreader",Georgia,serif;font-size:21px;line-height:1.4;color:var(--ink-2);margin:0 0 10px;max-width:60ch;text-wrap:pretty}
+.meta{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;color:var(--ink-3);letter-spacing:.02em;margin-bottom:48px}
+h2{font-family:"Newsreader",Georgia,serif;font-weight:500;font-size:30px;line-height:1.15;margin:64px 0 16px;letter-spacing:-.005em;text-wrap:balance}
+h2:first-of-type{margin-top:0}
+h3{font-size:16px;font-weight:600;margin:32px 0 8px;letter-spacing:-.005em}
+p{margin:0 0 16px;text-wrap:pretty}
+a{color:var(--accent)}
+strong{font-weight:600}
+em{font-style:italic}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,monospace;font-size:.88em}
+code{background:var(--code-bg);padding:1px 5px;border-radius:3px}
+.eyebrow{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+/* findings list */
+.findings{display:grid;gap:14px;margin:20px 0 8px;max-width:78ch}
+.finding{display:grid;grid-template-columns:22px minmax(0,1fr);gap:14px;padding:14px 0;border-top:1px solid var(--rule)}
+.finding:last-child{border-bottom:1px solid var(--rule)}
+.finding .k{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;color:var(--ink-3);padding-top:4px}
+.finding b{display:block;font-weight:600;margin-bottom:3px}
+.finding span{color:var(--ink-2);font-size:15px}
+/* family strip */
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);margin:24px 0 8px}
+.strip .cell{background:var(--bg-2);padding:14px 14px 16px;font-size:13.5px;line-height:1.45}
+.strip .cell.new{background:var(--accent-soft)}
+.strip .cell .t{font-weight:600;font-size:14px;margin-bottom:4px;display:flex;align-items:baseline;gap:8px}
+.strip .cell .t .tag{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.strip .cell .who{color:var(--ink-2)}
+.strip .cell .gr{color:var(--ink-3);font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11.5px;margin-top:8px}
+/* tables */
+.tbl{overflow-x:auto;margin:20px 0 24px;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;line-height:1.45}
+th{text-align:left;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:500;padding:10px 12px 8px 0;border-bottom:1px solid var(--rule);white-space:nowrap}
+td{padding:9px 12px 9px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.num,th.num{text-align:right;font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+td .m{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12.5px;color:var(--ink-2)}
+td.app{font-weight:600;white-space:nowrap}
+.pill{display:inline-block;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:1px 7px;border-radius:2px;border:1px solid var(--rule);color:var(--ink-2);white-space:nowrap}
+.pill.destroy{color:var(--del);border-color:var(--del);background:var(--del-bg)}
+.pill.append{color:var(--ins);border-color:var(--ins);background:var(--ins-bg)}
+.pill.copy{color:var(--warn);border-color:var(--warn);background:var(--warn-bg)}
+.pill.none{color:var(--ink-3)}
+/* quotes */
+blockquote{margin:18px 0 18px;padding:0 0 0 18px;border-left:2px solid var(--accent);font-family:"Newsreader",Georgia,serif;font-size:18px;line-height:1.45;color:var(--ink);max-width:62ch}
+blockquote cite{display:block;font-family:"IBM Plex Mono",ui-monospace,monospace;font-style:normal;font-size:12px;color:var(--ink-3);margin-top:6px}
+/* callouts */
+.note{background:var(--bg-2);border:1px solid var(--rule);padding:16px 18px;margin:20px 0;max-width:78ch;font-size:15px}
+.note .eyebrow{margin-bottom:4px}
+.formula{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:13px;background:var(--code-bg);padding:12px 14px;overflow-x:auto;margin:12px 0 18px;line-height:1.6}
+/* diff demo */
+.diff{font-family:"Newsreader",Georgia,serif;font-size:17px;line-height:1.5;max-width:62ch;padding:14px 18px;border:1px solid var(--rule);background:var(--bg-2);margin:16px 0 20px}
+.diff del{background:var(--del-bg);color:var(--del);text-decoration:line-through}
+.diff ins{background:var(--ins-bg);color:var(--ins);text-decoration:none}
+/* opportunities */
+.opp{border-top:1px solid var(--rule);padding:18px 0 6px;max-width:78ch}
+.opp:last-of-type{border-bottom:1px solid var(--rule);padding-bottom:18px}
+.opp h3{margin:0 0 6px;font-family:"Newsreader",Georgia,serif;font-weight:500;font-size:22px}
+.opp .why{font-size:14px;color:var(--ink-2);margin-bottom:8px}
+.opp .why b{color:var(--ink);font-weight:600}
+/* scrubber illustration */
+.scrub{margin:18px 0 26px;max-width:78ch}
+.scrub svg{width:100%;height:auto;display:block}
+/* sources */
+.src{font-size:13px;color:var(--ink-2);columns:2;column-gap:32px;max-width:100%}
+@media (max-width:700px){.src{columns:1}}
+.src p{margin:0 0 6px;break-inside:avoid}
+.src a{color:var(--ink-2);text-decoration-color:var(--rule)}
+.src a:hover{color:var(--accent)}
+hr{border:0;border-top:1px solid var(--rule);margin:40px 0}
+.small{font-size:13.5px;color:var(--ink-2)}
+@media (prefers-reduced-motion:no-preference){a{transition:color .12s}}
+</style>
+
+<div class="wrap">
+<nav class="idx" aria-label="Sections">
+  <div class="lbl">Contents</div>
+  <a href="#findings">Findings</a>
+  <a href="#map">The map, redrawn</a>
+  <a href="#restore">Restore semantics</a>
+  <a href="#triggers">When a version is born</a>
+  <a href="#granularity">Below the document</a>
+  <a href="#loss">What people actually lose</a>
+  <a href="#adjacent">Patterns from elsewhere</a>
+  <a href="#math">The arithmetic</a>
+  <a href="#opportunities">Holes and opportunities</a>
+  <a href="#memory">Muscle memory, extended</a>
+  <a href="#sources">Sources</a>
+</nav>
+
+<main>
+<div class="prose">
+<div class="eyebrow">Research outing · writing tools · version history</div>
+<h1>Undo That Survives Closing</h1>
+<p class="dek">A second pass over how writing tools keep the past, extended to thirty-odd apps the first pass skipped, to the code editors, chat clients and design tools that solved neighbouring problems, and to the storage arithmetic that decides what is actually affordable.</p>
+<div class="meta">29 Aug 2026 · builds on the existing "How the incumbents do versioning" notes · ~110 sources, spot-checked</div>
+</div>
+
+<div class="prose" id="findings">
+<h2>Findings</h2>
+<p>The earlier notes sorted apps into four families and named four habits people bring with them. Both hold up. What this pass adds is that the family map was missing its most interesting members, that the loss people complain about most is one that per-device history cannot fix, and that the cost argument for rationing history is, on the numbers, not an argument at all.</p>
+</div>
+<div class="findings">
+  <div class="finding"><div class="k">01</div><div><b>Sync overwrite, not accidental deletion, is the dominant loss story.</b><span>Across HN, Apple, Obsidian, Simplenote, Standard Notes, Samsung, Zoho, Outlook and Gmail threads, the largest cluster of complaints (about 13 distinct sources) is a note or draft silently reverting to an older copy from another device. It is noticed days later, often outside any 7-day retention window, and no "Recently Deleted" folder covers it.</span></div></div>
+  <div class="finding"><div class="k">02</div><div><b>Most history is device-local, which is exactly where it can't help.</b><span>NotePlan's <code>versions.db</code>, UpNote's 50 versions per note per device, Standard Notes' free tier, Joplin's desktop-only viewer, VS Code and JetBrains local history: all live on one machine. The failure mode in 01 is a cross-device one.</span></div></div>
+  <div class="finding"><div class="k">03</div><div><b>Restore semantics are an unexamined design axis.</b><span>Dropbox Paper deletes newer versions when you roll back. Figma writes two checkpoints so nothing is lost. Reflect and Joplin refuse to touch the current note and restore into a copy. Nobody in the earlier notes, and few vendors, say which they do. Users of AI tools now describe editing as "risky" for exactly this reason.</span></div></div>
+  <div class="finding"><div class="k">04</div><div><b>"When is a version?" has better answers than a five-minute timer.</b><span>Novlr snapshots on pause. Paper requires 30 minutes <em>and</em> 500 changed characters. VS Code merges saves inside a 10-second window. Claude Code checkpoints per prompt. Writing-process research puts the cognitive pause threshold at about 2 s and shows pauses lengthen at sentence and paragraph boundaries; nobody ships a snapshotter that uses that.</span></div></div>
+  <div class="finding"><div class="k">05</div><div><b>Below-document restore exists, just not in note apps.</b><span>JetBrains shows history for a selection. Google Sheets shows edit history for one cell. Roam keeps alternate versions of a block behind a sibling counter. Dabble's "Bring Forward" pulls one chapter out of a project snapshot. ChatGPT's <code>&lt; 2/3 &gt;</code> arrows are the smallest version UI in existence and users revolted when they were removed in 2026.</span></div></div>
+  <div class="finding"><div class="k">06</div><div><b>Storage is not the constraint. Ever, for short-form text.</b><span>A heavy note-taker generating full-copy snapshots six times per session, twenty sessions a day, accrues 64 MB a year, about eighteen phone photos. A year of Notion-Business-tier retention costs roughly $0.0004 per user per month on S3. Plan gating of history is segmentation, not cost recovery.</span></div></div>
+  <div class="finding"><div class="k">07</div><div><b>Line diffs are the wrong tool for short prose, and worse than no compression.</b><span>A note is often one long line, so unified line diffs measured at 0.5:1, larger than storing the full copy. Character deltas run about 1 byte per keystroke, the same order as a compacted CRDT log. Show word-level, store character-level.</span></div></div>
+  <div class="finding"><div class="k">08</div><div><b>Provenance is emerging as a layer orthogonal to time.</b><span>iA Writer's Authorship annotations (per-grapheme ranges, SHA-256 checked) and Linear's July 2026 per-span author indicators answer "who wrote this?" rather than "what was this before?" Both are praised in principle and lightly adopted; the sidecar format is the complaint.</span></div></div>
+</div>
+
+<div class="prose" id="map">
+<h2>The map, redrawn</h2>
+<p>The four families from the first pass (interval snapshots, continuous server-side history, deliberate snapshots, nothing) survive contact with a wider survey. But five more shapes turned up that the four-way split hides, and two of them are where the new design space is.</p>
+</div>
+<div class="strip">
+  <div class="cell"><div class="t">Interval snapshots</div><div class="who">Obsidian, Craft, Ulysses, Joplin (10 min), HackMD (10 min), Novelcrafter (3 min buckets), Logseq git (≤600 s)</div><div class="gr">whole file · timer</div></div>
+  <div class="cell"><div class="t">Continuous, server-side</div><div class="who">Google Docs, Simplenote, Notion, Drafts, Mem, Reflect, Anytype, Evernote, Keep</div><div class="gr">whole doc · every change</div></div>
+  <div class="cell"><div class="t">Deliberate snapshots</div><div class="who">Scrivener, Lex, JetBrains labels, Figma named versions, Dabble named checkpoints</div><div class="gr">whole doc · manual</div></div>
+  <div class="cell"><div class="t">Nothing</div><div class="who">Apple Notes, Bear, Tana, Capacities, Heynote (closed "not planned"), Zettlr, every email client</div><div class="gr">—</div></div>
+  <div class="cell new"><div class="t">Backups posing as history <span class="tag">new</span></div><div class="who">Tot (hourly JSON of all 7 dots), Antinote (1–100 whole-DB copies), Typora <code>draftsRecover</code>, Word <code>UnsavedFiles</code> (4 days), Logseq <code>bak/</code></div><div class="gr">whole store · timer or crash</div></div>
+  <div class="cell new"><div class="t">Hidden or forensic <span class="tag">new</span></div><div class="who">Agenda ("we store the complete version history, we haven't made this user visible"), Roam's Datascript transaction log (recovered via HAR capture), NotePlan's SQL in a support article</div><div class="gr">exists · no UI</div></div>
+  <div class="cell new"><div class="t">Per-keystroke replay <span class="tag">new</span></div><div class="who">Etherpad Timeslider (2009; playback-speed control since 2.7), Google Docs via Draftback (microsecond timestamps since May 2010)</div><div class="gr">changeset · continuous</div></div>
+  <div class="cell new"><div class="t">Branch on edit <span class="tag">new</span></div><div class="who">ChatGPT and Claude message editing (<code>&lt; 1/2 &gt;</code> siblings), Roam block versions (<code>Ctrl-,</code>), Cursor and Windsurf checkpoints, Claude Code <code>/rewind</code></div><div class="gr">block or turn · on edit</div></div>
+  <div class="cell new"><div class="t">Provenance layer <span class="tag">new</span></div><div class="who">iA Writer Authorship (grapheme ranges, <code>@Self</code> / <code>&amp;AI</code> / <code>*Reference</code>), Linear per-span author indicators (Jul 2026), Sheets cell editor</div><div class="gr">span · who, not when</div></div>
+</div>
+<div class="prose">
+<p class="small">The "backups posing as history" family matters because its members are the scratchpad apps closest to the short-form use case. Tot and Antinote are the two most-loved temporary-text tools on the Mac, and both protect the whole store rather than the note: you can get back Tuesday's app state, not Tuesday's phrasing of one thing.</p>
+</div>
+
+<div class="prose">
+<h3>The wider table</h3>
+<p>Every app checked this pass, with the four facts that matter for design. Retention is the vendor's stated default; "restore" is what happens to the current text and to newer versions when you go back.</p>
+</div>
+<div class="tbl"><table>
+<tbody><tr><th>App</th><th>Trigger</th><th>Unit</th><th>Retention / gating</th><th>Restore</th></tr>
+<tr><td class="app">Standard Notes</td><td>≥5 min apart (session); every save (remote)</td><td>note</td><td class="m">free: this session · $90/yr: 1 yr · $120/yr: unlimited</td><td><span class="pill append">overwrite</span> <span class="pill copy">or copy</span></td></tr>
+<tr><td class="app">Joplin</td><td>every 10 min while editing</td><td>note, stored as text diffs</td><td class="m">90 days default; lowest device setting wins</td><td><span class="pill copy">copy only</span></td></tr>
+<tr><td class="app">UpNote</td><td>on edit</td><td>note</td><td class="m">50 versions / note / device, local only</td><td><span class="pill append">overwrite</span></td></tr>
+<tr><td class="app">NotePlan</td><td>on edit</td><td>note</td><td class="m">local SQLite, "trimmed over time", unsynced</td><td><span class="pill append">overwrite</span></td></tr>
+<tr><td class="app">Reflect</td><td>continuous</td><td>note</td><td class="m">undocumented</td><td><span class="pill copy">copy only</span></td></tr>
+<tr><td class="app">Mem</td><td>as note changes</td><td>note, inline diff</td><td class="m">unlimited, not plan-gated</td><td><span class="pill append">append</span></td></tr>
+<tr><td class="app">Anytype</td><td>per change (CRDT)</td><td>object, char-level diff</td><td class="m">undocumented</td><td><span class="pill append">overwrite</span></td></tr>
+<tr><td class="app">Evernote</td><td>server, "several times per day"</td><td>note</td><td class="m">free since Feb 2024; desktop/web only</td><td><span class="pill append">overwrite</span></td></tr>
+<tr><td class="app">Google Keep</td><td>on change</td><td>note text, no images</td><td class="m">web only; download a .txt</td><td><span class="pill none">no in-app restore</span></td></tr>
+<tr><td class="app">Logseq</td><td>git auto-commit ≤600 s; Sync page history</td><td>page / whole graph</td><td class="m">Sync: up to 1 year</td><td><span class="pill append">overwrite</span></td></tr>
+<tr><td class="app">Roam</td><td>manual block versions</td><td>block</td><td class="m">no page history (issue #64 open since 2020)</td><td><span class="pill append">sibling cycle</span></td></tr>
+<tr><td class="app">Dropbox Paper</td><td>≥30 min old <em>and</em> &gt;500 chars changed</td><td>doc</td><td class="m">30 / 180 / 365 days by plan</td><td><span class="pill destroy">deletes newer</span></td></tr>
+<tr><td class="app">HackMD</td><td>every 10 min + named</td><td>note, side-by-side compare</td><td class="m">free: 10 versions · paid: unlimited</td><td><span class="pill append">overwrite</span></td></tr>
+<tr><td class="app">Etherpad</td><td>every changeset</td><td>pad, scrubbable</td><td class="m">unlimited (self-host)</td><td><span class="pill append">append</span></td></tr>
+<tr><td class="app">Word</td><td>AutoRecover 10 min; OneDrive on save</td><td>doc</td><td class="m">unsaved: 4 days · personal OneDrive: last 25 · SharePoint: 500</td><td><span class="pill append">overwrite</span></td></tr>
+<tr><td class="app">macOS Versions</td><td>hourly, on save/open/duplicate/rename</td><td>doc; copy text out of old version</td><td class="m">OS-pruned; iCloud copies "unreliable"</td><td><span class="pill append">append</span> <span class="pill copy">⌥ copy</span></td></tr>
+<tr><td class="app">Novlr</td><td>on pause</td><td>chapter, with word count</td><td class="m">undocumented</td><td><span class="pill append">overwrite</span></td></tr>
+<tr><td class="app">Dabble 3</td><td>continuous + named</td><td>project; "Bring Forward" one doc</td><td class="m">undocumented</td><td><span class="pill append">append</span> (saves current first)</td></tr>
+<tr><td class="app">Novelcrafter</td><td>3-min buckets, overwrite within bucket</td><td>per field (scene, summary, codex)</td><td class="m">support can recover 30 days</td><td><span class="pill append">overwrite</span></td></tr>
+<tr><td class="app">Tot</td><td>hourly + launch/quit</td><td>all dots</td><td class="m">"the past few days"</td><td><span class="pill destroy">whole state</span></td></tr>
+<tr><td class="app">Antinote</td><td>launch, quit, 10 min–1 month</td><td>whole DB</td><td class="m">keep 1–100 copies; notes auto-expire</td><td><span class="pill destroy">whole state</span></td></tr>
+<tr><td class="app">iA Writer</td><td>macOS Versions (needs iCloud on)</td><td>doc; Authorship is provenance</td><td class="m">OS rules</td><td><span class="pill append">append</span></td></tr>
+<tr><td class="app">Typora</td><td>Mac: Versions · Win/Linux: 5-min draft file</td><td>file</td><td class="m">none documented</td><td><span class="pill none">Win/Linux: folder</span></td></tr>
+<tr><td class="app">Tana · Capacities · Heynote · Zettlr</td><td>—</td><td>—</td><td class="m">none (Tana: "Future Consideration", 18 votes)</td><td><span class="pill none">none</span></td></tr>
+</tbody></table></div>
+
+<div class="prose" id="restore">
+<h2>Restore semantics</h2>
+<p>The earlier notes treat "restore" as one verb. It is at least three, and the choice decides whether users feel safe pressing the button.</p>
+<p><strong>Destructive rollback</strong> truncates history to the restored point. Dropbox Paper says it plainly: "any more recent versions are deleted from version history." Cursor's checkpoint restore became this in 2025, and the forum thread is titled "Restore Checkpoint permanently destroys change history." Lightroom's History panel does it on every click into the past. It is the model users are most afraid of, and the one that makes people copy-all before trying anything.</p>
+<p><strong>Append</strong> makes restoring just another edit. Figma writes two checkpoints on restore, one for the state you left and one for the state you arrived at, so the timeline never loses a frame. Mem, macOS Versions, Stack Overflow rollbacks and Wikipedia reverts all work this way. Langfuse takes it furthest: versions are immutable and "current" is a movable label, so rollback copies nothing and deletes nothing.</p>
+<p><strong>Copy-out</strong> refuses to touch the live text. Reflect only offers "Restore to new note"; Joplin restores into a dedicated folder; Standard Notes and Canva offer it beside overwrite; macOS hides it behind Option-click. It is the most conservative and the most annoying, because it hands the user a merge job.</p>
+<div class="note"><div class="eyebrow">Design position</div>Append is the only one of the three that satisfies both habits from the first pass, "history as durable undo" and "snapshot before rewrite," without a modal. If the tool also shows the diff on the way back (below), copy-out becomes unnecessary: the user can see what they'd lose before they lose nothing.</div>
+<p>One boundary case surfaced in Zed's tracker: after restoring an unsaved buffer on relaunch, pressing Undo wiped the buffer, because the restore itself was the last undoable action. Whatever the semantics, restore has to seal the undo stack.</p>
+</div>
+
+<div class="prose" id="triggers">
+<h2>When a version is born</h2>
+<p>The interval timer (Obsidian 5 min, Joplin 10, Figma 30) is the least interesting answer in a surprisingly rich space. The systems surveyed use six distinct heuristics, and they are not mutually exclusive.</p>
+</div>
+<div class="tbl"><table>
+<tbody><tr><th>Heuristic</th><th>Who</th><th>Setting</th><th>What it optimises</th></tr>
+<tr><td><strong>Interval</strong></td><td>Obsidian, Joplin, HackMD, Figma, Logseq git</td><td class="m">5 / 10 / 10 / 30 min / 600 s</td><td>Predictable cost; loses everything inside the interval</td></tr>
+<tr><td><strong>Merge window</strong></td><td>VS Code Local History, Yjs UndoManager, Novelcrafter</td><td class="m">10 s · 500 ms · 3 min</td><td>Collapses bursts so the list stays readable; inverse of idle</td></tr>
+<tr><td><strong>Idle / pause</strong></td><td>Novlr, macOS autosave ("often enough, at the correct times")</td><td class="m">unstated</td><td>Aligns with the writer stopping, cheap to detect</td></tr>
+<tr><td><strong>Magnitude threshold</strong></td><td>Dropbox Paper</td><td class="m">≥30 min <em>and</em> &gt;500 chars</td><td>Bounds information loss rather than time; hides trivial edits</td></tr>
+<tr><td><strong>Event</strong></td><td>JetBrains (test, deploy, commit), Claude Code (per prompt), Cursor (per agent edit), macOS (open, save, rename)</td><td class="m">—</td><td>Versions land where risk lands</td></tr>
+<tr><td><strong>On dismiss</strong></td><td>Zulip drafts (≥3 chars on close), Sublime/VS Code hot exit</td><td class="m">—</td><td>Snapshots at the exact moment text is usually lost</td></tr>
+</tbody></table></div>
+<div class="prose">
+<h3>What the keystroke-logging literature adds</h3>
+<p>Writing-process research (Inputlog, ScriptLog) has spent twenty years deciding where a writer's pauses fall. The conventional threshold for a cognitively meaningful pause is 2 seconds (Wengelin 2006; Hall, Baaijen and Galbraith 2022 note there is "no agreed threshold" but two seconds is typical). Van Waes and Leijten tested 200, 500, 1000 and 2000 ms and found the patterns robust. More useful for design: pauses get longer and more frequent as you move outward from within-word to between-word to sentence to paragraph boundaries, and between-sentence pauses correlate with looking back at larger text units, that is, with revision planning.</p>
+<p>No tool surveyed uses this. The nearest is Novlr's "whenever you pause." A snapshotter that fires on <em>idle ≥ 2 s with the caret at a sentence or paragraph boundary</em>, with a fallback at idle ≥ 20 s anywhere and a hard trigger on paste, select-all-delete, AI rewrite or send, would produce versions that line up with the units writers already think in. That is what a person means by "the version before I rewrote that paragraph," and it is what the Time Machine plugin's "restore just a single paragraph" promise is reaching for from the other direction.</p>
+<p>The cost of firing on every 2-second pause is real but bounded: roughly 60 versions per half-hour session instead of 6. The arithmetic section shows what that does to storage (it multiplies it by ten and it still fits in a few photos).</p>
+</div>
+
+<div class="prose" id="granularity">
+<h2>Below the document</h2>
+<p>The first pass ended on "all of them restore at whole-document granularity" and quoted the Time Machine plugin's paragraph-restore promise as the tell. The wider survey finds sub-document restore in five places, none of them note apps, and each one a different idea of what the unit is.</p>
+<p>JetBrains' Local History has <em>Show History for Selection</em>: highlight a span, see only the revisions that touched it. Google Sheets' cell edit history (2019) does the same for one cell, with arrows to step through prior values. Roam's block versions keep alternates of one bullet behind a small counter and cycle them with <code>Ctrl-&lt;</code> / <code>Ctrl-&gt;</code>. Dabble's <em>Bring Forward</em> lifts one chapter out of a project-wide snapshot into the present. Novelcrafter versions per field, so a scene's summary and its prose have separate timelines. macOS Versions and Word both fall back to the crude version: open the old copy beside the new one and paste across.</p>
+<p>For short-form text the framing flips. When the whole item is a paragraph, "restore a paragraph" and "restore the document" are the same operation, and the interesting sub-unit becomes the <strong>sibling variant</strong>: the three phrasings of this prompt, the two tones of this reply. That is what ChatGPT's and Claude's <code>&lt; 2/3 &gt;</code> arrows are. OpenAI's community forum filled with threads in April, May and August 2026 when the arrows were removed or changed; one user wrote that "branching splits the conversation and makes it harder to compare versions quickly," and another that "I now worry that editing could permanently lose access to something I wanted to keep." The demand is for variants in place, not a tree.</p>
+<blockquote>The restore checkpoint/redo is too linear for my lizard brain. Am I wrong to want a tree-based agentic IDE?<cite>Hacker News, May 2025, on Cursor</cite></blockquote>
+<p>Developers name the tree; everyone else asks for the arrows back. The undo-tree literature agrees in its silence: Vim and Emacs have shipped branching undo for two decades and there is no controlled usability study of it. The tree can exist underneath; the surface should be linear time plus in-place siblings.</p>
+</div>
+
+<div class="prose" id="loss">
+<h2>What people actually lose</h2>
+<p>Reddit was unreachable from here, so this leans on Hacker News, vendor forums (OpenAI, Cursor, Obsidian, Standard Notes, Simplenote, Samsung, Microsoft, Zoho), GitLab and Apple's community. About sixty threads, clustered by the job the writer was trying to get done. Counts are distinct sources, not upvotes.</p>
+</div>
+<div class="tbl"><table>
+<tbody><tr><th>Job to be done</th><th class="num">Sources</th><th>Shape of the complaint</th><th>Served today by</th></tr>
+<tr><td><strong>Recover from a sync overwrite</strong></td><td class="num">13</td><td>Note or draft reverts to an older copy from another device; noticed days later; "Recently Deleted" doesn't help because nothing was deleted</td><td>Nothing in stock apps; Obsidian File Recovery if inside 7 days</td></tr>
+<tr><td><strong>Durable draft for transient fields</strong></td><td class="num">9</td><td>Comment lost on failed submit, email draft blanked, scratch buffer gone on crash. Persistence, not history, is the ask</td><td>Browser extensions (Lazarus, dead since ~2017; Typio); Zulip's on-close draft</td></tr>
+<tr><td><strong>Edit without destroying the branch</strong></td><td class="num">6</td><td>"I edited a message that was days old and it erased everything after it." AI chat treats edit as fork-and-hide</td><td>Nobody well; ChatGPT removed the arrows in 2026</td></tr>
+<tr><td><strong>Keep rejected variants; compare phrasings</strong></td><td class="num">6</td><td>"You tweak one word, it gets better; another, worse; tomorrow you have no idea which version was the good one"</td><td>Scrivener snapshots for long-form; git or PromptLayer for developers</td></tr>
+<tr><td><strong>See what the AI changed</strong></td><td class="num">4</td><td>Praised in principle (iA Writer Authorship), light adoption, sidecar metadata format criticised</td><td>iA Writer, Linear, Cursor diff view</td></tr>
+<tr><td><strong>Redo after revert</strong></td><td class="num">4</td><td>"Previously if I rolled back I could reapply changes later. This is now not possible"</td><td>Vim/Emacs undo trees; nothing consumer-grade</td></tr>
+<tr><td><strong>Diff or merge two copies of one note</strong></td><td class="num">3</td><td>Users name Meld and Beyond Compare; want to pull lines each way</td><td>Standard Notes (shipped 2024)</td></tr>
+<tr><td><strong>Accountability for sent messages</strong></td><td class="num">3</td><td>Recipients want the original; senders don't. iMessage ships it; Slack and Discord decline</td><td>iMessage (5 edits, 15 min, tap "Edited")</td></tr>
+</tbody></table></div>
+<div class="prose">
+<blockquote>The entire contents of "2025-07-19.md" replaced the contents of "2025-07-18.md" as I was looking at it. Also the version history appears to have been wiped.<cite>Obsidian forum, July 2025</cite></blockquote>
+<blockquote>I have now lost the more complete version of the email that I spent so much time on. Is there any way to recover a former version of a draft?<cite>Microsoft Q&amp;A, October 2023</cite></blockquote>
+<blockquote>I just abuse the window restoration feature and never close or save any documents but have 50 TextMate windows.<cite>Hacker News, Heynote launch thread, December 2023</cite></blockquote>
+<p>Three things stand out. The number-one job is a multi-device job, and most history features are single-device. The number-two job is not history at all, it is the text surviving the moment it is usually lost (submit, close, crash), which is why the Zulip and hot-exit pattern of snapshotting on dismiss belongs in any short-form tool. And the AI-chat cluster is the youngest, angriest, and least served: three new OpenAI forum threads in four months, an XDA piece titled "Claude lost hours of my chat history overnight," and Cursor users discovering that restore now destroys redo.</p>
+<p class="small">Survey data on text loss specifically does not exist. Backblaze/Harris (2022, n=2,068) has 54% of US adults reporting lost data and 44% losing access when a shared or synced drive was deleted; Handy Recovery (2025, n=1,000) has 70.7%. Both are vendor-commissioned and neither asks about unsaved text.</p>
+</div>
+
+<div class="prose" id="adjacent">
+<h2>Patterns from elsewhere</h2>
+<p>Ranked by how directly each transfers to a short-form, temporary-text tool. Every one is shipping somewhere today.</p>
+</div>
+<div class="tbl"><table>
+<tbody><tr><th>Pattern</th><th>Where it ships</th><th>The number</th><th>Why it transfers</th></tr>
+<tr><td><strong>Restore appends, never truncates</strong></td><td>Figma, macOS Versions, Stack Overflow, Wikipedia, Langfuse</td><td class="m">Figma: +2 checkpoints per restore</td><td>Removes the fear that makes people copy-all first</td></tr>
+<tr><td><strong>Snapshot on dismiss</strong></td><td>Zulip drafts, Sublime and VS Code hot exit</td><td class="m">Zulip: ≥3 chars on close</td><td>The moment of loss is closing the box, not a timer tick</td></tr>
+<tr><td><strong>Merge window + per-item cap</strong></td><td>VS Code Local History</td><td class="m">10 s window · 50 entries · 256 KB</td><td>Readable list without time-based expiry</td></tr>
+<tr><td><strong>Retention in working days</strong></td><td>JetBrains Local History</td><td class="m">5 days with edits, not calendar days</td><td>A two-week holiday doesn't erase last week's versions</td></tr>
+<tr><td><strong>Tiered thinning</strong></td><td>Time Machine, SharePoint "Automatic"</td><td class="m">all ≤30 d · hourly to 60 d · daily to 180 d · weekly after (≈95% saved)</td><td>Bounded storage with predictable recovery points</td></tr>
+<tr><td><strong>Sibling navigator on a block</strong></td><td>ChatGPT, Claude, Roam blocks</td><td class="m">&lt; 2/3 &gt;</td><td>The smallest possible version UI; no panel, no modal</td></tr>
+<tr><td><strong>Bounded edit window with visible history</strong></td><td>iMessage</td><td class="m">5 edits · 15 min · tap "Edited"</td><td>Sent text gets a short, honest history then freezes</td></tr>
+<tr><td><strong>History for a selection</strong></td><td>JetBrains, Google Sheets (cell)</td><td class="m">—</td><td>Right-click a sentence, see its prior forms</td></tr>
+<tr><td><strong>Diff before save; byte delta in the list</strong></td><td>PromptLayer, Wikipedia, GitHub comment edits</td><td class="m">Wikipedia: ±bytes per row</td><td>The cheapest "how big was this change" signal</td></tr>
+<tr><td><strong>Immutable versions, movable "current" label</strong></td><td>Langfuse prompt management</td><td class="m">production / latest / custom</td><td>Rollback is re-pointing; nothing copied or deleted</td></tr>
+<tr><td><strong>Restore and refill</strong></td><td>Claude Code <code>/rewind</code></td><td class="m">100 checkpoints · 30 days</td><td>After reverting, the discarded text goes back in the input so both states are reachable</td></tr>
+<tr><td><strong>Time-relative undo</strong></td><td>Vim <code>:earlier 10m</code></td><td class="m">—</td><td>"Ten minutes ago" is how people remember, not "version 14"</td></tr>
+<tr><td><strong>Pin exempts from expiry</strong></td><td>Raycast, Maccy, Windows clipboard</td><td class="m">Raycast: 1 d / 1 w / 1 mo free</td><td>People already treat the clipboard manager as version history</td></tr>
+<tr><td><strong>Per-span attribution</strong></td><td>Linear (Jul 2026), iA Writer, Sheets</td><td class="m">—</td><td>Revert the AI's spans and keep yours</td></tr>
+</tbody></table></div>
+<div class="prose">
+<p>The clipboard-manager finding deserves a line of its own. Across the HN threads, "select all, copy, then try the edit" is the universal folk workaround, described in 2008 as a "user-hostile workaround" and still in use. A tool that offers "Copy this version" from its history, or that simply reads the clipboard manager's own history as a fallback source, is meeting a habit that already exists.</p>
+</div>
+
+<div class="prose" id="math">
+<h2>The arithmetic</h2>
+<p>Two user profiles, chosen to be heavy rather than typical. A <strong>note-taker</strong> with 2,000 notes averaging 1.5 KB (a 2.9 MB corpus), editing 20 notes a day in half-hour sessions at one keystroke every 1.5 s, so 1,200 keystrokes per session, 24,000 a day, 8.76 million a year. And a <strong>temporary-text</strong> user writing 200 items a month at 800 bytes, each rewritten three times. One phone photo is taken as 3.5 MB.</p>
+<div class="formula">op log      = keystrokes/yr × bytes/op
+snapshots   = sessions/day × snaps/session × doc size × 365
+delta       = snapshots ÷ 10        (char-level delta or windowed zstd; measured 4.9–16:1 on synthetic notes)</div>
+</div>
+<div class="tbl"><table>
+<tbody><tr><th>Policy (note-taker, per user)</th><th class="num">MB / year</th><th class="num">× corpus</th><th class="num">photos</th></tr>
+<tr><td>Raw operation log, 30 B per keystroke</td><td class="num">251</td><td class="num">86</td><td class="num">72</td></tr>
+<tr><td>Compacted CRDT log (Yjs / Automerge measured 0.6–1.1 B/op; 1.5 B used)</td><td class="num">12.5</td><td class="num">4.3</td><td class="num">3.6</td></tr>
+<tr><td>Full-copy snapshot, 6 per session (≈ every 5 min or idle-triggered)</td><td class="num">64</td><td class="num">22</td><td class="num">18</td></tr>
+<tr><td>Full-copy snapshot at every 2-s pause, ~60 per session</td><td class="num">642</td><td class="num">219</td><td class="num">183</td></tr>
+<tr><td>6 per session with 10:1 delta encoding</td><td class="num">6.4</td><td class="num">2.2</td><td class="num">1.8</td></tr>
+<tr><td>60 per session with 10:1 delta encoding</td><td class="num">64</td><td class="num">22</td><td class="num">18</td></tr>
+</tbody></table></div>
+<div class="tbl"><table>
+<tbody><tr><th>Policy (temporary text, per user)</th><th class="num">per year</th></tr>
+<tr><td>Full copy of every rewrite (4 versions × 800 B × 2,400 items)</td><td class="num">7.3 MB</td></tr>
+<tr><td>Same, 10:1 delta</td><td class="num">750 KB</td></tr>
+<tr><td>Compacted CRDT log</td><td class="num">≈25 MB</td></tr>
+<tr><td>Absurd bound: a full copy on every keystroke</td><td class="num">4.4 GB</td></tr>
+</tbody></table></div>
+<div class="prose">
+<p>The naive policy, full copies six times a session, is two photos a year for temporary text and eighteen for the heavy note-taker. It crosses 1 GB per year only when documents reach about 24 KB with six snapshots per session, or about 10 KB with pause-level snapshotting. That is long-form drafting territory, not notes, prompts or messages. Short text does not need a CRDT to afford history; it needs one only if you want concurrent editing or stable character identity for span-level restore, and then you pay 84 KB (Yjs) to 1.7–2.9 MB (Automerge, Loro) of runtime.</p>
+<h3>Retention and the gating question</h3>
+<p>Steady-state storage is daily accrual times retention. For the note-taker on the naive policy, accrual is 180 KB a day.</p>
+</div>
+<div class="tbl"><table>
+<tbody><tr><th>Retention</th><th>Who gates here</th><th class="num">Stored (naive)</th><th class="num">Stored (delta)</th><th class="num">S3 $/user/mo</th></tr>
+<tr><td>7 days</td><td>Notion Free, Obsidian default</td><td class="num">1.2 MB</td><td class="num">0.12 MB</td><td class="num">0.00003</td></tr>
+<tr><td>30 days</td><td>Notion Plus, Figma Starter, Dropbox Basic</td><td class="num">5.3 MB</td><td class="num">0.53 MB</td><td class="num">0.00012</td></tr>
+<tr><td>90 days</td><td>Notion Business, Joplin default</td><td class="num">15.8 MB</td><td class="num">1.6 MB</td><td class="num">0.00036</td></tr>
+<tr><td>365 days</td><td>Standard Notes $90/yr, Logseq Sync, Airtable Team</td><td class="num">64 MB</td><td class="num">6.4 MB</td><td class="num">0.0014</td></tr>
+<tr><td>5 years ("unlimited")</td><td>Notion Enterprise, Standard Notes $120/yr, Mem free</td><td class="num">321 MB</td><td class="num">32 MB</td><td class="num">0.0072</td></tr>
+</tbody></table></div>
+<div class="prose">
+<p>Notion charges roughly $10 a seat to move from 7 to 30 days of history; the marginal storage is $0.00009. Business, at about $15 more, buys 90 days for $0.0003. Even a pessimistic enterprise user (50 KB pages, forty sessions, three-way replication, history held in a hot database at $0.10/GB-month rather than object storage) tops out around $0.60 a month. History gating is a segmentation lever aimed at teams with compliance needs; the real costs are engineering ones: indexing, restore UI, and erasure obligations that must reach into every version. Loro's shallow snapshots and Yjs garbage collection exist for that last reason, not for bytes.</p>
+<p>A second consequence: with tiered thinning (everything for an hour, hourly for a day, daily for a month, weekly for a year), a single note carries at most about 166 versions, and the list is still scrubbable. For an independent short-form tool, "unlimited history, on every device" is a differentiator that costs about a tenth of a cent per user per month.</p>
+<h3>Diffs for text that has no lines</h3>
+<p>On a 1.5 KB synthetic note with seven snapshots about 200 keystrokes apart, per-snapshot gzip ran 3.5:1, concatenated-snapshot compression 16:1 (synthetic vocabulary inflates this; expect 6–10:1 on real prose), and base-plus-character-deltas 4.9:1 at about 190 bytes per snapshot, roughly one byte per keystroke. Unified <em>line</em> diffs came out at 0.5:1: a note is often a single line, so the "changed line" is the whole note plus a header. Store character deltas or windowed compression; render at word level, which is what readers expect:</p>
+<div class="diff">Thanks for the <del>quick</del><ins>fast</ins> turnaround on this. I've <del>attached the revised draft</del><ins>put the revised draft in the shared folder</ins> and flagged the two <del>paragraphs</del><ins>sections</ins> I'm least sure about.</div>
+<p>The moved-paragraph problem that consumes Wikipedia's diff engineering (wikidiff2 detects moves by word-similarity between deleted and inserted paragraphs) mostly does not arise in text short enough to have no paragraphs to move. A sentence-level diff, jsdiff's <code>diffSentences</code> or equivalent, is a good summary unit: "2 sentences changed" beside a version is the prose equivalent of Wikipedia's byte delta.</p>
+</div>
+
+<div class="prose" id="opportunities">
+<h2>Holes and opportunities</h2>
+<p>Where the tapestry is thin, in rough order of how much the evidence supports each.</p>
+</div>
+<div class="opp"><h3>History that lives with the note, not the device</h3><div class="why"><b>Evidence:</b> the largest complaint cluster is sync overwrite; most shipped history is device-local. Obsidian's 7-day default let a month-old overwrite go unnoticed.</div><p>Sync the history itself, and make retention longer than the noticing latency. Working-day retention (JetBrains) and tiered thinning together give a note a year of recovery points for a few hundred kilobytes. The version list should show which device wrote each version, because "the phone's copy won" is the question the user is asking.</p></div>
+<div class="opp"><h3>Versions at cognitive boundaries</h3><div class="why"><b>Evidence:</b> keystroke-logging research puts natural pauses at ~2 s and at sentence and paragraph boundaries; no tool uses it; Novlr's "on pause" is the closest.</div><p>Fire on idle ≥ 2 s at a sentence or paragraph boundary, with a 20-second fallback, and hard triggers on paste, select-all-delete, AI rewrite, and send. Storage at 60 versions a session with delta encoding is still eighteen photos a year for the heaviest profile. This is the mechanism that makes "restore just this paragraph" fall out naturally, because the versions already sit at paragraph edges.</p></div>
+<div class="opp"><h3>Variants in place, tree underneath</h3><div class="why"><b>Evidence:</b> users explicitly reject branching UIs as "harder to compare"; the sibling arrows are the most-mourned feature in OpenAI's forum this year; developers alone ask for trees.</div><p>Keep an undo tree in the model so nothing is ever unreachable, but surface it as linear time plus a <code>&lt; 2/3 &gt;</code> counter on any item that has alternates. Editing never hides the old branch; it adds a sibling. Restore appends; redo survives restore.</p></div>
+<div class="opp"><h3>The draft's lifecycle ends at send</h3><div class="why"><b>Evidence:</b> no email client has draft history; Antinote's auto-expiry and iMessage's 15-minute edit window are the only tools that treat text as having a lifetime; "durable draft" is the second-largest job.</div><p>Temporary text has an event that ordinary notes lack: it gets sent, pasted, or submitted. Treat send as the canonical version and everything before it as drafts that thin out afterward. Snapshot on dismiss (Zulip's ≥3-character rule) so closing the box is never the moment of loss, and keep a "copy this version" affordance because the clipboard habit is not going away.</p></div>
+<div class="opp"><h3>Provenance without the sidecar</h3><div class="why"><b>Evidence:</b> iA Writer Authorship is praised for the idea and criticised for a metadata block visible in every other editor; Linear shipped per-span author indicators in July 2026; "see what the AI changed" is a growing job.</div><p>Record who produced each span (self, AI, paste, reference) inside the history store rather than the file, and let the user revert one author's spans while keeping the rest. This is selective undo, which Azurite measured at about 2× faster than manual backtracking for code; the CRDT literature has selective undo for text since 2015 but nobody has shipped it to writers.</p></div>
+<div class="opp"><h3>Diff-first history for text with no lines</h3><div class="why"><b>Evidence:</b> line diffs are worse than full copies on short prose; Standard Notes users asked for Meld; nobody shows a change-size signal in a version list.</div><p>Store character deltas, render word-level, summarise per sentence. Put "+14 / −9 words, 2 sentences" on each row of the list, the way Wikipedia puts byte deltas, so the user can find the big rewrite without opening anything.</p></div>
+<div class="opp"><h3>Say what restore does</h3><div class="why"><b>Evidence:</b> the three restore semantics are undocumented almost everywhere and users of the destructive one describe editing as risky.</div><p>Append-only restore, two checkpoints per restore as Figma does, and a sealed undo stack afterward so Undo cannot "undo the restore." The control can then say what it does: "Restore" becomes "Bring this version forward," and nothing needs a confirmation dialog.</p></div>
+
+<div class="prose" id="memory">
+<h2>Muscle memory, extended</h2>
+<p>Additions to the four habits in the first pass, each one something hands already do somewhere.</p>
+<p><strong>Arrows on the block.</strong> Two years of ChatGPT and Claude have trained people to expect <code>&lt; 1/2 &gt;</code> beside anything that was edited, and to click them to compare. It is now the default expectation for "this text has other versions."</p>
+<p><strong>Tap "Edited."</strong> iMessage made the edited-label a control. Users of a short-form tool will tap it expecting to see the prior text.</p>
+<p><strong>Restore checkpoint.</strong> Cursor, Windsurf and Claude Code have taught developers to expect a checkpoint before every AI action and a one-click return. Anyone who has used an agentic editor will look for it before accepting an AI rewrite of prose.</p>
+<p><strong>Copy-all first.</strong> The oldest habit in the set. A tool can honour it (copy a version from history) rather than try to break it.</p>
+<p><strong>Ten minutes ago.</strong> Vim's <code>:earlier 10m</code> and Time Machine's "Enter Time Machine" both work in wall-clock time. People remember when, not which.</p>
+</div>
+
+<div class="prose">
+<hr>
+<h3>Method and caveats</h3>
+<p class="small">Four parallel searches (writing apps, adjacent domains, technology and economics, user complaints) over roughly 110 web sources, August 2026, followed by spot-checks of the claims this report leans on hardest: Dropbox Paper's 30-minute/500-character thresholds and destructive rollback, Figma's 30-minute checkpoints and two-checkpoint restore, Standard Notes' plan prices, Linear's July 2026 attribution feature, and VS Code's local-history defaults (all confirmed against the vendor page). The storage figures were derived twice, independently. Reddit was unreachable, so the complaint corpus under-represents r/ObsidianMD, r/bearapp and r/ChatGPT. Byword, Bike, Paper, Capacities and Sudowrite's version behaviour could not be confirmed from documentation and are marked as such in the table.</p>
+</div>
+
+<div id="sources">
+<h2>Sources</h2>
+<div class="src">
+<p><strong>Writing apps</strong></p>
+<p><a href="https://ia.net/writer/support/editor/authorship">iA Writer Authorship</a> · <a href="https://ia.net/writer/support/help/versions-and-backups">iA Writer versions</a> · <a href="https://ia.net/topics/see-what-ai-wrote">iA "See what AI wrote"</a></p>
+<p><a href="https://support.typora.io/Version-Control/">Typora version control</a> · <a href="https://support.typora.io/Auto-Save/">Typora autosave</a></p>
+<p><a href="https://docs.zettlr.com/en/reference/settings/">Zettlr settings</a> · <a href="https://github.com/Zettlr/Zettlr/issues/3030">Zettlr #3030</a></p>
+<p><a href="https://heynote.com/docs/changelog/">Heynote changelog</a> · <a href="https://github.com/heyman/heynote/issues/372">Heynote #372</a></p>
+<p><a href="https://blog.iconfactory.com/2022/01/tots-got-your-back/">Tot backups</a> · <a href="https://antinote.io/user-manual">Antinote manual</a></p>
+<p><a href="https://discuss.logseq.com/t/my-case-against-git-commit-bloat-anyone-else-want-a-longer-time-period-for-git-autosave-its-currently-limited-to-600s-10minutes/8063">Logseq git interval</a> · <a href="https://blog.logseq.com/how-to-setup-and-use-logseq-sync/">Logseq Sync</a></p>
+<p><a href="https://github.com/Roam-Research/issues/issues/64">Roam issue #64</a> · <a href="https://jeffchen.dev/posts/Recovering-Lost-Roam-Notes/">Recovering Roam notes</a></p>
+<p><a href="https://ideas.tana.inc/posts/20-nodes-historyversions">Tana node history request</a></p>
+<p><a href="https://blog.anytype.io/2024-in-review/">Anytype 2024</a> · <a href="https://community.anytype.io/t/revision-history-and-the-associated-shortcut/14298">Anytype shortcut thread</a></p>
+<p><a href="https://reflect.academy/note-history">Reflect note history</a> · <a href="https://help.mem.ai/features/version-history">Mem version history</a></p>
+<p><a href="https://help.noteplan.co/article/128-how-to-restore-a-note-to-an-earlier-version">NotePlan revisions</a> · <a href="https://agenda.community/t/version-history/9144">Agenda version history</a></p>
+<p><a href="https://standardnotes.com/plans">Standard Notes plans</a> · <a href="https://standardnotes.com/help/26/how-do-i-enable-note-version-history">SN note history</a></p>
+<p><a href="https://joplinapp.org/help/apps/note_history/">Joplin note history</a> · <a href="https://joplinapp.org/help/dev/spec/history/">Joplin history spec</a></p>
+<p><a href="https://help.getupnote.com/safety-and-control/restore-a-note-version">UpNote</a> · <a href="https://help.evernote.com/hc/en-us/articles/208313858">Evernote note history</a> · <a href="https://support.google.com/keep/answer/13820887">Keep version history</a></p>
+<p><a href="https://help.dropbox.com/delete-restore/track-restore-changes-comments">Dropbox Paper doc history</a> · <a href="https://hackmd.io/s/how-to-save">HackMD versions</a></p>
+<p><a href="https://github.com/ether/etherpad-lite/blob/develop/CHANGELOG.md">Etherpad changelog</a> · <a href="https://features.jsomers.net/how-i-reverse-engineered-google-docs/">Draftback</a></p>
+<p><a href="https://support.microsoft.com/en-us/office/collab-files/view-previous-versions-of-office-files">Word version history</a> · <a href="https://support.apple.com/guide/pages/restore-an-earlier-version-of-a-document-tan7f1de6ec5/mac">Pages versions</a> · <a href="https://eclecticlight.co/2018/10/06/document-versions-are-now-preserved-by-icloud-unreliably/">Eclectic Light on iCloud versions</a></p>
+<p><a href="https://help.novlr.org/en/article/where-can-i-access-my-version-history-1nvdca8/">Novlr</a> · <a href="https://www.dabblewriter.com/docs/reference/whats-new-in-3">Dabble 3</a> · <a href="https://www.novelcrafter.com/help/docs/organization/revision-history">Novelcrafter</a> · <a href="https://lexwriting.com/lex-writing-tool-new-features/">Lex</a></p>
+<p><strong>Adjacent domains</strong></p>
+<p><a href="https://code.visualstudio.com/updates/v1_66">VS Code 1.66 Local History</a> · <a href="https://www.jetbrains.com/help/idea/local-history.html">JetBrains Local History</a></p>
+<p><a href="https://cursor.com/docs/agent/chat/checkpoints">Cursor checkpoints</a> · <a href="https://code.claude.com/docs/en/checkpointing">Claude Code checkpointing</a> · <a href="https://github.com/zed-industries/zed/issues/21846">Zed #21846</a></p>
+<p><a href="https://github.com/mbbill/undotree">undotree</a> · <a href="https://elpa.gnu.org/packages/undo-tree.html">Emacs undo-tree</a></p>
+<p><a href="https://langfuse.com/docs/prompt-management/features/prompt-version-control">Langfuse prompt versions</a> · <a href="https://docs.promptlayer.com/features/prompt-registry/prompt-editor-versioning">PromptLayer</a></p>
+<p><a href="https://zulip.ietf.org/help/view-and-edit-your-message-drafts">Zulip drafts</a> · <a href="https://support.apple.com/en-us/105083">iMessage edit</a> · <a href="https://x.com/slackhq/status/959243153328001025">Slack on edit history</a></p>
+<p><a href="https://help.figma.com/hc/en-us/articles/360038006754-View-a-file-s-version-history">Figma version history</a> · <a href="https://www.canva.com/help/version-history/">Canva</a></p>
+<p><a href="https://typiorecovery.github.io/">Typio Form Recovery</a> · <a href="https://manual.raycast.com/clipboard-history">Raycast clipboard</a></p>
+<p><a href="https://workspaceupdates.googleblog.com/2019/06/edit-history-sheets.html">Sheets cell edit history</a> · <a href="https://learn.microsoft.com/en-us/sharepoint/plan-version-storage">SharePoint version thinning</a> · <a href="https://linear.app/changelog/2026-07-23-agent-assisted-editing">Linear agent editing</a></p>
+<p><a href="https://www.mediawiki.org/wiki/Help:History">MediaWiki history</a> · <a href="https://docs.github.com/en/communities/moderating-comments-and-conversations/tracking-changes-in-a-comment">GitHub comment edits</a></p>
+<p><a href="https://helpx.adobe.com/photoshop/desktop/get-started/set-up-toolbars-panels/create-work-snapshots.html">Photoshop snapshots</a> · <a href="https://photofocus.com/photography/understanding-the-snapshots-and-history-panels-in-lightroom/">Lightroom history</a></p>
+<p><strong>Technology and research</strong></p>
+<p><a href="https://docs.yjs.dev/api/undo-manager">Yjs UndoManager</a> · <a href="https://github.com/dmonad/crdt-benchmarks">crdt-benchmarks</a> · <a href="https://loro.dev/docs/performance">Loro benchmarks</a> · <a href="https://loro.dev/docs/advanced/shallow_snapshot">Loro shallow snapshots</a></p>
+<p><a href="https://github.com/automerge/automerge-perf/blob/master/columnar/README.md">Automerge columnar</a> · <a href="https://automerge.org/blog/automerge-3/">Automerge 3</a> · <a href="https://www.inkandswitch.com/peritext/">Peritext</a></p>
+<p><a href="https://github.com/kpdecker/jsdiff">jsdiff</a> · <a href="https://github.com/google/diff-match-patch/wiki/API">diff-match-patch</a> · <a href="https://www.mediawiki.org/wiki/Wikidiff2/How_we_improved_Wikidiff2">wikidiff2 moves</a></p>
+<p><a href="https://link.springer.com/doi/10.1007/s11145-022-10284-4">Hall, Baaijen &amp; Galbraith 2022</a> · <a href="https://www.cambridge.org/core/journals/studies-in-second-language-acquisition/article/exploring-second-language-writers-pausing-and-revision-behaviors/A84135AD35874EDEDF50D8BD6D36B911">Pause thresholds (SSLA)</a> · <a href="https://journals.sagepub.com/doi/10.1177/0741088313491692">Leijten &amp; Van Waes 2013</a></p>
+<p><a href="http://www.cs.cmu.edu/~NatProg/papers/ICSE15-Azurite-v12-CameraReady.pdf">Azurite (ICSE 2015)</a> · <a href="https://members.loria.fr/CIgnat/files/pdf/YuDAIS15.pdf">CRDT selective undo (DAIS 2015)</a></p>
+<p><a href="https://www.notion.com/help/duplicate-delete-and-restore-content">Notion retention</a> · <a href="https://obsidian.md/help/plugins/file-recovery">Obsidian File Recovery</a></p>
+<p><strong>User complaints</strong></p>
+<p><a href="https://news.ycombinator.com/item?id=43915023">HN: Cursor undo</a> · <a href="https://news.ycombinator.com/item?id=38733968">HN: Heynote</a> · <a href="https://news.ycombinator.com/item?id=205281">HN: lost comment (2008)</a> · <a href="https://news.ycombinator.com/item?id=41479189">HN: managing prompts</a></p>
+<p><a href="https://community.openai.com/t/is-there-a-way-to-roll-back-a-chatgpt-thread-to-a-previous-version/740930">OpenAI: roll back thread</a> · <a href="https://community.openai.com/t/restore-edit-message-history-in-chatgpt/1379404">OpenAI: restore edit history</a> · <a href="https://community.openai.com/t/bring-back-previous-version-toggles-after-try-again/1380207">OpenAI: version toggles</a> · <a href="https://community.openai.com/t/please-restore-the-previous-chat-branch-and-prompt-navigation-behaviour/1391764">OpenAI: branch navigation</a></p>
+<p><a href="https://www.xda-developers.com/claude-lost-hours-of-my-chat-history-overnight-until-figured-where-hidden/">XDA: Claude hidden branch</a> · <a href="https://dev.to/lululuhu/i-lost-my-best-ai-prompt-after-40-tweaks-so-i-built-a-tiny-git-for-prompts-1d5j">dev.to: lost best prompt</a></p>
+<p><a href="https://forum.cursor.com/t/restore-checkpoint-permanently-destroys-change-history/129652">Cursor: restore destroys history</a> · <a href="https://forum.cursor.com/t/ux-ui-confusion-on-restoring-checkpoints/67614">Cursor: checkpoint UX</a></p>
+<p><a href="https://learn.microsoft.com/en-us/answers/questions/129792/lost-draft-email">Outlook: lost draft</a> · <a href="https://learn.microsoft.com/en-us/answers/questions/4640742/draft-email-reverted-to-a-former-version-how-do-i">Outlook: draft reverted</a></p>
+<p><a href="https://forum.obsidian.md/t/content-of-a-note-totally-replaced-overwritten-with-content-of-another-note/102819">Obsidian: note overwritten</a> · <a href="https://forum.obsidian.md/t/conflicted-copy-spamming/19358">Obsidian: conflicted copies</a></p>
+<p><a href="https://github.com/standardnotes/forum/issues/928">Standard Notes #928</a> · <a href="https://github.com/standardnotes/forum/discussions/2602">Standard Notes diff request</a> · <a href="https://forums.simplenote.com/forums/topic/closing-the-app-with-unsynchronized-could-cause-data-loss/">Simplenote offline loss</a></p>
+<p><a href="https://discussions.apple.com/thread/253059090">Apple Notes reverted</a> · <a href="https://eu.community.samsung.com/t5/mobile-apps-services/notes-sync-history/m-p/12572506">Samsung Notes sync</a> · <a href="https://help.zoho.com/portal/vi/community/topic/zoho-notepad-lost-my-notes-because-of-sync-issues">Zoho sync loss</a></p>
+<p><a href="https://forums.macrumors.com/threads/edited-imessages-in-ios-16-now-display-original-text-undo-send-limited-to-two-minutes.2352763/">MacRumors: iMessage edit history</a> · <a href="https://gitlab.com/gitlab-org/gitlab/-/issues/333162">GitLab #333162</a></p>
+<p><a href="https://www.backblaze.com/blog/the-2022-backup-survey-54-report-data-loss-with-only-10-backing-up-daily/">Backblaze 2022 survey</a> · <a href="https://www.handyrecovery.com/data-loss-statistics/">Handy Recovery 2025</a></p>
+</div>
+</div>
+</main>
+</div>
+
+</body></html>

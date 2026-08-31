@@ -1,0 +1,876 @@
+<html><head><!-- frame-runtime --><base href="/_f/1787973676-7f6d/"><script>window.__FRAME_PREAMBLE={"v":1,"capabilities":{"artifact":"artifact.D_F1mx8d.js","assets":"assets.8Gk803W0.js","comments":"comments.GLuHR3zP.js","db":"db.h-3sndFg.js","downloads":"downloads.C3GSvEDP.js","embed":"embed.CxGAyc-v.js","mcp":"mcp.Bvma3qD7.js","network":"network.B5UA9Su4.js","notifications":"notifications.ssU4jy7G.js","permissions":"permissions.BNySkLV5.js","room":"room.BMMoe2BY.js","sample":"sample.BW2Uysoh.js","self":"artifact.D_F1mx8d.js","user":"user.BpKav-Rf.js"},"transforms":"_transforms.DSB5x63f.js","comments":"_comments.BoakUwmM.js","translate":"_translate.5HCW4BJh.js"}</script><script>(function(){"use strict";var te=["light","dark","system"],re=/^[A-Za-z0-9_-]{1,64}$/,$=/^[a-zA-Z_:][a-zA-Z0-9_:.-]{0,127}$/,ne=new Set(["class","hidden","value","checked","style","title","alt","placeholder","lang","dir","role","tabindex","disabled","readonly","contenteditable","open","colspan","rowspan"]);function oe(e){const t=e.toLowerCase();return t.startsWith("data-")||t.startsWith("aria-")||ne.has(t)}var Be="http://www.w3.org/1999/xhtml",se="http://www.w3.org/2000/svg",ae=new Set(["script","style","iframe","noscript","noframes","noembed","xmp","plaintext","template","title","textarea","object","embed"]),ie=new Set(["script","style"]);function ce(e){const t=e.localName.toLowerCase();return e.namespaceURI==="http://www.w3.org/1999/xhtml"?!ae.has(t):e.namespaceURI===se?!ie.has(t):!1}function M(e,t){return e===t||(e===160||e===32)&&(t===160||t===32)}function le(e,t){const r=e.length,n=t.length;let s=0;for(;s<r&&s<n&&M(e.charCodeAt(s),t.charCodeAt(s));)s++;let o=0;for(;o<r-s&&o<n-s&&M(e.charCodeAt(r-1-o),t.charCodeAt(n-1-o));)o++;return{p:s,s:o}}function ue(e,t){const r=e.firstChild;if(e.childNodes.length!==1||r===null||r.nodeType!==Node.TEXT_NODE){e.textContent=t;return}const n=r.data,s=n.length,o=t.length,{p:i,s:c}=le(n,t);i===s&&c===0&&s===o||r.replaceData(i,s-i-c,t.slice(i,o-c));const h=r.data,p=e.ownerDocument.getSelection?.()??null,w=p!==null&&p.rangeCount>0&&(p.anchorNode===r||p.focusNode===r)?{anchor:p.anchorNode,anchorOffset:p.anchorOffset,focus:p.focusNode,focusOffset:p.focusOffset}:null;let m=-1,g=-1;for(let f=0;f<h.length&&f<t.length;f++){const v=h.charCodeAt(f),b=t.charCodeAt(f);v!==b&&M(v,b)&&(m<0&&(m=f),g=f)}const a=m>=0;if(a&&r.replaceData(m,g-m+1,t.slice(m,g+1)),a&&w!==null&&w.anchor!==null&&w.focus!==null)try{p.setBaseAndExtent(w.anchor,w.anchorOffset,w.focus,w.focusOffset)}catch{}}var fe=new Set(["html","head","body","frameset"]);function de(e){return e.namespaceURI==="http://www.w3.org/1999/xhtml"&&fe.has(e.localName)}function pe(e){if(e===null||typeof e!="object")return!1;const t=e;if(typeof t.target!="string"||!re.test(t.target)||t.text!==void 0&&typeof t.text!="string")return!1;if(t.attrsSet!==void 0){if(t.attrsSet===null||typeof t.attrsSet!="object")return!1;for(const[r,n]of Object.entries(t.attrsSet))if(!$.test(r)||typeof n!="string")return!1}if(t.attrsRemoved!==void 0){if(!Array.isArray(t.attrsRemoved))return!1;for(const r of t.attrsRemoved)if(typeof r!="string"||!$.test(r))return!1}return!0}function me(e,t){if(e===null||typeof e!="object")return!1;const{seq:r,elements:n}=e;if(typeof r!="number"||!Number.isSafeInteger(r)||!Array.isArray(n)||n.length===0||n.length>64)return!1;for(let s=0;s<n.length;s++)if(!t(n[s]))return!1;return!0}function he(e){return e===null||typeof e!="object"?!1:me(e.__frame_patch,pe)}function _e(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_init;return t!==null&&typeof t=="object"}function ve(e){return e!==null&&typeof e=="object"&&e.__frame_size_poke===!0}function ye(e){if(e===null||typeof e!="object")return!1;const t=e.__frame_theme;if(t===null||typeof t!="object")return!1;const r=t.theme;return typeof r=="string"&&te.includes(r)}var A=/^[\w.-]+\.js$/;function we(e,t,r){return r?"inert":typeof t=="string"&&A.test(t)?e?[t]:"inert":e?"inert":"framed"}function ge(){return{post(e,t){parent.postMessage(e,t)},on(e){const t=r=>{r.source===parent&&e(r.data,r.origin,r.isTrusted)};return addEventListener("message",t),()=>removeEventListener("message",t)}}}function be(){return{post:()=>{},on:()=>()=>{}}}var j="__frame_scroll",Ee=150,Ae=310,Se=160,Te=3e4;function ke(){let e=0,t=!1,r=!1,n=!1,s=0,o=null;const i=l=>{try{sessionStorage.setItem(j,JSON.stringify({y:l}))}catch{}},c=()=>{if(clearTimeout(e),o===null)return;const l=o;o=null,i(l)},h=()=>{if(t){t=!1;return}r=!0,o=scrollY,clearTimeout(e),e=setTimeout(c,Ee)};try{addEventListener("scroll",h,{passive:!0}),addEventListener("pagehide",c)}catch{}const p=()=>{let l;try{l=sessionStorage.getItem(j)}catch{return null}if(l===null)return null;let _;try{_=JSON.parse(l)}catch{_=null}const d=_?.y;if(!(typeof d=="number"&&Number.isFinite(d)&&d>=0)){try{sessionStorage.removeItem(j)}catch{}return null}return d};let w=!1;const m=l=>{try{const _=scrollY;scrollTo({top:l,left:0,behavior:"instant"}),s=l,n=!0,clearTimeout(e),o=null,i(l);const d=scrollY;d!==_&&(t=!0),d!==l&&!w&&(w=!0,addEventListener("load",()=>{try{if(scrollY===d){const T=p();m(T!==null?T:s)}}catch{}},{once:!0}))}catch{}},g=()=>{try{return!!location.hash}catch{return!0}};let a=!1;const f=()=>{try{if(a||innerWidth>Ae||innerHeight>Se)return;a=!0;const l=Date.now(),_=()=>{try{removeEventListener("resize",_)}catch{}if(Date.now()-l>Te||r||g())return;const d=p();m(d!==null?d:s)};addEventListener("resize",_)}catch{}};let v=!1,b=!1;return{restore(){if(v||(v=!0,g()))return;const l=p();l!==null&&(m(l),f())},promoted(){if(b||(b=!0,g()))return;const l=p();l!==null?(m(l),f()):n&&m(s)}}}function Re(e,t,r,n){let s=null;try{s=window.trustedTypes?.createPolicy("frame-runtime",{createScriptURL:h=>h})??null}catch{}const o=window.Worker,i=o?.prototype,c=Object.freeze({Worker:o,workerOn:i?.addEventListener,workerPost:i?.postMessage,workerTerminate:i?.terminate,fetch:window.fetch.bind(window),preventDefault:Event.prototype.preventDefault,policy:s,origins:t});r(e).then(h=>h?.bootTopLevel?h.bootTopLevel(c,n):n.settle()).catch(()=>n.settle())}var De="modulepreload",Ie=function(e){return"/"+e},Ue={},Le=function(t,r,n){let s=Promise.resolve();function o(i){const c=new Event("vite:preloadError",{cancelable:!0});if(c.payload=i,window.dispatchEvent(c),!c.defaultPrevented)throw i}return s.then(i=>{for(const c of i||[])c.status==="rejected"&&o(c.reason);return t().catch(o)})},Oe=window===top,q=Object.getOwnPropertyDescriptor(window,"claude"),k=we(Oe,window.__FRAME_PREAMBLE?.topLevel,q?.writable===!1),N=typeof k=="object"&&k[0],y=N?be():ge();(function(){const e=Object.defineProperty,t=globalThis,r=["RTCPeerConnection","webkitRTCPeerConnection","RTCDataChannel","RTCIceCandidate","RTCSessionDescription","RTCRtpSender","RTCRtpReceiver"];let n=0;for(let s=0;s<r.length;s++){const o=r[s];try{e(t,o,{value:void 0,writable:!1,configurable:!1})}catch{try{delete t[o]}catch{}try{e(t,o,{value:void 0,writable:!1,configurable:!0})}catch{}}typeof t[o]=="function"&&n++}if(n&&k==="framed")try{y.post({__frame_rtc_lockdown_failed:n},"*")}catch{}})();var Pe=1e4,Y=Object.freeze([...window.__FRAME_PREAMBLE?.origins??["https://claude.ai","https://preview.claude.ai"]]);function X(e){for(const t of Y)if(t.endsWith(":*"))try{const r=new URL(e);if(`${r.protocol}//${r.hostname}:*`===t)return!0}catch{}else if(e===t)return!0;return!1}var R=Object.freeze({...window.__FRAME_PREAMBLE?.capabilities}),B=window.__FRAME_PREAMBLE?.transforms,D=window.__FRAME_PREAMBLE?.comments,I=window.__FRAME_PREAMBLE?.translate;function S(e){return Le(()=>import("/_runtime/"+e),void 0)}function G(e,t){return{contract:e.contract,changes:new Set(e.changes??[]),flags:new Set(e.flags??[]),capabilities:e.capabilities??{},capBudgets:e.capBudgets??{},transforms:new Map,shellOrigin:t,mount:x,hooks:O,pipe:()=>({wrap:(r,n)=>(...s)=>{try{return n(...s)}catch(o){return Promise.reject(o)}}})}}var L=null,E=null;function V(e,t,r){try{Object.defineProperty(e,t,{value:r,writable:!1,configurable:!1,enumerable:!0})}catch{try{Object.defineProperty(e,t,{value:r,writable:!1,configurable:!0,enumerable:!0})}catch{}}}var U=!1,O={editBefore:null,edit:null};function Ce(e,t,r=!1){const n=[];let s;if(r)try{O.editBefore?.(e)}catch{}for(const o of e.elements){const i=document.querySelector(`[data-id="${o.target}"]`);if(!i){s=o.target;break}if([...Object.keys(o.attrsSet??{}),...o.attrsRemoved??[]].some(c=>!oe(c))){s=o.target;break}if(o.text!==void 0&&(!ce(i)||de(i))){s=o.target;break}for(const[c,h]of Object.entries(o.attrsSet??{}))if(!J(i,c)){try{i.setAttribute(c,h)}catch{}Z(i,c,h)}for(const c of o.attrsRemoved??[])J(i,c)||(i.removeAttribute(c),Z(i,c,null));typeof o.text=="string"&&ue(i,o.text),n.push(o.target)}if(r)try{O.edit?.(e.seq,n,s)}catch{}if(s!==void 0){y.post({__frame_patch_miss:{seq:e.seq}},t);return}try{document.dispatchEvent(new CustomEvent("claude:edit",{detail:{seq:e.seq,targets:n}}))}catch{}}function Z(e,t,r){if(!(e instanceof HTMLInputElement))return;const n=t.toLowerCase();n==="checked"?e.checked=r!==null:n==="value"&&e.type!=="file"&&(e.value=r??"")}function J(e,t){const r=t.toLowerCase(),n=e;return r==="data-id"||(r==="value"||r==="checked")&&(n.__artifactSecret===!0||/^(password|hidden|file)$/.test(n.type??"")||/(^|\s)(cc-|one-time-code|current-password|new-password)/i.test(`${e.getAttribute("autocomplete")??""} ${n.autocomplete??""}`))}function Q(e){const t=document.documentElement;e==="light"||e==="dark"?(t.dataset.theme=e,t.style.colorScheme=e,U=!0):U&&(delete t.dataset.theme,t.style.colorScheme="",U=!1)}var P=new Map;function Me(){let e;const t={u:new Promise(r=>{e=r}),r:r=>{t.done=!0,e(r)},done:!1,nulled:!1};return t}function F(){for(const e of P.values())e.done||(e.nulled=!0,e.r(null))}var je=Object.freeze(Object.assign(Object.create(null),{call:Function.prototype.call,apply:Function.prototype.apply,bind:Function.prototype.bind})),x=(e,t)=>{const r=P.get(e);if(!r||r.done){r?.nulled&&E&&y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:e}},E);return}const n=typeof t=="function"?Object.setPrototypeOf(t,je):Object.assign(Object.create(null),t);typeof n.then=="function"&&delete n.then,r.r(Object.freeze(n))};function ee(){const e=q?.value??{};V(window,"claude",e);for(const t of Object.keys(R)){if(e[t]!==void 0){V(e,t,e[t]);continue}P.set(t,Me())}if(e.use===void 0){const t=r=>{if(typeof r!="string"||!Object.hasOwn(R,r))return Promise.resolve(null);const n=P.get(r);return n?n.u:Promise.resolve(e[r]??null)};try{Object.defineProperty(e,"use",{value:t,writable:!0,configurable:!0,enumerable:!1})}catch{}}}if(k==="framed"){const e=B&&A.test(B)?S(B).catch(()=>{}):Promise.resolve(void 0),t=a=>{if(a.type==="auxclick"&&a.button!==1)return;const f=a.target,v=f&&f.closest?f.closest("a[href],area[href]"):null;if(!v)return;const b=v.getAttribute("href");if(!b)return;let l;try{l=new URL(b,document.baseURI)}catch{return}if((l.protocol==="http:"||l.protocol==="https:")&&l.origin!==location.origin){a.preventDefault();const _=(v.getAttribute("target")??"").toLowerCase(),d=a.type==="auxclick"||a.metaKey||a.ctrlKey||a.shiftKey||a.altKey||!["","_self","_top","_parent"].includes(_);y.post({__frame_nav:!0,url:l.href,newTab:d},"*")}};addEventListener("click",t,!0),addEventListener("auxclick",t,!0);const r={},n=a=>{a.isTrusted&&(r.pointer=!0)},s=a=>{a.isTrusted&&(r.click=!0)};addEventListener("pointermove",n,{capture:!0,passive:!0}),addEventListener("click",s,{capture:!0,passive:!0}),e.then(a=>{a?.wireNav&&(a.wireNav(),removeEventListener("click",t,!0),removeEventListener("auxclick",t,!0),removeEventListener("pointermove",n,!0),removeEventListener("click",s,!0),a.wireEngagement?.(r))});let o=null;try{o=ke()}catch{}ee();let i=null,c=null,h=0;const p=y.on((a,f)=>{X(f)&&_e(a)&&(i=a.__frame_init,E=f,p(),clearTimeout(h),c?.())});y.post({__frame_connect:!0},"*");const w=new Promise(a=>{c=a,h=setTimeout(()=>{p(),a()},Pe)}),m=document.readyState==="loading"?new Promise(a=>document.addEventListener("DOMContentLoaded",()=>a(),{once:!0})):Promise.resolve();m.then(()=>{try{o?.restore()}catch{}});const g={cb:null};y.on((a,f)=>{if(X(f)&&ve(a)){try{o?.promoted()}catch{}g.cb?.()}}),w.then(async()=>{if(!i||!E){F();return}Q(i.theme);const a=E;let f=!1,v=!1;y.on((u,z,C)=>{if(z!==a)return;ye(u)&&Q(u.__frame_theme.theme),he(u)&&Ce(u.__frame_patch,a,C);const H=u?.__fc_mode;H&&typeof H=="object"&&!f&&D&&A.test(D)&&(f=!0,S(D).then(K=>K.install?.(a,H.on===!0)).catch(()=>{}));const W=u?.__ft_cmd;W&&typeof W=="object"&&!v&&I&&A.test(I)&&(v=!0,S(I).then(K=>K.install?.(a,W)).catch(()=>{}))});const b=Object.keys(i.capabilities??{}).filter(u=>Object.hasOwn(R,u)).map(u=>[u,R[u]]).filter(u=>typeof u[1]=="string"&&A.test(u[1])),l=await Promise.allSettled(b.map(([,u])=>S(u))),_=await e,d=E;if(_?.buildBoot||y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:"_transforms"}},d),_?.buildBoot)try{L=_.buildBoot(i,_.TRANSFORMS??{},{shellOrigin:d,mount:x,hooks:O},u=>y.post({__frame_cap_telemetry:u},d))}catch{y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:"_transforms"}},d),L=G(i,d)}else L=G(i,d);const T=u=>y.post({__frame_cap_telemetry:{kind:"cap-load-error",cap:u}},d),Ne=L;l.forEach((u,z)=>{const C=b[z][0];if(u.status!=="fulfilled"){T(C);return}try{u.value?.install?.(Ne)}catch{T(C)}}),F(),await m,y.post({__frame_ready:!0},E),e.then(u=>u?.installSizeReporter?.(d,g))})}else N&&(ee(),Re(N,Y,S,{settle:F,mount:x}))})();</script><!-- /frame-runtime --><meta charset="utf8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found]){display:none!important}</style></head><body>
+<title>Sixteen Ways Back</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,300;0,400;0,600;0,800;1,400&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>
+:root{
+  --paper:#F3F2F7; --card:#FFFFFF; --sunk:#EBE8F2;
+  --ink:#191322; --ink2:#4B4459; --ink3:#7E7694;
+  --rule:#DEDAE8; --rule2:#CFC8DF;
+  --violet:#6B41B8; --violet-ink:#4A2A85; --violet-wash:#EEE7FA;
+  --carbon-red:#AE372D; --carbon-green:#1E7A54; --carbon-blue:#2B5EA8;
+  --shadow:0 1px 2px rgba(25,19,34,.05), 0 8px 24px -12px rgba(25,19,34,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#121019; --card:#1A1626; --sunk:#221D32;
+    --ink:#EEEAF5; --ink2:#B5ADC7; --ink3:#847B9B;
+    --rule:#2D2641; --rule2:#3B3252;
+    --violet:#B189EE; --violet-ink:#D3BDFA; --violet-wash:#241B39;
+    --carbon-red:#E9796C; --carbon-green:#4FC194; --carbon-blue:#7FAAEE;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#121019; --card:#1A1626; --sunk:#221D32;
+  --ink:#EEEAF5; --ink2:#B5ADC7; --ink3:#847B9B;
+  --rule:#2D2641; --rule2:#3B3252;
+  --violet:#B189EE; --violet-ink:#D3BDFA; --violet-wash:#241B39;
+  --carbon-red:#E9796C; --carbon-green:#4FC194; --carbon-blue:#7FAAEE;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:Spectral,"Iowan Old Style",Georgia,serif;
+  font-size:17px; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1140px;margin:0 auto;padding:0 28px}
+a{color:var(--violet-ink)}
+:focus-visible{outline:2px solid var(--violet);outline-offset:2px;border-radius:2px}
+
+/* ---------- hero ---------- */
+.hero{padding:76px 0 42px;border-bottom:1px solid var(--rule)}
+.eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11.5px;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--ink3);
+  display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+}
+.eyebrow b{color:var(--violet-ink);font-weight:500}
+h1{
+  font-weight:800;font-size:clamp(46px,7.4vw,84px);line-height:.98;
+  letter-spacing:-.022em;margin:22px 0 0;text-wrap:balance;
+}
+h1 em{font-weight:400;font-style:italic;color:var(--violet)}
+.lede{max-width:60ch;margin:22px 0 0;font-size:19.5px;color:var(--ink2)}
+
+/* hero scrubber */
+.scrub{
+  margin:40px 0 0;background:var(--card);border:1px solid var(--rule);
+  border-radius:3px;box-shadow:var(--shadow);overflow:hidden;
+}
+.scrub-body{padding:26px 26px 20px;min-height:132px;display:flex;align-items:center}
+#scrubText{font-size:22px;line-height:1.5;margin:0;max-width:62ch}
+#scrubText .ins{background:color-mix(in srgb,var(--carbon-green) 22%,transparent);border-radius:2px;padding:1px 0}
+#scrubText .del{color:var(--carbon-red);text-decoration:line-through;text-decoration-thickness:1px;opacity:.72}
+.scrub-rail{
+  display:flex;align-items:center;gap:18px;padding:14px 26px 18px;
+  border-top:1px solid var(--rule);background:var(--sunk);
+}
+.scrub-rail input[type=range]{flex:1;accent-color:var(--violet);height:22px;margin:0}
+.stamp{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11.5px;
+  letter-spacing:.06em;color:var(--ink3);white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.stamp b{color:var(--ink);font-weight:500}
+
+/* ---------- notice ---------- */
+.notice{
+  margin:38px 0 0;padding:20px 24px;border-left:3px solid var(--violet);
+  background:var(--violet-wash);border-radius:0 3px 3px 0;
+}
+.notice p{margin:0;font-size:16px;color:var(--ink2);max-width:78ch}
+.notice strong{color:var(--ink);font-weight:600}
+
+/* ---------- family sections ---------- */
+.family{padding:72px 0 0}
+.family-head{display:flex;gap:20px;align-items:baseline;border-bottom:1px solid var(--rule2);padding-bottom:14px}
+.family-head h2{
+  font-size:31px;font-weight:600;letter-spacing:-.012em;margin:0;flex:1;text-wrap:balance;
+}
+.family-head .count{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:12px;
+  color:var(--ink3);letter-spacing:.08em;font-variant-numeric:tabular-nums;
+}
+.family-thesis{margin:16px 0 0;max-width:70ch;color:var(--ink2);font-size:17.5px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(430px,1fr));gap:26px;margin-top:30px}
+@media(max-width:900px){.grid{grid-template-columns:1fr}}
+
+/* ---------- plate ---------- */
+.plate{
+  background:var(--card);border:1px solid var(--rule);border-radius:3px;
+  box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;
+}
+.plate-head{display:flex;align-items:center;gap:12px;padding:16px 20px 13px}
+.plate-head h3{margin:0;font-size:19.5px;font-weight:600;letter-spacing:-.008em;flex:1}
+.plate-head h3 span{color:var(--ink3);font-weight:400;font-style:italic}
+.topo{
+  display:inline-flex;align-items:center;gap:6px;flex:none;
+  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:10.5px;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--ink3);
+  border:1px solid var(--rule2);border-radius:2px;padding:3px 7px 3px 5px;
+}
+.topo svg{width:15px;height:15px;stroke:var(--violet);fill:none;stroke-width:1.4;
+  stroke-linecap:round;stroke-linejoin:round;overflow:visible}
+
+.stage{margin:0 20px;padding:0;background:var(--sunk);border:1px solid var(--rule);
+  border-radius:2px;overflow:auto}
+.plate-foot{padding:16px 20px 20px}
+.move{margin:0;font-size:15.5px;color:var(--ink2);max-width:58ch}
+.move b{color:var(--ink);font-weight:600}
+.facts{
+  margin:14px 0 0;padding:12px 0 0;border-top:1px solid var(--rule);
+  display:grid;grid-template-columns:auto 1fr;gap:5px 14px;
+  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11.5px;line-height:1.55;
+}
+.facts dt{color:var(--ink3);letter-spacing:.07em;text-transform:uppercase;font-size:10px;padding-top:2px}
+.facts dd{margin:0;color:var(--ink2);font-variant-numeric:tabular-nums}
+.unv{color:var(--carbon-red);font-style:normal}
+
+/* ---------- shared UI-recreation chrome ---------- */
+.ui{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:12.5px;line-height:1.45;color:#1b1b1f;background:#fff}
+.term{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:12px;line-height:1.62;background:#17141f;color:#d9d3e6;padding:14px 16px}
+.term .dim{color:#7d7391}
+.term .vi{color:#b189ee}
+.term .gr{color:#5ec79b}
+.term .rd{color:#e9796c}
+.term .yl{color:#e0b45c}
+.term .sel{background:#2a2340;display:block;margin:0 -16px;padding:0 16px}
+.hr{border:0;border-top:1px solid #2d2740;margin:8px -16px}
+
+/* ---------- footer ---------- */
+footer{margin-top:88px;border-top:1px solid var(--rule2);padding:34px 0 70px}
+footer h2{font-size:22px;font-weight:600;margin:0 0 14px}
+footer p{margin:0 0 12px;color:var(--ink2);font-size:15.5px;max-width:76ch}
+.srcs{columns:2;column-gap:34px;font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11.5px;line-height:1.85;margin-top:18px;color:var(--ink3)}
+@media(max-width:760px){.srcs{columns:1}}
+.srcs a{color:var(--ink2);text-decoration:none;border-bottom:1px solid var(--rule2)}
+.srcs a:hover{color:var(--violet-ink);border-color:var(--violet)}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="t-tree" viewBox="0 0 16 16"><path d="M8 1.5v3.5M8 5L4 8v5.5M8 5l4 3v2.5M12 10.5v3"></path><circle cx="8" cy="1.5" r="1.1" fill="currentColor" stroke="none"></circle></symbol>
+<symbol id="t-line" viewBox="0 0 16 16"><path d="M2 8h12"></path><circle cx="4" cy="8" r="1.3"></circle><circle cx="8" cy="8" r="1.3"></circle><circle cx="12" cy="8" r="1.3"></circle></symbol>
+<symbol id="t-flow" viewBox="0 0 16 16"><path d="M1.5 8h13"></path><path d="M10 4v8" stroke-width="2.6"></path></symbol>
+<symbol id="t-pile" viewBox="0 0 16 16"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"></path></symbol>
+<symbol id="t-point" viewBox="0 0 16 16"><path d="M2 8h5.5M10.5 8H14"></path><circle cx="9" cy="8" r="1.6"></circle></symbol>
+</defs></svg>
+
+<div class="wrap">
+<header class="hero">
+  <div class="eyebrow"><span>Version-history research</span><span>·</span><span>29 Aug 2026</span><span>·</span><b>reconstructions, not screenshots</b></div>
+  <h1>Sixteen ways <em>back</em></h1>
+  <p class="lede">Nearly every product in the incumbent set can show you an earlier state. Only a handful invented a way of showing it that nobody else copied. These are those — redrawn from documentation, source code and locale files, and grouped by the shape the history actually takes.</p>
+
+  <div class="scrub" role="group" aria-label="A sentence, scrubbed back through its own drafts">
+    <div class="scrub-body"><p id="scrubText">Every editor promises undo. Almost none promise it survives closing the window, and fewer still will show you the thing you are about to overwrite.</p></div>
+    <div class="scrub-rail">
+      <span class="stamp" id="scrubLabel">v5 · <b>current</b></span>
+      <input type="range" id="scrubRange" min="0" max="4" value="4" step="1" aria-label="Draft position">
+      <span class="stamp" id="scrubTime">14:22:07</span>
+    </div>
+  </div>
+</header>
+
+<div class="notice">
+  <p><strong>Read these as drawings.</strong> This session has no route to a browser or a logged-in account, so nothing here is a captured screenshot. Each panel is rebuilt from the primary source — Etherpad's <code>timeslider.css</code>, Anytype's <code>history.scss</code>, VS Code's <code>localHistoryCommands.ts</code>, published help centres and changelogs — and reproduces layout, control wording and colour semantics, not pixel metrics. Where a source could not confirm a detail, the panel says so <span class="unv">in red</span> rather than inventing it.</p>
+</div>
+
+<section class="family">
+  <div class="family-head"><h2>The history is a tree, and it says so</h2><span class="count">3 plates</span></div>
+  <p class="family-thesis">Undo is a stack everywhere. In these three, redoing after an undo doesn't destroy the abandoned future — it becomes a sibling, and the interface hands you a way to walk sideways into it.</p>
+  <div class="grid">
+
+    <article class="plate">
+      <div class="plate-head"><h3>Emacs <span>undo-tree</span></h3>
+        <span class="topo"><svg><use href="#t-tree"></use></svg>tree</span></div>
+      <div class="stage"><div class="term">
+<div class="dim">&nbsp;*undo-tree*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="yl">draft.txt</span></div>
+<hr class="hr">
+<pre style="margin:0;font:inherit">              <span class="vi">o</span>
+          ____|____
+         /         <span class="vi">\</span>
+        o           <span class="vi">o</span>
+     ___|___        <span class="vi">|</span>
+    /       \       <span class="vi">o</span>
+   o         o      <span class="vi">|</span>
+   |                <span class="rd">x</span>
+   o</pre>
+<hr class="hr">
+<div class="dim">&nbsp;<span class="vi">o</span> past state&nbsp;&nbsp;<span class="rd">x</span> current&nbsp;&nbsp;<span class="vi">violet</span> = active branch</div>
+<div class="dim">&nbsp;p/n undo·redo&nbsp;&nbsp;b/f branch&nbsp;&nbsp;t times&nbsp;&nbsp;d diff&nbsp;&nbsp;s select&nbsp;&nbsp;q quit</div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> A whole buffer given over to the shape of your own hesitation. Moving the cursor up or down the tree undoes and redoes the real file live; <code>b</code> and <code>f</code> step sideways into a branch you abandoned twenty minutes ago. Nothing is ever truncated — a new edit after an undo grows a new limb instead of amputating the old one.</p>
+        <dl class="facts">
+          <dt>Opens</dt><dd>C-x u, into a split buffer named <code> *undo-tree*</code></dd>
+          <dt>Diff</dt><dd>d toggles a second window: current state vs. the one step above</dd>
+          <dt>Restore</dt><dd>no such verb — navigating <em>is</em> restoring. C-q aborts back to where you started</dd>
+          <dt>Detail</dt><dd>t fans the tree from 3-column to 9- or 13-column spacing to fit timestamps</dd>
+        </dl>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate-head"><h3>ChatGPT <span>sibling navigator</span></h3>
+        <span class="topo"><svg><use href="#t-tree"></use></svg>tree</span></div>
+      <div class="stage"><div class="ui" style="background:#fff;padding:18px 16px">
+        <div style="display:flex;justify-content:flex-end"><div style="background:#f4f4f5;border-radius:18px;padding:9px 14px;max-width:78%;color:#1b1b1f">rewrite the opening so it doesn't start with a question</div></div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:9px;margin:7px 2px 0;color:#8e8ea0;font-size:12px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+          <span style="display:inline-flex;align-items:center;gap:5px;font-variant-numeric:tabular-nums">
+            <span style="opacity:.55">‹</span><span>2/3</span><span>›</span></span>
+        </div>
+        <div style="margin:16px 0 0;color:#1b1b1f">The piece opens on a stalled cursor, not a question —</div>
+        <div style="margin-top:14px;border-top:1px dashed #e3e3e8;padding-top:11px;color:#8e8ea0;font-size:11.5px;font-family:'IBM Plex Mono',monospace">
+          siblings 1 and 3 still exist server-side · only the pointer moved</div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> No panel, no timestamps, no list — the entire version history is three characters wedged under a message. Paging swaps not just that message but the whole conversation downstream of it, which makes it the only control here that rewrites the future as well as the past.</p>
+        <dl class="facts">
+          <dt>Shown</dt><dd>on edited user messages and regenerated replies alike</dd>
+          <dt>Diff</dt><dd>none. Full replacement, no way to see two siblings at once</dd>
+          <dt>2026</dt><dd>arrows vanished in Feb behind a Statsig flag named <code>hide_pagination</code>; support called it "never an official feature"</dd>
+          <dt>Now</dt><dd>as of Aug 2026 they appear on edit, then disappear on reload</dd>
+          <dt>Layout</dt><dd><span class="unv">exact placement relative to the icon row unverified</span></dd>
+        </dl>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate-head"><h3>Claude Code <span>/rewind</span></h3>
+        <span class="topo"><svg><use href="#t-tree"></use></svg>tree</span></div>
+      <div class="stage"><div class="term">
+<hr class="hr" style="margin-top:0">
+<div>&nbsp;<span class="vi">Rewind</span></div>
+<div class="dim">&nbsp;Confirm you want to restore to the point before you sent this message:</div>
+<div>&nbsp;<span class="dim">│</span> all the date functions</div>
+<div>&nbsp;<span class="dim">│ (1m ago)</span></div>
+<div class="dim">&nbsp;The conversation will be forked.</div>
+<div class="dim">&nbsp;The code will be restored <span class="gr">+14</span> <span class="rd">-1</span> in utils.py.</div>
+<div class="sel">&nbsp;<span class="vi">❯</span> 1. Restore code and conversation</div>
+<div>&nbsp;&nbsp;&nbsp;2. Restore conversation</div>
+<div>&nbsp;&nbsp;&nbsp;3. Restore code</div>
+<div>&nbsp;&nbsp;&nbsp;4. Summarize from here</div>
+<div>&nbsp;&nbsp;&nbsp;5. Summarize up to here</div>
+<div>&nbsp;&nbsp;&nbsp;6. Never mind</div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> The only entry here that treats text and filesystem as two separately rewindable axes, and makes you say which one you meant. It also states the consequence in prose before offering the choice — "the conversation will be forked" — rather than leaving you to infer it from a button label.</p>
+        <dl class="facts">
+          <dt>Opens</dt><dd>/rewind, or Esc Esc on an empty prompt</dd>
+          <dt>List step</dt><dd>each row is two lines: your message, then a diff-stat subtitle — <code>utils.py +1 -14</code> or <code>No code changes</code></dd>
+          <dt>Sentinel</dt><dd>the list ends in a literal <code>(current)</code> row; the two code options hide when a checkpoint touched no files</dd>
+          <dt>Retention</dt><dd>100 checkpoints, 30 days; restore refills the prompt with your original message</dd>
+        </dl>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<section class="family">
+  <div class="family-head"><h2>The history is a continuum you scrub</h2><span class="count">3 plates</span></div>
+  <p class="family-thesis">Not a list of states but an axis. These three treat writing as something that happened over time and can be re-run, which is why all three grew a play button and none of them grew a restore button worth the name.</p>
+  <div class="grid">
+
+    <article class="plate">
+      <div class="plate-head"><h3>Etherpad <span>Timeslider</span></h3>
+        <span class="topo"><svg><use href="#t-flow"></use></svg>continuum</span></div>
+      <div class="stage"><div class="ui" style="background:#fff;padding:14px 16px 18px">
+        <div style="display:flex;align-items:flex-start;gap:14px">
+          <div style="flex:1">
+            <div style="font-size:22px;font-weight:400;color:#1b1b1f;letter-spacing:-.01em">Version 47 <span style="color:#666;font-size:15px">8/29/2026 14:22:07</span></div>
+            <div style="color:#666;font-size:11.5px;margin-top:3px">Authors: 3 unnamed authors</div>
+          </div>
+          <div style="display:flex;gap:12px;font-size:11.5px;color:#2b5ea8;padding-top:6px;white-space:nowrap">
+            <span>Export</span><span>Return to pad</span></div>
+        </div>
+        <div style="position:relative;margin:22px 4px 0;height:40px">
+          <div style="position:absolute;top:15px;left:0;right:0;height:10px;background:#c2c2c2"></div>
+          <div style="position:absolute;top:7px;left:19%;color:#da9700;font-size:15px;line-height:1">★</div>
+          <div style="position:absolute;top:7px;left:54%;color:#da9700;font-size:15px;line-height:1">★</div>
+          <div style="position:absolute;top:7px;left:81%;color:#da9700;font-size:15px;line-height:1">★</div>
+          <div style="position:absolute;top:0;left:66%;width:10px;height:40px;background:#3e3e3e"></div>
+        </div>
+        <div style="display:flex;gap:9px;align-items:center;margin-top:6px">
+          <div style="width:34px;height:34px;display:grid;place-items:center;font-size:19px;color:#333">▶</div>
+          <div style="width:30px;height:30px;border:1px solid #666;border-radius:50%;display:grid;place-items:center;font-size:11px;color:#333">◀◀</div>
+          <div style="width:30px;height:30px;border:1px solid #666;border-radius:50%;display:grid;place-items:center;font-size:11px;color:#333">▶▶</div>
+        </div>
+        <div style="margin-top:14px;border-top:1px solid #e6e6e6;padding-top:12px;line-height:1.7;color:#1b1b1f">
+          <span style="background:#f5d3d3">The kickoff is moved to Thursday.</span>
+          <span style="background:#d7ecd0">Room 4 is booked, </span><span style="background:#d3ddf5">Priya has the deck.</span>
+        </div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> A 10-pixel grey track with a charcoal handle four times its height, and gold stars sitting <em>above</em> the rail at every explicitly saved revision — so the continuous stream and the deliberate save points share one axis. Dedicated step buttons jump between stars rather than between keystrokes.</p>
+        <dl class="facts">
+          <dt>Lives at</dt><dd>a separate page, <code>/p/&lt;pad&gt;/timeslider</code></dd>
+          <dt>Speed</dt><dd>Original speed · Realtime · 200 / 500 / 1000 ms</dd>
+          <dt>Old state</dt><dd>full replacement, with per-author background colours carried through</dd>
+          <dt>Restore</dt><dd><b>none.</b> The exits are "Return to pad" and "Export current version as:"</dd>
+        </dl>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate-head"><h3>Draftback <span>keystroke replay</span></h3>
+        <span class="topo"><svg><use href="#t-flow"></use></svg>continuum</span></div>
+      <div class="stage"><div class="ui" style="background:#fff;padding:14px 16px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:11px;color:#666;font-family:'IBM Plex Mono',monospace">
+          <span>REVISIONS OVER TIME</span><span>1,842 revisions · 4h 11m</span></div>
+        <svg id="dbTime" viewBox="0 0 400 52" style="width:100%;height:52px;margin-top:5px" aria-hidden="true"><path d="M0 52 L0 45.0 L5 43.7 L10 41.6 L15 38.0 L20 38.2 L25 39.2 L30 37.6 L35 36.6 L40 41.3 L45 37.7 L50 41.0 L55 42.6 L60 38.3 L65 41.3 L70 35.4 L75 40.6 L80 42.0 L85 29.4 L90 18.2 L95 15.7 L100 16.0 L105 31.1 L110 25.7 L115 26.0 L120 32.5 L125 20.3 L130 34.0 L135 35.7 L140 40.4 L145 43.3 L150 40.4 L155 38.9 L160 37.5 L165 37.1 L170 36.9 L175 37.3 L180 41.9 L185 42.1 L190 43.3 L195 40.7 L200 41.3 L205 42.0 L210 39.3 L215 41.1 L220 38.4 L225 30.3 L230 34.5 L235 30.7 L240 26.5 L245 28.1 L250 31.4 L255 20.9 L260 21.5 L265 27.2 L270 21.8 L275 22.2 L280 26.5 L285 24.6 L290 34.9 L295 40.5 L300 39.9 L305 40.0 L310 40.5 L315 41.7 L320 41.3 L325 43.4 L330 40.1 L335 42.1 L340 43.5 L345 39.6 L350 39.4 L355 39.2 L360 37.2 L365 40.5 L370 40.6 L375 41.1 L380 39.9 L385 39.1 L390 41.5 L395 42.8 L400 40.7 L400 52 Z" fill="#2b5ea8" opacity=".18"></path><path d="M0 52 L0 45.0 L5 43.7 L10 41.6 L15 38.0 L20 38.2 L25 39.2 L30 37.6 L35 36.6 L40 41.3 L45 37.7 L50 41.0 L55 42.6 L60 38.3 L65 41.3 L70 35.4 L75 40.6 L80 42.0 L85 29.4 L90 18.2 L95 15.7 L100 16.0 L105 31.1 L110 25.7 L115 26.0 L120 32.5 L125 20.3 L130 34.0 L135 35.7 L140 40.4 L145 43.3 L150 40.4 L155 38.9 L160 37.5 L165 37.1 L170 36.9 L175 37.3 L180 41.9 L185 42.1 L190 43.3 L195 40.7 L200 41.3 L205 42.0 L210 39.3 L215 41.1 L220 38.4 L225 30.3 L230 34.5 L235 30.7 L240 26.5 L245 28.1 L250 31.4 L255 20.9 L260 21.5 L265 27.2 L270 21.8 L275 22.2 L280 26.5 L285 24.6 L290 34.9 L295 40.5 L300 39.9 L305 40.0 L310 40.5 L315 41.7 L320 41.3 L325 43.4 L330 40.1 L335 42.1 L340 43.5 L345 39.6 L350 39.4 L355 39.2 L360 37.2 L365 40.5 L370 40.6 L375 41.1 L380 39.9 L385 39.1 L390 41.5 L395 42.8 L400 40.7 L400 52 Z" fill="none" opacity=".85" stroke="#2b5ea8" stroke-width="1.2"></path><rect x="172" y="0" width="1.5" height="52" fill="#c0392b"></rect></svg>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#666;font-family:'IBM Plex Mono',monospace;margin-top:10px"><span>POSITION IN DOCUMENT</span><span style="opacity:.8">top → end, vertically</span></div>
+        <svg id="dbMap" viewBox="0 0 400 88" style="width:100%;height:88px;margin-top:5px" aria-hidden="true"><circle cx="2.1" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="305.5" cy="54.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="203.7" cy="33.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="336.0" cy="55.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="25.3" cy="19.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="179.6" cy="18.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="89.7" cy="19.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="146.2" cy="17.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="44.9" cy="26.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="230.1" cy="25.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="387.9" cy="63.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="198.2" cy="36.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="202.6" cy="51.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="201.6" cy="50.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="233.4" cy="54.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="135.7" cy="28.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="73.4" cy="11.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="21.5" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="324.9" cy="52.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="115.0" cy="16.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="256.6" cy="17.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="271.8" cy="19.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="125.5" cy="31.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="336.5" cy="57.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="244.3" cy="45.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="371.1" cy="15.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="233.5" cy="48.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="242.7" cy="53.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="22.3" cy="20.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="173.7" cy="43.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="64.3" cy="27.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="40.5" cy="5.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="304.0" cy="63.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="7.0" cy="4.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="177.8" cy="27.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="65.5" cy="19.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="125.3" cy="30.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="340.3" cy="16.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="104.3" cy="12.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="175.2" cy="39.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="26.2" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="197.2" cy="19.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="62.5" cy="8.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="187.0" cy="25.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="238.4" cy="36.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="316.2" cy="64.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="36.5" cy="17.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="25.5" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="89.3" cy="14.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="222.5" cy="52.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="342.7" cy="62.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="257.1" cy="48.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="309.0" cy="69.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="274.8" cy="61.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="365.2" cy="29.3" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="372.3" cy="76.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="16.8" cy="14.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="241.4" cy="14.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="338.3" cy="70.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="175.6" cy="24.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="22.2" cy="5.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="169.6" cy="41.3" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="368.5" cy="22.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="204.7" cy="30.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="210.6" cy="30.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="6.0" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="122.8" cy="22.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="231.7" cy="28.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="223.8" cy="49.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="62.1" cy="24.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="10.0" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="312.8" cy="63.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="163.9" cy="21.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="267.4" cy="55.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="246.5" cy="39.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="7.2" cy="15.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="157.8" cy="27.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="351.3" cy="53.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="45.8" cy="18.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="203.6" cy="52.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="271.9" cy="24.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="273.4" cy="24.3" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="218.7" cy="49.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="44.3" cy="27.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="397.0" cy="75.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="264.7" cy="24.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="80.8" cy="31.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="71.3" cy="24.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="18.7" cy="5.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="322.8" cy="49.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="241.9" cy="47.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="197.8" cy="35.3" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="265.0" cy="44.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="44.7" cy="22.3" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="337.1" cy="17.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="381.9" cy="61.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="121.5" cy="28.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="36.4" cy="10.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="380.6" cy="72.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="25.5" cy="12.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="77.8" cy="9.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="27.8" cy="24.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="224.9" cy="33.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="43.0" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="14.8" cy="10.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="182.6" cy="16.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="134.6" cy="26.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="5.8" cy="17.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="81.1" cy="21.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="302.3" cy="24.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="268.5" cy="46.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="60.3" cy="28.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="116.3" cy="16.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="226.1" cy="48.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="268.1" cy="60.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="348.6" cy="68.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="55.2" cy="25.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="128.3" cy="17.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="301.9" cy="66.3" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="258.2" cy="56.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="352.6" cy="65.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="2.3" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="146.4" cy="18.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="9.9" cy="4.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="116.1" cy="13.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="294.2" cy="45.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="239.5" cy="36.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="390.5" cy="81.3" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="148.2" cy="33.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="263.6" cy="54.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="12.2" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="155.3" cy="18.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="364.9" cy="76.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="263.9" cy="41.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="363.5" cy="71.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="249.1" cy="47.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="116.6" cy="14.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="163.7" cy="39.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="369.5" cy="73.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="161.7" cy="21.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="179.6" cy="25.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="61.3" cy="28.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="119.9" cy="17.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="29.2" cy="16.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="268.7" cy="46.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="16.0" cy="8.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="140.9" cy="16.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="161.9" cy="23.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="199.8" cy="34.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="134.9" cy="24.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="349.5" cy="68.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="125.6" cy="38.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="65.7" cy="23.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="274.0" cy="38.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="267.5" cy="45.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="244.4" cy="54.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="204.3" cy="26.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="270.3" cy="62.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="248.9" cy="45.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="65.6" cy="4.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="294.2" cy="58.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="369.6" cy="74.3" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="103.7" cy="20.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="251.8" cy="34.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="167.2" cy="27.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="119.7" cy="16.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="128.6" cy="25.3" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="68.5" cy="7.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="51.9" cy="9.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="153.4" cy="29.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="165.0" cy="26.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="381.9" cy="76.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="218.0" cy="24.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="320.3" cy="46.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="28.5" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="255.0" cy="55.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="150.5" cy="30.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="244.0" cy="34.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="23.7" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="192.3" cy="45.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="206.6" cy="33.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="305.0" cy="50.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="83.8" cy="19.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="264.1" cy="45.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="10.1" cy="3.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="77.2" cy="19.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="161.6" cy="38.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="158.7" cy="40.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="60.3" cy="18.3" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="226.5" cy="54.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="146.9" cy="33.6" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="162.2" cy="33.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="57.4" cy="24.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="345.8" cy="72.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="285.4" cy="63.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="149.8" cy="17.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="173.7" cy="43.4" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="359.5" cy="23.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="380.8" cy="16.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="323.8" cy="67.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="339.4" cy="68.2" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="152.7" cy="39.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="155.4" cy="43.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="57.2" cy="7.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="183.0" cy="28.0" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="121.1" cy="15.8" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="280.6" cy="41.9" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="122.9" cy="36.5" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="123.3" cy="15.7" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><circle cx="64.6" cy="21.1" r="1.5" fill="#2b5ea8" opacity="0.5"></circle><rect x="172" y="0" width="1.5" height="88" fill="#c0392b"></rect></svg>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:10px;font-size:12px;color:#333">
+          <span style="font-size:16px">▶</span><span style="opacity:.5">❚❚</span>
+          <div style="flex:1;height:3px;background:#e0e0e0;position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:43%;background:#2b5ea8"></div></div>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px">actual speed</span>
+        </div>
+        <div style="margin-top:11px;font-size:11.5px;color:#8a8a8a;font-style:italic">the writer stared into space for 30 minutes</div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> The only tool in the set that plots <em>where</em> each edit landed, not just when — a scatter of document position against time, which makes visible the difference between someone drafting forward and someone circling back to fix paragraph two eleven times. In actual-speed mode it reproduces the author's real pauses and narrates the long ones.</p>
+        <dl class="facts">
+          <dt>Where</dt><dd>a toolbar button in Google Docs that leaves Docs for Draftback's own page</dd>
+          <dt>Old state</dt><dd>animated replay, keystroke by keystroke, auto-scrolling to each change; green and red mark insertions and deletions</dd>
+          <dt>Restore</dt><dd><b>none.</b> Read-only forensics with no write path back into the document</dd>
+          <dt>Detail</dt><dd><span class="unv">exact speed multipliers and button label unverified — closed source, no docs</span></dd>
+        </dl>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate-head"><h3>Google Docs <span>version history</span></h3>
+        <span class="topo"><svg><use href="#t-flow"></use></svg>continuum</span></div>
+      <div class="stage"><div class="ui" style="background:#fff;display:flex;min-height:214px">
+        <div style="flex:1;padding:16px 16px 16px 18px;line-height:1.75;color:#202124">
+          <div style="font-size:11px;color:#5f6368;font-family:'IBM Plex Mono',monospace;margin-bottom:9px">14 AUG, 09:41</div>
+          <div>The pilot ran for <span style="color:#188038;background:#e6f4ea">six weeks across three teams</span> <span style="color:#c5221f;text-decoration:line-through">for a month</span>, and the retention effect held <span style="color:#188038;background:#e6f4ea">in all three</span>.</div>
+          <div style="margin-top:10px">Costs came in <span style="color:#1967d2;background:#e8f0fe">under the original estimate</span>.</div>
+        </div>
+        <div style="width:174px;border-left:1px solid #e0e0e0;padding:12px 0;flex:none;background:#fff">
+          <div style="font-size:13px;font-weight:500;padding:0 14px 10px;color:#202124">Version history</div>
+          <div style="font-size:11px;color:#5f6368;padding:0 14px 5px;font-family:'IBM Plex Mono',monospace">TODAY</div>
+          <div style="padding:7px 14px;border-left:3px solid #1a73e8;background:#e8f0fe">
+            <div style="font-size:12px;color:#202124">14 August, 09:41</div>
+            <div style="display:flex;align-items:center;gap:5px;margin-top:3px;font-size:11px;color:#5f6368">
+              <span style="width:7px;height:7px;border-radius:50%;background:#188038"></span>Priya
+              <span style="width:7px;height:7px;border-radius:50%;background:#1967d2;margin-left:2px"></span>Sam</div>
+          </div>
+          <div style="padding:7px 14px 4px;border-left:3px solid transparent">
+            <div style="font-size:12px;color:#202124">Before external review</div>
+            <div style="font-size:11px;color:#5f6368;margin-top:2px">13 August, 17:02</div></div>
+          <div style="padding:7px 14px 4px;border-left:3px solid transparent">
+            <div style="font-size:12px;color:#5f6368">13 August, 11:20</div></div>
+          <div style="padding:7px 14px 4px;border-left:3px solid transparent">
+            <div style="font-size:12px;color:#5f6368">12 August, 16:55</div></div>
+        </div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> The version everyone else was measured against: a continuous timeline on the right, and on the left the document itself wearing the diff — insertions in the author's own colour, deletions struck through in place rather than banished to a second pane. Naming a version promotes one point on the continuum into a landmark without breaking it.</p>
+        <dl class="facts">
+          <dt>Granularity</dt><dd>continuous; adjacent edits collapse, expandable to individual revisions</dd>
+          <dt>Diff</dt><dd>inline, per-author colour, strikethrough deletions</dd>
+          <dt>Restore</dt><dd>"Restore this version" — non-destructive, the current state stays in history</dd>
+          <dt>Extension</dt><dd>Draftback reads the same underlying keystroke log Docs never exposes</dd>
+        </dl>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<section class="family">
+  <div class="family-head"><h2>The history is a shelf of states you mount and compare</h2><span class="count">4 plates</span></div>
+  <p class="family-thesis">Discrete, addressable, often nameable. The interesting variation is not the list — everyone has a list — but what the product does when you ask it to hold two states up against each other, and what it does to the shelf when you take one down.</p>
+  <div class="grid">
+
+    <article class="plate">
+      <div class="plate-head"><h3>Scrivener <span>Snapshots</span></h3>
+        <span class="topo"><svg><use href="#t-pile"></use></svg>shelf</span></div>
+      <div class="stage"><div class="ui" style="background:#f2f2f4;padding:0">
+        <div style="display:flex;gap:16px;padding:8px 12px;border-bottom:1px solid #d6d6da;color:#8a8a90;font-size:13px">
+          <span>ⓘ</span><span>⚑</span><span>☐</span><span style="color:#1b1b1f;position:relative">◉<span style="position:absolute;top:-2px;right:-3px;width:5px;height:5px;background:#c0392b;border-radius:50%"></span></span></div>
+        <div style="background:#fff">
+          <div style="display:flex;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#8a8a90;padding:6px 10px 4px;border-bottom:1px solid #e6e6ea">
+            <span style="width:96px">DATE</span><span>TITLE</span></div>
+          <div style="display:flex;padding:5px 10px;background:#dbe6f6;font-size:12px"><span style="width:96px;color:#333">14:22</span><span>Before Marta's notes</span></div>
+          <div style="display:flex;padding:5px 10px;font-size:12px"><span style="width:96px;color:#8a8a90">09:04</span><span style="color:#8a8a90">Untitled</span></div>
+          <div style="display:flex;padding:5px 10px;font-size:12px"><span style="width:96px;color:#8a8a90">27 Aug</span><span style="color:#8a8a90">End of first pass</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:7px;padding:6px 10px;border-top:1px solid #d6d6da;border-bottom:1px solid #d6d6da">
+          <span style="border:1px solid #b9b9c0;border-radius:3px;padding:0 6px;font-size:12px;background:#fafafc">+</span>
+          <span style="border:1px solid #b9b9c0;border-radius:3px;padding:0 6px;font-size:12px;background:#fafafc">−</span>
+          <span style="flex:1"></span>
+          <span style="border:1px solid #b9b9c0;border-radius:3px;padding:1px 9px;font-size:11.5px;background:#e8e8ee">Original</span>
+          <span style="border:1px solid #b9b9c0;border-radius:3px;padding:1px 6px;font-size:11.5px;background:#fafafc">By Word ⌄</span>
+          <span style="border:1px solid #b9b9c0;border-radius:3px;padding:1px 9px;font-size:11.5px;background:#fafafc">Roll Back</span></div>
+        <div style="background:#fff;padding:11px 12px;line-height:1.7;font-size:12.5px;min-height:74px">
+          He waited at the gate <span style="color:#c0392b;text-decoration:line-through">for a long time</span> <span style="color:#2b5ea8;text-decoration:underline">until the last of the light went</span>, and then he
+          <span style="color:#c0392b;text-decoration:line-through">left</span> <span style="color:#2b5ea8;text-decoration:underline">turned back toward the house</span>.</div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> Snapshots are taken on purpose and titled by hand, so the shelf is a record of intent rather than of clock ticks — and the Compare button flips its own label to "Original", making the diff a mode you are visibly inside rather than a separate window. Before a rollback, Scrivener offers to snapshot the thing you are about to overwrite.</p>
+        <dl class="facts">
+          <dt>Take</dt><dd>⌘5 · titled ⌃⌘5. The binder icon dog-ears when a document has snapshots</dd>
+          <dt>Diff</dt><dd>in place: deletions red and struck, additions blue and underlined; granularity by paragraph, clause or word</dd>
+          <dt>Restore</dt><dd>"Roll Back" — not undoable, hence the pre-rollback snapshot prompt</dd>
+          <dt>Detail</dt><dd>⌘-click two snapshots to diff them against each other instead of against now</dd>
+        </dl>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate-head"><h3>Figma <span>version history</span></h3>
+        <span class="topo"><svg><use href="#t-pile"></use></svg>shelf</span></div>
+      <div class="stage"><div class="ui" style="background:#f5f5f5;display:flex;min-height:214px">
+        <div style="flex:1;display:grid;place-items:center;color:#8a8a90;font-size:11.5px;font-family:'IBM Plex Mono',monospace;background:#eaeaea">
+          <div style="text-align:center">viewport shows the selected version<br><span style="opacity:.7">read-only until “Edit current version”</span></div></div>
+        <div style="width:212px;background:#fff;border-left:1px solid #e0e0e0;flex:none;padding:11px 0">
+          <div style="padding:0 13px 9px;font-size:12.5px;font-weight:600;color:#1b1b1f">Version history</div>
+          <div style="padding:8px 13px;background:#e8f0ff;border-left:2px solid #0d99ff">
+            <div style="font-size:12px;color:#1b1b1f">Handoff candidate</div>
+            <div style="font-size:11px;color:#767676;margin-top:2px">Nav collapses under 720px</div>
+            <div style="display:flex;align-items:center;gap:5px;margin-top:5px;font-size:11px;color:#767676">
+              <span style="width:14px;height:14px;border-radius:50%;background:#f2994a"></span>Marta · 25 days ago</div></div>
+          <div style="padding:8px 13px;display:flex;align-items:center;gap:6px;color:#767676;font-size:11.5px">
+            <span style="font-size:8px">▸</span>Autosave · 12 versions</div>
+          <div style="padding:6px 13px;font-size:11.5px;color:#767676">1 month ago</div>
+          <div style="padding:6px 13px;font-size:11.5px;color:#0d99ff">Show older</div>
+          <div style="margin:8px 10px 0;border:1px solid #e0e0e0;border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.12);padding:4px 0;font-size:11.5px;color:#1b1b1f">
+            <div style="padding:4px 11px">Name This Version</div>
+            <div style="padding:4px 11px;background:#0d99ff;color:#fff">Restore This Version</div>
+            <div style="padding:4px 11px">Duplicate</div>
+            <div style="padding:4px 11px">Copy link</div>
+            <div style="padding:4px 11px">Delete Version Info</div></div>
+        </div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> Restoring doesn't move a pointer, it appends: Figma writes <em>two</em> new autosave checkpoints at the moment you click — one preserving what you were about to abandon, one marking the version you brought forward. History only ever grows, so a restore is itself an undoable event.</p>
+        <dl class="facts">
+          <dt>List</dt><dd>named versions carry title, description, time and the main contributor's avatar; bare autosaves collapse into expandable groups</dd>
+          <dt>Old state</dt><dd>replacement in the viewport, file read-only meanwhile</dd>
+          <dt>Compare</dt><dd>only in Dev Mode: side-by-side or overlay with a transparency slider, layers tagged Edited / Added / Deleted</dd>
+          <dt>Friction</dt><dd>UI3 dropped the post-restore "Done" button; version names clip past 25 characters</dd>
+        </dl>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate-head"><h3>Photoshop <span>History panel</span></h3>
+        <span class="topo"><svg><use href="#t-pile"></use></svg>shelf</span></div>
+      <div class="stage"><div class="ui" style="background:#323232;color:#d4d4d4;padding:0;min-height:214px">
+        <div style="display:flex;justify-content:space-between;padding:7px 11px;border-bottom:1px solid #262626;font-size:11.5px">
+          <span>History</span><span style="color:#8a8a8a">☰</span></div>
+        <div style="padding:5px 0">
+          <div style="display:flex;gap:8px;align-items:center;padding:4px 11px">
+            <div style="width:26px;height:20px;background:linear-gradient(120deg,#6b7f9e,#c9a27a);border:1px solid #4a4a4a"></div>
+            <span style="font-size:11.5px">poster.psd</span></div>
+          <div style="display:flex;gap:8px;align-items:center;padding:4px 11px">
+            <div style="width:26px;height:20px;background:linear-gradient(120deg,#8e6b9e,#c9a27a);border:1px solid #4a4a4a"></div>
+            <span style="font-size:11.5px">Snapshot 1 — before type</span></div>
+        </div>
+        <div style="border-top:1px solid #262626;padding:4px 0;font-size:11.5px">
+          <div style="padding:3px 11px;color:#8a8a8a">Curves</div>
+          <div style="padding:3px 11px;color:#8a8a8a">Gaussian Blur</div>
+          <div style="padding:3px 11px;background:#4a6d9e;color:#fff">Brush Tool</div>
+          <div style="padding:3px 11px;color:#5e5e5e">Brush Tool</div>
+          <div style="padding:3px 11px;color:#5e5e5e">Eraser</div>
+          <div style="padding:3px 11px;color:#5e5e5e">Free Transform</div>
+        </div>
+        <div style="border-top:1px solid #262626;padding:6px 11px;display:flex;gap:12px;font-size:12px;color:#8a8a8a">
+          <span>◉</span><span>⌫</span><span style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:10px">50 states</span></div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> The states below your current position stay visible, greyed out rather than deleted — you can see the future you are standing upstream of. Snapshots sit in a separate compartment above the list, exempt from the 50-state ceiling that keeps eating the bottom of it.</p>
+        <dl class="facts">
+          <dt>Depth</dt><dd>50 states by default, oldest discarded first; snapshots survive</dd>
+          <dt>Non-linear</dt><dd>an option: with it on, selecting an earlier state and editing does not discard the later ones</dd>
+          <dt>Old state</dt><dd>the canvas itself — the document <em>is</em> the preview</dd>
+          <dt>Ends at</dt><dd>close. Nothing here survives quitting the application</dd>
+        </dl>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate-head"><h3>Anytype <span>version history</span></h3>
+        <span class="topo"><svg><use href="#t-pile"></use></svg>shelf</span></div>
+      <div class="stage"><div class="ui" style="background:#fff;display:flex;min-height:214px">
+        <div style="flex:1;padding:16px 16px;line-height:1.75;color:#1b1b1f">
+          <div style="font-size:15px;font-weight:600;margin-bottom:8px">Warehouse cutover</div>
+          <div><span style="background:rgba(42,167,238,.2)">Freight moves to the new depot on the 14th.</span></div>
+          <div style="margin-top:7px"><span style="background:rgba(93,212,0,.2)">Priya signs off on the manifest format.</span></div>
+          <div style="margin-top:7px"><span style="background:rgba(245,85,34,.2)">Legacy labels retired.</span></div>
+          <div style="margin-top:12px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:#999">
+            <span style="background:rgba(93,212,0,.2);padding:1px 4px">added</span>
+            <span style="background:rgba(42,167,238,.2);padding:1px 4px">changed</span>
+            <span style="background:rgba(245,85,34,.2);padding:1px 4px">removed</span></div>
+        </div>
+        <div style="width:196px;border-left:1px solid #ececef;flex:none;padding:11px 9px;position:relative;background:#fff">
+          <div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:600;padding:0 6px 9px">
+            <span>Version History</span><span style="color:#999">✕</span></div>
+          <div style="background:#f4f4f6;border-radius:10px;padding:9px 11px 7px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:5px">
+              <span style="font-size:11.5px;font-weight:500">Today</span><span style="flex:1"></span>
+              <span style="display:flex"><span style="width:15px;height:15px;border-radius:50%;background:#f2994a;border:2px solid #fff"></span>
+              <span style="width:15px;height:15px;border-radius:50%;background:#5b8def;border:2px solid #fff;margin-left:-6px"></span>
+              <span style="width:15px;height:15px;border-radius:50%;background:#57c295;border:2px solid #fff;margin-left:-6px"></span></span>
+              <span style="font-size:9px;color:#999;margin-left:3px">⌄</span></div>
+            <div style="background:#ececef;border-radius:6px;padding:5px 8px;margin-top:6px">
+              <div style="font-size:11.5px">14:22</div>
+              <div style="font-size:10.5px;color:#999">Marta</div></div>
+            <div style="padding:4px 8px"><div style="font-size:11.5px;color:#666">09:04</div>
+              <div style="font-size:10.5px;color:#999">Priya</div></div>
+          </div>
+          <div style="background:#f4f4f6;border-radius:10px;padding:9px 11px;font-size:11.5px;color:#666">28 Aug</div>
+          <div style="position:absolute;left:14px;right:14px;bottom:12px;display:flex;gap:7px">
+            <div style="flex:1;text-align:center;background:#fff;border-radius:8px;padding:5px 0;font-size:11.5px;color:#666;box-shadow:0 2px 8px rgba(0,0,0,.2)">Restore</div>
+            <div style="flex:1;text-align:center;background:#fff;border-radius:8px;padding:5px 0;font-size:11.5px;color:#666;box-shadow:0 2px 8px rgba(0,0,0,.2)">Cancel</div></div>
+        </div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> Three diff colours instead of two — added, <em>changed</em>, removed — because a CRDT knows the difference between a replaced block and a deleted-then-inserted one. The rail groups by day into rounded cards, each headed by a pile of overlapping author avatars, and the two action buttons float over the scrolling list rather than docking beneath it.</p>
+        <dl class="facts">
+          <dt>Panel</dt><dd>336px right rail; the left pane re-renders the whole object read-only and scrolls to the first change</dd>
+          <dt>Nesting</dt><dd>three levels: day → version → sub-version</dd>
+          <dt>Restore</dt><dd>"Restore" — rolls the whole object back. Buttons appear only when the selection isn't the latest</dd>
+          <dt>Shortcut</dt><dd>⌘/Ctrl+Alt+H in current source. <span class="unv">Older docs say ⌘Y; it is user-remappable</span></dd>
+        </dl>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<section class="family">
+  <div class="family-head"><h2>The history is a diff, and the byline is the payload</h2><span class="count">2 plates</span></div>
+  <p class="family-thesis">Here the question isn't "what did it used to say" but "who put that there". Both of these treat authorship as a property of the text itself rather than of the revision, which is a different data model and a visibly different screen.</p>
+  <div class="grid">
+
+    <article class="plate">
+      <div class="plate-head"><h3>MediaWiki <span>revision history</span></h3>
+        <span class="topo"><svg><use href="#t-line"></use></svg>ledger</span></div>
+      <div class="stage"><div class="ui" style="background:#fff;padding:13px 14px;font-size:12px;color:#202122;min-width:494px">
+        <div style="display:flex;gap:8px;padding:3px 0;white-space:nowrap"><span style="color:#3366cc">cur</span><span style="color:#72777d">prev</span>
+          <span>29 Aug 2026 14:22</span><span style="color:#3366cc">Marta.R</span>
+          <span style="font-variant-numeric:tabular-nums">(18,204 bytes)</span>
+          <span style="color:#0a7b3d;font-weight:700">(+412)</span>
+          <span style="color:#72777d">(→‎Depot cutover: sourcing)</span></div>
+        <div style="display:flex;gap:8px;padding:3px 0;white-space:nowrap"><span style="color:#3366cc">cur</span><span style="color:#3366cc">prev</span>
+          <span>29 Aug 2026 11:07</span><span style="color:#3366cc">Sam.K</span>
+          <span style="font-variant-numeric:tabular-nums">(17,792 bytes)</span>
+          <span style="color:#bd2828;font-weight:700">(−1,043)</span>
+          <span style="color:#72777d">(rm unsourced)</span></div>
+        <div style="display:flex;gap:8px;padding:3px 0;color:#72777d;white-space:nowrap"><span style="color:#3366cc">cur</span><span style="color:#3366cc">prev</span>
+          <span>28 Aug 2026 22:41</span><span style="color:#3366cc">86.14.7.209</span>
+          <span style="font-variant-numeric:tabular-nums">(18,835 bytes)</span>
+          <span style="color:#0a7b3d;font-weight:700">(+6)</span></div>
+        <div style="display:flex;margin-top:10px;border-top:1px solid #eaecf0;padding-top:9px;gap:1px;font-size:11.5px;line-height:1.6">
+          <div style="flex:1;background:#fee7e6;padding:6px 8px">The depot opened in <span style="background:#ffd7d5;font-weight:600">1998</span> and closed briefly in 2004.</div>
+          <div style="flex:1;background:#d8ecff;padding:6px 8px">The depot opened in <span style="background:#b6dbff;font-weight:600">1997</span> and closed briefly in 2004.</div></div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> A signed byte delta on every row — <code>(+412)</code>, <code>(−1,043)</code>, green and red and bold — turns the history list itself into a scanner for vandalism and mass deletion, before you open a single diff. Two decades of moderation practice are compressed into that one column.</p>
+        <dl class="facts">
+          <dt>Diff</dt><dd>side-by-side, changed words re-highlighted inside the changed line</dd>
+          <dt>Detail</dt><dd>wikidiff2 detects moved paragraphs and marks them as moves rather than as a delete plus an insert</dd>
+          <dt>Restore</dt><dd>"undo" a single revision, or "restore this version" — either way a <em>new</em> revision, signed by you</dd>
+          <dt>Retention</dt><dd>unbounded. Every revision since the article was created</dd>
+        </dl>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate-head"><h3>Linear <span>text attribution</span></h3>
+        <span class="topo"><svg><use href="#t-line"></use></svg>ledger</span></div>
+      <div class="stage"><div class="ui" style="background:#fff;padding:15px 14px;min-height:214px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:11px;color:#1b1b1f">Weekly meeting agenda</div>
+        <div style="display:grid;grid-template-columns:1fr 84px;gap:5px 12px;font-size:12px;line-height:1.7;align-items:start">
+          <div>Depot cutover is on track for the 14th; freight contracts are signed.</div>
+          <div style="font-size:10.5px;color:#8a8a94;padding-top:3px">Marta</div>
+          <div style="background:#f0ecff;border-radius:3px;padding:2px 5px;margin-left:-5px">Blocked on the manifest schema — Priya is drafting a v2 that keeps the legacy label field optional.</div>
+          <div style="font-size:10.5px;color:#8759e8;padding-top:3px">Linear Agent</div>
+          <div>Hiring: two offers out, both verbal-accepted.</div>
+          <div style="font-size:10.5px;color:#8a8a94;padding-top:3px">Sam</div>
+          <div style="color:#8a8a94">Carried over: warehouse insurance renewal.</div>
+          <div style="font-size:10.5px;color:#8a8a94;padding-top:3px">Loop</div>
+        </div>
+        <div style="margin-top:13px;border-top:1px solid #ececef;padding-top:9px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#8a8a94">
+          ⌘K → “show author names” · “Issue description history”</div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> Attribution per <em>span</em>, not per revision, and rendered in the document while you read it — with text written by an agent or a loop highlighted differently from text written by a colleague. It is the only entry in the set whose history UI exists mainly to answer "did a human write this".</p>
+        <dl class="facts">
+          <dt>Shipped</dt><dd>23 July 2026, alongside agent-assisted editing</dd>
+          <dt>Checkpoints</dt><dd>agent edits and loop updates each create a version-history checkpoint</dd>
+          <dt>Entry points</dt><dd>⌘K "show author names"; document display options; "Show description history" on issues</dd>
+          <dt>Layout</dt><dd><span class="unv">reconstructed from wording alone — Linear publishes no screenshot of the panel. The margin placement is inferred from the documented note that names hide at narrow window widths.</span></dd>
+        </dl>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<section class="family">
+  <div class="family-head"><h2>The history happens whether or not you ask</h2><span class="count">3 plates</span></div>
+  <p class="family-thesis">No save-a-version button, no snapshot ritual. These capture in the background and then face the harder design problem: how to present a history nobody deliberately made, without drowning the user in it.</p>
+  <div class="grid">
+
+    <article class="plate">
+      <div class="plate-head"><h3>VS Code <span>Local History</span></h3>
+        <span class="topo"><svg><use href="#t-line"></use></svg>ledger</span></div>
+      <div class="stage"><div class="ui" style="background:#1f1f1f;color:#ccc;padding:0;min-height:214px">
+        <div style="background:#2d2d2d;padding:5px 12px;font-size:11px;color:#ccc;font-family:'IBM Plex Mono',monospace">
+          orders.ts (File Saved • March 4, 2026 at 2:31 PM) ↔ orders.ts</div>
+        <div style="padding:8px 12px;font-size:10.5px;letter-spacing:.08em;color:#bbb;border-top:1px solid #333">TIMELINE</div>
+        <div style="font-size:11.5px;padding-bottom:8px">
+          <div style="display:flex;gap:8px;padding:3px 12px;background:#04395e"><span style="color:#75beff">◯</span><span>File Saved</span><span style="margin-left:auto;color:#8a8a8a">2 min</span></div>
+          <div style="display:flex;gap:8px;padding:3px 12px"><span style="color:#75beff">◯</span><span>File Saved</span><span style="margin-left:auto;color:#8a8a8a">14 min</span></div>
+          <div style="display:flex;gap:8px;padding:3px 12px"><span style="color:#75beff">◯</span><span>Renamed from order.ts</span><span style="margin-left:auto;color:#8a8a8a">1 hr</span></div>
+          <div style="display:flex;gap:8px;padding:3px 12px"><span style="color:#c586c0">⎇</span><span>fix: settle rounding on partial refunds</span><span style="margin-left:auto;color:#8a8a8a">3 hr</span></div>
+          <div style="display:flex;gap:8px;padding:3px 12px"><span style="color:#75beff">◯</span><span>File Saved</span><span style="margin-left:auto;color:#8a8a8a">4 hr</span></div>
+        </div>
+        <div style="border-top:1px solid #333;padding:6px 12px;font-size:11px;color:#bbb;background:#252526">
+          <div style="padding:2px 0">Compare with File</div>
+          <div style="padding:2px 0">Compare with Previous</div>
+          <div style="padding:2px 0;background:#04395e;color:#fff;margin:0 -12px;padding-left:12px">Restore Contents</div>
+        </div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> Local saves and git commits are interleaved in one column, so the ambient history and the deliberate one share a single timeline. Rows are labelled by <em>cause</em> — "File Saved", "File Renamed", "Renamed from order.ts" — not by time; the timestamp is demoted to the hover tooltip.</p>
+        <dl class="facts">
+          <dt>Where</dt><dd>TIMELINE section at the foot of the Explorer, scoped to the active file</dd>
+          <dt>Diff</dt><dd>a side-by-side editor whose tab title is the recognisable part: <code>file (source • date) ↔ file</code></dd>
+          <dt>Limits</dt><dd>50 entries, 256 KB, and a 10-second merge window that collapses rapid saves into one row</dd>
+          <dt>Restore</dt><dd>"Restore Contents", warning "Restoring will discard any unsaved changes."</dd>
+        </dl>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate-head"><h3>macOS <span>Versions</span></h3>
+        <span class="topo"><svg><use href="#t-pile"></use></svg>shelf</span></div>
+      <div class="stage"><div class="ui" style="background:#0b0b12;padding:0;min-height:214px;position:relative;overflow:hidden">
+        <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 42% 130%,#26305a 0%,#0a0a12 58%,#06060b 100%)"></div><div style="position:absolute;inset:0;opacity:.55;background-image:radial-gradient(1px 1px at 12% 22%,#fff,transparent),radial-gradient(1px 1px at 31% 68%,#cfd6ff,transparent),radial-gradient(1px 1px at 47% 14%,#fff,transparent),radial-gradient(1px 1px at 63% 44%,#b9c4ff,transparent),radial-gradient(1px 1px at 76% 21%,#fff,transparent),radial-gradient(1px 1px at 88% 60%,#cfd6ff,transparent),radial-gradient(1px 1px at 22% 88%,#fff,transparent),radial-gradient(1px 1px at 55% 79%,#a9b4ee,transparent)"></div>
+        <div style="position:relative;display:flex;height:214px">
+          <div style="flex:1;display:grid;place-items:center">
+            <div style="width:112px;height:140px;background:#fff;border-radius:2px;box-shadow:0 10px 30px rgba(0,0,0,.6);padding:11px 10px">
+              <div style="height:5px;background:#333;width:70%;margin-bottom:7px"></div>
+              <div style="height:3px;background:#ccc;margin-bottom:4px"></div><div style="height:3px;background:#ccc;margin-bottom:4px"></div>
+              <div style="height:3px;background:#ccc;width:80%;margin-bottom:4px"></div><div style="height:3px;background:#ccc;margin-bottom:4px"></div>
+              <div style="height:3px;background:#ccc;width:55%"></div></div></div>
+          <div style="flex:1;position:relative;display:grid;place-items:center">
+            <div style="position:absolute;width:98px;height:124px;background:#e9e9ee;border-radius:2px;transform:translate(30px,-12px) scale(.86);opacity:.35"></div>
+            <div style="position:absolute;width:104px;height:132px;background:#f2f2f6;border-radius:2px;transform:translate(15px,-6px) scale(.93);opacity:.6"></div>
+            <div style="position:relative;width:112px;height:140px;background:#fff;border-radius:2px;box-shadow:0 10px 30px rgba(0,0,0,.7);padding:11px 10px">
+              <div style="height:5px;background:#333;width:52%;margin-bottom:7px"></div>
+              <div style="height:3px;background:#ccc;margin-bottom:4px"></div><div style="height:3px;background:#ccc;width:62%;margin-bottom:4px"></div>
+              <div style="height:3px;background:#d9c9a8;margin-bottom:4px"></div><div style="height:3px;background:#ccc;width:40%"></div></div>
+          </div>
+          <div style="width:56px;position:relative;color:#8e93b5;font-family:'IBM Plex Mono',monospace;font-size:8.5px;padding-top:18px">
+            <div style="text-align:right;padding-right:9px;line-height:2.15">
+              <div style="color:#fff">Today</div><div>15:00</div><div>14:00</div><div>13:00</div><div>Yesterday</div><div>27 Aug</div><div>21 Aug</div></div></div>
+        </div>
+        <div style="position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:10px;padding:9px;background:rgba(8,8,14,.75)">
+          <span style="background:#2a2a35;color:#e6e6ee;border-radius:5px;padding:3px 14px;font-size:11px">Restore</span>
+          <span style="background:#2a2a35;color:#e6e6ee;border-radius:5px;padding:3px 14px;font-size:11px">Done</span></div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> Version history as a place you travel to — the desktop falls away, the current document sits on the left, and past states recede into a starfield on the right against a timeline of hour and day ticks. It is also the only one that lets you leave with just a fragment: select text inside an old version and copy it out without restoring anything.</p>
+        <dl class="facts">
+          <dt>Captures</dt><dd>hourly while editing, plus on save; the same NSDocument mechanism behind Pages, TextEdit, Keynote, Xcode</dd>
+          <dt>Restore</dt><dd>"Restore" replaces the document; hold Option and it becomes "Restore a Copy"</dd>
+          <dt>Reach</dt><dd>every app built on NSDocument inherits it — which is why several editors in the set have version history their developers never wrote</dd>
+          <dt>Catch</dt><dd>tied to the file on that Mac; iA Writer's implementation needs iCloud enabled to appear at all</dd>
+        </dl>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate-head"><h3>Vim <span>persistent undo</span></h3>
+        <span class="topo"><svg><use href="#t-tree"></use></svg>tree</span></div>
+      <div class="stage"><div class="term">
+<div><span class="dim">:</span>undolist</div>
+<pre style="margin:0;font:inherit"><span class="dim">number  changes  when           saved</span>
+     7        2  09:14              1
+     9        3  11:02
+    12        4  4 minutes ago</pre>
+<hr class="hr">
+<div><span class="dim">:</span>earlier 10m</div>
+<div class="gr">4 changes; before #9  11:02</div>
+<hr class="hr">
+<div><span class="dim">:</span>set undofile undodir=~/.vim/undo</div>
+<div class="dim">&nbsp;&nbsp;undo history survives :q and reboot</div>
+<hr class="hr">
+<div><span class="dim">:</span>earlier 1f&nbsp;&nbsp;<span class="dim">" back one file-write</span></div>
+<div><span class="dim">:</span>later 30s</div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> Time as a first-class argument to a command. <code>:earlier 10m</code> doesn't step ten times through an undo stack — it asks the buffer what it looked like ten minutes ago and puts you there, crossing branch boundaries to get it. <code>1f</code> counts in file-writes instead of minutes.</p>
+        <dl class="facts">
+          <dt>Persistence</dt><dd>off by default; <code>set undofile</code> writes the whole tree beside the file and reloads it on reopen</dd>
+          <dt>List</dt><dd><code>:undolist</code> shows every leaf, with a saved-write marker</dd>
+          <dt>UI</dt><dd>none in core. The undotree plugin draws the same tree Emacs draws, in a side pane</dd>
+          <dt>Kinship</dt><dd>same model as undo-tree; opposite interface. One is a picture, the other a sentence</dd>
+        </dl>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<section class="family">
+  <div class="family-head"><h2>The history is one edit deep, and then it stops</h2><span class="count">1 plate + a floor</span></div>
+  <p class="family-thesis">The shallow end of the set, and the reason the outing existed. Most software people write in every day sits below this line.</p>
+  <div class="grid">
+
+    <article class="plate">
+      <div class="plate-head"><h3>iMessage <span>edit history</span></h3>
+        <span class="topo"><svg><use href="#t-point"></use></svg>one deep</span></div>
+      <div class="stage"><div class="ui" style="background:#fff;padding:16px 14px;min-height:214px">
+        <div style="display:flex;justify-content:flex-end"><div style="background:#0b84ff;color:#fff;border-radius:17px;padding:7px 13px;max-width:72%">Moved it to Thursday at four</div></div>
+        <div style="text-align:right;font-size:10.5px;color:#8a8a8e;margin:3px 4px 0">Edited</div>
+        <div style="margin:11px 0 0 auto;max-width:78%;border:1px solid #e3e3e8;border-radius:11px;overflow:hidden;box-shadow:0 6px 20px rgba(0,0,0,.09)">
+          <div style="padding:6px 11px;font-size:10.5px;color:#8a8a8e;background:#f7f7f9;border-bottom:1px solid #eee">Edit history</div>
+          <div style="padding:7px 11px;color:#8a8a8e;font-size:12px">Moved it to Thursday</div>
+          <div style="padding:7px 11px;color:#8a8a8e;font-size:12px;border-top:1px solid #f0f0f2">Moved it to Thursday at 4</div>
+          <div style="padding:7px 11px;color:#1b1b1f;font-size:12px;border-top:1px solid #f0f0f2">Moved it to Thursday at four</div>
+        </div>
+        <div style="margin-top:12px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#8a8a8e">5 edits · 15 minutes · then sealed</div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> A hard budget rather than a retention window: five edits, fifteen minutes, and the recipient can always see every one of them. The constraint isn't storage, it's that an unwitnessed edit to a message someone already read is a different thing from an edit to your own draft.</p>
+        <dl class="facts">
+          <dt>Reveal</dt><dd>tap the word "Edited" beneath the bubble</dd>
+          <dt>Compare</dt><dd>Slack, Discord and Telegram show the "edited" label and nothing behind it</dd>
+          <dt>Nearest kin</dt><dd>Zulip, which keeps a full edit history and also saves an unsent draft on close if it is at least three characters</dd>
+        </dl>
+      </div>
+    </article>
+
+    <article class="plate">
+      <div class="plate-head"><h3>The floor <span>no history at all</span></h3>
+        <span class="topo"><svg><use href="#t-point"></use></svg>none</span></div>
+      <div class="stage"><div class="ui" style="background:transparent;padding:15px 15px;min-height:214px;color:var(--ink2);font-family:'IBM Plex Mono',monospace;font-size:11.5px;line-height:2.1">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px">
+          <span>Apple Notes</span><span style="color:var(--ink3)">nothing</span>
+          <span>Bear</span><span style="color:var(--ink3)">nothing</span>
+          <span>Gmail</span><span style="color:var(--ink3)">no draft history</span>
+          <span>Outlook</span><span style="color:var(--ink3)">recoverable as deleted only</span>
+          <span>Apple Mail</span><span style="color:var(--ink3)">no draft history</span>
+          <span>Superhuman</span><span style="color:var(--ink3)">no draft history</span>
+          <span>Tana</span><span style="color:var(--ink3)">“Future Consideration”, 18 votes</span>
+          <span>Heynote</span><span style="color:var(--ink3)">closed, “not planned”</span>
+          <span>Zettlr</span><span style="color:var(--ink3)">autosave only</span>
+          <span>Photos</span><span style="color:var(--ink3)">revert to original, nothing between</span>
+          <span>Agenda</span><span style="color:var(--ink3)">stores full history · <em>no UI</em></span>
+        </div>
+      </div></div>
+      <div class="plate-foot">
+        <p class="move"><b>The move.</b> Listed because the absence is the finding. Agenda is the sharpest case in the whole set: it retains the complete history on disk and ships no way to look at it — the data problem is solved and the interface problem was never attempted, which is roughly the inverse of ChatGPT, where the siblings survive on the server and only the arrows were switched off.</p>
+        <dl class="facts">
+          <dt>Pattern</dt><dd>every product on this list is one people compose in daily</dd>
+          <dt>Substitute</dt><dd>Time Machine, form-recovery extensions, clipboard managers — history bolted on from outside the app</dd>
+        </dl>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<footer>
+  <h2>Method, and what to distrust</h2>
+  <p>Sixteen products drawn from the 150-odd examined in the 29 August outing, selected on one test: does the interface do something no one else in the set does? Products with a competent but conventional list-and-restore panel — Notion, Evernote, Dropbox Paper, Airtable, Standard Notes, JetBrains, Lightroom, Canva — are absent for that reason, not because they scored badly.</p>
+  <p>Panels reproduce layout, control wording and colour semantics from primary sources; they do not reproduce pixel metrics, real typefaces or exact spacing, and no screenshot was captured. Three panels carry a red note where a source could not confirm a detail. The Linear panel is the weakest — its wording is documented verbatim, its layout is not documented anywhere public, and the margin placement shown is an inference from one line about narrow windows.</p>
+  <div class="srcs">
+    <a href="https://elpa.gnu.org/packages/undo-tree.html">GNU ELPA · undo-tree</a><br>
+    <a href="https://community.openai.com/t/chatgpt-web-update-removed-message-version-arrows-cannot-access-edited-message-history/1374666">OpenAI community · version arrows removed</a><br>
+    <a href="https://code.claude.com/docs/en/checkpointing">Claude Code docs · Checkpointing</a><br>
+    <a href="https://github.com/ether/etherpad-lite/blob/develop/src/static/css/timeslider.css">Etherpad · timeslider.css &amp; en.json</a><br>
+    <a href="https://features.jsomers.net/how-i-reverse-engineered-google-docs/">Somers · How I reverse-engineered Google Docs</a><br>
+    <a href="https://draftback.com/">Draftback</a><br>
+    <a href="https://www.literatureandlatte.com/blog/how-to-manage-compare-and-restore-snapshots-in-your-scrivener-projects">Literature &amp; Latte · Snapshots</a><br>
+    <a href="https://help.figma.com/hc/en-us/articles/360038006754-View-a-file-s-version-history">Figma Help · version history</a><br>
+    <a href="https://help.figma.com/hc/en-us/articles/15023193382935-Compare-changes-in-Dev-Mode">Figma Help · Compare changes in Dev Mode</a><br>
+    <a href="https://github.com/anyproto/anytype-ts/blob/main/src/scss/page/main/history.scss">Anytype · history.scss &amp; history/right.tsx</a><br>
+    <a href="https://linear.app/changelog/2026-07-23-agent-assisted-editing">Linear changelog · text attribution</a><br>
+    <a href="https://linear.app/docs/documents">Linear docs · Documents</a><br>
+    <a href="https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/localHistory/browser/localHistoryCommands.ts">VS Code · localHistoryCommands.ts</a><br>
+    <a href="https://code.visualstudio.com/updates/v1_66">VS Code 1.66 release notes</a><br>
+    <a href="https://www.mediawiki.org/wiki/Manual:Page_history">MediaWiki · Page history</a><br>
+    <a href="https://support.apple.com/guide/mac-help/restore-items-mchlp1236/mac">Apple · Versions and restore</a>
+  </div>
+</footer>
+</div>
+
+<script>
+(function(){
+  var drafts = [
+    {t:"09:41:03", l:"v1", h:'Every editor promises undo.'},
+    {t:"10:58:22", l:"v2", h:'Every editor promises undo. <span class="ins">Almost none of them promise it will still be there tomorrow.</span>'},
+    {t:"11:34:10", l:"v3", h:'Every editor promises undo. Almost none <span class="del">of them</span> promise it <span class="ins">survives closing the window</span><span class="del">will still be there tomorrow</span>.'},
+    {t:"13:07:45", l:"v4", h:'Every editor promises undo. Almost none promise it survives closing the window <span class="ins">— or that you can see what you are about to lose.</span>'},
+    {t:"14:22:07", l:"v5", h:'Every editor promises undo. Almost none promise it survives closing the window, and fewer still will show you the thing you are about to overwrite.'}
+  ];
+  var txt=document.getElementById('scrubText'),
+      rng=document.getElementById('scrubRange'),
+      lab=document.getElementById('scrubLabel'),
+      tim=document.getElementById('scrubTime');
+  function render(){
+    var d=drafts[+rng.value];
+    txt.innerHTML=d.h;
+    lab.innerHTML=d.l+' · <b>'+(+rng.value===drafts.length-1?'current':'restorable')+'</b>';
+    tim.textContent=d.t;
+  }
+  rng.addEventListener('input',render); render();
+
+  function pt(x,y,r,f,o){var c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx',x);c.setAttribute('cy',y);c.setAttribute('r',r);c.setAttribute('fill',f);
+    if(o)c.setAttribute('opacity',o);return c;}
+  var seed=7; function rnd(){seed=(seed*1103515245+12345)&0x7fffffff;return seed/0x7fffffff;}
+
+  var time=document.getElementById('dbTime');
+  if(time){
+    var pathD='M0 52', prev=52;
+    for(var i=0;i<=80;i++){
+      var burst = (i>12&&i<26)||(i>44&&i<58)? 1:0.28;
+      var v = 52 - (6 + rnd()*40*burst);
+      prev = prev*0.45 + v*0.55;
+      pathD += ' L'+(i*5)+' '+prev.toFixed(1);
+    }
+    pathD += ' L400 52 Z';
+    var p=document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d',pathD); p.setAttribute('fill','#2b5ea8'); p.setAttribute('opacity','.18');
+    var p2=p.cloneNode(); p2.setAttribute('fill','none'); p2.setAttribute('stroke','#2b5ea8');
+    p2.setAttribute('stroke-width','1.2'); p2.setAttribute('opacity','.85');
+    time.appendChild(p); time.appendChild(p2);
+    var mk=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    mk.setAttribute('x','172');mk.setAttribute('y','0');mk.setAttribute('width','1.5');
+    mk.setAttribute('height','52');mk.setAttribute('fill','#c0392b');time.appendChild(mk);
+  }
+  var map=document.getElementById('dbMap');
+  if(map){
+    for(var j=0;j<210;j++){
+      var x=rnd()*396+2, drift=(x/400)*66+6, jitter=(rnd()-0.5)*26;
+      var y=Math.max(3,Math.min(85, drift+jitter));
+      if(rnd()>0.82) y = 14 + rnd()*16;
+      map.appendChild(pt(x.toFixed(1),y.toFixed(1),1.5,'#2b5ea8',0.5));
+    }
+    var mk2=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    mk2.setAttribute('x','172');mk2.setAttribute('y','0');mk2.setAttribute('width','1.5');
+    mk2.setAttribute('height','88');mk2.setAttribute('fill','#c0392b');map.appendChild(mk2);
+  }
+})();
+</script>
+
+</body></html>
