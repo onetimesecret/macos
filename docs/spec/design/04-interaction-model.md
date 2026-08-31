@@ -19,9 +19,11 @@ rounds so it reads self-contained:
   the clock learned to pause, dead pages got the ledger, and the page
   learned to read markdown without rewriting it.
 
-Sources: `docs/Airlock Prototype/Airlock Spec.dc.html` (rev C, authoritative
+Sources: `docs/archive/airlock-prototype/Airlock Spec.dc.html` (rev C,
+authoritative
 for conflicts), the design rounds v7–v10 in the same folder, and the
-working prototype `docs/Airlock Prototype/Airlock Prototype.dc.html`.
+working prototype
+`docs/archive/airlock-prototype/Airlock Prototype.dc.html`.
 Where this document contradicts rev A or rev B, this document governs.
 The product frame is unchanged: a chamber things pass through, never a
 place they live.

@@ -62,4 +62,4 @@ CI also runs cargo-deny (license/advisory) — new dependencies need a reason an
 
 - Key-window and stance handling is deliberate and fragile; test summon/rest/Esc by hand after touching `BackdropWindowController.swift`.
 - Keychain prompts are user-facing: key access happens on use (ADR-0004), not at launch.
-- Packaging/signing/TestFlight: `docs/from-here-to-testflight.md`; ADRs live in `docs/`.
+- Packaging/signing/TestFlight: `docs/plans/from-here-to-testflight.md`; ADRs live in `docs/`.

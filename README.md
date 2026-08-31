@@ -164,7 +164,8 @@ TCC grants off the id, so the id outlives the names painted over it.
 small chamber between two environments that things pass through but
 never live in, which collides with at least one existing security
 vendor (open question №8). The old name survives only in the
-design-history documents under `docs/Airlock Prototype/`. The final
+design-history documents under `docs/archive/airlock-prototype/`. The
+final
 name still needs a shortlist and a trademark pass before any public
 artifact.
 

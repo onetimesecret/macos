@@ -51,7 +51,7 @@ individual features, written against it, live under
 ## Design rounds and prototype
 
 The interaction model's revisions live as rendered documents in
-[`docs/Airlock Prototype/`](../../Airlock%20Prototype/):
+[`docs/archive/airlock-prototype/`](../../archive/airlock-prototype/):
 
 - `Airlock Spec.dc.html` — **rev C**, the authoritative interaction
   model; doc 04 is its markdown consolidation (including the rev B
@@ -71,7 +71,8 @@ environments that things pass through but never live in, which is the
 product in one image — because that name collides with at least one
 existing security vendor (Airlock Digital) and would not survive to
 release without a trademark check. The old name remains only in the
-design-history documents under [`docs/Airlock Prototype/`](../../Airlock%20Prototype/).
+design-history documents under
+[`docs/archive/airlock-prototype/`](../../archive/airlock-prototype/).
 Alternatives considered: Layover, Vestibule, Foyer, Waypoint, Holdover.
 The name matters less than the metaphor; every candidate is a word for
 *a place you pass through*. (Rev B retired the earlier "SleeperCell"

@@ -746,7 +746,7 @@ pub unsafe extern "C" fn companion_sheet_seal_text(
 /// Drop-to-seal: the core reads the **drag pasteboard** itself
 /// (`NSPasteboardNameDrag` — the board an in-flight drag session's
 /// content rides on) and seals it onto the page. This is the
-/// boundary-lawful drag route (docs/hardware-verification.md): dropped
+/// boundary-lawful drag route (docs/qa/hardware-verification.md): dropped
 /// bytes never transit the shell; the drop gesture is the consent, and
 /// the shell only names the page. Call it from the drop handler while
 /// the drag session's data is still on the board. Returns chip JSON as

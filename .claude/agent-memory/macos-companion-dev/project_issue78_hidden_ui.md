@@ -26,7 +26,7 @@ which is which is not decided yet.
   even though the bundled keymap no longer binds it. That is
   deliberate, so a user's own keymap can reach the ledger. See
   [[keymap-76-77]].
-- `docs/hardware-verification.md` carries a suspension note at the top:
+- `docs/qa/hardware-verification.md` carries a suspension note at the top:
   its ledger checks and its cmd-0 check cannot be run as written while
   this stands. Lift the note in the same change that restores the entry
   points.

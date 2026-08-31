@@ -1288,7 +1288,7 @@ mod tests {
         assert!(lines.lock().unwrap().is_empty());
     }
 
-    /// Hardware verification only (docs/hardware-verification.md §C):
+    /// Hardware verification only (docs/qa/hardware-verification.md §C):
     /// run by hand on a signed build with
     /// `cargo test -p companion-credentials -- --ignored --nocapture`.
     ///
@@ -1300,7 +1300,7 @@ mod tests {
     /// degradation instead of failing.
     #[cfg(target_os = "macos")]
     #[test]
-    #[ignore = "touches the real keychain; run by hand per docs/hardware-verification.md"]
+    #[ignore = "touches the real keychain; run by hand per docs/qa/hardware-verification.md"]
     fn data_protection_items_are_invisible_to_the_login_keychain() {
         let service = "com.onetimesecret.companion.test.dpk";
         let account = "hardware-verification";

@@ -82,7 +82,7 @@ the seam.
   (< 25 MB idle, near-zero idle CPU) is a review bar, not a wish. 22 MB
   at 0 cells is the baseline to regress against.
 - VoiceOver operability awaits the hardware runbook
-  (docs/hardware-verification.md §B); its failure modes are ADR-0002
+  (docs/qa/hardware-verification.md §B); its failure modes are ADR-0002
   eject triggers. The conceal path (↗ link / ↗ page) and the Settings window
   are the remaining slices.
 

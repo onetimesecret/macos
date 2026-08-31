@@ -5,7 +5,7 @@ import CompanionKit
 /// These decode the core's non-secret JSON and check the rung mapping —
 /// no live core needed, so they run wherever the package builds.
 /// Behaviour that needs the FFI + VoiceOver is exercised in the
-/// on-device hardware sessions (docs/hardware-verification.md).
+/// on-device hardware sessions (docs/qa/hardware-verification.md).
 final class CompanionClientTests: XCTestCase {
     func testTabSummaryDecoding() throws {
         let json = """

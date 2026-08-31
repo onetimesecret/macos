@@ -51,7 +51,7 @@ impl SystemPasteboard {
     /// Binds the drag pasteboard (`NSPasteboardNameDrag`) — the board an
     /// in-flight drag session's content rides on. Drop-to-seal reads it
     /// core-side, so dropped bytes never transit the shell (the drag
-    /// boundary decision, docs/hardware-verification.md).
+    /// boundary decision, docs/qa/hardware-verification.md).
     #[must_use]
     pub fn drag() -> Self {
         Self {

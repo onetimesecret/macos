@@ -5,7 +5,7 @@ import XCTest
 /// What the rail says and where a click on it lands (issue #79).
 ///
 /// A rail is a drawing, and drawings are hardware verification's
-/// business (docs/hardware-verification.md). What is here is everything
+/// business (docs/qa/hardware-verification.md). What is here is everything
 /// that was deliberately kept out of the drawing: the target a tap
 /// resolves to, the day the selected mark sits on, the words in each
 /// tooltip and the footer's count are all pure functions, in the idiom
