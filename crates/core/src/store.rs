@@ -3277,6 +3277,59 @@ mod tests {
     }
 
     #[test]
+    fn a_delete_at_the_end_of_the_body_keeps_the_names_and_the_summaries() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "top\n".into()
+            }]
+        ));
+        // A paste under it, three lines under one name (ADR-0013).
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 4,
+                text: "one\ntwo\nthree".into()
+            }]
+        ));
+        // Past the ceremony the summaries are the page's whole memory
+        // of itself: nothing else can say when either block appeared.
+        store.cycle_rung(slot(&store, id)).unwrap();
+        let before = store.sheet(id).unwrap().blocks_meta();
+        assert_eq!(before.len(), 2);
+        assert!(before.iter().all(|meta| meta.created_s.is_some()));
+
+        // Select the paste's last line and delete it. The body ends on
+        // a newline now, which changes where the last block ends and
+        // nothing else: an edit at the foot of the page is not grounds
+        // for renaming the page.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 12,
+                len_u16: 5
+            }]
+        ));
+        let after = store.sheet(id).unwrap().blocks_meta();
+        assert_eq!(after.len(), 3, "the finished sentence opened a block");
+        assert_eq!(
+            after[0].id, before[0].id,
+            "the untouched block is untouched"
+        );
+        assert_eq!(after[1].id, before[1].id, "and the paste keeps its name");
+        assert_eq!(after[0].created_s, before[0].created_s);
+        assert_eq!(
+            after[1].created_s, before[1].created_s,
+            "a re-minted block would have no created stamp at all, its \
+             frozen summary being the only evidence left"
+        );
+        assert_eq!(after[1].paragraphs, 2);
+    }
+
+    #[test]
     fn compaction_moves_no_clock_and_arms_no_timer() {
         let (mut store, _) = store();
         let id = store.new_tab().unwrap().1;

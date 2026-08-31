@@ -4795,6 +4795,78 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// The launch sequence in the order the shell actually runs it
+    /// (`PageModel`: the content file, then the ledger file). The
+    /// content restore entombs every death that happened while the app
+    /// was closed, so by the time the ledger file arrives the store is
+    /// already holding a record the file has never heard of. A restore
+    /// that replaced the deque wholesale threw that record away, and an
+    /// overnight expiry — the one death class the user never witnesses
+    /// — went missing from the audit trail for good.
+    #[test]
+    fn a_death_while_away_survives_the_ledger_restore_that_follows_it() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        let dir = scratch_dir();
+        let state_path = dir.join("state.sealed");
+        let ledger_path = dir.join("ledger.sealed");
+        let c_state = cstring(state_path.to_str().unwrap());
+        let c_ledger = cstring(ledger_path.to_str().unwrap());
+        unsafe {
+            let first = handle_with(Arc::clone(&credentials));
+            let (tab, sheet) = new_page(first);
+            assert!(companion_sheet_sync_document(
+                first,
+                sheet,
+                cstring(r##"[{"ink": "# perishable\n"}]"##).as_ptr()
+            ));
+            assert!(companion_tab_set_rung(first, tab, 0)); // the 1h rung
+            // The evening's ledger file knows the page was created and
+            // nothing else; the death is still a day away.
+            assert!(companion_ledger_save(first, c_ledger.as_ptr()));
+            let evening = take_json(companion_ledger_json(first));
+            assert!(evening.contains("\"created\""), "{evening}");
+            assert!(!evening.contains("\"expired\""), "{evening}");
+            let sealed_wall_ms = wall_now_ms().unwrap() - 24 * 60 * 60 * 1_000;
+            let snapshot = {
+                let guard = (*first).inner.lock().unwrap();
+                guard.store.snapshot(sealed_wall_ms)
+            };
+            let key = persist::ensure_state_key(&*credentials, &state_path).unwrap();
+            let sealed = persist::seal_state(&key, &snapshot, sealed_wall_ms).unwrap();
+            assert!(persist::write_private(&state_path, &sealed));
+            companion_free(first);
+
+            let second = handle_with(Arc::clone(&credentials));
+            assert!(companion_persist_restore(second, c_state.as_ptr()));
+            assert!(companion_ledger_restore(second, c_ledger.as_ptr()));
+            let morning = take_json(companion_ledger_json(second));
+            assert!(
+                morning.contains("\"expired\""),
+                "the ledger file overwrote the death the restore had just recorded: {morning}"
+            );
+            assert!(
+                morning.contains("\"created\""),
+                "the merge lost the file's own history: {morning}"
+            );
+            // And the save that follows carries the death to disk,
+            // which is the whole point of it reaching the deque.
+            assert!(companion_ledger_save(second, c_ledger.as_ptr()));
+            companion_free(second);
+
+            let third = handle_with(Arc::clone(&credentials));
+            assert!(companion_ledger_restore(third, c_ledger.as_ptr()));
+            assert_eq!(take_json(companion_ledger_json(third)), morning);
+            // Reading the same file twice does not double the trail:
+            // the merge keeps what it already holds rather than
+            // appending a second copy of every record in it.
+            assert!(companion_ledger_restore(third, c_ledger.as_ptr()));
+            assert_eq!(take_json(companion_ledger_json(third)), morning);
+            companion_free(third);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// The restore that cannot open a file must never be the thing that
     /// destroys it. This is issue #51's shape rather than its exact
     /// mechanism: "fail closed" had been implemented as "destroy the

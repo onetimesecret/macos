@@ -73,7 +73,7 @@
 //! record list. Those still take a new magic, and a new magic still
 //! refuses every existing file.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
 use zeroize::Zeroizing;
@@ -136,6 +136,18 @@ const MAX_SPAN_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 /// second while the wall reading truncates, so an honest stamp can sit
 /// one second ahead of the clock that judges it.
 const STAMP_SLACK_S: i64 = 2;
+
+/// A persisted Unix-second stamp, clamped into the sane range on the
+/// way in: positive, and no later than the wall clock plus
+/// [`STAMP_SLACK_S`]. A stamp is trusted arithmetic downstream, so a
+/// hand-edited file must not choose its value freely.
+fn clamp_stamp(claimed: u64, wall_ms: u64) -> i64 {
+    let ceiling = i64::try_from(wall_ms / 1000)
+        .unwrap_or(i64::MAX)
+        .saturating_add(STAMP_SLACK_S)
+        .max(1);
+    i64::try_from(claimed).unwrap_or(i64::MAX).clamp(1, ceiling)
+}
 
 /// Why a snapshot could not be restored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -307,12 +319,23 @@ impl<C: Clock> SheetStore<C> {
         buffer
     }
 
-    /// Replace this store's ledger with a ledger snapshot's, dropping
+    /// Merge a ledger snapshot's records into this store's, dropping
     /// records that have aged out of the retention window by `wall_ms`
     /// (Unix epoch milliseconds now). Sheets are untouched. On error the
     /// store is untouched.
     ///
-    /// Returns the number of records kept.
+    /// **Merge, not replace, because the store may already know
+    /// something the file cannot.** The shell's launch order is the
+    /// content file first and the ledger file second, and the content
+    /// restore entombs every death that fell due while the app was
+    /// closed ([`SheetStore::expire_due`]). By the time this call
+    /// arrives the deque can already be holding records written minutes
+    /// ago that no file has ever seen — an overnight expiry, which is
+    /// the one death the user never witnesses and therefore the one the
+    /// trail owes them most. Replacing the deque dropped it before it
+    /// could reach a reader or the next save.
+    ///
+    /// Returns the number of records the ledger holds afterwards.
     ///
     /// # Errors
     ///
@@ -337,20 +360,56 @@ impl<C: Clock> SheetStore<C> {
             });
         }
         let record_count = count(&mut reader)?;
-        let mut ledger = VecDeque::new();
+        let mut loaded = Vec::new();
         for _ in 0..record_count {
             let mut record = reader.framed().ok_or(RestoreError::Malformed)?;
-            ledger.push_back(read_record(&mut record)?);
+            loaded.push(read_record(&mut record)?);
         }
         if !reader.done() {
             return Err(RestoreError::Malformed);
         }
+        // Nothing above this line has touched the store, so a refusal
+        // still leaves it exactly as it was.
+        //
+        // The order needs no sort. The ledger runs newest first (an
+        // append is a `push_front`), what is already in hand was
+        // recorded by this session, and the file's records were
+        // recorded by earlier ones, so laying the file's list after the
+        // live one is precisely what a `push_front` per record would
+        // have produced. Sorting on the stamp instead would rearrange a
+        // file written by a session whose wall clock stepped, which is
+        // not this call's business to correct.
+        let mut merged: Vec<LedgerRecord> = self.ledger.drain(..).collect();
+        // A record already in hand is not taken from the file a second
+        // time, so reading one file twice — or reading a file that was
+        // saved after this same merge — reads back as one trail rather
+        // than two. Records are indexed by the two fields any twin must
+        // agree on, so the equality test only ever looks at the handful
+        // that could possibly be the same event; the test itself is the
+        // whole record, so a field added later joins it for free. The
+        // file is never deduplicated against itself: two identical
+        // records that a session genuinely wrote down are two things
+        // that happened, and this is not the place to decide otherwise.
+        let mut held: HashMap<(u64, ItemId), Vec<usize>> = HashMap::new();
+        for (index, record) in merged.iter().enumerate() {
+            held.entry((record.at_wall_ms, record.item))
+                .or_default()
+                .push(index);
+        }
+        for record in loaded {
+            let twins = held.get(&(record.at_wall_ms, record.item));
+            if twins.is_some_and(|twins| twins.iter().any(|&index| merged[index] == record)) {
+                continue;
+            }
+            merged.push(record);
+        }
+        let mut ledger: VecDeque<LedgerRecord> = merged.into();
         // Retention runs on load, where the ledger is already in hand: a
         // record sitting in a closed file is inert until someone reads it.
         evict_expired(&mut ledger, wall_ms);
-        let restored = ledger.len();
+        let kept = ledger.len();
         self.ledger = ledger;
-        Ok(restored)
+        Ok(kept)
     }
 }
 
@@ -486,24 +545,33 @@ fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut d
     out.raw(sheet.uuid.as_bytes());
     out.u64(sheet.created_wall_ms);
     match sheet.clock {
-        SheetClock::Running { deadline } => {
-            out.u8(0);
-            out.u64(ms(deadline.saturating_duration_since(now)));
-        }
+        // Only a hold still standing at `now` is written as one. Two
+        // tags, one payload: the tier is what decides whether the next
+        // pause press tops the hold up or releases it, so it has to
+        // survive a relaunch. A build that predates the release refuses
+        // tag 2 outright rather than misreading it as a first hold.
         SheetClock::Held {
             until,
             frozen_remaining,
             topped_up,
             ..
-        } => {
-            // Two tags, one payload: the tier is what decides whether
-            // the next pause press tops the hold up or releases it, so
-            // it has to survive a relaunch. A build that predates the
-            // release refuses tag 2 outright rather than misreading it
-            // as a first hold.
+        } if now < until => {
             out.u8(if topped_up { 2 } else { 1 });
             out.u64(ms(until.saturating_duration_since(now)));
             out.u64(ms(frozen_remaining));
+        }
+        // Everything else is a countdown running down, and
+        // [`Sheet::remaining`] is the whole of what it has left. A hold
+        // that lapsed before this snapshot was taken belongs here and
+        // not above: the life that drained since it lapsed is spent,
+        // and writing the frozen span down verbatim would hand every
+        // hour of it back at the next launch. `store::normalize` makes
+        // the same conversion on the live clock, but only from the
+        // paths that hold `&mut self`, and a snapshot is a `&self` read
+        // that has to be honest without it.
+        _ => {
+            out.u8(0);
+            out.u64(ms(sheet.remaining(now)));
         }
     }
     // total_held(now) folds a live hold's span in; restore restarts the
@@ -526,6 +594,24 @@ fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut d
     // slot was reserved in stage 4, so a compacted file differs from an
     // uncompacted one only by this section's contents.
     out.bytes(meta);
+    // The page's own half of graduation, trailing every field above it
+    // because that is what a trailing field costs here (issue #54): the
+    // log frontier the last ceremony captured, which no block can carry
+    // because the change it stamps may have been a deletion, and a
+    // deletion leaves no character behind to vote for it. A reader that
+    // has never heard of this field stops at the one before it and
+    // reaches the next record by the page record's length, and a file
+    // written before the field existed simply ends where the reader
+    // learns to expect nothing.
+    match sheet.blocks.compaction_frontier() {
+        None => out.u8(0),
+        Some(frontier_s) => {
+            out.u8(1);
+            // Positive by construction, the frontier being a committed
+            // timestamp the derivation already refused to read at zero.
+            out.u64(frontier_s.max(0) as u64);
+        }
+    }
 }
 
 /// One chip record, framed by its caller. The face (excerpt, size
@@ -918,6 +1004,19 @@ fn read_page(
     // believed only against the document they claim to describe.
     let blob = reader.bytes().ok_or(Malformed)?;
     let metadata = reader.bytes().ok_or(Malformed)?;
+    // The page-level modified floor, a trailing field on this record
+    // (issue #54). A file written before it existed ends here, and its
+    // absence is not damage: the page comes back resting on its block
+    // summaries alone, exactly as it did before the field was written.
+    let frontier_s = if reader.done() {
+        None
+    } else {
+        match reader.u8().ok_or(Malformed)? {
+            0 => None,
+            1 => Some(clamp_stamp(reader.u64().ok_or(Malformed)?, wall_ms)),
+            _ => return Err(Malformed),
+        }
+    };
 
     // The document is reborn whole, under a fresh peer identity that
     // never reaches any surface: the counters the store hands out are
@@ -965,6 +1064,10 @@ fn read_page(
     let mut blocks = BlockIndex::for_document(&document);
     blocks.regroup(&document, &spans);
     blocks.adopt(&document, frozen);
+    // The page-level floor rides back in beside the summaries: it is
+    // the stamp of a change no surviving character can prove, so
+    // nothing else in this file could reconstruct it.
+    blocks.note_compaction(frontier_s);
 
     let id = SheetId::from_raw(*next_sheet_id);
     *next_sheet_id += 1;
@@ -1014,11 +1117,7 @@ fn read_materialized(
     if bytes.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
-    let ceiling = i64::try_from(wall_ms / 1000)
-        .unwrap_or(i64::MAX)
-        .saturating_add(STAMP_SLACK_S)
-        .max(1);
-    let clamp = |claimed: u64| i64::try_from(claimed).unwrap_or(i64::MAX).clamp(1, ceiling);
+    let clamp = |claimed: u64| clamp_stamp(claimed, wall_ms);
     let mut reader = Reader { buf: bytes, pos: 0 };
     let record_count = count(&mut reader)?;
     let mut records = Vec::new();
@@ -1278,6 +1377,90 @@ mod tests {
     /// the compaction ceremony's discard claims are audited with.
     fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         haystack.windows(needle.len()).any(|w| w == needle)
+    }
+
+    /// A page whose newest change was a deletion, past the ceremony:
+    /// two lines written at 10:00, the second cut at 11:00, and the
+    /// history discarded. The stamps are injected rather than raced off
+    /// the wall clock, because the whole question is which of two hours
+    /// the page comes back holding.
+    fn page_cut_after_it_was_written() -> (SheetStore<ManualClock>, ManualClock, SheetId) {
+        let (mut store, clock) = store();
+        let id = store.new_tab().unwrap().1;
+        let sheet = store.tabs[0].page.as_mut().expect("the tab holds a page");
+        sheet.document.insert(0, "hello\n").unwrap();
+        sheet.blocks.note_insert(0, "hello\n");
+        sheet.document.insert(6, "world").unwrap();
+        sheet.blocks.note_insert(6, "world");
+        sheet.document.commit_at(36_000);
+        sheet.document.delete(6, 5).unwrap();
+        sheet.blocks.note_delete(6, 5);
+        sheet.document.commit_at(39_600);
+        sheet.rebuild_segments();
+        sheet.settle_blocks();
+        sheet.compact();
+        assert_eq!(sheet.modified_s(), Some(39_600));
+        (store, clock, id)
+    }
+
+    #[test]
+    fn a_deletions_stamp_is_the_pages_floor_across_a_restore() {
+        let (store, clock, _) = page_cut_after_it_was_written();
+        let wall = real_wall_ms();
+        let snapshot = store.snapshot(wall);
+
+        // The ceremony destroyed the ops that proved the 11:00 cut and
+        // no surviving character can vote for it, so the file is the
+        // only place that stamp can live between launches.
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
+        let sheet = revived.sheets().next().unwrap();
+        assert_eq!(
+            sheet.modified_s(),
+            Some(39_600),
+            "the page's newest change survived the relaunch"
+        );
+
+        // And it stayed the page's: no paragraph was made to claim a
+        // change that never touched it (ADR-0013).
+        let metas = sheet.blocks_meta();
+        assert_eq!(metas[0].modified_s, Some(36_000));
+        assert_eq!(metas[1].modified_s, None);
+    }
+
+    #[test]
+    fn a_file_written_before_the_page_floor_existed_still_restores() {
+        let (store, clock, id) = page_cut_after_it_was_written();
+        let wall = real_wall_ms();
+        let snapshot = store.snapshot(wall);
+        let honest = store.sheet(id).unwrap().blocks_meta();
+
+        // The trailing field cut away: what an installed build wrote,
+        // and what this one now reads as absent. The file must open
+        // rather than refuse — refusing costs the reader the page,
+        // which is a far worse answer than costing them an hour on a
+        // timestamp.
+        let older = without_the_page_floor(&snapshot, floor_len(store.sheet(id).unwrap()));
+        let mut revived = SheetStore::new(clock.clone());
+        assert_eq!(revived.restore(&older, wall).unwrap(), 1);
+        let sheet = revived.sheets().next().unwrap();
+        assert_eq!(sheet.segments(), [Segment::Ink("hello\n".into())]);
+        let metas = sheet.blocks_meta();
+        assert_eq!(
+            metas[0], honest[0],
+            "the frozen block's identity and stamps are the file's, floor or no floor"
+        );
+        // The trailing empty paragraph froze nothing, so it has no
+        // record to be adopted from and comes back newly named, exactly
+        // as it does from a file this build wrote.
+        assert_eq!(metas.len(), honest.len());
+        assert_eq!(metas[1].created_s, None);
+        assert_eq!(
+            sheet.modified_s(),
+            Some(36_000),
+            "with no floor in the file the page rests on its summaries, \
+             which is exactly what the build that wrote it did"
+        );
     }
 
     /// Unix epoch milliseconds now, for tests over materialized stamps:
@@ -1678,6 +1861,40 @@ mod tests {
         );
     }
 
+    /// A ledger file arrives second at launch, after the content
+    /// restore has already entombed the deaths that fell due while the
+    /// app was closed. Those records are in the deque and in no file,
+    /// so the load has to join them rather than write over them.
+    #[test]
+    fn a_ledger_restore_keeps_the_records_the_store_already_holds() {
+        let (original, clock, ..) = populated();
+        let file = original.ledger_snapshot();
+        let earlier: Vec<LedgerRecord> = original.ledger().cloned().collect();
+
+        // A death recorded before the file lands, which is the shape of
+        // what `expire_due` leaves behind on the way in.
+        let mut revived = SheetStore::new(clock.clone());
+        let doomed = revived.new_tab().unwrap().1;
+        assert!(revived.sync_document(doomed, vec![Segment::Ink("overnight".into())]));
+        assert!(revived.close_tab(slot(&revived, doomed)));
+        let overnight: Vec<LedgerRecord> = revived.ledger().cloned().collect();
+        assert_eq!(overnight.len(), 2, "the page was created, then it died");
+
+        let kept = revived.restore_ledger(&file, 0).unwrap();
+        assert_eq!(kept, overnight.len() + earlier.len());
+        let records: Vec<LedgerRecord> = revived.ledger().cloned().collect();
+        assert_eq!(
+            records,
+            [overnight.as_slice(), earlier.as_slice()].concat(),
+            "the trail reads newest first, with the file's own order kept"
+        );
+
+        // The same file twice is the same trail: nothing already in
+        // hand is taken from it a second time.
+        assert_eq!(revived.restore_ledger(&file, 0).unwrap(), kept);
+        assert_eq!(revived.ledger().cloned().collect::<Vec<_>>(), records);
+    }
+
     #[test]
     fn records_past_the_retention_window_drop_on_load() {
         let (original, clock, ..) = populated();
@@ -1857,21 +2074,49 @@ mod tests {
 
     /// The same, for the first materialized record, which sits four
     /// lengths deep: its own, the metadata slot's, the page record's
-    /// and the tab record's. The slot is the page record's last field,
-    /// so `meta_len` locates it from the end.
-    fn with_materialized_tail(snapshot: &[u8], meta_len: usize, extra: &[u8]) -> Vec<u8> {
+    /// and the tab record's. The slot is located from the end of the
+    /// page record, stepping back over the page-level floor field that
+    /// trails it and then over `meta_len`, and the floor is put back
+    /// where it was.
+    fn with_materialized_tail(
+        snapshot: &[u8],
+        meta_len: usize,
+        floor_len: usize,
+        extra: &[u8],
+    ) -> Vec<u8> {
         let tab = first_tab(snapshot);
         let page_len = le_u64(&tab[UNNAMED_TAB_PREFIX..]);
         let page_at = UNNAMED_TAB_PREFIX + 8;
         let page = &tab[page_at..page_at + page_len];
-        let slot_at = page.len() - meta_len;
+        let slot_at = page.len() - floor_len - meta_len;
         // The slot's own preamble is a record count, then the records.
-        let slot = with_trailing_field(&page[slot_at..], 8, extra);
+        let slot = with_trailing_field(&page[slot_at..page.len() - floor_len], 8, extra);
         let mut rebuilt_page = page[..slot_at - 8].to_vec();
         rebuilt_page.extend_from_slice(&frame(&slot));
+        rebuilt_page.extend_from_slice(&page[page.len() - floor_len..]);
         let mut rebuilt_tab = tab[..UNNAMED_TAB_PREFIX].to_vec();
         rebuilt_tab.extend_from_slice(&frame(&rebuilt_page));
         with_first_tab(snapshot, &rebuilt_tab)
+    }
+
+    /// The same page record with its trailing floor field cut away:
+    /// the file a build that never wrote that field would have left
+    /// behind, which this build must still open.
+    fn without_the_page_floor(snapshot: &[u8], floor_len: usize) -> Vec<u8> {
+        let tab = first_tab(snapshot);
+        let page_len = le_u64(&tab[UNNAMED_TAB_PREFIX..]);
+        let page_at = UNNAMED_TAB_PREFIX + 8;
+        let page = &tab[page_at..page_at + page_len];
+        let mut rebuilt_tab = tab[..UNNAMED_TAB_PREFIX].to_vec();
+        rebuilt_tab.extend_from_slice(&frame(&page[..page.len() - floor_len]));
+        with_first_tab(snapshot, &rebuilt_tab)
+    }
+
+    /// How wide the page record's trailing floor field is as the writer
+    /// just wrote it: one tag byte, and eight more behind it when the
+    /// tag says a stamp follows.
+    fn floor_len(sheet: &Sheet) -> usize {
+        1 + usize::from(sheet.blocks.compaction_frontier().is_some()) * 8
     }
 
     /// The fixed span at the front of a tab record for a tab nobody
@@ -2122,7 +2367,12 @@ mod tests {
         let meta_len = encode_materialized(&page.blocks, &page.document).len();
         let wall = real_wall_ms();
         let snapshot = store.snapshot(wall);
-        let extended = with_materialized_tail(&snapshot, meta_len, b"a block field from 2027");
+        let extended = with_materialized_tail(
+            &snapshot,
+            meta_len,
+            floor_len(page),
+            b"a block field from 2027",
+        );
 
         let mut revived = SheetStore::new(clock.clone());
         assert_eq!(revived.restore(&extended, wall).unwrap(), 1);
@@ -2394,6 +2644,52 @@ mod tests {
         let sheet = revived.sheet(id).unwrap();
         assert!(!sheet.is_held(now));
         assert_eq!(sheet.remaining(now), 6 * HOUR);
+    }
+
+    /// A hold that lapsed while the app was still open is life the page
+    /// has already spent, and the snapshot has to say so. Writing the
+    /// held triple verbatim hands the frozen span back whole at the
+    /// next launch: the page reads dead on screen all evening, is saved
+    /// on quit like any other, and comes back in the morning with hours
+    /// of life it finished spending days ago. The writer owes what
+    /// every other reader of the clock already believes, which is
+    /// [`Sheet::remaining`].
+    #[test]
+    fn a_snapshot_of_a_lapsed_hold_keeps_the_life_it_already_drained() {
+        let (mut store, clock) = store();
+        let id = store.new_tab().unwrap().1;
+        clock.advance(2 * HOUR); // 6h left on the 8h rung
+        assert!(store.pause_press(slot(&store, id))); // a 1h hold over 6h
+        clock.advance(4 * HOUR); // the hold lapsed 3h ago, and 3h drained
+        let left = store.sheet(id).unwrap().remaining(store.now());
+        assert_eq!(left, 3 * HOUR, "the live reading is not the thing on trial");
+        let snapshot = store.snapshot(0);
+
+        // No time away at all, so what the page comes back holding is
+        // what the writer wrote down rather than what a gap charged it.
+        let mut revived = SheetStore::new(clock.clone());
+        revived.restore(&snapshot, 0).unwrap();
+        let now = revived.now();
+        let sheet = revived.sheet(id).unwrap();
+        assert!(!sheet.is_held(now), "a hold that lapsed came back live");
+        assert_eq!(sheet.remaining(now), left, "the overhang was handed back");
+
+        // And a page whose frozen life ran out under the lapsed hold
+        // comes back dead, rather than resurrected for a second span.
+        clock.advance(3 * HOUR);
+        assert_eq!(
+            store.sheet(id).unwrap().remaining(store.now()),
+            Duration::ZERO
+        );
+        let snapshot = store.snapshot(0);
+        let mut revived = SheetStore::new(clock.clone());
+        revived.restore(&snapshot, 0).unwrap();
+        assert_eq!(
+            revived.sheet(id).unwrap().remaining(revived.now()),
+            Duration::ZERO
+        );
+        assert_eq!(revived.expire_due(), vec![id]);
+        assert!(revived.holds_no_page());
     }
 
     #[test]
