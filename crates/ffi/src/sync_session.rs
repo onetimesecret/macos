@@ -575,21 +575,43 @@ impl SyncSession {
         now_ms: u64,
         chain: &crate::gop::GopKeyChain,
     ) -> Option<HttpRequest> {
+        self.publish_request_sealed_with(now_ms, chain.epoch(), |plaintext| chain.seal(plaintext))
+    }
+
+    /// [`SyncSession::publish_request`] with the seal handed in rather
+    /// than taken from the chain. The indirection earns its keep in
+    /// the tests: a refusal is the system RNG declining a nonce, which
+    /// no test can coax out of a real chain, and the refusal path is
+    /// precisely the one where a queued edit is easiest to lose.
+    fn publish_request_sealed_with(
+        &mut self,
+        now_ms: u64,
+        epoch: u64,
+        seal: impl Fn(&[u8]) -> Option<Vec<u8>>,
+    ) -> Option<HttpRequest> {
         if !self.publish_due(now_ms) {
             return None;
         }
         let auth = self.auth()?;
         if self.in_flight.is_none() {
+            // The outbox is borrowed, never drained: a refusal is a
+            // "try again later", so the queue must survive it whole.
+            // Draining would not — the iterator is dropped at the
+            // first `None`, and a dropped `Drain` takes the entire
+            // range with it, so one declined nonce would cost every
+            // edit queued behind it.
             let blobs = self
                 .outbox
-                .drain(..)
-                .map(|envelope| chain.seal(&pad::pad(&envelope.encode())))
+                .iter()
+                .map(|envelope| seal(&pad::pad(&envelope.encode())))
                 .collect::<Option<Vec<_>>>()?;
+            // Every seal succeeded; only now does the queue let go.
+            self.outbox.clear();
             self.in_flight = Some(blobs);
         }
         let blobs = self.in_flight.as_ref()?;
         self.last_publish_ms = Some(now_ms);
-        Some(self.api.publish_deltas_request(chain.epoch(), blobs, &auth))
+        Some(self.api.publish_deltas_request(epoch, blobs, &auth))
     }
 
     /// Absorb the publish answer. `Ok` clears the batch; a `401`
@@ -1258,6 +1280,33 @@ mod tests {
             "inside the clock"
         );
         assert!(session.publish_request(2_000, &chain).is_some(), "the tick");
+    }
+
+    #[test]
+    fn a_refused_seal_keeps_the_queue_for_the_next_tick() {
+        let chain = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut session = session("fp-a");
+        let page = ItemId::random();
+        session.queue_ops(page, b"first");
+        session.queue_ops(page, b"second");
+
+        // The RNG declines a nonce. No request goes out — and, the
+        // property that matters, nothing is thrown away: a refusal to
+        // publish is a "later", not a loss.
+        assert!(
+            session
+                .publish_request_sealed_with(0, chain.epoch(), |_| None)
+                .is_none()
+        );
+        assert_eq!(session.outbox.len(), 2, "the queue survives a refusal");
+        assert!(session.in_flight.is_none(), "nothing was staged");
+
+        // The next tick seals cleanly, and both envelopes — the ones
+        // queued before the refusal — reach the wire.
+        let request = session.publish_request(0, &chain).unwrap();
+        let body: Value = serde_json::from_slice(request.body.as_ref().unwrap()).unwrap();
+        assert_eq!(body["blobs"].as_array().unwrap().len(), 2);
+        assert!(session.outbox.is_empty(), "a sealed batch leaves the queue");
     }
 
     #[test]

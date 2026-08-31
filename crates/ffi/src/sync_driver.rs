@@ -1181,6 +1181,16 @@ fn stage_word(step: &PairingStep) -> &'static str {
 }
 
 fn stage_json(flow: &PairingState) -> serde_json::Value {
+    // A ceremony that still owes a post is not done, whatever the step
+    // says. The shell stops polling at `done`, and the poll is the only
+    // thing that drains the queue, so a grant reported done here would
+    // sit in the queue forever and the other device would wait for it
+    // just as long. `confirmed` is the honest word for the interval:
+    // settled on this side, waiting on the other.
+    let stage = match stage_word(&flow.step) {
+        "done" if !flow.outgoing.is_empty() => "confirmed",
+        word => word,
+    };
     let sas = match &flow.step {
         PairingStep::InviterWaitAcceptance {
             settled,
@@ -1195,7 +1205,7 @@ fn stage_json(flow: &PairingState) -> serde_json::Value {
         _ => None,
     };
     serde_json::json!({
-        "stage": stage_word(&flow.step),
+        "stage": stage,
         "sas": sas,
         "reason": reason,
     })
@@ -1395,25 +1405,18 @@ pub(crate) fn pairing_confirm(companion: &mut Companion, matched: bool) -> serde
     stage
 }
 
-/// One mailbox round: drain the queued posts, fetch the tail, advance
-/// the machine, and report the stage. Blocking for the round-trips —
-/// background queue only. The shell polls this while its enrolment
-/// sheet is open.
-pub(crate) fn pairing_poll(handle: &CompanionHandle) -> serde_json::Value {
-    match ensure_access(handle) {
-        Ok(()) => {}
-        Err("unreachable") => return serde_json::json!({ "stage": "waiting" }),
-        Err(reason) => return serde_json::json!({ "stage": "failed", "reason": reason }),
-    }
-    // Drain the outgoing posts, one at a time; a transport failure
-    // leaves the rest queued for the next poll.
+/// Post the queued messages, one at a time, until the queue empties or
+/// the wire declines; a transport failure leaves the rest queued for
+/// the next poll. `Err` carries the stage the round should report
+/// instead of going on.
+fn drain_outgoing(handle: &CompanionHandle) -> Result<(), serde_json::Value> {
     loop {
         let staged = {
             let Ok(guard) = handle.inner.lock() else {
-                return serde_json::json!({ "stage": "failed", "reason": "poisoned" });
+                return Err(serde_json::json!({ "stage": "failed", "reason": "poisoned" }));
             };
             let Some(flow) = guard.sync.pairing.as_ref() else {
-                return serde_json::json!({ "stage": "idle" });
+                return Err(serde_json::json!({ "stage": "idle" }));
             };
             let transport = guard.sync.config.as_ref().map(SyncConfig::transport);
             flow.outgoing.first().cloned().map(|message| {
@@ -1428,8 +1431,10 @@ pub(crate) fn pairing_poll(handle: &CompanionHandle) -> serde_json::Value {
             })
         };
         match staged {
-            None => break,
-            Some(None) => return serde_json::json!({ "stage": "failed", "reason": "signed_out" }),
+            None => return Ok(()),
+            Some(None) => {
+                return Err(serde_json::json!({ "stage": "failed", "reason": "signed_out" }));
+            }
             Some(Some((sent, request, transport))) => match transport.send(request) {
                 Ok(response) if (200..300).contains(&response.status) => {
                     // The head is removed only if it is still the
@@ -1445,9 +1450,24 @@ pub(crate) fn pairing_poll(handle: &CompanionHandle) -> serde_json::Value {
                         flow.outgoing.remove(0);
                     }
                 }
-                _ => break,
+                _ => return Ok(()),
             },
         }
+    }
+}
+
+/// One mailbox round: drain the queued posts, fetch the tail, advance
+/// the machine, and report the stage. Blocking for the round-trips —
+/// background queue only. The shell polls this while its enrolment
+/// sheet is open.
+pub(crate) fn pairing_poll(handle: &CompanionHandle) -> serde_json::Value {
+    match ensure_access(handle) {
+        Ok(()) => {}
+        Err("unreachable") => return serde_json::json!({ "stage": "waiting" }),
+        Err(reason) => return serde_json::json!({ "stage": "failed", "reason": reason }),
+    }
+    if let Err(stage) = drain_outgoing(handle) {
+        return stage;
     }
     // Fetch the tail and advance.
     let staged = {
@@ -1472,6 +1492,13 @@ pub(crate) fn pairing_poll(handle: &CompanionHandle) -> serde_json::Value {
         && let Ok(mut guard) = handle.inner.lock()
     {
         absorb_mailbox(&mut guard, &response);
+    }
+    // Advancing may have queued a post of its own — the grant the
+    // inviter owes the moment the acceptance lands. Drain again so it
+    // goes out in this same round rather than waiting on a next poll
+    // that the reported stage might well talk the shell out of.
+    if let Err(stage) = drain_outgoing(handle) {
+        return stage;
     }
     let Ok(guard) = handle.inner.lock() else {
         return serde_json::json!({ "stage": "failed", "reason": "poisoned" });
@@ -1943,6 +1970,20 @@ mod tests {
         stage_json(companion.sync.pairing.as_ref().unwrap())
     }
 
+    /// The shell's poll loop in miniature: a round posts whatever the
+    /// ceremony has queued, and the shell stops its timer for good
+    /// once the stage reads `done` or `failed`
+    /// (`SyncController.swift`). Tests that reach past the stage word
+    /// and drain `outgoing` by hand cannot see a post stranded behind
+    /// a premature `done`, which is the whole failure this models.
+    fn poll_round(companion: &mut Companion) -> Vec<serde_json::Value> {
+        let stage = stage_of(companion);
+        if stage["stage"] == "done" || stage["stage"] == "failed" {
+            return Vec::new();
+        }
+        take_outgoing(companion)
+    }
+
     #[test]
     fn two_devices_pair_over_the_mailbox_and_the_grant_lands() {
         let creds_a: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
@@ -1979,8 +2020,13 @@ mod tests {
         let posts = take_outgoing(&mut b);
         absorb_mailbox(&mut a, &mailbox_response(&posts, 4));
         pairing_confirm(&mut a, true);
-        assert_eq!(stage_of(&a)["stage"], "done");
+        assert_eq!(
+            stage_of(&a)["stage"],
+            "confirmed",
+            "the grant is queued but unposted; the ceremony is not over"
+        );
         let posts = take_outgoing(&mut a);
+        assert_eq!(stage_of(&a)["stage"], "done", "and once it is out, it is");
         absorb_mailbox(&mut b, &mailbox_response(&posts, 5));
         assert_eq!(stage_of(&b)["stage"], "done");
 
@@ -2014,6 +2060,77 @@ mod tests {
             .unwrap();
         let opened = b.sync.engine.as_ref().unwrap().chain.open(&sealed).unwrap();
         assert_eq!(opened.as_slice(), b"hello");
+    }
+
+    #[test]
+    fn a_confirmation_that_queues_the_grant_does_not_report_done() {
+        let creds_a: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let creds_b: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut a = store_companion(Arc::clone(&creds_a));
+        let mut b = store_companion(Arc::clone(&creds_b));
+        a.sync.engine = Some(attached_engine(&*creds_a));
+        b.sync.engine = Some(attached_engine(&*creds_b));
+        invite_begin(&mut a).unwrap();
+        join_begin(&mut b).unwrap();
+        let posts = poll_round(&mut a);
+        absorb_mailbox(&mut b, &mailbox_response(&posts, 1));
+        let posts = poll_round(&mut b);
+        absorb_mailbox(&mut a, &mailbox_response(&posts, 2));
+        let posts = poll_round(&mut a);
+        absorb_mailbox(&mut b, &mailbox_response(&posts, 3));
+
+        // The joiner's acceptance arrives first, so the inviter's tap
+        // on Match queues the grant in the same breath as it settles
+        // the step.
+        pairing_confirm(&mut b, true);
+        let posts = poll_round(&mut b);
+        absorb_mailbox(&mut a, &mailbox_response(&posts, 4));
+        let stage = pairing_confirm(&mut a, true);
+        assert!(
+            !a.sync.pairing.as_ref().unwrap().outgoing.is_empty(),
+            "the grant is queued"
+        );
+        assert_eq!(
+            stage["stage"], "confirmed",
+            "a queued grant is a post still owed, never a finished ceremony"
+        );
+    }
+
+    #[test]
+    fn the_grant_leaves_the_inviter_when_the_shell_polls_by_the_stage_word() {
+        let creds_a: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let creds_b: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut a = store_companion(Arc::clone(&creds_a));
+        let mut b = store_companion(Arc::clone(&creds_b));
+        a.sync.engine = Some(attached_engine(&*creds_a));
+        b.sync.engine = Some(attached_engine(&*creds_b));
+        invite_begin(&mut a).unwrap();
+        join_begin(&mut b).unwrap();
+
+        // Every post rides a round the stage word had to permit.
+        let posts = poll_round(&mut a);
+        absorb_mailbox(&mut b, &mailbox_response(&posts, 1));
+        let posts = poll_round(&mut b);
+        absorb_mailbox(&mut a, &mailbox_response(&posts, 2));
+        let posts = poll_round(&mut a);
+        absorb_mailbox(&mut b, &mailbox_response(&posts, 3));
+
+        // This time the inviter's human confirms before the acceptance
+        // travels, so it is the acceptance's arrival mid-round — not
+        // the tap — that queues the grant.
+        pairing_confirm(&mut a, true);
+        pairing_confirm(&mut b, true);
+        let posts = poll_round(&mut b);
+        absorb_mailbox(&mut a, &mailbox_response(&posts, 4));
+
+        let posts = poll_round(&mut a);
+        assert!(!posts.is_empty(), "the grant must still get a round");
+        absorb_mailbox(&mut b, &mailbox_response(&posts, 5));
+        assert_eq!(stage_of(&a)["stage"], "done");
+        assert_eq!(stage_of(&b)["stage"], "done");
+        let secret_a = pairing::ensure_channel_secret(&*creds_a, false).unwrap();
+        let secret_b = pairing::ensure_channel_secret(&*creds_b, false).unwrap();
+        assert_eq!(*secret_a, *secret_b, "both devices hold one channel");
     }
 
     #[test]
