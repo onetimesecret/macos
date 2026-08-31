@@ -233,43 +233,43 @@ The runbook above is one session. These are standalone procedures, each
 with its own owner and its own dated results, under
 `docs/qa/verification-procedures/`. Which ADR-0016 lifecycle case each
 one closes, and what the automated tests already cover for that case,
-is indexed in [`qa/recovery-matrix.md`](qa/recovery-matrix.md):
+is indexed in [`recovery-matrix.md`](recovery-matrix.md):
 
-- [`reboot.md`](qa/verification-procedures/reboot.md). Owner: delano.
+- [`reboot.md`](verification-procedures/reboot.md). Owner: delano.
   A real reboot with a live pad; a reboot with the pad emptied first,
   confirming key rotation ran; a reboot with a page held, confirming it
   returns held. ADR-0016 section 10, case 3.
-- [`force-termination.md`](qa/verification-procedures/force-termination.md).
+- [`force-termination.md`](verification-procedures/force-termination.md).
   Owner: delano. A `kill -9` inside the debounce window and a second one
   after a settled write, then the Force Quit dialog and a rebuild over a
   live instance as the same death by other routes. ADR-0016 section 10,
   case 2.
-- [`power-loss.md`](qa/verification-procedures/power-loss.md). Owner:
+- [`power-loss.md`](verification-procedures/power-loss.md). Owner:
   delano. A hard power cut mid session, then the stranded
   `state.sealed.<hex>.tmp` artifacts and the sweep launch runs over
   them. ADR-0016 section 1 and section 10.
-- [`re-signed-bundle.md`](qa/verification-procedures/re-signed-bundle.md).
+- [`re-signed-bundle.md`](verification-procedures/re-signed-bundle.md).
   Owner: delano. Re-signing with a different identity refuses without
   erasing, and the `.debug` bundle id keeps its state directory separate
   from the release one. ADR-0016 section 10, case 4.
-- [`locked-keychain.md`](qa/verification-procedures/locked-keychain.md).
+- [`locked-keychain.md`](verification-procedures/locked-keychain.md).
   Owner: delano. A locked keychain at load, and a denied ACL prompt,
   each refusing with no erase and no overwrite. ADR-0016 section 10,
   case 6. §C above covers the round trip; this covers the refusals.
-- [`clock-step-back.md`](qa/verification-procedures/clock-step-back.md).
+- [`clock-step-back.md`](verification-procedures/clock-step-back.md).
   Owner: delano. The machine clock stepped back a day with a live pad,
   across a relaunch and again mid session, confirming a page ages by
   zero rather than gaining life. ADR-0016 section 4 and section 10,
   case 7.
-- [`raised-card-drag-tracking.md`](qa/verification-procedures/raised-card-drag-tracking.md).
+- [`raised-card-drag-tracking.md`](verification-procedures/raised-card-drag-tracking.md).
   Owner: delano. Drag and resize tracking on the raised card. Not an
   ADR-0016 case.
-- [`pinned-over-fullscreen.md`](qa/verification-procedures/pinned-over-fullscreen.md).
+- [`pinned-over-fullscreen.md`](verification-procedures/pinned-over-fullscreen.md).
   Owner: delano. A pinned card and another app's full-screen Space:
   whether the card is visible there, and, either way, that clicks reach
   the full-screen app rather than the pad (issue #73). Not an ADR-0016
   case.
-- [`spaces-and-cmd-tab.md`](qa/verification-procedures/spaces-and-cmd-tab.md).
+- [`spaces-and-cmd-tab.md`](verification-procedures/spaces-and-cmd-tab.md).
   Owner: delano. ⌘Tab back landing where the user is rather than on
   Desktop 1, the shape of any flicker on return, and the edge drag that
   ADR-0019 decides against rather than fixes (issue #74). Not an

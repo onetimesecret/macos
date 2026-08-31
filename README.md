@@ -37,7 +37,8 @@ conceal request (nothing is sent).
 
 The spec governs; code follows it. The standing design spec lives under
 `docs/spec/design/`; feature specs written against it live under
-`docs/spec/feature/`. Start at
+`docs/spec/feature/`. [docs/README.md](docs/README.md) maps the whole
+documentation tree. Start at
 [docs/spec/design/README.md](docs/spec/design/README.md):
 
 | Doc | Contents |
