@@ -87,7 +87,7 @@ Two entry points, both in `scripts/`:
   its defaults, keychain items, or state.
 - `scripts/install.sh` builds the release bundle, signs it, and
   installs it to `/Applications`. This is the daily dogfood channel;
-  see [DOGFOOD.md](DOGFOOD.md).
+  see [docs/dogfood/DOGFOOD.md](docs/dogfood/DOGFOOD.md).
 
 Both rebuild the Rust core only when it is stale and package through
 `scripts/package-app.sh`.

@@ -20,6 +20,6 @@ One day on from the first entry, and the picture is the same on the client side 
 Both carry forward from yesterday without movement:
 
 - **TestFlight and distribution** (`docs/plans/from-here-to-testflight.md`): sandbox, entitlements, a Distribution identity, a provisioning profile, a signed `.pkg`, an App Store Connect record. The keychain round trip under sandbox is the single highest-risk point to verify on device. Not yet a milestone.
-- **Block versioning** (DOGFOOD.md, commit `2e58158`): make the created and modified stamp a clickable element that reveals a block's prior versions, plus a blur and opacity setting when the pad drops to backdrop. It leans on the block-metadata display that just shipped and the ADR-0013 provenance model. Not yet an issue.
+- **Block versioning** (docs/dogfood/DOGFOOD.md, commit `2e58158`): make the created and modified stamp a clickable element that reveals a block's prior versions, plus a blur and opacity setting when the pad drops to backdrop. It leans on the block-metadata display that just shipped and the ADR-0013 provenance model. Not yet an issue.
 
 Net: milestone 3's client side is effectively complete. The remaining sync work is the relay on Fly and the OAuth provider on OTS v0.27, both now off the public macos board. TestFlight and block-version history are the next two things that will need a milestone once sync closes.

@@ -29,7 +29,7 @@ core's actual usage, with dispositions),
 [`2026-0828-page-lens.md`](2026-0828-page-lens.md)
 (page history as a second projection of the same log; concept only,
 unscheduled).
-Issue: not yet filed. Origin: DOGFOOD.md, commit `2e58158`.
+Issue: not yet filed. Origin: docs/dogfood/DOGFOOD.md, commit `2e58158`.
 
 ## Why now
 

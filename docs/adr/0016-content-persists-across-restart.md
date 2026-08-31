@@ -131,7 +131,7 @@ section 7 covers the cases where it is not.
 | Crash (process fault) | Yes, except the debounce window | The last burst of typing inside the window is gone. Everything sealed before it is intact, because each write lands whole or not at all (`crates/ffi/src/persist.rs:1251-1276`). Nothing tells the user which keystrokes were lost. Window quantified in section 2. |
 | Force termination (`kill -9`, Force Quit) | Yes, except the debounce window | Identical to crash. SIGKILL runs no handler, so the sudden-termination latch (`shell/Sources/CompanionKit/PageModel.swift:101-141`) buys nothing here; the atomic write is what saves the rest. |
 | macOS restart or shutdown | Yes. The discard arm this row was written against is gone | An orderly restart delivers a terminate while a write is owed, because the latch holds sudden termination off a dirty buffer (PageModel.swift:101-141, `shell/OnetimePad-Info.plist:56`), so the quit flush runs and the loss window is zero. A mutation that never reached `markDirty()` is not covered, and neither is a kill before the flush lands. The empty pad this ADR was written to remove is removed: the restart is asserted at `a_restart_leaves_the_pages_alive_and_drains_them_by_the_gap` (`crates/ffi/src/lib.rs:4017`) and confirmed on hardware once, `docs/qa/verification-procedures/reboot.md`, 2026-08-22. |
-| App update (same bundle id, same signing identity) | Yes, when the sealed format version is unchanged. The version-change case is section 9's one-time break, taken | Replacing the bundle changes nothing the file depends on. A build whose `FILE_MAGIC` differs refuses the file (`crates/ffi/src/persist.rs:620-628`, `:664-678`), which is a one-time loss, announced the way the previous break was (the repo-root `DOGFOOD.md:50-56`). |
+| App update (same bundle id, same signing identity) | Yes, when the sealed format version is unchanged. The version-change case is section 9's one-time break, taken | Replacing the bundle changes nothing the file depends on. A build whose `FILE_MAGIC` differs refuses the file (`crates/ffi/src/persist.rs:620-628`, `:664-678`), which is a one-time loss, announced the way the previous break was (`docs/dogfood/DOGFOOD.md`). |
 | Development rebuild | Only while the bundle id and signing identity hold still | Keychain ACL identity is derived from the bundle id (ADR-0012:90), and a `.debug` suffix or a changed `CODESIGN_IDENTITY` strands the halves. That lands in section 7's unavailable-key case: no restore, no overwrite, no writes for the session. Separately, `swift build` re-signs the bundle in place and the running instance is SIGKILLed (observed in development; nothing in the tree enforces or prevents it), so a rebuild against a live app is a force termination carrying the section 2 window. |
 | Logout | Yes | The process dies by sudden termination unless a write is owed. The latch is real and refcounted (PageModel.swift:101-141) and the shipping bundle declares `NSSupportsSuddenTermination` (`shell/OnetimePad-Info.plist:56`), so a dirty buffer blocks the fast path and the terminate flush runs. A mutation that never called `markDirty()` is not covered: pasteboard copy-out is exactly that case today and is filed as issue #52 (PageModel.swift:1869-1876). |
 | Fast user switching | Yes | No process death, no window at all. The other account cannot read anything: the state directory sits under the user's own Application Support (`shell/Sources/CompanionKit/FormFactor.swift:59-64`), the key halves are written 0600 (`crates/ffi/src/persist.rs:1264`), and the keychain half is `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` on an entitled build (`crates/credentials/src/lib.rs:637-646`). |
@@ -583,11 +583,11 @@ that this decision's Required work has landed; the citations in them
 mark the code each claim rests on.
 
 **Retracted.** ADR-0012:41, "Crypto-erasure at reboot is the primary
-mechanism", is withdrawn. So is the public form of it in the repo-root
-`DOGFOOD.md`, "Staged content no longer survives a reboot, by design."
-Under ADR-0007's rules that is a claim change, so the wording was
-replaced rather than quietly dropped, and the retraction now reads in
-place at `DOGFOOD.md:95-96`.
+mechanism", is withdrawn. So is the public form of it in
+`docs/dogfood/DOGFOOD.md`, "Staged content no longer survives a reboot,
+by design." Under ADR-0007's rules that is a claim change, so the
+wording was replaced rather than quietly dropped, and the retraction now
+reads in place in that document's ADR-0012 reset section.
 
 **The replacement claim.** Staged content is bounded by its TTL and by
 policy, not by the boot session. Nothing outlives its TTL, the ceiling is
@@ -683,7 +683,7 @@ the page, at most seven days, plus the unlinked and stranded generations
 this section already says nothing sweeps. Larger per byte, shorter per
 calendar, both behind the same keychain ACL. The reader can weigh that.
 
-**Required work.** The repo-root `DOGFOOD.md:57-63` is rewritten and `README.md` and
+**Required work.** `docs/dogfood/DOGFOOD.md` is rewritten and `README.md` and
 `SECURITY.md` are audited for erasure-at-reboot language before this
 ships.
 
@@ -727,7 +727,7 @@ key derives from a half in the temp directory that the restart already
 cleared, and even in-session the changed associated data makes the bytes
 unauthenticatable. Users lose whatever is staged, once, and the retained
 ledger history with it. This is the
-second announced break (the repo-root `DOGFOOD.md:50-56` announced the first, in which
+second announced break (`docs/dogfood/DOGFOOD.md` announced the first, in which
 the envelope and the snapshot each took a version byte at once) and it is
 announced the same way.
 
