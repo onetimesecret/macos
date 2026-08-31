@@ -1,4 +1,4 @@
-# ADR-0025: A link's lifetime is not the page's lifetime
+# ADR-0026: A link's lifetime is not the page's lifetime
 
 - **Status:** accepted
 - **Date:** 2026-08-31
