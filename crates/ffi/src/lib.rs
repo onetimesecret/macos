@@ -4041,6 +4041,81 @@ mod tests {
         }
     }
 
+    /// The automation route's own step boundary, across the seam. Both
+    /// batches land inside the merge interval, so plain
+    /// `companion_sheet_apply_ops` would fold them into one step and
+    /// the first press would take the writer's word back with the
+    /// marker the page continued for them.
+    #[test]
+    fn a_new_step_batch_comes_back_off_the_stack_alone() {
+        let handle = handle();
+        unsafe {
+            let (_tab, sheet) = new_page(handle);
+            let typed = r#"[{"ins": {"at": 0, "text": "- milk"}}]"#;
+            assert!(companion_sheet_apply_ops(
+                handle,
+                sheet,
+                cstring(typed).as_ptr()
+            ));
+            let continued = r#"[{"ins": {"at": 6, "text": "\n- "}}]"#;
+            assert!(companion_sheet_apply_ops_as_new_step(
+                handle,
+                sheet,
+                cstring(continued).as_ptr()
+            ));
+
+            assert!(companion_sheet_undo(handle, sheet));
+            let doc = take_json(companion_sheet_document_json(handle, sheet));
+            assert_eq!(
+                doc, r#"[{"ink":"- milk"}]"#,
+                "one press took back more than the marker the page added"
+            );
+            // The typing is still a step of its own behind it.
+            assert!(companion_sheet_can_undo(handle, sheet));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_new_step_seam_fails_closed_like_every_other_batch_route() {
+        let handle = handle();
+        unsafe {
+            let batch = cstring(r#"[{"ins": {"at": 0, "text": "x"}}]"#);
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                ptr::null_mut(),
+                1,
+                batch.as_ptr()
+            ));
+            let (_tab, sheet) = new_page(handle);
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                handle,
+                4_242,
+                batch.as_ptr()
+            ));
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                handle,
+                sheet,
+                ptr::null()
+            ));
+            // Malformed and out of range are refused whole here too:
+            // the step boundary changes when a batch groups, never
+            // whether it is allowed to apply.
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                handle,
+                sheet,
+                cstring("not json").as_ptr()
+            ));
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                handle,
+                sheet,
+                cstring(r#"[{"del": {"at": 9, "len": 3}}]"#).as_ptr()
+            ));
+            let doc = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(!doc.contains('x'), "a refused batch left ink: {doc}");
+            companion_free(handle);
+        }
+    }
+
     #[test]
     fn the_undo_seams_fail_closed_on_a_null_handle_and_an_unknown_page() {
         let handle = handle();
