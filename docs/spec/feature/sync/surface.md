@@ -60,29 +60,33 @@ is a trip to end. The core ends the ceremony rather than recording a
 wish, and it covers the whole ceremony rather than its first half,
 which is where the first attempt at this went wrong.
 
-`companion_sync_signin_cancel` raises a flag that is read at three
-points, because a sign in has three places it can be waiting. The
-loopback listener watches it while the browser is out, so a five
-minute patience collapses to one poll. The finish reads it again
-after the token exchange returns, since a landed redirect still has
-seconds of network ahead of it and a grant nobody is waiting for any
-more is dropped unstored and zeroized where it stands. And the last
-read is under the lock that guards the store, so a cancel either wins
-outright or arrives to find nothing in flight and answers false. A
-cancel that lands before the finish call has even run is the same
-answer by the same name, since the gate reads `signing_in` from the
-moment a ceremony is begun and the way out is on screen well before
-any finish starts.
+`companion_sync_signin_cancel` raises the abandon flag of the
+ceremony that stands, and the flag belongs to that ceremony rather
+than to the sync state, so a cancel can never reach a later trip. It
+is read at three points, because a sign in has three places it can be
+waiting. The loopback listener watches it while the browser is out,
+so a five minute patience collapses to one poll. The finish reads it
+again after the token exchange returns, since a landed redirect still
+has seconds of network ahead of it and a grant nobody is waiting for
+any more is never parsed. And the last read is under the lock that
+guards the store, so a cancel either wins outright or arrives to find
+nothing in flight and answers false.
 
-Every one of those is reported as `abandoned`, which is what actually
-happened. `no_ceremony` is kept for a finish nobody began, a caller
-out of order, and it has a sentence of its own: no path here reaches
-the sentence about a server refusing, because in none of them was a
-server asked anything (ADR-0027 §2, where silence is never a no). A
-trip the user ended and a trip that never returned are one fact to
-the core, so the shell keeps the difference for the length of one
-settling and says which it was, and a settling that arrives after a
-give up never attaches whatever it carries.
+Each of those is reported as `abandoned`, which is what actually
+happened. A cancel that lands before the finish call has even run is
+the ordinary order, since the gate reads `signing_in` from the moment
+a ceremony is begun and the way out is on screen well before any
+finish starts; that finish finds nothing and answers `no_ceremony`,
+because the flag went with the ceremony it ended and there is nothing
+honest left to read. `no_ceremony` therefore covers both a caller out
+of order and a give up the finish never met, and it has a sentence of
+its own: no path here reaches the sentence about a server refusing,
+because in none of them was a server asked anything (ADR-0027 §2,
+where silence is never a no). A trip the user ended and a trip that
+never returned are one fact to the core, so the shell keeps the
+difference for the length of one settling and says which it was, and
+a settling that arrives after a give up never attaches whatever it
+carries.
 
 **Pairing** is issue #97's ceremony on this surface, in the same
 section: an invite or a join, a spinner while the mailbox messages

@@ -125,31 +125,70 @@ public final class RollGeometryModel: ObservableObject {
     /// The measurement waiting for the hop, if one is in flight.
     private var pending: RollGeometry?
 
+    /// The hop itself, while one is booked. Held so a roll that comes
+    /// back to where it already was can call it off, rather than leaving
+    /// a turn of the loop reserved for a publication that will not
+    /// happen and having the next measurement book a second one.
+    private var hop: Task<Void, Never>?
+
+    /// The roll the rail is drawing, and the only one this model
+    /// listens to.
+    ///
+    /// Two rolls share this model for as long as one is replacing the
+    /// other, because SwiftUI may build a replacement before dismantling
+    /// what it replaces, which is the same fact
+    /// `DayScrollView.dismantleNSView` states about the editor handle.
+    /// Without a name on the publication, the outgoing roll's teardown
+    /// would wipe the measurement the incoming one had already taken and
+    /// the minimap would draw nothing until something happened to
+    /// re-measure. So a mount claims the model, and a roll that no
+    /// longer holds the claim is answered with silence rather than with
+    /// a redraw.
+    private var publisher: ObjectIdentifier?
+
+    /// A roll has been mounted. It speaks for the rail from here on, and
+    /// it has nothing laid out yet, so the rail stops drawing the shape
+    /// of whatever it is replacing. Through the same hop as any other
+    /// publication, for the same reason: a mount happens inside
+    /// `makeNSView`.
+    func claim(by roll: AnyObject) {
+        publisher = ObjectIdentifier(roll)
+        reset(from: roll)
+    }
+
     /// The roll measured itself. Nothing is published if the answer is
     /// the one already on screen, which is the common case: the roll
     /// re-measures on every cosmetic redraw, and a countdown ticking
     /// moves no frame.
-    func publish(_ measured: RollGeometry) {
+    func publish(_ measured: RollGeometry, from roll: AnyObject) {
+        guard publisher == ObjectIdentifier(roll) else { return }
         guard measured != geometry else {
             // The roll came back to where it already was before the hop
-            // could run, so there is nothing left to say.
+            // could run, so there is nothing left to say and the turn of
+            // the loop it booked is given back.
             pending = nil
+            hop?.cancel()
+            hop = nil
             return
         }
-        let alreadyScheduled = pending != nil
         pending = measured
-        guard !alreadyScheduled else { return }
-        Task { @MainActor [weak self] in self?.settle() }
+        guard hop == nil else { return }
+        hop = Task { @MainActor [weak self] in
+            guard !Task.isCancelled else { return }
+            self?.settle()
+        }
     }
 
-    /// The roll is going away, or a fresh one is arriving with nothing
-    /// laid out yet. Through the same hop as any other publication, for
-    /// the same reason: a mount happens inside `makeNSView`.
-    func reset() {
-        publish(.unmeasured)
+    /// The roll is going away. Ignored when a replacement has already
+    /// claimed the model: the surface being torn down is not the one the
+    /// rail is drawing any more, and its parting word would blank a
+    /// minimap that has just been measured honestly.
+    func reset(from roll: AnyObject) {
+        publish(.unmeasured, from: roll)
     }
 
     private func settle() {
+        hop = nil
         guard let next = pending else { return }
         pending = nil
         geometry = next
@@ -206,7 +245,11 @@ public enum RailMinimap {
     /// a hairline rather than hanging off the column or climbing back
     /// over its neighbour, and a rail too short to give every day a
     /// hairline runs out of room honestly, in the order the days come
-    /// in.
+    /// in: the days it cannot draw are dropped rather than kept at no
+    /// height. Every bar here is ink somebody can see, which is what
+    /// lets the view draw the list as it stands and the QA procedure
+    /// read a missing bar as a fault. It takes far more days than a card
+    /// can draw rows for to reach that floor.
     public static func bars(of roll: RollGeometry, in height: CGFloat) -> [Bar] {
         guard height > 0, roll.documentHeight > 0 else { return [] }
         let scale = height / roll.documentHeight
@@ -221,7 +264,9 @@ public enum RailMinimap {
             let wanted = max(bottom - top, floor)
             let y = max(min(top, height - wanted), settled)
             let drawn = max(min(wanted, height - y), 0)
-            bars.append(Bar(bucket: extent.bucket, y: y, height: drawn))
+            if drawn > 0 {
+                bars.append(Bar(bucket: extent.bucket, y: y, height: drawn))
+            }
             settled = y + drawn
         }
         return bars

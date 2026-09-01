@@ -170,6 +170,79 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertFalse(model.canUndoEdit(sheet: sheet))
     }
 
+    /// A step rewrites the storage from the core's runs, which are
+    /// plain text under the base font. Nothing on the step's own path
+    /// fires `textDidChange`, and `updateNSView` turns back at the
+    /// unchanged page, so unless the step lays the styling down itself
+    /// the page reads as unstyled prose until the writer types the next
+    /// character.
+    func testAStepLeavesTheStylingStanding() throws {
+        try makeEditor()
+        type("# heading")
+        let styledFont = storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont
+        XCTAssertEqual(
+            styledFont, InkStyle.headingFont(level: 1),
+            "the fixture never got its styling in the first place")
+
+        // A restate empties the core's stack, so the keystroke after it
+        // is the whole of the step this case takes back.
+        model.syncDocument(sheet: sheet, runs: [.ink("# heading")])
+        textView.setSelectedRange(NSRange(location: 9, length: 0))
+        type("!")
+
+        coordinator.step(back: true)
+
+        XCTAssertEqual(storage.string, "# heading")
+        XCTAssertEqual(
+            storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont,
+            InkStyle.headingFont(level: 1),
+            "the heading came back at body weight")
+        XCTAssertEqual(
+            storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor,
+            NSColor.tertiaryLabelColor,
+            "the marker came back undimmed")
+    }
+
+    /// The gate is `step`'s own. Both routes that exist check editing
+    /// before they call it, and the point of the guard inside is the
+    /// route nobody has written yet.
+    func testTheStepRouteRefusesAPageThatIsNotEditable() throws {
+        try makeEditor()
+        type("standing")
+        textView.isEditable = false
+
+        coordinator.step(back: true)
+
+        XCTAssertEqual(coreText(), "standing")
+        XCTAssertEqual(storage.string, "standing")
+    }
+
+    /// A composition in flight is anchored to offsets the step is about
+    /// to rewrite, and the emission gate skips its bookkeeping for
+    /// every projection write, so a marked span left open would outlive
+    /// the storage it points into. The step settles it on the page it
+    /// was typed on first, the way the page swap does.
+    func testAStepSettlesAnOpenCompositionFirst() throws {
+        try makeEditor()
+        type("base")
+        textView.setMarkedText(
+            "\u{304B}",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        XCTAssertTrue(textView.hasMarkedText(), "the fixture never opened a composition")
+
+        coordinator.step(back: true)
+
+        XCTAssertFalse(
+            textView.hasMarkedText(),
+            "the composition outlived the storage it was anchored to")
+        XCTAssertNil(
+            coordinator.imeComposition,
+            "the gate is still tracking a span the step has rewritten")
+        XCTAssertEqual(storage.string, coreText())
+    }
+
     // MARK: The other routes to undo
 
     /// AppKit must not keep a second stack of the page's text. It is
@@ -183,8 +256,8 @@ final class UndoRerouteTests: XCTestCase {
         try makeEditor()
         type("typed")
         XCTAssertFalse(textView.allowsUndo)
-        XCTAssertFalse(
-            textView.undoManager?.canUndo ?? false,
+        XCTAssertNil(
+            textView.undoManager,
             "AppKit is holding a second stack of the page's text")
     }
 
@@ -204,8 +277,48 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertEqual(coreText(), "clicked from the menu")
     }
 
-    /// The menu greys out on the core's answer, not on AppKit's, which
-    /// is empty and would say "nothing to undo" forever.
+    /// What actually greys the app's Edit menu out. The items are
+    /// SwiftUI's, so they carry SwiftUI's target and are never offered
+    /// to `validateMenuItem`; `.disabled` reads this pair instead, and
+    /// this pair is the core's own answer for the page under the
+    /// editor.
+    func testTheMenusEnablementFollowsTheCoresAnswer() throws {
+        try makeEditor()
+        model.activeEditor = textView
+        model.refreshEditSteps()
+        XCTAssertFalse(model.editSteps.canUndo)
+        XCTAssertFalse(model.editSteps.canRedo)
+
+        // No hand-written refresh from here on: the edit and the step
+        // publish it themselves, which is the wiring under test.
+        type("something to take back")
+        XCTAssertTrue(model.editSteps.canUndo)
+        XCTAssertFalse(model.editSteps.canRedo)
+
+        coordinator.step(back: true)
+        XCTAssertFalse(model.editSteps.canUndo)
+        XCTAssertTrue(model.editSteps.canRedo)
+
+        // A page shown read-only offers neither, which is what the
+        // resting card and the roll's past days arrive as.
+        textView.isEditable = false
+        model.refreshEditSteps()
+        XCTAssertFalse(model.editSteps.canUndo)
+        XCTAssertFalse(model.editSteps.canRedo)
+
+        // And with no page holding the keyboard at all.
+        textView.isEditable = true
+        model.refreshEditSteps()
+        XCTAssertTrue(model.editSteps.canRedo)
+        model.activeEditor = nil
+        model.refreshEditSteps()
+        XCTAssertFalse(model.editSteps.canUndo)
+        XCTAssertFalse(model.editSteps.canRedo)
+    }
+
+    /// The view still answers for itself, for any route that does
+    /// arrive nil-targeted. This proves the method, not the app's menu,
+    /// which is dimmed from the model above.
     func testTheMenuItemsValidateAgainstTheCore() throws {
         try makeEditor()
         let undoItem = NSMenuItem(

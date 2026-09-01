@@ -330,17 +330,22 @@ a scaled impression of the roll and not a diagram of the rail, so a
 stretch sitting well away from the row for the same day is the design
 rather than a bug: the whole document is mapped onto the whole column
 while the rows are packed from the top. What the two share is a count
-and an order. The band
-tracks the viewport as the roll moves and stays inside the column at
-both ends of an overscroll. A roll that fits inside the card shows no
-band at all, deliberately. At rest the whole rail dims with the card and
-the minimap dims with it, with no treatment of its own.
+and an order. The band tracks the viewport as the roll moves and stays
+inside the column at both ends of an overscroll. Every day with a row
+has a stretch you can see: the mapping keeps no bar it cannot draw, and
+it only runs out of room on a column with no two points left for a day,
+which takes far more days than the rail can draw rows for. A row with no
+stretch behind it is therefore a fault and not the floor. A roll that
+fits inside the card shows no band at all, deliberately. At rest the
+whole rail dims with the card and the minimap dims with it, with no
+treatment of its own.
 
 **Fail:** any text legible in the background at any card size; a bar or
-a band that overpowers a row; two bars overlapping into a darker seam; a band that lags a scroll by more than a
-frame or two; a bar for a day the rail draws no row for, or a row with
-no bar; a stretch of the roll drawn behind the ledger after ⌘L; typing
-that stutters while three days are mounted (see case 4).
+a band that overpowers a row; two bars overlapping into a darker seam; a
+band that lags a scroll by more than a frame or two; a bar for a day the
+rail draws no row for, or a row with no bar; a stretch of the roll drawn
+behind the ledger after ⌘L; typing that stutters while three days are
+mounted (see case 4).
 
 5. Write **down** whether the two inks were right, too loud or too
    faint, and in which appearance and which contrast setting. This is

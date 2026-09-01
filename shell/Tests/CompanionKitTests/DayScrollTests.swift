@@ -117,6 +117,13 @@ final class DayScrollTests: XCTestCase {
         return Roll(window: window, scroll: scroll, stack: stack, coordinator: coordinator)
     }
 
+    /// Let the queue turn. The roll hands its measurement to the rail
+    /// on a hop, so nothing about the publication is true until the loop
+    /// has had one.
+    private func settle() async {
+        for _ in 0..<3 { await Task.yield() }
+    }
+
     private func longPage(lines: Int) -> String {
         (0..<lines).map { "line \($0) of a day that goes on" }.joined(separator: "\n")
     }
@@ -298,6 +305,33 @@ final class DayScrollTests: XCTestCase {
             "a roll this long has to outgrow the card for the band to mean anything")
         let band = try XCTUnwrap(RailMinimap.band(of: measured, in: 100))
         XCTAssertGreaterThan(band.y, 0, "the band stayed at the top of a scrolled roll")
+    }
+
+    /// The measurement stands after the roll it replaced is dismantled
+    /// (issue #131). SwiftUI may build and lay out a replacement before
+    /// tearing down what it replaces, and both rolls hand their
+    /// measurements to the one model, so the surface on the way out must
+    /// not blank the surface on the way in. Asserted through the
+    /// publication rather than off `measuredGeometry`, because the
+    /// blanking would happen on the hop and nowhere else.
+    func testATeardownLeavesTheReplacementRollStanding() async throws {
+        let model = try makeModel()
+        let first = try page(in: model, saying: longPage(lines: 20))
+        let projection = spreadOverDays(model, selecting: first)
+        let outgoing = try mountRoll(model: model)
+        outgoing.stack.update(projection: projection, selectedPage: first, readOnly: false)
+
+        let incoming = try mountRoll(model: model)
+        incoming.stack.update(projection: projection, selectedPage: first, readOnly: false)
+        DayScrollView.dismantleNSView(outgoing.scroll, coordinator: outgoing.coordinator)
+        await settle()
+
+        XCTAssertNotEqual(
+            model.rollGeometry.geometry, .unmeasured,
+            "the outgoing roll's teardown blanked the rail behind a roll that is on screen")
+        XCTAssertEqual(
+            model.rollGeometry.geometry.documentHeight,
+            incoming.stack.measuredGeometry.documentHeight, accuracy: 0.5)
     }
 
     // MARK: Where the roll opens, and where it stays

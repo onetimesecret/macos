@@ -121,9 +121,14 @@ final class SyncOffSwitchTests: XCTestCase {
         let outcome = client.syncSigninFinish(patienceMs: 0)
 
         XCTAssertFalse(outcome.ok)
+        // The flag a cancel raises belongs to the ceremony it ended, so
+        // the core has nothing left to read and says only what it can
+        // see. The user's own ending is remembered on this side, for
+        // one settling, and `no_ceremony` carries a sentence of its own
+        // so that the answer is never a server's no.
         XCTAssertEqual(
-            outcome.reason, "abandoned",
-            "a ceremony the user ended is ended, not refused by a server nobody asked")
+            outcome.reason, "no_ceremony",
+            "a call that found nothing says so, and asks no server on the way")
         XCTAssertNotEqual(
             SyncController.signinSentence(reason: outcome.reason ?? ""),
             SyncController.signinSentence(reason: "refused"),

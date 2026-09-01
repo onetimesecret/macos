@@ -32,7 +32,7 @@ The reason is ADR-0021 section 4. Sync batches deltas on a fixed clock
 precisely so that the cadence of what leaves this machine says nothing
 about the cadence of the typing that produced it; the core's
 `set_change_merge_interval(0)`
-([`crates/core/src/document.rs:164`](../../../../crates/core/src/document.rs))
+([`crates/core/src/document.rs:172`](../../../../crates/core/src/document.rs))
 makes the local op log deliberately chatty, and the protocol's own
 timer is what keeps that chattiness from reaching a wire. A behaviour
 that fired on linguistic pauses and produced an observable event would
@@ -52,7 +52,7 @@ better". It is "does this surface's clock leave the machine".
 **Adopted.** The merge interval is set at
 [`crates/core/src/document.rs:59`](../../../../crates/core/src/document.rs)
 (`UNDO_MERGE_INTERVAL_MS = 2_000`), applied at
-[`crates/core/src/document.rs:783`](../../../../crates/core/src/document.rs).
+[`crates/core/src/document.rs:810`](../../../../crates/core/src/document.rs).
 
 Loro's default is zero, which makes every commit its own undo step, and
 every keystroke is a commit here (see the `set_change_merge_interval`
@@ -83,7 +83,7 @@ Two caveats, recorded because both are easy to overstate:
 One class of edit opts out of the interval entirely: the ones the page
 makes on the writer's behalf rather than at their dictation, a
 continued list marker or a nudged indent
-([`crates/core/src/document.rs:246`](../../../../crates/core/src/document.rs)).
+([`crates/core/src/document.rs:259`](../../../../crates/core/src/document.rs)).
 Those arrive a keystroke after the burst they should not join, so they
 begin their own step and come off in one press. The lever is the same
 constant, dropped to zero across that one commit, because the library
@@ -100,7 +100,7 @@ machinery.
 ### Autosave and persist debounce: reject, and do not touch it
 
 **Rejected.** The debounce stays a wall-clock number:
-[`shell/Sources/CompanionKit/PageModel.swift:609`](../../../../shell/Sources/CompanionKit/PageModel.swift)
+[`shell/Sources/CompanionKit/PageModel.swift:651`](../../../../shell/Sources/CompanionKit/PageModel.swift)
 (`saveDebounce = 2.0`), measured from the first mutation of a burst.
 
 Three reasons, in the order they decide it:
@@ -149,7 +149,7 @@ this document.
 already keyed to linguistic structure, just not to a pause: a fence
 region stamps as one unit because the fence rules say where it starts
 and ends
-([`shell/Sources/CompanionKit/InkEditorView.swift:1135`](../../../../shell/Sources/CompanionKit/InkEditorView.swift)),
+([`shell/Sources/CompanionKit/InkEditorView.swift:1126`](../../../../shell/Sources/CompanionKit/InkEditorView.swift)),
 and the grouping is recomputed in the restyle pass from the text on
 screen.
 

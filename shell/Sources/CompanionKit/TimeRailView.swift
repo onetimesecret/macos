@@ -230,6 +230,14 @@ struct RailMinimapView: View {
         GeometryReader { proxy in
             let geometry = roll.geometry
             let height = proxy.size.height
+            // Identified by place in the column rather than by day. A
+            // bar is a shape in a scaled impression, not a row a reader
+            // can reach, so there is nothing for an identity to carry
+            // across a redraw; and keying by bucket would lean on an
+            // invariant belonging two types away, since `merging` folds
+            // only consecutive runs and the ids are unique only because
+            // the projection's buckets are.
+            let bars = Array(RailMinimap.bars(of: geometry, in: height).enumerated())
             ZStack(alignment: .topLeading) {
                 // The band goes under the bars: where the two overlap
                 // the inks add, so the days the reader is actually
@@ -240,7 +248,7 @@ struct RailMinimapView: View {
                         .frame(width: proxy.size.width, height: band.height)
                         .offset(y: band.y)
                 }
-                ForEach(RailMinimap.bars(of: geometry, in: height), id: \.bucket) { bar in
+                ForEach(bars, id: \.offset) { _, bar in
                     Rectangle()
                         .fill(Color.secondary.opacity(Self.dayInk))
                         .frame(width: proxy.size.width, height: bar.height)

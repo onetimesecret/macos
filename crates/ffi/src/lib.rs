@@ -2686,6 +2686,15 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
         let Ok(mut guard) = handle.inner.lock() else {
             return ptr::null_mut();
         };
+        // A finish already out on the browser trip owns the ceremony
+        // and the gate that reports it. A second call must not empty
+        // that state on its way to saying it found nothing: doing so
+        // put the gate back to `signed_out` in the middle of a consent
+        // screen, which is the reading this whole state exists to
+        // prevent.
+        if guard.sync.awaiting_redirect.is_some() {
+            return sync_refusal("busy");
+        }
         let transport = guard
             .sync
             .config
@@ -2695,54 +2704,44 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
         // The ceremony leaves the state for the length of the browser
         // trip, and this is what keeps the gate reporting `signing_in`
         // meanwhile: a user reading a consent screen has left the
-        // signed-out state, whatever the emptied slot suggests.
-        guard.sync.awaiting_redirect = staged.is_some();
-        staged.map(|staged| (staged, Arc::clone(&guard.sync.signin_abandoned)))
-    };
-    let Some(((pending, transport), abandoned)) = staged else {
-        // Nothing to finish. Which of the two reasons that is matters
-        // to the user: a cancel that arrived before this call took the
-        // ceremony is the ordinary shape of the way out, since the
-        // gate reads `signing_in` from the moment a ceremony is begun
-        // and the surface draws the give-up long before any finish
-        // runs. Answering `no_ceremony` there would send the shell to
-        // its last resort sentence, which speaks for a server that was
-        // never asked anything (ADR-0027 §2: silence is never a no).
-        let cancelled = handle
-            .inner
-            .lock()
-            .is_ok_and(|guard| guard.sync.signin_abandoned.load(Ordering::Relaxed));
-        return sync_refusal(if cancelled {
-            "abandoned"
-        } else {
-            "no_ceremony"
-        });
-    };
-    let grant = match sync_driver::signin_finish(
-        pending,
-        Duration::from_millis(patience_ms),
-        &transport,
-        &abandoned,
-    ) {
-        Ok(grant) => grant,
-        Err(reason) => {
-            if let Ok(mut guard) = handle.inner.lock() {
-                guard.sync.awaiting_redirect = false;
-            }
-            return sync_refusal(reason);
+        // signed-out state, whatever the emptied slot suggests. The
+        // state holds that ceremony's own abandon flag, so a sign-out
+        // or a cancel can end a trip it cannot otherwise reach.
+        if let Some((pending, _)) = staged.as_ref() {
+            guard.sync.awaiting_redirect = Some(Arc::clone(&pending.abandoned));
         }
+        staged
     };
+    let Some((pending, transport)) = staged else {
+        // Nothing to finish, and nothing more this can honestly say:
+        // the flag a cancel raises belongs to the ceremony it ended,
+        // and that ceremony is gone. The surface keeps the difference
+        // between a trip somebody gave up on and a call that found
+        // nothing, and `no_ceremony` has a sentence of its own so that
+        // a call no server ever heard is never spelled as a refusal
+        // (ADR-0027 §2: silence is never a no).
+        return sync_refusal("no_ceremony");
+    };
+    let abandoned = Arc::clone(&pending.abandoned);
+    let grant =
+        match sync_driver::signin_finish(pending, Duration::from_millis(patience_ms), &transport) {
+            Ok(grant) => grant,
+            Err(reason) => {
+                if let Ok(mut guard) = handle.inner.lock() {
+                    sync_driver::release_redirect(&mut guard.sync, &abandoned);
+                }
+                return sync_refusal(reason);
+            }
+        };
     let Ok(mut guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
-    guard.sync.awaiting_redirect = false;
-    // The last look, and the only one taken under the lock a cancel
-    // also takes. Between the grant arriving and this line there is a
-    // window no flag read outside the lock can close, and what makes
-    // the two agree is that a cancel after this point finds nothing in
-    // flight and says so by answering false.
-    if guard.sync.signin_abandoned.load(Ordering::Relaxed) {
-        drop(grant);
+    sync_driver::release_redirect(&mut guard.sync, &abandoned);
+    // The last read, and the one under the lock that commits: a
+    // sign-out or a cancel that landed while the exchange was in the
+    // air ended this ceremony, and a grant absorbed now would sign the
+    // user back in behind their own gesture. Nothing is persisted.
+    if abandoned.load(Ordering::Relaxed) {
         return sync_refusal("abandoned");
     }
     // Persist first, absorb second: a keeper holding tokens the store
@@ -2762,21 +2761,13 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
     into_c_string(serde_json::json!({ "ok": true }).to_string())
 }
 
-/// Give up on a sign-in: the pending ceremony drops, and a finish
-/// already out is told to stop, so the browser trip ends within one
-/// poll of the loopback listener rather than at the end of its five
-/// minutes. That finish answers `{"ok": false, "reason": "abandoned"}`
-/// and the gate falls back to what stands, which is `signed_out` when
-/// nothing was ever stored. Nothing is deleted and no request is sent:
-/// the ceremony simply never happened.
-///
-/// This holds for the whole ceremony and not only the browser half. A
-/// redirect that has already landed still has a token exchange ahead
-/// of it, seconds of network, and a give-up during those seconds
-/// drops the grant unstored rather than signing the user in behind
-/// their own cancel. The last read is under this lock, so a cancel
-/// that arrives after the grant is committed finds nothing in flight
-/// and answers false.
+/// Give up on the sign-in ceremony, whichever half it is in: a begun
+/// ceremony still waiting for its finish drops with its listener, and
+/// one a finish is already holding out on the browser is marked
+/// abandoned, which the finish reads at every wait it has left and
+/// once more under the lock that would have persisted the grant. The
+/// gate stops saying `signing_in` at once. Nothing is deleted and no
+/// request is sent: the ceremony simply never happened.
 ///
 /// True when there was something to give up: a ceremony waiting for
 /// its finish, a finish waiting on the browser, or both. False means
@@ -2793,10 +2784,7 @@ pub unsafe extern "C" fn companion_sync_signin_cancel(handle: *mut CompanionHand
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    let pending = guard.sync.pending_signin.take().is_some();
-    let waiting = guard.sync.awaiting_redirect;
-    guard.sync.signin_abandoned.store(true, Ordering::Relaxed);
-    pending || waiting
+    sync_driver::abandon_signin(&mut guard.sync)
 }
 
 /// Sign sync out: drop the held tokens and delete the persisted
@@ -2815,7 +2803,10 @@ pub unsafe extern "C" fn companion_sync_signout(handle: *mut CompanionHandle) ->
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    guard.sync.pending_signin = None;
+    // A ceremony out on the browser must not outlive the gesture that
+    // said no account here: without this, a redirect landing a minute
+    // later persisted a grant the user had just deleted.
+    sync_driver::abandon_signin(&mut guard.sync);
     let _ = sync_driver::dissolve_engine(&mut guard);
     // The user's own sign-out is not a refusal: the gate reads
     // `signed_out`, and re-enrolling is a choice rather than a
@@ -4092,6 +4083,81 @@ mod tests {
             // Nothing left in either direction, and the seam says so
             // rather than pretending a step happened.
             assert!(!companion_sheet_redo(handle, sheet));
+            companion_free(handle);
+        }
+    }
+
+    /// The automation route's own step boundary, across the seam. Both
+    /// batches land inside the merge interval, so plain
+    /// `companion_sheet_apply_ops` would fold them into one step and
+    /// the first press would take the writer's word back with the
+    /// marker the page continued for them.
+    #[test]
+    fn a_new_step_batch_comes_back_off_the_stack_alone() {
+        let handle = handle();
+        unsafe {
+            let (_tab, sheet) = new_page(handle);
+            let typed = r#"[{"ins": {"at": 0, "text": "- milk"}}]"#;
+            assert!(companion_sheet_apply_ops(
+                handle,
+                sheet,
+                cstring(typed).as_ptr()
+            ));
+            let continued = r#"[{"ins": {"at": 6, "text": "\n- "}}]"#;
+            assert!(companion_sheet_apply_ops_as_new_step(
+                handle,
+                sheet,
+                cstring(continued).as_ptr()
+            ));
+
+            assert!(companion_sheet_undo(handle, sheet));
+            let doc = take_json(companion_sheet_document_json(handle, sheet));
+            assert_eq!(
+                doc, r#"[{"ink":"- milk"}]"#,
+                "one press took back more than the marker the page added"
+            );
+            // The typing is still a step of its own behind it.
+            assert!(companion_sheet_can_undo(handle, sheet));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_new_step_seam_fails_closed_like_every_other_batch_route() {
+        let handle = handle();
+        unsafe {
+            let batch = cstring(r#"[{"ins": {"at": 0, "text": "x"}}]"#);
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                ptr::null_mut(),
+                1,
+                batch.as_ptr()
+            ));
+            let (_tab, sheet) = new_page(handle);
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                handle,
+                4_242,
+                batch.as_ptr()
+            ));
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                handle,
+                sheet,
+                ptr::null()
+            ));
+            // Malformed and out of range are refused whole here too:
+            // the step boundary changes when a batch groups, never
+            // whether it is allowed to apply.
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                handle,
+                sheet,
+                cstring("not json").as_ptr()
+            ));
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                handle,
+                sheet,
+                cstring(r#"[{"del": {"at": 9, "len": 3}}]"#).as_ptr()
+            ));
+            let doc = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(!doc.contains('x'), "a refused batch left ink: {doc}");
             companion_free(handle);
         }
     }
@@ -6517,19 +6583,21 @@ mod tests {
                 "nothing left to forget"
             );
 
-            // A finish behind a cancel is the way out taken before the
-            // finish ever ran, which is the ordinary order: the gate
-            // reads `signing_in` from the begin, so the surface draws
-            // the give-up while the background call is still on its
-            // way. It is the user's own ending, not a server's answer.
-            // (The gate through the whole ceremony is its own test,
-            // `the_gate_says_signing_in_while_the_browser_is_out`.)
+            // A finish behind a cancel finds nothing, and the flag the
+            // cancel raised went with the ceremony it ended, so this
+            // is the honest answer rather than a guess at which of the
+            // two reasons it was. `no_ceremony` is never a server's
+            // word and has a sentence of its own in the shell, which
+            // is also where the give-up is remembered for exactly one
+            // settling. (The gate through the whole ceremony is its
+            // own test, `the_gate_says_signing_in_while_the_browser_is_out`.)
             let finished: serde_json::Value =
                 serde_json::from_str(&take_json(companion_sync_signin_finish(handle, 0))).unwrap();
-            assert_eq!(finished["reason"], "abandoned");
+            assert_eq!(finished["reason"], "no_ceremony");
 
             // A finish nobody began and nobody cancelled is a caller
-            // out of order, and keeps its own name.
+            // out of order, and keeps the same name, because a flag
+            // that lived on the last ceremony cannot colour this one.
             let begun: serde_json::Value =
                 serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
             assert_eq!(begun["ok"], true, "a fresh begin clears the surrender");
@@ -6565,6 +6633,142 @@ mod tests {
                 ),
                 "sign-out deleted the persisted token"
             );
+            companion_free(handle);
+        }
+    }
+
+    /// The loopback port the ceremony bound, read back out of the
+    /// authorize URL's percent-encoded redirect URI.
+    fn loopback_port(authorize_url: &str) -> u16 {
+        authorize_url
+            .split("127.0.0.1%3A")
+            .nth(1)
+            .and_then(|rest| rest.split("%2F").next())
+            .and_then(|port| port.parse().ok())
+            .expect("the authorize URL carries the redirect the listener bound")
+    }
+
+    fn sync_configured(handle: *mut CompanionHandle) {
+        let config = cstring(
+            r#"{"relay_url":"https://relay.example",
+                "authorize_url":"https://eu.example/oauth/authorize",
+                "token_url":"https://eu.example/oauth/token",
+                "client_id":"companion"}"#,
+        );
+        assert!(unsafe { companion_sync_configure(handle, config.as_ptr()) });
+    }
+
+    /// Wait until the finish call has actually taken the ceremony and
+    /// is blocked on the redirect. Polling the gate is not enough: it
+    /// reads `signing_in` from the moment the begin mints the
+    /// ceremony, so the assertions below would otherwise race the
+    /// thread they are about.
+    fn wait_for_browser_trip(handle: *mut CompanionHandle) {
+        for _ in 0..500 {
+            let taken = unsafe { &*handle }
+                .inner
+                .lock()
+                .is_ok_and(|guard| guard.sync.awaiting_redirect.is_some());
+            if taken {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("the finish never took the ceremony");
+    }
+
+    #[test]
+    fn signing_out_ends_a_browser_trip_that_is_still_out() {
+        use std::io::Write as _;
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            sync_configured(handle);
+            let begun: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
+            let port = loopback_port(begun["authorize_url"].as_str().unwrap());
+
+            let address = handle as usize;
+            let waiting = std::thread::spawn(move || {
+                let handle = address as *mut CompanionHandle;
+                take_json(companion_sync_signin_finish(handle, 10_000))
+            });
+            wait_for_browser_trip(handle);
+
+            // The user signs sync out while the consent screen is open.
+            companion_sync_signout(handle);
+            assert_eq!(
+                take_json(companion_sync_gate(handle)),
+                "signed_out",
+                "the gesture takes effect at once, not when the browser gets round to it"
+            );
+
+            // And now the browser comes back with a perfectly good
+            // code. It buys nothing: the ceremony was ended, so no
+            // token request is built and nothing is persisted.
+            let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+            write!(stream, "GET /callback?code=abc&state=x HTTP/1.1\r\n\r\n").unwrap();
+            let late: serde_json::Value = serde_json::from_str(&waiting.join().unwrap()).unwrap();
+            assert_eq!(
+                late["reason"], "abandoned",
+                "a redirect after the sign-out is not a state mismatch and not a network fault"
+            );
+            assert!(
+                matches!(
+                    credentials
+                        .key_material_store()
+                        .exists("sync-oauth-refresh"),
+                    Ok(false)
+                ),
+                "no grant may land after the account was removed"
+            );
+            assert_eq!(take_json(companion_sync_gate(handle)), "signed_out");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn a_second_call_during_a_browser_trip_neither_begins_nor_stomps() {
+        unsafe {
+            let handle = handle();
+            sync_configured(handle);
+            assert!(
+                serde_json::from_str::<serde_json::Value>(&take_json(companion_sync_signin_begin(
+                    handle
+                )))
+                .unwrap()["ok"]
+                    == true
+            );
+
+            let address = handle as usize;
+            let waiting = std::thread::spawn(move || {
+                let handle = address as *mut CompanionHandle;
+                take_json(companion_sync_signin_finish(handle, 300))
+            });
+            wait_for_browser_trip(handle);
+
+            // A second finish used to find no pending ceremony, clear
+            // the state on its way out and answer `no_ceremony`, which
+            // put the gate back to signed out mid consent screen.
+            let second: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_signin_finish(handle, 0))).unwrap();
+            assert_eq!(second["reason"], "busy");
+            assert_eq!(
+                take_json(companion_sync_gate(handle)),
+                "signing_in",
+                "the second call answers for itself and leaves the first ceremony alone"
+            );
+
+            // And a begin may not bind a second listener behind the
+            // first browser trip.
+            let again: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
+            assert_eq!(again["reason"], "busy");
+
+            let ended: serde_json::Value = serde_json::from_str(&waiting.join().unwrap()).unwrap();
+            assert_eq!(ended["reason"], "abandoned");
+            assert_eq!(take_json(companion_sync_gate(handle)), "signed_out");
             companion_free(handle);
         }
     }

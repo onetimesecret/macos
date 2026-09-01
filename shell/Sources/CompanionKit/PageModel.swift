@@ -261,6 +261,36 @@ public enum SurfaceTarget: Equatable, Sendable {
     case today
 }
 
+/// Whether the page holding the keyboard has a step waiting in each
+/// direction: the two answers the Edit menu's Undo and Redo grey
+/// themselves out on (issue #132).
+///
+/// It exists because a SwiftUI menu item carries SwiftUI's own target
+/// and never walks the responder chain to be validated, so
+/// `InkTextView.validateMenuItem` cannot reach the items the app
+/// builds. `.disabled` can, and this is what it reads.
+///
+/// An observable of its own rather than a published pair on the model,
+/// for the reason `rollGeometry` is one: the menu is the only reader,
+/// and an answer that moves on every keystroke should not redraw the
+/// page, the header and the status stack behind it.
+///
+/// Nothing here is a cache of what a step would do. Both booleans are
+/// the core's own answers, re-asked whenever the page under the editor,
+/// its editability, or its history can have moved.
+@MainActor
+public final class EditStepAvailability: ObservableObject {
+    @Published public private(set) var canUndo = false
+    @Published public private(set) var canRedo = false
+
+    /// Published only on a change, because the model re-asks on every
+    /// refresh and the usual answer is the one already standing.
+    func stand(canUndo: Bool, canRedo: Bool) {
+        if self.canUndo != canUndo { self.canUndo = canUndo }
+        if self.canRedo != canRedo { self.canRedo = canRedo }
+    }
+}
+
 @MainActor
 public final class PageModel: ObservableObject {
     /// What this form factor decides differently — where its Keychain
@@ -472,7 +502,17 @@ public final class PageModel: ObservableObject {
 
     /// The live editor view, so a summon can hand it the keyboard.
     /// Weak and non-published: view plumbing, not state.
-    public weak var activeEditor: NSTextView?
+    ///
+    /// The Edit menu's enablement is a function of it, so a mount or an
+    /// unmount re-asks. On the next turn of the loop rather than now:
+    /// every assignment happens inside a SwiftUI update pass, and
+    /// publishing from inside one is what the runtime warns about.
+    public weak var activeEditor: NSTextView? {
+        didSet { scheduleEditStepsRefresh() }
+    }
+
+    /// What the Edit menu's Undo and Redo read as right now.
+    public let editSteps = EditStepAvailability()
 
     /// Set by the app delegate; Esc routes here when no editor holds
     /// the keys (the controller re-keys the frontmost app's window).
@@ -543,16 +583,6 @@ public final class PageModel: ObservableObject {
     /// sit there within reach of ⌘Z, the exact resurrection ADR-0009
     /// closed.
     private var storages: [UInt64: NSTextStorage] = [:]
-
-    /// Each live page's undo history. Undo is as document-scoped as
-    /// the storage it rewrites (ADR-0006): one editor serves every
-    /// page, so letting the window's single manager span pages would
-    /// let ⌘Z on one page replay edits against another. Keyed by page
-    /// identity for the reason `storages` is: undo carried across a
-    /// page replacement in a reused tab is how a dead chip's glyph
-    /// comes back. Pruned with the storages; cleared for a page whose
-    /// storage is changed behind the editor's back.
-    private var undoManagers: [UInt64: UndoManager] = [:]
 
     /// Each visible day's page as the roll renders it while the editor
     /// is standing somewhere else (issue #79): the same ink and the same
@@ -1405,17 +1435,20 @@ public final class PageModel: ObservableObject {
     }
 
     public func refresh() {
+        // Whatever moved the page may have moved its history: an edit,
+        // a step, a seal, a settle that reaped a chip, a page that
+        // died. The menu's two items are asked again on every one of
+        // them rather than at a list of paths someone has to keep.
+        refreshEditSteps()
         tabs = client.tabs()
         let livePages = livePageIDs
         // A dead page's ink lives on only in the ledger; drop the
-        // editor-side document, and its undo history with it. The
-        // filter is on the live PAGE identities and never on the tabs,
-        // because a tab outlives its page: keyed by the slot, a reused
-        // tab would inherit the dead page's storage and undo stack, and
-        // a ⌘Z past the page boundary would re-insert a zeroized chip's
-        // attachment character (ADR-0009, ADR-0017 item 9).
+        // editor-side document. The filter is on the live PAGE
+        // identities and never on the tabs, because a tab outlives its
+        // page: keyed by the slot, a reused tab would inherit the dead
+        // page's storage, and its attachment character for a zeroized
+        // chip with it (ADR-0009, ADR-0017 item 9).
         storages = storages.filter { livePages.contains($0.key) }
-        undoManagers = undoManagers.filter { livePages.contains($0.key) }
         // The roll's renderings of the days the editor is not standing
         // on go the same way and on the same set. They are plaintext of
         // a page, so an entry outliving its page would be exactly the
@@ -1596,45 +1629,6 @@ public final class PageModel: ObservableObject {
     /// own, and asking `storage(for:)` whether a page has one would make
     /// one, which is the very thing under test.
     var pagesWithStorage: Set<UInt64> { Set(storages.keys) }
-
-    /// The page's undo history, created on first use. The editor asks
-    /// its delegate for a manager on every undo touch, so history
-    /// simply follows the current page — no hand-off at the swap
-    /// (ADR-0006).
-    public func undoManager(for id: UInt64) -> UndoManager {
-        if let existing = undoManagers[id] { return existing }
-        let created = UndoManager()
-        undoManagers[id] = created
-        return created
-    }
-
-    /// Discard every page's undo history. One editor serves all pages
-    /// (ADR-0006), so every registered undo operation is bound to that
-    /// single NSTextView. When the view is torn down and a fresh editor
-    /// later mounts, those cached managers still hold operations
-    /// targeting the dead view: replaying one drives a zombie
-    /// reference, not the live editor (issue #23). A mount clears them
-    /// so ⌘Z after a remount is a clean no-op rather than a misfire.
-    /// Page↔page swaps keep the same view and are untouched.
-    ///
-    /// **Every page's, and not the mounted one's, because every one of
-    /// them points at the same dead view.** There is no narrower
-    /// discard to make: an operation registered against the torn-down
-    /// editor is dead whether or not its page is still alive, so
-    /// keeping one would be keeping the zombie rather than keeping the
-    /// history.
-    ///
-    /// The teardown is more frequent since the split (ADR-0017), and
-    /// that cost is stated rather than hidden. The empty state used to
-    /// be reached only when the last page in the store died; now the
-    /// selected tab holding no page is enough, so a visit to a slot
-    /// whose page expired overnight unmounts the editor and the next
-    /// mount spends the undo history of every other live page with it.
-    /// Nothing on screen or on disk changes: what the user loses is
-    /// ⌘Z reaching back past that visit.
-    public func discardUndoHistory() {
-        undoManagers.values.forEach { $0.removeAllActions() }
-    }
 
     // MARK: Navigation — the keyboard map
 
@@ -2460,10 +2454,10 @@ public final class PageModel: ObservableObject {
     /// per-edit path that replaced the per-keystroke mirror. On
     /// acceptance this marks and refreshes exactly as the snapshot
     /// mirror did. On rejection it does not assert-crash: the batch
-    /// mutated nothing core-side, so the shell logs, re-converges by
-    /// one legacy `syncDocument` mirror, and clears that page's undo
-    /// history, because stale-range undo replays after a wholesale rewrite
-    /// would corrupt the document they no longer describe.
+    /// mutated nothing core-side, so the shell logs and re-converges by
+    /// one legacy `syncDocument` mirror. The page's steps go with that
+    /// mirror, in the core and by the core's own rule: after a
+    /// wholesale rewrite every offset a step holds describes nothing.
     ///
     /// `startingNewStep` marks a batch the page produced on the
     /// writer's behalf (a continued list marker, a nudged indent) so it
@@ -2537,6 +2531,42 @@ public final class PageModel: ObservableObject {
         client.canRedo(sheet: sheet)
     }
 
+    /// Re-ask the core what the Edit menu should read as, and publish
+    /// the answer for the two items to grey themselves out on.
+    ///
+    /// The page it asks about is the one under the editor, not
+    /// `selection`: on the roll those can differ, and the menu speaks
+    /// for the page the keyboard is in. Everything else fails closed
+    /// and says no step is available: no editor mounted, a page shown
+    /// read-only, an editor between pages. An unknown page fails closed
+    /// in the core itself, which is why no liveness check is spelled
+    /// here.
+    public func refreshEditSteps() {
+        guard let editor = activeEditor as? InkTextView,
+              editor.isEditable,
+              let sheet = editor.coordinator?.currentSheet
+        else {
+            editSteps.stand(canUndo: false, canRedo: false)
+            return
+        }
+        editSteps.stand(
+            canUndo: client.canUndo(sheet: sheet),
+            canRedo: client.canRedo(sheet: sheet)
+        )
+    }
+
+    /// The same question, asked on the next turn of the loop.
+    ///
+    /// For the callers that sit inside a SwiftUI update pass: the
+    /// editor's `updateNSView`, which is where a resting card's
+    /// read-only stance and a page swap both arrive. Publishing while
+    /// SwiftUI is updating its own graph is what the runtime warns
+    /// about, and one turn of the loop is a long way ahead of a hand
+    /// reaching the menu bar.
+    public func scheduleEditStepsRefresh() {
+        Task { @MainActor [weak self] in self?.refreshEditSteps() }
+    }
+
     /// The shared half of both directions: ask the core, and on a step
     /// that happened, restate the page from the document the core now
     /// holds. The core is the authority for what a step means, so the
@@ -2560,10 +2590,9 @@ public final class PageModel: ObservableObject {
     ///
     /// In place, and deliberately: the text view holds this exact
     /// object, so replacing the entry in the map would leave the editor
-    /// laying out a storage nobody else can see. The page's AppKit undo
-    /// history goes at the same time, for the reason `recoverProjection`
-    /// drops it (after a wholesale rewrite its ranges describe nothing)
-    /// and because the stack that matters now is the core's.
+    /// laying out a storage nobody else can see. There is no second
+    /// history to drop alongside it: the stack is the core's, and the
+    /// core cleared or moved it before this was called.
     private func restateStorage(sheet: UInt64) {
         guard let storage = storages[sheet] else { return }
         let rebuilt = NSMutableAttributedString()
@@ -2581,7 +2610,6 @@ public final class PageModel: ObservableObject {
         applyingProjection {
             storage.setAttributedString(rebuilt)
         }
-        undoManagers[sheet]?.removeAllActions()
     }
 
     /// Mirror the page's document to the core wholesale: the recovery
@@ -2640,7 +2668,6 @@ public final class PageModel: ObservableObject {
                 storage.replaceCharacters(in: range, with: "")
             }
         }
-        undoManagers[sheet]?.removeAllActions()
         syncDocument(sheet: sheet, runs: InkEditorView.Coordinator.runs(of: storage))
     }
 
@@ -2781,7 +2808,7 @@ public final class PageModel: ObservableObject {
         let host = livePageIDs.first { chipIds(onSheet: $0).contains(chipId) }
         _ = client.deleteChip(id: chipId)
         if let host { invalidateQuietRendering(for: host) }
-        for (sheet, storage) in storages {
+        for storage in storages.values {
             var found: NSRange?
             storage.enumerateAttribute(
                 .attachment, in: NSRange(location: 0, length: storage.length)
@@ -2795,11 +2822,6 @@ public final class PageModel: ObservableObject {
             applyingProjection {
                 storage.replaceCharacters(in: range, with: "")
             }
-            // The storage changed behind the editor's back: the page's
-            // undo history now points at offsets that may no longer
-            // exist, and — as everywhere — undo must never resurrect
-            // what was sealed and has now travelled. History dies.
-            undoManagers[sheet]?.removeAllActions()
             break
         }
         markDirty()

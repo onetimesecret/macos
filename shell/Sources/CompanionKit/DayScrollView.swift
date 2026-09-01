@@ -18,13 +18,13 @@ import SwiftUI
 /// The editor is a **permanent child** of the stack. A day switch moves
 /// its frame origin and swaps the storage underneath it, and
 /// `removeFromSuperview` is never called on it, so nothing resigns first
-/// responder and no composition, caret or undo stack is lost crossing a
+/// responder and no composition or caret is lost crossing a
 /// perforation, the exact class of bug issues #19, #22 and #23 closed.
 ///
 /// Every other visible page is a `QuietPageView`: a rendering over its
 /// **own** private storage, not editable, not selectable, and unable to
 /// take first responder. Private storages are what keep the roll out of
-/// `PageModel.storages`, `undoManagers`, `shedLayoutManagers` and the
+/// `PageModel.storages`, `shedLayoutManagers` and the
 /// projection-parity assertion entirely, every storage in the app still
 /// carries exactly one layout manager, because each still has exactly
 /// one view. There is still one editor, one `activeEditor`, one
@@ -72,11 +72,6 @@ public struct DayScrollView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
-        // A fresh mount follows a teardown, and every cached undo
-        // manager still holds operations bound to the torn-down view;
-        // shed them before this one registers its own (issue #23). The
-        // same first line `InkEditorView.makeNSView` has.
-        model.discardUndoHistory()
         let scroll = Self.makeRoll(
             model: model, coordinator: context.coordinator, emptyHint: emptyHint
         )
@@ -118,14 +113,16 @@ public struct DayScrollView: NSViewRepresentable {
     public static func dismantleNSView(
         _ scroll: NSScrollView, coordinator: InkEditorView.Coordinator
     ) {
-        // Above the identity check, and deliberately: whatever became of
-        // the editor, this roll's measurement describes a surface that
-        // is going away, and the rail must not keep drawing the shape of
-        // it behind a ledger (issue #131). A replacement roll publishes
-        // its own on its first pass.
-        coordinator.model.rollGeometry.reset()
-        guard let stack = scroll.documentView as? DayStackView,
-              let editor = stack.editor,
+        guard let stack = scroll.documentView as? DayStackView else { return }
+        // Whatever became of the editor, this roll's measurement
+        // describes a surface that is going away, and the rail must not
+        // keep drawing the shape of it behind a ledger (issue #131).
+        // Under the same rule as the handle below, and for the same
+        // interleaving: a replacement roll that has already claimed the
+        // measurement has also already published one, and this parting
+        // word would blank it until the next pass happened to re-measure.
+        coordinator.model.rollGeometry.reset(from: stack)
+        guard let editor = stack.editor,
               coordinator.model.activeEditor === editor else { return }
         coordinator.model.activeEditor = nil
     }
@@ -142,18 +139,20 @@ public struct DayScrollView: NSViewRepresentable {
     ) -> NSScrollView {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
-        // A roll with nothing laid out in it has no proportions to
-        // report, and the rail's minimap must not spend this pass
-        // drawing the shape of the roll it is replacing (issue #131).
-        // The first `relayout` publishes the real measurement a moment
-        // later.
-        model.rollGeometry.reset()
         // The card's own material shows through the roll, as it does
         // through the page.
         scroll.drawsBackground = false
         let stack = DayStackView(
             model: model, coordinator: coordinator, emptyHint: emptyHint
         )
+        // A roll with nothing laid out in it has no proportions to
+        // report, and the rail's minimap must not spend this pass
+        // drawing the shape of the roll it is replacing (issue #131).
+        // The claim also names this stack as the one the rail listens
+        // to, so the roll it replaces cannot answer for it on the way
+        // out. The first `relayout` publishes the real measurement a
+        // moment later.
+        model.rollGeometry.claim(by: stack)
         scroll.documentView = stack
         stack.observeRoll()
         // The clip the wrap geometry is levelled against is the roll's,
@@ -371,6 +370,7 @@ final class DayStackView: NSView {
             refreshQuietRegions()
             relayout()
             editor?.isEditable = !readOnly
+            model.scheduleEditStepsRefresh()
             return
         }
         // Building the editor gives it a frame, and a frame change is
@@ -399,6 +399,7 @@ final class DayStackView: NSView {
         settleEditor(on: selectedPage)
         isLayingOut = false
         editor?.isEditable = !readOnly
+        model.scheduleEditStepsRefresh()
         relayout()
         keepStill(anchoredOn: anchor)
     }
@@ -794,7 +795,7 @@ final class DayStackView: NSView {
     /// layout that runs inside a SwiftUI render does not write observed
     /// state in the middle of one.
     private func publishGeometry() {
-        model.rollGeometry.publish(measuredGeometry)
+        model.rollGeometry.publish(measuredGeometry, from: self)
     }
 
     /// A region no shorter than one line of ink, so an empty day is
@@ -1172,7 +1173,7 @@ final class DayHeaderView: NSView {
 /// Its own layout manager over its **own** `NSTextStorage`, seeded from
 /// the model's rendering of that page and watched by no delegate, so
 /// nothing it holds can emit an op and nothing about it enters
-/// `PageModel.storages`, `undoManagers` or `shedLayoutManagers`. It is
+/// `PageModel.storages` or `shedLayoutManagers`. It is
 /// not editable, not selectable, and it refuses to become first
 /// responder: there is one focusable text view in the card and it is the
 /// editor.
