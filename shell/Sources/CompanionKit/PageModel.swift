@@ -2472,7 +2472,7 @@ public final class PageModel: ObservableObject {
         #endif
     }
 
-    // MARK: Undo — the core's stack (issue #132)
+    // MARK: Undo, which is the core's stack now (issue #132)
 
     /// What one ⌘Z or ⇧⌘Z did: whether the core moved the page, and
     /// where it says the caret belongs afterwards.
@@ -2545,8 +2545,8 @@ public final class PageModel: ObservableObject {
     /// object, so replacing the entry in the map would leave the editor
     /// laying out a storage nobody else can see. The page's AppKit undo
     /// history goes at the same time, for the reason `recoverProjection`
-    /// drops it — after a wholesale rewrite its ranges describe nothing
-    /// — and because the stack that matters now is the core's.
+    /// drops it (after a wholesale rewrite its ranges describe nothing)
+    /// and because the stack that matters now is the core's.
     private func restateStorage(sheet: UInt64) {
         guard let storage = storages[sheet] else { return }
         let rebuilt = NSMutableAttributedString()
