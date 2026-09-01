@@ -170,6 +170,39 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertFalse(model.canUndoEdit(sheet: sheet))
     }
 
+    /// A step rewrites the storage from the core's runs, which are
+    /// plain text under the base font. Nothing on the step's own path
+    /// fires `textDidChange`, and `updateNSView` turns back at the
+    /// unchanged page, so unless the step lays the styling down itself
+    /// the page reads as unstyled prose until the writer types the next
+    /// character.
+    func testAStepLeavesTheStylingStanding() throws {
+        try makeEditor()
+        type("# heading")
+        let styledFont = storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont
+        XCTAssertEqual(
+            styledFont, InkStyle.headingFont(level: 1),
+            "the fixture never got its styling in the first place")
+
+        // A restate empties the core's stack, so the keystroke after it
+        // is the whole of the step this case takes back.
+        model.syncDocument(sheet: sheet, runs: [.ink("# heading")])
+        textView.setSelectedRange(NSRange(location: 9, length: 0))
+        type("!")
+
+        coordinator.step(back: true)
+
+        XCTAssertEqual(storage.string, "# heading")
+        XCTAssertEqual(
+            storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont,
+            InkStyle.headingFont(level: 1),
+            "the heading came back at body weight")
+        XCTAssertEqual(
+            storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor,
+            NSColor.tertiaryLabelColor,
+            "the marker came back undimmed")
+    }
+
     // MARK: The other routes to undo
 
     /// AppKit must not keep a second stack of the page's text. It is

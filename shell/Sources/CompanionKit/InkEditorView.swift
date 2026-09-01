@@ -659,6 +659,18 @@ public struct InkEditorView: NSViewRepresentable {
             guard let sheet = currentSheet, let textView else { return }
             let outcome = back ? model.undoEdit(sheet: sheet) : model.redoEdit(sheet: sheet)
             guard outcome.applied else { return }
+            // The model rebuilt the storage from the core's runs, which
+            // are plain text carrying the base font and nothing else,
+            // so the page arrives here stripped of every attribute the
+            // markdown pass puts on it. No other route lays them back
+            // down: `textDidChange` is what usually calls the pass and
+            // a projection write never fires it, the storage delegate
+            // returns early under the emission guard, and
+            // `updateNSView` turns back at a page that did not change.
+            // A step would otherwise leave headings at body weight and
+            // fences uncoloured until the writer typed one more
+            // character.
+            restyle()
             // A step that carried no position leaves the caret alone,
             // clamped, rather than guessing at an offset.
             let length = textView.textStorage?.length ?? 0
