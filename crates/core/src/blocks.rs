@@ -78,6 +78,23 @@ pub(crate) struct PersistedBlock {
     pub(crate) meta: MaterializedMeta,
 }
 
+impl MaterializedMeta {
+    /// Fold an absorbed block's summary into this one, when a merge
+    /// kills the absorbed identity but leaves its text on the page.
+    /// Earliest created and latest modified, the same arithmetic
+    /// derivation performs over a span's characters, and the origin
+    /// follows the created-defining stamp: a strictly earlier birth
+    /// hands over the role and the source that came with it, a tie
+    /// keeps the summary already holding it.
+    fn absorb(&mut self, other: MaterializedMeta) {
+        if other.created_s < self.created_s {
+            self.created_s = other.created_s;
+            self.origin = other.origin;
+        }
+        self.modified_s = self.modified_s.max(other.modified_s);
+    }
+}
+
 impl BlockRecord {
     fn fresh() -> Self {
         Self {
@@ -119,6 +136,14 @@ pub struct BlockMeta {
 pub(crate) struct BlockIndex {
     records: Vec<BlockRecord>,
     lens: Vec<usize>,
+    /// The operation log's frontier as of the last compaction
+    /// ceremony, Unix seconds. The per-block summaries can only speak
+    /// for text that is still on the page, and a deletion is precisely
+    /// the change that leaves no character behind to speak for it, so
+    /// without this the newest thing a reader did to a page could be
+    /// destroyed along with the ops that proved it and the page's
+    /// modified stamp would walk backwards across the boundary.
+    frontier_s: Option<i64>,
 }
 
 impl BlockIndex {
@@ -129,7 +154,11 @@ impl BlockIndex {
     pub(crate) fn for_document(doc: &SheetDocument) -> Self {
         let lens = document_lens(doc);
         let records = lens.iter().map(|_| BlockRecord::fresh()).collect();
-        let mut index = Self { records, lens };
+        let mut index = Self {
+            records,
+            lens,
+            frontier_s: None,
+        };
         index.retake_anchors(doc);
         index
     }
@@ -194,6 +223,11 @@ impl BlockIndex {
     /// separating newline merges across it: the block holding the
     /// deletion's start absorbs everything the range reached into,
     /// keeps its id, and the absorbed identities die.
+    ///
+    /// An identity dies; the evidence does not. Past a compaction
+    /// boundary an absorbed block's frozen summary is the only thing
+    /// left that can speak for text the survivor now holds, so it is
+    /// folded in before the record goes ([`MaterializedMeta::absorb`]).
     pub(crate) fn note_delete(&mut self, pos_u16: usize, len_u16: usize) {
         if len_u16 == 0 {
             return;
@@ -210,7 +244,44 @@ impl BlockIndex {
         }
         self.lens[block] = combined - len_u16;
         self.lens.drain(block + 1..=last);
-        self.records.drain(block + 1..=last);
+        let absorbed: Vec<MaterializedMeta> = self
+            .records
+            .drain(block + 1..=last)
+            .filter_map(|record| record.materialized)
+            .collect();
+        for frozen in absorbed {
+            match &mut self.records[block].materialized {
+                Some(survivor) => survivor.absorb(frozen),
+                slot @ None => *slot = Some(frozen),
+            }
+        }
+    }
+
+    /// Re-open the trailing empty block when the body ends on a newline
+    /// and the index has nothing zero-width standing for the paragraph
+    /// after it.
+    ///
+    /// A delete that reaches the end of the body can leave the last
+    /// block terminated by a newline, and that newline opens an empty
+    /// paragraph exactly as a typed Enter does, so it wants a block of
+    /// its own the way [`BlockIndex::note_insert`] mints one. The
+    /// narration cannot see it coming: widths say where blocks end and
+    /// never what the characters are, so whether the surviving tail is
+    /// a newline is a fact only the document holds. The repair
+    /// therefore happens here, where the document is at hand, and it is
+    /// deliberately the only shape it mends: any other drift still
+    /// moves the total width or strands a boundary inside a paragraph,
+    /// so [`BlockIndex::matches`] still catches it and the answer is
+    /// still a rebuild.
+    pub(crate) fn reopen_trailing_block(&mut self, doc: &SheetDocument) {
+        if document_lens(doc).last() != Some(&0) {
+            return;
+        }
+        if self.lens.last() == Some(&0) {
+            return;
+        }
+        self.lens.push(0);
+        self.records.push(BlockRecord::fresh());
     }
 
     /// Narrate a chip sentinel standing at a UTF-16 offset: one unit of
@@ -392,7 +463,27 @@ impl BlockIndex {
         self.retake_anchors(doc);
     }
 
-    /// The newest frozen modified stamp across the blocks, if any: the
+    /// Remember the log's frontier a ceremony is about to destroy, as
+    /// the page-level half of graduation: the blocks freeze what their
+    /// surviving characters prove, and this freezes what the log knew
+    /// and no character can. Folded rather than assigned, so a
+    /// ceremony that finds nothing newer cannot lower the floor, and
+    /// so the restore path can hand back a floor a snapshot recorded
+    /// without unseating anything the live index already holds.
+    pub(crate) fn note_compaction(&mut self, frontier_s: Option<i64>) {
+        self.frontier_s = self.frontier_s.max(frontier_s);
+    }
+
+    /// The frontier a past ceremony captured, for the persistence seam
+    /// to write down. Frozen block summaries travel in the same
+    /// section; this is the half of the page's memory that belongs to
+    /// no block, and it dies at the next launch if it is not written.
+    pub(crate) fn compaction_frontier(&self) -> Option<i64> {
+        self.frontier_s
+    }
+
+    /// The newest frozen modified stamp across the blocks, if any,
+    /// merged with the frontier the last ceremony captured: the
     /// page-level floor a compacted page's modified time rests on once
     /// the ops behind it are gone.
     pub(crate) fn max_materialized_modified(&self) -> Option<i64> {
@@ -400,6 +491,7 @@ impl BlockIndex {
             .iter()
             .filter_map(|record| record.materialized.as_ref().map(|frozen| frozen.modified_s))
             .max()
+            .max(self.frontier_s)
     }
 
     /// The records, in document order, for the persistence seam to
@@ -499,6 +591,9 @@ mod tests {
     fn delete(doc: &SheetDocument, index: &mut BlockIndex, pos: usize, len: usize) {
         doc.delete(pos, len).unwrap();
         index.note_delete(pos, len);
+        // What [`Sheet::settle_blocks`] does after every mutation, so
+        // the tests below see the index the store would serve.
+        index.reopen_trailing_block(doc);
     }
 
     #[test]
@@ -587,6 +682,73 @@ mod tests {
         delete(&doc, &mut index, 2, 10);
         let one = index.ids();
         assert_eq!(one, vec![ids[0]]);
+        assert!(index.matches(&doc));
+    }
+
+    #[test]
+    fn a_delete_that_ends_the_body_on_a_newline_keeps_every_name() {
+        let (doc, mut index) = empty();
+        // A paste, so one block spans the three paragraphs: the shape
+        // the bug needs, because a typed page already carries the
+        // trailing empty block that a delete here must put back.
+        insert(&doc, &mut index, 0, "one\ntwo\nthree");
+        let pasted = index.ids()[0];
+
+        // Select the last line and delete it. The body now ends on the
+        // newline that used to separate it, so the empty paragraph
+        // after that newline wants a block of its own; without one the
+        // index no longer describes the body and the settle answers a
+        // finished sentence by re-minting the whole page.
+        delete(&doc, &mut index, 8, 5);
+        assert!(
+            index.matches(&doc),
+            "the delete was narrated, so the index must still describe the body"
+        );
+        assert_eq!(index.spans(&doc), vec![2, 1]);
+        assert_eq!(
+            index.ids()[0],
+            pasted,
+            "the paste keeps its name across a delete at its tail"
+        );
+        assert_eq!(index.ids().len(), 2, "the trailing paragraph is a block");
+
+        // And what the reader types next belongs to the new block, not
+        // to the paste.
+        insert(&doc, &mut index, 8, "mine");
+        assert_eq!(index.ids()[0], pasted);
+        assert_eq!(index.ids().len(), 2);
+        assert!(index.matches(&doc));
+    }
+
+    #[test]
+    fn a_merge_keeps_the_absorbed_blocks_frozen_summary() {
+        let (mut doc, mut index) = empty();
+        insert(&doc, &mut index, 0, "alpha\n");
+        doc.commit_at(32_400);
+        insert(&doc, &mut index, 6, "beta\n");
+        doc.commit_at(36_000);
+        insert(&doc, &mut index, 10, " more");
+        doc.commit_at(39_600);
+
+        // Past the boundary the summaries are all the evidence there
+        // is: nothing else can say when beta appeared or when it last
+        // changed.
+        index.graduate(&doc);
+        doc.compact();
+        index.retake_anchors(&doc);
+        assert_eq!(index.materialized(1).unwrap().created_s, 36_000);
+        assert_eq!(index.materialized(1).unwrap().modified_s, 39_600);
+
+        // Backspace at beta's head: alpha absorbs it and keeps its id,
+        // by the merge convention. The absorbed id dies, but the text
+        // it named is still on the page, so its summary has to survive
+        // in the block that now holds it.
+        let ids = index.ids();
+        delete(&doc, &mut index, 5, 1);
+        assert_eq!(index.ids()[0], ids[0], "the absorbing block keeps its id");
+        let merged = index.materialized(0).unwrap();
+        assert_eq!(merged.created_s, 32_400, "the earlier birth survives");
+        assert_eq!(merged.modified_s, 39_600, "and the later change does");
         assert!(index.matches(&doc));
     }
 

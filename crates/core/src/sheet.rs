@@ -439,10 +439,24 @@ impl Sheet {
     /// narrate itself), rebuild it with fresh identities rather than
     /// serve stale ones. Every mutation path ends here.
     pub(crate) fn settle_blocks(&mut self) {
+        // A delete that ended the body on a newline left an empty
+        // paragraph with no block standing for it, which the narration
+        // could not see because it reads widths and not characters.
+        // Mend that here, before the check: judged as it stands the
+        // index looks stale, and the page would be handed a whole set
+        // of fresh identities for the crime of a finished sentence.
+        self.blocks.reopen_trailing_block(&self.document);
         if self.blocks.matches(&self.document) {
             self.blocks.retake_anchors(&self.document);
         } else {
+            // The floor is the page's stamp, not any block's, so it must
+            // outlive a rebuild of the block identities. A rebuild that
+            // dropped it would let the page's modified time step back the
+            // moment a wholesale restate (through `sync_document`) tripped
+            // the mismatch, and only `compact` happens to re-note it.
+            let floor = self.blocks.compaction_frontier();
             self.blocks = BlockIndex::for_document(&self.document);
+            self.blocks.note_compaction(floor);
         }
     }
 
@@ -457,10 +471,21 @@ impl Sheet {
     /// somehow stopped describing the body is rebuilt fresh rather
     /// than trusted.
     pub(crate) fn compact(&mut self) {
+        // The log's frontier is read while the log still exists, and
+        // kept as the page's floor: a deletion is a change with no
+        // surviving character to vote for it, so the per-block
+        // summaries below cannot carry it and the page's modified
+        // stamp would step back to whenever its oldest surviving text
+        // was written.
+        let frontier = self.document.latest_timestamp();
         self.blocks.graduate(&self.document);
         self.document.compact();
         self.rebuild_segments();
         self.settle_blocks();
+        // After the settle, so a rebuilt index inherits the floor: it
+        // is the page's stamp, not any block's, and nothing about a
+        // rebuild makes the page younger.
+        self.blocks.note_compaction(frontier);
     }
 
     /// What a rung transition does to the history: compact now when the
@@ -1258,6 +1283,44 @@ mod tests {
         // And a name the user typed wins over both.
         tab.name = Some("the vault".into());
         assert_eq!(tab.label(0), "the vault");
+    }
+
+    #[test]
+    fn compaction_keeps_the_stamp_of_a_deletion_that_left_no_witness() {
+        let mut sheet = bare_sheet(STAMP);
+        sheet.document.insert(0, "hello\n").unwrap();
+        sheet.blocks.note_insert(0, "hello\n");
+        sheet.document.insert(6, "world").unwrap();
+        sheet.blocks.note_insert(6, "world");
+        sheet.document.commit_at(36_000);
+
+        // An hour later the second line goes. A deletion is a change
+        // like any other, but it is the one kind that leaves no
+        // character behind to vote for it: the page's newest stamp
+        // rests on the log alone.
+        sheet.document.delete(6, 5).unwrap();
+        sheet.blocks.note_delete(6, 5);
+        sheet.document.commit_at(39_600);
+        sheet.rebuild_segments();
+        sheet.settle_blocks();
+        assert_eq!(sheet.modified_s(), Some(39_600));
+
+        // The ceremony destroys that log, so the frontier has to be
+        // read while it still exists. Modified is a stamp on a page a
+        // reader is looking at; it may not walk backwards because the
+        // evidence behind it expired on schedule.
+        sheet.compact();
+        assert_eq!(
+            sheet.modified_s(),
+            Some(39_600),
+            "the deletion's hour survives the boundary"
+        );
+
+        // The floor is the page's, not a block's: no paragraph is made
+        // to claim a change that did not touch it.
+        let metas = sheet.blocks_meta();
+        assert_eq!(metas[0].modified_s, Some(36_000));
+        assert_eq!(metas[1].modified_s, None);
     }
 
     /// A page with nothing in it, born at `created_wall_ms`.
