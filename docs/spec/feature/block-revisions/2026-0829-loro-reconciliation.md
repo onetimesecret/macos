@@ -63,15 +63,15 @@ fifteen concepts:
 | 2 | Container | Partial. Text only; no Map, List, Tree, or Counter, no nesting. Chips live beside the document as sealed records; block identity lives outside it in `BlockIndex`. |
 | 3 | Attached/detached | Not used. No checkout anywhere; the only second view is a discarded trial `fork()` on the update path. Becomes load-bearing under ADR-0025 part 1. |
 | 4 | OpLog/DocState | Partial. The op log is read via version vector, frontiers, and `get_change`; the two version pointers are never distinguished, which is safe only because nothing detaches. |
-| 5 | Ops and Changes | Used heavily; the provenance substrate. `span_provenance` reads exactly `ChangeMeta.timestamp` and `.message()` (`document.rs:561`). |
+| 5 | Ops and Changes | Used heavily; the provenance substrate. `span_provenance` reads exactly `ChangeMeta.timestamp` and `.message()` (`document.rs:555`). |
 | 6 | Transactions | Partial. Explicit commit at every mutation boundary; commit messages carry paste origin. |
 | 7 | Frontiers | Partial. Read for emptiness and the newest stamp only; nothing ever encodes or stores one. |
-| 8 | Version Vector | Used. The opaque sync cursor (`document.rs:402`), deliberately unreadable above the module. |
+| 8 | Version Vector | Used. The opaque sync cursor (`document.rs:414`), deliberately unreadable above the module. |
 | 9 | Cursor | Used twice over: persisted block anchors revalidated on restore, and the per-character op-id probe behind provenance. |
 | 10 | Import Status | Partial. Fail-closed on the update path (`UpdateRefusal::MissingHistory`); `import_snapshot` discards the status, benign while snapshots are self-contained sealed bytes. |
 | 11 | PeerID | Used, as an anti-linkability asset: random per instance, re-minted at restore and compaction, never persisted (see the inversions below). |
 | 12 | Eg-Walker | Not used at the API level; compaction is a re-type from runs, not a replay. |
-| 13 | Shallow snapshots | Measured and rejected: the recorded spike (`document.rs:999`) shows state-only export sheds deleted text but keeps the authoring peer id. |
+| 13 | Shallow snapshots | Measured and rejected: the recorded spike (`document.rs:1038`) shows state-only export sheds deleted text but keeps the authoring peer id. |
 | 14 | Choosing types | Settled and narrow: text plus marks, UTF-16 normalized at the module boundary, all structure kept outside the CRDT. |
 | 15 | When not CRDTs | Practiced. Ledger, chips, TTL clocks, tab metadata, and block grouping all live outside; the relay is the authority shape ADR-0021 chose. |
 
@@ -102,13 +102,13 @@ fifteen concepts:
    `set_detached_editing`. The measured-cost settle item and the
    matching eject trigger are reworded to match.
 2. **"Merging disabled" was overstated.**
-   `set_change_merge_interval(0)` (`document.rs:164`) still
+   `set_change_merge_interval(0)` (`document.rs:172`) still
    coalesces same-peer commits sharing a message inside one
    wall-clock second, because the library's test is `<= 0` over
    whole-second stamps. Far below any boundary the ADR derives, so
    harmless to part 1, but the context line now says what is true.
    A paste's origin-carrying commit stays unmerged only because its
-   message differs. The comment at `document.rs:151` deserves the
+   message differs. The comment at `document.rs:159` deserves the
    same word the next time that file is touched.
 
 ## Where the doctrine inverts the report
@@ -183,14 +183,14 @@ argument starts honest:
 
 - **Undo does not survive relaunch, deliberately.** The manager is
   bound where the document is constructed
-  (`document.rs:186`), which makes every construction path a rebind: a
+  (`document.rs:194`), which makes every construction path a rebind: a
   restore reads a snapshot into a document minted there, and the
   ceremony rebuilds into one. Both re-mint the peer id, so a stack
   carried across either would point into operations that no longer
   exist. Starting empty is therefore a property of the construction
   rather than a rule to remember, and it matches what AppKit offered,
   a stack that died with the window. The compaction path clears
-  explicitly on top of that (`document.rs:673`), because the rebuild
+  explicitly on top of that (`document.rs:686`), because the rebuild
   is typed in as local operations and would otherwise leave one step
   that undid the whole page.
 - **The merge interval is two seconds**
@@ -208,15 +208,41 @@ argument starts honest:
   (ADR-0009), and a sentinel standing for zeroized bytes is the one
   document shape the restore path calls damage.
 - **The edits the page makes for the writer begin their own step**
-  (`document.rs:246`): a continued list marker, a nudged indent. They
+  (`document.rs:259`): a continued list marker, a nudged indent. They
   arrive a keystroke after the burst they should not join, so the
   interval is dropped across that one commit and one press takes the
   automation back alone.
 - **The menu is the same stack as the chord.** The page's text view
-  answers `undo:` and `redo:` itself and validates them from the
-  core's own can-undo, and the editor allows no AppKit undo at all, so
-  there is no second history of the document for Edit then Undo to
-  reach. Both routes refuse a page shown read-only.
+  answers `undo:` and `redo:` itself, and the editor allows no AppKit
+  undo at all, so there is no second history of the document for Edit
+  then Undo to reach. Both routes refuse a page shown read-only, and
+  the guard sits inside the step rather than at each door.
+
+  The greying out is the model's, not the view's. A SwiftUI menu item
+  carries SwiftUI's own target and is never offered to
+  `validateMenuItem`, so the two items read `PageModel.editSteps`,
+  which the model re-asks of the core for the page under the editor.
+  The view keeps its own validation for any route that arrives
+  nil-targeted. Enablement is display either way: a click with no page
+  holding the keyboard reaches nobody, and a read-only page refuses the
+  step.
+- **A neighbouring device's chip delete costs this device its steps.**
+  Chip liveness follows the shared document, so a peer backspacing over
+  a sentinel zeroizes the bytes here, and the settle that reaps the
+  chip forgets the local stack with them. That is the intended reading
+  of the rule rather than an accident: a step standing across that
+  moment could stand the sentinel again over nothing, the one document
+  shape the restore path calls damage (ADR-0009). It is the only place
+  a remote event destroys local state, and it is held by a test.
+- **`clear()` drops, it does not zeroize.** Forgetting the stack frees
+  the steps without wiping the memory they sat in, and it never touched
+  chip bytes in the first place: a chip's plaintext lives in its own
+  `Zeroizing` buffer and never enters the document, and the ink a step
+  would restore is already in the op log until the ceremony rebuilds
+  it. So `forget_undo` is a correctness valve, standing between undo
+  and a document shape that must not exist, and not a memory
+  guarantee. The memory guarantee rests where it always has, on the
+  ceremony (ADR-0007).
 - **The cursor hooks carry the caret.** The push hook records where
   the step was authored and the pop hook hands it back, converted to
   UTF-16 only once the document is still again. The position is a
@@ -235,7 +261,7 @@ argument starts honest:
   shallow export ever returns from rejection.
 - `set_record_timestamp` is runtime configuration that must be
   reapplied per document instance; every construction path here
-  already does (`document.rs:150`).
+  already does (`document.rs:158`).
 - `blocks_meta()` already re-derives provenance per character per
   read, so ADR-0025's derivation walk joins a read path that is
   O(document) per refresh, not a newly expensive one.
