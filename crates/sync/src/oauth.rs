@@ -19,6 +19,19 @@ use zeroize::Zeroizing;
 
 use crate::b64;
 
+/// The one scope the sync client asks for, and the only scope the
+/// relay's client application is registered with server side
+/// (ADR-0027 §3). The registration is the ceiling: a consent screen
+/// offers the application's registered scopes rather than the
+/// requested ones, so an application holding nothing but this is what
+/// keeps a leaked sync token from concealing, reading account data, or
+/// acting as the account anywhere else. It is sent explicitly on the
+/// authorization request and never on a refresh: narrowing on refresh
+/// is silently ignored and the refresh answer carries no scope back,
+/// so the scope is fixed at authorization and asking again would be
+/// theatre.
+pub const SYNC_SCOPE: &str = "sync";
+
 /// A refusal from the auth ceremony or the token machinery. Everything
 /// here is user-visible state, never a panic: auth failing leaves the
 /// pad untouched (the spec's degraded-state rule).
@@ -72,7 +85,11 @@ impl AuthCeremony {
     /// Mint the ceremony material and the authorization URL to open in
     /// the system browser. `port` is the ephemeral loopback port the
     /// listener actually bound ([`crate::loopback::OneShotListener`]),
-    /// so the redirect URI matches exactly (RFC 8252 §7.3).
+    /// so the redirect URI matches exactly (RFC 8252 §7.3). The URL
+    /// names [`SYNC_SCOPE`] explicitly: a client that omits scope is
+    /// offered the application's whole registered set, which is a
+    /// width the client should not accept by silence even where the
+    /// registration is narrow.
     ///
     /// # Errors
     ///
@@ -98,9 +115,10 @@ impl AuthCeremony {
         let challenge = b64::encode_url_nopad(digest(&SHA256, verifier.as_bytes()).as_ref());
         let redirect_uri = format!("http://127.0.0.1:{port}/callback");
         let url = format!(
-            "{authorize_endpoint}?response_type=code&client_id={}&redirect_uri={}&code_challenge={challenge}&code_challenge_method=S256&state={state}",
+            "{authorize_endpoint}?response_type=code&client_id={}&redirect_uri={}&code_challenge={challenge}&code_challenge_method=S256&state={state}&scope={}",
             form_encode(client_id),
             form_encode(&redirect_uri),
+            form_encode(SYNC_SCOPE),
         );
         Ok((
             Self {
@@ -440,6 +458,52 @@ mod tests {
         assert_eq!(ceremony.redirect_uri(), "http://127.0.0.1:49152/callback");
         // The challenge is derived, never the verifier itself.
         assert!(!url.contains("code_verifier"));
+    }
+
+    #[test]
+    fn the_authorize_url_asks_for_exactly_the_sync_scope() {
+        let (_, url) = ceremony();
+        assert!(url.contains("&scope=sync"), "{url}");
+        assert_eq!(
+            url.matches("scope=").count(),
+            1,
+            "code_challenge_method is not a scope and neither is anything else"
+        );
+    }
+
+    #[test]
+    fn no_scope_is_asked_for_or_expected_on_a_refresh() {
+        let mut keeper = TokenKeeper::new(
+            "https://eu.onetimesecret.com/auth/token",
+            "companion-macos",
+            Some(Zeroizing::new("rt-0".into())),
+        );
+        let request = keeper.refresh_request().unwrap();
+        let body = String::from_utf8(request.body.unwrap().to_vec()).unwrap();
+        assert!(
+            !body.contains("scope"),
+            "narrowing on refresh is ignored server side; the scope is fixed at authorization"
+        );
+        // And the answer carrying none back is an ordinary grant.
+        let unscoped = HttpResponse {
+            status: 200,
+            body: br#"{"access_token":"at-1","refresh_token":"rt-1"}"#.to_vec(),
+        };
+        assert!(keeper.absorb_refresh(&unscoped).is_ok());
+        assert_eq!(keeper.access(), Some("at-1"));
+    }
+
+    #[test]
+    fn a_grant_that_names_no_scope_is_still_a_grant() {
+        let response = HttpResponse {
+            status: 200,
+            body: br#"{"access_token":"at-1","refresh_token":"rt-1","token_type":"bearer"}"#
+                .to_vec(),
+        };
+        assert!(
+            parse_token_response(&response).is_ok(),
+            "the server may omit scope from the token response, and does"
+        );
     }
 
     #[test]

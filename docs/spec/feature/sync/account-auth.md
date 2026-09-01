@@ -33,9 +33,13 @@ The app authenticates with **OAuth 2.0 authorization code + PKCE, in
 the user's default browser, returning on a loopback redirect** — the
 native-app BCP, RFC 8252, followed as written: public client, no
 client secret, `S256` code challenge, exact-match loopback redirect URI
-(`http://127.0.0.1:{ephemeral}/callback`), `state` checked on return.
-The app opens the browser, listens once on an ephemeral loopback port,
-exchanges the code, and closes the listener.
+(`http://127.0.0.1:{ephemeral}/callback`), `state` checked on return,
+and `scope=sync` asked for explicitly. The app opens the browser,
+listens once on an ephemeral loopback port, exchanges the code, and
+closes the listener. The redirect URI is **registered portless**
+server side (`http://127.0.0.1/callback`), which is what lets any
+ephemeral port match; ADR-0027 §1 says why that registration is a hard
+requirement rather than a detail.
 
 The issue asks where the browser step lands for an app that "is not a
 browser and has no server side to receive a redirect". The BCP's
