@@ -413,6 +413,18 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertEqual(
             SyncController.lastSeen(attachedWallMs: now - 5 * 60_000, nowWallMs: now),
             "seen 5 minutes ago")
+        // The band the just-now threshold hands to the minutes: ninety
+        // seconds through a hundred and nineteen is one minute, and one
+        // minute is singular like every other unit here.
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 90_000, nowWallMs: now),
+            "seen 1 minute ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 119_000, nowWallMs: now),
+            "seen 1 minute ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 120_000, nowWallMs: now),
+            "seen 2 minutes ago")
         XCTAssertEqual(
             SyncController.lastSeen(attachedWallMs: now - 3_600_000, nowWallMs: now),
             "seen 1 hour ago")

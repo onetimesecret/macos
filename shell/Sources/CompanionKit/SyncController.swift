@@ -828,7 +828,7 @@ public final class SyncController: ObservableObject {
         let seconds = elapsed / 1000
         if seconds < 90 { return "seen just now" }
         let minutes = seconds / 60
-        if minutes < 60 { return "seen \(minutes) minutes ago" }
+        if minutes < 60 { return "seen \(minutes) \(minutes == 1 ? "minute" : "minutes") ago" }
         let hours = minutes / 60
         if hours < 24 { return "seen \(hours) \(hours == 1 ? "hour" : "hours") ago" }
         let days = hours / 24
