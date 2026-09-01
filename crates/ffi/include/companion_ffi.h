@@ -794,8 +794,8 @@ bool companion_sync_configure(CompanionHandle *handle, const char *json);
 /*
  * Sync's standing state for Settings: {"configured", "signed_in",
  * "gate", "signin_pending", "attached", "epoch", "frame_present",
- * "enrolled", "pairing"}. Existence checks and in-memory reads only —
- * rendering Settings never decrypts a credential, wedges on the
+ * "enrolled", "pairing"}. Existence checks and in-memory reads only,
+ * so rendering Settings never decrypts a credential, wedges on the
  * Keychain, or waits on the network. Free with
  * companion_string_free().
  */

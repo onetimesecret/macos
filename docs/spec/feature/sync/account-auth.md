@@ -1,7 +1,7 @@
 # Account auth for the relay channel
 
 **Decided in [ADR-0027](../../../adr/0027-account-auth-gates-the-sync-channel.md)**,
-which promotes this document to a decision, adds the failure modes
+which turns this document into a decision, adds the failure modes
 for each choice, and settles the three things this spec left implicit:
 the gate as a state the core reports rather than the shell infers
 (§5's table below), a server that declines to rotate refresh tokens,

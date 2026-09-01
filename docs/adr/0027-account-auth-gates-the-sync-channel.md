@@ -54,7 +54,7 @@ This ADR is written after the code, which inverts issue #98's stated
 order and has to be said plainly rather than papered over. The client
 half of the flow landed in PR #119 and PR #121, spec first
 (docs/spec/feature/sync/account-auth.md, whose status line says
-"built, spec first"), and this document promotes that spec to a
+"built, spec first"), and this document turns that spec into a
 decision with its failure modes, adds the three sections the spec
 left implicit, and records what remains unratified.
 
