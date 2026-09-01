@@ -27,6 +27,26 @@ struct BackdropApp: App {
                 // is the Settings placeholder, so the standard Edit menu
                 // is asked for by name rather than assumed.
                 TextEditingCommands()
+                // Undo is the core's stack (issue #132), so the menu
+                // has to send the same action the chord does rather
+                // than SwiftUI's own undo command, which drives the
+                // environment's `UndoManager` and knows nothing about
+                // the document. Both items post `undo:`/`redo:` down
+                // the responder chain, where the page's text view
+                // answers them and greys them out from the core's
+                // answer (`InkTextView.validateMenuItem`). With no page
+                // holding the keyboard nothing responds, and the click
+                // is a no-op rather than a second history moving.
+                //
+                // The chords come from the keymap, like every other
+                // chord this app advertises: nil means the file unbound
+                // them, and then the items stay and lose the shortcut.
+                CommandGroup(replacing: .undoRedo) {
+                    Button("Undo") { appDelegate.sendToResponder("undo:") }
+                        .keyboardShortcut(appDelegate.undoShortcut)
+                    Button("Redo") { appDelegate.sendToResponder("redo:") }
+                        .keyboardShortcut(appDelegate.redoShortcut)
+                }
                 // The scene's automatic "Settings…" (⌘,) item would open
                 // the empty placeholder as a blank window. Repoint it so
                 // every ⌘, in the app lands on the one real Settings
@@ -265,6 +285,32 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// the surprise, not the honesty.
     var settingsShortcut: KeyboardShortcut? {
         settingsKeystroke?.keyboardShortcut
+    }
+
+    /// The Edit menu's two undo chords, read from the keymap for the
+    /// same reason ⌘, is: the file is the authoritative list of what
+    /// the keyboard does, and a chord spelled in Swift here would
+    /// survive a user unbinding it in their own keymap.
+    ///
+    /// The page's text view claims the same chord first, because a key
+    /// equivalent reaches the key window's view chain before the main
+    /// menu. The menu carries it to show what the item costs, not to be
+    /// the thing that fires.
+    var undoShortcut: KeyboardShortcut? {
+        model.pages.keymap.menuKeystroke(for: .editorUndo)?.keyboardShortcut
+    }
+
+    var redoShortcut: KeyboardShortcut? {
+        model.pages.keymap.menuKeystroke(for: .editorRedo)?.keyboardShortcut
+    }
+
+    /// Post an action down the responder chain, which is how a menu
+    /// item reaches whoever is first responder. Nothing happens when
+    /// nothing answers, which is the fail-closed shape the whole seam
+    /// keeps: a menu click with no page holding the keyboard moves no
+    /// history at all.
+    func sendToResponder(_ selector: String) {
+        NSApp.sendAction(Selector((selector)), to: nil, from: nil)
     }
 
     /// The Settings window, from the menu bar's ⌘, or either of the

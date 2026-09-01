@@ -131,7 +131,20 @@ public struct InkEditorView: NSViewRepresentable {
         // user-facing surface is still plain, ⌘V pastes plain text and
         // no ruler/font UI exists. Styling is ours alone (restyle()).
         textView.isRichText = true
-        textView.allowsUndo = true
+        // Off, because undo is the core's now (issue #132). A page's
+        // history has to live in exactly one place: the core's stack
+        // knows which operations this device authored and AppKit's does
+        // not, so a second stack could only ever disagree with it, and
+        // on a shared page it would happily revert text that arrived
+        // from another device. Leaving it on would also mean AppKit
+        // quietly retaining every deleted fragment of the page for the
+        // life of the process, with nothing left to drain it.
+        //
+        // There is no non-text undo in this app to lose: nothing but
+        // text editing ever registered an operation on that manager.
+        // The list automation's grouping calls survive as no-ops and
+        // are documented where they stand.
+        textView.allowsUndo = false
         Self.enableFinding(on: textView)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -1778,6 +1791,42 @@ final class InkTextView: NSTextView {
             return true
         }
         return super.performKeyEquivalent(with: event)
+    }
+
+    /// The Edit menu's Undo, which sends `undo:` down the responder
+    /// chain to whoever is first responder, and while a page is being
+    /// typed into that is this view.
+    ///
+    /// Overridden so the mouse route and the keyboard route reach the
+    /// same stack (issue #132). Without this the item would walk past
+    /// the page to `NSUndoManager`, which is a different history of the
+    /// same document and does not know which operations this device
+    /// authored. The chord is intercepted in `performKeyEquivalent`
+    /// above; a click on the menu never goes near it, so a second door
+    /// had to be closed rather than assumed shut.
+    @objc func undo(_ sender: Any?) {
+        coordinator?.step(back: true)
+    }
+
+    @objc func redo(_ sender: Any?) {
+        coordinator?.step(back: false)
+    }
+
+    /// What greys the two items out: the core's answer, because the
+    /// core holds the stack. Everything else the menu asks about is
+    /// `NSTextView`'s to answer.
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard let sheet = coordinator?.currentSheet, let model = coordinator?.model else {
+            return super.validateMenuItem(item)
+        }
+        switch item.action {
+        case #selector(undo(_:)):
+            return isEditable && model.canUndoEdit(sheet: sheet)
+        case #selector(redo(_:)):
+            return isEditable && model.canRedoEdit(sheet: sheet)
+        default:
+            return super.validateMenuItem(item)
+        }
     }
 
     /// The page's chords that carry no ⌘ (⌥Z, the wrap toggle, by

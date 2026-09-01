@@ -35,22 +35,18 @@ final class UndoRerouteTests: XCTestCase {
         model.newPage()
         sheet = try XCTUnwrap(model.selection)
 
-        let layoutManager = NSLayoutManager()
-        let container = NSTextContainer(
-            size: NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude))
-        container.widthTracksTextView = true
-        let storage = model.storage(for: sheet)
-        storage.addLayoutManager(layoutManager)
-        layoutManager.addTextContainer(container)
-        textView = InkTextView(frame: .zero, textContainer: container)
-        textView.isRichText = true
-        textView.allowsUndo = true
+        // The shipping factory rather than a hand-wired view, because
+        // several of these cases are about flags the factory sets: what
+        // AppKit is allowed to hold, and whether the page accepts
+        // typing at all.
         coordinator = InkEditorView.Coordinator(model: model)
-        textView.coordinator = coordinator
+        textView = InkEditorView.makeInkTextView(
+            model: model, sheetID: sheet, coordinator: coordinator
+        )
+        textView.isEditable = true
         textView.delegate = coordinator
         coordinator.textView = textView
         coordinator.currentSheet = sheet
-        storage.delegate = coordinator
     }
 
     private var storage: NSTextStorage { model.storage(for: sheet) }
@@ -172,6 +168,60 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertEqual(coreText(), "", "the second burst came back on its own")
         XCTAssertEqual(outcome.caret, 0, "a merged step returns to where it began")
         XCTAssertFalse(model.canUndoEdit(sheet: sheet))
+    }
+
+    // MARK: The other routes to undo
+
+    /// AppKit must not keep a second stack of the page's text. It is
+    /// not the stack the chord drives any more, so anything on it is a
+    /// stack that can only ever disagree with the core, and Edit > Undo
+    /// clicked with the mouse is a live route into it: a manager that
+    /// held the last few keystrokes would rewrite the storage behind
+    /// the core's back, and on a shared page it would happily revert
+    /// text that arrived from another device.
+    func testTheEditorKeepsNoAppKitStackOfThePagesText() throws {
+        try makeEditor()
+        type("typed")
+        XCTAssertFalse(textView.allowsUndo)
+        XCTAssertFalse(
+            textView.undoManager?.canUndo ?? false,
+            "AppKit is holding a second stack of the page's text")
+    }
+
+    /// And the menu item itself lands on the core. `undo:` is what the
+    /// Edit menu sends down the responder chain, and the page's text
+    /// view is first responder while a page is being typed into.
+    func testTheMenuActionDrivesTheCore() throws {
+        try makeEditor()
+        type("clicked from the menu")
+        XCTAssertTrue(coreText().contains("clicked"))
+
+        textView.undo(nil)
+        XCTAssertEqual(coreText(), "")
+        XCTAssertEqual(storage.string, "")
+
+        textView.redo(nil)
+        XCTAssertEqual(coreText(), "clicked from the menu")
+    }
+
+    /// The menu greys out on the core's answer, not on AppKit's, which
+    /// is empty and would say "nothing to undo" forever.
+    func testTheMenuItemsValidateAgainstTheCore() throws {
+        try makeEditor()
+        let undoItem = NSMenuItem(
+            title: "Undo", action: #selector(InkTextView.undo(_:)), keyEquivalent: "")
+        let redoItem = NSMenuItem(
+            title: "Redo", action: #selector(InkTextView.redo(_:)), keyEquivalent: "")
+        XCTAssertFalse(textView.validateMenuItem(undoItem))
+        XCTAssertFalse(textView.validateMenuItem(redoItem))
+
+        type("something to take back")
+        XCTAssertTrue(textView.validateMenuItem(undoItem))
+        XCTAssertFalse(textView.validateMenuItem(redoItem))
+
+        textView.undo(nil)
+        XCTAssertFalse(textView.validateMenuItem(undoItem))
+        XCTAssertTrue(textView.validateMenuItem(redoItem))
     }
 
     /// A step never un-seals (ADR-0009). Sealing clears the core's stack,
