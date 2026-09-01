@@ -142,6 +142,36 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertEqual(SyncController.reconciled(trouble: .unreachable, gate: nil), .unreachable)
     }
 
+    func testAnAttachRefusalDefersToTheGateThatKnowsWhy() {
+        // The core answers a second 401 on one attach with the reason
+        // "signed_out" and a gate of refused. The reason is the coarser
+        // of the two, so the gate decides which sentence is shown.
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: false, reason: "signed_out", gate: .refused),
+            .refused
+        )
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: false, reason: "signed_out", gate: .signedOut),
+            .signedOut
+        )
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: false, reason: "unreachable", gate: .unreachable),
+            .unreachable
+        )
+        // A core with no gate to report leaves the reason standing.
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: false, reason: "unreachable", gate: nil),
+            .unreachable
+        )
+        // An attach that landed says nothing, and a gate naming a
+        // condition is heard even then.
+        XCTAssertNil(SyncController.settledTrouble(ok: true, reason: nil, gate: .attached))
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: true, reason: nil, gate: .unreachable),
+            .unreachable
+        )
+    }
+
     func testARefusedGateSaysSoAndSpareThePad() {
         XCTAssertEqual(
             SyncController.sentence(

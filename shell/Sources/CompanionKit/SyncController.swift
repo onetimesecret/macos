@@ -278,21 +278,20 @@ public final class SyncController: ObservableObject {
     }
 
     private func settleAttach(_ outcome: SyncOutcome) {
+        // The refresh first, so the gate the settling reads is the one
+        // the attach just moved rather than the one before it.
         refreshState()
         guard enabled else { return }
+        let settled = Self.settledTrouble(
+            ok: outcome.ok, reason: outcome.reason, gate: status?.gate)
         guard outcome.ok else {
-            switch outcome.reason {
-            case "signed_out": trouble = .signedOut
-            case "unreachable":
-                trouble = .unreachable
-                armRetry()
-            default: trouble = .notConfigured
-            }
+            trouble = settled
+            if settled == .unreachable { armRetry() }
             return
         }
         attached = true
         lastAttachPeers = outcome.peers
-        trouble = nil
+        trouble = settled
         pump()
     }
 
@@ -530,6 +529,25 @@ public final class SyncController: ObservableObject {
         case .signingIn, .ready, .attached:
             return trouble == .behind ? .behind : nil
         }
+    }
+
+    /// What an attach outcome and the core's gate together mean. The
+    /// outcome's reason is the coarser of the two: the core answers the
+    /// second 401 on one attach with `signed_out`, which is exactly the
+    /// case `.refused` exists to tell apart, so the gate decides and
+    /// the reason only fills in what the gate does not name.
+    public nonisolated static func settledTrouble(
+        ok: Bool, reason: String?, gate: SyncGate?
+    ) -> Trouble? {
+        var inferred: Trouble?
+        if !ok {
+            switch reason {
+            case "signed_out": inferred = .signedOut
+            case "unreachable": inferred = .unreachable
+            default: inferred = .notConfigured
+            }
+        }
+        return reconciled(trouble: inferred, gate: gate)
     }
 
     /// A failed sign-in, one sentence per §5 failure row.
