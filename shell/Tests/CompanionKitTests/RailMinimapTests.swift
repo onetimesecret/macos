@@ -30,6 +30,27 @@ final class RailMinimapTests: XCTestCase {
         )
     }
 
+    /// No bar may begin above the one before it ended, and none may
+    /// hang off the column. Two faint fills over one another are twice
+    /// the ink, so an overlap draws a seam the reader would take for a
+    /// mark rather than for the join between two days.
+    private func assertLaidOutInOrder(
+        _ bars: [RailMinimap.Bar], in height: CGFloat,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        var settled: CGFloat = 0
+        for bar in bars {
+            XCTAssertGreaterThanOrEqual(
+                bar.y, settled, "a bar began above where the one before it ended",
+                file: file, line: line)
+            XCTAssertGreaterThanOrEqual(bar.height, 0, file: file, line: line)
+            XCTAssertLessThanOrEqual(
+                bar.y + bar.height, height,
+                "a bar was drawn past the foot of the rail", file: file, line: line)
+            settled = bar.y + bar.height
+        }
+    }
+
     // MARK: Nothing to draw
 
     /// A roll nobody has measured has no proportions, so the minimap
@@ -72,10 +93,7 @@ final class RailMinimapTests: XCTestCase {
         XCTAssertEqual(bars.map(\.bucket), [0, -1, -3], "the days lost the roll's own order")
         XCTAssertEqual(bars.map(\.y), [0, 25, 62.5])
         XCTAssertEqual(bars.map(\.height), [25, 37.5, 37.5])
-        for bar in bars {
-            XCTAssertGreaterThanOrEqual(bar.y, 0)
-            XCTAssertLessThanOrEqual(bar.y + bar.height, 100, "a day was drawn past the rail")
-        }
+        assertLaidOutInOrder(bars, in: 100)
     }
 
     /// A day holding one line at the top of a very long roll scales to a
@@ -87,17 +105,48 @@ final class RailMinimapTests: XCTestCase {
         let bars = RailMinimap.bars(of: measured, in: 100)
         XCTAssertEqual(bars.first?.height, RailMinimap.hairline)
         XCTAssertEqual(bars.first?.y, 0)
+        assertLaidOutInOrder(bars, in: 100)
+    }
+
+    /// And the room it borrows comes off the day below it rather than
+    /// out of thin air: the next bar starts where the hairline ended,
+    /// not where its own share of the roll began. Two faint fills laid
+    /// over one another would be twice the ink, and the seam would read
+    /// as a mark rather than as the join between two days.
+    func testAHairlineTakesItsRoomFromTheDayBelow() {
+        let measured = roll([extent(0, 0, 8), extent(-1, 8, 4_000)], document: 4_008)
+        let bars = RailMinimap.bars(of: measured, in: 100)
+        XCTAssertEqual(bars.count, 2)
+        XCTAssertEqual(bars[1].y, RailMinimap.hairline, "the second day began under the first")
+        XCTAssertEqual(bars[1].height, 100 - RailMinimap.hairline)
+        assertLaidOutInOrder(bars, in: 100)
     }
 
     /// The last day of a long roll is drawn against the bottom of the
-    /// rail rather than starting past it, which is the same clamp from
-    /// the other end.
+    /// rail rather than starting past it, and the floor yields to the
+    /// column rather than the column to the floor: a day with only a
+    /// point of room left is drawn a point tall, which is still a mark,
+    /// where a full hairline there could only have been taken out of its
+    /// neighbour or off the end of the rail.
     func testTheLastDayStopsAtTheFootOfTheRail() {
         let measured = roll([extent(0, 0, 990), extent(-1, 990, 10)], document: 1_000)
         let bars = RailMinimap.bars(of: measured, in: 100)
         let last = bars.last
-        XCTAssertEqual(last?.height, RailMinimap.hairline)
-        XCTAssertEqual(last?.y, 100 - RailMinimap.hairline)
+        XCTAssertEqual(last?.y, 99)
+        XCTAssertEqual(last?.height, 1)
+        assertLaidOutInOrder(bars, in: 100)
+    }
+
+    /// A rail too short to give every day a hairline runs out of room
+    /// honestly, in the order the days come in, rather than stacking the
+    /// remainder on top of one another at the foot. Nine days in ten
+    /// points is not a card anybody has, which is exactly why the case
+    /// is asserted rather than reasoned about.
+    func testARailWithNoRoomLeftRunsOutInOrder() {
+        let days = (0..<9).map { extent(-$0, CGFloat($0) * 100, 100) }
+        let bars = RailMinimap.bars(of: roll(days, document: 900), in: 10)
+        XCTAssertEqual(bars.count, 9, "a day the rail draws a row for lost its bar entirely")
+        assertLaidOutInOrder(bars, in: 10)
     }
 
     // MARK: The viewport band

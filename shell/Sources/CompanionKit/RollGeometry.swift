@@ -191,15 +191,40 @@ public enum RailMinimap {
     /// The days, mapped. Empty before the roll has been measured: a
     /// document with no height has no proportions, and inventing some
     /// would draw a shape that is not a reading of anything.
+    ///
+    /// A walk rather than a map, because the hairline floor is what
+    /// makes the bars able to collide. A day scaled to a fifth of a
+    /// point is drawn two points tall, which is ground the next day was
+    /// going to start on, and two faint fills over one another are twice
+    /// the ink: the seam would read as a mark rather than as the join it
+    /// is. So each bar starts no higher than where the one above it
+    /// ended, and the borrowed room comes off the day below, which is
+    /// the day that had room to spare.
+    ///
+    /// The floor yields to the foot of the rail and never the other way
+    /// round. A last day pushed against the bottom is drawn thinner than
+    /// a hairline rather than hanging off the column or climbing back
+    /// over its neighbour, and a rail too short to give every day a
+    /// hairline runs out of room honestly, in the order the days come
+    /// in.
     public static func bars(of roll: RollGeometry, in height: CGFloat) -> [Bar] {
         guard height > 0, roll.documentHeight > 0 else { return [] }
         let scale = height / roll.documentHeight
-        return roll.extents.map { extent in
-            let top = clamped(extent.top * scale, from: 0, to: height)
+        let floor = min(hairline, height)
+        var bars: [Bar] = []
+        // Where the last bar ended, which is the highest the next one may
+        // begin.
+        var settled: CGFloat = 0
+        for extent in roll.extents {
+            let top = max(clamped(extent.top * scale, from: 0, to: height), settled)
             let bottom = clamped(extent.bottom * scale, from: top, to: height)
-            let drawn = max(bottom - top, min(hairline, height))
-            return Bar(bucket: extent.bucket, y: min(top, height - drawn), height: drawn)
+            let wanted = max(bottom - top, floor)
+            let y = max(min(top, height - wanted), settled)
+            let drawn = max(min(wanted, height - y), 0)
+            bars.append(Bar(bucket: extent.bucket, y: y, height: drawn))
+            settled = y + drawn
         }
+        return bars
     }
 
     /// The viewport band, or nothing at all when the whole roll is on
