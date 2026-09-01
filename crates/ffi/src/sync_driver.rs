@@ -450,17 +450,26 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
                     return serde_json::json!({ "ok": false, "reason": reason });
                 }
             }
-            // A second 401 on the same attach, with a token refreshed
-            // in between: the account is refusing this client rather
-            // than the token merely having aged out.
-            Err(RelayRefusal::Unauthorized) => {
-                note_fault(&mut guard, GateFault::Refused);
-                return serde_json::json!({ "ok": false, "reason": "signed_out" });
-            }
+            Err(RelayRefusal::Unauthorized) => return attach_refused(&mut guard),
             Err(_) => return serde_json::json!({ "ok": false, "reason": "refused" }),
         }
     }
     serde_json::json!({ "ok": false, "reason": "refused" })
+}
+
+/// A second `401` on one attach, with a token refreshed in between:
+/// the account is refusing this client rather than the token merely
+/// having aged out, and ADR-0027 §5 says that verdict is the grant
+/// being dead. So take the sign-out path the refused refresh takes.
+///
+/// Noting the fault alone would publish a `refused` gate over a
+/// credential still resting in the keychain, answer `signed_out` for a
+/// session nobody signed out of, and wedge there: `note_reachable`
+/// deliberately will not clear `Refused`, and nothing short of a fresh
+/// ceremony or an explicit sign-out ever does.
+fn attach_refused(companion: &mut Companion) -> serde_json::Value {
+    sign_out_locked(companion);
+    serde_json::json!({ "ok": false, "reason": "signed_out" })
 }
 
 /// Detach: tell the relay (best effort — attachments age out
@@ -2173,6 +2182,35 @@ mod tests {
             *ledger
         );
         assert!(!signed_in(&*credentials), "the sync account alone is gone");
+    }
+
+    #[test]
+    fn a_second_401_on_one_attach_deletes_the_grant() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        assert!(store_refresh(
+            &*credentials,
+            &Zeroizing::new("rt-1".to_owned())
+        ));
+        companion.sync.keeper = Some(keeper_for(
+            companion.sync.config.as_ref().unwrap(),
+            &*credentials,
+        ));
+        assert_eq!(gate_of(&companion), SyncGate::Ready);
+
+        let answer = attach_refused(&mut companion);
+        assert_eq!(answer["reason"], "signed_out");
+        assert_eq!(gate_of(&companion), SyncGate::Refused);
+        assert!(
+            !signed_in(&*credentials),
+            "`refused` is the state whose whole meaning is that the credential is gone"
+        );
+        assert_eq!(
+            status_json(&companion)["signed_in"],
+            false,
+            "the status may not say signed in over a refused gate"
+        );
     }
 
     #[test]
