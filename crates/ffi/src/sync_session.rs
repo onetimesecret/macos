@@ -1541,6 +1541,103 @@ mod tests {
     }
 
     #[test]
+    fn a_peers_delete_only_batch_is_still_an_arrival() {
+        // The frontier check asks whether the document moved, and a
+        // deletion is the move a "did anything change" test most often
+        // swallows: nothing was added, the batch can be shorter than
+        // the one that inserted the text, and a length or a byte count
+        // would read it as nothing happening. What must hold is that
+        // `document_version` advances for a delete exactly as it does
+        // for an insert, so the mark a page carries when someone else
+        // is writing on it appears for a peer erasing a line too.
+        let clock = ManualClock::new();
+        let mut store_a = SheetStore::new(clock.clone());
+        let page_a = store_a.new_tab().unwrap().1;
+        assert!(store_a.apply_ops(
+            page_a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "a line that will be cut".into()
+            }]
+        ));
+        let uuid = store_a.sheet(page_a).unwrap().uuid();
+
+        let mut store_b = SheetStore::new(clock.clone());
+        let page_b = store_b.new_tab().unwrap().1;
+        let pristine = store_b.document_version(page_b).unwrap();
+        let full = store_a.export_document_updates(page_a, &pristine).unwrap();
+        store_b.adopt_key_frame(page_b, uuid, &full).unwrap();
+
+        let chain_a = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut chain_b = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut a = session("fp-a");
+        let mut b = session("fp-b");
+        let (pkcs8_b, _) = identity();
+        let mut packages_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
+        let mut relay = FakeRelay::default();
+
+        // B holds the whole line. A now removes part of it and
+        // publishes nothing but that removal.
+        let adopted = store_b.document_version(page_b).unwrap();
+        assert!(store_a.apply_ops(
+            page_a,
+            &[EditOp::Delete {
+                pos_u16: 0,
+                len_u16: 7
+            }]
+        ));
+        let delta = store_a.export_document_updates(page_a, &adopted).unwrap();
+        a.queue_ops(uuid, &delta);
+        let request = a.publish_request(0, &chain_a).unwrap();
+        a.absorb_publish(&relay.accept_publish(&request)).unwrap();
+
+        let before = store_b.document_version(page_b).unwrap();
+        let events = b
+            .absorb_deltas(
+                &relay.serve_fetch(0),
+                &mut store_b,
+                &mut chain_b,
+                &mut packages_b,
+                &[],
+                0,
+            )
+            .unwrap();
+        assert!(
+            events.contains(&SyncEvent::Applied(uuid)),
+            "a peer erasing text is another device writing on the page"
+        );
+        assert_ne!(
+            store_b.document_version(page_b).unwrap(),
+            before,
+            "the frontier moves for a deletion, which is what the event rests on"
+        );
+        assert_eq!(
+            store_b.sheet(page_b).unwrap().segments(),
+            [companion_core::Segment::Ink("that will be cut".into())],
+            "and the deletion is the one A made"
+        );
+
+        // The same batch again is the echo, and an echo removes
+        // nothing a second time.
+        let echo = b
+            .absorb_deltas(
+                &relay.serve_fetch(0),
+                &mut store_b,
+                &mut chain_b,
+                &mut packages_b,
+                &[],
+                0,
+            )
+            .unwrap();
+        assert!(
+            !echo
+                .iter()
+                .any(|event| matches!(event, SyncEvent::Applied(_))),
+            "a deletion already held is not an arrival either"
+        );
+    }
+
+    #[test]
     fn two_devices_confirm_a_ceremony_at_the_same_stream_position() {
         let clock = ManualClock::new();
         let mut store_a = SheetStore::new(clock.clone());
