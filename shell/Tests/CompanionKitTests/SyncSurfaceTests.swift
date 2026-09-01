@@ -185,6 +185,99 @@ final class SyncSurfaceTests: XCTestCase {
                 enabled: false, status: status(gate: .refused), trouble: .refused, peers: nil))
     }
 
+    // MARK: The header word (issue #102, criterion 4)
+
+    private func word(
+        gate: SyncGate?, trouble: SyncController.Trouble? = nil, peers: Int? = 1,
+        enrolled: Int = 1, enabled: Bool = true
+    ) -> SyncHeaderWord? {
+        SyncController.headerWord(
+            enabled: enabled,
+            status: status(attached: gate == .attached, enrolled: enrolled, gate: gate),
+            trouble: trouble,
+            peers: peers
+        )
+    }
+
+    func testTheHeaderSaysNothingAboutSyncWhileItIsOff() {
+        XCTAssertNil(word(gate: .attached, enabled: false))
+        XCTAssertNil(
+            word(gate: .refused, trouble: .refused, enabled: false),
+            "off is silence even when the last thing sync heard was a refusal")
+        XCTAssertNil(word(gate: .off), "and a switch over no relay owes the header nothing")
+    }
+
+    func testEveryGateStateThatSpeaksHasItsOwnHeaderWord() {
+        let speaking: [SyncGate] = [.signedOut, .signingIn, .refused, .unreachable, .ready, .attached]
+        let words = speaking.map { word(gate: $0)?.text }
+        for (gate, text) in zip(speaking, words) {
+            XCTAssertNotNil(text, "\(gate) may not be silent in the header")
+        }
+        XCTAssertEqual(
+            Set(words.compactMap { $0 }).count, speaking.count,
+            "no two gate states share a word")
+        XCTAssertEqual(word(gate: .signedOut)?.text, "sync signed out")
+        XCTAssertEqual(word(gate: .signingIn)?.text, "signing in")
+        XCTAssertEqual(word(gate: .refused)?.text, "sync refused")
+        XCTAssertEqual(word(gate: .unreachable)?.text, "sync offline")
+        XCTAssertEqual(word(gate: .ready)?.text, "reaching")
+        XCTAssertEqual(word(gate: .attached)?.text, "synced")
+    }
+
+    func testTheLoudWordsAreTheOnesAUserMustActOn() {
+        XCTAssertEqual(word(gate: .refused)?.tone, .loud)
+        XCTAssertEqual(word(gate: .unreachable)?.tone, .loud)
+        XCTAssertEqual(
+            word(gate: .attached, trouble: .behind)?.tone, .loud,
+            "falling behind is not a gate state and still has to be loud")
+        // A working channel is not news, so it is drawn as quietly as
+        // the persistence word's `saved`.
+        XCTAssertEqual(word(gate: .attached)?.tone, .quiet)
+        XCTAssertEqual(word(gate: .ready)?.tone, .plain)
+        XCTAssertEqual(word(gate: .signingIn)?.tone, .plain)
+    }
+
+    func testFallingBehindOutranksTheGatesGoodNews() {
+        XCTAssertEqual(word(gate: .attached, trouble: .behind)?.text, "sync behind")
+        XCTAssertEqual(word(gate: .ready, trouble: .behind)?.text, "sync behind")
+        // But the account axis still wins over it where the gate names
+        // a condition of its own: a refused account is why nothing is
+        // arriving, and rejoining cannot be attempted through it.
+        XCTAssertEqual(word(gate: .attached, trouble: .refused)?.text, "synced")
+    }
+
+    func testAttachedWithNobodyAwakeDoesNotClaimToBeSynced() {
+        XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 2)?.text, "sync waiting")
+        // With nothing enrolled there is nothing waiting: an empty
+        // channel is genuinely up to date.
+        XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 0)?.text, "synced")
+    }
+
+    func testACoreWithNoGateLeavesTheShellsOwnReadingStanding() {
+        // A core built before the gate existed, or one a version ahead
+        // naming a state this build never heard of.
+        XCTAssertEqual(word(gate: nil, trouble: .unreachable)?.text, "sync offline")
+        XCTAssertEqual(word(gate: nil, trouble: .signedOut)?.text, "sync signed out")
+        XCTAssertNil(word(gate: nil, trouble: nil), "and it invents nothing to say")
+    }
+
+    func testTheHeaderWordAndTheStandingSentenceNeverDisagree() {
+        // Every degraded condition that earns a sentence earns a word,
+        // so the page and the header can never be caught telling a user
+        // two different things about one channel.
+        let troubles: [SyncController.Trouble] = [.signedOut, .refused, .unreachable, .behind]
+        for trouble in troubles {
+            let gate = SyncController.reconciled(trouble: trouble, gate: nil)
+            XCTAssertNotNil(
+                SyncController.sentence(
+                    enabled: true, status: status(gate: nil), trouble: gate, peers: 1))
+            XCTAssertNotNil(
+                SyncController.headerWord(
+                    enabled: true, status: status(gate: nil), trouble: gate, peers: 1),
+                "\(trouble) speaks on the page and must speak in the header too")
+        }
+    }
+
     func testSyncStatusDecoding() throws {
         let json = """
         {

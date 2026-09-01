@@ -44,6 +44,29 @@ public struct SyncEndpoints: Equatable, Sendable {
     }
 }
 
+/// The one word the header says about sync, beside the one it already
+/// says about the write (issue #102). The persistence word is the
+/// pattern being followed rather than a second vocabulary invented:
+/// short, lower case, absent while there is nothing to report, quiet
+/// for the states that need nothing and loud for the ones that need
+/// acting on. `help` and `spoken` travel with the word so a tooltip
+/// and VoiceOver never have to reconstruct what it meant.
+public struct SyncHeaderWord: Equatable, Sendable {
+    /// How loudly the word is drawn. `quiet` is the settled state, the
+    /// way `saved` is quiet; `plain` is a state in motion; `loud` is
+    /// the ember reserved for what a user has to do something about.
+    public enum Tone: Equatable, Sendable {
+        case quiet
+        case plain
+        case loud
+    }
+
+    public let text: String
+    public let tone: Tone
+    public let help: String
+    public let spoken: String
+}
+
 /// The shell's sync driver (issues #98 and #102): owns the off
 /// switch, the sign-in ceremony, the engine loop, and the pairing
 /// flow, all over the `companion_sync_*` seam. Off is the default and
@@ -153,6 +176,14 @@ public final class SyncController: ObservableObject {
     /// sync is off (silence is the promise) or quiet and well.
     public var standingSentence: String? {
         Self.sentence(enabled: enabled, status: status, trouble: trouble, peers: lastAttachPeers)
+    }
+
+    /// The header's sync word, or nil when the header should carry
+    /// none: sync off, and a switch turned on over no relay at all,
+    /// which the gate reads as `off` and the ADR gives nothing to say.
+    public var headerWord: SyncHeaderWord? {
+        Self.headerWord(
+            enabled: enabled, status: status, trouble: trouble, peers: lastAttachPeers)
     }
 
     /// The Settings section's own status line: the standing sentence,
@@ -510,6 +541,113 @@ public final class SyncController: ObservableObject {
             return "no other device is awake; pages sync when one wakes"
         }
         return nil
+    }
+
+    /// The header's word for where sync stands, driven by the gate the
+    /// core reports (ADR-0027 §5) and by nothing the shell inferred.
+    ///
+    /// Three rules, all inherited from the persistence word rather than
+    /// invented here. Nothing shows while there is nothing to report,
+    /// so a user who never turned sync on sees a header identical to
+    /// the one before sync existed. The settled state is quiet, the way
+    /// `saved` is quiet, because a working channel is not news. And the
+    /// two states a user has to act on are loud, the way `save failed`
+    /// is loud.
+    ///
+    /// `off` earns no word even with the switch on, which happens when
+    /// no relay is configured: the ADR gives that state nothing to say
+    /// here, and the page's standing sentence says the whole of it in a
+    /// place with room for the reason.
+    public nonisolated static func headerWord(
+        enabled: Bool, status: SyncStatus?, trouble: Trouble?, peers: Int?
+    ) -> SyncHeaderWord? {
+        guard enabled else { return nil }
+        // Falling behind a rotation is not a gate state (ADR-0027 §5),
+        // and it outranks the gate's own good news: a device the
+        // channel rotated past passed the gate and lacks a key.
+        if trouble == .behind {
+            return SyncHeaderWord(
+                text: "sync behind",
+                tone: .loud,
+                help:
+                    "This Mac is behind the channel's current key. Edits stay local until it rejoins.",
+                spoken: "Sync is behind a key rotation"
+            )
+        }
+        switch status?.gate ?? gateStandingIn(for: trouble) {
+        case .off, nil:
+            return nil
+        case .signedOut:
+            return SyncHeaderWord(
+                text: "sync signed out",
+                tone: .plain,
+                help: "Sync is on and signed out. Sign in from Settings; the pad is unaffected.",
+                spoken: "Sync is signed out"
+            )
+        case .signingIn:
+            return SyncHeaderWord(
+                text: "signing in",
+                tone: .plain,
+                help: "Waiting on your browser to finish signing in. Settings can give up on it.",
+                spoken: "Signing in, waiting on the browser"
+            )
+        case .refused:
+            return SyncHeaderWord(
+                text: "sync refused",
+                tone: .loud,
+                help:
+                    "The account refused this sign-in and the stored one is gone. Sign in again from Settings; the pad is unaffected.",
+                spoken: "The account refused sync"
+            )
+        case .unreachable:
+            return SyncHeaderWord(
+                text: "sync offline",
+                tone: .loud,
+                help: "The relay cannot be reached. Edits stay on this Mac and sync keeps retrying.",
+                spoken: "Sync is offline and retrying"
+            )
+        case .ready:
+            return SyncHeaderWord(
+                text: "reaching",
+                tone: .plain,
+                help: "Signed in, reaching the relay to attach.",
+                spoken: "Reaching the relay"
+            )
+        case .attached:
+            // Issue #94's device: enrolled pages and nobody awake to
+            // receive them. Saying "synced" there would be the one
+            // cheerful lie this word could tell.
+            if peers == 0, let status, status.enrolled > 0 {
+                return SyncHeaderWord(
+                    text: "sync waiting",
+                    tone: .plain,
+                    help:
+                        "No other device is awake. The pages you chose travel as soon as one is.",
+                    spoken: "Sync is waiting for another device"
+                )
+            }
+            return SyncHeaderWord(
+                text: "synced",
+                tone: .quiet,
+                help: "Attached to the channel; the pages you chose travel to your paired devices.",
+                spoken: "Synced"
+            )
+        }
+    }
+
+    /// What gate a core too old or too new to name one would have
+    /// named, read back from the shell's own trouble. A fallback and
+    /// never an override: `headerWord` consults it only where the core
+    /// said nothing, so the gate stays the authority wherever there is
+    /// one (ADR-0027 §5).
+    private nonisolated static func gateStandingIn(for trouble: Trouble?) -> SyncGate? {
+        switch trouble {
+        case .notConfigured: return .off
+        case .signedOut: return .signedOut
+        case .refused: return .refused
+        case .unreachable: return .unreachable
+        case .behind, nil: return nil
+        }
     }
 
     /// The account axis of the standing trouble, as the core reports
