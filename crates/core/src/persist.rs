@@ -380,16 +380,22 @@ impl<C: Clock> SheetStore<C> {
         // file written by a session whose wall clock stepped, which is
         // not this call's business to correct.
         let mut merged: Vec<LedgerRecord> = self.ledger.drain(..).collect();
-        // A record already in hand is not taken from the file a second
-        // time, so reading one file twice — or reading a file that was
-        // saved after this same merge — reads back as one trail rather
-        // than two. Records are indexed by the two fields any twin must
-        // agree on, so the equality test only ever looks at the handful
-        // that could possibly be the same event; the test itself is the
-        // whole record, so a field added later joins it for free. The
-        // file is never deduplicated against itself: two identical
-        // records that a session genuinely wrote down are two things
-        // that happened, and this is not the place to decide otherwise.
+        // The merge is a multiset union: every copy the file and the
+        // deque both hold cancels one for one, and any copy only the
+        // file holds is kept. So reading one file twice, or reading a
+        // file saved after this same merge, reads back as one trail
+        // rather than two, while a file that genuinely holds more copies
+        // of an event than the deque does keeps the surplus. The deque's
+        // records are indexed by the two fields any twin must agree on,
+        // so the equality test only ever weighs the handful that could
+        // be the same event; the test itself is the whole record, so a
+        // field added later joins it for free. A match consumes the live
+        // record it spent, removing its position, so a second identical
+        // file record cannot cancel against the same deque record twice.
+        // The file is never deduplicated against itself: two identical
+        // records a session genuinely wrote down are two things that
+        // happened, and the loaded list is never indexed here, only the
+        // deque.
         let mut held: HashMap<(u64, ItemId), Vec<usize>> = HashMap::new();
         for (index, record) in merged.iter().enumerate() {
             held.entry((record.at_wall_ms, record.item))
@@ -397,8 +403,16 @@ impl<C: Clock> SheetStore<C> {
                 .push(index);
         }
         for record in loaded {
-            let twins = held.get(&(record.at_wall_ms, record.item));
-            if twins.is_some_and(|twins| twins.iter().any(|&index| merged[index] == record)) {
+            let spent = held
+                .get_mut(&(record.at_wall_ms, record.item))
+                .and_then(|positions| {
+                    positions
+                        .iter()
+                        .position(|&index| merged[index] == record)
+                        .map(|slot| positions.remove(slot))
+                })
+                .is_some();
+            if spent {
                 continue;
             }
             merged.push(record);
@@ -1893,6 +1907,56 @@ mod tests {
         // hand is taken from it a second time.
         assert_eq!(revived.restore_ledger(&file, 0).unwrap(), kept);
         assert_eq!(revived.ledger().cloned().collect::<Vec<_>>(), records);
+    }
+
+    /// One ledger record, every field pinned so two calls with the same
+    /// arguments compare fully equal. The identity is passed in rather
+    /// than minted so a caller can hand the same page's id to several.
+    fn ledger_record(item: ItemId, at_wall_ms: u64) -> LedgerRecord {
+        LedgerRecord {
+            event: LedgerEvent::Sent,
+            item,
+            title: String::from("a page"),
+            at_wall_ms,
+            item_created_wall_ms: at_wall_ms,
+            size: SizeClass::Tiny,
+            destination: DestinationClass::Clipboard,
+        }
+    }
+
+    /// A ledger file carrying exactly the given records, in order.
+    fn ledger_file(records: &[LedgerRecord]) -> Zeroizing<Vec<u8>> {
+        let (mut store, _) = store();
+        store.ledger = records.iter().cloned().collect();
+        store.ledger_snapshot()
+    }
+
+    #[test]
+    fn a_ledger_restore_unions_duplicate_records_as_a_multiset() {
+        // Two byte-identical records (same millisecond, same item,
+        // equal in every field) are two things that happened, and a
+        // merge must keep both rather than collapse them to one. The
+        // deque starts holding one copy; a file of two then adds the
+        // surplus, spending its single live twin and keeping the other,
+        // the way a multiset union does.
+        let item = ItemId::random();
+        let r = ledger_record(item, 1_800_000_000_000);
+        let one = ledger_file(std::slice::from_ref(&r));
+        let two = ledger_file(&[r.clone(), r.clone()]);
+
+        let (mut store, _) = store();
+        assert_eq!(store.restore_ledger(&one, 0).unwrap(), 1);
+        assert_eq!(
+            store.restore_ledger(&two, 0).unwrap(),
+            2,
+            "the surplus copy the deque lacked was kept, not deduplicated away"
+        );
+        let records: Vec<LedgerRecord> = store.ledger().cloned().collect();
+        assert_eq!(
+            records,
+            vec![r.clone(), r],
+            "both copies survived the union"
+        );
     }
 
     #[test]
