@@ -6322,7 +6322,7 @@ mod tests {
             let address = handle as usize;
             let waiting = std::thread::spawn(move || {
                 let handle = address as *mut CompanionHandle;
-                unsafe { take_json(companion_sync_signin_finish(handle, 1_000)) }
+                take_json(companion_sync_signin_finish(handle, 1_000))
             });
             let mut seen = String::new();
             for _ in 0..40 {
