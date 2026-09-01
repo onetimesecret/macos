@@ -837,8 +837,17 @@ bool companion_sync_configure(CompanionHandle *handle, const char *json);
  * "gate", "signin_pending", "attached", "epoch", "frame_present",
  * "enrolled", "pairing"}. Existence checks and in-memory reads only,
  * so rendering Settings never decrypts a credential, wedges on the
- * Keychain, or waits on the network. Free with
- * companion_string_free().
+ * Keychain, or waits on the network.
+ *
+ * "attached" and a "gate" of "attached" are deliberately not the same
+ * question. "attached" is the relay's answer: an attachment stands.
+ * The gate additionally asks whether the next request can use it, and
+ * a 401 on any route drops the access token, so the gate falls back to
+ * "ready" while "attached" stays true until the refresh lands. So
+ * {"attached": true, "gate": "ready"} is a legal and common pair, and
+ * the gate is the one to switch on: it is the value that says whether
+ * this client may attach, and "attached" is a fact about the last
+ * round trip. Free with companion_string_free().
  */
 char *companion_sync_status_json(CompanionHandle *handle);
 
@@ -849,8 +858,16 @@ char *companion_sync_status_json(CompanionHandle *handle);
  * JSON carries as "gate", for a caller that wants the one word
  * without the rest. It says whether this client may attach to the
  * channel and nothing about content: passing this gate without
- * pairing downloads ciphertext that will not open. Null on a null
- * handle. Free with companion_string_free().
+ * pairing downloads ciphertext that will not open.
+ *
+ * Null on a null handle or a core that could not be read at all. Null
+ * is not one of the seven states and must never be softened into one:
+ * a gate that could not be read has not been passed, so a caller
+ * treats it as "may not attach" rather than as no opinion. That is a
+ * different fact from the status JSON simply carrying no "gate" key,
+ * which is a core older or newer than the caller and does mean no
+ * opinion; a caller reading the gate out of the status keeps whatever
+ * it already believed. Free with companion_string_free().
  */
 char *companion_sync_gate(CompanionHandle *handle);
 
@@ -860,8 +877,12 @@ char *companion_sync_gate(CompanionHandle *handle);
  * {"ok": true, "authorize_url"} for the shell to open in the SYSTEM
  * browser — never a web view. Then call companion_sync_signin_finish
  * from a background queue. {"ok": false, "reason"} with "busy" while a
- * ceremony already waits, "not_configured", "port" (the listener could
- * not bind), or "no_entropy". Free with companion_string_free().
+ * ceremony already waits for its finish OR a finish is out on the
+ * browser, "not_configured", "port" (the listener could not bind), or
+ * "no_entropy". A second listener bound behind the first browser trip
+ * would leave two sockets open on one consent screen, so a begin
+ * refuses rather than superseding; companion_sync_signin_cancel is the
+ * way out. Free with companion_string_free().
  */
 char *companion_sync_signin_begin(CompanionHandle *handle);
 
@@ -874,16 +895,25 @@ char *companion_sync_signin_begin(CompanionHandle *handle);
  * only at the edges; the pad never waits on this. Returns {"ok": true}
  * or {"ok": false, "reason"} with the section-5 tokens: "abandoned",
  * "state_mismatch", "no_code", "unreachable", "refused",
- * "no_ceremony", "keychain". Every failure leaves nothing stored;
- * retry is a fresh begin. Free with companion_string_free().
+ * "no_ceremony", "busy", "keychain". Every failure leaves nothing
+ * stored; retry is a fresh begin. A call made while another finish is
+ * already out on the browser answers "busy" and leaves that ceremony
+ * and the gate exactly as they were. "abandoned" also covers a
+ * ceremony ended by companion_sync_signin_cancel or
+ * companion_sync_signout while this call was out, including one ended
+ * after the redirect landed: the grant is dropped rather than
+ * persisted. Free with companion_string_free().
  */
 char *companion_sync_signin_finish(CompanionHandle *handle,
                                    uint64_t patience_ms);
 
 /*
- * Forget a begun, unfinished sign-in ceremony: the listener closes and
- * the PKCE material drops. True when there was one to forget. A finish
- * already blocking is not interrupted — it owns the listener by then.
+ * Give up on the sign-in ceremony, whichever half it is in: one still
+ * waiting for its finish drops with its listener, and one a finish is
+ * already holding out on the browser is marked abandoned, which that
+ * finish reads at every wait it has left and once more under the lock
+ * that would have persisted the grant. The gate stops reading
+ * "signing_in" at once. True when there was a ceremony to end.
  */
 bool companion_sync_signin_cancel(CompanionHandle *handle);
 
@@ -891,7 +921,9 @@ bool companion_sync_signin_cancel(CompanionHandle *handle);
  * Sign sync out: drop the held tokens and delete the persisted refresh
  * token — exactly one Keychain account. The conceal token, the content
  * and ledger keys, and the pairing accounts all stand; the pad is
- * unaffected, which is the point. True when the delete was accepted.
+ * unaffected, which is the point. A sign-in ceremony still out on the
+ * browser is ended with it, so a redirect landing afterwards persists
+ * nothing. True when the delete was accepted.
  */
 bool companion_sync_signout(CompanionHandle *handle);
 

@@ -397,10 +397,13 @@ the top and pushed apart by a spacer, so a bar and the row for the same
 day do not line up and are not meant to: a day holding most of the roll
 takes most of the column whatever height its row happens to have. What
 the two do share is a count and an order, one shape per drawn day,
-newest at the top of both. Anyone who wants the bars to sit beside their
-rows is asking for a different feature, one where the rail's rows are
-laid out by content rather than packed, and that is a layout change and
-not a drawing one.
+newest at the top of both. A bar is always ink somebody can see: a
+column with no two points left for a day drops that day's bar rather
+than keeping it at no height, which takes far more days than a card can
+draw rows for and is why a row without a bar reads as a fault. Anyone
+who wants the bars to sit beside their rows is asking for a different
+feature, one where the rail's rows are laid out by content rather than
+packed, and that is a layout change and not a drawing one.
 
 Four things about it are load-bearing.
 
@@ -433,7 +436,11 @@ Four things about it are load-bearing.
   a few rectangles rather than the header, the status stack and the
   page. The roll watches the clip's **bounds** as well as its frame for
   this, since scrolling moves no frame and nothing had needed to notice
-  it before.
+  it before. The model answers to one roll at a time: a mount claims it,
+  and a roll that no longer holds the claim is met with silence, because
+  SwiftUI may build and lay out a replacement before dismantling what it
+  replaces and the outgoing surface's parting reset would otherwise
+  blank a minimap that had just been measured honestly.
 
 The mapping into the rail's coordinates is two pure functions,
 `RailMinimap.bars(of:in:)` and `band(of:in:)`, in the idiom
@@ -441,8 +448,9 @@ The mapping into the rail's coordinates is two pure functions,
 the ones a drawing cannot be squinted at for: an unmeasured roll draws
 nothing rather than inventing proportions, a day a fraction of a point
 tall draws a hairline rather than vanishing under a row the rail is
-drawing anyway, an elastic overscroll clamps into the column instead of
-hanging off it, and a roll that fits in the card gets no band at all,
+drawing anyway, a column with no room left runs out in the order the
+days come in rather than keeping bars nobody can see, an elastic
+overscroll clamps into the column instead of hanging off it, and a roll that fits in the card gets no band at all,
 because a band around everything marks nothing.
 
 Everything the rail already did is untouched by both: the tap targets,
@@ -695,7 +703,8 @@ decision that is Rust, the more of it is validated before a PR exists.
   height draw nothing; one day that is the whole roll fills the column;
   several days keep their order, their share and their place inside it;
   a day a fraction of a point tall draws a hairline; the last day stops
-  at the foot of the rail; the band is absent when the whole roll is on
+  at the foot of the rail; a column with no room left runs out in the
+  order the days come in and keeps no bar it cannot draw; the band is absent when the whole roll is on
   screen, follows the clip when it is not, and clamps into the column at
   both ends of an elastic overscroll; and two pages of one day fold into
   one bar.
@@ -703,8 +712,17 @@ decision that is Rust, the more of it is validated before a PR exists.
   One extent per day in document order, each running from the top of its
   header to the bottom of its page, read against the frames the pass
   actually set; a day holding more writing measuring taller than a day
-  holding a line; two pages of one day measuring as one extent; and the
-  viewport following the clip down a roll that outgrows the card.
+  holding a line; two pages of one day measuring as one extent; the
+  viewport following the clip down a roll that outgrows the card; and a
+  teardown arriving after the replacement roll has already measured
+  itself leaving that measurement standing.
+- **The hop, and who is allowed to take it**
+  (`RollGeometryModelTests`, no window at either end). A mount clears
+  what the last roll left behind; a replaced roll can neither reset nor
+  publish; the last roll going away leaves the rail with nothing to
+  draw; a measurement the rail is already drawing is not published at
+  all; and a burst of them inside one turn of the loop lands as one
+  redraw, on the last measurement rather than the first.
 - **The chords, pressed.** ⌘1 in the mode lands on today and takes the
   create path when today is empty, and a second press is a jump; ⌘2 and
   ⌥⌘→ count days rather than slots, asserted as the contrast between the

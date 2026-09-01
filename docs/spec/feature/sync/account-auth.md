@@ -33,9 +33,13 @@ The app authenticates with **OAuth 2.0 authorization code + PKCE, in
 the user's default browser, returning on a loopback redirect** — the
 native-app BCP, RFC 8252, followed as written: public client, no
 client secret, `S256` code challenge, exact-match loopback redirect URI
-(`http://127.0.0.1:{ephemeral}/callback`), `state` checked on return.
-The app opens the browser, listens once on an ephemeral loopback port,
-exchanges the code, and closes the listener.
+(`http://127.0.0.1:{ephemeral}/callback`), `state` checked on return,
+and `scope=sync` asked for explicitly. The app opens the browser,
+listens once on an ephemeral loopback port, exchanges the code, and
+closes the listener. The redirect URI is **registered portless**
+server side (`http://127.0.0.1/callback`), which is what lets any
+ephemeral port match; ADR-0027 §1 says why that registration is a hard
+requirement rather than a detail.
 
 The issue asks where the browser step lands for an app that "is not a
 browser and has no server side to receive a redirect". The BCP's
@@ -79,7 +83,10 @@ lifetimes are chosen for that shape:
 - **Expiry mid-session:** the relay answers an expired access token
   with `401`; the client refreshes and retries the one request. The
   long-poll (`relay-protocol.md` §4) simply returns on the same `401`
-  and re-enters after the refresh. The client never pre-judges expiry
+  and re-enters after the refresh, but on the retry clock rather than
+  at once: a `401` comes back instantly instead of holding the poll
+  open, so an immediate re-entry against a relay that keeps refusing
+  would be a hot loop. The client never pre-judges expiry
   by its own clock — the server's `401` is the only authority, so clock
   skew cannot invent an outage.
 - **Refresh refused** (revoked account-side, rotation reuse tripped,
@@ -146,7 +153,7 @@ attach or publish actually needs the network.
 | Redirect arrives with wrong `state` | Abort, nothing stored, retry offered. |
 | `401` mid-session | Refresh once, retry once; on second `401`, treat as refresh refused. |
 | Refresh refused or reuse detected | Sync signed out with its sentence; pad untouched; re-enrol via §1. |
-| No network at refresh time | Sync degraded with its sentence ("the relay cannot be reached"); retry follows the publish clock, not a hot loop. |
+| No network at refresh time | Sync degraded with its sentence ("sync could not reach the server"); retry follows the publish clock, not a hot loop. |
 | Token or grant revoked account-side | Indistinguishable from refresh refused, handled identically. |
 
 Every one of these lands on one of ADR-0027 §5's seven gate states,

@@ -1,9 +1,10 @@
 # ADR-0027: Account auth gates the sync channel
 
-- **Status:** proposed. Three items are flagged for ratification and
-  named as such in section 1 (the loopback port), section 2 (the
-  server's refresh policy) and section 3 (the token's scope). Each is
-  a fact the account server owns and this client can only tolerate.
+- **Status:** accepted, 2026-09-01. The three items this ADR first
+  raised as flagged, the loopback port in section 1, the refresh
+  policy in section 2 and the token's scope in section 3, were
+  answered by testing rodauth-oauth against a running server, and each
+  is now a decision in the section that raised it.
 - **Date:** 2026-09-01
 - **Depends on:**
   [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md) section 3,
@@ -55,26 +56,28 @@ order and has to be said plainly rather than papered over. The client
 half of the flow landed in PR #119 and PR #121, spec first
 (docs/spec/feature/sync/account-auth.md, whose status line says
 "built, spec first"), and this document turns that spec into a
-decision with its failure modes, adds the three sections the spec
-left implicit, and records what remains unratified.
+decision with its failure modes and adds the three sections the spec
+left implicit. The three server side facts it first raised as open
+were then settled against a running server, and their answers are in
+the sections that raised them.
 
 Standing before this ADR:
 
 - The ceremony: `AuthCeremony::begin` mints the PKCE verifier, the
   `S256` challenge, the `state` and the exact loopback redirect URI
-  (crates/sync/src/oauth.rs:81), and `redeem` checks the returned
+  (crates/sync/src/oauth.rs:98), and `redeem` checks the returned
   `state` before building the token request
-  (crates/sync/src/oauth.rs:133). The one shot listener that receives
+  (crates/sync/src/oauth.rs:151). The one shot listener that receives
   the redirect is crates/sync/src/loopback.rs.
 - The lifetimes: `TokenKeeper` holds the access token in memory only
   and treats the server's refusal as the only expiry authority
-  (crates/sync/src/oauth.rs:221).
+  (crates/sync/src/oauth.rs:270).
 - The strategy: `BearerAuth` is a second `AuthStrategy` beside
   `BasicAuth`, added without touching the conceal path
   (crates/ots-client/src/auth.rs:49).
 - The resting place: the refresh token rests under its own account,
   `sync-oauth-refresh`, in the key material store
-  (crates/ffi/src/sync_driver.rs:44).
+  (crates/ffi/src/sync_driver.rs:46).
 - The driver: sign in, refresh, sign out, attach, pump
   (crates/ffi/src/sync_driver.rs), and the shell's states and
   sentences (shell/Sources/CompanionKit/SyncController.swift).
@@ -97,7 +100,8 @@ follows, and `oauth_device_code_grant` exists but is off by default,
 which makes it a server change to request rather than a capability to
 assume. Refresh token rotation and reuse detection are a server side
 configuration this client can ask for and must not require; section 2
-is written for a server that rotates and a server that does not.
+is written for a server that rotates and a server that does not, and
+the server as configured does rotate.
 
 ## Decision
 
@@ -112,9 +116,10 @@ which may discard an edit.
 
 **Authorization code plus PKCE, in the system browser, returning to a
 loopback listener.** RFC 8252 followed as written: public client, no
-client secret, `S256` challenge, exact match redirect URI on
-`http://127.0.0.1:{port}/callback`, `state` checked on return, one
-redemption per ceremony.
+client secret, `S256` challenge, a redirect URI on
+`http://127.0.0.1:{port}/callback` matched against a portless
+registration, `scope=sync` asked for explicitly, `state` checked on
+return, one redemption per ceremony.
 
 - https://www.rfc-editor.org/rfc/rfc8252
 - https://www.rfc-editor.org/rfc/rfc7636
@@ -169,17 +174,31 @@ with revocation as a support conversation.
 | The token endpoint refuses the code | Refused with its status, and the body is not echoed anywhere, since it can carry account identifiers. |
 | The token endpoint cannot be reached | Reported as unreachable; the refusal is the network's, not the account's, and nothing is signed out. |
 
-**Flagged for ratification: the loopback port.** RFC 8252 section 7.3
-says an authorization server must allow any port for a loopback
-redirect at request time, because the client cannot know in advance
-which port it will get. Whether rodauth-oauth implements that
-allowance, or matches the registered redirect URI including its port,
-is a server fact this client cannot discover from here. If it matches
-strictly, this client must bind from a small fixed list of registered
-ports and fail when all are taken, which is a worse flow, and the
-change belongs in `AuthCeremony::begin` and the registration. The
-maintainer confirms which it is with the server side before the first
-real sign in.
+**Decided: the redirect is registered portless, and that registration
+is a hard requirement.** RFC 8252 section 7.3 says an authorization
+server must allow any port for a loopback redirect at request time,
+because the client cannot know in advance which port it will get.
+Tested against a running rodauth-oauth: it strips the port from the
+incoming redirect URI and compares what is left against the registered
+list unnormalized. So the allowance is real but it is a property of
+the registration rather than of the server. A portless registration,
+`http://127.0.0.1/callback`, accepts a request from any port, and a
+registration that carries a port rejects every other port, which would
+force this client back onto a small fixed list and a failure when all
+of them are taken.
+
+Therefore the sync client is registered with a portless IP literal
+redirect, `http://127.0.0.1/callback`, and the app binds `127.0.0.1`
+on an ephemeral port exactly as described above. Never `localhost`:
+the server accepts it, and OAuth 2.1 section 8.4.2 marks it NOT
+RECOMMENDED because the name can resolve somewhere else on a machine
+whose resolver has been arranged for it.
+
+This is recorded as a hard requirement of the server side
+registration, not as a preference, because it is a convention
+rodauth-oauth does not document: a registration written the obvious
+way, with the port the developer happened to test on, silently breaks
+every subsequent sign in.
 
 ### 2. Lifetime, and an app that sleeps for days
 
@@ -209,12 +228,20 @@ lifetimes are chosen for that shape rather than for a web session.
   Revoked account side, reuse detected, or the idle window elapsed:
   all three are indistinguishable from here and all three are handled
   identically. Re enabling sync is the section 1 ceremony again.
-- **An unwell token endpoint is not a refusal.** A `5xx` or a mangled
-  body is the endpoint being unwell, not the grant being dead: the
-  refresh token stands and the next pump retries. Only the endpoint's
-  own `4xx` pronounces a grant dead. Signing a user out because a
-  gateway hiccuped would be an outage the client invented, which is
-  the same error as pre judging expiry by a clock.
+- **Only `invalid_grant` pronounces a grant dead.** RFC 6749 section
+  5.2 answers `invalid_request`, `invalid_client`,
+  `unauthorized_client`, `unsupported_grant_type` and `invalid_scope`
+  with the same `400` as `invalid_grant`, and only the last of them is
+  about the grant: the rest are faults in the request or the
+  registration that deleting a good refresh token would not fix. A
+  `408` or a `429` is 4xx and transient by definition, and a `403`
+  from a captive portal or a WAF challenge is not the authorization
+  server speaking at all. So the verdict is read out of the body's
+  `error` field, never off the status, and every other answer, a
+  `5xx`, a rate limit or a mangled body alike, leaves the refresh
+  token standing for the next pump to retry. Signing a user out
+  because a gateway hiccuped would be an outage the client invented,
+  which is the same error as pre judging expiry by a clock.
 - **A server that declines to rotate keeps its grant.** RFC 6749
   section 6 makes the new refresh token optional in a refresh
   response. A client that requires one refuses every grant from a non
@@ -237,14 +264,35 @@ it would save the wake up refresh and would put a bearer token, valid
 for minutes to an hour, into a file that outlives the process for no
 benefit the refresh token does not already provide.
 
-**Flagged for ratification: the idle window and the rotation policy.**
-"90 days idle, rotated on use, with reuse detection" is what the app
-wants and is entirely the server's to set. The client tolerates any
-window and both policies, and issue #98's answer to open question 21
-(docs/spec/design/06-open-questions.md:180-183) is exactly this: the
-desktop app's requirement of v3 auth is a long idle refresh window and
-nothing else. It does not want a device claim inside the token, which
-would re entangle the two gates ADR-0021 section 3 separated.
+**Decided: the window is the server's, and the client adds none of its
+own.** Tested against a running rodauth-oauth: rotation is on by
+default and a stale refresh token is rejected, so the client's
+rotation handling is the ordinary path rather than a tolerance. The
+configured expiry is a sliding idle timeout measured from the last
+refresh, with no absolute lifetime and no configuration option for
+one; it was verified valid at 359 days of idleness and expired at 361.
+So an app asleep for months wakes signed in, which is the shape
+section 2 is written for, and the window is server owned: the client
+holds no timer, no maximum age and no opinion.
+
+A grant idle past that window comes back as `invalid_grant`, which is
+the same answer a revoked grant gives, and it takes the sign out path
+above. That is the whole of the client's expiry logic.
+
+**One thing the client may not assume: reuse detection does not revoke
+the family.** A replayed refresh token is rejected, but the grant's
+`revoked_at` stays nil, so a stolen refresh token that the thief
+replays does not end the legitimate device's session server side. The
+client therefore treats a refusal as being about its own credential
+and never as evidence that a compromise was contained. Containment is
+the user revoking the grant in their account settings, and it is the
+server's to improve.
+
+Issue #98's answer to open question 21
+(docs/spec/design/06-open-questions.md:180-183) stands: the desktop
+app's requirement of v3 auth is a long idle refresh window and nothing
+else. It does not want a device claim inside the token, which would re
+entangle the two gates ADR-0021 section 3 separated.
 
 ### 3. Sync credentials are separate from conceal credentials
 
@@ -286,16 +334,28 @@ and still wrong here: a scope narrows what a token may do, not who may
 use it, and the two paths differ in when they run and which keychain
 tier that demands, not only in what they touch.
 
-**Flagged for ratification: the scope the client requests.** The
-authorize request today names no scope, so the server's default
-applies. The client should ask for the least privilege scope the
-server defines for the relay, so that a leaked sync token cannot
-conceal, read account data, or act as the account anywhere else. That
-scope has to exist server side before the client can name it, and
-requesting an undefined scope is refused by conformant servers, so the
-client stays silent until the server has one. Naming it is required
-work on the server side, and this ADR records that a scopeless sync
-token is a known temporary width, not the intended end state.
+**Decided: one scope, named `sync`, asked for explicitly.** The
+scopeless design is retired. Tested against a running rodauth-oauth:
+a client that omits `scope` is offered the client application's whole
+registered set, and the consent POST is validated against that
+registered set rather than against what the request asked for. So the
+registration is the ceiling and silence is not a narrowing.
+
+The relay's client application is registered with exactly one scope,
+`sync`, and holds nothing else. The app always sends `scope=sync` on
+the authorization request
+(`SYNC_SCOPE`, crates/sync/src/oauth.rs:33), and every relay endpoint
+requires that one scope. A leaked sync token can therefore attach to
+the channel and do nothing else: it cannot conceal, read account data,
+or act as the account anywhere.
+
+Two details that follow, both verified rather than assumed. Scope
+narrowing on a refresh is silently ignored and the refresh response
+omits `scope` altogether, so the scope is fixed at authorization: the
+client sends none on a refresh and expects none back. And an empty
+scope token is refused with `401` at every endpoint that names a
+scope, which is one more reason the registration carries the real
+name rather than a blank.
 
 ### 4. Where the tokens rest
 
@@ -354,7 +414,7 @@ seven:
 | `signed_out` | Configured, and no credential rests on this device. | Sync is signed out; the pad is unaffected. |
 | `signing_in` | A browser ceremony is out and has not returned. | Waiting on the browser, with a way to give up. |
 | `refused` | A credential rested, the server refused it, and it has been deleted here. | The account refused the sign in; sync is off and the pad is unaffected. |
-| `unreachable` | A credential rests and the last attempt to use it could not reach the account server or the relay. | The relay cannot be reached; edits stay local and sync retries. |
+| `unreachable` | A credential rests and the last attempt to use it could not reach the account server or the relay, or reached one that was unwell. | Sync could not reach the server; edits stay local and sync retries. The sentence does not name which server, because the state covers both and naming the wrong one is a small lie about a thing the user cannot act on either way. |
 | `ready` | A credential rests, nothing has refused it, and no channel is attached. | Reaching the relay. |
 | `attached` | The channel admitted this client. | Nothing, unless another condition applies. |
 
@@ -372,6 +432,18 @@ claim about the past that a restored backup could falsify.
 answer is not a server that said no. The credential stands, the retry
 follows the publish clock rather than a hot loop, and the state clears
 itself the moment a request succeeds.
+
+**A ceremony ends when the user says it ends, and only one is ever
+out.** `signing_in` promises a way to give up, and a way out that only
+covers the first of a ceremony's waits is not one: the browser trip,
+the token exchange and the commit are three places a ceremony can be
+standing, and the give up flag is read at all three. Signing out ends
+an outstanding ceremony for the same reason, or a redirect landing a
+minute later would restore the credential the user had just deleted.
+Because a ceremony can be ended, a begin refuses while one is in
+flight rather than superseding it: the user has a browser tab open and
+a control that ends it, which is a better answer than a second
+listener bound behind the first on the same consent screen.
 
 **Falling behind is not a gate state.** A device the channel rotated
 past has passed the gate and lacks a key. It is reported on its own
@@ -438,17 +510,33 @@ ceremony is the duplicate merge the settled cursor exists to prevent.
   checkable rather than aspirational.
 - Sync off remains bit for bit today's app: `off` is the default, it
   configures nothing, opens no socket and says nothing.
-- Three server side facts remain unratified (the loopback port, the
-  refresh policy and the scope). Each has a client behaviour that
-  tolerates either answer, so none of them blocks, and each is a
-  question the first real sign in against onetimesecret.dev answers.
+- The three server side facts are answered and each is a decision
+  above. Two of them survive as obligations on the registration rather
+  than on the code: the redirect must be registered portless, and the
+  relay's client application must carry `sync` and nothing else.
+  Either one written the obvious way instead breaks the flow quietly,
+  the first by refusing every sign in and the second by handing out a
+  wider token than anyone asked for.
+- Reuse detection does not revoke the grant family, so a refused
+  refresh is never evidence that a stolen token has been contained.
+  The client says only what it knows: this credential no longer works.
+- Two server side faults were found while answering the above. Neither
+  changes any client behaviour and both are being sent upstream. The
+  consent form answers `500` when nothing is ticked, because a nil
+  scope reaches `check_valid_scopes?`
+  (`oauth_authorize_base.rb:125`). And `require_oauth_authorization`
+  with several scopes is an OR rather than an AND, which is a
+  primitive this ADR neither describes nor depends on: the relay has
+  one scope, so the question does not arise here.
 
 ## Eject triggers
 
-- **rodauth-oauth matches loopback redirect URIs including the port.**
-  Section 1's ephemeral bind becomes a fixed port list, with its own
-  failure when every port is taken, and the ceremony's registration
-  changes with it.
+- **The redirect registration stops being portless**, whether by a
+  server change or by someone re registering the client the obvious
+  way. Section 1's ephemeral bind becomes a fixed port list, with its
+  own failure when every port is taken, and the ceremony changes with
+  it. This is the trigger most likely to fire by accident, which is
+  why section 1 records the registration as a requirement.
 - **The authorization server has no refresh token at all**, or an idle
   window short enough that an app asleep for days is signed out
   routinely. Then the flow survives but the product does not: sign in
@@ -461,9 +549,15 @@ ceremony is the duplicate merge the settled cursor exists to prevent.
   provider, which contradicts ADR-0021 section 1's blindness, and the
   right response is to argue the relay back to validation rather than
   to add a second account system.
-- **A scope for the relay ships server side.** Section 3's flagged
-  item stops being flagged: the client names the scope and the
-  scopeless token becomes a migration.
+- **The relay needs more than the one scope**, because an endpoint
+  appears that a `sync` token should not reach. Section 3's single
+  scope becomes a set, and with it the server's OR reading of several
+  scopes stops being a curiosity this ADR could ignore.
+- **The idle window is shortened enough that an app asleep for weeks
+  is signed out routinely.** The window is the server's, section 2
+  adds nothing to it, and the client would have no way to tell that
+  outcome from a revocation. Sign in stops being an enrolment and
+  becomes a chore.
 - **The two credentials are asked to merge**, by a support load nobody
   predicted or by a server that issues one token for everything. That
   reopens section 3, which is an argument this ADR expects to win

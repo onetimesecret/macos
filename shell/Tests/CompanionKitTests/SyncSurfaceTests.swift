@@ -142,6 +142,42 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertEqual(SyncController.reconciled(trouble: .unreachable, gate: nil), .unreachable)
     }
 
+    func testARefusedBearerUnderTheLongPollIsNotAFreeRound() {
+        // A 401 under the long poll comes back instantly rather than
+        // holding the poll open, so re-entering at once would be a
+        // refresh, poll, refuse loop at the speed of the network.
+        XCTAssertEqual(
+            SyncController.pumpTurn(
+                ok: true, reason: nil, sawUnreachable: false, sawUnauthorized: true),
+            .refused)
+        // A quiet round is a free round, and that is the whole point
+        // of the long poll.
+        XCTAssertEqual(
+            SyncController.pumpTurn(
+                ok: true, reason: nil, sawUnreachable: false, sawUnauthorized: false),
+            .again)
+        // The coarser outcomes still win: a credential that is gone
+        // and an attachment that is gone are not waits.
+        XCTAssertEqual(
+            SyncController.pumpTurn(
+                ok: false, reason: "signed_out", sawUnreachable: false, sawUnauthorized: true),
+            .signedOut)
+        XCTAssertEqual(
+            SyncController.pumpTurn(
+                ok: false, reason: "not_attached", sawUnreachable: false, sawUnauthorized: false),
+            .reattach)
+        // A relay nobody could reach is reported as itself, never as
+        // a refusal.
+        XCTAssertEqual(
+            SyncController.pumpTurn(
+                ok: true, reason: nil, sawUnreachable: true, sawUnauthorized: false),
+            .unreachable)
+        XCTAssertEqual(
+            SyncController.pumpTurn(
+                ok: false, reason: nil, sawUnreachable: false, sawUnauthorized: false),
+            .unreachable)
+    }
+
     func testAnAttachRefusalDefersToTheGateThatKnowsWhy() {
         // The core answers a second 401 on one attach with the reason
         // "signed_out" and a gate of refused. The reason is the coarser

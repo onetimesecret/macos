@@ -849,7 +849,11 @@ public final class CompanionClient: @unchecked Sendable {
     /// Where the account gate stands, without the rest of the status:
     /// the one word the surface needs to know whether sync may attach.
     /// Nil when the core could not be read, which is not a state the
-    /// gate has and is therefore never mistaken for one.
+    /// gate has and is therefore never mistaken for one: a gate that
+    /// could not be read has not been passed, so a caller treats nil
+    /// as "may not attach" rather than as no opinion.
+    /// `SyncStatus.gate`'s nil is the other fact, a core that named no
+    /// gate at all, and that one does mean no opinion.
     public func syncGate() -> SyncGate? {
         guard let ptr = companion_sync_gate(handle) else { return nil }
         defer { companion_string_free(ptr) }
