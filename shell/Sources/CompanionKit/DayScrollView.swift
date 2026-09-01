@@ -371,6 +371,7 @@ final class DayStackView: NSView {
             refreshQuietRegions()
             relayout()
             editor?.isEditable = !readOnly
+            model.scheduleEditStepsRefresh()
             return
         }
         // Building the editor gives it a frame, and a frame change is
@@ -399,6 +400,7 @@ final class DayStackView: NSView {
         settleEditor(on: selectedPage)
         isLayingOut = false
         editor?.isEditable = !readOnly
+        model.scheduleEditStepsRefresh()
         relayout()
         keepStill(anchoredOn: anchor)
     }

@@ -322,6 +322,10 @@ public struct InkEditorView: NSViewRepresentable {
         // (ADR-0017), so a slot's id would keep a dead page's caret and
         // scroll alive for whatever page came next.
         coordinator.pruneViewState(keeping: Set(model.tabs.compactMap(\.pageID)))
+        // The stance may have flipped editing on or off above, so the
+        // Edit menu's two items are re-asked on every pass, before the
+        // early return that a page which did not change takes.
+        model.scheduleEditStepsRefresh()
         guard coordinator.currentSheet != sheetID else { return }
         // The page under the editor changed, so hand the editor over.
         // The scroller goes with it: on this surface the editor is the
@@ -1879,9 +1883,16 @@ final class InkTextView: NSTextView, EditStepResponder {
         coordinator?.step(back: false)
     }
 
-    /// What greys the two items out: the core's answer, because the
-    /// core holds the stack. Everything else the menu asks about is
-    /// `NSTextView`'s to answer.
+    /// The answer for any nil-targeted item that asks this view about
+    /// the two step actions: the core's, because the core holds the
+    /// stack, and `NSTextView`'s own for everything else the menu asks
+    /// about.
+    ///
+    /// It is not what greys out the app's own Edit menu. Those two
+    /// items are built in SwiftUI and carry SwiftUI's target rather
+    /// than walking the responder chain to be validated, so they are
+    /// dimmed from `PageModel.editSteps` instead, which asks the core
+    /// the same question this method does.
     override func validateMenuItem(_ item: NSMenuItem) -> Bool {
         guard let sheet = coordinator?.currentSheet, let model = coordinator?.model else {
             return super.validateMenuItem(item)

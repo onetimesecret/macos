@@ -277,8 +277,48 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertEqual(coreText(), "clicked from the menu")
     }
 
-    /// The menu greys out on the core's answer, not on AppKit's, which
-    /// is empty and would say "nothing to undo" forever.
+    /// What actually greys the app's Edit menu out. The items are
+    /// SwiftUI's, so they carry SwiftUI's target and are never offered
+    /// to `validateMenuItem`; `.disabled` reads this pair instead, and
+    /// this pair is the core's own answer for the page under the
+    /// editor.
+    func testTheMenusEnablementFollowsTheCoresAnswer() throws {
+        try makeEditor()
+        model.activeEditor = textView
+        model.refreshEditSteps()
+        XCTAssertFalse(model.editSteps.canUndo)
+        XCTAssertFalse(model.editSteps.canRedo)
+
+        // No hand-written refresh from here on: the edit and the step
+        // publish it themselves, which is the wiring under test.
+        type("something to take back")
+        XCTAssertTrue(model.editSteps.canUndo)
+        XCTAssertFalse(model.editSteps.canRedo)
+
+        coordinator.step(back: true)
+        XCTAssertFalse(model.editSteps.canUndo)
+        XCTAssertTrue(model.editSteps.canRedo)
+
+        // A page shown read-only offers neither, which is what the
+        // resting card and the roll's past days arrive as.
+        textView.isEditable = false
+        model.refreshEditSteps()
+        XCTAssertFalse(model.editSteps.canUndo)
+        XCTAssertFalse(model.editSteps.canRedo)
+
+        // And with no page holding the keyboard at all.
+        textView.isEditable = true
+        model.refreshEditSteps()
+        XCTAssertTrue(model.editSteps.canRedo)
+        model.activeEditor = nil
+        model.refreshEditSteps()
+        XCTAssertFalse(model.editSteps.canUndo)
+        XCTAssertFalse(model.editSteps.canRedo)
+    }
+
+    /// The view still answers for itself, for any route that does
+    /// arrive nil-targeted. This proves the method, not the app's menu,
+    /// which is dimmed from the model above.
     func testTheMenuItemsValidateAgainstTheCore() throws {
         try makeEditor()
         let undoItem = NSMenuItem(

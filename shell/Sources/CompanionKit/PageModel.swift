@@ -261,6 +261,36 @@ public enum SurfaceTarget: Equatable, Sendable {
     case today
 }
 
+/// Whether the page holding the keyboard has a step waiting in each
+/// direction: the two answers the Edit menu's Undo and Redo grey
+/// themselves out on (issue #132).
+///
+/// It exists because a SwiftUI menu item carries SwiftUI's own target
+/// and never walks the responder chain to be validated, so
+/// `InkTextView.validateMenuItem` cannot reach the items the app
+/// builds. `.disabled` can, and this is what it reads.
+///
+/// An observable of its own rather than a published pair on the model,
+/// for the reason `rollGeometry` is one: the menu is the only reader,
+/// and an answer that moves on every keystroke should not redraw the
+/// page, the header and the status stack behind it.
+///
+/// Nothing here is a cache of what a step would do. Both booleans are
+/// the core's own answers, re-asked whenever the page under the editor,
+/// its editability, or its history can have moved.
+@MainActor
+public final class EditStepAvailability: ObservableObject {
+    @Published public private(set) var canUndo = false
+    @Published public private(set) var canRedo = false
+
+    /// Published only on a change, because the model re-asks on every
+    /// refresh and the usual answer is the one already standing.
+    func stand(canUndo: Bool, canRedo: Bool) {
+        if self.canUndo != canUndo { self.canUndo = canUndo }
+        if self.canRedo != canRedo { self.canRedo = canRedo }
+    }
+}
+
 @MainActor
 public final class PageModel: ObservableObject {
     /// What this form factor decides differently — where its Keychain
@@ -472,7 +502,17 @@ public final class PageModel: ObservableObject {
 
     /// The live editor view, so a summon can hand it the keyboard.
     /// Weak and non-published: view plumbing, not state.
-    public weak var activeEditor: NSTextView?
+    ///
+    /// The Edit menu's enablement is a function of it, so a mount or an
+    /// unmount re-asks. On the next turn of the loop rather than now:
+    /// every assignment happens inside a SwiftUI update pass, and
+    /// publishing from inside one is what the runtime warns about.
+    public weak var activeEditor: NSTextView? {
+        didSet { scheduleEditStepsRefresh() }
+    }
+
+    /// What the Edit menu's Undo and Redo read as right now.
+    public let editSteps = EditStepAvailability()
 
     /// Set by the app delegate; Esc routes here when no editor holds
     /// the keys (the controller re-keys the frontmost app's window).
@@ -1405,6 +1445,11 @@ public final class PageModel: ObservableObject {
     }
 
     public func refresh() {
+        // Whatever moved the page may have moved its history: an edit,
+        // a step, a seal, a settle that reaped a chip, a page that
+        // died. The menu's two items are asked again on every one of
+        // them rather than at a list of paths someone has to keep.
+        refreshEditSteps()
         tabs = client.tabs()
         let livePages = livePageIDs
         // A dead page's ink lives on only in the ledger; drop the
@@ -2535,6 +2580,42 @@ public final class PageModel: ObservableObject {
 
     public func canRedoEdit(sheet: UInt64) -> Bool {
         client.canRedo(sheet: sheet)
+    }
+
+    /// Re-ask the core what the Edit menu should read as, and publish
+    /// the answer for the two items to grey themselves out on.
+    ///
+    /// The page it asks about is the one under the editor, not
+    /// `selection`: on the roll those can differ, and the menu speaks
+    /// for the page the keyboard is in. Everything else fails closed
+    /// and says no step is available: no editor mounted, a page shown
+    /// read-only, an editor between pages. An unknown page fails closed
+    /// in the core itself, which is why no liveness check is spelled
+    /// here.
+    public func refreshEditSteps() {
+        guard let editor = activeEditor as? InkTextView,
+              editor.isEditable,
+              let sheet = editor.coordinator?.currentSheet
+        else {
+            editSteps.stand(canUndo: false, canRedo: false)
+            return
+        }
+        editSteps.stand(
+            canUndo: client.canUndo(sheet: sheet),
+            canRedo: client.canRedo(sheet: sheet)
+        )
+    }
+
+    /// The same question, asked on the next turn of the loop.
+    ///
+    /// For the callers that sit inside a SwiftUI update pass: the
+    /// editor's `updateNSView`, which is where a resting card's
+    /// read-only stance and a page swap both arrive. Publishing while
+    /// SwiftUI is updating its own graph is what the runtime warns
+    /// about, and one turn of the loop is a long way ahead of a hand
+    /// reaching the menu bar.
+    public func scheduleEditStepsRefresh() {
+        Task { @MainActor [weak self] in self?.refreshEditSteps() }
     }
 
     /// The shared half of both directions: ask the core, and on a step
