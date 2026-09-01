@@ -161,7 +161,11 @@ pub struct TokenGrant {
 ///
 /// [`SyncAuthError::Refused`] on any non-2xx status or a body missing
 /// either token — a grant without a refresh token cannot serve an app
-/// that sleeps for days, so it is refused rather than half-kept.
+/// that sleeps for days, so it is refused rather than half-kept. An
+/// empty string is a missing token, the same reading
+/// [`parse_refresh_response`] takes: an empty refresh token written to
+/// the keychain would answer "signed in" forever while every refresh
+/// failed.
 pub fn parse_token_response(response: &HttpResponse) -> Result<TokenGrant, SyncAuthError> {
     if !(200..300).contains(&response.status) {
         return Err(SyncAuthError::Refused(response.status));
@@ -172,7 +176,8 @@ pub fn parse_token_response(response: &HttpResponse) -> Result<TokenGrant, SyncA
         value
             .get(key)
             .and_then(serde_json::Value::as_str)
-            .map(|s| Zeroizing::new(s.to_owned()))
+            .filter(|token| !token.is_empty())
+            .map(|token| Zeroizing::new(token.to_owned()))
     };
     match (token("access_token"), token("refresh_token")) {
         (Some(access), Some(refresh)) => Ok(TokenGrant { access, refresh }),
@@ -559,6 +564,20 @@ mod tests {
         assert_eq!(
             keeper.refresh_request().unwrap_err(),
             SyncAuthError::SignedOut
+        );
+    }
+
+    #[test]
+    fn an_empty_token_is_not_a_token_in_either_parser() {
+        // An empty refresh token written to the keychain would answer
+        // "signed in" forever while every refresh failed.
+        let grant = HttpResponse {
+            status: 200,
+            body: br#"{"access_token":"","refresh_token":""}"#.to_vec(),
+        };
+        assert_eq!(
+            parse_token_response(&grant).err(),
+            Some(SyncAuthError::Refused(200))
         );
     }
 
