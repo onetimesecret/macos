@@ -28,6 +28,7 @@ use zeroize::Zeroizing;
 use crate::diagnostics::diag_fault;
 use crate::gop::GopKeyChain;
 use crate::pairing::{self, MailboxMessage};
+use crate::sync_gate::{GateFault, GateInputs, SyncGate, gate};
 use crate::sync_session::{KeyPackageKeeper, SyncEvent, SyncSession, sheet_of};
 use crate::{Companion, CompanionHandle};
 
@@ -118,6 +119,11 @@ pub(crate) struct SyncState {
     pub enrolled: BTreeMap<ItemId, PageTracking>,
     /// A pairing ceremony in flight over the relay mailbox.
     pub pairing: Option<PairingState>,
+    /// What the last attempt to use the account credential met, which
+    /// is what tells a server that said no from a server that said
+    /// nothing (ADR-0027 §5). In memory only, and cleared by any round
+    /// trip that succeeds.
+    pub fault: Option<GateFault>,
     /// Where the engine's relative clock starts: monotonic, so the
     /// publish and ballot windows cannot jump with the wall clock.
     origin: Instant,
@@ -132,6 +138,7 @@ impl Default for SyncState {
             engine: None,
             enrolled: BTreeMap::new(),
             pairing: None,
+            fault: None,
             origin: Instant::now(),
         }
     }
@@ -390,6 +397,9 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
             return serde_json::json!({ "ok": false, "reason": "signed_out" });
         };
         let Ok(response) = transport.send(request) else {
+            if let Ok(mut guard) = handle.inner.lock() {
+                note_fault(&mut guard, GateFault::Unreachable);
+            }
             return serde_json::json!({ "ok": false, "reason": "unreachable" });
         };
         let Ok(mut guard) = handle.inner.lock() else {
@@ -400,12 +410,14 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
         };
         match engine.session.absorb_attach(&response) {
             Ok(()) => {
-                return serde_json::json!({
+                let answer = serde_json::json!({
                     "ok": true,
                     "epoch": engine.session.attach_epoch(),
                     "frame_present": engine.session.frame_present(),
                     "peers": engine.session.attach_roster().len(),
                 });
+                note_reachable(&mut guard);
+                return answer;
             }
             Err(RelayRefusal::Unauthorized) if !retry => {
                 drop(guard);
@@ -413,7 +425,11 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
                     return serde_json::json!({ "ok": false, "reason": reason });
                 }
             }
+            // A second 401 on the same attach, with a token refreshed
+            // in between: the account is refusing this client rather
+            // than the token merely having aged out.
             Err(RelayRefusal::Unauthorized) => {
+                note_fault(&mut guard, GateFault::Refused);
                 return serde_json::json!({ "ok": false, "reason": "signed_out" });
             }
             Err(_) => return serde_json::json!({ "ok": false, "reason": "refused" }),
@@ -533,6 +549,9 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
     };
     let (request, transport) = staged;
     let Ok(response) = transport.send(request) else {
+        if let Ok(mut guard) = handle.inner.lock() {
+            note_fault(&mut guard, GateFault::Unreachable);
+        }
         return Err("unreachable");
     };
     let Ok(mut guard) = handle.inner.lock() else {
@@ -552,6 +571,7 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
             {
                 diag_fault!("the credential store refused the rotated sync refresh token");
             }
+            note_reachable(&mut guard);
             Ok(())
         }
         Err(SyncAuthError::SignedOut) => {
@@ -561,7 +581,10 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
         // The token endpoint being unwell (a 5xx, a mangled body) is
         // not the grant being revoked: the refresh token stands and
         // the next pump retries, exactly as an unreachable host would.
-        Err(_) => Err("unreachable"),
+        Err(_) => {
+            note_fault(&mut guard, GateFault::Unreachable);
+            Err("unreachable")
+        }
     }
 }
 
@@ -573,6 +596,7 @@ fn sign_out_locked(companion: &mut Companion) {
     // The dissolve rewinds what the relay never acknowledged, so the
     // account's refusal costs the peers a delay and never an edit.
     let _ = dissolve_engine(companion);
+    companion.sync.fault = Some(GateFault::Refused);
     if let Some(config) = &companion.sync.config {
         companion.sync.keeper = Some(TokenKeeper::new(&config.token_url, &config.client_id, None));
     }
@@ -746,6 +770,7 @@ fn absorb_publish_locked(
     for tracking in companion.sync.enrolled.values_mut() {
         tracking.acked = tracking.frontier.clone();
     }
+    note_reachable(companion);
     Some(Ok(()))
 }
 
@@ -758,7 +783,7 @@ fn absorb_publish_locked(
 /// last published, so the next sweep states them again. Restating a
 /// fact a peer already holds is idempotent; dropping one is not, and
 /// tenet 1 does not stop at the sync boundary.
-fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> {
+pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> {
     for tracking in companion.sync.enrolled.values_mut() {
         tracking.frontier = tracking.acked.clone();
         tracking.deadline_wall_ms = None;
@@ -888,11 +913,19 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
     let mut committed = false;
     if let Some((request, transport)) = staged {
         match transport.send(request) {
-            Err(_) => events.push(serde_json::json!({ "kind": "unreachable" })),
+            Err(_) => {
+                if let Ok(mut guard) = handle.inner.lock() {
+                    note_fault(&mut guard, GateFault::Unreachable);
+                }
+                events.push(serde_json::json!({ "kind": "unreachable" }));
+            }
             Ok(response) => {
                 let Ok(mut guard) = handle.inner.lock() else {
                     return pump_result(handle, Some("poisoned"), &events);
                 };
+                // The relay answered, whatever it said: the gate's
+                // account axis has nothing to report.
+                note_reachable(&mut guard);
                 let now = guard.sync.now_ms();
                 let Companion {
                     store,
@@ -985,6 +1018,9 @@ fn publish_round(
     events: &mut Vec<serde_json::Value>,
 ) {
     let Ok(response) = transport.send(request) else {
+        if let Ok(mut guard) = handle.inner.lock() {
+            note_fault(&mut guard, GateFault::Unreachable);
+        }
         events.push(serde_json::json!({ "kind": "unreachable" }));
         return;
     };
@@ -1100,12 +1136,54 @@ fn pump_result(
     })
 }
 
-/// Sync's standing state: existence checks and in-memory reads only,
-/// so rendering Settings never decrypts a credential or waits on the
-/// network.
-pub(crate) fn status_json(companion: &Companion) -> serde_json::Value {
+/// Note that a round trip reached its host. That answers the network
+/// question and only the network question: a refusal stands until the
+/// user signs in again, because re-enrolment is the only way back from
+/// one (ADR-0027 §2) and a reachable server is not a server that
+/// changed its mind.
+fn note_reachable(companion: &mut Companion) {
+    if companion.sync.fault == Some(GateFault::Unreachable) {
+        companion.sync.fault = None;
+    }
+}
+
+/// Note what the last attempt met. A refusal outranks an unreachable
+/// host, because the second is a retry and the first is a sign-out.
+fn note_fault(companion: &mut Companion, fault: GateFault) {
+    if companion.sync.fault != Some(GateFault::Refused) || fault == GateFault::Refused {
+        companion.sync.fault = Some(fault);
+    }
+}
+
+/// Forget every fault: the ceremony granted, the shell reconfigured,
+/// or the user signed out on purpose. Each is a fresh start the last
+/// refusal has nothing to say about.
+pub(crate) fn clear_fault(companion: &mut Companion) {
+    companion.sync.fault = None;
+}
+
+/// Where the account gate stands, as the one value the shell reads
+/// (ADR-0027 §5). Existence checks and in-memory reads only, like
+/// every other field of the status.
+pub(crate) fn gate_of(companion: &Companion) -> SyncGate {
     let sync = &companion.sync;
-    let signed_in = sync.engine.as_ref().map_or_else(
+    gate(GateInputs {
+        configured: sync.config.is_some(),
+        signin_pending: sync.pending_signin.is_some(),
+        credential: credential_rests(companion),
+        fault: sync.fault,
+        attached: sync
+            .engine
+            .as_ref()
+            .is_some_and(|engine| engine.session.attached()),
+    })
+}
+
+/// Whether any account credential rests here: the live keeper's if one
+/// stands, the keychain account's otherwise.
+fn credential_rests(companion: &Companion) -> bool {
+    let sync = &companion.sync;
+    sync.engine.as_ref().map_or_else(
         || {
             sync.keeper.as_ref().map_or_else(
                 || signed_in(&*companion.credentials),
@@ -1113,10 +1191,19 @@ pub(crate) fn status_json(companion: &Companion) -> serde_json::Value {
             )
         },
         |engine| engine.session.signed_in(),
-    );
+    )
+}
+
+/// Sync's standing state: existence checks and in-memory reads only,
+/// so rendering Settings never decrypts a credential or waits on the
+/// network.
+pub(crate) fn status_json(companion: &Companion) -> serde_json::Value {
+    let sync = &companion.sync;
+    let signed_in = credential_rests(companion);
     serde_json::json!({
         "configured": sync.config.is_some(),
         "signed_in": signed_in,
+        "gate": gate_of(companion).token(),
         "signin_pending": sync.pending_signin.is_some(),
         "attached": sync.engine.as_ref().is_some_and(|engine| engine.session.attached()),
         "epoch": sync.engine.as_ref().map(|engine| engine.chain.epoch()),
@@ -1935,6 +2022,139 @@ mod tests {
         assert!(engine.session.publish_due(10_000));
         let EngineState { session, chain, .. } = engine;
         assert!(session.publish_request(10_000, chain).is_some());
+    }
+
+    #[test]
+    fn a_refused_refresh_names_its_state_and_leaves_the_pad_whole() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        credentials.store("api-token", b"conceal-token").unwrap();
+        let ledger = crate::persist::ensure_ledger_key(&*credentials).unwrap();
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        assert!(store_refresh(
+            &*credentials,
+            &Zeroizing::new("rt-1".to_owned())
+        ));
+        companion.sync.keeper = Some(keeper_for(
+            companion.sync.config.as_ref().unwrap(),
+            &*credentials,
+        ));
+        let page = inked_page(&mut companion, "work in progress");
+        assert_eq!(gate_of(&companion), SyncGate::Ready);
+
+        // The refresh came back refused: the grant is dead and the
+        // resting token goes with it.
+        sign_out_locked(&mut companion);
+        assert_eq!(
+            gate_of(&companion),
+            SyncGate::Refused,
+            "a refusal is told apart from never having signed in"
+        );
+        assert_eq!(
+            status_json(&companion)["gate"],
+            "refused",
+            "the seam reports the state, and the shell owns the words"
+        );
+
+        // The pad is untouched: the page stands, a new one opens, and
+        // the neighbouring credentials are exactly where they were.
+        assert!(companion.store.sheet(page).is_some());
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Insert {
+                pos_u16: 0,
+                text: "still typing ".into(),
+            }],
+        ));
+        assert!(companion.store.new_tab().is_ok());
+        assert_eq!(*credentials.load("api-token").unwrap(), b"conceal-token");
+        assert_eq!(
+            *crate::persist::load_ledger_key(&*credentials).unwrap(),
+            *ledger
+        );
+        assert!(!signed_in(&*credentials), "the sync account alone is gone");
+    }
+
+    #[test]
+    fn a_relay_that_did_not_answer_never_reads_as_a_refusal() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        assert!(store_refresh(
+            &*credentials,
+            &Zeroizing::new("rt-1".to_owned())
+        ));
+        companion.sync.keeper = Some(keeper_for(
+            companion.sync.config.as_ref().unwrap(),
+            &*credentials,
+        ));
+
+        note_fault(&mut companion, GateFault::Unreachable);
+        assert_eq!(gate_of(&companion), SyncGate::Unreachable);
+        assert!(
+            signed_in(&*credentials),
+            "an unanswered request deletes nothing"
+        );
+        // And the state clears itself the moment something answers.
+        note_reachable(&mut companion);
+        assert_eq!(gate_of(&companion), SyncGate::Ready);
+
+        // A refusal, though, outlives a reachable host: only signing in
+        // again is the way back from one.
+        note_fault(&mut companion, GateFault::Refused);
+        note_reachable(&mut companion);
+        assert_eq!(gate_of(&companion), SyncGate::Refused);
+        clear_fault(&mut companion);
+        assert_eq!(gate_of(&companion), SyncGate::Ready);
+    }
+
+    #[test]
+    fn an_unconfigured_handle_reports_off_and_touches_nothing() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let companion = store_companion(Arc::clone(&credentials));
+        assert_eq!(gate_of(&companion), SyncGate::Off);
+        assert_eq!(status_json(&companion)["gate"], "off");
+    }
+
+    #[test]
+    fn the_sync_token_never_reaches_the_sealed_store() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let secret = "rt-a-secret-nobody-should-find-in-a-page";
+        assert!(store_refresh(
+            &*credentials,
+            &Zeroizing::new(secret.to_owned())
+        ));
+        companion.sync.keeper = Some(keeper_for(
+            companion.sync.config.as_ref().unwrap(),
+            &*credentials,
+        ));
+        let page = inked_page(&mut companion, "an ordinary page");
+        assert!(enrol_page(&mut companion, page, true));
+
+        // The snapshot is what the state file seals. A credential in it
+        // would rest under the rotating content key, which ADR-0027 §4
+        // refuses: a rotation would sign the user out, and a copied
+        // state file would carry the account with it.
+        let snapshot = companion.store.snapshot(1_700_000_000_000);
+        let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
+        assert!(
+            !contains(&snapshot, secret.as_bytes()),
+            "the refresh token has no business in the content store"
+        );
+        // It rests in the key material tier instead, which is where
+        // the ledger key and the keychain content half rest. The
+        // in-memory store under test answers both tiers with one map,
+        // so this pins the account the driver reads and writes, and the
+        // tier split is the real store's own (`key_material_store`).
+        assert!(load_refresh(&*credentials).is_some());
+        assert!(
+            credentials
+                .key_material_store()
+                .exists(SYNC_REFRESH_ACCOUNT)
+                .unwrap_or(false)
+        );
     }
 
     #[test]

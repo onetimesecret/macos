@@ -793,12 +793,25 @@ bool companion_sync_configure(CompanionHandle *handle, const char *json);
 
 /*
  * Sync's standing state for Settings: {"configured", "signed_in",
- * "signin_pending", "attached", "epoch", "frame_present", "enrolled",
- * "pairing"}. Existence checks and in-memory reads only — rendering
- * Settings never decrypts a credential, wedges on the Keychain, or
- * waits on the network. Free with companion_string_free().
+ * "gate", "signin_pending", "attached", "epoch", "frame_present",
+ * "enrolled", "pairing"}. Existence checks and in-memory reads only —
+ * rendering Settings never decrypts a credential, wedges on the
+ * Keychain, or waits on the network. Free with
+ * companion_string_free().
  */
 char *companion_sync_status_json(CompanionHandle *handle);
+
+/*
+ * Where the account gate stands, as one machine token (ADR-0027
+ * section 5): "off", "signed_out", "signing_in", "refused",
+ * "unreachable", "ready" or "attached". The same value the status
+ * JSON carries as "gate", for a caller that wants the one word
+ * without the rest. It says whether this client may attach to the
+ * channel and nothing about content: passing this gate without
+ * pairing downloads ciphertext that will not open. Null on a null
+ * handle. Free with companion_string_free().
+ */
+char *companion_sync_gate(CompanionHandle *handle);
 
 /*
  * Begin the sign-in ceremony (account-auth.md section 1): bind the

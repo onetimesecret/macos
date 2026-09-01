@@ -73,6 +73,7 @@ pub mod gop;
 pub mod pairing;
 mod persist;
 mod sync_driver;
+mod sync_gate;
 pub mod sync_session;
 
 use diagnostics::diag_fault;
@@ -2425,11 +2426,14 @@ pub unsafe extern "C" fn companion_sync_configure(
     };
     guard.sync.keeper = Some(sync_driver::keeper_for(&config, &*guard.credentials));
     guard.sync.config = Some(config);
+    // A fresh configuration is a fresh start: whatever the last one's
+    // endpoints refused says nothing about these.
+    sync_driver::clear_fault(&mut guard);
     true
 }
 
 /// Sync's standing state for the Settings surface:
-/// `{"configured", "signed_in", "signin_pending", "attached",
+/// `{"configured", "signed_in", "gate", "signin_pending", "attached",
 /// "epoch", "frame_present", "enrolled", "pairing"}`. Existence
 /// checks and in-memory reads only — rendering Settings must never
 /// decrypt a credential, wedge on the Keychain, or wait on the
@@ -2447,6 +2451,31 @@ pub unsafe extern "C" fn companion_sync_status_json(handle: *mut CompanionHandle
         return ptr::null_mut();
     };
     into_c_string(sync_driver::status_json(&guard).to_string())
+}
+
+/// Where the account gate stands, as one machine token (ADR-0027 §5):
+/// `off`, `signed_out`, `signing_in`, `refused`, `unreachable`,
+/// `ready` or `attached`. The same value the status JSON carries as
+/// `gate`, for a caller that wants the one word without the rest, and
+/// the only thing in the seam that answers "may this client attach".
+/// It answers nothing about content: a client past this gate and past
+/// no pairing downloads ciphertext it cannot open (ADR-0021 §3).
+///
+/// A null handle or a poisoned lock returns null rather than a state,
+/// because a gate that cannot be read has not been passed. Free with
+/// [`companion_string_free`].
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sync_gate(handle: *mut CompanionHandle) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    into_c_string(sync_driver::gate_of(&guard).token().to_owned())
 }
 
 /// Begin the sign-in ceremony (account-auth.md §1): bind the one-shot
@@ -2533,6 +2562,9 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
         return sync_refusal("not_configured");
     };
     let _rotated = keeper.absorb(grant);
+    // A grant in hand retires every earlier refusal: the gate reads
+    // from what stands now, not from what the last token met.
+    sync_driver::clear_fault(&mut guard);
     into_c_string(serde_json::json!({ "ok": true }).to_string())
 }
 
@@ -2572,8 +2604,11 @@ pub unsafe extern "C" fn companion_sync_signout(handle: *mut CompanionHandle) ->
         return false;
     };
     guard.sync.pending_signin = None;
-    guard.sync.engine = None;
-    guard.sync.pairing = None;
+    let _ = sync_driver::dissolve_engine(&mut guard);
+    // The user's own sign-out is not a refusal: the gate reads
+    // `signed_out`, and re-enrolling is a choice rather than a
+    // recovery.
+    sync_driver::clear_fault(&mut guard);
     if let Some(config) = &guard.sync.config {
         guard.sync.keeper = Some(companion_sync::TokenKeeper::new(
             &config.token_url,
@@ -6131,6 +6166,7 @@ mod tests {
                 cstring("{}").as_ptr()
             ));
             assert!(companion_sync_status_json(ptr::null_mut()).is_null());
+            assert!(companion_sync_gate(ptr::null_mut()).is_null());
             assert!(companion_sync_signin_begin(ptr::null_mut()).is_null());
             assert!(companion_sync_signin_finish(ptr::null_mut(), 0).is_null());
             assert!(!companion_sync_signin_cancel(ptr::null_mut()));
@@ -6175,6 +6211,11 @@ mod tests {
                 status["signed_in"], true,
                 "existence check before configure"
             );
+            assert_eq!(
+                status["gate"], "off",
+                "a resting token does not make an unconfigured handle anything but off"
+            );
+            assert_eq!(take_json(companion_sync_gate(handle)), "off");
 
             let unconfigured: serde_json::Value =
                 serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
@@ -6190,6 +6231,10 @@ mod tests {
                 serde_json::from_str(&take_json(companion_sync_status_json(handle))).unwrap();
             assert_eq!(status["configured"], true);
             assert_eq!(status["signed_in"], true, "the keeper resumed the token");
+            assert_eq!(
+                status["gate"], "ready",
+                "configured, credentialed, unattached"
+            );
 
             let begun: serde_json::Value =
                 serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
@@ -6215,6 +6260,10 @@ mod tests {
             let status: serde_json::Value =
                 serde_json::from_str(&take_json(companion_sync_status_json(handle))).unwrap();
             assert_eq!(status["signed_in"], false);
+            assert_eq!(
+                status["gate"], "signed_out",
+                "the user's own sign-out is not a refusal"
+            );
             assert!(
                 matches!(
                     credentials
