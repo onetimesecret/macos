@@ -787,11 +787,24 @@ fn chips_of(body: &LoroText) -> Vec<ItemId> {
 /// hook writes into.
 ///
 /// Both hooks are deliberately quiet about the document. The push hook
-/// asks the body for a cursor, which is safe because Loro emits its
-/// events with no state lock held, and the pop hook does nothing but
-/// copy a number: the offset it receives is a unicode scalar, and
+/// asks the body for a cursor, which is a read back into the document
+/// from inside the document's own event callback, and it is safe
+/// because Loro takes its state lock, drains the queued events and
+/// drops the lock before it calls a single subscriber:
+/// `LoroDocInner::emit_events`, whose body opens with the comment "we
+/// should not hold the lock when emitting events"
+/// (`loro-internal-1.13.9/src/loro.rs:853`). The pop hook does nothing
+/// but copy a number: the offset it receives is a unicode scalar, and
 /// converting it to the UTF-16 the wire speaks happens later, once the
 /// undo has finished and the document is still again.
+///
+/// That is an internal detail of the library rather than a documented
+/// guarantee, which is the reason `loro` is pinned exactly at
+/// `=1.13.9` in `crates/core/Cargo.toml`. A version bump has to
+/// re-read `emit_events` before it lands: if a future release ever
+/// calls subscribers with the state lock held, this hook deadlocks in
+/// the field rather than failing a test, so the pin is what makes the
+/// re-check deliberate.
 fn bind_undo(doc: &LoroDoc, body: &LoroText) -> (UndoManager, Arc<Mutex<Option<usize>>>) {
     let mut undo = UndoManager::new(doc);
     undo.set_merge_interval(UNDO_MERGE_INTERVAL_MS);
@@ -838,6 +851,18 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> (UndoManager, Arc<Mutex<Option<u
 /// Loro's event deltas are indexed in unicode scalars outside the wasm
 /// build, the same unit [`Cursor`] positions use, so nothing is
 /// converted here.
+///
+/// One assumption is written down rather than handled: a
+/// `TextDelta::Retain` carrying `attributes` is a mark change and not
+/// a retain, and this walk counts it as a retain, so a step that only
+/// moved a mark would record the offset of the end of that mark rather
+/// than its start. The single mark this document knows is the chip's
+/// ([`CHIP_MARK`]), it is only ever written alongside the sentinel's
+/// insertion, and every path that moves the chip roster forgets the
+/// stack, so no step of that shape can reach the push hook. The branch
+/// is left uncorrected because a fix would be a branch no test could
+/// reach; the moment a mark is applied without an insertion beside it,
+/// this walk needs a case for it and a test to go with it.
 fn change_start(event: &DiffEvent) -> Option<usize> {
     for container in &event.events {
         let Diff::Text(deltas) = &container.diff else {
