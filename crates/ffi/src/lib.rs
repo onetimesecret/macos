@@ -2538,7 +2538,13 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
             .config
             .as_ref()
             .map(sync_driver::SyncConfig::transport);
-        guard.sync.pending_signin.take().zip(transport)
+        let staged = guard.sync.pending_signin.take().zip(transport);
+        // The ceremony leaves the state for the length of the browser
+        // trip, and this is what keeps the gate reporting `signing_in`
+        // meanwhile: a user reading a consent screen has left the
+        // signed-out state, whatever the emptied slot suggests.
+        guard.sync.awaiting_redirect = staged.is_some();
+        staged
     };
     let Some((pending, transport)) = staged else {
         return sync_refusal("no_ceremony");
@@ -2546,11 +2552,17 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
     let grant =
         match sync_driver::signin_finish(pending, Duration::from_millis(patience_ms), &transport) {
             Ok(grant) => grant,
-            Err(reason) => return sync_refusal(reason),
+            Err(reason) => {
+                if let Ok(mut guard) = handle.inner.lock() {
+                    guard.sync.awaiting_redirect = false;
+                }
+                return sync_refusal(reason);
+            }
         };
     let Ok(mut guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
+    guard.sync.awaiting_redirect = false;
     // Persist first, absorb second: a keeper holding tokens the store
     // refused would sign in for one session and silently sign out at
     // relaunch.
@@ -6252,6 +6264,8 @@ mod tests {
             );
 
             // A finish with no pending ceremony refuses by name.
+            // (The gate through the whole ceremony is its own test,
+            // `the_gate_says_signing_in_while_the_browser_is_out`.)
             let finished: serde_json::Value =
                 serde_json::from_str(&take_json(companion_sync_signin_finish(handle, 0))).unwrap();
             assert_eq!(finished["reason"], "no_ceremony");
@@ -6272,6 +6286,61 @@ mod tests {
                     Ok(false)
                 ),
                 "sign-out deleted the persisted token"
+            );
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_gate_says_signing_in_while_the_browser_is_out() {
+        let credentials: Arc<dyn CredentialStore> =
+            Arc::new(companion_credentials::InMemoryCredentialStore::default());
+        unsafe {
+            let handle = handle_with(Arc::clone(&credentials));
+            let config = cstring(
+                r#"{"relay_url":"https://relay.example",
+                    "authorize_url":"https://eu.example/oauth/authorize",
+                    "token_url":"https://eu.example/oauth/token",
+                    "client_id":"companion"}"#,
+            );
+            assert!(companion_sync_configure(handle, config.as_ptr()));
+            assert_eq!(take_json(companion_sync_gate(handle)), "signed_out");
+            let begun: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
+            assert_eq!(begun["ok"], true);
+            assert_eq!(
+                take_json(companion_sync_gate(handle)),
+                "signing_in",
+                "the ceremony is minted and waiting for its finish"
+            );
+
+            // The finish takes the ceremony and blocks on the redirect
+            // that never comes. Through the whole consent screen the
+            // gate has to keep saying so: a browser is open on the
+            // user's screen, and "signed out" would be a state the app
+            // has already left.
+            let address = handle as usize;
+            let waiting = std::thread::spawn(move || {
+                let handle = address as *mut CompanionHandle;
+                unsafe { take_json(companion_sync_signin_finish(handle, 1_000)) }
+            });
+            let mut seen = String::new();
+            for _ in 0..40 {
+                std::thread::sleep(Duration::from_millis(10));
+                seen = take_json(companion_sync_gate(handle));
+                if seen == "signing_in" {
+                    break;
+                }
+            }
+            assert_eq!(seen, "signing_in", "the browser step is a state of its own");
+
+            let abandoned: serde_json::Value = serde_json::from_str(&waiting.join().unwrap())
+                .expect("the finish answers even when the browser does not");
+            assert_eq!(abandoned["reason"], "abandoned");
+            assert_eq!(
+                take_json(companion_sync_gate(handle)),
+                "signed_out",
+                "and the ceremony's end takes the state with it"
             );
             companion_free(handle);
         }

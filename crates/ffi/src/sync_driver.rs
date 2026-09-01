@@ -110,6 +110,12 @@ pub(crate) struct SyncState {
     /// and the bound listener, waiting for the finish call to take
     /// them off-lock and block on the redirect.
     pub pending_signin: Option<PendingSignin>,
+    /// A finish call holding that ceremony off-lock, blocked on the
+    /// browser's one redirect. The ceremony is out of the state above
+    /// for as long as this stands, so without it the minutes a user
+    /// spends on a consent screen would read as signed out, which is a
+    /// state the app has already left (ADR-0027 §5).
+    pub awaiting_redirect: bool,
     /// The attached engine: session, chain, and key packages. `None`
     /// while sync is off or detached.
     pub engine: Option<EngineState>,
@@ -140,6 +146,7 @@ impl Default for SyncState {
             config: None,
             keeper: None,
             pending_signin: None,
+            awaiting_redirect: false,
             engine: None,
             enrolled: BTreeMap::new(),
             pairing: None,
@@ -1227,7 +1234,7 @@ pub(crate) fn gate_of(companion: &Companion) -> SyncGate {
     let sync = &companion.sync;
     gate(GateInputs {
         configured: sync.config.is_some(),
-        signin_pending: sync.pending_signin.is_some(),
+        signin_pending: signin_in_flight(sync),
         credential: credential_rests(companion),
         fault: sync.fault,
         attached: sync
@@ -1235,6 +1242,13 @@ pub(crate) fn gate_of(companion: &Companion) -> SyncGate {
             .as_ref()
             .is_some_and(|engine| engine.session.attached()),
     })
+}
+
+/// Whether a sign-in ceremony is in flight at all: minted and waiting
+/// for its finish, or taken by a finish that is blocked on the
+/// browser. The two are one state to anyone outside this module.
+pub(crate) fn signin_in_flight(sync: &SyncState) -> bool {
+    sync.pending_signin.is_some() || sync.awaiting_redirect
 }
 
 /// Whether any account credential rests here: the live keeper's if one
@@ -1262,7 +1276,7 @@ pub(crate) fn status_json(companion: &Companion) -> serde_json::Value {
         "configured": sync.config.is_some(),
         "signed_in": signed_in,
         "gate": gate_of(companion).token(),
-        "signin_pending": sync.pending_signin.is_some(),
+        "signin_pending": signin_in_flight(sync),
         "attached": sync.engine.as_ref().is_some_and(|engine| engine.session.attached()),
         "epoch": sync.engine.as_ref().map(|engine| engine.chain.epoch()),
         "frame_present": sync.engine.as_ref().and_then(|engine| engine.session.frame_present()),
