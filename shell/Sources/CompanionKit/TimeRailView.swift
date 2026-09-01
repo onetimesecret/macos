@@ -21,6 +21,13 @@ import SwiftUI
 /// it lands on is the shipped create path, not a mint of its own
 /// (ADR-0017).
 ///
+/// Behind the rows, a faint minimap of the roll: a bar per day as tall a
+/// share of the rail as that day is of the document, and a band over the
+/// part the reader can see (issue #131). It is geometry and never
+/// glyphs, it is drawn first and faintly so the rows keep the column,
+/// and it answers no click, so everything above still reads as
+/// navigation.
+///
 /// It reuses `GaugeBar` and `EmptyRule` where they stand rather than
 /// moving them, so `TabStripView.swift` takes no diff at all and the
 /// claim that horizontal mode is untouched is a fact about the diff.
@@ -64,7 +71,7 @@ public struct TimeRailView: View {
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
         .frame(width: Self.width)
-        .background(Color.panelBackground)
+        .background(RailMinimapView(roll: model.rollGeometry))
     }
 
     /// The days paired with the chords that reach them, resolved before
@@ -168,6 +175,71 @@ public struct TimeRailView: View {
             : "\(count) live pages have nothing on them"
         return "\(pages), so no day is drawn for them. Turn the time tabs off in Settings "
             + "to reach them, nothing is discarded to make room."
+    }
+}
+
+/// The rail's background: the panel it always was, with a faint reading
+/// of the roll drawn on it (issue #131).
+///
+/// What it is for is the thing a scrolled reader cannot otherwise see.
+/// The rows above say which days exist and which one is selected; they
+/// say nothing about how much page stands on each, or where in a long
+/// Today the viewport currently is. The bars say the first as height and
+/// the band says the second as position, and both are read off the same
+/// frames the roll laid out, so the rail and the page cannot disagree.
+///
+/// Faint is a requirement rather than a taste. The markers over it, a
+/// day's words, its gauge, the selection fill, are the rail's content,
+/// and a background that competed with them would have turned a
+/// navigation column into a chart. The two inks below are the numbers
+/// the dogfood window is meant to argue with.
+///
+/// Never text, at any size. A minimap that scaled glyphs down would be a
+/// second surface rendering page content, and it would have to answer
+/// for how a concealed block draws on it; rectangles cannot leak a word,
+/// which is why the measurement crossing into this view carries no ink
+/// at all (`RollGeometry`).
+///
+/// It observes the roll's own measurement rather than the model, so a
+/// scroll redraws these few rectangles and nothing else on the card. It
+/// takes no clicks, so a tap meant for the day over it still lands on
+/// the day, and it is hidden from VoiceOver, which has the rows
+/// themselves and would hear nothing here it could act on.
+struct RailMinimapView: View {
+    @ObservedObject var roll: RollGeometryModel
+
+    /// A day's share of the roll, and the reader's place in it.
+    /// Deliberately below the weight of the tertiary label the footer
+    /// draws in: at these values the minimap reads as a texture in the
+    /// panel rather than as a mark on it.
+    static let dayInk: Double = 0.10
+    static let viewportInk: Double = 0.06
+
+    var body: some View {
+        GeometryReader { proxy in
+            let geometry = roll.geometry
+            let height = proxy.size.height
+            ZStack(alignment: .topLeading) {
+                // The band goes under the bars: where the two overlap
+                // the inks add, so the days the reader is actually
+                // looking at are the ones that stand out slightly.
+                if let band = RailMinimap.band(of: geometry, in: height) {
+                    Rectangle()
+                        .fill(Color.secondary.opacity(Self.viewportInk))
+                        .frame(width: proxy.size.width, height: band.height)
+                        .offset(y: band.y)
+                }
+                ForEach(RailMinimap.bars(of: geometry, in: height), id: \.bucket) { bar in
+                    Rectangle()
+                        .fill(Color.secondary.opacity(Self.dayInk))
+                        .frame(width: proxy.size.width, height: bar.height)
+                        .offset(y: bar.y)
+                }
+            }
+        }
+        .background(Color.panelBackground)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
