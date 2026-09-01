@@ -122,6 +122,11 @@ public final class SyncController: ObservableObject {
     public var onRemoteChange: (() -> Void)?
     /// Where the conceal server URL lives, for endpoint derivation.
     public var serverUrlProvider: () -> String = { "" }
+    /// How the authorize URL reaches a browser: the system browser,
+    /// always, and never a web view (account-auth.md §3). Named rather
+    /// than called inline so a test can walk the whole ceremony
+    /// without a consent screen opening on whoever is running it.
+    var openAuthorizeUrl: (URL) -> Void = { NSWorkspace.shared.open($0) }
 
     /// The degraded conditions issue #102 owes sentences for, each a
     /// different one and none of them silent.
@@ -244,8 +249,14 @@ public final class SyncController: ObservableObject {
             signinFailure = Self.signinSentence(reason: begun.reason ?? "no_ceremony")
             return
         }
-        NSWorkspace.shared.open(url)
-        status = client.syncStatus()
+        openAuthorizeUrl(url)
+        // Through `refreshState`, not by assigning the status: the
+        // standing trouble is still `signedOut` from the begin, and
+        // only the reconciliation clears it against the gate. Setting
+        // the status alone left the header saying "signing in" while
+        // the page went on saying signed out, for the whole of the
+        // browser trip.
+        refreshState()
         Task.detached(priority: .userInitiated) {
             let outcome = client.syncSigninFinish(patienceMs: 300_000)
             await MainActor.run { [weak self] in self?.settleSignin(outcome) }
