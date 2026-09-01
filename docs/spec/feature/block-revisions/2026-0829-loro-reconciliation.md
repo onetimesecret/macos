@@ -63,15 +63,15 @@ fifteen concepts:
 | 2 | Container | Partial. Text only; no Map, List, Tree, or Counter, no nesting. Chips live beside the document as sealed records; block identity lives outside it in `BlockIndex`. |
 | 3 | Attached/detached | Not used. No checkout anywhere; the only second view is a discarded trial `fork()` on the update path. Becomes load-bearing under ADR-0025 part 1. |
 | 4 | OpLog/DocState | Partial. The op log is read via version vector, frontiers, and `get_change`; the two version pointers are never distinguished, which is safe only because nothing detaches. |
-| 5 | Ops and Changes | Used heavily; the provenance substrate. `span_provenance` reads exactly `ChangeMeta.timestamp` and `.message()` (`document.rs:435`). |
+| 5 | Ops and Changes | Used heavily; the provenance substrate. `span_provenance` reads exactly `ChangeMeta.timestamp` and `.message()` (`document.rs:538`). |
 | 6 | Transactions | Partial. Explicit commit at every mutation boundary; commit messages carry paste origin. |
 | 7 | Frontiers | Partial. Read for emptiness and the newest stamp only; nothing ever encodes or stores one. |
-| 8 | Version Vector | Used. The opaque sync cursor (`document.rs:276`), deliberately unreadable above the module. |
+| 8 | Version Vector | Used. The opaque sync cursor (`document.rs:379`), deliberately unreadable above the module. |
 | 9 | Cursor | Used twice over: persisted block anchors revalidated on restore, and the per-character op-id probe behind provenance. |
 | 10 | Import Status | Partial. Fail-closed on the update path (`UpdateRefusal::MissingHistory`); `import_snapshot` discards the status, benign while snapshots are self-contained sealed bytes. |
 | 11 | PeerID | Used, as an anti-linkability asset: random per instance, re-minted at restore and compaction, never persisted (see the inversions below). |
 | 12 | Eg-Walker | Not used at the API level; compaction is a re-type from runs, not a replay. |
-| 13 | Shallow snapshots | Measured and rejected: the recorded spike (`document.rs:747`) shows state-only export sheds deleted text but keeps the authoring peer id. |
+| 13 | Shallow snapshots | Measured and rejected: the recorded spike (`document.rs:976`) shows state-only export sheds deleted text but keeps the authoring peer id. |
 | 14 | Choosing types | Settled and narrow: text plus marks, UTF-16 normalized at the module boundary, all structure kept outside the CRDT. |
 | 15 | When not CRDTs | Practiced. Ledger, chips, TTL clocks, tab metadata, and block grouping all live outside; the relay is the authority shape ADR-0021 chose. |
 
@@ -102,13 +102,13 @@ fifteen concepts:
    `set_detached_editing`. The measured-cost settle item and the
    matching eject trigger are reworded to match.
 2. **"Merging disabled" was overstated.**
-   `set_change_merge_interval(0)` (`document.rs:123`) still
+   `set_change_merge_interval(0)` (`document.rs:164`) still
    coalesces same-peer commits sharing a message inside one
    wall-clock second, because the library's test is `<= 0` over
    whole-second stamps. Far below any boundary the ADR derives, so
    harmless to part 1, but the context line now says what is true.
    A paste's origin-carrying commit stays unmerged only because its
-   message differs. The comment at `document.rs:110` deserves the
+   message differs. The comment at `document.rs:151` deserves the
    same word the next time that file is touched.
 
 ## Where the doctrine inverts the report
@@ -179,6 +179,39 @@ argument starts honest:
   cursor save/restore hooks (`set_on_push`/`set_on_pop`) replace
   AppKit's selection restoration and should land in the same change.
 
+### What the switch decided (delivered, 2026-09-01, issue #132)
+
+- **Undo does not survive relaunch, deliberately.** The manager is
+  bound where the document is constructed
+  (`document.rs:186`), which makes every construction path a rebind: a
+  restore reads a snapshot into a document minted there, and the
+  ceremony rebuilds into one. Both re-mint the peer id, so a stack
+  carried across either would point into operations that no longer
+  exist. Starting empty is therefore a property of the construction
+  rather than a rule to remember, and it matches what AppKit offered,
+  a stack that died with the window. The compaction path clears
+  explicitly on top of that (`document.rs:650`), because the rebuild
+  is typed in as local operations and would otherwise leave one step
+  that undid the whole page.
+- **The merge interval is two seconds**
+  (`document.rs:59`), the research's figure, argued in full at
+  [`2026-0901-pause-boundaries.md`](2026-0901-pause-boundaries.md)
+  along with the caveat that the library's rule is a ceiling on a
+  step's growth rather than the idle-gap detector the literature
+  describes. It groups local operations only; ADR-0021 section 4's
+  clock batching is untouched.
+- **The stack is forgotten wherever a step would be a lie.** Beyond
+  the two ceremonies: a wholesale restate, a seal, a chip burned out
+  of the page, and any settle that reaps a chip. Undo never un-seals
+  and never resurrects (ADR-0009), and a sentinel standing for
+  zeroized bytes is the one document shape the restore path calls
+  damage.
+- **The cursor hooks carry the caret.** The push hook records where
+  the step was authored and the pop hook hands it back, converted to
+  UTF-16 only once the document is still again. The position is a
+  Loro cursor rather than a bare offset, so a peer's operations
+  arriving while the step waits move it correctly.
+
 ## Facts recorded for later reference
 
 - `checkout` on a detached document is read-only by default and
@@ -191,7 +224,7 @@ argument starts honest:
   shallow export ever returns from rejection.
 - `set_record_timestamp` is runtime configuration that must be
   reapplied per document instance; every construction path here
-  already does (`document.rs:109`).
+  already does (`document.rs:150`).
 - `blocks_meta()` already re-derives provenance per character per
   read, so ADR-0025's derivation walk joins a read path that is
   O(document) per refresh, not a newly expensive one.
