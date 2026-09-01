@@ -6,7 +6,7 @@ metadata:
 ---
 
 Issue #131 (time rail word labels plus a faint minimap) landed as four
-commits on `feature/131-time-rail`, pushed 2026-09-01, no PR opened.
+commits on `feature/131-time-rail`, pushed 2026-09-01, PR #140.
 
 **Why:** the rail abbreviated ("-3d") only because the column was 56pt,
 and its flat background gave a scrolled reader no sense of place in the

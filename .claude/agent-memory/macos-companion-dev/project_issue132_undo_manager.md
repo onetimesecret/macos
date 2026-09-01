@@ -6,7 +6,7 @@ metadata:
 ---
 
 Issue #132 delivered 2026-09-01 on `feature/132-undo-manager` (pushed,
-no PR opened): `loro::UndoManager` lives in `SheetDocument`, exposed
+PR #142): `loro::UndoManager` lives in `SheetDocument`, exposed
 through five FFI seams, and ⌘Z / ⇧⌘Z route to it from the keymap file.
 Issue #133's judgments doc landed in the same branch.
 
@@ -54,5 +54,5 @@ otherwise hand ⌘Z to `NSUndoManager`. AppKit's per-page managers are
 left in place so list-automation grouping is unchanged; the page's
 AppKit history is dropped at each core step.
 
-See [[test-seams-are-mandatory]] for the fixture rule the new Swift
+See [[feedback-test-seams-are-mandatory]] for the fixture rule the new Swift
 suite follows.

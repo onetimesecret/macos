@@ -1,11 +1,11 @@
 ---
 name: issue98-account-gate
-description: ADR-0027 settles sync account auth; the gate is seven named tokens the core reports, and three server side facts await maintainer ratification
+description: ADR-0027 settles sync account auth; the gate is seven named tokens the core reports, and the three server side facts are settled: portless loopback registration, a server owned idle window, one scope named sync
 metadata:
   type: project
 ---
 
-Issue #98 landed on branch `feature/98-account-auth` (pushed 2026-09-01, no PR opened) as ADR-0027, `docs/adr/0027-account-auth-gates-the-sync-channel.md`, status proposed.
+Issue #98 landed on branch `feature/98-account-auth` (pushed 2026-09-01, PR #141) as ADR-0027, `docs/adr/0027-account-auth-gates-the-sync-channel.md`, accepted 2026-09-01 once the maintainer tested the three server side facts.
 
 **Most of #98's client half already existed** before the ADR: PRs #119 and #121 built the PKCE ceremony, loopback listener, `TokenKeeper`, `BearerAuth` and the driver, spec first in `docs/spec/feature/sync/account-auth.md`. The ADR promotes that spec to a decision. Audit before designing in this area: specs here are sometimes written and built from ahead of the ADR that governs them.
 
@@ -15,10 +15,10 @@ Issue #98 landed on branch `feature/98-account-auth` (pushed 2026-09-01, no PR o
 
 **How to apply:** when building #102's Settings surface, switch on `SyncStatus.gate` and `SyncController.reconciled(trouble:gate:)`; do not reintroduce string sniffing. Do not add a durable record of *why* a token is gone.
 
-**Three items flagged for maintainer ratification, all server side facts:**
+**Three server side facts, tested by the maintainer against rodauth-oauth on 2026-09-01 and recorded in the ADR:**
 
-1. Whether rodauth-oauth honours RFC 8252 §7.3 (any port for a loopback redirect). If it matches the registered port strictly, `AuthCeremony::begin` must bind from a fixed registered list.
-2. The refresh policy and idle window the server sets. The client now tolerates both rotation and no rotation.
-3. The scope the client should request. It currently requests none, so the server's default applies; a leaked sync token is therefore as wide as the account until a relay scope exists server side.
+1. RFC 8252 §7.3 any port loopback holds only when the client is registered with a portless redirect (`http://127.0.0.1/<path>`); a registration carrying a port rejects every other port. Register portless, never `localhost`.
+2. Refresh rotation is on and a stale token is rejected, but a replay does not revoke the family, and the configured expiry is a sliding idle window from the last refresh with no absolute cap. The client adds no expiry of its own; only `invalid_grant` means the grant is dead.
+3. The application registration is the only scope ceiling, several scopes on one endpoint are an OR, and an empty scope token is refused at every scoped endpoint. The client sends `scope=sync` explicitly and the registration holds nothing else.
 
 Related: [[relay-hosting-and-auth-decision]], [[sync-relay-design-direction]].

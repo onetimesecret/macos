@@ -6,7 +6,7 @@ metadata:
 ---
 
 Issue #102 built on branch `feature/102-sync-surface` off
-`feature/132-undo-manager` (pushed 2026-09-01, no PR). Most of the
+`feature/132-undo-manager` (pushed 2026-09-01, PR #143). Most of the
 surface already existed under #98/#119/#121; what #102 added was the
 header word, the give up, the last seen line, the elsewhere mark, the
 off proof, `docs/spec/feature/sync/surface.md` and
