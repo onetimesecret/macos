@@ -623,6 +623,12 @@ fn emit_sheet(sheet: &Sheet, blob: &[u8], meta: &[u8], now: Instant, out: &mut d
             out.u8(1);
             // Positive by construction, the frontier being a committed
             // timestamp the derivation already refused to read at zero.
+            // The `max(0)` is only a guard against a negative that
+            // cannot arise; were it ever to floor a value to zero, the
+            // reader's `clamp_stamp` would hand it back as one second,
+            // an off-by-a-second lie for an input that never happens and
+            // harmless if it did, since a zero stamp is forbidden
+            // downstream anyway.
             out.u64(frontier_s.max(0) as u64);
         }
     }
@@ -1028,6 +1034,12 @@ fn read_page(
         match reader.u8().ok_or(Malformed)? {
             0 => None,
             1 => Some(clamp_stamp(reader.u64().ok_or(Malformed)?, wall_ms)),
+            // The field's absence is forgiven above, a reader older than
+            // the field ending before it. An unknown tag inside the
+            // field is a different thing and is not forgiven: every
+            // tagged value in this format rejects a byte it cannot read,
+            // the clock tags included, and a floor in a shape we do not
+            // know is damage rather than a newer dialect to skip.
             _ => return Err(Malformed),
         }
     };
