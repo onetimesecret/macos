@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Undo belongs to the page's document now** (issue #132). ⌘Z and
+  ⇧⌘Z drive the core's own stack rather than AppKit's, which is what
+  makes undo safe to keep once a page is shared: the stack is bound to
+  this device's identity in the document, so a step takes back what
+  you typed and never what arrived from another device. One step is a
+  couple of seconds of writing rather than a single character, the
+  interval taken from the keystroke-logging literature's account of
+  where a writing pause falls. Undo starts empty after a relaunch and
+  after a page's history is shed, deliberately and for the same
+  reason: the operations a step would invert are gone, and a stack
+  that pretended otherwise would be lying about what it could give
+  back. Sealing, a burned chip, and a page restated whole each end the
+  stack where they stand, because undo never un-seals. The chords are
+  named in the keymap file like every other chord, so they can be
+  moved.
+
 - **Lists continue themselves, and nothing else** (ADR-0024). Return
   at the end of a list item starts the next one: the same indent, a
   bullet repeating itself, an ordered marker counting on with the
