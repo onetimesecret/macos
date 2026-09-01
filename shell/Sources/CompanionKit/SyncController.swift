@@ -562,6 +562,15 @@ public final class SyncController: ObservableObject {
     /// string. Falling behind a key rotation is not on this axis: the
     /// gate admitted that device and it is short a key, so `.behind`
     /// survives a gate with nothing to report.
+    ///
+    /// A nil gate here is a core that named none: one older or newer
+    /// than this shell, which the seam's optional decoding is built
+    /// for. That is no opinion, and the shell keeps whatever it
+    /// already believed. It is not the same nil as
+    /// `CompanionClient.syncGate()`'s, which is a core that could not
+    /// be read at all and means "has not been passed"; that one never
+    /// arrives here, because a core that cannot answer the gate cannot
+    /// answer the status either.
     public nonisolated static func reconciled(trouble: Trouble?, gate: SyncGate?) -> Trouble? {
         guard let gate else { return trouble }
         switch gate {

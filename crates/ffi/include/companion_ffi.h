@@ -796,8 +796,17 @@ bool companion_sync_configure(CompanionHandle *handle, const char *json);
  * "gate", "signin_pending", "attached", "epoch", "frame_present",
  * "enrolled", "pairing"}. Existence checks and in-memory reads only,
  * so rendering Settings never decrypts a credential, wedges on the
- * Keychain, or waits on the network. Free with
- * companion_string_free().
+ * Keychain, or waits on the network.
+ *
+ * "attached" and a "gate" of "attached" are deliberately not the same
+ * question. "attached" is the relay's answer: an attachment stands.
+ * The gate additionally asks whether the next request can use it, and
+ * a 401 on any route drops the access token, so the gate falls back to
+ * "ready" while "attached" stays true until the refresh lands. So
+ * {"attached": true, "gate": "ready"} is a legal and common pair, and
+ * the gate is the one to switch on: it is the value that says whether
+ * this client may attach, and "attached" is a fact about the last
+ * round trip. Free with companion_string_free().
  */
 char *companion_sync_status_json(CompanionHandle *handle);
 
@@ -808,8 +817,16 @@ char *companion_sync_status_json(CompanionHandle *handle);
  * JSON carries as "gate", for a caller that wants the one word
  * without the rest. It says whether this client may attach to the
  * channel and nothing about content: passing this gate without
- * pairing downloads ciphertext that will not open. Null on a null
- * handle. Free with companion_string_free().
+ * pairing downloads ciphertext that will not open.
+ *
+ * Null on a null handle or a core that could not be read at all. Null
+ * is not one of the seven states and must never be softened into one:
+ * a gate that could not be read has not been passed, so a caller
+ * treats it as "may not attach" rather than as no opinion. That is a
+ * different fact from the status JSON simply carrying no "gate" key,
+ * which is a core older or newer than the caller and does mean no
+ * opinion; a caller reading the gate out of the status keeps whatever
+ * it already believed. Free with companion_string_free().
  */
 char *companion_sync_gate(CompanionHandle *handle);
 
