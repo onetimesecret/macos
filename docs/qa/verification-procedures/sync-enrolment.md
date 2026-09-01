@@ -118,6 +118,24 @@ out; the header should say `sync signed out`.
     -a sync-oauth-refresh
   ```
 
+- [ ] **Press Sign in, and with the consent screen still open turn the
+      sync switch off.** Expected: the header says nothing at all, and
+      the item below does not exist however long you leave the browser
+      tab open afterwards. Consenting after the switch went off must
+      store nothing: the switch ends the trip, and a token that
+      arrives for a session nobody is in is not a sign in.
+
+  ```sh
+  security find-generic-password -s com.onetimesecret.companion.backdrop \
+    -a sync-oauth-refresh   # expect: not found
+  ```
+
+- [ ] **Turn the switch off and straight back on while sync is
+      attached.** Expected: the surface settles on the new session
+      within a poll and never shows a page marked as being written
+      elsewhere by the session that ended, nor a `sync behind` it
+      reported.
+
 - [ ] **Press Sign in again and complete the consent.** Expected: the
       browser says the tab can be closed, the header goes to
       `reaching` and then `synced`, and Settings lists this Mac.
@@ -129,9 +147,9 @@ out; the header should say `sync signed out`.
       consent screen.
 
 **Fail:** a Give up that does not end the wait, a refresh token
-present after an abandoned or given up ceremony, a cancel described
-as a server refusal, a prompt at launch, or a relaunch that asks for
-the browser again.
+present after an abandoned or given up ceremony or after the switch
+went off mid trip, a cancel described as a server refusal, a prompt at
+launch, or a relaunch that asks for the browser again.
 
 ## Check 3: pairing, and failing it on purpose
 
