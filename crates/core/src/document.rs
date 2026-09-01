@@ -141,6 +141,14 @@ pub(crate) struct SheetDocument {
     /// the document is quiet again, which is the only moment the offset
     /// can be converted to the UTF-16 the wire speaks.
     caret: Arc<Mutex<Option<usize>>>,
+    /// The merge interval standing on the manager right now, held here
+    /// because the library offers no way to read it back. Only
+    /// [`SheetDocument::commit_as_new_step`] and the test-only
+    /// retuning below write it, and the former restores what it finds
+    /// rather than the constant, so a test that lowered the interval
+    /// still has its number after an automation batch has passed
+    /// through.
+    merge_interval: i64,
 }
 
 impl SheetDocument {
@@ -189,6 +197,7 @@ impl SheetDocument {
             body,
             undo,
             caret,
+            merge_interval: UNDO_MERGE_INTERVAL_MS,
         }
     }
 
@@ -243,10 +252,14 @@ impl SheetDocument {
     /// The boundary is in front of this commit only. Type on afterwards
     /// and the automation joins that next burst, exactly as any two
     /// edits inside the interval join.
+    /// The interval put back afterwards is whatever was standing, not
+    /// the constant: a test that lowered it to zero to prove a
+    /// grouping would otherwise find its number quietly replaced by
+    /// the first automation batch the case sends.
     pub(crate) fn commit_as_new_step(&mut self, message: Option<&str>) {
         self.undo.set_merge_interval(0);
         self.commit(message);
-        self.undo.set_merge_interval(UNDO_MERGE_INTERVAL_MS);
+        self.undo.set_merge_interval(self.merge_interval);
     }
 
     /// Where the caret belongs after the last [`SheetDocument::undo`]
@@ -691,6 +704,7 @@ impl SheetDocument {
     /// one interval, and it is argued at [`UNDO_MERGE_INTERVAL_MS`].
     #[cfg(test)]
     pub(crate) fn set_merge_interval(&mut self, ms: i64) {
+        self.merge_interval = ms;
         self.undo.set_merge_interval(ms);
     }
 
@@ -1297,6 +1311,27 @@ mod tests {
         assert!(ungrouped.undo());
         assert_eq!(ungrouped.runs(), vec![DocRun::Ink("one".to_string())]);
         assert!(ungrouped.can_undo());
+    }
+
+    /// The automation route puts back the interval it found rather
+    /// than the shipping constant. A case that turned grouping off to
+    /// prove a boundary would otherwise have it turned back on again
+    /// behind its back by the first continued list marker it typed,
+    /// and the failure would read as a defect in the grouping.
+    #[test]
+    fn a_new_step_commit_leaves_a_retuned_interval_where_it_found_it() {
+        let mut doc = SheetDocument::new();
+        doc.set_merge_interval(0);
+        doc.insert(0, "- milk").unwrap();
+        doc.commit_as_new_step(None);
+        doc.insert(6, "\n- eggs").unwrap();
+        doc.commit(None);
+
+        // Two steps, because the interval the test asked for is still
+        // the interval standing.
+        assert!(doc.undo());
+        assert_eq!(doc.runs(), vec![DocRun::Ink("- milk".to_string())]);
+        assert!(doc.can_undo());
     }
 
     #[test]
