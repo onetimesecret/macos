@@ -68,13 +68,13 @@ Standing before this ADR:
   the redirect is crates/sync/src/loopback.rs.
 - The lifetimes: `TokenKeeper` holds the access token in memory only
   and treats the server's refusal as the only expiry authority
-  (crates/sync/src/oauth.rs:186).
+  (crates/sync/src/oauth.rs:221).
 - The strategy: `BearerAuth` is a second `AuthStrategy` beside
   `BasicAuth`, added without touching the conceal path
   (crates/ots-client/src/auth.rs:49).
 - The resting place: the refresh token rests under its own account,
   `sync-oauth-refresh`, in the key material store
-  (crates/ffi/src/sync_driver.rs:43).
+  (crates/ffi/src/sync_driver.rs:44).
 - The driver: sign in, refresh, sign out, attach, pump
   (crates/ffi/src/sync_driver.rs), and the shell's states and
   sentences (shell/Sources/CompanionKit/SyncController.swift).
