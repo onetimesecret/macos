@@ -52,7 +52,7 @@ better". It is "does this surface's clock leave the machine".
 **Adopted.** The merge interval is set at
 [`crates/core/src/document.rs:59`](../../../../crates/core/src/document.rs)
 (`UNDO_MERGE_INTERVAL_MS = 2_000`), applied at
-[`crates/core/src/document.rs:760`](../../../../crates/core/src/document.rs).
+[`crates/core/src/document.rs:783`](../../../../crates/core/src/document.rs).
 
 Loro's default is zero, which makes every commit its own undo step, and
 every keystroke is a commit here (see the `set_change_merge_interval`
@@ -79,6 +79,17 @@ Two caveats, recorded because both are easy to overstate:
   undo manager and reaches nothing else. Sync cadence is untouched:
   ADR-0021 section 4's clock still batches deltas, and no observable
   event moves because of this number.
+
+One class of edit opts out of the interval entirely: the ones the page
+makes on the writer's behalf rather than at their dictation, a
+continued list marker or a nudged indent
+([`crates/core/src/document.rs:246`](../../../../crates/core/src/document.rs)).
+Those arrive a keystroke after the burst they should not join, so they
+begin their own step and come off in one press. The lever is the same
+constant, dropped to zero across that one commit, because the library
+offers no other way to force a boundary: its test compares against the
+moment the current step began and nothing can reset that moment except
+pushing a step.
 
 A true pause-aligned undo would need the boundary computed here rather
 than delegated to the interval, using idle gaps and sentence edges the
@@ -138,7 +149,7 @@ this document.
 already keyed to linguistic structure, just not to a pause: a fence
 region stamps as one unit because the fence rules say where it starts
 and ends
-([`shell/Sources/CompanionKit/InkEditorView.swift:1105`](../../../../shell/Sources/CompanionKit/InkEditorView.swift)),
+([`shell/Sources/CompanionKit/InkEditorView.swift:1135`](../../../../shell/Sources/CompanionKit/InkEditorView.swift)),
 and the grouping is recomputed in the restyle pass from the text on
 screen.
 

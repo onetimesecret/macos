@@ -63,15 +63,15 @@ fifteen concepts:
 | 2 | Container | Partial. Text only; no Map, List, Tree, or Counter, no nesting. Chips live beside the document as sealed records; block identity lives outside it in `BlockIndex`. |
 | 3 | Attached/detached | Not used. No checkout anywhere; the only second view is a discarded trial `fork()` on the update path. Becomes load-bearing under ADR-0025 part 1. |
 | 4 | OpLog/DocState | Partial. The op log is read via version vector, frontiers, and `get_change`; the two version pointers are never distinguished, which is safe only because nothing detaches. |
-| 5 | Ops and Changes | Used heavily; the provenance substrate. `span_provenance` reads exactly `ChangeMeta.timestamp` and `.message()` (`document.rs:538`). |
+| 5 | Ops and Changes | Used heavily; the provenance substrate. `span_provenance` reads exactly `ChangeMeta.timestamp` and `.message()` (`document.rs:561`). |
 | 6 | Transactions | Partial. Explicit commit at every mutation boundary; commit messages carry paste origin. |
 | 7 | Frontiers | Partial. Read for emptiness and the newest stamp only; nothing ever encodes or stores one. |
-| 8 | Version Vector | Used. The opaque sync cursor (`document.rs:379`), deliberately unreadable above the module. |
+| 8 | Version Vector | Used. The opaque sync cursor (`document.rs:402`), deliberately unreadable above the module. |
 | 9 | Cursor | Used twice over: persisted block anchors revalidated on restore, and the per-character op-id probe behind provenance. |
 | 10 | Import Status | Partial. Fail-closed on the update path (`UpdateRefusal::MissingHistory`); `import_snapshot` discards the status, benign while snapshots are self-contained sealed bytes. |
 | 11 | PeerID | Used, as an anti-linkability asset: random per instance, re-minted at restore and compaction, never persisted (see the inversions below). |
 | 12 | Eg-Walker | Not used at the API level; compaction is a re-type from runs, not a replay. |
-| 13 | Shallow snapshots | Measured and rejected: the recorded spike (`document.rs:976`) shows state-only export sheds deleted text but keeps the authoring peer id. |
+| 13 | Shallow snapshots | Measured and rejected: the recorded spike (`document.rs:999`) shows state-only export sheds deleted text but keeps the authoring peer id. |
 | 14 | Choosing types | Settled and narrow: text plus marks, UTF-16 normalized at the module boundary, all structure kept outside the CRDT. |
 | 15 | When not CRDTs | Practiced. Ledger, chips, TTL clocks, tab metadata, and block grouping all live outside; the relay is the authority shape ADR-0021 chose. |
 
@@ -190,7 +190,7 @@ argument starts honest:
   exist. Starting empty is therefore a property of the construction
   rather than a rule to remember, and it matches what AppKit offered,
   a stack that died with the window. The compaction path clears
-  explicitly on top of that (`document.rs:650`), because the rebuild
+  explicitly on top of that (`document.rs:673`), because the rebuild
   is typed in as local operations and would otherwise leave one step
   that undid the whole page.
 - **The merge interval is two seconds**
@@ -202,10 +202,21 @@ argument starts honest:
   clock batching is untouched.
 - **The stack is forgotten wherever a step would be a lie.** Beyond
   the two ceremonies: a wholesale restate, a seal, a chip burned out
-  of the page, and any settle that reaps a chip. Undo never un-seals
-  and never resurrects (ADR-0009), and a sentinel standing for
-  zeroized bytes is the one document shape the restore path calls
-  damage.
+  of the page, any settle that reaps a chip, and any batch that stands
+  a sentinel through the operation path, which is how a drag carrying
+  a chip arrives. Undo never un-seals and never resurrects
+  (ADR-0009), and a sentinel standing for zeroized bytes is the one
+  document shape the restore path calls damage.
+- **The edits the page makes for the writer begin their own step**
+  (`document.rs:246`): a continued list marker, a nudged indent. They
+  arrive a keystroke after the burst they should not join, so the
+  interval is dropped across that one commit and one press takes the
+  automation back alone.
+- **The menu is the same stack as the chord.** The page's text view
+  answers `undo:` and `redo:` itself and validates them from the
+  core's own can-undo, and the editor allows no AppKit undo at all, so
+  there is no second history of the document for Edit then Undo to
+  reach. Both routes refuse a page shown read-only.
 - **The cursor hooks carry the caret.** The push hook records where
   the step was authored and the pop hook hands it back, converted to
   UTF-16 only once the document is still again. The position is a
