@@ -13,6 +13,8 @@
 //! words.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use companion_core::{HoldRegister, ItemId, SheetId};
@@ -116,6 +118,13 @@ pub(crate) struct SyncState {
     /// spends on a consent screen would read as signed out, which is a
     /// state the app has already left (ADR-0027 §5).
     pub awaiting_redirect: bool,
+    /// The user's way out of a browser trip that is not coming back.
+    /// Shared with the finish call blocking off-lock, because that is
+    /// the only place that can actually end the wait: a cancel that
+    /// merely emptied the state would leave the listener sitting out
+    /// its five minutes and the gate saying `signing_in` to a user
+    /// who has already given up (ADR-0027 §5).
+    pub signin_abandoned: Arc<AtomicBool>,
     /// The attached engine: session, chain, and key packages. `None`
     /// while sync is off or detached.
     pub engine: Option<EngineState>,
@@ -147,6 +156,7 @@ impl Default for SyncState {
             keeper: None,
             pending_signin: None,
             awaiting_redirect: false,
+            signin_abandoned: Arc::new(AtomicBool::new(false)),
             engine: None,
             enrolled: BTreeMap::new(),
             pairing: None,
@@ -250,6 +260,11 @@ pub(crate) fn signin_begin(state: &mut SyncState) -> Result<String, &'static str
         listener.port(),
     )
     .map_err(|_| "no_entropy")?;
+    // A ceremony begins hopeful. The flag survives from whatever the
+    // last trip ended as, so clearing it here is what keeps a user who
+    // gave up yesterday from abandoning today's sign-in before the
+    // browser has even opened.
+    state.signin_abandoned.store(false, Ordering::Relaxed);
     state.pending_signin = Some(PendingSignin { ceremony, listener });
     Ok(authorize_url)
 }
@@ -258,15 +273,22 @@ pub(crate) fn signin_begin(state: &mut SyncState) -> Result<String, &'static str
 /// patience — the user is reading a consent screen), redeem the code,
 /// and exchange it for the grant. Runs with no lock held; the caller
 /// took `pending` out first. Every failure is a §5 row as a machine
-/// token: `abandoned` (the browser never returned), `state_mismatch`,
-/// `no_code`, `unreachable`, `refused` — and all of them leave nothing
-/// stored, with retry being a fresh begin.
+/// token: `abandoned` (the browser never returned, or the user gave up
+/// on it), `state_mismatch`, `no_code`, `unreachable`, `refused` — and
+/// all of them leave nothing stored, with retry being a fresh begin.
+///
+/// `abandoned` is the shared flag a cancel raises. A user who closed
+/// the consent tab and came back to the app is told `abandoned` at
+/// once rather than after the patience runs out, and the two arrive by
+/// the same door because they are the same fact: no redirect is
+/// coming.
 pub(crate) fn signin_finish<T: Transport>(
     pending: PendingSignin,
     patience: Duration,
     transport: &T,
+    abandoned: &AtomicBool,
 ) -> Result<TokenGrant, &'static str> {
-    let Some(query) = pending.listener.accept_redirect(patience) else {
+    let Some(query) = pending.listener.accept_redirect(patience, abandoned) else {
         return Err("abandoned");
     };
     let request = pending
@@ -1884,7 +1906,13 @@ mod tests {
         browser_returns(&authorize_url, pending.listener.port(), None);
 
         let transport = MockTransport::granting();
-        let grant = signin_finish(pending, Duration::from_secs(5), &transport).unwrap();
+        let grant = signin_finish(
+            pending,
+            Duration::from_secs(5),
+            &transport,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
         assert!(store_refresh(&credentials, &grant.refresh));
         assert_eq!(
             load_refresh(&credentials).unwrap().as_str(),
@@ -1906,7 +1934,12 @@ mod tests {
         let pending = state.pending_signin.take().unwrap();
         browser_returns(&authorize_url, pending.listener.port(), Some("forged"));
         let transport = MockTransport::granting();
-        let refused = signin_finish(pending, Duration::from_secs(5), &transport);
+        let refused = signin_finish(
+            pending,
+            Duration::from_secs(5),
+            &transport,
+            &AtomicBool::new(false),
+        );
         assert_eq!(refused.err(), Some("state_mismatch"));
         assert!(
             transport.seen.borrow().is_none(),
@@ -1920,7 +1953,7 @@ mod tests {
         let _ = signin_begin(&mut state).unwrap();
         let pending = state.pending_signin.take().unwrap();
         let transport = MockTransport::granting();
-        let refused = signin_finish(pending, Duration::ZERO, &transport);
+        let refused = signin_finish(pending, Duration::ZERO, &transport, &AtomicBool::new(false));
         assert_eq!(refused.err(), Some("abandoned"));
     }
 
@@ -1931,6 +1964,47 @@ mod tests {
         assert_eq!(signin_begin(&mut state).unwrap_err(), "busy");
         state.pending_signin = None;
         assert!(signin_begin(&mut state).is_ok());
+    }
+
+    #[test]
+    fn giving_up_ends_the_browser_trip_rather_than_waiting_it_out() {
+        let mut state = configured();
+        let _ = signin_begin(&mut state).unwrap();
+        let pending = state.pending_signin.take().unwrap();
+        let abandoned = Arc::clone(&state.signin_abandoned);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(60));
+            abandoned.store(true, Ordering::Relaxed);
+        });
+        let transport = MockTransport::granting();
+        let began = Instant::now();
+        // The patience a real consent screen gets. Only the give-up
+        // can explain an answer that arrives in this test's lifetime.
+        let refused = signin_finish(
+            pending,
+            Duration::from_secs(300),
+            &transport,
+            &state.signin_abandoned,
+        );
+        assert_eq!(refused.err(), Some("abandoned"));
+        assert!(began.elapsed() < Duration::from_secs(10));
+        assert!(
+            transport.seen.borrow().is_none(),
+            "a ceremony nobody finished redeems nothing"
+        );
+    }
+
+    #[test]
+    fn a_fresh_ceremony_does_not_inherit_the_last_one_s_surrender() {
+        let mut state = configured();
+        let _ = signin_begin(&mut state).unwrap();
+        state.signin_abandoned.store(true, Ordering::Relaxed);
+        state.pending_signin = None;
+        let _ = signin_begin(&mut state).unwrap();
+        assert!(
+            !state.signin_abandoned.load(Ordering::Relaxed),
+            "yesterday's surrender may not abandon today's browser trip"
+        );
     }
 
     #[test]
