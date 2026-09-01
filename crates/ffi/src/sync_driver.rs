@@ -28,6 +28,7 @@ use zeroize::Zeroizing;
 use crate::diagnostics::diag_fault;
 use crate::gop::GopKeyChain;
 use crate::pairing::{self, MailboxMessage};
+use crate::sync_gate::{GateFault, GateInputs, SyncGate, gate};
 use crate::sync_session::{KeyPackageKeeper, SyncEvent, SyncSession, sheet_of};
 use crate::{Companion, CompanionHandle};
 
@@ -109,6 +110,12 @@ pub(crate) struct SyncState {
     /// and the bound listener, waiting for the finish call to take
     /// them off-lock and block on the redirect.
     pub pending_signin: Option<PendingSignin>,
+    /// A finish call holding that ceremony off-lock, blocked on the
+    /// browser's one redirect. The ceremony is out of the state above
+    /// for as long as this stands, so without it the minutes a user
+    /// spends on a consent screen would read as signed out, which is a
+    /// state the app has already left (ADR-0027 §5).
+    pub awaiting_redirect: bool,
     /// The attached engine: session, chain, and key packages. `None`
     /// while sync is off or detached.
     pub engine: Option<EngineState>,
@@ -118,6 +125,16 @@ pub(crate) struct SyncState {
     pub enrolled: BTreeMap<ItemId, PageTracking>,
     /// A pairing ceremony in flight over the relay mailbox.
     pub pairing: Option<PairingState>,
+    /// What the last attempt to use the account credential met, which
+    /// is what tells a server that said no from a server that said
+    /// nothing (ADR-0027 §5). In memory only, and cleared by any round
+    /// trip that succeeds.
+    pub fault: Option<GateFault>,
+    /// What the publish batch now in flight carries: each enrolled
+    /// page's export cursor as it stood when the batch was sealed. The
+    /// answer, whenever it comes, advances the acknowledged cursors to
+    /// these and to nothing later.
+    pub staged_batch: Option<StagedBatch>,
     /// Where the engine's relative clock starts: monotonic, so the
     /// publish and ballot windows cannot jump with the wall clock.
     origin: Instant,
@@ -129,9 +146,12 @@ impl Default for SyncState {
             config: None,
             keeper: None,
             pending_signin: None,
+            awaiting_redirect: false,
             engine: None,
             enrolled: BTreeMap::new(),
             pairing: None,
+            fault: None,
+            staged_batch: None,
             origin: Instant::now(),
         }
     }
@@ -160,6 +180,13 @@ pub(crate) struct PageTracking {
     /// The frontier the last export left; the pristine cursor at
     /// enrolment, so the first publish carries the whole page.
     pub frontier: Vec<u8>,
+    /// The frontier the relay has acknowledged carrying. The export
+    /// cursor above moves when ops are *queued*, which is before they
+    /// are sent, so this is the position a dissolving engine rewinds
+    /// to: an edit queued into a session that died before its publish
+    /// would otherwise sit behind a cursor that moved without it, and
+    /// no later export would ever reach it (ADR-0027 §7, tenet 1).
+    pub acked: Vec<u8>,
     /// The deadline the last published expiry policy named.
     pub deadline_wall_ms: Option<u64>,
     /// The hold register as last published.
@@ -171,15 +198,28 @@ pub(crate) struct PageTracking {
 
 impl PageTracking {
     fn at_enrolment() -> Self {
+        let pristine =
+            companion_core::SheetStore::<companion_core::SystemClock>::pristine_document_version();
         Self {
-            frontier:
-                companion_core::SheetStore::<companion_core::SystemClock>::pristine_document_version(
-                ),
+            frontier: pristine.clone(),
+            acked: pristine,
             deadline_wall_ms: None,
             hold: None,
             terminal_sent: false,
         }
     }
+}
+
+/// A publish batch in flight, and the cursors it carries: one entry
+/// per page enrolled when the batch was sealed. Pages enrolled after
+/// the seal are simply absent, which is right, since the batch carries
+/// nothing of theirs.
+pub(crate) struct StagedBatch {
+    /// The session's own name for the batch
+    /// ([`SyncSession::in_flight_batch`]), so a resend is recognized
+    /// as the same one rather than recorded afresh.
+    pub id: u64,
+    pub cursors: BTreeMap<ItemId, Vec<u8>>,
 }
 
 /// A begun sign-in ceremony: consumed whole by the finish, dropped
@@ -382,6 +422,9 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
             return serde_json::json!({ "ok": false, "reason": "signed_out" });
         };
         let Ok(response) = transport.send(request) else {
+            if let Ok(mut guard) = handle.inner.lock() {
+                note_fault(&mut guard, GateFault::Unreachable);
+            }
             return serde_json::json!({ "ok": false, "reason": "unreachable" });
         };
         let Ok(mut guard) = handle.inner.lock() else {
@@ -392,12 +435,14 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
         };
         match engine.session.absorb_attach(&response) {
             Ok(()) => {
-                return serde_json::json!({
+                let answer = serde_json::json!({
                     "ok": true,
                     "epoch": engine.session.attach_epoch(),
                     "frame_present": engine.session.frame_present(),
                     "peers": engine.session.attach_roster().len(),
                 });
+                note_reachable(&mut guard);
+                return answer;
             }
             Err(RelayRefusal::Unauthorized) if !retry => {
                 drop(guard);
@@ -405,7 +450,11 @@ pub(crate) fn attach(handle: &CompanionHandle) -> serde_json::Value {
                     return serde_json::json!({ "ok": false, "reason": reason });
                 }
             }
+            // A second 401 on the same attach, with a token refreshed
+            // in between: the account is refusing this client rather
+            // than the token merely having aged out.
             Err(RelayRefusal::Unauthorized) => {
+                note_fault(&mut guard, GateFault::Refused);
                 return serde_json::json!({ "ok": false, "reason": "signed_out" });
             }
             Err(_) => return serde_json::json!({ "ok": false, "reason": "refused" }),
@@ -422,11 +471,9 @@ pub(crate) fn detach(handle: &CompanionHandle) -> bool {
         let Ok(mut guard) = handle.inner.lock() else {
             return false;
         };
-        let Some(engine) = guard.sync.engine.take() else {
+        let Some(keeper) = dissolve_engine(&mut guard) else {
             return false;
         };
-        guard.sync.pairing = None;
-        let keeper = engine.session.into_keeper();
         let request = keeper.access().map(|access| {
             let relay_url = guard
                 .sync
@@ -527,6 +574,9 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
     };
     let (request, transport) = staged;
     let Ok(response) = transport.send(request) else {
+        if let Ok(mut guard) = handle.inner.lock() {
+            note_fault(&mut guard, GateFault::Unreachable);
+        }
         return Err("unreachable");
     };
     let Ok(mut guard) = handle.inner.lock() else {
@@ -536,10 +586,17 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
         return Err("not_attached");
     };
     match engine.session.absorb_refresh(&response) {
+        // A rotation is a new durable secret and has to land before it
+        // is used; a server that declined to rotate leaves the resting
+        // token correct, so there is nothing to write and no reason to
+        // touch the keychain (ADR-0027 §2).
         Ok(rotated) => {
-            if !store_refresh(&*guard.credentials, &rotated) {
+            if let Some(rotated) = rotated
+                && !store_refresh(&*guard.credentials, &rotated)
+            {
                 diag_fault!("the credential store refused the rotated sync refresh token");
             }
+            note_reachable(&mut guard);
             Ok(())
         }
         Err(SyncAuthError::SignedOut) => {
@@ -549,7 +606,10 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
         // The token endpoint being unwell (a 5xx, a mangled body) is
         // not the grant being revoked: the refresh token stands and
         // the next pump retries, exactly as an unreachable host would.
-        Err(_) => Err("unreachable"),
+        Err(_) => {
+            note_fault(&mut guard, GateFault::Unreachable);
+            Err("unreachable")
+        }
     }
 }
 
@@ -558,8 +618,10 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
 /// status tells the truth. The pad is unaffected.
 fn sign_out_locked(companion: &mut Companion) {
     let _ = clear_refresh(&*companion.credentials);
-    companion.sync.engine = None;
-    companion.sync.pairing = None;
+    // The dissolve rewinds what the relay never acknowledged, so the
+    // account's refusal costs the peers a delay and never an edit.
+    let _ = dissolve_engine(companion);
+    companion.sync.fault = Some(GateFault::Refused);
     if let Some(config) = &companion.sync.config {
         companion.sync.keeper = Some(TokenKeeper::new(&config.token_url, &config.client_id, None));
     }
@@ -587,7 +649,10 @@ pub(crate) fn sweep_outbound(
         ..
     } = companion;
     let SyncState {
-        engine, enrolled, ..
+        engine,
+        enrolled,
+        staged_batch,
+        ..
     } = sync;
     let Some(engine) = engine.as_mut() else {
         return;
@@ -653,7 +718,7 @@ pub(crate) fn sweep_outbound(
         && let Some(target) = due_target.or(fallback)
         && rotate_channel(store, engine, &**credentials, target, now_ms, events)
     {
-        settle_frontier(store, enrolled, target);
+        settle_frontier(store, enrolled, staged_batch, target);
     }
 }
 
@@ -696,14 +761,128 @@ fn hold_moved(last: Option<HoldRegister>, next: HoldRegister) -> bool {
 fn settle_frontier(
     store: &companion_core::SheetStore<companion_core::SystemClock>,
     enrolled: &mut BTreeMap<ItemId, PageTracking>,
+    staged: &mut Option<StagedBatch>,
     page: ItemId,
 ) {
     if let Some(tracking) = enrolled.get_mut(&page)
         && let Some(sheet) = sheet_of(store, page)
         && let Some(version) = store.document_version(sheet)
     {
-        tracking.frontier = version;
+        tracking.frontier = version.clone();
+        // The acknowledged cursor settles with it, or a later rewind
+        // would land before the rebuild and republish the whole body
+        // as the duplicate this settling exists to prevent.
+        tracking.acked = version;
+        // And a batch still in flight loses its claim on this page. Its
+        // record was taken before the rebuild, so honouring it when the
+        // late answer arrives would put the acknowledged cursor back
+        // behind the rebuild and undo the settling in the same breath.
+        // A cursor the ceremony has settled is no longer any batch's to
+        // move: an acknowledgement may advance one and may never lower
+        // one.
+        if let Some(staged) = staged.as_mut() {
+            staged.cursors.remove(&page);
+        }
     }
+}
+
+/// Build the publish request and record what its batch carries, in one
+/// act. The recording is the whole point: a batch sealed in one pump
+/// and answered in a later one is resent verbatim
+/// (`SyncSession::publish_request` borrows the outbox only when
+/// nothing is already in flight), so by the time the relay accepts it
+/// the live cursors may have run on past it. Advancing to the live
+/// cursor would then mark ops acknowledged that the relay was never
+/// offered, and the next dissolve would rewind to a position past
+/// them, which is the loss the rewind exists to prevent.
+fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::HttpRequest> {
+    let engine = companion.sync.engine.as_mut()?;
+    let EngineState { session, chain, .. } = engine;
+    let request = session.publish_request(now_ms, chain)?;
+    let batch = session.in_flight_batch();
+    let known = companion
+        .sync
+        .staged_batch
+        .as_ref()
+        .is_some_and(|staged| Some(staged.id) == batch);
+    if let Some(id) = batch
+        && !known
+    {
+        // A batch this call sealed: what it carries is each page's
+        // cursor as it stands right now, before any later sweep.
+        companion.sync.staged_batch = Some(StagedBatch {
+            id,
+            cursors: companion
+                .sync
+                .enrolled
+                .iter()
+                .map(|(page, tracking)| (*page, tracking.frontier.clone()))
+                .collect(),
+        });
+    }
+    Some(request)
+}
+
+/// Absorb a publish answer under the lock, and on acceptance advance
+/// each enrolled page's acknowledged cursor to the position the batch
+/// the relay just took actually carried, never to wherever the live
+/// cursor has since reached. Acknowledgement and advance are one act
+/// on purpose: two call sites doing it separately is two chances for a
+/// cursor to move past ops nobody received.
+///
+/// A refusal that drops the batch drops the record with it, leaving
+/// the acknowledged cursor where it was, so the ops the dropped batch
+/// held are exported again after the next dissolve. Restating is
+/// cheap and idempotent; losing is neither.
+fn absorb_publish_locked(
+    companion: &mut Companion,
+    response: &HttpResponse,
+) -> Option<Result<(), RelayRefusal>> {
+    let engine = companion.sync.engine.as_mut()?;
+    let absorbed = engine.session.absorb_publish(response);
+    let still_in_flight = engine.session.in_flight_batch().is_some();
+    if let Err(refusal) = absorbed {
+        if !still_in_flight {
+            companion.sync.staged_batch = None;
+        }
+        return Some(Err(refusal));
+    }
+    if let Some(staged) = companion.sync.staged_batch.take() {
+        for (page, carried) in staged.cursors {
+            if let Some(tracking) = companion.sync.enrolled.get_mut(&page) {
+                tracking.acked = carried;
+            }
+        }
+    }
+    note_reachable(companion);
+    Some(Ok(()))
+}
+
+/// Dissolve the engine, handing back the keeper it held, and rewind
+/// every enrolled page to what the relay actually acknowledged.
+///
+/// Whatever was queued into the dying session and never sent goes back
+/// on the books: the document ops by way of the rewound cursor, and
+/// the policy, hold and terminal facts by way of forgetting what was
+/// last published, so the next sweep states them again. Restating a
+/// fact a peer already holds is idempotent; dropping one is not, and
+/// tenet 1 does not stop at the sync boundary.
+pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> {
+    // The batch dies with the session that sealed it, and so does the
+    // record of what it carried.
+    companion.sync.staged_batch = None;
+    for tracking in companion.sync.enrolled.values_mut() {
+        tracking.frontier = tracking.acked.clone();
+        tracking.deadline_wall_ms = None;
+        tracking.hold = None;
+        tracking.terminal_sent = false;
+    }
+    companion.sync.pairing = None;
+    companion
+        .sync
+        .engine
+        .take()
+        .map(|engine| engine.session.into_keeper())
 }
 
 /// Rotate the channel at `target`: a ballot to the verified attached
@@ -791,14 +970,8 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
             return pump_result(handle, Some("not_attached"), &events);
         };
         engine.session.tick(now);
-        let publish = engine
-            .session
-            .publish_due(now)
-            .then(|| {
-                let EngineState { session, chain, .. } = engine;
-                session.publish_request(now, chain)
-            })
-            .flatten();
+        let due = engine.session.publish_due(now);
+        let publish = due.then(|| stage_publish(&mut guard, now)).flatten();
         publish.zip(transport)
     };
     if let Some((request, transport)) = staged {
@@ -821,11 +994,19 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
     let mut committed = false;
     if let Some((request, transport)) = staged {
         match transport.send(request) {
-            Err(_) => events.push(serde_json::json!({ "kind": "unreachable" })),
+            Err(_) => {
+                if let Ok(mut guard) = handle.inner.lock() {
+                    note_fault(&mut guard, GateFault::Unreachable);
+                }
+                events.push(serde_json::json!({ "kind": "unreachable" }));
+            }
             Ok(response) => {
                 let Ok(mut guard) = handle.inner.lock() else {
                     return pump_result(handle, Some("poisoned"), &events);
                 };
+                // The relay answered, whatever it said: the gate's
+                // account axis has nothing to report.
+                note_reachable(&mut guard);
                 let now = guard.sync.now_ms();
                 let Companion {
                     store,
@@ -852,12 +1033,22 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                             // only as the frame.
                             for event in &absorbed {
                                 if let SyncEvent::CeremonyCommitted(page) = event {
-                                    settle_frontier(store, &mut sync.enrolled, *page);
+                                    settle_frontier(
+                                        store,
+                                        &mut sync.enrolled,
+                                        &mut sync.staged_batch,
+                                        *page,
+                                    );
                                 }
                             }
                         }
-                        // A 401 here refreshes at the next pump's top.
-                        Err(RelayRefusal::Unauthorized) => {}
+                        // A 401 here is the bearer dying under the long
+                        // poll. The session drops the access token as
+                        // it refuses, so the next pump's top refreshes
+                        // and the round is reported rather than
+                        // swallowed: a refusal nobody hears is a
+                        // silence the gate would have to fill with a
+                        // guess.
                         Err(refusal) => events.push(refusal_json(&refusal)),
                     }
                 }
@@ -918,16 +1109,19 @@ fn publish_round(
     events: &mut Vec<serde_json::Value>,
 ) {
     let Ok(response) = transport.send(request) else {
+        if let Ok(mut guard) = handle.inner.lock() {
+            note_fault(&mut guard, GateFault::Unreachable);
+        }
         events.push(serde_json::json!({ "kind": "unreachable" }));
         return;
     };
     let Ok(mut guard) = handle.inner.lock() else {
         return;
     };
-    let Some(engine) = guard.sync.engine.as_mut() else {
+    let Some(absorbed) = absorb_publish_locked(&mut guard, &response) else {
         return;
     };
-    match engine.session.absorb_publish(&response) {
+    match absorbed {
         Ok(()) => {}
         Err(RelayRefusal::Unauthorized) => {
             drop(guard);
@@ -941,11 +1135,9 @@ fn publish_round(
                     return;
                 };
                 let now = guard.sync.now_ms();
-                let Some(engine) = guard.sync.engine.as_mut() else {
-                    return;
-                };
-                let EngineState { session, chain, .. } = engine;
-                session.publish_request(now, chain)
+                // The same batch, so the record of what it carries
+                // stands: `stage_publish` recognizes the resend.
+                stage_publish(&mut guard, now)
             };
             let Some(rebuilt) = staged else {
                 return;
@@ -957,9 +1149,7 @@ fn publish_round(
             let Ok(mut guard) = handle.inner.lock() else {
                 return;
             };
-            if let Some(engine) = guard.sync.engine.as_mut()
-                && let Err(refusal) = engine.session.absorb_publish(&response)
-            {
+            if let Some(Err(refusal)) = absorb_publish_locked(&mut guard, &response) {
                 events.push(refusal_json(&refusal));
             }
         }
@@ -1035,12 +1225,65 @@ fn pump_result(
     })
 }
 
-/// Sync's standing state: existence checks and in-memory reads only,
-/// so rendering Settings never decrypts a credential or waits on the
-/// network.
-pub(crate) fn status_json(companion: &Companion) -> serde_json::Value {
+/// Note that a round trip reached its host. That answers the network
+/// question and only the network question: a refusal stands until the
+/// user signs in again, because re-enrolment is the only way back from
+/// one (ADR-0027 §2) and a reachable server is not a server that
+/// changed its mind.
+fn note_reachable(companion: &mut Companion) {
+    if companion.sync.fault == Some(GateFault::Unreachable) {
+        companion.sync.fault = None;
+    }
+}
+
+/// Note what the last attempt met. A refusal outranks an unreachable
+/// host, because the second is a retry and the first is a sign-out.
+fn note_fault(companion: &mut Companion, fault: GateFault) {
+    if companion.sync.fault != Some(GateFault::Refused) || fault == GateFault::Refused {
+        companion.sync.fault = Some(fault);
+    }
+}
+
+/// Forget every fault: the ceremony granted, the shell reconfigured,
+/// or the user signed out on purpose. Each is a fresh start the last
+/// refusal has nothing to say about.
+pub(crate) fn clear_fault(companion: &mut Companion) {
+    companion.sync.fault = None;
+}
+
+/// Where the account gate stands, as the one value the shell reads
+/// (ADR-0027 §5). Existence checks and in-memory reads only, like
+/// every other field of the status.
+pub(crate) fn gate_of(companion: &Companion) -> SyncGate {
     let sync = &companion.sync;
-    let signed_in = sync.engine.as_ref().map_or_else(
+    gate(GateInputs {
+        configured: sync.config.is_some(),
+        signin_pending: signin_in_flight(sync),
+        credential: credential_rests(companion),
+        fault: sync.fault,
+        // An attachment the next request cannot use is not one to
+        // report: a `401` on any route drops the access token, so the
+        // gate falls back to `ready` until the refresh lands rather
+        // than reading `attached` with a dead bearer.
+        attached: sync
+            .engine
+            .as_ref()
+            .is_some_and(|engine| engine.session.attached() && engine.session.has_access()),
+    })
+}
+
+/// Whether a sign-in ceremony is in flight at all: minted and waiting
+/// for its finish, or taken by a finish that is blocked on the
+/// browser. The two are one state to anyone outside this module.
+pub(crate) fn signin_in_flight(sync: &SyncState) -> bool {
+    sync.pending_signin.is_some() || sync.awaiting_redirect
+}
+
+/// Whether any account credential rests here: the live keeper's if one
+/// stands, the keychain account's otherwise.
+fn credential_rests(companion: &Companion) -> bool {
+    let sync = &companion.sync;
+    sync.engine.as_ref().map_or_else(
         || {
             sync.keeper.as_ref().map_or_else(
                 || signed_in(&*companion.credentials),
@@ -1048,11 +1291,20 @@ pub(crate) fn status_json(companion: &Companion) -> serde_json::Value {
             )
         },
         |engine| engine.session.signed_in(),
-    );
+    )
+}
+
+/// Sync's standing state: existence checks and in-memory reads only,
+/// so rendering Settings never decrypts a credential or waits on the
+/// network.
+pub(crate) fn status_json(companion: &Companion) -> serde_json::Value {
+    let sync = &companion.sync;
+    let signed_in = credential_rests(companion);
     serde_json::json!({
         "configured": sync.config.is_some(),
         "signed_in": signed_in,
-        "signin_pending": sync.pending_signin.is_some(),
+        "gate": gate_of(companion).token(),
+        "signin_pending": signin_in_flight(sync),
         "attached": sync.engine.as_ref().is_some_and(|engine| engine.session.attached()),
         "epoch": sync.engine.as_ref().map(|engine| engine.chain.epoch()),
         "frame_present": sync.engine.as_ref().and_then(|engine| engine.session.frame_present()),
@@ -1810,6 +2062,374 @@ mod tests {
         sweep_outbound(&mut companion, 4_000, &mut events);
         let engine = companion.sync.engine.as_mut().unwrap();
         assert!(engine.session.publish_due(4_000));
+    }
+
+    /// Play the relay accepting a batch: the answer §4 gives a publish.
+    fn accepted() -> HttpResponse {
+        HttpResponse {
+            status: 200,
+            body: br#"{"seq":1}"#.to_vec(),
+        }
+    }
+
+    #[test]
+    fn a_sign_out_mid_session_keeps_the_unpublished_edits_for_the_next_attach() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let page = inked_page(&mut companion, "the line the peers never got");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(
+            companion
+                .sync
+                .engine
+                .as_ref()
+                .unwrap()
+                .session
+                .publish_due(0),
+            "the sweep queued the page"
+        );
+        // The relay never saw it: the access token expired mid session
+        // and the refresh was refused, so the engine dissolves.
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        sign_out_locked(&mut companion);
+        assert!(companion.sync.engine.is_none());
+        assert!(
+            companion.store.sheet(page).is_some(),
+            "the pad keeps every character; the account failure cost nothing"
+        );
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier,
+            companion_core::SheetStore::<companion_core::SystemClock>::pristine_document_version(),
+            "nothing was acknowledged, so the cursor rewinds the whole way"
+        );
+
+        // Signed in again and attached again: the edit that was queued
+        // and never sent is owed again, rather than sitting behind a
+        // cursor that moved without it (ADR-0027 §7).
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        sweep_outbound(&mut companion, 10_000, &mut events);
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier,
+            companion.store.document_version(page).unwrap(),
+            "the re-attached sweep exported the page again"
+        );
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(engine.session.publish_due(10_000));
+        let EngineState { session, chain, .. } = engine;
+        assert!(session.publish_request(10_000, chain).is_some());
+    }
+
+    #[test]
+    fn a_refused_refresh_names_its_state_and_leaves_the_pad_whole() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        credentials.store("api-token", b"conceal-token").unwrap();
+        let ledger = crate::persist::ensure_ledger_key(&*credentials).unwrap();
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        assert!(store_refresh(
+            &*credentials,
+            &Zeroizing::new("rt-1".to_owned())
+        ));
+        companion.sync.keeper = Some(keeper_for(
+            companion.sync.config.as_ref().unwrap(),
+            &*credentials,
+        ));
+        let page = inked_page(&mut companion, "work in progress");
+        assert_eq!(gate_of(&companion), SyncGate::Ready);
+
+        // The refresh came back refused: the grant is dead and the
+        // resting token goes with it.
+        sign_out_locked(&mut companion);
+        assert_eq!(
+            gate_of(&companion),
+            SyncGate::Refused,
+            "a refusal is told apart from never having signed in"
+        );
+        assert_eq!(
+            status_json(&companion)["gate"],
+            "refused",
+            "the seam reports the state, and the shell owns the words"
+        );
+
+        // The pad is untouched: the page stands, a new one opens, and
+        // the neighbouring credentials are exactly where they were.
+        assert!(companion.store.sheet(page).is_some());
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Insert {
+                pos_u16: 0,
+                text: "still typing ".into(),
+            }],
+        ));
+        assert!(companion.store.new_tab().is_ok());
+        assert_eq!(*credentials.load("api-token").unwrap(), b"conceal-token");
+        assert_eq!(
+            *crate::persist::load_ledger_key(&*credentials).unwrap(),
+            *ledger
+        );
+        assert!(!signed_in(&*credentials), "the sync account alone is gone");
+    }
+
+    #[test]
+    fn a_dead_bearer_is_not_reported_as_an_attachment() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let mut engine = attached_engine(&*credentials);
+        engine
+            .session
+            .absorb_attach(&HttpResponse {
+                status: 200,
+                body: br#"{"epoch":0,"frame_present":false,"next_seq":0,"peers":[]}"#.to_vec(),
+            })
+            .unwrap();
+        companion.sync.engine = Some(engine);
+        assert_eq!(gate_of(&companion), SyncGate::Attached);
+
+        // The relay refused the bearer mid poll. The attachment still
+        // stands and the next request cannot use it, so the gate says
+        // ready until the refresh lands rather than claiming health.
+        companion
+            .sync
+            .engine
+            .as_mut()
+            .unwrap()
+            .session
+            .keeper_mut()
+            .clear_access();
+        assert_eq!(gate_of(&companion), SyncGate::Ready);
+    }
+
+    #[test]
+    fn a_relay_that_did_not_answer_never_reads_as_a_refusal() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        assert!(store_refresh(
+            &*credentials,
+            &Zeroizing::new("rt-1".to_owned())
+        ));
+        companion.sync.keeper = Some(keeper_for(
+            companion.sync.config.as_ref().unwrap(),
+            &*credentials,
+        ));
+
+        note_fault(&mut companion, GateFault::Unreachable);
+        assert_eq!(gate_of(&companion), SyncGate::Unreachable);
+        assert!(
+            signed_in(&*credentials),
+            "an unanswered request deletes nothing"
+        );
+        // And the state clears itself the moment something answers.
+        note_reachable(&mut companion);
+        assert_eq!(gate_of(&companion), SyncGate::Ready);
+
+        // A refusal, though, outlives a reachable host: only signing in
+        // again is the way back from one.
+        note_fault(&mut companion, GateFault::Refused);
+        note_reachable(&mut companion);
+        assert_eq!(gate_of(&companion), SyncGate::Refused);
+        clear_fault(&mut companion);
+        assert_eq!(gate_of(&companion), SyncGate::Ready);
+    }
+
+    #[test]
+    fn an_unconfigured_handle_reports_off_and_touches_nothing() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let companion = store_companion(Arc::clone(&credentials));
+        assert_eq!(gate_of(&companion), SyncGate::Off);
+        assert_eq!(status_json(&companion)["gate"], "off");
+    }
+
+    #[test]
+    fn the_sync_token_never_reaches_the_sealed_store() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let secret = "rt-a-secret-nobody-should-find-in-a-page";
+        assert!(store_refresh(
+            &*credentials,
+            &Zeroizing::new(secret.to_owned())
+        ));
+        companion.sync.keeper = Some(keeper_for(
+            companion.sync.config.as_ref().unwrap(),
+            &*credentials,
+        ));
+        let page = inked_page(&mut companion, "an ordinary page");
+        assert!(enrol_page(&mut companion, page, true));
+
+        // The snapshot is what the state file seals. A credential in it
+        // would rest under the rotating content key, which ADR-0027 §4
+        // refuses: a rotation would sign the user out, and a copied
+        // state file would carry the account with it.
+        let snapshot = companion.store.snapshot(1_700_000_000_000);
+        let contains = |hay: &[u8], needle: &[u8]| hay.windows(needle.len()).any(|w| w == needle);
+        assert!(
+            !contains(&snapshot, secret.as_bytes()),
+            "the refresh token has no business in the content store"
+        );
+        // It rests in the key material tier instead, which is where
+        // the ledger key and the keychain content half rest. The
+        // in-memory store under test answers both tiers with one map,
+        // so this pins the account the driver reads and writes, and the
+        // tier split is the real store's own (`key_material_store`).
+        assert!(load_refresh(&*credentials).is_some());
+        assert!(
+            credentials
+                .key_material_store()
+                .exists(SYNC_REFRESH_ACCOUNT)
+                .unwrap_or(false)
+        );
+    }
+
+    #[test]
+    fn a_late_acceptance_never_moves_a_settled_cursor_back() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let page = inked_page(&mut companion, "keep DOOMED");
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Delete {
+                pos_u16: 4,
+                len_u16: 7,
+            }],
+        ));
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+
+        // A batch is sealed at V1 and its answer goes missing.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(stage_publish(&mut companion, 0).is_some());
+        let before_rebuild = companion.sync.enrolled[&uuid].frontier.clone();
+
+        // A due transition rotates the channel while that batch is
+        // still out. The rebuilt body travels as the sealed frame, and
+        // both cursors settle at the rebuild.
+        let tab = companion.store.tabs().next().unwrap().id();
+        companion.store.cycle_rung(tab).unwrap();
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        let rebuilt = companion.store.document_version(page).unwrap();
+        assert_ne!(rebuilt, before_rebuild, "the ceremony rebuilt the page");
+        assert_eq!(companion.sync.enrolled[&uuid].acked, rebuilt);
+
+        // The lost answer arrives. It may not restore the cursor the
+        // rebuild replaced: the batch it acknowledges belongs to a
+        // document identity this page no longer has.
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+        assert_eq!(
+            companion.sync.enrolled[&uuid].acked, rebuilt,
+            "an acknowledged cursor never moves backwards"
+        );
+
+        // So the dissolve rewinds to the rebuild, and the next sweep
+        // owes no text: an export from before the rebuild would reach a
+        // peer as a second copy of the body rather than as its own.
+        sign_out_locked(&mut companion);
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        sweep_outbound(&mut companion, 10_000, &mut events);
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier, rebuilt,
+            "the rebuilt body does not travel a second time as a delta"
+        );
+    }
+
+    #[test]
+    fn an_answer_to_a_resent_batch_acknowledges_only_what_that_batch_carried() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let page = inked_page(&mut companion, "the first line");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+
+        // Pump one: sweep to V1, seal the batch, and lose the answer to
+        // a transport error. The batch stays in flight.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(stage_publish(&mut companion, 0).is_some());
+        let carried = companion.sync.enrolled[&uuid].frontier.clone();
+
+        // Pump two: a second edit sweeps to V2 and queues behind the
+        // batch, which is resent verbatim and accepted. Only V1 ever
+        // reached the relay, so only V1 may count as acknowledged.
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Insert {
+                pos_u16: 0,
+                text: "the second line ".into(),
+            }],
+        ));
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        assert!(stage_publish(&mut companion, 4_000).is_some());
+        let live = companion.sync.enrolled[&uuid].frontier.clone();
+        assert_ne!(live, carried, "the sweep moved the cursor past the batch");
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+        assert_eq!(
+            companion.sync.enrolled[&uuid].acked, carried,
+            "the relay took the first batch, and only the first batch"
+        );
+
+        // The refused refresh that follows dissolves the engine, and
+        // the second edit has to survive it: it is in no batch the
+        // relay ever answered.
+        sign_out_locked(&mut companion);
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, carried);
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        sweep_outbound(&mut companion, 10_000, &mut events);
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier, live,
+            "the second line is exported again rather than lost"
+        );
+        assert!(stage_publish(&mut companion, 10_000).is_some());
+    }
+
+    #[test]
+    fn an_acknowledged_batch_is_not_owed_again_after_a_sign_out() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let page = inked_page(&mut companion, "the line the peers did get");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(stage_publish(&mut companion, 0).is_some());
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let published = companion.store.document_version(page).unwrap();
+        sign_out_locked(&mut companion);
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier, published,
+            "the rewind stops at the last acknowledgement"
+        );
+
+        // The re-attached sweep restates the expiry and hold facts,
+        // which are idempotent, and owes the peers no text: an
+        // acknowledged body republished from a stale cursor is the
+        // duplicate merge the settled cursor exists to prevent.
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        sweep_outbound(&mut companion, 10_000, &mut events);
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, published);
     }
 
     #[test]

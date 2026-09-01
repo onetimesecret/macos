@@ -10,11 +10,12 @@ import XCTest
 /// Rust-side.
 final class SyncSurfaceTests: XCTestCase {
     private func status(
-        signedIn: Bool = true, attached: Bool = true, enrolled: Int = 0
+        signedIn: Bool = true, attached: Bool = true, enrolled: Int = 0,
+        gate: SyncGate? = .attached
     ) -> SyncStatus {
         SyncStatus(
-            configured: true, signedIn: signedIn, signinPending: false, attached: attached,
-            epoch: 0, framePresent: false, enrolled: enrolled, pairing: nil
+            configured: true, signedIn: signedIn, gateToken: gate?.rawValue, signinPending: false,
+            attached: attached, epoch: 0, framePresent: false, enrolled: enrolled, pairing: nil
         )
     }
 
@@ -29,7 +30,7 @@ final class SyncSurfaceTests: XCTestCase {
 
     func testEveryDegradedStateHasItsOwnSentence() {
         let troubles: [SyncController.Trouble] = [
-            .notConfigured, .signedOut, .unreachable, .behind,
+            .notConfigured, .signedOut, .refused, .unreachable, .behind,
         ]
         let sentences = troubles.map {
             SyncController.sentence(enabled: true, status: status(), trouble: $0, peers: 1)
@@ -121,11 +122,75 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertEqual(overridden.clientId, "companion")
     }
 
+    func testTheGateIsTheAuthorityOnTheAccountAxis() {
+        // A gate that names a condition wins over whatever the shell
+        // had inferred from a refusal string.
+        XCTAssertEqual(
+            SyncController.reconciled(trouble: nil, gate: .refused), .refused)
+        XCTAssertEqual(
+            SyncController.reconciled(trouble: .unreachable, gate: .signedOut), .signedOut)
+        XCTAssertEqual(
+            SyncController.reconciled(trouble: .signedOut, gate: .off), .notConfigured)
+        // A gate with nothing to report clears the account axis.
+        XCTAssertNil(SyncController.reconciled(trouble: .unreachable, gate: .attached))
+        XCTAssertNil(SyncController.reconciled(trouble: .signedOut, gate: .ready))
+        // Falling behind a rotation is not on that axis: that device
+        // passed the gate and is short a key.
+        XCTAssertEqual(SyncController.reconciled(trouble: .behind, gate: .attached), .behind)
+        // A core too old or too new to name a gate leaves the shell's
+        // own reading alone.
+        XCTAssertEqual(SyncController.reconciled(trouble: .unreachable, gate: nil), .unreachable)
+    }
+
+    func testAnAttachRefusalDefersToTheGateThatKnowsWhy() {
+        // The core answers a second 401 on one attach with the reason
+        // "signed_out" and a gate of refused. The reason is the coarser
+        // of the two, so the gate decides which sentence is shown.
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: false, reason: "signed_out", gate: .refused),
+            .refused
+        )
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: false, reason: "signed_out", gate: .signedOut),
+            .signedOut
+        )
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: false, reason: "unreachable", gate: .unreachable),
+            .unreachable
+        )
+        // A core with no gate to report leaves the reason standing.
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: false, reason: "unreachable", gate: nil),
+            .unreachable
+        )
+        // An attach that landed says nothing, and a gate naming a
+        // condition is heard even then.
+        XCTAssertNil(SyncController.settledTrouble(ok: true, reason: nil, gate: .attached))
+        XCTAssertEqual(
+            SyncController.settledTrouble(ok: true, reason: nil, gate: .unreachable),
+            .unreachable
+        )
+    }
+
+    func testARefusedGateSaysSoAndSpareThePad() {
+        XCTAssertEqual(
+            SyncController.sentence(
+                enabled: true, status: status(signedIn: false, attached: false, gate: .refused),
+                trouble: .refused, peers: nil),
+            "the account refused this sign-in; sync is off and the pad is unaffected"
+        )
+        // And the same condition is silent while sync is off.
+        XCTAssertNil(
+            SyncController.sentence(
+                enabled: false, status: status(gate: .refused), trouble: .refused, peers: nil))
+    }
+
     func testSyncStatusDecoding() throws {
         let json = """
         {
             "configured": true,
             "signed_in": true,
+            "gate": "attached",
             "signin_pending": false,
             "attached": true,
             "epoch": 3,
@@ -136,10 +201,34 @@ final class SyncSurfaceTests: XCTestCase {
         """
         let status = try JSONDecoder().decode(SyncStatus.self, from: Data(json.utf8))
         XCTAssertTrue(status.signedIn)
+        XCTAssertEqual(status.gate, .attached)
         XCTAssertEqual(status.epoch, 3)
         XCTAssertEqual(status.framePresent, false)
         XCTAssertEqual(status.enrolled, 2)
         XCTAssertEqual(status.pairing, "sas")
+    }
+
+    func testAStatusWithAnUnreadableGateStillDecodes() throws {
+        // A core from before the gate existed, and one a version ahead
+        // of this shell: neither may cost the surface its whole status.
+        for token in ["", "\"gate\": null,", "\"gate\": \"a_state_from_the_future\","] {
+            let json = """
+            {
+                "configured": true,
+                "signed_in": false,
+                \(token)
+                "signin_pending": false,
+                "attached": false,
+                "epoch": null,
+                "frame_present": null,
+                "enrolled": 0,
+                "pairing": null
+            }
+            """
+            let status = try JSONDecoder().decode(SyncStatus.self, from: Data(json.utf8))
+            XCTAssertNil(status.gate)
+            XCTAssertFalse(status.signedIn)
+        }
     }
 
     func testDeviceListDecodingTellsVerifiedFromStranger() throws {

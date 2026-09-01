@@ -291,6 +291,11 @@ public struct ConcealOutcome: Codable, Hashable, Sendable {
 public struct SyncStatus: Codable, Hashable, Sendable {
     public let configured: Bool
     public let signedIn: Bool
+    /// Where the account gate stands, as the core spells it. Kept as
+    /// the raw token and read through `gate` below, so neither a core
+    /// built before the gate existed nor one a version ahead can make
+    /// the whole status fail to decode.
+    public let gateToken: String?
     public let signinPending: Bool
     public let attached: Bool
     public let epoch: UInt64?
@@ -298,12 +303,32 @@ public struct SyncStatus: Codable, Hashable, Sendable {
     public let enrolled: Int
     public let pairing: String?
 
+    /// The gate as a state the surface can switch on, or nil when the
+    /// core named something this build has never heard of.
+    public var gate: SyncGate? { gateToken.flatMap(SyncGate.init(rawValue:)) }
+
     enum CodingKeys: String, CodingKey {
         case configured, attached, epoch, enrolled, pairing
+        case gateToken = "gate"
         case signedIn = "signed_in"
         case signinPending = "signin_pending"
         case framePresent = "frame_present"
     }
+}
+
+/// The account gate's seven states (ADR-0027 §5), as the core names
+/// them. Each earns its own sentence and none of them is silent; none
+/// of them touches the pad, which keeps working with no account and no
+/// network whatever this says.
+///
+public enum SyncGate: String, Codable, Hashable, Sendable {
+    case off
+    case signedOut = "signed_out"
+    case signingIn = "signing_in"
+    case refused
+    case unreachable
+    case ready
+    case attached
 }
 
 /// One row of the device list: a peer a human verified here, this
@@ -819,6 +844,16 @@ public final class CompanionClient: @unchecked Sendable {
     /// never a decrypt and never a network wait.
     public func syncStatus() -> SyncStatus? {
         decodeJSON(SyncStatus.self, from: companion_sync_status_json(handle))
+    }
+
+    /// Where the account gate stands, without the rest of the status:
+    /// the one word the surface needs to know whether sync may attach.
+    /// Nil when the core could not be read, which is not a state the
+    /// gate has and is therefore never mistaken for one.
+    public func syncGate() -> SyncGate? {
+        guard let ptr = companion_sync_gate(handle) else { return nil }
+        defer { companion_string_free(ptr) }
+        return SyncGate(rawValue: String(cString: ptr))
     }
 
     /// Begin the sign-in ceremony: the result's `authorizeUrl` opens in

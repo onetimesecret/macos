@@ -118,6 +118,12 @@ public struct DayScrollView: NSViewRepresentable {
     public static func dismantleNSView(
         _ scroll: NSScrollView, coordinator: InkEditorView.Coordinator
     ) {
+        // Above the identity check, and deliberately: whatever became of
+        // the editor, this roll's measurement describes a surface that
+        // is going away, and the rail must not keep drawing the shape of
+        // it behind a ledger (issue #131). A replacement roll publishes
+        // its own on its first pass.
+        coordinator.model.rollGeometry.reset()
         guard let stack = scroll.documentView as? DayStackView,
               let editor = stack.editor,
               coordinator.model.activeEditor === editor else { return }
@@ -136,6 +142,12 @@ public struct DayScrollView: NSViewRepresentable {
     ) -> NSScrollView {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
+        // A roll with nothing laid out in it has no proportions to
+        // report, and the rail's minimap must not spend this pass
+        // drawing the shape of the roll it is replacing (issue #131).
+        // The first `relayout` publishes the real measurement a moment
+        // later.
+        model.rollGeometry.reset()
         // The card's own material shows through the roll, as it does
         // through the page.
         scroll.drawsBackground = false
@@ -176,6 +188,12 @@ final class DayStackView: NSView {
         /// The editor, a quiet region, or the place today's page would
         /// go.
         let body: NSView
+        /// The day this row was laid out for, as the projection counts
+        /// them. Carried so the rail's minimap can be told which day
+        /// each stretch of the roll belongs to (issue #131); a day
+        /// holding two pages has two rows and one bucket, which is the
+        /// fold `RollGeometry.merging` performs.
+        let bucket: Int
         /// The page under this header, or nil for the empty Today
         /// place, which is a place and not a page (ADR-0017).
         let page: UInt64?
@@ -284,6 +302,18 @@ final class DayStackView: NSView {
             name: NSView.frameDidChangeNotification,
             object: clip
         )
+        // And the third thing, which changes nothing about the layout
+        // and everything about what the reader can see: the clip moving
+        // over a document that stayed still. Nothing was watching it
+        // until the rail gained a minimap with a viewport band to keep
+        // honest (issue #131).
+        clip.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(rollScrolled),
+            name: NSView.boundsDidChangeNotification,
+            object: clip
+        )
     }
 
     private func observeEditor(_ editor: InkTextView) {
@@ -308,6 +338,14 @@ final class DayStackView: NSView {
     /// mid-render.
     @objc private func surroundingsChanged(_ notification: Notification) {
         relayout()
+    }
+
+    /// The reader moved over the roll. No frame changed, so nothing is
+    /// re-measured and nothing is placed; all that moved is which part
+    /// of the document the clip has open, which is half of what the
+    /// minimap says.
+    @objc private func rollScrolled(_ notification: Notification) {
+        publishGeometry()
     }
 
     // MARK: The pass
@@ -401,6 +439,7 @@ final class DayStackView: NSView {
                 built.append(Row(
                     header: header,
                     body: place,
+                    bucket: unit.bucket,
                     page: nil,
                     fillsViewport: unit.bucket == projection.units.last?.bucket
                 ))
@@ -425,7 +464,8 @@ final class DayStackView: NSView {
                     ? editorView(for: page)
                     : quietRegion(for: page)
                 built.append(Row(
-                    header: header, body: body, page: page, fillsViewport: false
+                    header: header, body: body, bucket: unit.bucket, page: page,
+                    fillsViewport: false
                 ))
                 isFirstOnRoll = false
             }
@@ -676,9 +716,12 @@ final class DayStackView: NSView {
 
     // MARK: Measuring and placing
 
-    /// Re-measure every region and place it. Frames only: nothing
-    /// observable moves from here, which is what lets the AppKit
-    /// notifications call it without re-entering a SwiftUI render.
+    /// Re-measure every region and place it. Frames only, with one
+    /// deliberate exception at the end: the measurement handed to the
+    /// rail's minimap, which is published on a hop rather than written
+    /// here (issue #131). Nothing observable moves synchronously from
+    /// this pass, which is what lets the AppKit notifications call it
+    /// without re-entering a SwiftUI render.
     func relayout() {
         guard !isLayingOut, let scroll = enclosingScrollView else { return }
         isLayingOut = true
@@ -710,6 +753,48 @@ final class DayStackView: NSView {
         }
         setFrameSize(NSSize(width: width, height: max(y, clipHeight)))
         scroll.reflectScrolledClipView(scroll.contentView)
+        publishGeometry()
+    }
+
+    // MARK: What the rail draws behind the days
+
+    /// Where each day now stands and how much of the roll is on screen
+    /// (issue #131).
+    ///
+    /// Read off the frames this pass just set rather than computed a
+    /// second way, so the bars behind the rail's rows and the regions
+    /// under the reader's eye cannot disagree about how much page a day
+    /// holds. A day's span runs from the top of its first header to the
+    /// bottom of its last page, the perforation included, because the
+    /// tear is part of what a reader scrolls past.
+    ///
+    /// Internal and readable so a test can mount the roll and ask it
+    /// what it measured, without waiting on the publication's hop
+    /// through the main queue.
+    var measuredGeometry: RollGeometry {
+        guard let scroll = enclosingScrollView else { return .unmeasured }
+        let clip = scroll.contentView
+        let spans = rows.map { row in
+            RollGeometry.Extent(
+                bucket: row.bucket,
+                top: row.header.frame.minY,
+                height: max(row.body.frame.maxY - row.header.frame.minY, 0)
+            )
+        }
+        return RollGeometry(
+            extents: RollGeometry.merging(spans),
+            documentHeight: frame.height,
+            viewportTop: clip.bounds.origin.y,
+            viewportHeight: clip.bounds.height
+        )
+    }
+
+    /// Hand the measurement to the rail. The model's own observable
+    /// takes it, coalesces it and publishes it after this pass, so a
+    /// layout that runs inside a SwiftUI render does not write observed
+    /// state in the middle of one.
+    private func publishGeometry() {
+        model.rollGeometry.publish(measuredGeometry)
     }
 
     /// A region no shorter than one line of ink, so an empty day is

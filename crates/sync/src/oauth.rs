@@ -180,6 +180,41 @@ pub fn parse_token_response(response: &HttpResponse) -> Result<TokenGrant, SyncA
     }
 }
 
+/// Parse a *refresh* answer, where the rotated token is optional.
+///
+/// RFC 6749 §6 makes the new refresh token optional in a refresh
+/// response, and a server configured without rotation simply omits it.
+/// A client that insisted on one would refuse every grant such a
+/// server issues, and would refuse them behind a `2xx` it could not
+/// even explain, so sync would be permanently unable to wake up
+/// against a perfectly conformant server (ADR-0027 §2: rotation is
+/// requested, never required). The access token is still mandatory:
+/// a refresh answer without one has told us nothing we can attach
+/// with.
+///
+/// # Errors
+///
+/// [`SyncAuthError::Refused`] with the status on a non-2xx answer, a
+/// body that is not JSON, or a body with no access token.
+fn parse_refresh_response(
+    response: &HttpResponse,
+) -> Result<(Zeroizing<String>, Option<Zeroizing<String>>), SyncAuthError> {
+    if !(200..300).contains(&response.status) {
+        return Err(SyncAuthError::Refused(response.status));
+    }
+    let value: serde_json::Value = serde_json::from_slice(&response.body)
+        .map_err(|_| SyncAuthError::Refused(response.status))?;
+    let token = |key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .filter(|token| !token.is_empty())
+            .map(|token| Zeroizing::new(token.to_owned()))
+    };
+    let access = token("access_token").ok_or(SyncAuthError::Refused(response.status))?;
+    Ok((access, token("refresh_token")))
+}
+
 /// The token lifetimes of §2, as a machine: access token in memory,
 /// refresh token rotated on every use, and the `401` from the relay —
 /// never a local clock — deciding when to refresh.
@@ -250,14 +285,17 @@ impl TokenKeeper {
         Ok(token_request(&self.token_endpoint, body))
     }
 
-    /// Absorb the refresh answer. On success the rotated refresh token
-    /// is returned for persisting. Only the token endpoint's own
-    /// refusal — a `4xx`, the server saying this grant is dead — signs
-    /// the keeper out with both tokens dropped, for the caller to
-    /// surface issue #102's sentence: "Sync is signed out; the pad is
-    /// unaffected." Anything else (a `5xx`, a gateway mangling the
-    /// body) is the endpoint being unwell, not the grant being
-    /// revoked: the refresh token is kept and the next pump retries.
+    /// Absorb the refresh answer. `Ok(Some(token))` is a rotated
+    /// refresh token for the caller to persist; `Ok(None)` is a server
+    /// that declined to rotate, whose grant stands unchanged and whose
+    /// stored token is still the right one, so there is nothing to
+    /// write (ADR-0027 §2). Only the token endpoint's own refusal, a
+    /// `4xx` saying this grant is dead, signs the keeper out with both
+    /// tokens dropped, for the caller to surface issue #102's
+    /// sentence: "Sync is signed out; the pad is unaffected." Anything
+    /// else (a `5xx`, a gateway mangling the body) is the endpoint
+    /// being unwell, not the grant being revoked: the refresh token is
+    /// kept and the next pump retries.
     ///
     /// # Errors
     ///
@@ -267,9 +305,16 @@ impl TokenKeeper {
     pub fn absorb_refresh(
         &mut self,
         response: &HttpResponse,
-    ) -> Result<Zeroizing<String>, SyncAuthError> {
-        match parse_token_response(response) {
-            Ok(grant) => Ok(self.absorb(grant)),
+    ) -> Result<Option<Zeroizing<String>>, SyncAuthError> {
+        match parse_refresh_response(response) {
+            Ok((access, rotated)) => {
+                self.access = Some(access);
+                if let Some(rotated) = rotated {
+                    self.refresh = Some(rotated.clone());
+                    return Ok(Some(rotated));
+                }
+                Ok(None)
+            }
             Err(_) if (400..500).contains(&response.status) => {
                 self.access = None;
                 self.refresh = None;
@@ -407,13 +452,64 @@ mod tests {
         let request = keeper.refresh_request().unwrap();
         let body = String::from_utf8(request.body.unwrap().to_vec()).unwrap();
         assert!(body.contains("refresh_token=rt-0"));
-        let rotated = keeper.absorb_refresh(&grant_response()).unwrap();
+        let rotated = keeper.absorb_refresh(&grant_response()).unwrap().unwrap();
         assert_eq!(&*rotated, "rt-1");
         assert_eq!(keeper.access(), Some("at-1"));
         // The next refresh uses the rotated token, not the original.
         let request = keeper.refresh_request().unwrap();
         let body = String::from_utf8(request.body.unwrap().to_vec()).unwrap();
         assert!(body.contains("refresh_token=rt-1"));
+    }
+
+    #[test]
+    fn a_server_that_declines_to_rotate_keeps_the_grant_alive() {
+        let mut keeper = TokenKeeper::new(
+            "https://eu.onetimesecret.com/auth/token",
+            "companion-macos",
+            Some(Zeroizing::new("rt-0".into())),
+        );
+        let _ = keeper.refresh_request().unwrap();
+        // RFC 6749 §6: the new refresh token is optional, and a server
+        // configured without rotation omits it.
+        let unrotated = HttpResponse {
+            status: 200,
+            body: br#"{"access_token":"at-9","expires_in":3600}"#.to_vec(),
+        };
+        assert_eq!(
+            keeper.absorb_refresh(&unrotated).unwrap(),
+            None,
+            "nothing rotated, so there is nothing for the caller to persist"
+        );
+        assert_eq!(keeper.access(), Some("at-9"), "the grant did land");
+        assert!(keeper.signed_in());
+        // And the held token is still the one that refreshes, so the
+        // next wake from sleep works rather than signing sync out.
+        let request = keeper.refresh_request().unwrap();
+        let body = String::from_utf8(request.body.unwrap().to_vec()).unwrap();
+        assert!(body.contains("refresh_token=rt-0"));
+    }
+
+    #[test]
+    fn a_refresh_answer_without_an_access_token_is_not_a_grant() {
+        let mut keeper = TokenKeeper::new(
+            "https://eu.onetimesecret.com/auth/token",
+            "companion-macos",
+            Some(Zeroizing::new("rt-0".into())),
+        );
+        let _ = keeper.refresh_request().unwrap();
+        let empty = HttpResponse {
+            status: 200,
+            body: br#"{"refresh_token":"rt-1"}"#.to_vec(),
+        };
+        assert_eq!(
+            keeper.absorb_refresh(&empty).unwrap_err(),
+            SyncAuthError::Refused(200),
+            "a 2xx with nothing to attach with is the endpoint being unwell"
+        );
+        // Unwell is not revoked: the grant stands and the next pump
+        // retries with it.
+        assert!(keeper.signed_in());
+        assert!(keeper.access().is_none());
     }
 
     #[test]

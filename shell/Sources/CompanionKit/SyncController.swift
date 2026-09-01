@@ -98,8 +98,11 @@ public final class SyncController: ObservableObject {
     public enum Trouble: Equatable, Sendable {
         /// No relay URL is configured; nothing can leave.
         case notConfigured
-        /// No sign-in rests on this device, or a refresh was refused.
+        /// No sign-in rests on this device.
         case signedOut
+        /// A sign-in rested here and the account refused it; the token
+        /// is gone and signing in again is the way back (ADR-0027 §5).
+        case refused
         /// The relay did not answer; the loop retries.
         case unreachable
         /// The channel rotated past this device's key.
@@ -275,21 +278,20 @@ public final class SyncController: ObservableObject {
     }
 
     private func settleAttach(_ outcome: SyncOutcome) {
+        // The refresh first, so the gate the settling reads is the one
+        // the attach just moved rather than the one before it.
         refreshState()
         guard enabled else { return }
+        let settled = Self.settledTrouble(
+            ok: outcome.ok, reason: outcome.reason, gate: status?.gate)
         guard outcome.ok else {
-            switch outcome.reason {
-            case "signed_out": trouble = .signedOut
-            case "unreachable":
-                trouble = .unreachable
-                armRetry()
-            default: trouble = .notConfigured
-            }
+            trouble = settled
+            if settled == .unreachable { armRetry() }
             return
         }
         attached = true
         lastAttachPeers = outcome.peers
-        trouble = nil
+        trouble = settled
         pump()
     }
 
@@ -471,6 +473,10 @@ public final class SyncController: ObservableObject {
     private func refreshState() {
         status = client.syncStatus()
         devices = client.syncDevices()
+        // Off is silent whatever the core says, so a controller nobody
+        // switched on publishes nothing at all.
+        guard enabled else { return }
+        trouble = Self.reconciled(trouble: trouble, gate: status?.gate)
     }
 
     // MARK: The sentences, pure and testable
@@ -488,6 +494,8 @@ public final class SyncController: ObservableObject {
             return "sync is on but has no relay configured; nothing leaves this Mac"
         case .signedOut:
             return "sync is signed out; the pad is unaffected"
+        case .refused:
+            return "the account refused this sign-in; sync is off and the pad is unaffected"
         case .unreachable:
             return "the relay cannot be reached; edits stay local and sync retries"
         case .behind:
@@ -502,6 +510,44 @@ public final class SyncController: ObservableObject {
             return "no other device is awake; pages sync when one wakes"
         }
         return nil
+    }
+
+    /// The account axis of the standing trouble, as the core reports
+    /// it. The gate is the authority on whether this client may attach
+    /// (ADR-0027 §5), so where it names a condition, that condition
+    /// wins over whatever the shell had inferred from a refusal
+    /// string. Falling behind a key rotation is not on this axis: the
+    /// gate admitted that device and it is short a key, so `.behind`
+    /// survives a gate with nothing to report.
+    public nonisolated static func reconciled(trouble: Trouble?, gate: SyncGate?) -> Trouble? {
+        guard let gate else { return trouble }
+        switch gate {
+        case .off: return .notConfigured
+        case .signedOut: return .signedOut
+        case .refused: return .refused
+        case .unreachable: return .unreachable
+        case .signingIn, .ready, .attached:
+            return trouble == .behind ? .behind : nil
+        }
+    }
+
+    /// What an attach outcome and the core's gate together mean. The
+    /// outcome's reason is the coarser of the two: the core answers the
+    /// second 401 on one attach with `signed_out`, which is exactly the
+    /// case `.refused` exists to tell apart, so the gate decides and
+    /// the reason only fills in what the gate does not name.
+    public nonisolated static func settledTrouble(
+        ok: Bool, reason: String?, gate: SyncGate?
+    ) -> Trouble? {
+        var inferred: Trouble?
+        if !ok {
+            switch reason {
+            case "signed_out": inferred = .signedOut
+            case "unreachable": inferred = .unreachable
+            default: inferred = .notConfigured
+            }
+        }
+        return reconciled(trouble: inferred, gate: gate)
     }
 
     /// A failed sign-in, one sentence per §5 failure row.
