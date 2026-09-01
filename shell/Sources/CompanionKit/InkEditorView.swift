@@ -657,6 +657,14 @@ public struct InkEditorView: NSViewRepresentable {
         /// should be built as though it could.
         func step(back: Bool) {
             guard let sheet = currentSheet, let textView else { return }
+            // The gate lives here rather than only at the callers. Both
+            // routes that exist today check it before they arrive, and
+            // that is still worth keeping at the chord, which has to
+            // fall through rather than be swallowed; but a page shown
+            // read-only must not be rewritten by whatever third route
+            // is added next, and this is the one place every route
+            // passes through.
+            guard textView.isEditable else { return }
             let outcome = back ? model.undoEdit(sheet: sheet) : model.redoEdit(sheet: sheet)
             guard outcome.applied else { return }
             // The model rebuilt the storage from the core's runs, which
@@ -1838,14 +1846,13 @@ final class InkTextView: NSTextView {
     /// had to be closed rather than assumed shut.
     /// Editability gates both routes, for the reason it gates the
     /// chord: a page shown read-only must not be rewritten from a menu
-    /// either.
+    /// either. The guard itself sits inside `step`, where every route
+    /// meets, rather than being spelled once per door.
     @objc func undo(_ sender: Any?) {
-        guard isEditable else { return }
         coordinator?.step(back: true)
     }
 
     @objc func redo(_ sender: Any?) {
-        guard isEditable else { return }
         coordinator?.step(back: false)
     }
 
@@ -1911,8 +1918,10 @@ final class InkTextView: NSTextView {
             // A resting card and a page shown read-only both arrive
             // here with editing off, and a chord that rewrote the
             // document from either would be an edit made where typing
-            // is refused. The press is declined rather than swallowed,
-            // so it falls through to whatever else would have had it.
+            // is refused. `step` refuses it too; this guard is about
+            // the answer, not the refusal. The press is declined rather
+            // than swallowed, so it falls through to whatever else
+            // would have had it.
             guard isEditable else { return false }
             coordinator.step(back: command == .editorUndo)
         default:

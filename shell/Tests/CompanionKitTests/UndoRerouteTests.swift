@@ -203,6 +203,20 @@ final class UndoRerouteTests: XCTestCase {
             "the marker came back undimmed")
     }
 
+    /// The gate is `step`'s own. Both routes that exist check editing
+    /// before they call it, and the point of the guard inside is the
+    /// route nobody has written yet.
+    func testTheStepRouteRefusesAPageThatIsNotEditable() throws {
+        try makeEditor()
+        type("standing")
+        textView.isEditable = false
+
+        coordinator.step(back: true)
+
+        XCTAssertEqual(coreText(), "standing")
+        XCTAssertEqual(storage.string, "standing")
+    }
+
     // MARK: The other routes to undo
 
     /// AppKit must not keep a second stack of the page's text. It is
