@@ -217,6 +217,32 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertEqual(storage.string, "standing")
     }
 
+    /// A composition in flight is anchored to offsets the step is about
+    /// to rewrite, and the emission gate skips its bookkeeping for
+    /// every projection write, so a marked span left open would outlive
+    /// the storage it points into. The step settles it on the page it
+    /// was typed on first, the way the page swap does.
+    func testAStepSettlesAnOpenCompositionFirst() throws {
+        try makeEditor()
+        type("base")
+        textView.setMarkedText(
+            "\u{304B}",
+            selectedRange: NSRange(location: 1, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        XCTAssertTrue(textView.hasMarkedText(), "the fixture never opened a composition")
+
+        coordinator.step(back: true)
+
+        XCTAssertFalse(
+            textView.hasMarkedText(),
+            "the composition outlived the storage it was anchored to")
+        XCTAssertNil(
+            coordinator.imeComposition,
+            "the gate is still tracking a span the step has rewritten")
+        XCTAssertEqual(storage.string, coreText())
+    }
+
     // MARK: The other routes to undo
 
     /// AppKit must not keep a second stack of the page's text. It is

@@ -665,6 +665,16 @@ public struct InkEditorView: NSViewRepresentable {
             // is added next, and this is the one place every route
             // passes through.
             guard textView.isEditable else { return }
+            // A composition in flight is anchored to offsets this step
+            // is about to rewrite, and the emission gate skips its
+            // bookkeeping while a projection write is in progress, so a
+            // marked span would survive into a storage that no longer
+            // holds it. Settle it on the page it was typed on first,
+            // exactly as the page swap does. A press that finds nothing
+            // on the stack has still ended the composition, which is
+            // what every other editor on the machine does with ⌘Z
+            // mid-conversion.
+            InkEditorView.discardComposition(in: textView)
             let outcome = back ? model.undoEdit(sheet: sheet) : model.redoEdit(sheet: sheet)
             guard outcome.applied else { return }
             // The model rebuilt the storage from the core's runs, which
