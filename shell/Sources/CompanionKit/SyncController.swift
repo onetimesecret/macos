@@ -103,6 +103,13 @@ public final class SyncController: ObservableObject {
     @Published public private(set) var trouble: Trouble?
     /// A failed sign-in's sentence, standing until the next attempt.
     @Published public private(set) var signinFailure: String?
+    /// The pages another device is writing on right now, by PAGE id:
+    /// a page is in this set while a peer's edit has landed on it
+    /// recently enough to still be happening (issue #102). Derived
+    /// from the ops the engine already applies, so it costs no
+    /// presence protocol and claims nothing the relay was not already
+    /// told.
+    @Published public private(set) var editedElsewhere: Set<UInt64> = []
     /// Pages enrolled this session, by PAGE id. Per session on
     /// purpose for now: page ids do not survive a relaunch, and the
     /// durable enrolment record arrives with the cross-relaunch
@@ -154,6 +161,12 @@ public final class SyncController: ObservableObject {
     // convention (PageModel.swift).
     private nonisolated(unsafe) var retryTimer: Timer?
     private nonisolated(unsafe) var pairingTimer: Timer?
+    private nonisolated(unsafe) var elsewhereTimer: Timer?
+    /// When a peer's edit last landed on each page. The mark's whole
+    /// life is this session and this window: nothing about who is
+    /// writing elsewhere is worth keeping, and nothing about it is
+    /// written down.
+    private var remoteEdits: [UInt64: Date] = [:]
 
     public init(client: CompanionClient, defaults: UserDefaults = FormFactor.settingsDefaults) {
         self.client = client
@@ -167,6 +180,7 @@ public final class SyncController: ObservableObject {
     deinit {
         retryTimer?.invalidate()
         pairingTimer?.invalidate()
+        elsewhereTimer?.invalidate()
     }
 
     /// The launch hook, once, after the state restore: a disabled
@@ -325,6 +339,11 @@ public final class SyncController: ObservableObject {
         pairingStage = nil
         pairingTimer?.invalidate()
         retryTimer?.invalidate()
+        // Nothing is arriving from anywhere now, so no page may go on
+        // saying that something is.
+        elsewhereTimer?.invalidate()
+        remoteEdits = [:]
+        editedElsewhere = []
         // The enrolment mirror stays: the core keeps its enrolment
         // across detach and re-configure, so clearing only the mirror
         // would leave pages syncing while the menu says they don't.
@@ -396,6 +415,14 @@ public final class SyncController: ObservableObject {
             switch event.kind {
             case "applied", "countdown_moved", "terminal":
                 remoteChanged = true
+                // Someone else's writing, on a page this device can
+                // name: the mark that page carries for the next while
+                // (issue #102). Only an applied edit counts — a
+                // countdown moving or a page dying elsewhere is not
+                // someone typing.
+                if event.kind == "applied", let page = event.pageID {
+                    remoteEdits[page] = Date()
+                }
             case "rejoin_required", "epoch_conflict":
                 trouble = .behind
             case "unreachable":
@@ -406,6 +433,7 @@ public final class SyncController: ObservableObject {
                 break
             }
         }
+        sweepElsewhere()
         if remoteChanged { onRemoteChange?() }
         if outcome.reason == "signed_out" {
             attached = false
@@ -425,6 +453,27 @@ public final class SyncController: ObservableObject {
         }
         if trouble == .unreachable { trouble = nil }
         pump()
+    }
+
+    /// Recompute which pages are being written elsewhere, and arm one
+    /// shot to recompute again when the oldest mark lapses.
+    ///
+    /// One timer, at the one moment the answer can change on its own,
+    /// rather than a clock ticking over a set that is empty nearly
+    /// always: the same frugality the countdown follows.
+    private func sweepElsewhere() {
+        let now = Date()
+        remoteEdits = remoteEdits.filter { now.timeIntervalSince($0.value) < Self.elsewhereWindow }
+        let marked = Self.editedElsewhere(marks: remoteEdits, now: now)
+        if marked != editedElsewhere { editedElsewhere = marked }
+        elsewhereTimer?.invalidate()
+        guard let oldest = remoteEdits.values.min() else { return }
+        let lapses = Self.elsewhereWindow - now.timeIntervalSince(oldest)
+        let timer = Timer(timeInterval: max(lapses, 0.5), repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.sweepElsewhere() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        elsewhereTimer = timer
     }
 
     /// A relay that did not answer is retried on a slow clock, never a
@@ -733,6 +782,23 @@ public final class SyncController: ObservableObject {
             }
         }
         return reconciled(trouble: inferred, gate: gate)
+    }
+
+    /// How long a peer's edit keeps a page marked as being written
+    /// elsewhere. Long enough to cover the pauses in someone's typing
+    /// and the publish clock's own two seconds, short enough that the
+    /// mark means "now" rather than "today". A guess, and the only
+    /// number here that is one: it is the length of a pause that still
+    /// reads as the same session of writing.
+    public nonisolated static let elsewhereWindow: TimeInterval = 90
+
+    /// Which pages count as being written elsewhere, given when each
+    /// last took a peer's edit. Pure, so the rule is testable without
+    /// a relay or a clock that has to be waited out.
+    public nonisolated static func editedElsewhere(
+        marks: [UInt64: Date], now: Date, window: TimeInterval = elsewhereWindow
+    ) -> Set<UInt64> {
+        Set(marks.filter { now.timeIntervalSince($0.value) < window }.keys)
     }
 
     /// When the channel last saw a device, in the words its row shows

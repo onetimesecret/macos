@@ -159,6 +159,23 @@ public struct PageStatusStack: View {
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        if let page = model.selectedPageID, sync.editedElsewhere.contains(page),
+            !model.showingLedger
+        {
+            // Someone else is writing on this page (issue #102). A word
+            // and never a dialog: the edits are already merging, so
+            // there is nothing to decide and nothing to interrupt for.
+            // It sits with the page's own status lines because it is a
+            // fact about this page and not about the channel, which is
+            // what the header's word is for.
+            Text("another device is editing this page")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(Text("Another device is editing this page"))
+        }
         if PageModel.shouldShowPasteboardOffer(
             boardHolds: model.pasteboardOffer,
             hasPage: model.selectedPageID != nil,

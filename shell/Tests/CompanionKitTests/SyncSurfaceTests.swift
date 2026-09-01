@@ -378,6 +378,29 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertFalse(list.devices[2].verified, "a stranger reads as one")
     }
 
+    // MARK: A page being written elsewhere (issue #102, criterion 6)
+
+    func testAPageKeepsItsMarkOnlyWhileTheEditIsRecent() {
+        let now = Date()
+        let marks: [UInt64: Date] = [
+            11: now.addingTimeInterval(-5),
+            22: now.addingTimeInterval(-SyncController.elsewhereWindow - 1),
+        ]
+        XCTAssertEqual(
+            SyncController.editedElsewhere(marks: marks, now: now), [11],
+            "a peer who stopped writing a while ago is not writing now")
+        // And the mark lapses on its own, without another event.
+        XCTAssertEqual(
+            SyncController.editedElsewhere(
+                marks: marks, now: now.addingTimeInterval(SyncController.elsewhereWindow)),
+            [],
+            "the mark says now, and now passes")
+    }
+
+    func testNoMarksMeansNoPagesMarked() {
+        XCTAssertEqual(SyncController.editedElsewhere(marks: [:], now: Date()), [])
+    }
+
     func testTheDeviceListSaysWhenEachWasLastSeen() {
         let now: UInt64 = 1_000_000_000_000
         XCTAssertEqual(
