@@ -224,6 +224,39 @@ final class UndoRerouteTests: XCTestCase {
         XCTAssertTrue(textView.validateMenuItem(redoItem))
     }
 
+    /// A page shown read-only is not a page a chord may rewrite. The
+    /// resting card and the roll's read-only pages both reach the same
+    /// view with editing off, and the press must fall through rather
+    /// than edit a document nobody is allowed to type into.
+    func testAReadOnlyPageRefusesTheChordAndTheMenu() throws {
+        try makeEditor()
+        type("standing")
+        textView.isEditable = false
+
+        let event = try XCTUnwrap(
+            NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: .command,
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: 0,
+                context: nil,
+                characters: "z",
+                charactersIgnoringModifiers: "z",
+                isARepeat: false,
+                keyCode: zKeyCode
+            ),
+            "AppKit refused to build the event this test presses")
+        XCTAssertFalse(textView.performKeyEquivalent(with: event))
+        textView.undo(nil)
+
+        XCTAssertEqual(coreText(), "standing")
+        XCTAssertEqual(storage.string, "standing")
+        let undoItem = NSMenuItem(
+            title: "Undo", action: #selector(InkTextView.undo(_:)), keyEquivalent: "")
+        XCTAssertFalse(textView.validateMenuItem(undoItem))
+    }
+
     /// A step never un-seals (ADR-0009). Sealing clears the core's stack,
     /// so the chord after a seal is a no-op rather than a gesture that
     /// pulls the sentinel back out from under zeroized bytes.

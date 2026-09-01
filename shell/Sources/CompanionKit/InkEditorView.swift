@@ -1821,11 +1821,16 @@ final class InkTextView: NSTextView {
     /// authored. The chord is intercepted in `performKeyEquivalent`
     /// above; a click on the menu never goes near it, so a second door
     /// had to be closed rather than assumed shut.
+    /// Editability gates both routes, for the reason it gates the
+    /// chord: a page shown read-only must not be rewritten from a menu
+    /// either.
     @objc func undo(_ sender: Any?) {
+        guard isEditable else { return }
         coordinator?.step(back: true)
     }
 
     @objc func redo(_ sender: Any?) {
+        guard isEditable else { return }
         coordinator?.step(back: false)
     }
 
@@ -1887,10 +1892,14 @@ final class InkTextView: NSTextView {
             coordinator.sealedPaste()
         case .clipboardSealSelection:
             coordinator.sealSelectionOrLine()
-        case .editorUndo:
-            coordinator.step(back: true)
-        case .editorRedo:
-            coordinator.step(back: false)
+        case .editorUndo, .editorRedo:
+            // A resting card and a page shown read-only both arrive
+            // here with editing off, and a chord that rewrote the
+            // document from either would be an edit made where typing
+            // is refused. The press is declined rather than swallowed,
+            // so it falls through to whatever else would have had it.
+            guard isEditable else { return false }
+            coordinator.step(back: command == .editorUndo)
         default:
             return coordinator.model.perform(command)
         }
