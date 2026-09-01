@@ -433,7 +433,11 @@ Four things about it are load-bearing.
   a few rectangles rather than the header, the status stack and the
   page. The roll watches the clip's **bounds** as well as its frame for
   this, since scrolling moves no frame and nothing had needed to notice
-  it before.
+  it before. The model answers to one roll at a time: a mount claims it,
+  and a roll that no longer holds the claim is met with silence, because
+  SwiftUI may build and lay out a replacement before dismantling what it
+  replaces and the outgoing surface's parting reset would otherwise
+  blank a minimap that had just been measured honestly.
 
 The mapping into the rail's coordinates is two pure functions,
 `RailMinimap.bars(of:in:)` and `band(of:in:)`, in the idiom
@@ -703,8 +707,10 @@ decision that is Rust, the more of it is validated before a PR exists.
   One extent per day in document order, each running from the top of its
   header to the bottom of its page, read against the frames the pass
   actually set; a day holding more writing measuring taller than a day
-  holding a line; two pages of one day measuring as one extent; and the
-  viewport following the clip down a roll that outgrows the card.
+  holding a line; two pages of one day measuring as one extent; the
+  viewport following the clip down a roll that outgrows the card; and a
+  teardown arriving after the replacement roll has already measured
+  itself leaving that measurement standing.
 - **The chords, pressed.** ⌘1 in the mode lands on today and takes the
   create path when today is empty, and a second press is a jump; ⌘2 and
   ⌥⌘→ count days rather than slots, asserted as the contrast between the

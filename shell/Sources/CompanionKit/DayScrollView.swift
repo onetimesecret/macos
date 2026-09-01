@@ -118,14 +118,16 @@ public struct DayScrollView: NSViewRepresentable {
     public static func dismantleNSView(
         _ scroll: NSScrollView, coordinator: InkEditorView.Coordinator
     ) {
-        // Above the identity check, and deliberately: whatever became of
-        // the editor, this roll's measurement describes a surface that
-        // is going away, and the rail must not keep drawing the shape of
-        // it behind a ledger (issue #131). A replacement roll publishes
-        // its own on its first pass.
-        coordinator.model.rollGeometry.reset()
-        guard let stack = scroll.documentView as? DayStackView,
-              let editor = stack.editor,
+        guard let stack = scroll.documentView as? DayStackView else { return }
+        // Whatever became of the editor, this roll's measurement
+        // describes a surface that is going away, and the rail must not
+        // keep drawing the shape of it behind a ledger (issue #131).
+        // Under the same rule as the handle below, and for the same
+        // interleaving: a replacement roll that has already claimed the
+        // measurement has also already published one, and this parting
+        // word would blank it until the next pass happened to re-measure.
+        coordinator.model.rollGeometry.reset(from: stack)
+        guard let editor = stack.editor,
               coordinator.model.activeEditor === editor else { return }
         coordinator.model.activeEditor = nil
     }
@@ -142,18 +144,20 @@ public struct DayScrollView: NSViewRepresentable {
     ) -> NSScrollView {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
-        // A roll with nothing laid out in it has no proportions to
-        // report, and the rail's minimap must not spend this pass
-        // drawing the shape of the roll it is replacing (issue #131).
-        // The first `relayout` publishes the real measurement a moment
-        // later.
-        model.rollGeometry.reset()
         // The card's own material shows through the roll, as it does
         // through the page.
         scroll.drawsBackground = false
         let stack = DayStackView(
             model: model, coordinator: coordinator, emptyHint: emptyHint
         )
+        // A roll with nothing laid out in it has no proportions to
+        // report, and the rail's minimap must not spend this pass
+        // drawing the shape of the roll it is replacing (issue #131).
+        // The claim also names this stack as the one the rail listens
+        // to, so the roll it replaces cannot answer for it on the way
+        // out. The first `relayout` publishes the real measurement a
+        // moment later.
+        model.rollGeometry.claim(by: stack)
         scroll.documentView = stack
         stack.observeRoll()
         // The clip the wrap geometry is levelled against is the roll's,
@@ -794,7 +798,7 @@ final class DayStackView: NSView {
     /// layout that runs inside a SwiftUI render does not write observed
     /// state in the middle of one.
     private func publishGeometry() {
-        model.rollGeometry.publish(measuredGeometry)
+        model.rollGeometry.publish(measuredGeometry, from: self)
     }
 
     /// A region no shorter than one line of ink, so an empty day is
