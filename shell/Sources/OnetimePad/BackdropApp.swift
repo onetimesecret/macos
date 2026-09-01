@@ -42,10 +42,14 @@ struct BackdropApp: App {
                 // chord this app advertises: nil means the file unbound
                 // them, and then the items stay and lose the shortcut.
                 CommandGroup(replacing: .undoRedo) {
-                    Button("Undo") { appDelegate.sendToResponder("undo:") }
-                        .keyboardShortcut(appDelegate.undoShortcut)
-                    Button("Redo") { appDelegate.sendToResponder("redo:") }
-                        .keyboardShortcut(appDelegate.redoShortcut)
+                    Button("Undo") {
+                        appDelegate.sendToResponder(#selector(EditStepResponder.undo(_:)))
+                    }
+                    .keyboardShortcut(appDelegate.undoShortcut)
+                    Button("Redo") {
+                        appDelegate.sendToResponder(#selector(EditStepResponder.redo(_:)))
+                    }
+                    .keyboardShortcut(appDelegate.redoShortcut)
                 }
                 // The scene's automatic "Settings…" (⌘,) item would open
                 // the empty placeholder as a blank window. Repoint it so
@@ -309,8 +313,14 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// nothing answers, which is the fail-closed shape the whole seam
     /// keeps: a menu click with no page holding the keyboard moves no
     /// history at all.
-    func sendToResponder(_ selector: String) {
-        NSApp.sendAction(Selector((selector)), to: nil, from: nil)
+    ///
+    /// A `Selector` rather than a string: `undo:` misspelled would send
+    /// nothing and look exactly like the honest case of nobody
+    /// answering, which is the one failure this route cannot report.
+    /// `EditStepResponder` is what lets the compiler check the pairing
+    /// from a target that cannot see the page's text view.
+    func sendToResponder(_ selector: Selector) {
+        NSApp.sendAction(selector, to: nil, from: nil)
     }
 
     /// The Settings window, from the menu bar's ⌘, or either of the

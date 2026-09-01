@@ -1804,12 +1804,25 @@ final class InkLayoutManager: NSLayoutManager {
 
 // MARK: - The text view
 
+/// The two actions the Edit menu posts down the responder chain, so
+/// that the menu's end of the route and the page's end spell them
+/// once. A menu built in the app target cannot name `InkTextView`,
+/// which is this package's own; `#selector(EditStepResponder.undo(_:))`
+/// resolves to the same `undo:` the page answers, and a rename that
+/// broke the pairing would fail to compile rather than becoming a menu
+/// item that quietly does nothing.
+@MainActor
+@objc public protocol EditStepResponder {
+    func undo(_ sender: Any?)
+    func redo(_ sender: Any?)
+}
+
 /// The page's text view: routes the seal gestures, keeps ⌘V plain,
 /// hands Esc back, and seals external drops through the core's drag
 /// route. Chips are atomic under the caret by construction — an
 /// attachment is one character: arrows step over it, one ⌫ removes it
 /// whole, selection cannot reach inside it.
-final class InkTextView: NSTextView {
+final class InkTextView: NSTextView, EditStepResponder {
     weak var coordinator: InkEditorView.Coordinator?
 
     /// A resize rewraps paragraphs without touching their content, so
