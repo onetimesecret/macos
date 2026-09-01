@@ -57,6 +57,13 @@ struct SyncSettingsSection: View {
                     }
                 } else {
                     Button("Sign in…") { sync.signIn() }
+                        // The one state the row above returns false
+                        // for while a trip still exists: a gate that
+                        // names something other than signing in with a
+                        // stale pending beside it. Beginning a second
+                        // ceremony there earns a `busy` sentence and
+                        // nothing else, and the disable costs nothing.
+                        .disabled(sync.status?.signinPending == true)
                 }
             }
         } header: {
@@ -164,6 +171,14 @@ private struct SyncDeviceRow: View {
     /// is being looked at, so saying when it was last seen would be a
     /// strange thing to tell someone about the machine in front of
     /// them.
+    ///
+    /// The clock is read here, in a computed property, so a Settings
+    /// window left open shows a stamp that ages only when something
+    /// else redraws the row. That is accepted rather than overlooked:
+    /// the stamp is the relay's attach time and coarse by design, and
+    /// the roster behind it only refreshes when this Mac attaches, so
+    /// a ticker driving this line would animate a number that is not
+    /// moving.
     private var seen: String {
         if device.thisDevice { return "here" }
         return SyncController.lastSeen(
