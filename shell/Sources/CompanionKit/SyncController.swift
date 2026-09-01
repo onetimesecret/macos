@@ -258,17 +258,25 @@ public final class SyncController: ObservableObject {
         // open; off means silent and detached — no attach, and no
         // failure sentence either.
         guard enabled else { return }
-        guard outcome.ok else {
-            // A trip the user ended and a trip that never returned come
-            // back through the same door, `abandoned`, because to the
-            // core they are one fact: no redirect arrived. Only the
-            // shell knows which of the two the user did, and telling
-            // someone their browser never returned when they cancelled
-            // on purpose would be describing them to themselves wrongly.
-            let reason = outcome.reason ?? "refused"
-            signinFailure = Self.signinSentence(
-                reason: signinGivenUp && reason == "abandoned" ? "cancelled" : reason)
+        // The user's own decision outranks whatever this settling
+        // carries. The core drops a grant that arrives for a ceremony
+        // somebody gave up on, so a successful outcome here could only
+        // come from a core that predates that rule, and attaching on
+        // one would be signing a user in behind their own cancel.
+        guard !signinGivenUp else {
             signinGivenUp = false
+            signinFailure = Self.signinSentence(reason: "cancelled")
+            refreshState()
+            return
+        }
+        guard outcome.ok else {
+            // A trip that never returned and a trip somebody ended come
+            // back through the same door, `abandoned`, because to the
+            // core they are one fact: no redirect arrived. The guard
+            // above is what tells them apart, and telling someone their
+            // browser never returned when they gave up on purpose would
+            // be describing them to themselves wrongly.
+            signinFailure = Self.signinSentence(reason: outcome.reason ?? "refused")
             return
         }
         signinFailure = nil

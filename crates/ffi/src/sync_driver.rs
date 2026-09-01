@@ -282,6 +282,15 @@ pub(crate) fn signin_begin(state: &mut SyncState) -> Result<String, &'static str
 /// once rather than after the patience runs out, and the two arrive by
 /// the same door because they are the same fact: no redirect is
 /// coming.
+///
+/// The flag is read twice, because the ceremony has two waits and only
+/// the first one is the browser's. The exchange that follows a landed
+/// redirect is a network round trip of its own, seconds wide, and a
+/// give-up during those seconds has to be as final as one during the
+/// consent screen. So a grant that arrives for a ceremony nobody is
+/// waiting for any more is dropped where it stands, zeroized by
+/// `Zeroizing` on the way out, and never seen by the caller that would
+/// have stored it.
 pub(crate) fn signin_finish<T: Transport>(
     pending: PendingSignin,
     patience: Duration,
@@ -300,7 +309,12 @@ pub(crate) fn signin_finish<T: Transport>(
             _ => "refused",
         })?;
     let response = transport.send(request).map_err(|_| "unreachable")?;
-    parse_token_response(&response).map_err(|_| "refused")
+    let grant = parse_token_response(&response).map_err(|_| "refused")?;
+    if abandoned.load(Ordering::Relaxed) {
+        drop(grant);
+        return Err("abandoned");
+    }
+    Ok(grant)
 }
 
 /// The keeper for a configuration, resuming from the persisted
@@ -1888,6 +1902,25 @@ mod tests {
         }
     }
 
+    /// A token endpoint that answers only once the caller has given up:
+    /// it raises the flag itself and then grants, which is the window
+    /// between a redirect landing and a grant arriving, held open on
+    /// purpose. Seconds wide in life, since it is a real exchange over
+    /// a real network.
+    struct SurrenderingTransport {
+        abandoned: Arc<AtomicBool>,
+    }
+
+    impl Transport for SurrenderingTransport {
+        fn send(&self, _request: HttpRequest) -> Result<HttpResponse, TransportError> {
+            self.abandoned.store(true, Ordering::Relaxed);
+            Ok(HttpResponse {
+                status: 200,
+                body: br#"{"access_token":"at-1","refresh_token":"rt-1"}"#.to_vec(),
+            })
+        }
+    }
+
     fn configured() -> SyncState {
         SyncState {
             config: SyncConfig::parse(
@@ -2048,6 +2081,46 @@ mod tests {
             transport.seen.borrow().is_none(),
             "a ceremony nobody finished redeems nothing"
         );
+    }
+
+    #[test]
+    fn a_give_up_during_the_exchange_stores_nothing() {
+        // The window the first give-up missed. The redirect lands, so
+        // the listener is past caring about the flag, and the code is
+        // then exchanged over the network, which takes seconds. A user
+        // pressing the way out during those seconds was told nothing
+        // was stored while a token was on its way to the Keychain.
+        let credentials = InMemoryCredentialStore::default();
+        let mut state = configured();
+        let authorize_url = signin_begin(&mut state).unwrap();
+        let pending = state.pending_signin.take().unwrap();
+        browser_returns(&authorize_url, pending.listener.port(), None);
+        let transport = SurrenderingTransport {
+            abandoned: Arc::clone(&state.signin_abandoned),
+        };
+
+        let refused = signin_finish(
+            pending,
+            Duration::from_secs(5),
+            &transport,
+            &state.signin_abandoned,
+        );
+        assert_eq!(
+            refused.err(),
+            Some("abandoned"),
+            "a grant nobody is waiting for any more is not a sign-in"
+        );
+        assert!(
+            !store_refresh_was_called(&credentials),
+            "and nothing of it may rest here"
+        );
+    }
+
+    /// Whether anything ever landed in the sync refresh account. The
+    /// finish is the only writer, so an empty account is the whole
+    /// assertion.
+    fn store_refresh_was_called(credentials: &InMemoryCredentialStore) -> bool {
+        load_refresh(credentials).is_some()
     }
 
     #[test]

@@ -2716,6 +2716,15 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
         return ptr::null_mut();
     };
     guard.sync.awaiting_redirect = false;
+    // The last look, and the only one taken under the lock a cancel
+    // also takes. Between the grant arriving and this line there is a
+    // window no flag read outside the lock can close, and what makes
+    // the two agree is that a cancel after this point finds nothing in
+    // flight and says so by answering false.
+    if guard.sync.signin_abandoned.load(Ordering::Relaxed) {
+        drop(grant);
+        return sync_refusal("abandoned");
+    }
     // Persist first, absorb second: a keeper holding tokens the store
     // refused would sign in for one session and silently sign out at
     // relaunch.
@@ -2734,13 +2743,20 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
 }
 
 /// Give up on a sign-in: the pending ceremony drops, and a finish
-/// already blocking on the redirect is told to stop waiting, so the
-/// browser trip ends within one poll of the loopback listener rather
-/// than at the end of its five minutes. That finish answers
-/// `{"ok": false, "reason": "abandoned"}` and the gate falls back to
-/// what stands, which is `signed_out` when nothing was ever stored.
-/// Nothing is deleted and no request is sent: the ceremony simply
-/// never happened.
+/// already out is told to stop, so the browser trip ends within one
+/// poll of the loopback listener rather than at the end of its five
+/// minutes. That finish answers `{"ok": false, "reason": "abandoned"}`
+/// and the gate falls back to what stands, which is `signed_out` when
+/// nothing was ever stored. Nothing is deleted and no request is sent:
+/// the ceremony simply never happened.
+///
+/// This holds for the whole ceremony and not only the browser half. A
+/// redirect that has already landed still has a token exchange ahead
+/// of it, seconds of network, and a give-up during those seconds
+/// drops the grant unstored rather than signing the user in behind
+/// their own cancel. The last read is under this lock, so a cancel
+/// that arrives after the grant is committed finds nothing in flight
+/// and answers false.
 ///
 /// True when there was something to give up — a ceremony waiting for
 /// its finish, a finish waiting on the browser, or both. False means
