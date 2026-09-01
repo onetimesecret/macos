@@ -1023,8 +1023,13 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                                 }
                             }
                         }
-                        // A 401 here refreshes at the next pump's top.
-                        Err(RelayRefusal::Unauthorized) => {}
+                        // A 401 here is the bearer dying under the long
+                        // poll. The session drops the access token as
+                        // it refuses, so the next pump's top refreshes
+                        // and the round is reported rather than
+                        // swallowed: a refusal nobody hears is a
+                        // silence the gate would have to fill with a
+                        // guess.
                         Err(refusal) => events.push(refusal_json(&refusal)),
                     }
                 }
@@ -1237,10 +1242,14 @@ pub(crate) fn gate_of(companion: &Companion) -> SyncGate {
         signin_pending: signin_in_flight(sync),
         credential: credential_rests(companion),
         fault: sync.fault,
+        // An attachment the next request cannot use is not one to
+        // report: a `401` on any route drops the access token, so the
+        // gate falls back to `ready` until the refresh lands rather
+        // than reading `attached` with a dead bearer.
         attached: sync
             .engine
             .as_ref()
-            .is_some_and(|engine| engine.session.attached()),
+            .is_some_and(|engine| engine.session.attached() && engine.session.has_access()),
     })
 }
 
@@ -2145,6 +2154,36 @@ mod tests {
             *ledger
         );
         assert!(!signed_in(&*credentials), "the sync account alone is gone");
+    }
+
+    #[test]
+    fn a_dead_bearer_is_not_reported_as_an_attachment() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let mut engine = attached_engine(&*credentials);
+        engine
+            .session
+            .absorb_attach(&HttpResponse {
+                status: 200,
+                body: br#"{"epoch":0,"frame_present":false,"next_seq":0,"peers":[]}"#.to_vec(),
+            })
+            .unwrap();
+        companion.sync.engine = Some(engine);
+        assert_eq!(gate_of(&companion), SyncGate::Attached);
+
+        // The relay refused the bearer mid poll. The attachment still
+        // stands and the next request cannot use it, so the gate says
+        // ready until the refresh lands rather than claiming health.
+        companion
+            .sync
+            .engine
+            .as_mut()
+            .unwrap()
+            .session
+            .keeper_mut()
+            .clear_access();
+        assert_eq!(gate_of(&companion), SyncGate::Ready);
     }
 
     #[test]

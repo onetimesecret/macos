@@ -363,6 +363,16 @@ impl SyncSession {
         self.keeper.signed_in()
     }
 
+    /// Whether a live access token is held. A `401` from any route
+    /// drops it ([`SyncSession::note_refusal`]), so this goes false the
+    /// moment the relay refuses the bearer and true again when the
+    /// refresh lands, which is what keeps the gate from reporting an
+    /// attachment the next request cannot use.
+    #[must_use]
+    pub fn has_access(&self) -> bool {
+        self.keeper.access().is_some()
+    }
+
     /// Dissolve the session, handing the keeper back — a detach keeps
     /// the sign-in it did not revoke.
     #[must_use]
