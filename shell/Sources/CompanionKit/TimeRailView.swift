@@ -186,7 +186,18 @@ public struct TimeRailView: View {
 /// say nothing about how much page stands on each, or where in a long
 /// Today the viewport currently is. The bars say the first as height and
 /// the band says the second as position, and both are read off the same
-/// frames the roll laid out, so the rail and the page cannot disagree.
+/// frames the roll laid out, so the proportions are the roll's own
+/// rather than a second estimate of them.
+///
+/// A scaled impression of the roll in its own space, and not a diagram
+/// of the rail. The whole document is mapped onto the whole column,
+/// while the rows over it are packed from the top and pushed apart by a
+/// spacer, so a bar and the row for the same day do not line up. That is
+/// the deal a proportional reading makes: a day holding most of the roll
+/// takes most of the column whatever height its row has. Count and order
+/// are what the two share, one shape per drawn day, newest at the top of
+/// both, and lining them up would mean laying the rows out by content,
+/// which is a different rail.
 ///
 /// Faint is a requirement rather than a taste. The markers over it, a
 /// day's words, its gauge, the selection fill, are the rail's content,

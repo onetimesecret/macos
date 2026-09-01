@@ -214,9 +214,9 @@ final class DayScrollTests: XCTestCase {
     /// order, each running from the top of the day's header to the
     /// bottom of its page, with the document's own height and the
     /// clip's own window beside them (issue #131). Nothing here is
-    /// computed a second way, which is the whole reason the bars behind
-    /// the rail's rows cannot disagree with the pages under the
-    /// reader's eye.
+    /// computed a second way, which is the whole reason the minimap's
+    /// proportions cannot disagree with the pages under the reader's
+    /// eye.
     func testTheRollMeasuresOneExtentPerDayInDocumentOrder() throws {
         let model = try makeModel()
         let first = try page(in: model, saying: longPage(lines: 20))

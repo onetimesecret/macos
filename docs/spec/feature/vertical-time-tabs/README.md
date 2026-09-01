@@ -311,7 +311,7 @@ the rail: the rows read Today, Yesterday, 2 days ago, and doc 05's rule
 is answered where a reader is looking rather than one hover away. The
 short form survives in the roll's day gutter, where the day shares a
 line with a page's title and its countdown and the reason for it still
-holds. Behind the rows is a faint minimap of the roll, described below.
+holds. Under the rows, a faint minimap of the roll, described below.
 
 The rail is navigation and nothing else. It offers no rename, no close,
 no rung, no hold and no drag-reorder. Days have an order the user does
@@ -388,8 +388,21 @@ net rather than the plan.
 The second is the background, which was a flat `Color.panelBackground`
 and is now a faint reading of the roll: a bar per day, as tall a share
 of the column as that day is of the document, and a band over the part
-the reader can see, which follows the clip as it scrolls. Four things
-about it are load-bearing.
+the reader can see, which follows the clip as it scrolls.
+
+It is a scaled impression of the roll in its own coordinate space, and
+not a diagram of the rail. The whole document is mapped onto the whole
+column, in proportion to content, while the rows above are packed from
+the top and pushed apart by a spacer, so a bar and the row for the same
+day do not line up and are not meant to: a day holding most of the roll
+takes most of the column whatever height its row happens to have. What
+the two do share is a count and an order, one shape per drawn day,
+newest at the top of both. Anyone who wants the bars to sit beside their
+rows is asking for a different feature, one where the rail's rows are
+laid out by content rather than packed, and that is a layout change and
+not a drawing one.
+
+Four things about it are load-bearing.
 
 - **Geometry, never glyphs.** `RollGeometry` carries a day's top and
   height, the document's height and the clip's window, and nothing else
@@ -408,9 +421,10 @@ about it are load-bearing.
   are named constants and not literals in a fill.
 - **One measurement, read off the frames.** The extents come from
   `DayStackView.relayout`, the pass that has just placed every region,
-  so the bars behind the rail's rows and the pages under the reader's
-  eye cannot disagree about how much page a day holds. A day holding two
-  pages is two rows and one bar, folded by `RollGeometry.merging`.
+  so the minimap and the pages under the reader's eye cannot disagree
+  about how much page a day holds: the proportions are the roll's own
+  and not a second estimate of them. A day holding two pages is two rows
+  and one bar, folded by `RollGeometry.merging`.
 - **Published on a hop, and off the model.** `relayout` runs inside
   `updateNSView`, so writing observed state there would be writing it
   during a render pass; the measurement goes to its own
@@ -614,7 +628,7 @@ apologising for their absence.
    `RailMinimap` in
    `shell/Sources/CompanionKit/RollGeometry.swift`;
    `DayStackView.measuredGeometry` and the clip's bounds observation;
-   and `RailMinimapView` behind the rail's rows. Type names rather than
+   and `RailMinimapView` under the rail's rows. Type names rather than
    line numbers, for the reason branch 6 gives. Nothing in the core, at
    the seam, in the projection's laws or in horizontal mode moved:
    `TabStripView.swift` takes no diff on this one either.

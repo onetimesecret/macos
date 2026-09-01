@@ -77,7 +77,10 @@ public struct RollGeometry: Equatable, Sendable {
     /// one page; the rail draws one row per day. Two pages born on one
     /// day are therefore one extent covering both, which is what keeps
     /// the minimap's bars in the same count and the same order as the
-    /// rows drawn over them. Consecutive rather than grouped, because
+    /// rail's rows. Count and order are the whole of the agreement: the
+    /// bars are a scaled impression of the roll in their own space, so a
+    /// bar is not level with the row for the same day and is not meant
+    /// to be. Consecutive rather than grouped, because
     /// the roll already emits a day's pages together and an extent that
     /// jumped a gap would claim ground belonging to the day in between.
     ///

@@ -325,14 +325,19 @@ until this case is run, which is the whole reason it exists.
 **Pass:** the bars are visible as a texture and never as a chart: the
 day's words, its gauge and the selection fill all read first. A day
 holding more writing is a taller stretch than a day holding a line, and
-two pages born on one day are one stretch rather than two. The band
+two pages born on one day are one stretch rather than two. The bars are
+a scaled impression of the roll and not a diagram of the rail, so a
+stretch sitting well away from the row for the same day is the design
+rather than a bug: the whole document is mapped onto the whole column
+while the rows are packed from the top. What the two share is a count
+and an order. The band
 tracks the viewport as the roll moves and stays inside the column at
 both ends of an overscroll. A roll that fits inside the card shows no
 band at all, deliberately. At rest the whole rail dims with the card and
 the minimap dims with it, with no treatment of its own.
 
 **Fail:** any text legible in the background at any card size; a bar or
-a band that overpowers a row; a band that lags a scroll by more than a
+a band that overpowers a row; two bars overlapping into a darker seam; a band that lags a scroll by more than a
 frame or two; a bar for a day the rail draws no row for, or a row with
 no bar; a stretch of the roll drawn behind the ledger after ⌘L; typing
 that stutters while three days are mounted (see case 4).

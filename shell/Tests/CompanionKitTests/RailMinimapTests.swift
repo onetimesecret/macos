@@ -153,7 +153,8 @@ final class RailMinimapTests: XCTestCase {
     /// The roll lays out a row per page and the rail draws a row per
     /// day, so two pages born on one day are one bar covering both. The
     /// fold is what keeps the bars in the same count and the same order
-    /// as the rows drawn over them.
+    /// as the rail's rows, which is the whole of what the two share: the
+    /// bars are proportional to the roll and never level with a row.
     func testTwoPagesOfOneDayAreOneExtent() {
         let merged = RollGeometry.merging([
             extent(0, 0, 100),
