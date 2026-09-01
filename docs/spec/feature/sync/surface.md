@@ -168,6 +168,14 @@ that event names the local page as well as the cross device identity,
 so the shell can say which of its own pages is meant. Nothing extra is
 told to the relay and nothing extra is asked of it.
 
+One thing had to be corrected for the mark to be true. The relay is
+blind and its delta stream carries no author, so a device fetches back
+what it published itself and imports it again, and the session
+reported that as an applied edit. Harmless for a refresh and a lie
+here, since a page would say another device was editing it while its
+owner typed. An import that leaves the document's frontier where it
+was brought nothing, and only something brought is news.
+
 The mark lasts ninety seconds past the last edit that landed: long
 enough to cover the pauses in someone's writing and the publish
 clock's own two seconds, short enough to mean now rather than today.
