@@ -425,7 +425,7 @@ public final class SyncController: ObservableObject {
                 remoteChanged = true
                 // Someone else's writing, on a page this device can
                 // name: the mark that page carries for the next while
-                // (issue #102). Only an applied edit counts — a
+                // (issue #102). Only an applied edit counts: a
                 // countdown moving or a page dying elsewhere is not
                 // someone typing.
                 if event.kind == "applied", let page = event.pageID {
@@ -818,7 +818,7 @@ public final class SyncController: ObservableObject {
     ///
     /// Coarse on purpose. A device list is read to answer "is my
     /// laptop on this channel, and roughly since when", and a stamp to
-    /// the second would be a precision the number does not have — the
+    /// the second would be a precision the number does not have, since the
     /// roster is refreshed when this Mac attaches, so it ages between
     /// attaches. A future stamp is a clock disagreeing across two
     /// machines, not a device seen tomorrow, so it reads as just now.

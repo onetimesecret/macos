@@ -147,7 +147,7 @@ public struct PageStatusStack: View {
         }
         if let sentence = sync.standingSentence {
             // Sync's one standing line (issue #102): present only while
-            // sync is on AND has something to report — off is silence,
+            // sync is on AND has something to report. Off is silence,
             // and quiet-and-well is too. Each condition is its own
             // sentence; ember for the ones that name something to act
             // on, and secondary for a browser trip that is simply out,

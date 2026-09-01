@@ -2778,7 +2778,7 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
 /// that arrives after the grant is committed finds nothing in flight
 /// and answers false.
 ///
-/// True when there was something to give up — a ceremony waiting for
+/// True when there was something to give up: a ceremony waiting for
 /// its finish, a finish waiting on the browser, or both. False means
 /// nothing was in flight, which is the answer a surface uses to stop
 /// drawing the way out.
@@ -2900,7 +2900,7 @@ pub unsafe extern "C" fn companion_sync_detach(handle: *mut CompanionHandle) -> 
 /// `{"ok", "reason"?, "events": [{"kind", "page"?, "page_id"?}, …],
 /// "state"}`, where `page` is the cross-device identity and `page_id`
 /// the local id the same page answers to on this device (null when no
-/// live page holds that identity here) — event kinds: `applied`,
+/// live page holds that identity here). Event kinds: `applied`,
 /// `countdown_moved`, `terminal`,
 /// `rejoin_required`, `ceremony_proposed`, `ceremony_committed`,
 /// `ceremony_required`, `epoch_conflict`, `unauthorized`,

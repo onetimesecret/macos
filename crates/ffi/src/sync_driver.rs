@@ -274,7 +274,7 @@ pub(crate) fn signin_begin(state: &mut SyncState) -> Result<String, &'static str
 /// and exchange it for the grant. Runs with no lock held; the caller
 /// took `pending` out first. Every failure is a §5 row as a machine
 /// token: `abandoned` (the browser never returned, or the user gave up
-/// on it), `state_mismatch`, `no_code`, `unreachable`, `refused` — and
+/// on it), `state_mismatch`, `no_code`, `unreachable`, `refused`, and
 /// all of them leave nothing stored, with retry being a fresh begin.
 ///
 /// `abandoned` is the shared flag a cancel raises. A user who closed

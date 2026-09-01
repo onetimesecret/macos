@@ -391,7 +391,7 @@ public struct SyncPumpOutcome: Codable, Hashable, Sendable {
 }
 
 /// One pump event: a machine kind and, where one is concerned, the
-/// page — twice over. `page` is the cross-device identity, the only
+/// page, twice over. `page` is the cross-device identity, the only
 /// name a peer can use; `pageID` is the local id the same page answers
 /// to here, and it is nil for an event about no page and for a page
 /// this device no longer keeps. The surface uses the second: a mark
