@@ -1187,9 +1187,10 @@ fn stage_json(flow: &PairingState) -> serde_json::Value {
     // sit in the queue forever and the other device would wait for it
     // just as long. `confirmed` is the honest word for the interval:
     // settled on this side, waiting on the other.
-    let stage = match stage_word(&flow.step) {
-        "done" if !flow.outgoing.is_empty() => "confirmed",
-        word => word,
+    let stage = if matches!(flow.step, PairingStep::Done) && !flow.outgoing.is_empty() {
+        "confirmed"
+    } else {
+        stage_word(&flow.step)
     };
     let sas = match &flow.step {
         PairingStep::InviterWaitAcceptance {
