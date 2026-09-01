@@ -4958,6 +4958,57 @@ mod tests {
         assert_eq!(body(&store, id), "before the boundary");
     }
 
+    /// The one place a remote event destroys local state, written down
+    /// as a test so it is a decision rather than a surprise. Chip
+    /// liveness follows the document, and the document is shared: a
+    /// neighbouring device backspacing over a sentinel zeroizes the
+    /// bytes here, and the steps standing on this device would then be
+    /// steps that could stand the sentinel again over nothing. The
+    /// stack goes rather than the guarantee (ADR-0009). What the writer
+    /// loses is ⌘Z reaching back past the moment the chip died; what
+    /// they keep is the page.
+    #[test]
+    fn a_peers_chip_deletion_forgets_this_devices_steps() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        store.seal_text_at(id, "sealed", 0, 0).unwrap();
+        let chip = store.sheet(id).unwrap().chips().next().unwrap().uuid;
+
+        // The peer holds the same page, and is told it owns the chip so
+        // the sentinel is not read as damage on the way in.
+        let mirror = SheetDocument::new();
+        let shared = store
+            .export_document_updates(id, &mirror.version())
+            .unwrap();
+        mirror.import_update(&shared, &[chip]).unwrap();
+
+        // This device types after the seal. That is the step at stake.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 1,
+                text: "ink".into(),
+            }],
+        ));
+        assert!(store.can_undo(id));
+
+        // The peer backspaces over the sentinel and the delete arrives
+        // here as an ordinary update.
+        mirror.delete(0, 1).unwrap();
+        mirror.commit(None);
+        let away = mirror
+            .export_updates_since(&store.document_version(id).unwrap())
+            .unwrap();
+        store.apply_remote_update(id, &away).unwrap();
+
+        assert_eq!(body(&store, id), "ink");
+        assert!(store.sheet(id).unwrap().chips().next().is_none());
+        assert!(
+            !store.can_undo(id),
+            "a step survived the death of the chip it could stand again"
+        );
+    }
+
     #[test]
     fn a_step_back_leaves_a_peers_edits_standing() {
         let (mut alpha, _) = store();
