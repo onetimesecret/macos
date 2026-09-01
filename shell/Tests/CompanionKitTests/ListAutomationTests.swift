@@ -523,13 +523,18 @@ final class ListKeystrokeTests: XCTestCase {
     /// One keystroke, one undo step: ⌘Z after a continuation puts the
     /// caret back with no orphaned marker, and takes nothing of what
     /// was typed before it.
+    ///
+    /// Against the core's stack, which is the one ⌘Z drives (issue
+    /// #132). The marker arrives a keystroke after the words, well
+    /// inside the merge interval, so it comes off alone only because
+    /// the automation asks the core for its own step.
     func testOneUndoReversesTheContinuationAndNothingElse() {
         makeEditor()
         write("- milk")
         textView.insertNewline(nil)
         XCTAssertEqual(storage.string, "- milk\n- ")
 
-        textView.undoManager?.undo()
+        coordinator.step(back: true)
 
         XCTAssertEqual(storage.string, "- milk")
     }
@@ -540,7 +545,7 @@ final class ListKeystrokeTests: XCTestCase {
         textView.insertNewline(nil)
         XCTAssertEqual(storage.string, "- milk\n")
 
-        textView.undoManager?.undo()
+        coordinator.step(back: true)
 
         XCTAssertEqual(storage.string, "- milk\n- ")
     }
@@ -692,7 +697,7 @@ final class ListKeystrokeTests: XCTestCase {
         textView.insertTab(nil)
         XCTAssertEqual(storage.string, "  - milk")
 
-        textView.undoManager?.undo()
+        coordinator.step(back: true)
 
         XCTAssertEqual(storage.string, "- milk")
     }

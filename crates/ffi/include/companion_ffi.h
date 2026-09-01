@@ -372,6 +372,17 @@ bool companion_sheet_apply_ops(CompanionHandle *handle, uint64_t sheet,
                                const char *json);
 
 /*
+ * The same, for a batch that must begin its own undo step: an edit the
+ * page made on the writer's behalf rather than at their dictation, such
+ * as a list marker it continued or an indent it nudged. One press takes
+ * the automation back and leaves the words typed before it standing,
+ * which the merge interval would otherwise refuse. Identical in every
+ * other respect, refusals included.
+ */
+bool companion_sheet_apply_ops_as_new_step(CompanionHandle *handle,
+                                           uint64_t sheet, const char *json);
+
+/*
  * Undo, which lives here rather than in AppKit (issue #132). One step
  * is the page's last local edit, or the couple of seconds of them the
  * merge interval groups together. The stack is bound to this document's

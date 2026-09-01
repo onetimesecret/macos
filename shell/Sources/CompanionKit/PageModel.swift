@@ -2452,8 +2452,13 @@ public final class PageModel: ObservableObject {
     /// one legacy `syncDocument` mirror, and clears that page's undo
     /// history, because stale-range undo replays after a wholesale rewrite
     /// would corrupt the document they no longer describe.
-    public func applyOps(sheet: UInt64, opsJSON: String) {
-        let accepted = client.applyOps(sheet: sheet, json: opsJSON)
+    ///
+    /// `startingNewStep` marks a batch the page produced on the
+    /// writer's behalf (a continued list marker, a nudged indent) so it
+    /// begins its own undo step and comes off in one press.
+    public func applyOps(sheet: UInt64, opsJSON: String, startingNewStep: Bool = false) {
+        let accepted = client.applyOps(
+            sheet: sheet, json: opsJSON, startingNewStep: startingNewStep)
         if accepted {
             // The page just changed, so how it reads when it is quiet
             // changed with it (issue #79). Here rather than at the

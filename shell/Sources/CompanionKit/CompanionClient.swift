@@ -595,9 +595,19 @@ public final class CompanionClient: @unchecked Sendable {
     /// to the page's body core-side, the ADR-0013 operation path.
     /// False means the batch was rejected whole and nothing moved;
     /// the caller re-converges through `syncDocument`.
+    ///
+    /// `startingNewStep` marks a batch the page produced on the
+    /// writer's behalf rather than at their dictation (a continued list
+    /// marker, a nudged indent). It begins its own undo step, so one
+    /// press takes the automation back and leaves the words typed
+    /// before it standing.
     @discardableResult
-    public func applyOps(sheet: UInt64, json: String) -> Bool {
-        json.withCString { companion_sheet_apply_ops(handle, sheet, $0) }
+    public func applyOps(sheet: UInt64, json: String, startingNewStep: Bool = false) -> Bool {
+        json.withCString {
+            startingNewStep
+                ? companion_sheet_apply_ops_as_new_step(handle, sheet, $0)
+                : companion_sheet_apply_ops(handle, sheet, $0)
+        }
     }
 
     /// Push a whole document snapshot (JSON runs) to the core. The

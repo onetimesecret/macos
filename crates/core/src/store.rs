@@ -751,6 +751,21 @@ impl<C: Clock> SheetStore<C> {
     /// body is zeroized with the same `Discarded` record the snapshot
     /// path writes. Returns whether the batch applied.
     pub fn apply_ops(&mut self, id: SheetId, ops: &[EditOp]) -> bool {
+        self.apply_batch(id, ops, false)
+    }
+
+    /// [`SheetStore::apply_ops`] for a batch that must begin its own
+    /// undo step: an edit the page made on the writer's behalf rather
+    /// than at their dictation, such as a list marker it continued or
+    /// an indent it nudged. One press takes the automation back and
+    /// leaves the words typed before it standing, which the merge
+    /// interval would otherwise refuse, the automation arriving a
+    /// keystroke after the burst it should not join.
+    pub fn apply_ops_as_new_step(&mut self, id: SheetId, ops: &[EditOp]) -> bool {
+        self.apply_batch(id, ops, true)
+    }
+
+    fn apply_batch(&mut self, id: SheetId, ops: &[EditOp], new_step: bool) -> bool {
         let Some(sheet) = self.sheet_mut(id) else {
             return false;
         };
@@ -807,7 +822,11 @@ impl<C: Clock> SheetStore<C> {
                 }
             }
         }
-        sheet.document.commit(None);
+        if new_step {
+            sheet.document.commit_as_new_step(None);
+        } else {
+            sheet.document.commit(None);
+        }
         // A batch that stood a sentinel moved the chip roster, and the
         // roster is the one thing no step may walk backwards over. A
         // step back would pull the sentinel out, the settle below would
@@ -4794,6 +4813,56 @@ mod tests {
         // stand their sentinel again.
         assert!(!store.can_undo(id));
         assert!(!store.can_redo(id));
+    }
+
+    #[test]
+    fn an_edit_the_page_made_itself_comes_off_in_one_press() {
+        let (mut bounded, _) = store();
+        let (mut merged, _) = store();
+        let id = bounded.new_tab().unwrap().1;
+        let other = merged.new_tab().unwrap().1;
+        let store = &mut bounded;
+        // The writer's own words, then the marker the page continued
+        // for them a keystroke later, well inside the merge interval.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "- milk".into(),
+            }],
+        ));
+        assert!(store.apply_ops_as_new_step(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 6,
+                text: "\n- ".into(),
+            }],
+        ));
+        assert_eq!(body(store, id), "- milk\n- ");
+
+        // One press takes back the marker and nothing the writer typed.
+        assert!(store.undo(id));
+        assert_eq!(body(store, id), "- milk");
+        assert!(store.can_undo(id), "the writer's own words went with it");
+
+        // The contrast is the whole evidence that the boundary is real:
+        // the same two batches without one take back both together.
+        assert!(merged.apply_ops(
+            other,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "- milk".into(),
+            }],
+        ));
+        assert!(merged.apply_ops(
+            other,
+            &[EditOp::Insert {
+                pos_u16: 6,
+                text: "\n- ".into(),
+            }],
+        ));
+        assert!(merged.undo(other));
+        assert_eq!(body(&merged, other), "");
     }
 
     #[test]

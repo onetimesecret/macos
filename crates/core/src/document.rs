@@ -226,6 +226,29 @@ impl SheetDocument {
         self.undo.can_redo()
     }
 
+    /// Close the transaction as a change that begins its own undo step,
+    /// whatever the merge interval would otherwise have said.
+    ///
+    /// For the edits the page makes on the writer's behalf rather than
+    /// at their dictation: a list marker the page continued, an indent
+    /// it nudged. Those want to come off in one press, leaving the
+    /// words typed before them standing, and the interval would fold
+    /// them into that preceding burst because they arrive a keystroke
+    /// after it.
+    ///
+    /// The boundary is set by dropping the interval to zero across this
+    /// one commit, which is the only lever the library offers: its own
+    /// test is a comparison against the moment the current step began,
+    /// with no way to reset that moment except by pushing a new step.
+    /// The boundary is in front of this commit only. Type on afterwards
+    /// and the automation joins that next burst, exactly as any two
+    /// edits inside the interval join.
+    pub(crate) fn commit_as_new_step(&mut self, message: Option<&str>) {
+        self.undo.set_merge_interval(0);
+        self.commit(message);
+        self.undo.set_merge_interval(UNDO_MERGE_INTERVAL_MS);
+    }
+
     /// Where the caret belongs after the last [`SheetDocument::undo`]
     /// or [`SheetDocument::redo`], in UTF-16 code units, which is the
     /// only offset unit this module lets out. `None` when nothing was

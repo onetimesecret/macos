@@ -423,16 +423,19 @@ public struct InkEditorView: NSViewRepresentable {
         // MARK: Per-page view state (ADR-0006)
 
         /// Remember the outgoing page's caret and scroll before the
-        /// swap. The pending typing group settles first, so half a
-        /// word is not left open in a page that is going away.
+        /// swap.
         ///
         /// A mount with no scroller of its own saves the caret and stops
         /// there. There is no offset belonging to this page to read, and
         /// whatever a scrolled mount once saved is left standing rather
         /// than overwritten with a guess.
+        ///
+        /// Nothing settles a typing group on the way out any more:
+        /// undo steps are the core's and each page's stack is its own,
+        /// so a swap cannot leave half a word open in a page that is
+        /// going away (issue #132).
         func saveViewState(textView: InkTextView, scrollView: NSScrollView?) {
             guard let sheet = currentSheet else { return }
-            textView.breakUndoCoalescing()
             savedCarets[sheet] = textView.selectedRange()
             guard let scrollView else { return }
             savedScrolls[sheet] = scrollView.contentView.bounds.origin
@@ -779,11 +782,25 @@ public struct InkEditorView: NSViewRepresentable {
             finishComposition(in: storage, sheet: sheet)
         }
 
+        /// Set for the one edit that follows, by the keystroke handlers
+        /// that write on the writer's behalf: a continued list marker,
+        /// a nudged indent. The core gives such a batch its own undo
+        /// step, so one press takes the automation back and leaves the
+        /// words typed before it standing (issue #132).
+        ///
+        /// A one-shot rather than a mode, and consumed in `emit` rather
+        /// than cleared by the caller, because an automation edit that
+        /// somehow produced no batch must not hand its boundary to
+        /// whatever the writer types next.
+        var nextEditIsAutomation = false
+
         /// Encode and send one batch. Empty batches never cross: a
         /// no-op is not an operation.
         private func emit(_ ops: [DocumentEditOp], sheet: UInt64) {
+            let automation = nextEditIsAutomation
+            nextEditIsAutomation = false
             guard !ops.isEmpty, let json = DocumentEditOp.wireJSON(ops) else { return }
-            model.applyOps(sheet: sheet, opsJSON: json)
+            model.applyOps(sheet: sheet, opsJSON: json, startingNewStep: automation)
             onEmit?(ops)
         }
 
@@ -1982,33 +1999,29 @@ final class InkTextView: NSTextView {
             // travels the ordinary edit route, so the core sees an
             // ordinary delete and provenance holds (ADR-0013).
             let prefix = NSRange(location: paragraph.location, length: line.utf16.count)
-            breakUndoCoalescing()
             // A refused edit is not a keystroke to swallow: the page
             // falls back to the newline it would have given before any
             // of this existed.
             guard shouldChangeText(in: prefix, replacementString: "") else {
                 return super.insertNewline(sender)
             }
+            // The removal is the page's own doing, so it gets its own
+            // undo step for the reason the continuation does.
+            coordinator?.nextEditIsAutomation = true
             storage.replaceCharacters(in: prefix, with: "")
             didChangeText()
             setSelectedRange(NSRange(location: paragraph.location, length: 0))
             return
         }
-        // One keystroke, one undo step: the coalescing that would
-        // otherwise fold this into the words typed before it is broken
-        // on both sides, so a single ⌘Z puts the caret back with no
-        // orphaned marker left behind. The newline and the marker go
-        // down as one `insertText`, the ordinary route every other
-        // character takes.
-        breakUndoCoalescing()
-        // Held in hand rather than asked for twice: the manager arrives
-        // from the delegate, one per page (ADR-0006), and a group has
-        // to be closed on the same manager it was opened on.
-        let undo = undoManager
-        undo?.beginUndoGrouping()
+        // One keystroke, one undo step, and since issue #132 that is
+        // the core's arrangement rather than AppKit's: the marker is an
+        // edit the page made on the writer's behalf, so the batch it
+        // emits begins its own step and a single ⌘Z takes it back with
+        // none of the words typed before it. The newline and the marker
+        // go down as one `insertText`, the ordinary route every other
+        // character takes, and the flag rides that one batch across.
+        coordinator?.nextEditIsAutomation = true
         insertText("\n" + item.successor, replacementRange: caret)
-        breakUndoCoalescing()
-        undo?.endUndoGrouping()
     }
 
     /// Tab, on a line the page reads as a list item, with the caret in
@@ -2125,19 +2138,19 @@ final class InkTextView: NSTextView {
     ///
     /// The edit travels the ordinary route (`shouldChangeText`, the
     /// edit, `didChangeText`), so the core sees an ordinary op and
-    /// ADR-0013's provenance holds with no special case, and the
-    /// coalescing is broken on both sides so one keystroke is one undo
-    /// step. False when the delegate refuses, which leaves the
+    /// ADR-0013's provenance holds with no special case, and the batch
+    /// is marked as the page's own doing so it begins its own undo step
+    /// and one press takes the depth back and none of the words
+    /// (issue #132). False when the delegate refuses, which leaves the
     /// keystroke to the ordinary tab rather than swallowing it.
     private func nudgeDepth(
         replacing range: NSRange, with replacement: String, caret: NSRange
     ) -> Bool {
         guard let storage = textStorage else { return false }
-        breakUndoCoalescing()
         guard shouldChangeText(in: range, replacementString: replacement) else { return false }
+        coordinator?.nextEditIsAutomation = true
         storage.replaceCharacters(in: range, with: replacement)
         didChangeText()
-        breakUndoCoalescing()
         // Where the caret lands is the whole of whether the gesture
         // repeats. It keeps its place relative to the line's content,
         // so after a nudge it is still in the marker region and a

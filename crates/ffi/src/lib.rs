@@ -899,6 +899,41 @@ pub unsafe extern "C" fn companion_sheet_apply_ops(
     guard.store.apply_ops(SheetId::from_raw(sheet), &ops)
 }
 
+/// [`companion_sheet_apply_ops`] for a batch that must begin its own
+/// undo step: an edit the page made on the writer's behalf rather than
+/// at their dictation, such as a list marker it continued or an indent
+/// it nudged. One press takes the automation back and leaves the words
+/// typed before it standing, which the merge interval would otherwise
+/// refuse, the automation arriving a keystroke after the burst it
+/// should not join. Identical in every other respect, refusals
+/// included.
+///
+/// # Safety
+/// `handle` must be a valid handle. `json` must be a valid,
+/// NUL-terminated UTF-8 C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_apply_ops_as_new_step(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+    json: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Some(json) = (unsafe { cstr(json) }) else {
+        return false;
+    };
+    let Some(ops) = parse_ops(json) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard
+        .store
+        .apply_ops_as_new_step(SheetId::from_raw(sheet), &ops)
+}
+
 // ---------------------------------------------------------------------------
 // Undo: the core's stack, not AppKit's (issue #132)
 // ---------------------------------------------------------------------------
