@@ -2808,7 +2808,7 @@ public final class PageModel: ObservableObject {
         let host = livePageIDs.first { chipIds(onSheet: $0).contains(chipId) }
         _ = client.deleteChip(id: chipId)
         if let host { invalidateQuietRendering(for: host) }
-        for (sheet, storage) in storages {
+        for storage in storages.values {
             var found: NSRange?
             storage.enumerateAttribute(
                 .attachment, in: NSRange(location: 0, length: storage.length)
