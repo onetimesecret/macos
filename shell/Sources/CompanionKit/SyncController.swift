@@ -850,6 +850,12 @@ public final class SyncController: ObservableObject {
             return "the Keychain refused to store the sign-in"
         case "busy":
             return "a sign-in is already waiting on the browser"
+        case "no_ceremony":
+            // Never a server's word. The core answers this only when
+            // there was nothing to finish, so falling through to the
+            // refusal below would put a "no" in the mouth of a server
+            // that was never asked (ADR-0027 §2).
+            return "there was no sign-in to finish; nothing was stored"
         case "not_configured":
             return "sync has no server configured to sign in against"
         default:

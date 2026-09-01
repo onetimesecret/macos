@@ -92,6 +92,57 @@ final class SyncOffSwitchTests: XCTestCase {
             "the gate says off, and off owes the header nothing; the page carries the reason")
     }
 
+    /// A controller over a configured core, without the browser: the
+    /// ceremony is begun through the seam directly, since `signIn()`
+    /// opens the system browser and no test may.
+    private func configured() throws -> (SyncController, CompanionClient) {
+        let suiteName = "companion-sync-off-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+        defaults.set("https://relay.example", forKey: "sync.relayURL")
+        defaults.set("https://account.example/oauth/authorize", forKey: "sync.authorizeURL")
+        defaults.set("https://account.example/oauth/token", forKey: "sync.tokenURL")
+        let client = CompanionClient.ephemeral(tag: "sync-cancel-\(UUID().uuidString)")
+        let sync = SyncController(client: client, defaults: defaults)
+        sync.serverUrlProvider = { "https://account.example" }
+        sync.enabled = true
+        return (sync, client)
+    }
+
+    func testACancelBeforeTheFinishIsNeverAServerRefusal() throws {
+        let (sync, client) = try configured()
+        XCTAssertTrue(client.syncSigninBegin().ok)
+        XCTAssertEqual(client.syncGate(), .signingIn)
+
+        // The race the surface makes easy: the gate reads signing_in
+        // the instant the ceremony is begun, so the way out is drawn
+        // before the background task has called finish at all.
+        sync.giveUpSignin()
+        let outcome = client.syncSigninFinish(patienceMs: 0)
+
+        XCTAssertFalse(outcome.ok)
+        XCTAssertEqual(
+            outcome.reason, "abandoned",
+            "a ceremony the user ended is ended, not refused by a server nobody asked")
+        XCTAssertNotEqual(
+            SyncController.signinSentence(reason: outcome.reason ?? ""),
+            SyncController.signinSentence(reason: "refused"),
+            "no silence may be reported as a no")
+        XCTAssertEqual(client.syncGate(), .signedOut)
+    }
+
+    func testAFinishWithNoCeremonyBehindItSaysSoInItsOwnWords() throws {
+        // Nobody began anything and nobody cancelled anything: this is
+        // the shell calling finish out of order, and it is still not
+        // the server refusing a sign in.
+        let (_, client) = try configured()
+        let outcome = client.syncSigninFinish(patienceMs: 0)
+        XCTAssertEqual(outcome.reason, "no_ceremony")
+        XCTAssertNotEqual(
+            SyncController.signinSentence(reason: "no_ceremony"),
+            SyncController.signinSentence(reason: "refused"))
+    }
+
     func testTurningItOffAgainLeavesNothingStanding() throws {
         let (sync, client) = try controller()
         sync.enabled = true

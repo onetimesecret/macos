@@ -2663,7 +2663,11 @@ pub unsafe extern "C" fn companion_sync_signin_begin(handle: *mut CompanionHandl
 /// `{"ok": false, "reason"}` with §5's tokens: `abandoned`,
 /// `state_mismatch`, `no_code`, `unreachable`, `refused`,
 /// `no_ceremony`, `keychain`. Every failure leaves nothing stored;
-/// retry is a fresh begin. Free with [`companion_string_free`].
+/// retry is a fresh begin. `abandoned` covers a browser that never
+/// returned and a user who gave up, including one who gave up before
+/// this call ever took the ceremony; `no_ceremony` is left for a
+/// finish nobody began, which is a caller out of order rather than
+/// anything a user did. Free with [`companion_string_free`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -2696,7 +2700,23 @@ pub unsafe extern "C" fn companion_sync_signin_finish(
         staged.map(|staged| (staged, Arc::clone(&guard.sync.signin_abandoned)))
     };
     let Some(((pending, transport), abandoned)) = staged else {
-        return sync_refusal("no_ceremony");
+        // Nothing to finish. Which of the two reasons that is matters
+        // to the user: a cancel that arrived before this call took the
+        // ceremony is the ordinary shape of the way out, since the
+        // gate reads `signing_in` from the moment a ceremony is begun
+        // and the surface draws the give-up long before any finish
+        // runs. Answering `no_ceremony` there would send the shell to
+        // its last resort sentence, which speaks for a server that was
+        // never asked anything (ADR-0027 §2: silence is never a no).
+        let cancelled = handle
+            .inner
+            .lock()
+            .is_ok_and(|guard| guard.sync.signin_abandoned.load(Ordering::Relaxed));
+        return sync_refusal(if cancelled {
+            "abandoned"
+        } else {
+            "no_ceremony"
+        });
     };
     let grant = match sync_driver::signin_finish(
         pending,
@@ -6497,12 +6517,36 @@ mod tests {
                 "nothing left to forget"
             );
 
-            // A finish with no pending ceremony refuses by name.
+            // A finish behind a cancel is the way out taken before the
+            // finish ever ran, which is the ordinary order: the gate
+            // reads `signing_in` from the begin, so the surface draws
+            // the give-up while the background call is still on its
+            // way. It is the user's own ending, not a server's answer.
             // (The gate through the whole ceremony is its own test,
             // `the_gate_says_signing_in_while_the_browser_is_out`.)
             let finished: serde_json::Value =
                 serde_json::from_str(&take_json(companion_sync_signin_finish(handle, 0))).unwrap();
-            assert_eq!(finished["reason"], "no_ceremony");
+            assert_eq!(finished["reason"], "abandoned");
+
+            // A finish nobody began and nobody cancelled is a caller
+            // out of order, and keeps its own name.
+            let begun: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
+            assert_eq!(begun["ok"], true, "a fresh begin clears the surrender");
+            assert!(companion_sync_signin_cancel(handle));
+            let _ = take_json(companion_sync_signin_finish(handle, 0));
+            let begun: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
+            assert_eq!(begun["ok"], true);
+            let taken = take_json(companion_sync_signin_finish(handle, 0));
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&taken).unwrap()["reason"],
+                "abandoned",
+                "no redirect came in no patience at all"
+            );
+            let orphaned: serde_json::Value =
+                serde_json::from_str(&take_json(companion_sync_signin_finish(handle, 0))).unwrap();
+            assert_eq!(orphaned["reason"], "no_ceremony");
 
             assert!(companion_sync_signout(handle));
             let status: serde_json::Value =
