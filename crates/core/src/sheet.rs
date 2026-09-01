@@ -449,7 +449,14 @@ impl Sheet {
         if self.blocks.matches(&self.document) {
             self.blocks.retake_anchors(&self.document);
         } else {
+            // The floor is the page's stamp, not any block's, so it must
+            // outlive a rebuild of the block identities. A rebuild that
+            // dropped it would let the page's modified time step back the
+            // moment a wholesale restate (through `sync_document`) tripped
+            // the mismatch, and only `compact` happens to re-note it.
+            let floor = self.blocks.compaction_frontier();
             self.blocks = BlockIndex::for_document(&self.document);
+            self.blocks.note_compaction(floor);
         }
     }
 

@@ -3814,6 +3814,53 @@ mod tests {
     }
 
     #[test]
+    fn the_page_floor_outlives_a_wholesale_restate() {
+        // A deletion is the page's newest change, and compaction freezes
+        // it as the page floor (the stamp no surviving character can
+        // carry). A wholesale restate then rebuilds the block index
+        // through the settle mismatch branch, and the floor must ride
+        // through that rebuild rather than die with the old identities.
+        // Were it dropped, the page's modified stamp would step back
+        // below its newest real change the moment a resync tripped the
+        // rebuild.
+        //
+        // The stamps are injected into the far future, past the wall
+        // clock the restate's own commit reads from the system, so a
+        // dropped floor is observable: with it gone the page answers
+        // with the restate's smaller stamp instead.
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        let floor = 4_000_000_000; // year 2096, comfortably past any real wall clock
+        let written = floor - 3600;
+        let sheet = store.tabs[0].page.as_mut().expect("the tab holds a page");
+        sheet.document.insert(0, "hello\n").unwrap();
+        sheet.blocks.note_insert(0, "hello\n");
+        sheet.document.insert(6, "world").unwrap();
+        sheet.blocks.note_insert(6, "world");
+        sheet.document.commit_at(written);
+        sheet.document.delete(6, 5).unwrap();
+        sheet.blocks.note_delete(6, 5);
+        sheet.document.commit_at(floor);
+        sheet.rebuild_segments();
+        sheet.settle_blocks();
+        sheet.compact();
+        assert_eq!(
+            sheet.modified_s(),
+            Some(floor),
+            "the deletion is the page's newest change, and the floor holds it"
+        );
+
+        // A wholly new body through the restate path, which trips the
+        // settle mismatch and rebuilds the block index from scratch.
+        assert!(store.sync_document(id, vec![Segment::Ink("wholly restated".into())]));
+        assert_eq!(
+            store.sheet(id).unwrap().modified_s(),
+            Some(floor),
+            "the floor rode through the block-index rebuild"
+        );
+    }
+
+    #[test]
     fn a_multi_line_insert_lands_as_one_block_the_way_a_paste_arrives() {
         let (mut store, _) = store();
         let id = store.new_tab().unwrap().1;
