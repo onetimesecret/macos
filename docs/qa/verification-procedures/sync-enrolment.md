@@ -98,6 +98,26 @@ out; the header should say `sync signed out`.
     -a sync-oauth-refresh   # expect: not found
   ```
 
+- [ ] **Press Sign in and then Give up immediately**, before the
+      consent screen has finished loading. Expected: the same given up
+      sentence. It must never read as the server refusing the sign in:
+      no server was asked anything, and the cancel racing the app's
+      own background call is the ordinary case rather than a rare one.
+- [ ] **Press Sign in, complete the consent, and press Give up as the
+      browser hands back.** This one is a race and may take several
+      attempts to land inside; the window is the token exchange, which
+      is one network round trip wide. Expected: one of two outcomes
+      and never a mixture. Either the sign in completed, Settings says
+      so and the item below exists, or Settings says the sign in was
+      given up and the item below does not exist. A Settings that says
+      given up over a Keychain that holds a token, or an app that
+      attaches after saying it, is the defect.
+
+  ```sh
+  security find-generic-password -s com.onetimesecret.companion.backdrop \
+    -a sync-oauth-refresh
+  ```
+
 - [ ] **Press Sign in again and complete the consent.** Expected: the
       browser says the tab can be closed, the header goes to
       `reaching` and then `synced`, and Settings lists this Mac.
@@ -109,8 +129,9 @@ out; the header should say `sync signed out`.
       consent screen.
 
 **Fail:** a Give up that does not end the wait, a refresh token
-present after an abandoned or given up ceremony, a prompt at launch,
-or a relaunch that asks for the browser again.
+present after an abandoned or given up ceremony, a cancel described
+as a server refusal, a prompt at launch, or a relaunch that asks for
+the browser again.
 
 ## Check 3: pairing, and failing it on purpose
 
@@ -211,6 +232,8 @@ stay: a re-run adds a row rather than replacing one.
 |---|---|---|---|---|
 | | | 1 off is off | | Record whether any packet left. |
 | | | 2 browser trip and give up | | Record how long the give up took. |
+| | | 2 give up before the consent loads | | Never the server refusal sentence. |
+| | | 2 give up during the token exchange | | Record how many attempts to land in the window. |
 | | | 2 relaunch resumes without a browser | | Record any Keychain prompt and when. |
 | | | 3 pairing fails on a mismatch | | |
 | | | 3 pairing succeeds on a match | | |

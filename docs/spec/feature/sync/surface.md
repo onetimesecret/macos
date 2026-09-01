@@ -56,13 +56,33 @@ of its own rather than a quieter signed out: a consent screen is open
 on the user's screen and the app that opened it should say so.
 
 **Giving up** is drawn beside the waiting line, and only while there
-is a trip to end. The core ends the wait rather than recording a wish:
-`companion_sync_signin_cancel` raises a flag the loopback listener
-watches, so the five minute patience collapses to one poll and the
-blocked finish reports `abandoned` through the ordinary path. A trip
-the user ended and a trip that never returned are one fact to the
-core, so the shell keeps the difference for the length of one settling
-and says which it was.
+is a trip to end. The core ends the ceremony rather than recording a
+wish, and it covers the whole ceremony rather than its first half,
+which is where the first attempt at this went wrong.
+
+`companion_sync_signin_cancel` raises a flag that is read at three
+points, because a sign in has three places it can be waiting. The
+loopback listener watches it while the browser is out, so a five
+minute patience collapses to one poll. The finish reads it again
+after the token exchange returns, since a landed redirect still has
+seconds of network ahead of it and a grant nobody is waiting for any
+more is dropped unstored and zeroized where it stands. And the last
+read is under the lock that guards the store, so a cancel either wins
+outright or arrives to find nothing in flight and answers false. A
+cancel that lands before the finish call has even run is the same
+answer by the same name, since the gate reads `signing_in` from the
+moment a ceremony is begun and the way out is on screen well before
+any finish starts.
+
+Every one of those is reported as `abandoned`, which is what actually
+happened. `no_ceremony` is kept for a finish nobody began, a caller
+out of order, and it has a sentence of its own: no path here reaches
+the sentence about a server refusing, because in none of them was a
+server asked anything (ADR-0027 §2, where silence is never a no). A
+trip the user ended and a trip that never returned are one fact to
+the core, so the shell keeps the difference for the length of one
+settling and says which it was, and a settling that arrives after a
+give up never attaches whatever it carries.
 
 **Pairing** is issue #97's ceremony on this surface, in the same
 section: an invite or a join, a spinner while the mailbox messages
@@ -149,11 +169,13 @@ rest are written in the same voice.
 
 A failed sign in adds its own line in Settings, one sentence per
 ADR-0027 section 1 failure row, standing until the next attempt:
-the browser never returned, the sign in was given up, the sign in came
-back wrong and was refused, the server could not be reached, the
-Keychain refused to store the sign in, a sign in is already waiting on
-the browser, sync has no server configured to sign in against, and the
-server refused the sign in.
+the browser never returned, the sign in was given up, there was no
+sign in to finish, the sign in came back wrong and was refused, the
+server could not be reached, the Keychain refused to store the sign
+in, a sign in is already waiting on the browser, sync has no server
+configured to sign in against, and the server refused the sign in.
+The last of those is the only one that speaks for the server, and it
+is reached only when a server actually answered.
 
 ## 6. A page being written elsewhere
 
