@@ -126,6 +126,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The seam counts both features, not one** (`companion-ffi` 0.19.0).
+  Two branches each moved the seam's minor from 0.17.0 to 0.18.0, the
+  account gate for `companion_sync_gate` and a new field in the sync
+  status, the undo stack for the five undo routes and the step that
+  applies a batch of operations as one. Stacked, they are two minor
+  features arriving together, and a single bump would have understated
+  what the header now declares, so the number moves twice. Merging the
+  two branches could not see this on its own: both parents wrote the
+  same 0.18.0 from the same ancestor, so there was no disagreement for
+  the merge to resolve. `companion-core` stays at 0.17.0 and
+  `companion-sync` at 0.4.0, each having moved once and only once.
+
 - **Nothing you typed is lost when sync stops, and a server that does
   not rotate its tokens no longer strands it** (issue #98, ADR-0027
   §2 and §7). A page being synced kept a mark for how far its edits
