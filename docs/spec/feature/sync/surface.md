@@ -154,7 +154,14 @@ inferred.
 Two states are not the gate's and are still the header's. A device the
 channel rotated past reads `sync behind` in ember: it passed the gate
 and lacks a key, which is ADR-0021 amendment 1's axis and not the
-account's. A channel attached with pages enrolled and no peer awake
+account's. That reading outlives a network one. An unreachable turn
+and a quiet turn both leave `behind` standing, because a relay that
+blinked says nothing about which key this pad holds, and letting the
+blip take its place would clear on the next good turn and leave the
+header saying `synced` for a pad that is still short a key. Only a
+rejoin ends it. Everything else is the newer fact and replaces it,
+the account axis included: a pad that is behind and signed out has a
+sign in to do before it can rejoin. A channel attached with pages enrolled and no peer awake
 reads `sync waiting` rather than `synced`, which is issue #94's state
 and the one cheerful lie this word could otherwise tell.
 

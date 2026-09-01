@@ -98,4 +98,37 @@ final class SyncCeremonyTests: XCTestCase {
         )
         XCTAssertNil(sync.headerWord, "and off says nothing at all")
     }
+
+    /// One long-poll turn's worth of nothing, so a settling can be
+    /// driven without a relay.
+    private func quietTurn(events: [SyncPumpEvent] = []) -> SyncPumpOutcome {
+        SyncPumpOutcome(ok: true, reason: nil, events: events, state: nil)
+    }
+
+    func testFallingBehindSurvivesAnUnreachableBlip() throws {
+        let (sync, _, _) = try configured()
+        sync.enabled = true
+
+        // The channel rotated past this pad. Nothing here rejoins, so
+        // this is true until something does.
+        sync.settlePump(
+            quietTurn(events: [SyncPumpEvent(kind: "rejoin_required", page: nil, pageID: nil)]))
+        XCTAssertEqual(sync.headerWord?.text, "sync behind")
+
+        // The relay blinks. Being unreachable is a fact about the
+        // network and being behind is a fact about this pad's keys, so
+        // the blip may not stand in for the rotation.
+        sync.settlePump(nil)
+        // And the blip passes.
+        sync.settlePump(quietTurn())
+
+        XCTAssertEqual(
+            sync.headerWord?.text, "sync behind",
+            "a pad that is still short a key may not be called synced"
+        )
+        XCTAssertEqual(
+            sync.standingSentence,
+            "sync fell behind a key rotation; edits stay local until this pad rejoins"
+        )
+    }
 }

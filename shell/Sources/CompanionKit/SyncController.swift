@@ -408,7 +408,7 @@ public final class SyncController: ObservableObject {
         }
         attached = true
         lastAttachPeers = outcome.peers
-        trouble = settled
+        trouble = Self.standing(trouble: trouble, after: settled)
         pump()
     }
 
@@ -427,11 +427,11 @@ public final class SyncController: ObservableObject {
         }
     }
 
-    private func settlePump(_ outcome: SyncPumpOutcome?) {
+    func settlePump(_ outcome: SyncPumpOutcome?) {
         pumping = false
         guard enabled else { return }
         guard let outcome else {
-            trouble = .unreachable
+            trouble = Self.standing(trouble: trouble, after: .unreachable)
             armRetry()
             return
         }
@@ -477,7 +477,7 @@ public final class SyncController: ObservableObject {
             attached = false
             attach()
         case .unreachable:
-            trouble = .unreachable
+            trouble = Self.standing(trouble: trouble, after: .unreachable)
             armRetry()
         case .refused:
             // The relay refused the bearer under the long poll. The
@@ -842,6 +842,26 @@ public final class SyncController: ObservableObject {
         case .signingIn, .ready, .attached:
             return trouble == .behind ? .behind : nil
         }
+    }
+
+    /// What a turn's own verdict does to the standing trouble.
+    ///
+    /// Falling behind a key rotation is not a network condition, and no
+    /// network condition may stand in for it. Letting an unreachable
+    /// blip overwrite `.behind` erases it for good: the next good turn
+    /// clears the unreachable it left behind, and the header then says
+    /// `synced` for a pad that is still short the channel's key. So
+    /// `.behind` outlives a blip and a quiet turn alike and only a
+    /// rejoin ends it, which is the precedence the header word already
+    /// gives it over the gate's own good news.
+    ///
+    /// Everything else is the newer fact and wins, the account axis
+    /// included: a pad that is behind and signed out has a sign-in to
+    /// do first, and rejoining is on the far side of it.
+    public nonisolated static func standing(trouble: Trouble?, after verdict: Trouble?) -> Trouble?
+    {
+        if trouble == .behind, verdict == nil || verdict == .unreachable { return .behind }
+        return verdict
     }
 
     /// What an attach outcome and the core's gate together mean. The
