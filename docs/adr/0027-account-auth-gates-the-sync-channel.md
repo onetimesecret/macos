@@ -362,7 +362,7 @@ seven:
 | `signed_out` | Configured, and no credential rests on this device. | Sync is signed out; the pad is unaffected. |
 | `signing_in` | A browser ceremony is out and has not returned. | Waiting on the browser, with a way to give up. |
 | `refused` | A credential rested, the server refused it, and it has been deleted here. | The account refused the sign in; sync is off and the pad is unaffected. |
-| `unreachable` | A credential rests and the last attempt to use it could not reach the account server or the relay. | The relay cannot be reached; edits stay local and sync retries. |
+| `unreachable` | A credential rests and the last attempt to use it could not reach the account server or the relay, or reached one that was unwell. | Sync could not reach the server; edits stay local and sync retries. The sentence does not name which server, because the state covers both and naming the wrong one is a small lie about a thing the user cannot act on either way. |
 | `ready` | A credential rests, nothing has refused it, and no channel is attached. | Reaching the relay. |
 | `attached` | The channel admitted this client. | Nothing, unless another condition applies. |
 

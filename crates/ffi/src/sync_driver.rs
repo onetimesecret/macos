@@ -686,9 +686,15 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
             sign_out_locked(&mut guard);
             Err("signed_out")
         }
-        // The token endpoint being unwell (a 5xx, a mangled body) is
-        // not the grant being revoked: the refresh token stands and
-        // the next pump retries, exactly as an unreachable host would.
+        // The token endpoint being unwell (a 5xx, a rate limit, a
+        // mangled body) is not the grant being revoked: the refresh
+        // token stands and the next pump retries, exactly as an
+        // unreachable host would. `Unreachable` is the right state and
+        // a slightly wide word: the endpoint did answer, and it was
+        // the token endpoint rather than the relay. The gate keeps the
+        // two under one state because they mean the same thing to the
+        // user and to the retry, and the shell's sentence names no
+        // server for the same reason.
         Err(_) => {
             note_fault(&mut guard, GateFault::Unreachable);
             Err("unreachable")

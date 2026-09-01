@@ -149,7 +149,7 @@ attach or publish actually needs the network.
 | Redirect arrives with wrong `state` | Abort, nothing stored, retry offered. |
 | `401` mid-session | Refresh once, retry once; on second `401`, treat as refresh refused. |
 | Refresh refused or reuse detected | Sync signed out with its sentence; pad untouched; re-enrol via §1. |
-| No network at refresh time | Sync degraded with its sentence ("the relay cannot be reached"); retry follows the publish clock, not a hot loop. |
+| No network at refresh time | Sync degraded with its sentence ("sync could not reach the server"); retry follows the publish clock, not a hot loop. |
 | Token or grant revoked account-side | Indistinguishable from refresh refused, handled identically. |
 
 Every one of these lands on one of ADR-0027 §5's seven gate states,

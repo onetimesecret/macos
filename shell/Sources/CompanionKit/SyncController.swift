@@ -540,7 +540,7 @@ public final class SyncController: ObservableObject {
         case .refused:
             return "the account refused this sign-in; sync is off and the pad is unaffected"
         case .unreachable:
-            return "the relay cannot be reached; edits stay local and sync retries"
+            return "sync could not reach the server; edits stay local and sync retries"
         case .behind:
             return "sync fell behind a key rotation; edits stay local until this pad rejoins"
         case nil:

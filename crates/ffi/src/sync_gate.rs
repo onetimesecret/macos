@@ -24,7 +24,9 @@ pub(crate) enum GateFault {
     /// The account server said no: the grant is dead, the resting
     /// token has been deleted, and re-enrolment is the way back.
     Refused,
-    /// Nobody answered. The credential stands and the loop retries.
+    /// Nobody answered, or the answer was the account server or the
+    /// relay being unwell rather than saying no. The credential stands
+    /// and the loop retries.
     Unreachable,
 }
 
@@ -44,7 +46,10 @@ pub(crate) enum SyncGate {
     /// A credential rested, the server refused it, and it is gone.
     Refused,
     /// A credential rests and the last attempt to use it could not
-    /// reach the account server or the relay.
+    /// reach the account server or the relay, or reached one that was
+    /// unwell. The surface names no server: the state covers both, and
+    /// naming the wrong one is a small lie about something the user
+    /// cannot act on either way.
     Unreachable,
     /// A credential rests, nothing has refused it, and no channel is
     /// attached yet.
