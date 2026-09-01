@@ -649,7 +649,10 @@ pub(crate) fn sweep_outbound(
         ..
     } = companion;
     let SyncState {
-        engine, enrolled, ..
+        engine,
+        enrolled,
+        staged_batch,
+        ..
     } = sync;
     let Some(engine) = engine.as_mut() else {
         return;
@@ -715,7 +718,7 @@ pub(crate) fn sweep_outbound(
         && let Some(target) = due_target.or(fallback)
         && rotate_channel(store, engine, &**credentials, target, now_ms, events)
     {
-        settle_frontier(store, enrolled, target);
+        settle_frontier(store, enrolled, staged_batch, target);
     }
 }
 
@@ -758,6 +761,7 @@ fn hold_moved(last: Option<HoldRegister>, next: HoldRegister) -> bool {
 fn settle_frontier(
     store: &companion_core::SheetStore<companion_core::SystemClock>,
     enrolled: &mut BTreeMap<ItemId, PageTracking>,
+    staged: &mut Option<StagedBatch>,
     page: ItemId,
 ) {
     if let Some(tracking) = enrolled.get_mut(&page)
@@ -769,6 +773,16 @@ fn settle_frontier(
         // would land before the rebuild and republish the whole body
         // as the duplicate this settling exists to prevent.
         tracking.acked = version;
+        // And a batch still in flight loses its claim on this page. Its
+        // record was taken before the rebuild, so honouring it when the
+        // late answer arrives would put the acknowledged cursor back
+        // behind the rebuild and undo the settling in the same breath.
+        // A cursor the ceremony has settled is no longer any batch's to
+        // move: an acknowledgement may advance one and may never lower
+        // one.
+        if let Some(staged) = staged.as_mut() {
+            staged.cursors.remove(&page);
+        }
     }
 }
 
@@ -1019,7 +1033,12 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                             // only as the frame.
                             for event in &absorbed {
                                 if let SyncEvent::CeremonyCommitted(page) = event {
-                                    settle_frontier(store, &mut sync.enrolled, *page);
+                                    settle_frontier(
+                                        store,
+                                        &mut sync.enrolled,
+                                        &mut sync.staged_batch,
+                                        *page,
+                                    );
                                 }
                             }
                         }
@@ -2265,6 +2284,63 @@ mod tests {
                 .key_material_store()
                 .exists(SYNC_REFRESH_ACCOUNT)
                 .unwrap_or(false)
+        );
+    }
+
+    #[test]
+    fn a_late_acceptance_never_moves_a_settled_cursor_back() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let page = inked_page(&mut companion, "keep DOOMED");
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Delete {
+                pos_u16: 4,
+                len_u16: 7,
+            }],
+        ));
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+
+        // A batch is sealed at V1 and its answer goes missing.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(stage_publish(&mut companion, 0).is_some());
+        let before_rebuild = companion.sync.enrolled[&uuid].frontier.clone();
+
+        // A due transition rotates the channel while that batch is
+        // still out. The rebuilt body travels as the sealed frame, and
+        // both cursors settle at the rebuild.
+        let tab = companion.store.tabs().next().unwrap().id();
+        companion.store.cycle_rung(tab).unwrap();
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        let rebuilt = companion.store.document_version(page).unwrap();
+        assert_ne!(rebuilt, before_rebuild, "the ceremony rebuilt the page");
+        assert_eq!(companion.sync.enrolled[&uuid].acked, rebuilt);
+
+        // The lost answer arrives. It may not restore the cursor the
+        // rebuild replaced: the batch it acknowledges belongs to a
+        // document identity this page no longer has.
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+        assert_eq!(
+            companion.sync.enrolled[&uuid].acked, rebuilt,
+            "an acknowledged cursor never moves backwards"
+        );
+
+        // So the dissolve rewinds to the rebuild, and the next sweep
+        // owes no text: an export from before the rebuild would reach a
+        // peer as a second copy of the body rather than as its own.
+        sign_out_locked(&mut companion);
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        sweep_outbound(&mut companion, 10_000, &mut events);
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier, rebuilt,
+            "the rebuilt body does not travel a second time as a delta"
         );
     }
 
