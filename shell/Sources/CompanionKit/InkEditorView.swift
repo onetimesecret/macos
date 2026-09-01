@@ -33,14 +33,6 @@ public struct InkEditorView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
-        // A fresh editor mount follows a teardown: a ledger round trip,
-        // or the empty state, which since ADR-0017 is reached whenever
-        // the selected tab holds no page and not only when the last
-        // page died. Every cached undo manager still holds operations
-        // bound to the torn-down view; shed them before this view
-        // registers its own, so ⌘Z rewrites live text instead of firing
-        // at a zombie (issue #23).
-        model.discardUndoHistory()
         let textView = Self.makeInkTextView(
             model: model, sheetID: sheetID, coordinator: context.coordinator
         )
@@ -633,16 +625,6 @@ public struct InkEditorView: NSViewRepresentable {
             return NSPoint(x: offset.x, y: min(max(offset.y, 0), maxY))
         }
 
-        /// One undo history per page, from the model's cache: the text
-        /// view asks its delegate on every undo touch, so history
-        /// simply follows `currentSheet` across storage swaps — ⌘Z
-        /// after a switch rewrites the page it was typed on, never a
-        /// neighbour (ADR-0006).
-        public func undoManager(for view: NSTextView) -> UndoManager? {
-            guard let sheet = currentSheet else { return nil }
-            return model.undoManager(for: sheet)
-        }
-
         /// ⌘Z and ⇧⌘Z, taken off AppKit's stack and handed to the
         /// core's (issue #132).
         ///
@@ -1009,7 +991,6 @@ public struct InkEditorView: NSViewRepresentable {
                 }
             }
             textView.setSelectedRange(NSRange(location: range.location + 1, length: 0))
-            textView.undoManager?.removeAllActions()
         }
 
         static func containsChip(_ storage: NSTextStorage, in range: NSRange) -> Bool {

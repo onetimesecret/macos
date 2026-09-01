@@ -584,16 +584,6 @@ public final class PageModel: ObservableObject {
     /// closed.
     private var storages: [UInt64: NSTextStorage] = [:]
 
-    /// Each live page's undo history. Undo is as document-scoped as
-    /// the storage it rewrites (ADR-0006): one editor serves every
-    /// page, so letting the window's single manager span pages would
-    /// let ⌘Z on one page replay edits against another. Keyed by page
-    /// identity for the reason `storages` is: undo carried across a
-    /// page replacement in a reused tab is how a dead chip's glyph
-    /// comes back. Pruned with the storages; cleared for a page whose
-    /// storage is changed behind the editor's back.
-    private var undoManagers: [UInt64: UndoManager] = [:]
-
     /// Each visible day's page as the roll renders it while the editor
     /// is standing somewhere else (issue #79): the same ink and the same
     /// chip faces, in an attributed string the quiet regions copy into
@@ -1453,14 +1443,12 @@ public final class PageModel: ObservableObject {
         tabs = client.tabs()
         let livePages = livePageIDs
         // A dead page's ink lives on only in the ledger; drop the
-        // editor-side document, and its undo history with it. The
-        // filter is on the live PAGE identities and never on the tabs,
-        // because a tab outlives its page: keyed by the slot, a reused
-        // tab would inherit the dead page's storage and undo stack, and
-        // a ⌘Z past the page boundary would re-insert a zeroized chip's
-        // attachment character (ADR-0009, ADR-0017 item 9).
+        // editor-side document. The filter is on the live PAGE
+        // identities and never on the tabs, because a tab outlives its
+        // page: keyed by the slot, a reused tab would inherit the dead
+        // page's storage, and its attachment character for a zeroized
+        // chip with it (ADR-0009, ADR-0017 item 9).
         storages = storages.filter { livePages.contains($0.key) }
-        undoManagers = undoManagers.filter { livePages.contains($0.key) }
         // The roll's renderings of the days the editor is not standing
         // on go the same way and on the same set. They are plaintext of
         // a page, so an entry outliving its page would be exactly the
@@ -1641,45 +1629,6 @@ public final class PageModel: ObservableObject {
     /// own, and asking `storage(for:)` whether a page has one would make
     /// one, which is the very thing under test.
     var pagesWithStorage: Set<UInt64> { Set(storages.keys) }
-
-    /// The page's undo history, created on first use. The editor asks
-    /// its delegate for a manager on every undo touch, so history
-    /// simply follows the current page — no hand-off at the swap
-    /// (ADR-0006).
-    public func undoManager(for id: UInt64) -> UndoManager {
-        if let existing = undoManagers[id] { return existing }
-        let created = UndoManager()
-        undoManagers[id] = created
-        return created
-    }
-
-    /// Discard every page's undo history. One editor serves all pages
-    /// (ADR-0006), so every registered undo operation is bound to that
-    /// single NSTextView. When the view is torn down and a fresh editor
-    /// later mounts, those cached managers still hold operations
-    /// targeting the dead view: replaying one drives a zombie
-    /// reference, not the live editor (issue #23). A mount clears them
-    /// so ⌘Z after a remount is a clean no-op rather than a misfire.
-    /// Page↔page swaps keep the same view and are untouched.
-    ///
-    /// **Every page's, and not the mounted one's, because every one of
-    /// them points at the same dead view.** There is no narrower
-    /// discard to make: an operation registered against the torn-down
-    /// editor is dead whether or not its page is still alive, so
-    /// keeping one would be keeping the zombie rather than keeping the
-    /// history.
-    ///
-    /// The teardown is more frequent since the split (ADR-0017), and
-    /// that cost is stated rather than hidden. The empty state used to
-    /// be reached only when the last page in the store died; now the
-    /// selected tab holding no page is enough, so a visit to a slot
-    /// whose page expired overnight unmounts the editor and the next
-    /// mount spends the undo history of every other live page with it.
-    /// Nothing on screen or on disk changes: what the user loses is
-    /// ⌘Z reaching back past that visit.
-    public func discardUndoHistory() {
-        undoManagers.values.forEach { $0.removeAllActions() }
-    }
 
     // MARK: Navigation — the keyboard map
 
@@ -2505,10 +2454,10 @@ public final class PageModel: ObservableObject {
     /// per-edit path that replaced the per-keystroke mirror. On
     /// acceptance this marks and refreshes exactly as the snapshot
     /// mirror did. On rejection it does not assert-crash: the batch
-    /// mutated nothing core-side, so the shell logs, re-converges by
-    /// one legacy `syncDocument` mirror, and clears that page's undo
-    /// history, because stale-range undo replays after a wholesale rewrite
-    /// would corrupt the document they no longer describe.
+    /// mutated nothing core-side, so the shell logs and re-converges by
+    /// one legacy `syncDocument` mirror. The page's steps go with that
+    /// mirror, in the core and by the core's own rule: after a
+    /// wholesale rewrite every offset a step holds describes nothing.
     ///
     /// `startingNewStep` marks a batch the page produced on the
     /// writer's behalf (a continued list marker, a nudged indent) so it
@@ -2641,10 +2590,9 @@ public final class PageModel: ObservableObject {
     ///
     /// In place, and deliberately: the text view holds this exact
     /// object, so replacing the entry in the map would leave the editor
-    /// laying out a storage nobody else can see. The page's AppKit undo
-    /// history goes at the same time, for the reason `recoverProjection`
-    /// drops it (after a wholesale rewrite its ranges describe nothing)
-    /// and because the stack that matters now is the core's.
+    /// laying out a storage nobody else can see. There is no second
+    /// history to drop alongside it: the stack is the core's, and the
+    /// core cleared or moved it before this was called.
     private func restateStorage(sheet: UInt64) {
         guard let storage = storages[sheet] else { return }
         let rebuilt = NSMutableAttributedString()
@@ -2662,7 +2610,6 @@ public final class PageModel: ObservableObject {
         applyingProjection {
             storage.setAttributedString(rebuilt)
         }
-        undoManagers[sheet]?.removeAllActions()
     }
 
     /// Mirror the page's document to the core wholesale: the recovery
@@ -2721,7 +2668,6 @@ public final class PageModel: ObservableObject {
                 storage.replaceCharacters(in: range, with: "")
             }
         }
-        undoManagers[sheet]?.removeAllActions()
         syncDocument(sheet: sheet, runs: InkEditorView.Coordinator.runs(of: storage))
     }
 
@@ -2876,11 +2822,6 @@ public final class PageModel: ObservableObject {
             applyingProjection {
                 storage.replaceCharacters(in: range, with: "")
             }
-            // The storage changed behind the editor's back: the page's
-            // undo history now points at offsets that may no longer
-            // exist, and — as everywhere — undo must never resurrect
-            // what was sealed and has now travelled. History dies.
-            undoManagers[sheet]?.removeAllActions()
             break
         }
         markDirty()

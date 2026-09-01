@@ -18,13 +18,13 @@ import SwiftUI
 /// The editor is a **permanent child** of the stack. A day switch moves
 /// its frame origin and swaps the storage underneath it, and
 /// `removeFromSuperview` is never called on it, so nothing resigns first
-/// responder and no composition, caret or undo stack is lost crossing a
+/// responder and no composition or caret is lost crossing a
 /// perforation, the exact class of bug issues #19, #22 and #23 closed.
 ///
 /// Every other visible page is a `QuietPageView`: a rendering over its
 /// **own** private storage, not editable, not selectable, and unable to
 /// take first responder. Private storages are what keep the roll out of
-/// `PageModel.storages`, `undoManagers`, `shedLayoutManagers` and the
+/// `PageModel.storages`, `shedLayoutManagers` and the
 /// projection-parity assertion entirely, every storage in the app still
 /// carries exactly one layout manager, because each still has exactly
 /// one view. There is still one editor, one `activeEditor`, one
@@ -72,11 +72,6 @@ public struct DayScrollView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
-        // A fresh mount follows a teardown, and every cached undo
-        // manager still holds operations bound to the torn-down view;
-        // shed them before this one registers its own (issue #23). The
-        // same first line `InkEditorView.makeNSView` has.
-        model.discardUndoHistory()
         let scroll = Self.makeRoll(
             model: model, coordinator: context.coordinator, emptyHint: emptyHint
         )
@@ -1174,7 +1169,7 @@ final class DayHeaderView: NSView {
 /// Its own layout manager over its **own** `NSTextStorage`, seeded from
 /// the model's rendering of that page and watched by no delegate, so
 /// nothing it holds can emit an op and nothing about it enters
-/// `PageModel.storages`, `undoManagers` or `shedLayoutManagers`. It is
+/// `PageModel.storages` or `shedLayoutManagers`. It is
 /// not editable, not selectable, and it refuses to become first
 /// responder: there is one focusable text view in the card and it is the
 /// editor.

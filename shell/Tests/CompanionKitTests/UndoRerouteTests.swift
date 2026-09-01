@@ -256,8 +256,8 @@ final class UndoRerouteTests: XCTestCase {
         try makeEditor()
         type("typed")
         XCTAssertFalse(textView.allowsUndo)
-        XCTAssertFalse(
-            textView.undoManager?.canUndo ?? false,
+        XCTAssertNil(
+            textView.undoManager,
             "AppKit is holding a second stack of the page's text")
     }
 
