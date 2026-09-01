@@ -245,7 +245,11 @@ public enum RailMinimap {
     /// a hairline rather than hanging off the column or climbing back
     /// over its neighbour, and a rail too short to give every day a
     /// hairline runs out of room honestly, in the order the days come
-    /// in.
+    /// in: the days it cannot draw are dropped rather than kept at no
+    /// height. Every bar here is ink somebody can see, which is what
+    /// lets the view draw the list as it stands and the QA procedure
+    /// read a missing bar as a fault. It takes far more days than a card
+    /// can draw rows for to reach that floor.
     public static func bars(of roll: RollGeometry, in height: CGFloat) -> [Bar] {
         guard height > 0, roll.documentHeight > 0 else { return [] }
         let scale = height / roll.documentHeight
@@ -260,7 +264,9 @@ public enum RailMinimap {
             let wanted = max(bottom - top, floor)
             let y = max(min(top, height - wanted), settled)
             let drawn = max(min(wanted, height - y), 0)
-            bars.append(Bar(bucket: extent.bucket, y: y, height: drawn))
+            if drawn > 0 {
+                bars.append(Bar(bucket: extent.bucket, y: y, height: drawn))
+            }
             settled = y + drawn
         }
         return bars

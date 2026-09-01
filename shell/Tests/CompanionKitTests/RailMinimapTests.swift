@@ -43,7 +43,8 @@ final class RailMinimapTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(
                 bar.y, settled, "a bar began above where the one before it ended",
                 file: file, line: line)
-            XCTAssertGreaterThanOrEqual(bar.height, 0, file: file, line: line)
+            XCTAssertGreaterThan(
+                bar.height, 0, "a bar was kept at no height", file: file, line: line)
             XCTAssertLessThanOrEqual(
                 bar.y + bar.height, height,
                 "a bar was drawn past the foot of the rail", file: file, line: line)
@@ -139,13 +140,17 @@ final class RailMinimapTests: XCTestCase {
 
     /// A rail too short to give every day a hairline runs out of room
     /// honestly, in the order the days come in, rather than stacking the
-    /// remainder on top of one another at the foot. Nine days in ten
-    /// points is not a card anybody has, which is exactly why the case
-    /// is asserted rather than reasoned about.
+    /// remainder on top of one another at the foot. The days it cannot
+    /// draw are dropped rather than kept at no height, so a bar in the
+    /// list is always ink somebody can see. Nine days in ten points is
+    /// not a card anybody has, which is exactly why the case is asserted
+    /// rather than reasoned about.
     func testARailWithNoRoomLeftRunsOutInOrder() {
         let days = (0..<9).map { extent(-$0, CGFloat($0) * 100, 100) }
         let bars = RailMinimap.bars(of: roll(days, document: 900), in: 10)
-        XCTAssertEqual(bars.count, 9, "a day the rail draws a row for lost its bar entirely")
+        XCTAssertEqual(
+            bars.map(\.bucket), [0, -1, -2, -3, -4],
+            "the days the column had room for lost their order, or a day it had none for was kept")
         assertLaidOutInOrder(bars, in: 10)
     }
 

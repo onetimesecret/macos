@@ -397,10 +397,13 @@ the top and pushed apart by a spacer, so a bar and the row for the same
 day do not line up and are not meant to: a day holding most of the roll
 takes most of the column whatever height its row happens to have. What
 the two do share is a count and an order, one shape per drawn day,
-newest at the top of both. Anyone who wants the bars to sit beside their
-rows is asking for a different feature, one where the rail's rows are
-laid out by content rather than packed, and that is a layout change and
-not a drawing one.
+newest at the top of both. A bar is always ink somebody can see: a
+column with no two points left for a day drops that day's bar rather
+than keeping it at no height, which takes far more days than a card can
+draw rows for and is why a row without a bar reads as a fault. Anyone
+who wants the bars to sit beside their rows is asking for a different
+feature, one where the rail's rows are laid out by content rather than
+packed, and that is a layout change and not a drawing one.
 
 Four things about it are load-bearing.
 
@@ -445,8 +448,9 @@ The mapping into the rail's coordinates is two pure functions,
 the ones a drawing cannot be squinted at for: an unmeasured roll draws
 nothing rather than inventing proportions, a day a fraction of a point
 tall draws a hairline rather than vanishing under a row the rail is
-drawing anyway, an elastic overscroll clamps into the column instead of
-hanging off it, and a roll that fits in the card gets no band at all,
+drawing anyway, a column with no room left runs out in the order the
+days come in rather than keeping bars nobody can see, an elastic
+overscroll clamps into the column instead of hanging off it, and a roll that fits in the card gets no band at all,
 because a band around everything marks nothing.
 
 Everything the rail already did is untouched by both: the tap targets,
@@ -699,7 +703,8 @@ decision that is Rust, the more of it is validated before a PR exists.
   height draw nothing; one day that is the whole roll fills the column;
   several days keep their order, their share and their place inside it;
   a day a fraction of a point tall draws a hairline; the last day stops
-  at the foot of the rail; the band is absent when the whole roll is on
+  at the foot of the rail; a column with no room left runs out in the
+  order the days come in and keeps no bar it cannot draw; the band is absent when the whole roll is on
   screen, follows the clip when it is not, and clamps into the column at
   both ends of an elastic overscroll; and two pages of one day fold into
   one bar.
