@@ -144,6 +144,10 @@ public final class SyncController: ObservableObject {
     private let client: CompanionClient
     private let defaults: UserDefaults
     private var attached = false
+    /// Whether the sign-in now settling was one the user ended. Held
+    /// only until that settling reads it: nothing durable records a
+    /// cancelled ceremony, which never happened.
+    private var signinGivenUp = false
     private var lastAttachPeers: Int?
     private var pumping = false
     // `nonisolated(unsafe)` for deinit's sake, the model's own timer
@@ -176,6 +180,13 @@ public final class SyncController: ObservableObject {
     /// sync is off (silence is the promise) or quiet and well.
     public var standingSentence: String? {
         Self.sentence(enabled: enabled, status: status, trouble: trouble, peers: lastAttachPeers)
+    }
+
+    /// Whether the standing sentence names something to act on. The
+    /// waiting states say themselves quietly; only a condition a user
+    /// has to answer earns the ember the surface reserves for those.
+    public var standingSentenceIsTrouble: Bool {
+        trouble != nil
     }
 
     /// The header's sync word, or nil when the header should carry
@@ -213,6 +224,7 @@ public final class SyncController: ObservableObject {
     public func signIn() {
         let client = self.client
         signinFailure = nil
+        signinGivenUp = false
         let begun = client.syncSigninBegin()
         guard begun.ok, let raw = begun.authorizeUrl, let url = URL(string: raw) else {
             signinFailure = Self.signinSentence(reason: begun.reason ?? "no_ceremony")
@@ -233,12 +245,40 @@ public final class SyncController: ObservableObject {
         // failure sentence either.
         guard enabled else { return }
         guard outcome.ok else {
-            signinFailure = Self.signinSentence(reason: outcome.reason ?? "refused")
+            // A trip the user ended and a trip that never returned come
+            // back through the same door, `abandoned`, because to the
+            // core they are one fact: no redirect arrived. Only the
+            // shell knows which of the two the user did, and telling
+            // someone their browser never returned when they cancelled
+            // on purpose would be describing them to themselves wrongly.
+            let reason = outcome.reason ?? "refused"
+            signinFailure = Self.signinSentence(
+                reason: signinGivenUp && reason == "abandoned" ? "cancelled" : reason)
+            signinGivenUp = false
             return
         }
         signinFailure = nil
+        signinGivenUp = false
         trouble = nil
         attach()
+    }
+
+    /// Give up on a sign-in whose browser trip is still out (ADR-0027
+    /// §5: `signing_in` owes the surface a way to give up). The core
+    /// ends the wait rather than recording a wish, so the gate leaves
+    /// `signing_in` within a poll and the blocked finish reports the
+    /// abandonment through the ordinary path.
+    public func giveUpSignin() {
+        signinGivenUp = client.syncSigninCancel()
+        refreshState()
+    }
+
+    /// Whether the surface draws the way out. It exists only while
+    /// there is a trip to end, which is the ledger clear button's
+    /// shape: a control that appears with the condition it answers and
+    /// leaves with it, rather than standing there disabled.
+    public nonisolated static func showsGiveUpSignin(gate: SyncGate?, signinPending: Bool) -> Bool {
+        gate == .signingIn || (gate == nil && signinPending)
     }
 
     /// Sign out: one Keychain account goes, the engine dissolves, the
@@ -534,6 +574,13 @@ public final class SyncController: ObservableObject {
         case nil:
             break
         }
+        // Not a degraded state, and not a silent one either: a browser
+        // is open on the user's screen waiting for them, and the app
+        // that opened it should say so rather than look idle (ADR-0027
+        // §5, `signing_in`).
+        if status?.gate == .signingIn {
+            return "waiting on your browser to finish signing in; Settings can give up on it"
+        }
         guard let status, status.attached else { return nil }
         if peers == 0, status.enrolled > 0 {
             // Issue #94's device: enrolled pages with nobody to send
@@ -693,6 +740,8 @@ public final class SyncController: ObservableObject {
         switch reason {
         case "abandoned":
             return "the browser never returned; sync stays signed out"
+        case "cancelled":
+            return "the sign-in was given up; nothing was stored"
         case "state_mismatch", "no_code":
             return "the sign-in came back wrong and was refused; nothing was stored"
         case "unreachable":

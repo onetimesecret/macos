@@ -147,12 +147,14 @@ public struct PageStatusStack: View {
         }
         if let sentence = sync.standingSentence {
             // Sync's one standing line (issue #102): present only while
-            // sync is on AND degraded — off is silence, and quiet-and-
-            // well is too. Each condition is its own sentence, ember
-            // because every one of them names something to act on.
+            // sync is on AND has something to report — off is silence,
+            // and quiet-and-well is too. Each condition is its own
+            // sentence; ember for the ones that name something to act
+            // on, and secondary for a browser trip that is simply out,
+            // which is a fact rather than a fault.
             Text(sentence)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(Color.ember)
+                .foregroundStyle(sync.standingSentenceIsTrouble ? Color.ember : Color.secondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)

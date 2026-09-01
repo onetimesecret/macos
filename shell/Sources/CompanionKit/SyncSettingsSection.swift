@@ -34,9 +34,29 @@ struct SyncSettingsSection: View {
                                 "Sync stops until you sign in again. Pages, sealed chips and the conceal token are untouched."
                             )
                         }
+                } else if SyncController.showsGiveUpSignin(
+                    gate: sync.status?.gate, signinPending: sync.status?.signinPending == true)
+                {
+                    // The way out of a browser trip, drawn only while
+                    // there is a trip to end and gone the moment there
+                    // is not — the ledger clear button's shape, and the
+                    // "way to give up" ADR-0027 §5 owes this state. The
+                    // core ends the wait; this is not a button that
+                    // merely stops listening.
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("waiting on your browser…")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Give up") { sync.giveUpSignin() }
+                            .controlSize(.small)
+                            .help(
+                                "Stops waiting for the browser. Nothing is stored and signing in again starts over."
+                            )
+                    }
                 } else {
                     Button("Sign in…") { sync.signIn() }
-                        .disabled(sync.status?.signinPending == true)
                 }
             }
         } header: {

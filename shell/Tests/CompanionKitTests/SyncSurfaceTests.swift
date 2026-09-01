@@ -68,9 +68,44 @@ final class SyncSurfaceTests: XCTestCase {
                 enabled: true, status: status(enrolled: 0), trouble: nil, peers: 0))
     }
 
+    func testABrowserTripSaysSoAndOffersTheWayOut() {
+        XCTAssertEqual(
+            SyncController.sentence(
+                enabled: true,
+                status: status(signedIn: false, attached: false, gate: .signingIn),
+                trouble: nil, peers: nil),
+            "waiting on your browser to finish signing in; Settings can give up on it"
+        )
+        // The control exists exactly while the trip does, which is the
+        // gated banner's shape rather than a disabled button.
+        XCTAssertTrue(
+            SyncController.showsGiveUpSignin(gate: .signingIn, signinPending: true))
+        XCTAssertFalse(
+            SyncController.showsGiveUpSignin(gate: .signedOut, signinPending: false))
+        XCTAssertFalse(
+            SyncController.showsGiveUpSignin(gate: .attached, signinPending: true),
+            "the gate is the authority; a stale pending flag does not draw a way out")
+        // A core that names no gate leaves the pending flag standing.
+        XCTAssertTrue(SyncController.showsGiveUpSignin(gate: nil, signinPending: true))
+        XCTAssertFalse(SyncController.showsGiveUpSignin(gate: nil, signinPending: false))
+    }
+
+    func testGivingUpReadsDifferentlyFromABrowserThatNeverReturned() {
+        // The core answers both with `abandoned`, because to it they
+        // are one fact. Only the shell knows which the user did.
+        XCTAssertEqual(
+            SyncController.signinSentence(reason: "cancelled"),
+            "the sign-in was given up; nothing was stored"
+        )
+        XCTAssertNotEqual(
+            SyncController.signinSentence(reason: "cancelled"),
+            SyncController.signinSentence(reason: "abandoned")
+        )
+    }
+
     func testEverySigninFailureRowHasASentence() {
         let rows = [
-            "abandoned", "state_mismatch", "no_code", "unreachable",
+            "abandoned", "cancelled", "state_mismatch", "no_code", "unreachable",
             "keychain", "busy", "not_configured", "refused",
         ]
         for row in rows {
