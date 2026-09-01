@@ -160,6 +160,13 @@ pub(crate) struct PageTracking {
     /// The frontier the last export left; the pristine cursor at
     /// enrolment, so the first publish carries the whole page.
     pub frontier: Vec<u8>,
+    /// The frontier the relay has acknowledged carrying. The export
+    /// cursor above moves when ops are *queued*, which is before they
+    /// are sent, so this is the position a dissolving engine rewinds
+    /// to: an edit queued into a session that died before its publish
+    /// would otherwise sit behind a cursor that moved without it, and
+    /// no later export would ever reach it (ADR-0027 §7, tenet 1).
+    pub acked: Vec<u8>,
     /// The deadline the last published expiry policy named.
     pub deadline_wall_ms: Option<u64>,
     /// The hold register as last published.
@@ -171,10 +178,11 @@ pub(crate) struct PageTracking {
 
 impl PageTracking {
     fn at_enrolment() -> Self {
+        let pristine =
+            companion_core::SheetStore::<companion_core::SystemClock>::pristine_document_version();
         Self {
-            frontier:
-                companion_core::SheetStore::<companion_core::SystemClock>::pristine_document_version(
-                ),
+            frontier: pristine.clone(),
+            acked: pristine,
             deadline_wall_ms: None,
             hold: None,
             terminal_sent: false,
@@ -422,11 +430,9 @@ pub(crate) fn detach(handle: &CompanionHandle) -> bool {
         let Ok(mut guard) = handle.inner.lock() else {
             return false;
         };
-        let Some(engine) = guard.sync.engine.take() else {
+        let Some(keeper) = dissolve_engine(&mut guard) else {
             return false;
         };
-        guard.sync.pairing = None;
-        let keeper = engine.session.into_keeper();
         let request = keeper.access().map(|access| {
             let relay_url = guard
                 .sync
@@ -564,8 +570,9 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
 /// status tells the truth. The pad is unaffected.
 fn sign_out_locked(companion: &mut Companion) {
     let _ = clear_refresh(&*companion.credentials);
-    companion.sync.engine = None;
-    companion.sync.pairing = None;
+    // The dissolve rewinds what the relay never acknowledged, so the
+    // account's refusal costs the peers a delay and never an edit.
+    let _ = dissolve_engine(companion);
     if let Some(config) = &companion.sync.config {
         companion.sync.keeper = Some(TokenKeeper::new(&config.token_url, &config.client_id, None));
     }
@@ -708,8 +715,62 @@ fn settle_frontier(
         && let Some(sheet) = sheet_of(store, page)
         && let Some(version) = store.document_version(sheet)
     {
-        tracking.frontier = version;
+        tracking.frontier = version.clone();
+        // The acknowledged cursor settles with it, or a later rewind
+        // would land before the rebuild and republish the whole body
+        // as the duplicate this settling exists to prevent.
+        tracking.acked = version;
     }
+}
+
+/// Absorb a publish answer under the lock, and on acceptance promote
+/// every enrolled page's export cursor to the position the relay has
+/// now taken. Acknowledgement and promotion are one act on purpose:
+/// two call sites doing it separately is two chances for a cursor to
+/// advance past ops nobody received.
+///
+/// A sweep between the batch's staging and its answer can carry a
+/// cursor a little further than the batch did, and promoting it here
+/// commits that much optimistically. That window is one pump wide, the
+/// pump is single flighted, and the rewind it costs in the worst case
+/// is exactly today's behaviour, so the rule is a strict improvement
+/// on losing every unsent edit at every dissolution.
+fn absorb_publish_locked(
+    companion: &mut Companion,
+    response: &HttpResponse,
+) -> Option<Result<(), RelayRefusal>> {
+    let engine = companion.sync.engine.as_mut()?;
+    if let Err(refusal) = engine.session.absorb_publish(response) {
+        return Some(Err(refusal));
+    }
+    for tracking in companion.sync.enrolled.values_mut() {
+        tracking.acked = tracking.frontier.clone();
+    }
+    Some(Ok(()))
+}
+
+/// Dissolve the engine, handing back the keeper it held, and rewind
+/// every enrolled page to what the relay actually acknowledged.
+///
+/// Whatever was queued into the dying session and never sent goes back
+/// on the books: the document ops by way of the rewound cursor, and
+/// the policy, hold and terminal facts by way of forgetting what was
+/// last published, so the next sweep states them again. Restating a
+/// fact a peer already holds is idempotent; dropping one is not, and
+/// tenet 1 does not stop at the sync boundary.
+fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> {
+    for tracking in companion.sync.enrolled.values_mut() {
+        tracking.frontier = tracking.acked.clone();
+        tracking.deadline_wall_ms = None;
+        tracking.hold = None;
+        tracking.terminal_sent = false;
+    }
+    companion.sync.pairing = None;
+    companion
+        .sync
+        .engine
+        .take()
+        .map(|engine| engine.session.into_keeper())
 }
 
 /// Rotate the channel at `target`: a ballot to the verified attached
@@ -930,10 +991,10 @@ fn publish_round(
     let Ok(mut guard) = handle.inner.lock() else {
         return;
     };
-    let Some(engine) = guard.sync.engine.as_mut() else {
+    let Some(absorbed) = absorb_publish_locked(&mut guard, &response) else {
         return;
     };
-    match engine.session.absorb_publish(&response) {
+    match absorbed {
         Ok(()) => {}
         Err(RelayRefusal::Unauthorized) => {
             drop(guard);
@@ -963,9 +1024,7 @@ fn publish_round(
             let Ok(mut guard) = handle.inner.lock() else {
                 return;
             };
-            if let Some(engine) = guard.sync.engine.as_mut()
-                && let Err(refusal) = engine.session.absorb_publish(&response)
-            {
+            if let Some(Err(refusal)) = absorb_publish_locked(&mut guard, &response) {
                 events.push(refusal_json(&refusal));
             }
         }
@@ -1816,6 +1875,102 @@ mod tests {
         sweep_outbound(&mut companion, 4_000, &mut events);
         let engine = companion.sync.engine.as_mut().unwrap();
         assert!(engine.session.publish_due(4_000));
+    }
+
+    /// Play the relay accepting a batch: the answer §4 gives a publish.
+    fn accepted() -> HttpResponse {
+        HttpResponse {
+            status: 200,
+            body: br#"{"seq":1}"#.to_vec(),
+        }
+    }
+
+    #[test]
+    fn a_sign_out_mid_session_keeps_the_unpublished_edits_for_the_next_attach() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let page = inked_page(&mut companion, "the line the peers never got");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(
+            companion
+                .sync
+                .engine
+                .as_ref()
+                .unwrap()
+                .session
+                .publish_due(0),
+            "the sweep queued the page"
+        );
+        // The relay never saw it: the access token expired mid session
+        // and the refresh was refused, so the engine dissolves.
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        sign_out_locked(&mut companion);
+        assert!(companion.sync.engine.is_none());
+        assert!(
+            companion.store.sheet(page).is_some(),
+            "the pad keeps every character; the account failure cost nothing"
+        );
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier,
+            companion_core::SheetStore::<companion_core::SystemClock>::pristine_document_version(),
+            "nothing was acknowledged, so the cursor rewinds the whole way"
+        );
+
+        // Signed in again and attached again: the edit that was queued
+        // and never sent is owed again, rather than sitting behind a
+        // cursor that moved without it (ADR-0027 §7).
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        sweep_outbound(&mut companion, 10_000, &mut events);
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier,
+            companion.store.document_version(page).unwrap(),
+            "the re-attached sweep exported the page again"
+        );
+        let engine = companion.sync.engine.as_mut().unwrap();
+        assert!(engine.session.publish_due(10_000));
+        let EngineState { session, chain, .. } = engine;
+        assert!(session.publish_request(10_000, chain).is_some());
+    }
+
+    #[test]
+    fn an_acknowledged_batch_is_not_owed_again_after_a_sign_out() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let page = inked_page(&mut companion, "the line the peers did get");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        let engine = companion.sync.engine.as_mut().unwrap();
+        let EngineState { session, chain, .. } = engine;
+        assert!(session.publish_request(0, chain).is_some());
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+        let published = companion.store.document_version(page).unwrap();
+        sign_out_locked(&mut companion);
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier, published,
+            "the rewind stops at the last acknowledgement"
+        );
+
+        // The re-attached sweep restates the expiry and hold facts,
+        // which are idempotent, and owes the peers no text: an
+        // acknowledged body republished from a stale cursor is the
+        // duplicate merge the settled cursor exists to prevent.
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        sweep_outbound(&mut companion, 10_000, &mut events);
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, published);
     }
 
     #[test]
