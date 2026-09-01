@@ -2861,8 +2861,11 @@ pub unsafe extern "C" fn companion_sync_detach(handle: *mut CompanionHandle) -> 
 /// publish a committed ceremony's frame. **Blocks for up to the whole
 /// long-poll**; the core mutex is held only between round-trips, so
 /// the pad never waits on the network. Returns
-/// `{"ok", "reason"?, "events": [{"kind", "page"?}, …], "state"}` —
-/// event kinds: `applied`, `countdown_moved`, `terminal`,
+/// `{"ok", "reason"?, "events": [{"kind", "page"?, "page_id"?}, …],
+/// "state"}`, where `page` is the cross-device identity and `page_id`
+/// the local id the same page answers to on this device (null when no
+/// live page holds that identity here) — event kinds: `applied`,
+/// `countdown_moved`, `terminal`,
 /// `rejoin_required`, `ceremony_proposed`, `ceremony_committed`,
 /// `ceremony_required`, `epoch_conflict`, `unauthorized`,
 /// `unreachable`, `protocol`, `signed_out`. States, never sentences —

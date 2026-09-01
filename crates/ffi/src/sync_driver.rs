@@ -927,12 +927,17 @@ fn rotate_channel(
         .collect();
     let peers = engine.session.ceremony_peers(&identities);
     let page = crate::sync_session::page_wire_id(target);
+    // The same two names every other event carries: the identity the
+    // peers know the page by, and the local id this surface does.
+    let page_id = store.sheet_id_of(target).map(SheetId::raw);
     if peers.is_empty() {
         if engine
             .session
             .solo_ceremony(target, store, &mut engine.chain)
         {
-            events.push(serde_json::json!({ "kind": "ceremony_committed", "page": page }));
+            events.push(serde_json::json!({
+                "kind": "ceremony_committed", "page": page, "page_id": page_id
+            }));
             return true;
         }
     } else {
@@ -941,7 +946,9 @@ fn rotate_channel(
             .session
             .propose_ceremony(target, &peers, &own, now_ms)
         {
-            events.push(serde_json::json!({ "kind": "ceremony_proposed", "page": page }));
+            events.push(serde_json::json!({
+                "kind": "ceremony_proposed", "page": page, "page_id": page_id
+            }));
         }
     }
     false
@@ -1049,7 +1056,7 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                             committed = absorbed
                                 .iter()
                                 .any(|event| matches!(event, SyncEvent::CeremonyCommitted(_)));
-                            events.extend(absorbed.iter().map(event_json));
+                            events.extend(absorbed.iter().map(|event| event_json(event, store)));
                             // A drained commit compacted the page here;
                             // its cursor settles so the rebuild travels
                             // only as the frame.
@@ -1201,17 +1208,35 @@ fn publish_round(
     }
 }
 
-fn event_json(event: &SyncEvent) -> serde_json::Value {
+/// One event as the shell reads it. The `page` is the cross-device
+/// identity, which is the only name a peer can use; `page_id` is the
+/// local id the same page answers to here, so a surface can say which
+/// of its own pages an event is about without ever holding a table of
+/// identities. It is null for an event about no page and for a page
+/// this device no longer keeps, and issue #102's "another device is
+/// editing this page" is what wants it: without the translation the
+/// shell would know that something arrived and not where to say so.
+fn event_json(
+    event: &SyncEvent,
+    store: &companion_core::SheetStore<companion_core::SystemClock>,
+) -> serde_json::Value {
     let page = |page: &ItemId| crate::sync_session::page_wire_id(*page);
+    let local = |page: &ItemId| store.sheet_id_of(*page).map(SheetId::raw);
     match event {
-        SyncEvent::Applied(id) => serde_json::json!({ "kind": "applied", "page": page(id) }),
-        SyncEvent::CountdownMoved(id) => {
-            serde_json::json!({ "kind": "countdown_moved", "page": page(id) })
+        SyncEvent::Applied(id) => {
+            serde_json::json!({ "kind": "applied", "page": page(id), "page_id": local(id) })
         }
-        SyncEvent::Terminal(id) => serde_json::json!({ "kind": "terminal", "page": page(id) }),
+        SyncEvent::CountdownMoved(id) => {
+            serde_json::json!({ "kind": "countdown_moved", "page": page(id), "page_id": local(id) })
+        }
+        SyncEvent::Terminal(id) => {
+            serde_json::json!({ "kind": "terminal", "page": page(id), "page_id": local(id) })
+        }
         SyncEvent::RejoinRequired => serde_json::json!({ "kind": "rejoin_required" }),
         SyncEvent::CeremonyCommitted(id) => {
-            serde_json::json!({ "kind": "ceremony_committed", "page": page(id) })
+            serde_json::json!({
+                "kind": "ceremony_committed", "page": page(id), "page_id": local(id)
+            })
         }
         SyncEvent::SignedOut => serde_json::json!({ "kind": "signed_out" }),
     }
@@ -1964,6 +1989,37 @@ mod tests {
         assert_eq!(signin_begin(&mut state).unwrap_err(), "busy");
         state.pending_signin = None;
         assert!(signin_begin(&mut state).is_ok());
+    }
+
+    #[test]
+    fn an_event_names_the_page_in_both_the_languages_the_seam_speaks() {
+        let mut store = companion_core::SheetStore::new(companion_core::SystemClock);
+        let sheet = store.new_tab().unwrap().1;
+        let page = store.sheet(sheet).unwrap().uuid();
+
+        let applied = event_json(&SyncEvent::Applied(page), &store);
+        assert_eq!(applied["kind"], "applied");
+        assert_eq!(
+            applied["page"],
+            crate::sync_session::page_wire_id(page),
+            "the peers' name for it"
+        );
+        assert_eq!(
+            applied["page_id"],
+            serde_json::json!(sheet.raw()),
+            "and this device's, which is the one a surface can point at"
+        );
+
+        // A page this device does not hold: the event still tells the
+        // shell something happened, and says honestly that it happened
+        // nowhere it can show.
+        let stranger = event_json(&SyncEvent::Applied(ItemId::random()), &store);
+        assert_eq!(stranger["page_id"], serde_json::Value::Null);
+
+        // An event about no page at all names neither.
+        let signed_out = event_json(&SyncEvent::SignedOut, &store);
+        assert_eq!(signed_out["kind"], "signed_out");
+        assert_eq!(signed_out.get("page_id"), None);
     }
 
     #[test]

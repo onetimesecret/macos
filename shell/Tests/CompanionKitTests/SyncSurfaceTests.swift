@@ -256,7 +256,8 @@ final class SyncSurfaceTests: XCTestCase {
             "ok": true,
             "reason": null,
             "events": [
-                {"kind": "applied", "page": "0011"},
+                {"kind": "applied", "page": "0011", "page_id": 7},
+                {"kind": "applied", "page": "0022", "page_id": null},
                 {"kind": "rejoin_required", "page": null}
             ],
             "state": null
@@ -264,9 +265,27 @@ final class SyncSurfaceTests: XCTestCase {
         """
         let outcome = try JSONDecoder().decode(SyncPumpOutcome.self, from: Data(json.utf8))
         XCTAssertTrue(outcome.ok)
-        XCTAssertEqual(outcome.events.count, 2)
+        XCTAssertEqual(outcome.events.count, 3)
         XCTAssertEqual(outcome.events[0].kind, "applied")
         XCTAssertEqual(outcome.events[0].page, "0011")
-        XCTAssertNil(outcome.events[1].page)
+        XCTAssertEqual(
+            outcome.events[0].pageID, 7,
+            "the local id is what a surface can point a mark at")
+        XCTAssertNil(
+            outcome.events[1].pageID,
+            "a page this device no longer keeps is named honestly as none")
+        XCTAssertNil(outcome.events[2].page)
+    }
+
+    func testAnEventFromACoreWithNoLocalPageIdStillDecodes() throws {
+        // A core built before the local id joined the event: the whole
+        // pump answer may not be lost over one absent field.
+        let json = """
+        {"ok": true, "reason": null, "state": null,
+         "events": [{"kind": "applied", "page": "0011"}]}
+        """
+        let outcome = try JSONDecoder().decode(SyncPumpOutcome.self, from: Data(json.utf8))
+        XCTAssertEqual(outcome.events.count, 1)
+        XCTAssertNil(outcome.events[0].pageID)
     }
 }

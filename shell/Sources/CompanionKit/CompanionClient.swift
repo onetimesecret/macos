@@ -391,10 +391,22 @@ public struct SyncPumpOutcome: Codable, Hashable, Sendable {
 }
 
 /// One pump event: a machine kind and, where one is concerned, the
-/// page's wire id.
+/// page — twice over. `page` is the cross-device identity, the only
+/// name a peer can use; `pageID` is the local id the same page answers
+/// to here, and it is nil for an event about no page and for a page
+/// this device no longer keeps. The surface uses the second: a mark
+/// saying "another device is editing this page" has to land on a page
+/// the user is looking at, and the identity alone would not say which
+/// one that is.
 public struct SyncPumpEvent: Codable, Hashable, Sendable {
     public let kind: String
     public let page: String?
+    public let pageID: UInt64?
+
+    enum CodingKeys: String, CodingKey {
+        case kind, page
+        case pageID = "page_id"
+    }
 }
 
 /// The pairing ceremony's stage, polled while the enrolment sheet is
