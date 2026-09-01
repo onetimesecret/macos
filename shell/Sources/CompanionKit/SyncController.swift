@@ -180,6 +180,9 @@ public final class SyncController: ObservableObject {
     /// writing elsewhere is worth keeping, and nothing about it is
     /// written down.
     private var remoteEdits: [UInt64: Date] = [:]
+    /// When the armed sweep is due. Held so a pump that changed
+    /// nothing about the earliest mark leaves the timer standing.
+    private var elsewhereDeadline: Date?
 
     public init(client: CompanionClient, defaults: UserDefaults = FormFactor.settingsDefaults) {
         self.client = client
@@ -385,6 +388,8 @@ public final class SyncController: ObservableObject {
         // Nothing is arriving from anywhere now, so no page may go on
         // saying that something is.
         elsewhereTimer?.invalidate()
+        elsewhereTimer = nil
+        elsewhereDeadline = nil
         remoteEdits = [:]
         editedElsewhere = []
         // The enrolment mirror stays: the core keeps its enrolment
@@ -559,14 +564,31 @@ public final class SyncController: ObservableObject {
         remoteEdits = remoteEdits.filter { now.timeIntervalSince($0.value) < Self.elsewhereWindow }
         let marked = Self.editedElsewhere(marks: remoteEdits, now: now)
         if marked != editedElsewhere { editedElsewhere = marked }
+        guard let oldest = remoteEdits.values.min() else {
+            elsewhereTimer?.invalidate()
+            elsewhereTimer = nil
+            elsewhereDeadline = nil
+            return
+        }
+        // A pump returns as often as the relay has anything to say,
+        // and most of those returns leave the earliest mark exactly
+        // where it was. The timer is armed for that one moment, so a
+        // deadline that did not move needs no new timer.
+        let deadline = oldest.addingTimeInterval(Self.elsewhereWindow)
+        guard deadline != elsewhereDeadline || elsewhereTimer == nil else { return }
         elsewhereTimer?.invalidate()
-        guard let oldest = remoteEdits.values.min() else { return }
         let lapses = Self.elsewhereWindow - now.timeIntervalSince(oldest)
         let timer = Timer(timeInterval: max(lapses, 0.5), repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.sweepElsewhere() }
+            Task { @MainActor in
+                // Let go of the fired timer before sweeping, so the
+                // sweep it triggers always arms the next one.
+                self?.elsewhereTimer = nil
+                self?.sweepElsewhere()
+            }
         }
         RunLoop.main.add(timer, forMode: .common)
         elsewhereTimer = timer
+        elsewhereDeadline = deadline
     }
 
     /// A relay that did not answer is retried on a slow clock, never a
