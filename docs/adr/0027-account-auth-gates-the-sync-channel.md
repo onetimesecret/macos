@@ -209,12 +209,20 @@ lifetimes are chosen for that shape rather than for a web session.
   Revoked account side, reuse detected, or the idle window elapsed:
   all three are indistinguishable from here and all three are handled
   identically. Re enabling sync is the section 1 ceremony again.
-- **An unwell token endpoint is not a refusal.** A `5xx` or a mangled
-  body is the endpoint being unwell, not the grant being dead: the
-  refresh token stands and the next pump retries. Only the endpoint's
-  own `4xx` pronounces a grant dead. Signing a user out because a
-  gateway hiccuped would be an outage the client invented, which is
-  the same error as pre judging expiry by a clock.
+- **Only `invalid_grant` pronounces a grant dead.** RFC 6749 section
+  5.2 answers `invalid_request`, `invalid_client`,
+  `unauthorized_client`, `unsupported_grant_type` and `invalid_scope`
+  with the same `400` as `invalid_grant`, and only the last of them is
+  about the grant: the rest are faults in the request or the
+  registration that deleting a good refresh token would not fix. A
+  `408` or a `429` is 4xx and transient by definition, and a `403`
+  from a captive portal or a WAF challenge is not the authorization
+  server speaking at all. So the verdict is read out of the body's
+  `error` field, never off the status, and every other answer, a
+  `5xx`, a rate limit or a mangled body alike, leaves the refresh
+  token standing for the next pump to retry. Signing a user out
+  because a gateway hiccuped would be an outage the client invented,
+  which is the same error as pre judging expiry by a clock.
 - **A server that declines to rotate keeps its grant.** RFC 6749
   section 6 makes the new refresh token optional in a refresh
   response. A client that requires one refuses every grant from a non

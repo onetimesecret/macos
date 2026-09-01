@@ -215,6 +215,32 @@ fn parse_refresh_response(
     Ok((access, token("refresh_token")))
 }
 
+/// Whether the token endpoint said *this grant is dead* rather than
+/// *not now*, or *you asked wrongly*. The status alone cannot say it:
+/// RFC 6749 §5.2 answers `invalid_request`, `invalid_client`,
+/// `unauthorized_client`, `unsupported_grant_type`, `invalid_scope`
+/// and `invalid_grant` all with the same `400`, and only the last is
+/// about the grant. The others are about the request or the
+/// registration, and deleting a perfectly good refresh token would
+/// not fix any of them. A `408` or a `429` is 4xx and unambiguously
+/// transient, and a `403` from a captive portal or a WAF challenge is
+/// not the authorization server speaking at all: neither carries an
+/// `error` field, and an HTML body carries nothing this can read. So
+/// the verdict is taken from the body, never off the status, and the
+/// default is to keep the credential (ADR-0027 §2: a server that said
+/// slow down is not a server that said no).
+fn grant_is_dead(response: &HttpResponse) -> bool {
+    if !(400..500).contains(&response.status) {
+        return false;
+    }
+    serde_json::from_slice::<serde_json::Value>(&response.body)
+        .ok()
+        .as_ref()
+        .and_then(|value| value.get("error"))
+        .and_then(serde_json::Value::as_str)
+        == Some("invalid_grant")
+}
+
 /// The token lifetimes of §2, as a machine: access token in memory,
 /// refresh token rotated on every use, and the `401` from the relay —
 /// never a local clock — deciding when to refresh.
@@ -289,12 +315,13 @@ impl TokenKeeper {
     /// refresh token for the caller to persist; `Ok(None)` is a server
     /// that declined to rotate, whose grant stands unchanged and whose
     /// stored token is still the right one, so there is nothing to
-    /// write (ADR-0027 §2). Only the token endpoint's own refusal, a
-    /// `4xx` saying this grant is dead, signs the keeper out with both
-    /// tokens dropped, for the caller to surface issue #102's
-    /// sentence: "Sync is signed out; the pad is unaffected." Anything
-    /// else (a `5xx`, a gateway mangling the body) is the endpoint
-    /// being unwell, not the grant being revoked: the refresh token is
+    /// write (ADR-0027 §2). Only the token endpoint naming
+    /// `invalid_grant` signs the keeper out with both tokens dropped,
+    /// for the caller to surface issue #102's sentence: "Sync is
+    /// signed out; the pad is unaffected." Anything else (a `5xx`, a
+    /// rate limit, a gateway mangling the body, a `400` about the
+    /// request rather than the grant) is the endpoint being unwell or
+    /// misasked, not the grant being revoked: the refresh token is
     /// kept and the next pump retries.
     ///
     /// # Errors
@@ -315,7 +342,7 @@ impl TokenKeeper {
                 }
                 Ok(None)
             }
-            Err(_) if (400..500).contains(&response.status) => {
+            Err(_) if grant_is_dead(response) => {
                 self.access = None;
                 self.refresh = None;
                 Err(SyncAuthError::SignedOut)
@@ -533,6 +560,77 @@ mod tests {
             keeper.refresh_request().unwrap_err(),
             SyncAuthError::SignedOut
         );
+    }
+
+    #[test]
+    fn a_throttled_token_endpoint_is_not_a_dead_grant() {
+        let mut keeper = TokenKeeper::new(
+            "https://eu.onetimesecret.com/auth/token",
+            "companion-macos",
+            Some(Zeroizing::new("rt-0".into())),
+        );
+        let _ = keeper.refresh_request().unwrap();
+        // A server that said slow down is not a server that said no.
+        let throttled = HttpResponse {
+            status: 429,
+            body: br#"{"error":"slow_down"}"#.to_vec(),
+        };
+        assert_eq!(
+            keeper.absorb_refresh(&throttled).unwrap_err(),
+            SyncAuthError::Refused(429)
+        );
+        assert!(keeper.signed_in(), "a rate limit deletes nothing");
+    }
+
+    #[test]
+    fn only_invalid_grant_pronounces_the_grant_dead() {
+        // RFC 6749 §5.2 answers all of these with the same `400`, and
+        // only the last of them is about the grant.
+        for code in [
+            "invalid_request",
+            "invalid_client",
+            "unauthorized_client",
+            "unsupported_grant_type",
+            "invalid_scope",
+        ] {
+            let mut keeper = TokenKeeper::new(
+                "https://eu.onetimesecret.com/auth/token",
+                "companion-macos",
+                Some(Zeroizing::new("rt-0".into())),
+            );
+            let _ = keeper.refresh_request().unwrap();
+            let refusal = HttpResponse {
+                status: 400,
+                body: format!(r#"{{"error":"{code}"}}"#).into_bytes(),
+            };
+            assert_eq!(
+                keeper.absorb_refresh(&refusal).unwrap_err(),
+                SyncAuthError::Refused(400),
+                "{code} is a fault in the request or the registration, not a dead grant"
+            );
+            assert!(keeper.signed_in(), "{code} may not delete a good token");
+        }
+    }
+
+    #[test]
+    fn a_4xx_that_named_no_error_keeps_the_grant() {
+        let mut keeper = TokenKeeper::new(
+            "https://eu.onetimesecret.com/auth/token",
+            "companion-macos",
+            Some(Zeroizing::new("rt-0".into())),
+        );
+        let _ = keeper.refresh_request().unwrap();
+        // A captive portal or a WAF challenge: 4xx, and not the
+        // authorization server speaking at all.
+        let challenge = HttpResponse {
+            status: 403,
+            body: b"<html><body>are you a robot</body></html>".to_vec(),
+        };
+        assert_eq!(
+            keeper.absorb_refresh(&challenge).unwrap_err(),
+            SyncAuthError::Refused(403)
+        );
+        assert!(keeper.signed_in());
     }
 
     #[test]
