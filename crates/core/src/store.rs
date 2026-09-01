@@ -808,6 +808,21 @@ impl<C: Clock> SheetStore<C> {
             }
         }
         sheet.document.commit(None);
+        // A batch that stood a sentinel moved the chip roster, and the
+        // roster is the one thing no step may walk backwards over. A
+        // step back would pull the sentinel out, the settle below would
+        // read the chip as deleted and zeroize it, and the redo that
+        // should have put it back has been cleared by that same reap:
+        // one ⌘Z would destroy a sealed chip. The seal path forgets for
+        // this reason and so must this one, which is the route a drag
+        // moving a selection that holds a chip arrives on.
+        //
+        // After the commit, not inside the loop: the operations become
+        // an undo step when the transaction closes, so a stack cleared
+        // while it was still open would simply be refilled here.
+        if ops.iter().any(|op| matches!(op, EditOp::InsertChip { .. })) {
+            sheet.document.forget_undo();
+        }
         self.settle_document(id);
         clean
     }
@@ -4779,6 +4794,32 @@ mod tests {
         // stand their sentinel again.
         assert!(!store.can_undo(id));
         assert!(!store.can_redo(id));
+    }
+
+    #[test]
+    fn standing_a_sentinel_through_the_op_path_takes_the_stack_with_it() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        // A chip minted but not yet placed, then stood in the body by
+        // the operation path. That is the shape a drag arrives in: the
+        // editor emits a chip op for any storage edit whose range holds
+        // an attachment, so moving a selection that contains a chip
+        // re-inserts it rather than seals it.
+        let chip = store.seal_text(id, "sealed").unwrap();
+        assert!(store.apply_ops(id, &[EditOp::InsertChip { pos_u16: 0, chip }],));
+        assert_eq!(body(&store, id), "\u{FFFC}");
+        assert_eq!(store.sheet(id).unwrap().chips().count(), 1);
+
+        // Without the stack going here, one step back pulls the
+        // sentinel out, the settle reads the chip as deleted, and the
+        // bytes are zeroized with a Discarded record: a single ⌘Z
+        // destroys a sealed chip and no redo can bring it back. Every
+        // other path that moves the roster forgets the stack; this one
+        // must too.
+        assert!(!store.can_undo(id));
+        assert!(!store.undo(id));
+        assert_eq!(body(&store, id), "\u{FFFC}");
+        assert_eq!(store.sheet(id).unwrap().chips().count(), 1);
     }
 
     #[test]
