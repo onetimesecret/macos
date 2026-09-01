@@ -381,6 +381,18 @@ answer is not a server that said no. The credential stands, the retry
 follows the publish clock rather than a hot loop, and the state clears
 itself the moment a request succeeds.
 
+**A ceremony ends when the user says it ends, and only one is ever
+out.** `signing_in` promises a way to give up, and a way out that only
+covers the first of a ceremony's waits is not one: the browser trip,
+the token exchange and the commit are three places a ceremony can be
+standing, and the give up flag is read at all three. Signing out ends
+an outstanding ceremony for the same reason, or a redirect landing a
+minute later would restore the credential the user had just deleted.
+Because a ceremony can be ended, a begin refuses while one is in
+flight rather than superseding it: the user has a browser tab open and
+a control that ends it, which is a better answer than a second
+listener bound behind the first on the same consent screen.
+
 **Falling behind is not a gate state.** A device the channel rotated
 past has passed the gate and lacks a key. It is reported on its own
 axis and belongs to ADR-0021's amendment 1 and issue #94, not here.

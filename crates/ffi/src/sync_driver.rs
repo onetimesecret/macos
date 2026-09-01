@@ -13,6 +13,8 @@
 //! words.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use companion_core::{HoldRegister, ItemId, SheetId};
@@ -110,12 +112,16 @@ pub(crate) struct SyncState {
     /// and the bound listener, waiting for the finish call to take
     /// them off-lock and block on the redirect.
     pub pending_signin: Option<PendingSignin>,
-    /// A finish call holding that ceremony off-lock, blocked on the
-    /// browser's one redirect. The ceremony is out of the state above
-    /// for as long as this stands, so without it the minutes a user
-    /// spends on a consent screen would read as signed out, which is a
-    /// state the app has already left (ADR-0027 §5).
-    pub awaiting_redirect: bool,
+    /// The abandon flag of the ceremony a finish call is holding
+    /// off-lock, blocked on the browser's one redirect. The ceremony
+    /// is out of the state above for as long as this stands, so
+    /// without it the minutes a user spends on a consent screen would
+    /// read as signed out, which is a state the app has already left
+    /// (ADR-0027 §5). It holds the flag rather than a bare bool so
+    /// that a stale finish returning can be told from the one that
+    /// owns the trip now, and so that a sign-out or a cancel can end
+    /// a ceremony it cannot reach.
+    pub awaiting_redirect: Option<Arc<AtomicBool>>,
     /// The attached engine: session, chain, and key packages. `None`
     /// while sync is off or detached.
     pub engine: Option<EngineState>,
@@ -146,7 +152,7 @@ impl Default for SyncState {
             config: None,
             keeper: None,
             pending_signin: None,
-            awaiting_redirect: false,
+            awaiting_redirect: None,
             engine: None,
             enrolled: BTreeMap::new(),
             pairing: None,
@@ -227,6 +233,13 @@ pub(crate) struct StagedBatch {
 pub(crate) struct PendingSignin {
     pub ceremony: AuthCeremony,
     pub listener: OneShotListener,
+    /// Raised when this ceremony must not complete: the user gave up,
+    /// or signed sync out while the browser trip was still out. The
+    /// finish clones it before it lets go of the lock, which is the
+    /// only way to reach a ceremony that is no longer in the state,
+    /// and it belongs to this ceremony alone so that yesterday's
+    /// surrender cannot end today's trip.
+    pub abandoned: Arc<AtomicBool>,
 }
 
 /// Begin the sign-in ceremony: bind the loopback listener, mint the
@@ -237,7 +250,16 @@ pub(crate) fn signin_begin(state: &mut SyncState) -> Result<String, &'static str
     let Some(config) = &state.config else {
         return Err("not_configured");
     };
-    if state.pending_signin.is_some() {
+    // Busy covers both halves of a ceremony in flight: one waiting for
+    // its finish, and one a finish is already holding out on the
+    // browser. Binding a second listener behind the first would leave
+    // two sockets open on one consent screen and let the loser's
+    // return quietly supersede the winner's. Superseding the first
+    // deliberately was the alternative; refusing is chosen because the
+    // user has a browser tab open and a way to give up, and a control
+    // that ends things is a better answer than one that silently
+    // starts a rival (ADR-0027 §5).
+    if signin_in_flight(state) {
         return Err("busy");
     }
     let Some(listener) = OneShotListener::bind() else {
@@ -250,8 +272,45 @@ pub(crate) fn signin_begin(state: &mut SyncState) -> Result<String, &'static str
         listener.port(),
     )
     .map_err(|_| "no_entropy")?;
-    state.pending_signin = Some(PendingSignin { ceremony, listener });
+    state.pending_signin = Some(PendingSignin {
+        ceremony,
+        listener,
+        abandoned: Arc::new(AtomicBool::new(false)),
+    });
     Ok(authorize_url)
+}
+
+/// End whichever sign-in ceremony stands: the one parked waiting for
+/// its finish, the one a finish is holding out on the browser, or
+/// both. Dropping the pending one closes its listener; raising the
+/// flag is the only thing that reaches a ceremony already off-lock,
+/// and it is read at every wait the finish has left. True when there
+/// was something to end.
+pub(crate) fn abandon_signin(state: &mut SyncState) -> bool {
+    let mut ended = false;
+    if let Some(pending) = state.pending_signin.take() {
+        pending.abandoned.store(true, Ordering::Relaxed);
+        ended = true;
+    }
+    if let Some(flag) = state.awaiting_redirect.take() {
+        flag.store(true, Ordering::Relaxed);
+        ended = true;
+    }
+    ended
+}
+
+/// Let go of the browser trip, but only when the state still names the
+/// ceremony this finish took. A cancel or a sign-out may have ended
+/// the trip and a newer begin may already own the slot, and a stale
+/// finish unwinding must not clear a state that stopped being its.
+pub(crate) fn release_redirect(state: &mut SyncState, mine: &Arc<AtomicBool>) {
+    if state
+        .awaiting_redirect
+        .as_ref()
+        .is_some_and(|held| Arc::ptr_eq(held, mine))
+    {
+        state.awaiting_redirect = None;
+    }
 }
 
 /// Finish the ceremony: block on the one redirect (minutes of
@@ -266,9 +325,21 @@ pub(crate) fn signin_finish<T: Transport>(
     patience: Duration,
     transport: &T,
 ) -> Result<TokenGrant, &'static str> {
+    let abandoned = Arc::clone(&pending.abandoned);
+    // Three waits, three reads. A ceremony ended while the browser trip
+    // is out has to stop at whichever of them it is standing in, and
+    // the last one matters most: the redirect lands, the exchange is
+    // seconds of real network, and a grant absorbed after a sign-out
+    // would sign the user back in behind their own gesture.
+    if abandoned.load(Ordering::Relaxed) {
+        return Err("abandoned");
+    }
     let Some(query) = pending.listener.accept_redirect(patience) else {
         return Err("abandoned");
     };
+    if abandoned.load(Ordering::Relaxed) {
+        return Err("abandoned");
+    }
     let request = pending
         .ceremony
         .redeem(&query)
@@ -278,6 +349,9 @@ pub(crate) fn signin_finish<T: Transport>(
             _ => "refused",
         })?;
     let response = transport.send(request).map_err(|_| "unreachable")?;
+    if abandoned.load(Ordering::Relaxed) {
+        return Err("abandoned");
+    }
     parse_token_response(&response).map_err(|_| "refused")
 }
 
@@ -1285,7 +1359,7 @@ pub(crate) fn gate_of(companion: &Companion) -> SyncGate {
 /// for its finish, or taken by a finish that is blocked on the
 /// browser. The two are one state to anyone outside this module.
 pub(crate) fn signin_in_flight(sync: &SyncState) -> bool {
-    sync.pending_signin.is_some() || sync.awaiting_redirect
+    sync.pending_signin.is_some() || sync.awaiting_redirect.is_some()
 }
 
 /// Whether any account credential rests here: the live keeper's if one
@@ -1826,6 +1900,7 @@ mod tests {
     struct MockTransport {
         seen: RefCell<Option<HttpRequest>>,
         response: HttpResponse,
+        raises: Option<Arc<AtomicBool>>,
     }
 
     impl MockTransport {
@@ -1836,13 +1911,25 @@ mod tests {
                     status: 200,
                     body: br#"{"access_token":"at-1","refresh_token":"rt-1"}"#.to_vec(),
                 },
+                raises: None,
             }
+        }
+
+        /// A token endpoint that ends the ceremony while it answers:
+        /// the exchange succeeds and the grant is worthless, which is
+        /// the window a single flag read at the listener misses.
+        fn raising(mut self, flag: Arc<AtomicBool>) -> Self {
+            self.raises = Some(flag);
+            self
         }
     }
 
     impl Transport for MockTransport {
         fn send(&self, request: HttpRequest) -> Result<HttpResponse, TransportError> {
             *self.seen.borrow_mut() = Some(request);
+            if let Some(flag) = &self.raises {
+                flag.store(true, Ordering::Relaxed);
+            }
             Ok(HttpResponse {
                 status: self.response.status,
                 body: self.response.body.clone(),
@@ -1934,11 +2021,89 @@ mod tests {
     }
 
     #[test]
+    fn an_invalidated_ceremony_never_exchanges_its_code() {
+        let mut state = configured();
+        let authorize_url = signin_begin(&mut state).unwrap();
+        let pending = state.pending_signin.take().unwrap();
+        browser_returns(&authorize_url, pending.listener.port(), None);
+        // A sign-out (or a cancel) while the browser trip is out.
+        pending.abandoned.store(true, Ordering::Relaxed);
+
+        let transport = MockTransport::granting();
+        let refused = signin_finish(pending, Duration::from_secs(5), &transport);
+        assert_eq!(refused.err(), Some("abandoned"));
+        assert!(
+            transport.seen.borrow().is_none(),
+            "a ceremony the user ended may not redeem its code"
+        );
+    }
+
+    #[test]
+    fn a_ceremony_ended_during_the_exchange_grants_nothing() {
+        let mut state = configured();
+        let authorize_url = signin_begin(&mut state).unwrap();
+        let pending = state.pending_signin.take().unwrap();
+        browser_returns(&authorize_url, pending.listener.port(), None);
+        // The window the redirect opens: the code is in hand and the
+        // token exchange is seconds of real network. A sign-out
+        // landing here must still leave nothing to persist.
+        let transport = MockTransport::granting().raising(Arc::clone(&pending.abandoned));
+
+        let refused = signin_finish(pending, Duration::from_secs(5), &transport);
+        assert_eq!(
+            refused.err(),
+            Some("abandoned"),
+            "the grant arrived after the ceremony was ended, so it is not a grant"
+        );
+    }
+
+    #[test]
+    fn a_begin_is_busy_while_a_finish_holds_the_ceremony() {
+        let mut state = configured();
+        let _ = signin_begin(&mut state).unwrap();
+        // The finish took the ceremony and is out on the browser trip.
+        let pending = state.pending_signin.take().unwrap();
+        state.awaiting_redirect = Some(Arc::clone(&pending.abandoned));
+        assert_eq!(
+            signin_begin(&mut state).unwrap_err(),
+            "busy",
+            "a second listener bound behind the first is not a retry"
+        );
+        // Giving up is the way out, and it ends the trip that is out.
+        assert!(abandon_signin(&mut state));
+        assert!(pending.abandoned.load(Ordering::Relaxed));
+        assert!(signin_begin(&mut state).is_ok());
+    }
+
+    #[test]
+    fn a_stale_finish_does_not_release_a_newer_ceremony() {
+        let mut state = configured();
+        let _ = signin_begin(&mut state).unwrap();
+        let stale = state.pending_signin.take().unwrap();
+        state.awaiting_redirect = Some(Arc::clone(&stale.abandoned));
+        assert!(abandon_signin(&mut state));
+
+        // A fresh ceremony, begun and taken while the stale finish is
+        // still unwinding.
+        let _ = signin_begin(&mut state).unwrap();
+        let fresh = state.pending_signin.take().unwrap();
+        state.awaiting_redirect = Some(Arc::clone(&fresh.abandoned));
+        release_redirect(&mut state, &stale.abandoned);
+        assert!(
+            state.awaiting_redirect.is_some(),
+            "the stale finish let go of a trip that was never its own"
+        );
+        assert!(!fresh.abandoned.load(Ordering::Relaxed));
+        release_redirect(&mut state, &fresh.abandoned);
+        assert!(state.awaiting_redirect.is_none());
+    }
+
+    #[test]
     fn one_ceremony_at_a_time_and_a_cancel_clears_the_way() {
         let mut state = configured();
         let _ = signin_begin(&mut state).unwrap();
         assert_eq!(signin_begin(&mut state).unwrap_err(), "busy");
-        state.pending_signin = None;
+        assert!(abandon_signin(&mut state));
         assert!(signin_begin(&mut state).is_ok());
     }
 
