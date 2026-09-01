@@ -284,6 +284,13 @@ pub struct SyncSession {
     /// A publish batch built and not yet acknowledged, kept so a `401`
     /// can retry the one request after a refresh.
     in_flight: Option<Vec<Vec<u8>>>,
+    /// Which batch that is: a counter bumped once per seal, so a
+    /// caller can tell a fresh batch from a resend of the same one
+    /// without reading a byte of ciphertext. What the caller does with
+    /// it is remember what the batch carried
+    /// (`sync_driver::stage_publish`), which is the only honest thing
+    /// to advance a cursor to when the answer arrives.
+    in_flight_id: u64,
     last_publish_ms: Option<u64>,
     /// The proposer's minted entropy while its ballot is in flight.
     proposed_entropy: Option<(String, Zeroizing<Vec<u8>>)>,
@@ -323,6 +330,7 @@ impl SyncSession {
             channels: HashMap::new(),
             outbox: Vec::new(),
             in_flight: None,
+            in_flight_id: 0,
             last_publish_ms: None,
             proposed_entropy: None,
             received_entropy: None,
@@ -449,6 +457,16 @@ impl SyncSession {
     #[must_use]
     pub fn attached(&self) -> bool {
         self.attach.is_some()
+    }
+
+    /// Which publish batch is in flight, or `None` when none is. The
+    /// identity is what matters: an unchanged one across two calls
+    /// means the same sealed blobs went out twice, so whatever the
+    /// caller recorded about the first send still describes the
+    /// second.
+    #[must_use]
+    pub fn in_flight_batch(&self) -> Option<u64> {
+        self.in_flight.is_some().then_some(self.in_flight_id)
     }
 
     /// The channel epoch the last attach reported. The chain, not this
@@ -610,6 +628,7 @@ impl SyncSession {
             // Every seal succeeded; only now does the queue let go.
             self.outbox.clear();
             self.in_flight = Some(blobs);
+            self.in_flight_id = self.in_flight_id.wrapping_add(1);
         }
         let blobs = self.in_flight.as_ref()?;
         self.last_publish_ms = Some(now_ms);

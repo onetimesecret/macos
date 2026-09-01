@@ -124,6 +124,11 @@ pub(crate) struct SyncState {
     /// nothing (ADR-0027 §5). In memory only, and cleared by any round
     /// trip that succeeds.
     pub fault: Option<GateFault>,
+    /// What the publish batch now in flight carries: each enrolled
+    /// page's export cursor as it stood when the batch was sealed. The
+    /// answer, whenever it comes, advances the acknowledged cursors to
+    /// these and to nothing later.
+    pub staged_batch: Option<StagedBatch>,
     /// Where the engine's relative clock starts: monotonic, so the
     /// publish and ballot windows cannot jump with the wall clock.
     origin: Instant,
@@ -139,6 +144,7 @@ impl Default for SyncState {
             enrolled: BTreeMap::new(),
             pairing: None,
             fault: None,
+            staged_batch: None,
             origin: Instant::now(),
         }
     }
@@ -195,6 +201,18 @@ impl PageTracking {
             terminal_sent: false,
         }
     }
+}
+
+/// A publish batch in flight, and the cursors it carries: one entry
+/// per page enrolled when the batch was sealed. Pages enrolled after
+/// the seal are simply absent, which is right, since the batch carries
+/// nothing of theirs.
+pub(crate) struct StagedBatch {
+    /// The session's own name for the batch
+    /// ([`SyncSession::in_flight_batch`]), so a resend is recognized
+    /// as the same one rather than recorded afresh.
+    pub id: u64,
+    pub cursors: BTreeMap<ItemId, Vec<u8>>,
 }
 
 /// A begun sign-in ceremony: consumed whole by the finish, dropped
@@ -747,28 +765,73 @@ fn settle_frontier(
     }
 }
 
-/// Absorb a publish answer under the lock, and on acceptance promote
-/// every enrolled page's export cursor to the position the relay has
-/// now taken. Acknowledgement and promotion are one act on purpose:
-/// two call sites doing it separately is two chances for a cursor to
-/// advance past ops nobody received.
+/// Build the publish request and record what its batch carries, in one
+/// act. The recording is the whole point: a batch sealed in one pump
+/// and answered in a later one is resent verbatim
+/// (`SyncSession::publish_request` borrows the outbox only when
+/// nothing is already in flight), so by the time the relay accepts it
+/// the live cursors may have run on past it. Advancing to the live
+/// cursor would then mark ops acknowledged that the relay was never
+/// offered, and the next dissolve would rewind to a position past
+/// them, which is the loss the rewind exists to prevent.
+fn stage_publish(companion: &mut Companion, now_ms: u64) -> Option<ots_client::HttpRequest> {
+    let engine = companion.sync.engine.as_mut()?;
+    let EngineState { session, chain, .. } = engine;
+    let request = session.publish_request(now_ms, chain)?;
+    let batch = session.in_flight_batch();
+    let known = companion
+        .sync
+        .staged_batch
+        .as_ref()
+        .is_some_and(|staged| Some(staged.id) == batch);
+    if let Some(id) = batch
+        && !known
+    {
+        // A batch this call sealed: what it carries is each page's
+        // cursor as it stands right now, before any later sweep.
+        companion.sync.staged_batch = Some(StagedBatch {
+            id,
+            cursors: companion
+                .sync
+                .enrolled
+                .iter()
+                .map(|(page, tracking)| (*page, tracking.frontier.clone()))
+                .collect(),
+        });
+    }
+    Some(request)
+}
+
+/// Absorb a publish answer under the lock, and on acceptance advance
+/// each enrolled page's acknowledged cursor to the position the batch
+/// the relay just took actually carried, never to wherever the live
+/// cursor has since reached. Acknowledgement and advance are one act
+/// on purpose: two call sites doing it separately is two chances for a
+/// cursor to move past ops nobody received.
 ///
-/// A sweep between the batch's staging and its answer can carry a
-/// cursor a little further than the batch did, and promoting it here
-/// commits that much optimistically. That window is one pump wide, the
-/// pump is single flighted, and the rewind it costs in the worst case
-/// is exactly today's behaviour, so the rule is a strict improvement
-/// on losing every unsent edit at every dissolution.
+/// A refusal that drops the batch drops the record with it, leaving
+/// the acknowledged cursor where it was, so the ops the dropped batch
+/// held are exported again after the next dissolve. Restating is
+/// cheap and idempotent; losing is neither.
 fn absorb_publish_locked(
     companion: &mut Companion,
     response: &HttpResponse,
 ) -> Option<Result<(), RelayRefusal>> {
     let engine = companion.sync.engine.as_mut()?;
-    if let Err(refusal) = engine.session.absorb_publish(response) {
+    let absorbed = engine.session.absorb_publish(response);
+    let still_in_flight = engine.session.in_flight_batch().is_some();
+    if let Err(refusal) = absorbed {
+        if !still_in_flight {
+            companion.sync.staged_batch = None;
+        }
         return Some(Err(refusal));
     }
-    for tracking in companion.sync.enrolled.values_mut() {
-        tracking.acked = tracking.frontier.clone();
+    if let Some(staged) = companion.sync.staged_batch.take() {
+        for (page, carried) in staged.cursors {
+            if let Some(tracking) = companion.sync.enrolled.get_mut(&page) {
+                tracking.acked = carried;
+            }
+        }
     }
     note_reachable(companion);
     Some(Ok(()))
@@ -784,6 +847,9 @@ fn absorb_publish_locked(
 /// fact a peer already holds is idempotent; dropping one is not, and
 /// tenet 1 does not stop at the sync boundary.
 pub(crate) fn dissolve_engine(companion: &mut Companion) -> Option<TokenKeeper> {
+    // The batch dies with the session that sealed it, and so does the
+    // record of what it carried.
+    companion.sync.staged_batch = None;
     for tracking in companion.sync.enrolled.values_mut() {
         tracking.frontier = tracking.acked.clone();
         tracking.deadline_wall_ms = None;
@@ -883,14 +949,8 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
             return pump_result(handle, Some("not_attached"), &events);
         };
         engine.session.tick(now);
-        let publish = engine
-            .session
-            .publish_due(now)
-            .then(|| {
-                let EngineState { session, chain, .. } = engine;
-                session.publish_request(now, chain)
-            })
-            .flatten();
+        let due = engine.session.publish_due(now);
+        let publish = due.then(|| stage_publish(&mut guard, now)).flatten();
         publish.zip(transport)
     };
     if let Some((request, transport)) = staged {
@@ -1044,11 +1104,9 @@ fn publish_round(
                     return;
                 };
                 let now = guard.sync.now_ms();
-                let Some(engine) = guard.sync.engine.as_mut() else {
-                    return;
-                };
-                let EngineState { session, chain, .. } = engine;
-                session.publish_request(now, chain)
+                // The same batch, so the record of what it carries
+                // stands: `stage_publish` recognizes the resend.
+                stage_publish(&mut guard, now)
             };
             let Some(rebuilt) = staged else {
                 return;
@@ -2158,6 +2216,60 @@ mod tests {
     }
 
     #[test]
+    fn an_answer_to_a_resent_batch_acknowledges_only_what_that_batch_carried() {
+        let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
+        let mut companion = store_companion(Arc::clone(&credentials));
+        companion.sync.config = configured().config;
+        let page = inked_page(&mut companion, "the first line");
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        assert!(enrol_page(&mut companion, page, true));
+        let uuid = companion.store.sheet(page).unwrap().uuid();
+
+        // Pump one: sweep to V1, seal the batch, and lose the answer to
+        // a transport error. The batch stays in flight.
+        let mut events = Vec::new();
+        sweep_outbound(&mut companion, 0, &mut events);
+        assert!(stage_publish(&mut companion, 0).is_some());
+        let carried = companion.sync.enrolled[&uuid].frontier.clone();
+
+        // Pump two: a second edit sweeps to V2 and queues behind the
+        // batch, which is resent verbatim and accepted. Only V1 ever
+        // reached the relay, so only V1 may count as acknowledged.
+        assert!(companion.store.apply_ops(
+            page,
+            &[companion_core::EditOp::Insert {
+                pos_u16: 0,
+                text: "the second line ".into(),
+            }],
+        ));
+        sweep_outbound(&mut companion, 4_000, &mut events);
+        assert!(stage_publish(&mut companion, 4_000).is_some());
+        let live = companion.sync.enrolled[&uuid].frontier.clone();
+        assert_ne!(live, carried, "the sweep moved the cursor past the batch");
+        assert_eq!(
+            absorb_publish_locked(&mut companion, &accepted()),
+            Some(Ok(()))
+        );
+        assert_eq!(
+            companion.sync.enrolled[&uuid].acked, carried,
+            "the relay took the first batch, and only the first batch"
+        );
+
+        // The refused refresh that follows dissolves the engine, and
+        // the second edit has to survive it: it is in no batch the
+        // relay ever answered.
+        sign_out_locked(&mut companion);
+        assert_eq!(companion.sync.enrolled[&uuid].frontier, carried);
+        companion.sync.engine = Some(attached_engine(&*credentials));
+        sweep_outbound(&mut companion, 10_000, &mut events);
+        assert_eq!(
+            companion.sync.enrolled[&uuid].frontier, live,
+            "the second line is exported again rather than lost"
+        );
+        assert!(stage_publish(&mut companion, 10_000).is_some());
+    }
+
+    #[test]
     fn an_acknowledged_batch_is_not_owed_again_after_a_sign_out() {
         let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
         let mut companion = store_companion(Arc::clone(&credentials));
@@ -2168,9 +2280,7 @@ mod tests {
 
         let mut events = Vec::new();
         sweep_outbound(&mut companion, 0, &mut events);
-        let engine = companion.sync.engine.as_mut().unwrap();
-        let EngineState { session, chain, .. } = engine;
-        assert!(session.publish_request(0, chain).is_some());
+        assert!(stage_publish(&mut companion, 0).is_some());
         assert_eq!(
             absorb_publish_locked(&mut companion, &accepted()),
             Some(Ok(()))
