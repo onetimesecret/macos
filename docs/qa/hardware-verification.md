@@ -275,6 +275,15 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   ADR-0019 decides against rather than fixes (issue #74). Not an
   ADR-0016 case.
 
+- [`sync-enrolment.md`](verification-procedures/sync-enrolment.md).
+  Owner: delano. Two Macs, a real browser trip and a real relay: that
+  sync off reaches nothing, that a browser trip can be given up, that
+  the six digits can be failed on purpose, that a page travels and
+  carries the mark while another device writes on it, and that a
+  revoke stops new edits without reaching across to the other
+  machine's records (issue #102, ADR-0027 section 5, ADR-0021 section
+  3). Blocked on the relay. Not an ADR-0016 case.
+
 Whether any of them has been run is recorded in each file's own Status
 line and Results table, which is the one place a run belongs. A tally
 kept here as well would only be a second copy to go stale.

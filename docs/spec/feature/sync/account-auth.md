@@ -159,4 +159,8 @@ an edit (ADR-0027 §7).
 Every one of these ends in a state issue #102 owes a sentence, and none
 of them may be silent — an expired token disabling sync without a word
 would break the promise pass 1 wrote down: no unaccounted behaviour
-change, in either direction.
+change, in either direction. Those words are now written down and
+built: [surface.md](surface.md) §5 carries the sentence each of these
+rows lands on, §4 the header word the gate chooses, and §2 the way out
+of a browser trip that is still open, which is what ADR-0027 §5's
+`signing_in` row asks the surface for.
