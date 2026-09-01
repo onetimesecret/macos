@@ -623,6 +623,35 @@ public struct InkEditorView: NSViewRepresentable {
             return model.undoManager(for: sheet)
         }
 
+        /// ⌘Z and ⇧⌘Z, taken off AppKit's stack and handed to the
+        /// core's (issue #132).
+        ///
+        /// The core owns the document, so it owns what a step means:
+        /// this asks it to take one, and then puts the caret where it
+        /// says the writer's hand was. The storage has already been
+        /// rewritten from the core's runs by the time this returns, so
+        /// the clamp is against the page as it now stands.
+        ///
+        /// **A step reverts this device's operations and no others.**
+        /// Loro's manager is local to the document's own peer, and a
+        /// device that joined at a key frame never held the operations
+        /// an away-device undo would need (ADR-0021 section 5). ⌘Z is
+        /// therefore undo that is safe beside another device's edits,
+        /// not undo that reaches across them, and nothing on this route
+        /// should be built as though it could.
+        func step(back: Bool) {
+            guard let sheet = currentSheet, let textView else { return }
+            let outcome = back ? model.undoEdit(sheet: sheet) : model.redoEdit(sheet: sheet)
+            guard outcome.applied else { return }
+            // A step that carried no position leaves the caret alone,
+            // clamped, rather than guessing at an offset.
+            let length = textView.textStorage?.length ?? 0
+            let landing = outcome.caret ?? textView.selectedRange().location
+            textView.setSelectedRange(
+                Self.clamped(NSRange(location: landing, length: 0), to: length)
+            )
+        }
+
         // MARK: Editing (ops across the seam, ADR-0013)
 
         public func textDidChange(_ notification: Notification) {
@@ -1792,6 +1821,10 @@ final class InkTextView: NSTextView {
             coordinator.sealedPaste()
         case .clipboardSealSelection:
             coordinator.sealSelectionOrLine()
+        case .editorUndo:
+            coordinator.step(back: true)
+        case .editorRedo:
+            coordinator.step(back: false)
         default:
             return coordinator.model.perform(command)
         }

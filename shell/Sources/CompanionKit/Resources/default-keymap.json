@@ -76,6 +76,15 @@
       "cmd-shift-v": "clipboard::Seal",
       "cmd-enter": "clipboard::SealSelection",
 
+      // Undo and redo. Bound here rather than left to the standard Edit
+      // menu, because the stack they drive is the core's now and not
+      // AppKit's (issue #132): the page's text view sees the chord
+      // first and hands it to the core, which reverts operations this
+      // device authored and nothing else. A step never reaches another
+      // device's text, by design and by ADR-0021's key-frame law.
+      "cmd-z": "editor::Undo",
+      "cmd-shift-z": "editor::Redo",
+
       // Long lines wrap, or run and scroll sideways. Deliberately not a
       // command chord: it is a plain character, and every search field
       // and settings box has as much right to it, so it fires only

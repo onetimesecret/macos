@@ -35,6 +35,11 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-w": .pageClose,
         "cmd-shift-v": .clipboardSeal,
         "cmd-enter": .clipboardSealSelection,
+        // Undo names its chords here rather than leaving them to the
+        // standard Edit menu, because the stack behind them is the
+        // core's now and not AppKit's (issue #132).
+        "cmd-z": .editorUndo,
+        "cmd-shift-z": .editorRedo,
         "alt-z": .editorToggleWrap,
         "cmd-s": .stateSaveNow,
         "cmd-,": .appSettings,
@@ -82,11 +87,15 @@ final class BundledKeymapTests: XCTestCase {
 
     /// The two seal gestures are the page's, not the surface's: they
     /// act on the caret and the selection, which the text view owns.
-    func testTheSealGesturesAreDispatchedByThePage() throws {
+    /// Undo is on the same route for the same reason, and for one more:
+    /// the text view has to see ⌘Z before the standard Edit menu can
+    /// hand it to `NSUndoManager` (issue #132).
+    func testTheSealGesturesAndUndoAreDispatchedByThePage() throws {
         let resolved = try bundled()
         let editorRoute = resolved.bindings(in: .editor, dispatch: .editor).map(\.command)
         XCTAssertEqual(
-            Set(editorRoute), [.clipboardSeal, .clipboardSealSelection, .editorToggleWrap])
+            Set(editorRoute),
+            [.clipboardSeal, .clipboardSealSelection, .editorToggleWrap, .editorUndo, .editorRedo])
     }
 
     /// Everything else is carried by the surface's hidden buttons, and

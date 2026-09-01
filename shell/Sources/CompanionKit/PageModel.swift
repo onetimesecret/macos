@@ -2472,6 +2472,101 @@ public final class PageModel: ObservableObject {
         #endif
     }
 
+    // MARK: Undo — the core's stack (issue #132)
+
+    /// What one ⌘Z or ⇧⌘Z did: whether the core moved the page, and
+    /// where it says the caret belongs afterwards.
+    public struct StepOutcome: Equatable, Sendable {
+        /// False means nothing moved and the caller changes nothing.
+        public let applied: Bool
+        /// The caret in UTF-16 code units, or nil when the step carried
+        /// no position and the caret should stay where the writer left
+        /// it.
+        public let caret: Int?
+
+        public static let nothing = StepOutcome(applied: false, caret: nil)
+    }
+
+    /// Take back the page's last local edit through the core's stack,
+    /// and bring the editor's storage back into line with the document
+    /// that has just moved underneath it.
+    ///
+    /// **A step reverts only what this device typed.** Loro's manager
+    /// is bound to the document's own peer and refuses another peer's
+    /// operations by design; and a device that joined a page at a key
+    /// frame never received the operations an away-device undo would
+    /// have to invert (ADR-0021 section 5). So ⌘Z here is undo that is
+    /// safe beside another device's edits, never undo that reaches
+    /// across them, and it should not grow into the latter without the
+    /// key-frame law being reopened first.
+    @discardableResult
+    public func undoEdit(sheet: UInt64) -> StepOutcome {
+        step(sheet: sheet) { self.client.undo(sheet: sheet) }
+    }
+
+    /// Put the step back, on the same terms.
+    @discardableResult
+    public func redoEdit(sheet: UInt64) -> StepOutcome {
+        step(sheet: sheet) { self.client.redo(sheet: sheet) }
+    }
+
+    /// Whether the page has a step waiting in either direction: what a
+    /// menu item or an affordance would grey out on.
+    public func canUndoEdit(sheet: UInt64) -> Bool {
+        client.canUndo(sheet: sheet)
+    }
+
+    public func canRedoEdit(sheet: UInt64) -> Bool {
+        client.canRedo(sheet: sheet)
+    }
+
+    /// The shared half of both directions: ask the core, and on a step
+    /// that happened, restate the page from the document the core now
+    /// holds. The core is the authority for what a step means, so the
+    /// storage is rewritten from its runs rather than reverse-engineered
+    /// here; the write goes in under the emission guard, because it
+    /// describes a document that has already moved and echoing it back
+    /// as operations would apply the step twice.
+    private func step(sheet: UInt64, _ take: () -> Bool) -> StepOutcome {
+        guard take() else { return .nothing }
+        restateStorage(sheet: sheet)
+        invalidateQuietRendering(for: sheet)
+        markDirty()
+        refresh()
+        #if DEBUG
+        assertProjectionParity(sheet: sheet)
+        #endif
+        return StepOutcome(applied: true, caret: client.undoCaret(sheet: sheet))
+    }
+
+    /// Rewrite a page's storage in place from the core's document.
+    ///
+    /// In place, and deliberately: the text view holds this exact
+    /// object, so replacing the entry in the map would leave the editor
+    /// laying out a storage nobody else can see. The page's AppKit undo
+    /// history goes at the same time, for the reason `recoverProjection`
+    /// drops it — after a wholesale rewrite its ranges describe nothing
+    /// — and because the stack that matters now is the core's.
+    private func restateStorage(sheet: UInt64) {
+        guard let storage = storages[sheet] else { return }
+        let rebuilt = NSMutableAttributedString()
+        for run in client.documentRuns(sheet: sheet) {
+            switch run {
+            case .ink(let text):
+                rebuilt.append(NSAttributedString(
+                    string: text,
+                    attributes: [.font: InkStyle.baseFont, .foregroundColor: NSColor.labelColor]
+                ))
+            case .chip(let info):
+                rebuilt.append(NSAttributedString(attachment: ChipAttachment(info: info)))
+            }
+        }
+        applyingProjection {
+            storage.setAttributedString(rebuilt)
+        }
+        undoManagers[sheet]?.removeAllActions()
+    }
+
     /// Mirror the page's document to the core wholesale: the recovery
     /// path (still authoritative for chip liveness: a chip the
     /// snapshot omits was deleted in the editor and is zeroized

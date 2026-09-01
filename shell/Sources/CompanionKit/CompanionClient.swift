@@ -609,6 +609,46 @@ public final class CompanionClient: @unchecked Sendable {
         json.withCString { companion_sheet_sync_document(handle, sheet, $0) }
     }
 
+    // MARK: Undo (issue #132)
+
+    /// Take back the page's last local edit, or the couple of seconds
+    /// of them the core groups into one step. False means nothing
+    /// moved, and the caller leaves the page alone.
+    ///
+    /// The stack is the core's and it is bound to that document's own
+    /// peer, so a step reverts only what this device authored. Undo
+    /// does not reach another device's text and is not meant to: the
+    /// library refuses a peer's operations by design, and a device that
+    /// joined at a key frame never held the operations an away-device
+    /// undo would have to invert (ADR-0021 section 5).
+    @discardableResult
+    public func undo(sheet: UInt64) -> Bool {
+        companion_sheet_undo(handle, sheet)
+    }
+
+    /// Put back the step `undo(sheet:)` took, on the same terms.
+    @discardableResult
+    public func redo(sheet: UInt64) -> Bool {
+        companion_sheet_redo(handle, sheet)
+    }
+
+    /// Whether the page has a step waiting in either direction.
+    public func canUndo(sheet: UInt64) -> Bool {
+        companion_sheet_can_undo(handle, sheet)
+    }
+
+    public func canRedo(sheet: UInt64) -> Bool {
+        companion_sheet_can_redo(handle, sheet)
+    }
+
+    /// Where the caret belongs after the last accepted step, in UTF-16
+    /// code units. Nil when the step carried no position, which is the
+    /// signal to leave the caret where the writer had it.
+    public func undoCaret(sheet: UInt64) -> Int? {
+        let caret = companion_sheet_undo_caret_u16(handle, sheet)
+        return caret < 0 ? nil : Int(caret)
+    }
+
     // MARK: Chips
 
     /// Copy a chip back out. The core writes the pasteboard itself,
