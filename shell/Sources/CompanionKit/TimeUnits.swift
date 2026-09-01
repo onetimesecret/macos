@@ -41,7 +41,16 @@ public enum TimeUnit: String, Sendable {
         }
     }
 
-    /// The label the rail draws: "Today", "-1d", "-3d".
+    /// The short label the roll's day gutter draws: "Today", "-1d",
+    /// "-3d".
+    ///
+    /// It sat on the rail too until the rail was widened for the words
+    /// (issue #131). What is left is the leading gutter of a
+    /// perforation, where the day shares a line with the page's title
+    /// and its countdown and the short form is what leaves room for
+    /// them. The phrase is a keystroke away there in any case: the
+    /// header speaks it, `spokenHeader` puts it first, so nothing on the
+    /// roll is abbreviation-only either.
     ///
     /// Relative rather than dated, which is the whole reason a day whose
     /// page expired can simply be absent: the reader sees Today, -1d,
@@ -66,9 +75,11 @@ public enum TimeUnit: String, Sendable {
     /// The same label as a phrase, for the accessibility label and the
     /// tooltip: "today", "yesterday", "3 days ago".
     ///
-    /// Doc 05 asks that nothing be abbreviation-only, so the short form
-    /// rides the rail where the column is 56pt wide and this one rides
-    /// everywhere a full sentence fits.
+    /// Lower case, because this one is read mid-sentence: the tooltip
+    /// says "Go to yesterday" and VoiceOver reads the row out as the day
+    /// it is. The rail's own capital comes from `railLabel`, which is
+    /// this string with its first letter raised rather than a second
+    /// table of phrases that could drift away from it.
     public func spokenLabel(bucket: Int) -> String {
         switch self {
         case .day:
@@ -76,6 +87,25 @@ public enum TimeUnit: String, Sendable {
             if bucket == -1 { return "yesterday" }
             return "\(-bucket) days ago"
         }
+    }
+
+    /// What the rail draws, now that the column is wide enough to say it:
+    /// "Today", "Yesterday", "2 days ago" (issue #131).
+    ///
+    /// Derived from the spoken phrase rather than written out again. The
+    /// rail, the tooltip and VoiceOver then say the same words about the
+    /// same row by construction, which is the property the short form
+    /// could not offer: a reader who heard "3 days ago" and looked for
+    /// "-3d" had to do the translation themselves, and doc 05's
+    /// no-abbreviation-only rule was satisfied only by the tooltip.
+    ///
+    /// Only the first letter is raised. `capitalized` would render "3
+    /// Days Ago", which is a title and not a label, and the days are not
+    /// names.
+    public func railLabel(bucket: Int) -> String {
+        let spoken = spokenLabel(bucket: bucket)
+        guard let first = spoken.first else { return spoken }
+        return first.uppercased() + spoken.dropFirst()
     }
 }
 
@@ -118,10 +148,16 @@ public struct TimeUnitProjection: Equatable, Sendable {
         /// ahead of it. Unique within a projection, which is what makes
         /// it the identity as well.
         public let bucket: Int
-        /// "Today", "-1d": what the rail draws.
+        /// "Today", "-1d": what the roll's day gutter draws.
         public let label: String
         /// "today", "yesterday": what VoiceOver says.
         public let spokenLabel: String
+        /// "Today", "Yesterday", "2 days ago": what the rail draws
+        /// (issue #131). The same words the tooltip and VoiceOver use,
+        /// carried here rather than re-derived in the view for the
+        /// reason `spokenRemaining` is carried: a row must not be able
+        /// to say one thing and speak another.
+        public let railLabel: String
         /// The pages this day holds, in strip order. Empty only for
         /// today, which is a place whether or not a page stands in it.
         public let pageIDs: [UInt64]
@@ -247,6 +283,7 @@ public struct TimeUnitProjection: Equatable, Sendable {
                 bucket: bucket,
                 label: unit.label(bucket: bucket),
                 spokenLabel: unit.spokenLabel(bucket: bucket),
+                railLabel: unit.railLabel(bucket: bucket),
                 pageIDs: pages.compactMap(\.pageID),
                 tabIDs: pages.map(\.id),
                 fractionRemaining: soonest?.fractionRemaining ?? 0,

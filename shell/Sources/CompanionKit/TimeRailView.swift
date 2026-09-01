@@ -36,7 +36,15 @@ public struct TimeRailView: View {
     /// clamp its tests pin do not move for this mode. Whether the card
     /// wants a wider floor while the days are showing is a question for
     /// the dogfood window rather than a number to guess at now.
-    static let width: CGFloat = 56
+    ///
+    /// Ninety six points, up from fifty six, and the words are what
+    /// bought them (issue #131). It is the measure that holds the
+    /// longest phrase the rail can realistically be asked for, "10 days
+    /// ago" from a page held past its rung, in the monospaced caption
+    /// the rows draw in, with the row's own padding still around it.
+    /// Longer than that truncates at the tail, which is the net rather
+    /// than the plan.
+    static let width: CGFloat = 96
 
     public var body: some View {
         let projection = model.timeUnits
@@ -141,9 +149,12 @@ public struct TimeRailView: View {
     }
 
     /// What the footer prints, or nothing at all when nothing is being
-    /// held back. Short, because the column is 56 points wide; the full
-    /// sentence rides the tooltip and the accessibility label, which is
-    /// what doc 05's no-abbreviation-only rule asks for.
+    /// held back. Short, because it is a footer and not a row: it counts
+    /// what the rail is not showing, and a sentence at the bottom of the
+    /// column would weigh more than the days above it. The sentence
+    /// rides the tooltip and the accessibility label instead, and "3
+    /// blank" is words rather than an abbreviation, so doc 05's rule is
+    /// answered at both ends.
     static func hiddenPagesLine(count: Int) -> String? {
         guard count > 0 else { return nil }
         return "\(count) blank"
@@ -175,9 +186,9 @@ private struct TimeRailRow: Identifiable {
     var id: Int { unit.bucket }
 }
 
-/// One day on the rail: its relative label over the gauge of the page on
-/// it that dies soonest, or the dashed rule when the day holds no page
-/// at all.
+/// One day on the rail: its relative label in words over the gauge of
+/// the page on it that dies soonest, or the dashed rule when the day
+/// holds no page at all.
 ///
 /// Internal rather than private so the three pure decisions below (the
 /// target a tap resolves to and the two tooltips) can be tested without
@@ -194,7 +205,7 @@ struct TimeUnitTab: View {
 
     var body: some View {
         VStack(spacing: 3) {
-            Text(unit.label)
+            Text(unit.railLabel)
                 .font(.system(.caption, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -258,10 +269,12 @@ struct TimeUnitTab: View {
         return Self.todayHelp(hasPage: false, chord: chord)
     }
 
-    /// A row's tooltip, naming the day in full: the rail shows "-3d"
-    /// because the column is narrow, and this is where the phrase
-    /// behind the abbreviation lives. With nothing bound it says only
-    /// what the row does, which is still true.
+    /// A row's tooltip: what the row does, in the same words the row
+    /// itself now shows. It used to be where the phrase behind "-3d"
+    /// lived, and issue #131 moved the phrase onto the rail; what is
+    /// left is the verb and the chord, which is the part a label cannot
+    /// carry. With nothing bound it says only what the row does, which
+    /// is still true.
     static func dayHelp(spokenLabel: String, chord: Keystroke?) -> String {
         chorded("Go to \(spokenLabel)", chord: chord)
     }
