@@ -536,8 +536,14 @@ fn ensure_access(handle: &CompanionHandle) -> Result<(), Refusal> {
         return Err("not_attached");
     };
     match engine.session.absorb_refresh(&response) {
+        // A rotation is a new durable secret and has to land before it
+        // is used; a server that declined to rotate leaves the resting
+        // token correct, so there is nothing to write and no reason to
+        // touch the keychain (ADR-0027 §2).
         Ok(rotated) => {
-            if !store_refresh(&*guard.credentials, &rotated) {
+            if let Some(rotated) = rotated
+                && !store_refresh(&*guard.credentials, &rotated)
+            {
                 diag_fault!("the credential store refused the rotated sync refresh token");
             }
             Ok(())

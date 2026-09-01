@@ -378,8 +378,10 @@ impl SyncSession {
         self.keeper.refresh_request()
     }
 
-    /// Absorb the refresh answer; the rotated refresh token comes back
-    /// for the caller to persist. A refusal signs sync out.
+    /// Absorb the refresh answer; a rotated refresh token comes back
+    /// for the caller to persist, and `None` means the server declined
+    /// to rotate and the resting token still stands. A refusal signs
+    /// sync out.
     ///
     /// # Errors
     ///
@@ -387,7 +389,7 @@ impl SyncSession {
     pub fn absorb_refresh(
         &mut self,
         response: &HttpResponse,
-    ) -> Result<Zeroizing<String>, companion_sync::oauth::SyncAuthError> {
+    ) -> Result<Option<Zeroizing<String>>, companion_sync::oauth::SyncAuthError> {
         self.keeper.absorb_refresh(response)
     }
 
