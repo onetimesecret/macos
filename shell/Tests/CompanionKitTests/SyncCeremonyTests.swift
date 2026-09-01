@@ -112,15 +112,16 @@ final class SyncCeremonyTests: XCTestCase {
         // The channel rotated past this pad. Nothing here rejoins, so
         // this is true until something does.
         sync.settlePump(
-            quietTurn(events: [SyncPumpEvent(kind: "rejoin_required", page: nil, pageID: nil)]))
+            quietTurn(events: [SyncPumpEvent(kind: "rejoin_required", page: nil, pageID: nil)]),
+            session: sync.session)
         XCTAssertEqual(sync.headerWord?.text, "sync behind")
 
         // The relay blinks. Being unreachable is a fact about the
         // network and being behind is a fact about this pad's keys, so
         // the blip may not stand in for the rotation.
-        sync.settlePump(nil)
+        sync.settlePump(nil, session: sync.session)
         // And the blip passes.
-        sync.settlePump(quietTurn())
+        sync.settlePump(quietTurn(), session: sync.session)
 
         XCTAssertEqual(
             sync.headerWord?.text, "sync behind",
@@ -129,6 +130,37 @@ final class SyncCeremonyTests: XCTestCase {
         XCTAssertEqual(
             sync.standingSentence,
             "sync fell behind a key rotation; edits stay local until this pad rejoins"
+        )
+    }
+
+    func testATurnFromAStoppedSessionIsNotTheReplacementsTurn() throws {
+        let (sync, _, _) = try configured()
+        sync.enabled = true
+        // A long poll is out, holding the socket open for its
+        // twenty-five seconds, when the switch goes off and straight
+        // back on.
+        let stale = sync.session
+        sync.enabled = false
+        sync.enabled = true
+        XCTAssertNotEqual(sync.session, stale, "off and on again is a new session")
+
+        // The old turn comes back now, carrying a page somebody was
+        // writing on and a rotation this pad fell behind, both of them
+        // about a channel nobody is attached to any more.
+        sync.settlePump(
+            quietTurn(events: [
+                SyncPumpEvent(kind: "applied", page: "peer-page", pageID: 7),
+                SyncPumpEvent(kind: "rejoin_required", page: nil, pageID: nil),
+            ]),
+            session: stale)
+
+        XCTAssertTrue(
+            sync.editedElsewhere.isEmpty,
+            "a mark from a session nobody is in may not land on this one's pages"
+        )
+        XCTAssertNotEqual(
+            sync.headerWord?.text, "sync behind",
+            "nor may its rotation become the replacement session's trouble"
         )
     }
 }

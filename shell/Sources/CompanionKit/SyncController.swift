@@ -162,6 +162,14 @@ public final class SyncController: ObservableObject {
     private var signinGivenUp = false
     private var lastAttachPeers: Int?
     private var pumping = false
+    /// Which run of the engine loop is the live one. Every detached
+    /// turn carries the session it began in, and one that comes back
+    /// after the switch went off belongs to a channel nobody is on any
+    /// more: its events, its failures and its retry are all about a
+    /// session that ended. `enabled` alone cannot tell them apart,
+    /// because turning sync off and straight back on inside one long
+    /// poll leaves it reading true for both.
+    private(set) var session: UInt64 = 0
     // `nonisolated(unsafe)` for deinit's sake, the model's own timer
     // convention (PageModel.swift).
     private nonisolated(unsafe) var retryTimer: Timer?
@@ -250,6 +258,7 @@ public final class SyncController: ObservableObject {
             return
         }
         openAuthorizeUrl(url)
+        let mine = session
         // Through `refreshState`, not by assigning the status: the
         // standing trouble is still `signedOut` from the begin, and
         // only the reconciliation clears it against the gate. Setting
@@ -259,11 +268,15 @@ public final class SyncController: ObservableObject {
         refreshState()
         Task.detached(priority: .userInitiated) {
             let outcome = client.syncSigninFinish(patienceMs: 300_000)
-            await MainActor.run { [weak self] in self?.settleSignin(outcome) }
+            await MainActor.run { [weak self] in self?.settleSignin(outcome, session: mine) }
         }
     }
 
-    private func settleSignin(_ outcome: SyncOutcome) {
+    private func settleSignin(_ outcome: SyncOutcome, session mine: UInt64) {
+        // A ceremony belongs to the session that opened the browser.
+        // The switch going off ends it, so one settling here after a
+        // re-enable is answering for a trip that is over.
+        guard session == mine else { return }
         status = client.syncStatus()
         // The switch may have gone off while the browser consent was
         // open; off means silent and detached — no attach, and no
@@ -326,6 +339,7 @@ public final class SyncController: ObservableObject {
     // MARK: The engine loop (issue #102)
 
     private func begin() {
+        session &+= 1
         signinFailure = nil
         let endpoints = SyncEndpoints.resolve(
             serverUrl: serverUrlProvider(), defaults: defaults)
@@ -351,8 +365,10 @@ public final class SyncController: ObservableObject {
     }
 
     private func stop() {
+        session &+= 1
         let wasAttached = attached
         attached = false
+        pumping = false
         // A browser trip is part of the session, so the switch ends it
         // too. Leaving it out would let a consent screen answered
         // after the switch went off store a refresh token: the core
@@ -388,13 +404,15 @@ public final class SyncController: ObservableObject {
 
     private func attach() {
         let client = self.client
+        let mine = session
         Task.detached(priority: .userInitiated) {
             let outcome = client.syncAttach()
-            await MainActor.run { [weak self] in self?.settleAttach(outcome) }
+            await MainActor.run { [weak self] in self?.settleAttach(outcome, session: mine) }
         }
     }
 
-    private func settleAttach(_ outcome: SyncOutcome) {
+    private func settleAttach(_ outcome: SyncOutcome, session mine: UInt64) {
+        guard session == mine else { return }
         // The refresh first, so the gate the settling reads is the one
         // the attach just moved rather than the one before it.
         refreshState()
@@ -421,13 +439,18 @@ public final class SyncController: ObservableObject {
         guard enabled, attached, !pumping else { return }
         pumping = true
         let client = self.client
+        let mine = session
         Task.detached(priority: .utility) {
             let outcome = client.syncPump(waitSeconds: 25)
-            await MainActor.run { [weak self] in self?.settlePump(outcome) }
+            await MainActor.run { [weak self] in self?.settlePump(outcome, session: mine) }
         }
     }
 
-    func settlePump(_ outcome: SyncPumpOutcome?) {
+    func settlePump(_ outcome: SyncPumpOutcome?, session mine: UInt64) {
+        // Above the flag as well as the events: a session that has
+        // ended left `pumping` clear behind it, and the turn the live
+        // session has out is the one that owns it now.
+        guard session == mine else { return }
         pumping = false
         guard enabled else { return }
         guard let outcome else {
@@ -550,9 +573,10 @@ public final class SyncController: ObservableObject {
     /// hot loop (account-auth.md §4).
     private func armRetry() {
         retryTimer?.invalidate()
+        let mine = session
         let timer = Timer(timeInterval: 30, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.enabled else { return }
+                guard let self, self.enabled, self.session == mine else { return }
                 if self.attached { self.pump() } else { self.attach() }
             }
         }

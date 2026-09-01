@@ -47,6 +47,15 @@ Turning the switch on with no relay configured is the one state where
 sync is on and nothing can leave. The gate still reads `off`, the
 header still says nothing, and the page says why in full.
 
+Every detached turn carries the session it began in, and the switch
+starts a new one each time it moves. A long poll holds its socket open
+for twenty five seconds, so turning sync off and straight back on
+inside one leaves an old turn still to come back, and `enabled` reads
+true for both sessions. A turn whose session has ended is dropped
+whole: its events mark no page, its verdict becomes nobody's trouble
+and it arms no retry. The same holds for an attach and for a sign in
+settling.
+
 Turning the switch off ends the sign in ceremony as well as the loop.
 A browser trip is part of the session, and one left running behind the
 switch comes back with a grant that the core persists before it
