@@ -79,7 +79,10 @@ lifetimes are chosen for that shape:
 - **Expiry mid-session:** the relay answers an expired access token
   with `401`; the client refreshes and retries the one request. The
   long-poll (`relay-protocol.md` §4) simply returns on the same `401`
-  and re-enters after the refresh. The client never pre-judges expiry
+  and re-enters after the refresh, but on the retry clock rather than
+  at once: a `401` comes back instantly instead of holding the poll
+  open, so an immediate re-entry against a relay that keeps refusing
+  would be a hot loop. The client never pre-judges expiry
   by its own clock — the server's `401` is the only authority, so clock
   skew cannot invent an outage.
 - **Refresh refused** (revoked account-side, rotation reuse tripped,

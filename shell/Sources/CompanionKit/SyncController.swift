@@ -320,6 +320,7 @@ public final class SyncController: ObservableObject {
         }
         if let state = outcome.state { status = state }
         var sawUnreachable = false
+        var sawUnauthorized = false
         var remoteChanged = false
         for event in outcome.events {
             switch event.kind {
@@ -329,6 +330,8 @@ public final class SyncController: ObservableObject {
                 trouble = .behind
             case "unreachable":
                 sawUnreachable = true
+            case "unauthorized":
+                sawUnauthorized = true
             case "ceremony_committed", "ceremony_proposed":
                 refreshState()
             default:
@@ -336,24 +339,64 @@ public final class SyncController: ObservableObject {
             }
         }
         if remoteChanged { onRemoteChange?() }
-        if outcome.reason == "signed_out" {
+        switch Self.pumpTurn(
+            ok: outcome.ok, reason: outcome.reason, sawUnreachable: sawUnreachable,
+            sawUnauthorized: sawUnauthorized)
+        {
+        case .signedOut:
             attached = false
             trouble = .signedOut
             refreshState()
-            return
-        }
-        if outcome.reason == "not_attached" {
+        case .reattach:
             attached = false
             attach()
-            return
-        }
-        if sawUnreachable || !outcome.ok {
+        case .unreachable:
             trouble = .unreachable
             armRetry()
-            return
+        case .refused:
+            // The relay refused the bearer under the long poll. The
+            // core dropped the access token as it refused, so the next
+            // turn refreshes before it polls; but a 401 comes back at
+            // once rather than holding the poll open, so re-entering
+            // now would be a refresh, poll, refuse loop at the speed of
+            // the network. One turn on the slow clock instead, and the
+            // gate says what it means rather than the shell guessing.
+            refreshState()
+            armRetry()
+        case .again:
+            if trouble == .unreachable { trouble = nil }
+            pump()
         }
-        if trouble == .unreachable { trouble = nil }
-        pump()
+    }
+
+    /// What a settled pump owes the next turn. Every outcome the core
+    /// can report has to be named here: one that nothing reads falls
+    /// through to re-entering the long poll at once, which for a
+    /// refusal that returns instantly is a hot loop against the relay
+    /// rather than a wait.
+    public enum PumpTurn: Equatable {
+        /// The credential is gone. Stop, and say so.
+        case signedOut
+        /// The attachment is gone. Attach again.
+        case reattach
+        /// Nobody answered. The slow retry clock, never a hot loop.
+        case unreachable
+        /// The relay refused the bearer. Also the slow clock, but the
+        /// account gate owns the sentence, not the network.
+        case refused
+        /// A quiet, well round: straight back into the long poll.
+        case again
+    }
+
+    /// The pure rule behind the switch above.
+    public nonisolated static func pumpTurn(
+        ok: Bool, reason: String?, sawUnreachable: Bool, sawUnauthorized: Bool
+    ) -> PumpTurn {
+        if reason == "signed_out" { return .signedOut }
+        if reason == "not_attached" { return .reattach }
+        if sawUnreachable || !ok { return .unreachable }
+        if sawUnauthorized { return .refused }
+        return .again
     }
 
     /// A relay that did not answer is retried on a slow clock, never a
