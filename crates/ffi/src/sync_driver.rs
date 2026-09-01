@@ -929,7 +929,7 @@ fn rotate_channel(
     let page = crate::sync_session::page_wire_id(target);
     // The same two names every other event carries: the identity the
     // peers know the page by, and the local id this surface does.
-    let page_id = store.sheet_id_of(target).map(SheetId::raw);
+    let page_id = sheet_of(store, target).map(SheetId::raw);
     if peers.is_empty() {
         if engine
             .session
@@ -1221,7 +1221,7 @@ fn event_json(
     store: &companion_core::SheetStore<companion_core::SystemClock>,
 ) -> serde_json::Value {
     let page = |page: &ItemId| crate::sync_session::page_wire_id(*page);
-    let local = |page: &ItemId| store.sheet_id_of(*page).map(SheetId::raw);
+    let local = |page: &ItemId| sheet_of(store, *page).map(SheetId::raw);
     match event {
         SyncEvent::Applied(id) => {
             serde_json::json!({ "kind": "applied", "page": page(id), "page_id": local(id) })

@@ -787,7 +787,18 @@ impl SyncSession {
                         let Some(sheet_id) = sheet_of(store, page) else {
                             return;
                         };
-                        if store.apply_remote_update(sheet_id, &ops.0).is_ok() {
+                        // A device fetches back the blobs it published
+                        // itself: the delta stream is one stream and,
+                        // the relay being blind, carries no author to
+                        // filter on. Re-importing one's own operations
+                        // moves nothing, so the frontier is what tells
+                        // an arrival from an echo. Only an arrival is
+                        // news, and only an arrival is another device
+                        // writing (issue #102).
+                        let before = store.document_version(sheet_id);
+                        if store.apply_remote_update(sheet_id, &ops.0).is_ok()
+                            && store.document_version(sheet_id) != before
+                        {
                             events.push(SyncEvent::Applied(page));
                         }
                     }
@@ -1176,12 +1187,11 @@ impl SyncSession {
     }
 }
 
-/// The sheet currently holding `page`'s cross-device identity.
+/// The sheet currently holding `page`'s cross-device identity. The
+/// store owns the translation, since it owns both names; this is the
+/// spelling the session layer reads it by.
 pub(crate) fn sheet_of<C: Clock>(store: &SheetStore<C>, page: ItemId) -> Option<SheetId> {
-    store
-        .sheets()
-        .find(|sheet| sheet.uuid() == page)
-        .map(companion_core::Sheet::id)
+    store.sheet_id_of(page)
 }
 
 /// Whether `marker` is a well-formed terminal claim for `page` under
@@ -1429,7 +1439,21 @@ mod tests {
         let mut packages_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
         let mut relay = FakeRelay::default();
 
-        a.queue_ops(uuid, &full);
+        // A writes on after B adopted the frame, and publishes only
+        // what B has not seen. Publishing the adopted frame's own
+        // operations instead would be an echo rather than an arrival,
+        // and B would rightly report nothing.
+        let adopted = store_b.document_version(page_b).unwrap();
+        assert!(store_a.apply_ops(
+            page_a,
+            &[EditOp::Insert {
+                pos_u16: 11,
+                text: ", written after the frame".into()
+            }]
+        ));
+        let delta = store_a.export_document_updates(page_a, &adopted).unwrap();
+
+        a.queue_ops(uuid, &delta);
         let request = a.publish_request(0, &chain_a).unwrap();
         a.absorb_publish(&relay.accept_publish(&request)).unwrap();
 
@@ -1444,6 +1468,28 @@ mod tests {
             )
             .unwrap();
         assert!(events.contains(&SyncEvent::Applied(uuid)));
+
+        // The same batch served a second time is the echo every device
+        // fetches back from a stream with no author in it. It applies
+        // to nothing and must be reported as nothing: an event here
+        // would tell the surface that a peer is writing on a page
+        // nobody has touched (issue #102).
+        let echo = b
+            .absorb_deltas(
+                &relay.serve_fetch(0),
+                &mut store_b,
+                &mut chain_b,
+                &mut packages_b,
+                &[],
+                0,
+            )
+            .unwrap();
+        assert!(
+            !echo
+                .iter()
+                .any(|event| matches!(event, SyncEvent::Applied(_))),
+            "operations already held are not an arrival"
+        );
 
         // Draining to the frontier made B's view current: the terminal
         // gate opens. A fresh session that never drained stays quiet.
