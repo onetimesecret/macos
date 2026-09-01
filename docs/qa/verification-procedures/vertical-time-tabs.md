@@ -24,7 +24,9 @@ roll's geometry, its one-layout-manager-per-storage invariant, its
 refusal to emit an op and its undo boundary are asserted against a real
 window and a real TextKit stack
 (`shell/Tests/CompanionKitTests/DayScrollTests.swift`,
-`DayScrollProjectionTests.swift`).
+`DayScrollProjectionTests.swift`); and the map from the roll's geometry
+to the rail's minimap, edges included, is pure Swift over hand-built
+measurements (`RailMinimapTests.swift`).
 
 Four things are left, and each of them is here because the automated
 suite structurally cannot reach it.
@@ -43,7 +45,9 @@ suite structurally cannot reach it.
   plumbing, which this project verifies by hand rather than by mocking
   (`docs/qa/hardware-verification.md`).
 - **Reading it.** Whether a perforation reads as "a day ago" rather than
-  as a bug is not a thing a test can hold an opinion about.
+  as a bug is not a thing a test can hold an opinion about, and neither
+  is whether the minimap behind the rail is faint enough to stay a
+  background and strong enough to be worth drawing (case 10).
 
 ## Staging, and why it takes three days
 
@@ -99,12 +103,14 @@ spec and is what this case measures: **a label can be up to 30 s stale
 at local midnight while the card rests.**
 
 1. Before midnight, with the mode on and at least two days of pages,
-   leave the card **resting** and note what the rail reads (Today, -1d,
-   …).
+   leave the card **resting** and note what the rail reads (Today,
+   Yesterday, …) and what the roll's gutters read beside it (Today,
+   -1d, …), the two vocabularies being deliberate since issue #131.
 2. Watch across midnight without touching the card.
 
 **Pass:** within about half a minute of the hour, every row's label
-moves back one, so what was Today reads -1d, and a new Today row appears
+moves back one, so what was Today reads Yesterday on the rail and -1d in
+the gutter, and a new Today row appears
 at the top of the rail and the roll with the empty state under it if
 nothing has been written yet. Nothing else moves: the tabs, their names
 and their rungs are unchanged, no page was created, and the countdowns
@@ -138,8 +144,10 @@ the labels. No ghost row, no placeholder, no renumbering.
 
 **Pass:** the middle day's row leaves the rail and its region leaves the
 roll. Its neighbours stay exactly where they were, the labels now read
-with a gap in them (Today, -1d, -3d), and nothing marks the place where
--2d was. Turn the toggle **off**: all three tabs are still on the strip
+with a gap in them (Today, Yesterday, 3 days ago on the rail; Today,
+-1d, -3d in the gutters), and nothing marks the place where the middle
+day was. The minimap's bars close up with the rows: three stretches
+become two, still in the same order and still filling the column. Turn the toggle **off**: all three tabs are still on the strip
 in their original order, with their names and their rungs, and the
 expired one draws the dashed empty treatment. Turn it back on.
 
@@ -255,14 +263,18 @@ renamed or re-ordered; a new sealed generation written for a flip.
 
 **Pass:** each rail row announces its day in full words ("today",
 "yesterday", "3 days ago") followed by how long the page on it that
-dies soonest has left, and the selected row announces as selected. The
-short forms (`-3d`) are on screen only; nothing is announced as an
-abbreviation alone. Each perforation announces the day, the page's name
-and its remaining time. The hidden-pages line at the foot of the rail,
-when it is there, announces the whole sentence and not just the number.
+dies soonest has left, and the selected row announces as selected. Since
+issue #131 the row says the same words on screen, so what is heard and
+what is read agree apart from the capital. The short form (`-3d`) is
+left only in the roll's gutter, whose header announces the phrase, so
+nothing anywhere is abbreviation-only. Each perforation announces the
+day, the page's name and its remaining time. The hidden-pages line at
+the foot of the rail, when it is there, announces the whole sentence and
+not just the number.
 
-**Fail:** a row that announces only "-3d"; a row with no value; a
-perforation that announces nothing; a decorative gauge that VoiceOver
+**Fail:** a row that announces only "-3d"; a row that shows different
+words from the ones it speaks; a row with no value; a perforation that
+announces nothing; a decorative gauge or a minimap bar that VoiceOver
 reads.
 
 ## Case 8: reduced motion
@@ -295,6 +307,47 @@ is wrong.
    count that is routinely above zero means the content bar is set wrong,
    which is ADR-0020's fifth eject trigger.
 
+## Case 10: the minimap, and how faint is faint enough
+
+Issue #131 put a faint reading of the roll behind the rail's rows: a bar
+per day, as tall a share of the column as that day is of the document,
+and a band over the part the viewport has open. The inks are a guess
+until this case is run, which is the whole reason it exists.
+
+1. With three days staged and at least one long page, raise the card and
+   look at the rail without scrolling.
+2. Scroll the roll down and back up, slowly, then flick it so the
+   elastic overscroll runs at each end.
+3. Rest the card (⎋, or click away) and look again.
+4. Put a page with a sealed chip and a page with several paragraphs on
+   the same day.
+
+**Pass:** the bars are visible as a texture and never as a chart: the
+day's words, its gauge and the selection fill all read first. A day
+holding more writing is a taller stretch than a day holding a line, and
+two pages born on one day are one stretch rather than two. The bars are
+a scaled impression of the roll and not a diagram of the rail, so a
+stretch sitting well away from the row for the same day is the design
+rather than a bug: the whole document is mapped onto the whole column
+while the rows are packed from the top. What the two share is a count
+and an order. The band
+tracks the viewport as the roll moves and stays inside the column at
+both ends of an overscroll. A roll that fits inside the card shows no
+band at all, deliberately. At rest the whole rail dims with the card and
+the minimap dims with it, with no treatment of its own.
+
+**Fail:** any text legible in the background at any card size; a bar or
+a band that overpowers a row; two bars overlapping into a darker seam; a band that lags a scroll by more than a
+frame or two; a bar for a day the rail draws no row for, or a row with
+no bar; a stretch of the roll drawn behind the ledger after ⌘L; typing
+that stutters while three days are mounted (see case 4).
+
+5. Write **down** whether the two inks were right, too loud or too
+   faint, and in which appearance and which contrast setting. This is
+   the calibration the spec's open question 11 is waiting on, and "too
+   faint to be worth having" is a legitimate answer that retires the
+   band rather than darkening it.
+
 ## Results
 
 Not yet run. One row per check when a session runs it, and the rows
@@ -317,3 +370,6 @@ stay: a re-run adds a row rather than replacing one.
 | | | 7 VoiceOver at a perforation | | |
 | | | 8 reduced motion | | |
 | | | 9 hidden blank pages counted and named | | Record whether the count is ever non-zero. |
+| | | 10 minimap reads as texture, not as a chart | | Record the two inks and the appearance. |
+| | | 10 band tracks the scroll and clamps at both ends | | |
+| | | 10 nothing legible in the minimap at any size | | |

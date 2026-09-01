@@ -25,6 +25,9 @@ Decision: [ADR-0020](../../../adr/0020-a-day-is-a-projection-of-live-pages.md),
 **proposed**.
 Issue: #79, labelled `decision` and `prototype`, milestone "Dogfood
 fixes".
+Refined by: #131 (the rail says the day in words, and its background
+became a faint minimap of the roll), milestone "Editing rhythm and the
+time rail".
 Side doc:
 [`2026-0828-paradigms.md`](2026-0828-paradigms.md)
 (paradigms, the duration the UI optimizes for; concept only,
@@ -294,15 +297,21 @@ changed, and a long Day 0 wants a scroll after each summon.
 
 ## The rail and the roll
 
-**The rail** is a fixed 56pt column on the leading edge of the content
-row, one row per visible unit, newest at the top. A row carries the
-relative label, the shipped `GaugeBar`
+**The rail** is a fixed ~~56pt~~ 96pt column on the leading edge of the
+content row, one row per visible unit, newest at the top. A row carries
+the relative label, the shipped `GaugeBar`
 (`shell/Sources/CompanionKit/TabStripView.swift:435`) fed from the unit's
 soonest-dying page, or `EmptyRule` (`:416`) when it holds none, and the
 same accessibility triple `SheetTab` uses: a spoken label, a spoken
-remaining value, and the selected trait. Abbreviated labels ("-3d") ride
-the rail while the full phrase rides the tooltip and the accessibility
-label, which is what doc 05's no-abbreviation-only rule asks for.
+remaining value, and the selected trait. ~~Abbreviated labels ("-3d")
+ride the rail while the full phrase rides the tooltip and the
+accessibility label, which is what doc 05's no-abbreviation-only rule
+asks for.~~ Issue #131 widened the column and put the phrase itself on
+the rail: the rows read Today, Yesterday, 2 days ago, and doc 05's rule
+is answered where a reader is looking rather than one hover away. The
+short form survives in the roll's day gutter, where the day shares a
+line with a page's title and its countdown and the reason for it still
+holds. Under the rows, a faint minimap of the roll, described below.
 
 The rail is navigation and nothing else. It offers no rename, no close,
 no rung, no hold and no drag-reorder. Days have an order the user does
@@ -360,6 +369,87 @@ and the strip shows it again the moment the mode goes off. Nothing on
 the rail mints by being drawn; the one click that makes anything is an
 empty Today's, which takes the shipped create path and says so in its
 tooltip.
+
+**What #131 added to the rail.** Two refinements, written here rather
+than folded into the paragraphs above so the rail as branch 5 shipped it
+and the rail as it stands can be read side by side.
+
+The first is the words. `TimeUnit.railLabel(bucket:)` is
+`spokenLabel(bucket:)` with its first letter raised, and nothing else:
+one table of phrases, so the row, its tooltip and what VoiceOver reads
+cannot drift apart, and a reader who hears "3 days ago" is looking at
+those words rather than translating them from "-3d". Only the first
+letter is raised, because `capitalized` renders "2 Days Ago", a title
+for something that is not a name. The column went from 56pt to 96pt to
+hold the longest phrase the rail can realistically be asked for, "10
+days ago" from a page held past its rung, with tail truncation as the
+net rather than the plan.
+
+The second is the background, which was a flat `Color.panelBackground`
+and is now a faint reading of the roll: a bar per day, as tall a share
+of the column as that day is of the document, and a band over the part
+the reader can see, which follows the clip as it scrolls.
+
+It is a scaled impression of the roll in its own coordinate space, and
+not a diagram of the rail. The whole document is mapped onto the whole
+column, in proportion to content, while the rows above are packed from
+the top and pushed apart by a spacer, so a bar and the row for the same
+day do not line up and are not meant to: a day holding most of the roll
+takes most of the column whatever height its row happens to have. What
+the two do share is a count and an order, one shape per drawn day,
+newest at the top of both. Anyone who wants the bars to sit beside their
+rows is asking for a different feature, one where the rail's rows are
+laid out by content rather than packed, and that is a layout change and
+not a drawing one.
+
+Four things about it are load-bearing.
+
+- **Geometry, never glyphs.** `RollGeometry` carries a day's top and
+  height, the document's height and the clip's window, and nothing else
+  crosses it. A minimap drawn from scaled text would be a second surface
+  rendering page content: it would have to answer for how a concealed
+  block draws on it, it would cost a second layout pass or a layer
+  snapshot per quiet day, and it would invite an argument about whether
+  two point glyphs are legible. Rectangles cannot leak a word, so there
+  is no argument to have. No per-block and no per-line rendering either:
+  the finest thing the rail draws is a day.
+- **Faint is a requirement.** The markers over it, the day's words, its
+  gauge, the selection fill, are the rail's content, and a background
+  that competed with them would turn a navigation column into a chart.
+  The two inks (`RailMinimapView.dayInk` and `viewportInk`) are the
+  numbers the dogfood window is meant to argue with, which is why they
+  are named constants and not literals in a fill.
+- **One measurement, read off the frames.** The extents come from
+  `DayStackView.relayout`, the pass that has just placed every region,
+  so the minimap and the pages under the reader's eye cannot disagree
+  about how much page a day holds: the proportions are the roll's own
+  and not a second estimate of them. A day holding two pages is two rows
+  and one bar, folded by `RollGeometry.merging`.
+- **Published on a hop, and off the model.** `relayout` runs inside
+  `updateNSView`, so writing observed state there would be writing it
+  during a render pass; the measurement goes to its own
+  `RollGeometryModel` through a coalescing hop on the main actor, and
+  the minimap is the only view observing it. A scroll therefore redraws
+  a few rectangles rather than the header, the status stack and the
+  page. The roll watches the clip's **bounds** as well as its frame for
+  this, since scrolling moves no frame and nothing had needed to notice
+  it before.
+
+The mapping into the rail's coordinates is two pure functions,
+`RailMinimap.bars(of:in:)` and `band(of:in:)`, in the idiom
+`selectedBucket` and `chord(forRowAt:)` set. The edges they decide are
+the ones a drawing cannot be squinted at for: an unmeasured roll draws
+nothing rather than inventing proportions, a day a fraction of a point
+tall draws a hairline rather than vanishing under a row the rail is
+drawing anyway, an elastic overscroll clamps into the column instead of
+hanging off it, and a roll that fits in the card gets no band at all,
+because a band around everything marks nothing.
+
+Everything the rail already did is untouched by both: the tap targets,
+⌘1 to ⌘9, the selection mark, the gauges, the empty rule, the hidden
+pages footer, the tooltips and the accessibility triple. The minimap
+takes no clicks and is hidden from VoiceOver, which has the rows
+themselves.
 
 **The roll** is one `NSScrollView` over a flipped stack laid out top-down
 by frame. Perforations are chrome: a hairline drawn between regions in
@@ -532,6 +622,17 @@ are on each page's own gutter inside the roll, addressed to that page's
 slot, and the Settings caption says where they are rather than
 apologising for their absence.
 
+7. **The rail's words and its minimap** (issue #131), after the six.
+   `TimeUnit.railLabel(bucket:)` and the wider column
+   (`TimeRailView.width`); `RollGeometry`, `RollGeometryModel` and
+   `RailMinimap` in
+   `shell/Sources/CompanionKit/RollGeometry.swift`;
+   `DayStackView.measuredGeometry` and the clip's bounds observation;
+   and `RailMinimapView` under the rail's rows. Type names rather than
+   line numbers, for the reason branch 6 gives. Nothing in the core, at
+   the seam, in the projection's laws or in horizontal mode moved:
+   `TabStripView.swift` takes no diff on this one either.
+
 ## Test plan
 
 The model is Rust and pure Swift on purpose, because Swift builds and
@@ -585,6 +686,25 @@ decision that is Rust, the more of it is validated before a PR exists.
   description when nothing is; the footer's line appears exactly when
   the hidden count is non-zero; and each row reads its distance and its
   clock out loud.
+- **The words, and the minimap's map** (issue #131, pure Swift). The
+  rail's label table at the edges (today, yesterday, the counted form,
+  and a bucket from a clock that went backwards), and the law that it is
+  the spoken phrase and not a second table: lower-cased, the two are
+  equal for every bucket asked. Then the mapping, which is where the
+  minimap's whole argument is: an unmeasured roll and a rail with no
+  height draw nothing; one day that is the whole roll fills the column;
+  several days keep their order, their share and their place inside it;
+  a day a fraction of a point tall draws a hairline; the last day stops
+  at the foot of the rail; the band is absent when the whole roll is on
+  screen, follows the clip when it is not, and clamps into the column at
+  both ends of an elastic overscroll; and two pages of one day fold into
+  one bar.
+- **The measurement, in a real window** (the `DayScrollTests` idiom).
+  One extent per day in document order, each running from the top of its
+  header to the bottom of its page, read against the frames the pass
+  actually set; a day holding more writing measuring taller than a day
+  holding a line; two pages of one day measuring as one extent; and the
+  viewport following the clip down a roll that outgrows the card.
 - **The chords, pressed.** ⌘1 in the mode lands on today and takes the
   create path when today is empty, and a second press is a jump; ⌘2 and
   ⌥⌘→ count days rather than slots, asserted as the contrast between the
@@ -647,6 +767,11 @@ decision that is Rust, the more of it is validated before a PR exists.
   expired.
 - **No drag-reorder, no rename on the rail**, and no rail affordance for a
   tab holding no page.
+- **No text anywhere in the minimap**, at any size the rail can take, and
+  no per-block or per-line rendering on it either: the finest thing it
+  draws is a day, and the day is a rectangle. It is also not a control.
+  It takes no clicks and offers no drag: the reader jumps by the row
+  drawn over it, and scrolls by the roll.
 - **No text selection, copy-out or chip interaction inside a quiet
   region.** Click it and it becomes the editor, which already has all
   four.
@@ -794,11 +919,15 @@ the height that arrived, so nothing shifts under a sentence being read.
    third tab, the answer is probably to stop mapping numbers at all in
    this mode rather than to add a second set of chords.
 2. **Does the card want a wider floor while the mode is on?** The rail
-   eats 56pt of a 360pt minimum, and `BackdropGeometry.minWidth` is
-   deliberately not moved, so its clamp and its test stay as they are.
-   *Leaning:* leave it, and watch for the countdown header wrapping at the
-   floor. A mode-conditional minimum is a second geometry story, and this
-   one is already tested.
+   eats ~~56pt~~ 96pt of a 360pt minimum since #131 put the words on it,
+   and `BackdropGeometry.minWidth` is deliberately still not moved, so
+   its clamp and its test stay as they are. *Leaning:* leave it, and
+   watch for the countdown header wrapping at the floor. A
+   mode-conditional minimum is a second geometry story, and this one is
+   already tested. The question is sharper than it was, though: a
+   quarter of the narrowest card is now rail, and if the floor reads as
+   cramped the answer is more likely to be a narrower rail than a wider
+   minimum.
 3. **Is a day the right unit, and is anything else worth building?** The
    issue says configurable, starting with the day. *Leaning:* a day, and
    nothing else until someone asks for a week and can say what a week
@@ -841,6 +970,24 @@ the height that arrived, so nothing shifts under a sentence being read.
     instrument rather than a feature. If the vertical mode wins outright,
     the follow-up is an amendment to doc 04 and one model, not a setting
     kept forever out of politeness.
+11. **How faint should the minimap be, and does the band read as the
+    viewport?** (issue #131) `RailMinimapView.dayInk` and `viewportInk`
+    are 0.10 and 0.06 of the secondary label colour, chosen to sit under
+    the tertiary text the footer draws in and never yet measured against
+    a real card. *Leaning:* they are a starting point and the dogfood
+    window is the instrument. Two failure modes to watch for, in
+    opposite directions: a background loud enough to compete with the
+    gauges, and one so faint that a scrolled reader gets no sense of
+    place from it at all, in which case the honest answer is to drop the
+    band rather than to darken it.
+12. **Should the roll's day gutter say the day in words too?** (issue
+    #131) The rail says "2 days ago" and the perforation beside it says
+    "-2d", which is two vocabularies for one fact on one card.
+    *Leaning:* leave it until someone reports the mismatch. The gutter's
+    reason for the short form did not dissolve the way the rail's did:
+    the day shares that line with the page's title and its countdown,
+    and the header already speaks the phrase to VoiceOver, so nothing
+    there is abbreviation-only either.
 
 ## Effort estimate
 

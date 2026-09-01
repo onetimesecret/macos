@@ -207,6 +207,99 @@ final class DayScrollTests: XCTestCase {
         )
     }
 
+    // MARK: What the roll tells the rail
+
+    /// The measurement the rail's minimap is drawn from is read off the
+    /// frames this pass set: one extent per day, in the roll's own
+    /// order, each running from the top of the day's header to the
+    /// bottom of its page, with the document's own height and the
+    /// clip's own window beside them (issue #131). Nothing here is
+    /// computed a second way, which is the whole reason the minimap's
+    /// proportions cannot disagree with the pages under the reader's
+    /// eye.
+    func testTheRollMeasuresOneExtentPerDayInDocumentOrder() throws {
+        let model = try makeModel()
+        let first = try page(in: model, saying: longPage(lines: 20))
+        try page(in: model, saying: longPage(lines: 4))
+        try page(in: model, saying: "a line")
+        let roll = try mountRoll(model: model)
+
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: first),
+            selectedPage: first,
+            readOnly: false
+        )
+
+        let measured = roll.stack.measuredGeometry
+        XCTAssertEqual(measured.extents.map(\.bucket), [0, -1, -2], "the days lost the roll's order")
+        for (extent, part) in zip(measured.extents, roll.stack.laidOut) {
+            XCTAssertEqual(extent.top, part.header.frame.minY, accuracy: 0.5)
+            XCTAssertEqual(extent.bottom, part.body.frame.maxY, accuracy: 0.5)
+        }
+        XCTAssertEqual(measured.documentHeight, roll.stack.frame.height, accuracy: 0.5)
+        XCTAssertEqual(
+            measured.viewportHeight, roll.scroll.contentView.bounds.height, accuracy: 0.5)
+        XCTAssertEqual(measured.viewportTop, 0, accuracy: 0.5)
+        // A day holding more writing is a taller stretch of the roll,
+        // which is the fact the minimap's bars are a reading of.
+        XCTAssertGreaterThan(
+            measured.extents[0].height, measured.extents[2].height,
+            "a long day measured no taller than a one line day")
+    }
+
+    /// Two pages born on one day are one bar, because the rail draws one
+    /// row for that day. The extent covers both rows, the hairline
+    /// between them included.
+    func testTwoPagesOfOneDayMeasureAsOneExtent() throws {
+        let model = try makeModel()
+        let first = try page(in: model, saying: "this morning")
+        try page(in: model, saying: "this afternoon")
+        try page(in: model, saying: "yesterday")
+        let roll = try mountRoll(model: model)
+        let projection = TimeUnitProjection.project(
+            tabs: filed(model, under: [0, 0, -1]), selectedPageID: first, unit: .day
+        )
+
+        roll.stack.update(projection: projection, selectedPage: first, readOnly: false)
+
+        let measured = roll.stack.measuredGeometry
+        XCTAssertEqual(roll.stack.laidOut.count, 3, "three pages, three rows")
+        XCTAssertEqual(measured.extents.map(\.bucket), [0, -1], "two days, two bars")
+        XCTAssertEqual(measured.extents[0].top, 0, accuracy: 0.5)
+        XCTAssertEqual(
+            measured.extents[0].bottom, roll.stack.laidOut[1].body.frame.maxY, accuracy: 0.5,
+            "today's bar stopped short of its second page")
+        XCTAssertEqual(
+            measured.extents[1].top, roll.stack.laidOut[2].header.frame.minY, accuracy: 0.5)
+    }
+
+    /// And the viewport half of it follows the clip, so the band the
+    /// rail draws over the bars says where the reader actually is. The
+    /// scroll moves no frame, which is why the roll watches the clip's
+    /// bounds as well as its frame.
+    func testTheMeasurementFollowsTheClipDownTheRoll() throws {
+        let model = try makeModel()
+        let first = try page(in: model, saying: longPage(lines: 120))
+        try page(in: model, saying: longPage(lines: 120))
+        let roll = try mountRoll(model: model)
+
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: first),
+            selectedPage: first,
+            readOnly: false
+        )
+        roll.scroll.contentView.scroll(to: NSPoint(x: 0, y: 240))
+        roll.scroll.reflectScrolledClipView(roll.scroll.contentView)
+
+        let measured = roll.stack.measuredGeometry
+        XCTAssertEqual(measured.viewportTop, 240, accuracy: 1)
+        XCTAssertGreaterThan(
+            measured.documentHeight, measured.viewportHeight,
+            "a roll this long has to outgrow the card for the band to mean anything")
+        let band = try XCTUnwrap(RailMinimap.band(of: measured, in: 100))
+        XCTAssertGreaterThan(band.y, 0, "the band stayed at the top of a scrolled roll")
+    }
+
     // MARK: Where the roll opens, and where it stays
 
     /// Day 0 is the top of the document, and the anchor is an instant
