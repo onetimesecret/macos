@@ -711,6 +711,13 @@ decision that is Rust, the more of it is validated before a PR exists.
   viewport following the clip down a roll that outgrows the card; and a
   teardown arriving after the replacement roll has already measured
   itself leaving that measurement standing.
+- **The hop, and who is allowed to take it**
+  (`RollGeometryModelTests`, no window at either end). A mount clears
+  what the last roll left behind; a replaced roll can neither reset nor
+  publish; the last roll going away leaves the rail with nothing to
+  draw; a measurement the rail is already drawing is not published at
+  all; and a burst of them inside one turn of the loop lands as one
+  redraw, on the last measurement rather than the first.
 - **The chords, pressed.** ⌘1 in the mode lands on today and takes the
   create path when today is empty, and a second press is a jump; ⌘2 and
   ⌥⌘→ count days rather than slots, asserted as the contrast between the
