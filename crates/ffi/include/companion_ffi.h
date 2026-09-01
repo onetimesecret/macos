@@ -372,6 +372,36 @@ bool companion_sheet_apply_ops(CompanionHandle *handle, uint64_t sheet,
                                const char *json);
 
 /*
+ * Undo, which lives here rather than in AppKit (issue #132). One step
+ * is the page's last local edit, or the couple of seconds of them the
+ * merge interval groups together. The stack is bound to this document's
+ * own peer, so a step can only revert operations this device authored:
+ * cross-device undo is out by design and out by ADR-0021's key-frame
+ * law, which never hands a joiner the operations it would need.
+ *
+ * Returns whether anything moved. On true, restate the page from
+ * companion_sheet_document_json() and put the caret where
+ * companion_sheet_undo_caret_u16() says.
+ */
+bool companion_sheet_undo(CompanionHandle *handle, uint64_t sheet);
+bool companion_sheet_redo(CompanionHandle *handle, uint64_t sheet);
+
+/*
+ * Whether a step is waiting in either direction. False for an unknown
+ * page.
+ */
+bool companion_sheet_can_undo(CompanionHandle *handle, uint64_t sheet);
+bool companion_sheet_can_redo(CompanionHandle *handle, uint64_t sheet);
+
+/*
+ * Where the caret belongs after the last accepted step, in UTF-16 code
+ * units. -1 when nothing was stepped, when the step carried no
+ * position, or for an unknown page; leave the caret alone in that case.
+ */
+int64_t companion_sheet_undo_caret_u16(CompanionHandle *handle,
+                                       uint64_t sheet);
+
+/*
  * Replace a page's document wholesale: a JSON array of runs in document
  * order — {"ink": "text"} for visible ink, {"chip": id} where a chip
  * sits. Since edits travel as operations (companion_sheet_apply_ops),

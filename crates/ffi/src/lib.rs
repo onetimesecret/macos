@@ -900,6 +900,119 @@ pub unsafe extern "C" fn companion_sheet_apply_ops(
 }
 
 // ---------------------------------------------------------------------------
+// Undo: the core's stack, not AppKit's (issue #132)
+// ---------------------------------------------------------------------------
+
+/// Take back a page's last local edit, or the couple of seconds of them
+/// the merge interval groups into one step. Returns whether anything
+/// was reverted; on false the shell leaves the page exactly as it is.
+///
+/// The stack is Loro's, bound to this document's own peer, so a step
+/// can only ever revert operations this device authored. Cross-device
+/// undo is out of reach twice over: the library refuses another peer's
+/// operations by design, and a device that joined at a key frame never
+/// held the operations an away-device undo would have to invert
+/// (ADR-0021 section 5).
+///
+/// On true the shell restates the page from
+/// [`companion_sheet_document_json`] and puts the caret where
+/// [`companion_sheet_undo_caret_u16`] says: the projection is a
+/// mirror of a document that has just moved underneath it.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_undo(handle: *mut CompanionHandle, sheet: u64) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.undo(SheetId::from_raw(sheet))
+}
+
+/// Put back the step [`companion_sheet_undo`] took, on the same terms.
+/// Returns whether anything was restored.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_redo(handle: *mut CompanionHandle, sheet: u64) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.redo(SheetId::from_raw(sheet))
+}
+
+/// Whether the page has a step waiting to be taken back. False for an
+/// unknown page, and false whenever the answer cannot be had.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_can_undo(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.can_undo(SheetId::from_raw(sheet))
+}
+
+/// Whether the page has a step waiting to be restored.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_can_redo(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.can_redo(SheetId::from_raw(sheet))
+}
+
+/// Where the caret belongs after the page's last accepted step, in
+/// UTF-16 code units. `-1` when nothing has been stepped, when the step
+/// carried no position, or for an unknown page; the shell then leaves
+/// the caret where the writer had it. This is what stands in for
+/// `AppKit`'s selection restoration now that the stack is down here: the
+/// position is recorded when the step is pushed and carried through any
+/// peer's operations that arrive while it waits.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_sheet_undo_caret_u16(
+    handle: *mut CompanionHandle,
+    sheet: u64,
+) -> i64 {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return -1;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return -1;
+    };
+    guard
+        .store
+        .restored_caret_u16(SheetId::from_raw(sheet))
+        .map_or(-1, i64::from)
+}
+
+// ---------------------------------------------------------------------------
 // Chips: copy-out, delete
 // ---------------------------------------------------------------------------
 
@@ -3810,6 +3923,57 @@ mod tests {
             ));
             let doc = take_json(companion_sheet_document_json(handle, sheet));
             assert!(doc.contains("plan the launch"), "unexpected body: {doc}");
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn undo_and_redo_cross_the_seam_with_the_caret() {
+        let handle = handle();
+        unsafe {
+            let (_tab, sheet) = new_page(handle);
+            assert!(!companion_sheet_can_undo(handle, sheet));
+            let batch = r#"[{"ins": {"at": 0, "text": "a whole thought"}}]"#;
+            assert!(companion_sheet_apply_ops(
+                handle,
+                sheet,
+                cstring(batch).as_ptr()
+            ));
+            assert!(companion_sheet_can_undo(handle, sheet));
+            assert!(!companion_sheet_can_redo(handle, sheet));
+
+            assert!(companion_sheet_undo(handle, sheet));
+            let doc = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(!doc.contains("a whole thought"), "unexpected body: {doc}");
+            assert_eq!(companion_sheet_undo_caret_u16(handle, sheet), 0);
+            assert!(companion_sheet_can_redo(handle, sheet));
+
+            assert!(companion_sheet_redo(handle, sheet));
+            let doc = take_json(companion_sheet_document_json(handle, sheet));
+            assert!(doc.contains("a whole thought"), "unexpected body: {doc}");
+
+            // Nothing left in either direction, and the seam says so
+            // rather than pretending a step happened.
+            assert!(!companion_sheet_redo(handle, sheet));
+            companion_free(handle);
+        }
+    }
+
+    #[test]
+    fn the_undo_seams_fail_closed_on_a_null_handle_and_an_unknown_page() {
+        let handle = handle();
+        unsafe {
+            assert!(!companion_sheet_undo(ptr::null_mut(), 1));
+            assert!(!companion_sheet_redo(ptr::null_mut(), 1));
+            assert!(!companion_sheet_can_undo(ptr::null_mut(), 1));
+            assert!(!companion_sheet_can_redo(ptr::null_mut(), 1));
+            assert_eq!(companion_sheet_undo_caret_u16(ptr::null_mut(), 1), -1);
+
+            assert!(!companion_sheet_undo(handle, 4_242));
+            assert!(!companion_sheet_redo(handle, 4_242));
+            assert!(!companion_sheet_can_undo(handle, 4_242));
+            assert!(!companion_sheet_can_redo(handle, 4_242));
+            assert_eq!(companion_sheet_undo_caret_u16(handle, 4_242), -1);
             companion_free(handle);
         }
     }
