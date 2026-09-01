@@ -675,9 +675,12 @@ public struct InkEditorView: NSViewRepresentable {
             // clamped, rather than guessing at an offset.
             let length = textView.textStorage?.length ?? 0
             let landing = outcome.caret ?? textView.selectedRange().location
-            textView.setSelectedRange(
-                Self.clamped(NSRange(location: landing, length: 0), to: length)
-            )
+            let caret = Self.clamped(NSRange(location: landing, length: 0), to: length)
+            textView.setSelectedRange(caret)
+            // Rewriting the whole storage resets the scroller, so a
+            // step taken over an edit that was off screen would put the
+            // caret somewhere the writer cannot see. Follow it.
+            textView.scrollRangeToVisible(caret)
         }
 
         // MARK: Editing (ops across the seam, ADR-0013)
