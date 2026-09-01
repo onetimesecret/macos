@@ -378,6 +378,42 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertFalse(list.devices[2].verified, "a stranger reads as one")
     }
 
+    func testTheDeviceListSaysWhenEachWasLastSeen() {
+        let now: UInt64 = 1_000_000_000_000
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: nil, nowWallMs: now),
+            "not seen on this channel",
+            "a paired device the roster does not carry is absent, not recent")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 30_000, nowWallMs: now),
+            "seen just now")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 5 * 60_000, nowWallMs: now),
+            "seen 5 minutes ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 3_600_000, nowWallMs: now),
+            "seen 1 hour ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 5 * 3_600_000, nowWallMs: now),
+            "seen 5 hours ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 24 * 3_600_000, nowWallMs: now),
+            "seen 1 day ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 9 * 24 * 3_600_000, nowWallMs: now),
+            "seen 9 days ago")
+    }
+
+    func testADeviceStampedInTheFutureIsAClockNotATimeTraveller() {
+        // Two machines, two clocks: the peer's attach stamp can land
+        // ahead of this Mac's now, and "seen in -3 minutes" would be
+        // the surface reporting the skew as news.
+        let now: UInt64 = 1_000_000_000_000
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now + 90_000, nowWallMs: now),
+            "seen just now")
+    }
+
     func testPumpOutcomeDecoding() throws {
         let json = """
         {

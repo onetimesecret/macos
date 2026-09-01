@@ -125,6 +125,9 @@ private struct SyncDeviceRow: View {
                 .foregroundStyle(.secondary)
             Text(title)
                 .font(.caption)
+            Text(seen)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.tertiary)
             Spacer()
             Text(badge)
                 .font(.system(.caption2, design: .monospaced))
@@ -149,12 +152,24 @@ private struct SyncDeviceRow: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("\(title), \(badge)"))
+        .accessibilityLabel(Text("\(title), \(seen), \(badge)"))
     }
 
     private var title: String {
         if device.thisDevice { return "this Mac" }
         return device.label.isEmpty ? "paired device" : device.label
+    }
+
+    /// When the channel last saw this device. This Mac is exempt: it
+    /// is being looked at, so saying when it was last seen would be a
+    /// strange thing to tell someone about the machine in front of
+    /// them.
+    private var seen: String {
+        if device.thisDevice { return "here" }
+        return SyncController.lastSeen(
+            attachedWallMs: device.attachedMs,
+            nowWallMs: UInt64(max(0, Date().timeIntervalSince1970 * 1000))
+        )
     }
 
     private var badge: String {

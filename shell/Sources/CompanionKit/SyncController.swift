@@ -735,6 +735,32 @@ public final class SyncController: ObservableObject {
         return reconciled(trouble: inferred, gate: gate)
     }
 
+    /// When the channel last saw a device, in the words its row shows
+    /// (issue #102's device list). The stamp is the attach time the
+    /// relay reported for that peer, which is the one piece of
+    /// metadata ADR-0021 §4 admits the relay may hold, so this says
+    /// "seen" rather than "active": it is when the device joined the
+    /// channel, not when it last typed anything.
+    ///
+    /// Coarse on purpose. A device list is read to answer "is my
+    /// laptop on this channel, and roughly since when", and a stamp to
+    /// the second would be a precision the number does not have — the
+    /// roster is refreshed when this Mac attaches, so it ages between
+    /// attaches. A future stamp is a clock disagreeing across two
+    /// machines, not a device seen tomorrow, so it reads as just now.
+    public nonisolated static func lastSeen(attachedWallMs: UInt64?, nowWallMs: UInt64) -> String {
+        guard let attachedWallMs else { return "not seen on this channel" }
+        let elapsed = nowWallMs > attachedWallMs ? nowWallMs - attachedWallMs : 0
+        let seconds = elapsed / 1000
+        if seconds < 90 { return "seen just now" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "seen \(minutes) minutes ago" }
+        let hours = minutes / 60
+        if hours < 24 { return "seen \(hours) \(hours == 1 ? "hour" : "hours") ago" }
+        let days = hours / 24
+        return "seen \(days) \(days == 1 ? "day" : "days") ago"
+    }
+
     /// A failed sign-in, one sentence per §5 failure row.
     public nonisolated static func signinSentence(reason: String) -> String {
         switch reason {
