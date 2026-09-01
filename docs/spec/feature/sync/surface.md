@@ -47,6 +47,14 @@ Turning the switch on with no relay configured is the one state where
 sync is on and nothing can leave. The gate still reads `off`, the
 header still says nothing, and the page says why in full.
 
+Turning the switch off ends the sign in ceremony as well as the loop.
+A browser trip is part of the session, and one left running behind the
+switch comes back with a grant that the core persists before it
+answers, so a shell that merely declines to attach has already been
+signed in by the time it declines. `stop` cancels the ceremony for
+that reason, and the proof is that nothing is left to give up on
+afterwards.
+
 ## 2. Enrolment
 
 **Signing in** is ADR-0027 section 1's browser trip, begun from the

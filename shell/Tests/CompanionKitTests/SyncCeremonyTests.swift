@@ -74,4 +74,28 @@ final class SyncCeremonyTests: XCTestCase {
         // this test.
         sync.giveUpSignin()
     }
+
+    func testTurningSyncOffEndsABrowserTripInFlight() throws {
+        let (sync, client, _) = try configured()
+        sync.enabled = true
+        sync.signIn()
+        XCTAssertEqual(client.syncGate(), .signingIn)
+
+        // Off means the app you already had. A ceremony left running
+        // behind the switch would come back with a grant, and the core
+        // persists that grant to the Keychain before it answers, so a
+        // shell that only declines to attach has already been signed
+        // in by the time it declines.
+        sync.enabled = false
+
+        XCTAssertNotEqual(
+            client.syncGate(), .signingIn,
+            "the switch going off ends the trip rather than leaving it out"
+        )
+        XCTAssertFalse(
+            client.syncSigninCancel(),
+            "there is nothing left to give up on, because turning off gave up"
+        )
+        XCTAssertNil(sync.headerWord, "and off says nothing at all")
+    }
 }

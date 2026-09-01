@@ -353,11 +353,19 @@ public final class SyncController: ObservableObject {
     private func stop() {
         let wasAttached = attached
         attached = false
+        // A browser trip is part of the session, so the switch ends it
+        // too. Leaving it out would let a consent screen answered
+        // after the switch went off store a refresh token: the core
+        // persists the grant before it returns, so a shell that only
+        // declines to attach has already been signed in by the time it
+        // declines (issue #102's first criterion).
         trouble = nil
         signinFailure = nil
         pairingStage = nil
         pairingTimer?.invalidate()
         retryTimer?.invalidate()
+        _ = client.syncSigninCancel()
+        signinGivenUp = false
         // Nothing is arriving from anywhere now, so no page may go on
         // saying that something is.
         elsewhereTimer?.invalidate()
