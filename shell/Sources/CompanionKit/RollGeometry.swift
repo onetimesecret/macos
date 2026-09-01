@@ -125,6 +125,12 @@ public final class RollGeometryModel: ObservableObject {
     /// The measurement waiting for the hop, if one is in flight.
     private var pending: RollGeometry?
 
+    /// The hop itself, while one is booked. Held so a roll that comes
+    /// back to where it already was can call it off, rather than leaving
+    /// a turn of the loop reserved for a publication that will not
+    /// happen and having the next measurement book a second one.
+    private var hop: Task<Void, Never>?
+
     /// The roll the rail is drawing, and the only one this model
     /// listens to.
     ///
@@ -158,14 +164,19 @@ public final class RollGeometryModel: ObservableObject {
         guard publisher == ObjectIdentifier(roll) else { return }
         guard measured != geometry else {
             // The roll came back to where it already was before the hop
-            // could run, so there is nothing left to say.
+            // could run, so there is nothing left to say and the turn of
+            // the loop it booked is given back.
             pending = nil
+            hop?.cancel()
+            hop = nil
             return
         }
-        let alreadyScheduled = pending != nil
         pending = measured
-        guard !alreadyScheduled else { return }
-        Task { @MainActor [weak self] in self?.settle() }
+        guard hop == nil else { return }
+        hop = Task { @MainActor [weak self] in
+            guard !Task.isCancelled else { return }
+            self?.settle()
+        }
     }
 
     /// The roll is going away. Ignored when a replacement has already
@@ -177,6 +188,7 @@ public final class RollGeometryModel: ObservableObject {
     }
 
     private func settle() {
+        hop = nil
         guard let next = pending else { return }
         pending = nil
         geometry = next
