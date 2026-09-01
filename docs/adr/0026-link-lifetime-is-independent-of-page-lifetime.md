@@ -57,7 +57,10 @@ default and whatever the person asked for at the moment of sharing.
 - The existing test `ttl_snaps_down_the_ladder`
   (`crates/ffi/src/conceal.rs`) pins the derivation, including the
   round-up at `ladder_snapped_ttl(60) == 3600`. It is pinning a
-  behaviour this ADR retires, not a property worth keeping.
+  behaviour this ADR retires, not a property worth keeping. Removing
+  the coupling in code is tracked in issue #139; it is blocked on
+  ADR-0011 settling the link's independent default, so the code and
+  this ADR stay in tension until then.
 - We give up a story that sounded protective: that sharing from a page
   could never outlive the page. It sounded protective because it
   borrowed the page's promise, but the page's promise is about the
