@@ -13,10 +13,13 @@
 //! `_utf16` variants are called here, and no Rust `String` is ever
 //! indexed by a wire offset.
 
+use std::sync::{Arc, Mutex};
+
 use loro::cursor::{Cursor, PosType, Side};
+use loro::event::{Diff, DiffEvent};
 use loro::{
     CommitOptions, ContainerTrait as _, ExpandType, ExportMode, LoroDoc, LoroText, LoroValue,
-    StyleConfig, StyleConfigMap, TextDelta, VersionVector,
+    StyleConfig, StyleConfigMap, TextDelta, UndoItemMeta, UndoManager, VersionVector,
 };
 use zeroize::Zeroizing;
 
@@ -30,6 +33,30 @@ const CHIP_MARK: &str = "chip";
 /// occupies in the body. One code unit in UTF-16, which keeps the
 /// sentinel's wire width equal to its width here.
 const CHIP_SENTINEL: &str = "\u{FFFC}";
+
+/// How long one undo step may go on absorbing further commits, in
+/// milliseconds. Loro's default is zero, which makes every commit its
+/// own step, and every keystroke is a commit here, so an unconfigured
+/// stack would take one character back per ⌘Z.
+///
+/// Two seconds is the keystroke-logging literature's cognitively
+/// meaningful writing pause (Wengelin; Van Waes and Leijten), the same
+/// number ADR-0025's revision boundaries were seeded from, and the
+/// choice is argued in full at
+/// `docs/spec/feature/block-revisions/2026-0901-pause-boundaries.md`.
+/// The honest caveat, recorded here because the code is where it will
+/// be misread: the library's rule is a ceiling on how long one step may
+/// keep growing, measured from when the step began, not a detector of
+/// the idle gap the research describes. So a step never spans two units
+/// of thought, while a long fluent run splits into several. That is the
+/// safe direction to be wrong in: one ⌘Z takes back less than the
+/// writer expected rather than more.
+///
+/// This interval groups **local** operations and nothing else. It is
+/// not the sync cadence: ADR-0021 section 4 batches deltas on a clock
+/// precisely so that the wire never publishes typing rhythm, and that
+/// number belongs to the protocol. Nothing here reaches it.
+const UNDO_MERGE_INTERVAL_MS: i64 = 2_000;
 
 /// One run of the body, in document order: contiguous ink between
 /// chips, or a single chip.
@@ -100,6 +127,20 @@ pub(crate) struct SpanProvenance {
 pub(crate) struct SheetDocument {
     doc: LoroDoc,
     body: LoroText,
+    /// The undo stack, bound to this document and to the peer identity
+    /// it was minted with. Loro's manager reverts only that peer's own
+    /// operations, which is the whole reason it lives here rather than
+    /// in `AppKit` (issue #132): once remote operations land in a live
+    /// document, a stack that knew nothing of peers would happily take
+    /// back another device's sentence.
+    undo: UndoManager,
+    /// Where the caret belongs after the step that was last taken off
+    /// the stack, as a unicode scalar offset, or `None` when nothing
+    /// has been taken or the popped step carried no position. Written
+    /// by the pop hook while the library holds the floor and read once
+    /// the document is quiet again, which is the only moment the offset
+    /// can be converted to the UTF-16 the wire speaks.
+    caret: Arc<Mutex<Option<usize>>>,
 }
 
 impl SheetDocument {
@@ -130,7 +171,94 @@ impl SheetDocument {
         );
         doc.config_text_style(styles);
         let body = doc.get_text("body");
-        Self { doc, body }
+        // The stack is bound here and nowhere else, which is what makes
+        // every construction path a rebind: a restore reads a snapshot
+        // into a document minted by this function, and the compaction
+        // ceremony rebuilds into one. Both re-mint the peer id, and a
+        // stack bound to a peer that no longer exists points into
+        // operations that no longer exist, so undo starting empty at
+        // both boundaries is a property of the construction rather than
+        // a rule anyone has to remember. Undo therefore does not
+        // survive relaunch, deliberately: AppKit's stack died with the
+        // window and this one dies with the process, which is the
+        // honest thing to offer for a document whose history the
+        // ceremony is entitled to destroy.
+        let (undo, caret) = bind_undo(&doc, &body);
+        Self {
+            doc,
+            body,
+            undo,
+            caret,
+        }
+    }
+
+    /// Take one step back off the undo stack: the last local edit, or
+    /// the last two seconds of them ([`UNDO_MERGE_INTERVAL_MS`]).
+    /// Returns whether anything was reverted.
+    ///
+    /// Only this peer's operations are candidates. A neighbouring
+    /// device's text is not reachable from here by design, and could
+    /// not be reached anyway: a device joins at a key frame and never
+    /// holds the operations an away-device undo would have to invert
+    /// (ADR-0021 section 5).
+    pub(crate) fn undo(&mut self) -> bool {
+        self.set_caret(None);
+        // A refusal from the library is a step that did not happen, and
+        // a step that did not happen must read as one: the seam above
+        // restates the page only when this says something moved.
+        self.undo.undo().unwrap_or(false)
+    }
+
+    /// Take one step forward again. Returns whether anything was
+    /// restored.
+    pub(crate) fn redo(&mut self) -> bool {
+        self.set_caret(None);
+        self.undo.redo().unwrap_or(false)
+    }
+
+    /// Whether a step is waiting to be taken back.
+    pub(crate) fn can_undo(&self) -> bool {
+        self.undo.can_undo()
+    }
+
+    /// Whether a step that was taken back is waiting to be restored.
+    pub(crate) fn can_redo(&self) -> bool {
+        self.undo.can_redo()
+    }
+
+    /// Where the caret belongs after the last [`SheetDocument::undo`]
+    /// or [`SheetDocument::redo`], in UTF-16 code units, which is the
+    /// only offset unit this module lets out. `None` when nothing was
+    /// taken, when the step carried no position, or when the recorded
+    /// position no longer names a boundary the body recognizes.
+    ///
+    /// This is what replaces `AppKit`'s selection restoration: the push
+    /// hook records the position each step was authored at, the library
+    /// carries it through any remote operation that arrives in the
+    /// meantime, and the pop hook hands it back.
+    pub(crate) fn restored_caret(&self) -> Option<usize> {
+        let scalar = (*self.caret.lock().ok()?)?;
+        self.body
+            .convert_pos(scalar, PosType::Unicode, PosType::Utf16)
+    }
+
+    /// Forget everything on both stacks. Called wherever a step would
+    /// be a lie if it were taken: the ceremony that destroys the
+    /// operations a step points into, a wholesale restate that leaves
+    /// every recorded offset describing nothing, and every movement of
+    /// the chip roster, because undo must never un-seal (ADR-0009).
+    pub(crate) fn forget_undo(&self) {
+        self.undo.clear();
+        self.set_caret(None);
+    }
+
+    /// Write the pending caret slot, tolerating a poisoned lock the way
+    /// every read of it does: a caret nobody can read is a caret the
+    /// seam above simply does not move.
+    fn set_caret(&self, scalar: Option<usize>) {
+        if let Ok(mut slot) = self.caret.lock() {
+            *slot = scalar;
+        }
     }
 
     /// Insert ink at a UTF-16 offset. An empty insertion at a valid
@@ -193,39 +321,14 @@ impl SheetDocument {
     /// ink: an identity that cannot be read is not a chip, and the bare
     /// replacement character leaks nothing.
     pub(crate) fn runs(&self) -> Vec<DocRun> {
-        let mut runs: Vec<DocRun> = Vec::new();
-        for piece in self.body.to_delta() {
-            // `to_delta` on a text container yields inserts only;
-            // retains and deletes belong to diffs, not to state.
-            let TextDelta::Insert { insert, attributes } = piece else {
-                continue;
-            };
-            let chip = attributes
-                .as_ref()
-                .and_then(|attrs| attrs.get(CHIP_MARK))
-                .and_then(parse_mark_value);
-            match chip {
-                Some(id) => runs.push(DocRun::Chip(id)),
-                None => match runs.last_mut() {
-                    Some(DocRun::Ink(text)) => text.push_str(&insert),
-                    _ => runs.push(DocRun::Ink(insert)),
-                },
-            }
-        }
-        runs
+        runs_of(&self.body)
     }
 
     /// Every chip still standing in the body, in document order. A chip
     /// whose sentinel was deleted is simply absent, which is how a chip
     /// dies under this model.
     pub(crate) fn live_chips(&self) -> Vec<ItemId> {
-        self.runs()
-            .into_iter()
-            .filter_map(|run| match run {
-                DocRun::Chip(id) => Some(id),
-                DocRun::Ink(_) => None,
-            })
-            .collect()
+        chips_of(&self.body)
     }
 
     /// The UTF-16 offset of a chip's sentinel, if it still stands in
@@ -316,18 +419,18 @@ impl SheetDocument {
         bytes: &[u8],
         owned: &[ItemId],
     ) -> Result<(), UpdateRefusal> {
-        let doc = self.doc.fork();
-        let body = doc.get_text("body");
-        let trial = Self { doc, body };
-        let status = trial
-            .doc
-            .import(bytes)
-            .map_err(|_| UpdateRefusal::Malformed)?;
+        // The trial is a bare Loro document rather than a whole
+        // `SheetDocument`: a fork exists to be read once and thrown
+        // away, and binding an undo stack to it would subscribe a
+        // manager to a document nobody will ever type into.
+        let trial = self.doc.fork();
+        let body = trial.get_text("body");
+        let status = trial.import(bytes).map_err(|_| UpdateRefusal::Malformed)?;
         if status.pending.is_some() {
             return Err(UpdateRefusal::MissingHistory);
         }
         let mut seen: Vec<ItemId> = Vec::new();
-        for id in trial.live_chips() {
+        for id in chips_of(&body) {
             if !owned.contains(&id) || seen.contains(&id) {
                 return Err(UpdateRefusal::ChipRoster);
             }
@@ -538,6 +641,13 @@ impl SheetDocument {
             .doc
             .commit_with(CommitOptions::new().immediate_renew(true).timestamp(0));
         *self = fresh;
+        // The rebuild was typed in as ordinary local operations, so the
+        // fresh document's stack now holds one step that would undo the
+        // whole page back to nothing. It goes, along with everything
+        // the outgoing document's stack pointed into, which the
+        // ceremony has just destroyed. Undo starts empty on the far
+        // side of a ceremony, as it does on the far side of a relaunch.
+        self.forget_undo();
     }
 
     /// Close the open transaction with an injected timestamp, so tests
@@ -550,6 +660,15 @@ impl SheetDocument {
                 .immediate_renew(true)
                 .timestamp(timestamp),
         );
+    }
+
+    /// Retune the undo stack's merge interval, so a test can prove the
+    /// grouping is the interval's doing rather than an accident of how
+    /// fast a test machine commits. Test-only: production has exactly
+    /// one interval, and it is argued at [`UNDO_MERGE_INTERVAL_MS`].
+    #[cfg(test)]
+    pub(crate) fn set_merge_interval(&mut self, ms: i64) {
+        self.undo.set_merge_interval(ms);
     }
 
     /// This document's own peer identity, exposed so persistence tests
@@ -586,6 +705,116 @@ impl SheetDocument {
         let message = change.message();
         (!message.is_empty()).then(|| message.to_string())
     }
+}
+
+/// A body in document order, split into ink and chips at chip marks.
+/// Free-standing so a trial fork can be read without standing up a
+/// whole [`SheetDocument`] around it.
+fn runs_of(body: &LoroText) -> Vec<DocRun> {
+    let mut runs: Vec<DocRun> = Vec::new();
+    for piece in body.to_delta() {
+        // `to_delta` on a text container yields inserts only; retains
+        // and deletes belong to diffs, not to state.
+        let TextDelta::Insert { insert, attributes } = piece else {
+            continue;
+        };
+        let chip = attributes
+            .as_ref()
+            .and_then(|attrs| attrs.get(CHIP_MARK))
+            .and_then(parse_mark_value);
+        match chip {
+            Some(id) => runs.push(DocRun::Chip(id)),
+            None => match runs.last_mut() {
+                Some(DocRun::Ink(text)) => text.push_str(&insert),
+                _ => runs.push(DocRun::Ink(insert)),
+            },
+        }
+    }
+    runs
+}
+
+/// Every chip standing in a body, in document order.
+fn chips_of(body: &LoroText) -> Vec<ItemId> {
+    runs_of(body)
+        .into_iter()
+        .filter_map(|run| match run {
+            DocRun::Chip(id) => Some(id),
+            DocRun::Ink(_) => None,
+        })
+        .collect()
+}
+
+/// Bind an undo stack to a document: the merge interval, the push hook
+/// that remembers where each step was authored, and the pop hook that
+/// hands that position back. Returns the manager and the slot the pop
+/// hook writes into.
+///
+/// Both hooks are deliberately quiet about the document. The push hook
+/// asks the body for a cursor, which is safe because Loro emits its
+/// events with no state lock held, and the pop hook does nothing but
+/// copy a number: the offset it receives is a unicode scalar, and
+/// converting it to the UTF-16 the wire speaks happens later, once the
+/// undo has finished and the document is still again.
+fn bind_undo(doc: &LoroDoc, body: &LoroText) -> (UndoManager, Arc<Mutex<Option<usize>>>) {
+    let mut undo = UndoManager::new(doc);
+    undo.set_merge_interval(UNDO_MERGE_INTERVAL_MS);
+
+    let anchor = body.clone();
+    undo.set_on_push(Some(Box::new(move |_kind, _span, event| {
+        let mut meta = UndoItemMeta::new();
+        // A cursor rather than a bare offset, because a cursor is what
+        // the library transforms when a peer's operations arrive while
+        // the step sits on the stack. A step whose position cannot be
+        // read records none: the push that seeds the opposite stack
+        // during a step carries no event, so the first redo after an
+        // undo has no position of its own and the caret stays where the
+        // writer left it.
+        if let Some(pos) = event.as_ref().and_then(change_start)
+            && let Some(cursor) = anchor.get_cursor(pos, Side::Left)
+        {
+            meta.add_cursor(&cursor);
+        }
+        meta
+    })));
+
+    let caret = Arc::new(Mutex::new(None));
+    let sink = Arc::clone(&caret);
+    undo.set_on_pop(Some(Box::new(move |_kind, _span, meta| {
+        if let Ok(mut slot) = sink.lock() {
+            *slot = meta.cursors.first().map(|cursor| cursor.pos.pos);
+        }
+    })));
+
+    (undo, caret)
+}
+
+/// Where a local change began, as a unicode scalar offset into the
+/// body: the retained run in front of the first insertion or deletion.
+/// `None` for an event that touched no text.
+///
+/// The start rather than the end, because the library's contract for a
+/// recorded cursor is that it was acquired *before* the operations the
+/// step will invert. Undoing an insertion therefore lands the caret
+/// where the writer's hand was when they began it, and undoing a
+/// deletion lands it at the front of the text that has just come back.
+///
+/// Loro's event deltas are indexed in unicode scalars outside the wasm
+/// build, the same unit [`Cursor`] positions use, so nothing is
+/// converted here.
+fn change_start(event: &DiffEvent) -> Option<usize> {
+    for container in &event.events {
+        let Diff::Text(deltas) = &container.diff else {
+            continue;
+        };
+        let mut pos = 0usize;
+        for delta in deltas {
+            match delta {
+                TextDelta::Retain { retain, .. } => pos += retain,
+                TextDelta::Insert { .. } | TextDelta::Delete { .. } => return Some(pos),
+            }
+        }
+    }
+    None
 }
 
 /// Read a chip identity back out of its mark value. `None` for any
@@ -967,6 +1196,154 @@ mod tests {
         assert!(!contains(&full, b"DOOMED"));
         assert!(!contains(&full, &old_peer.to_le_bytes()));
         assert_ne!(doc.peer_id(), old_peer);
+    }
+
+    // ------------------------------------------------------------------
+    // The undo stack (issue #132)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn a_step_back_and_a_step_forward_return_the_body_to_where_it_was() {
+        let mut doc = SheetDocument::new();
+        doc.insert(0, "first").unwrap();
+        doc.commit(None);
+        // The two edits are pushed apart so the interval cannot fold
+        // them into one step; the grouping has its own test below.
+        doc.set_merge_interval(0);
+        doc.insert(5, " second").unwrap();
+        doc.commit(None);
+
+        assert!(doc.can_undo());
+        assert!(!doc.can_redo());
+        assert!(doc.undo());
+        assert_eq!(doc.runs(), vec![DocRun::Ink("first".to_string())]);
+        assert!(doc.can_redo());
+        assert!(doc.redo());
+        assert_eq!(doc.runs(), vec![DocRun::Ink("first second".to_string())]);
+    }
+
+    #[test]
+    fn an_empty_stack_refuses_to_step_in_either_direction() {
+        let mut doc = SheetDocument::new();
+        assert!(!doc.can_undo());
+        assert!(!doc.can_redo());
+        assert!(!doc.undo());
+        assert!(!doc.redo());
+        assert_eq!(doc.restored_caret(), None);
+    }
+
+    #[test]
+    fn a_step_puts_the_caret_where_the_edit_was_authored() {
+        let mut doc = SheetDocument::new();
+        doc.insert(0, "alpha").unwrap();
+        doc.commit(None);
+        doc.set_merge_interval(0);
+        doc.insert(5, "\u{1F600}beta").unwrap();
+        doc.commit(None);
+
+        assert!(doc.undo());
+        // The emoji went in with the step that was just taken back, so
+        // the caret comes home to the end of what is left, counted in
+        // the code units the wire speaks.
+        assert_eq!(doc.restored_caret(), Some(5));
+        assert_eq!(doc.utf16_len(), 5);
+    }
+
+    #[test]
+    fn commits_inside_the_merge_interval_come_back_as_one_step() {
+        // Two commits a fraction of a second apart, which is what a
+        // page taking dictation actually produces.
+        let mut doc = SheetDocument::new();
+        doc.insert(0, "one").unwrap();
+        doc.commit(None);
+        doc.insert(3, " two").unwrap();
+        doc.commit(None);
+        assert!(doc.undo());
+        assert_eq!(doc.runs(), Vec::<DocRun>::new());
+        assert!(!doc.can_undo());
+
+        // The same pair of commits with the interval off: now each is
+        // its own step, which is what proves the grouping above was the
+        // interval's doing and not the library's default.
+        let mut ungrouped = SheetDocument::new();
+        ungrouped.set_merge_interval(0);
+        ungrouped.insert(0, "one").unwrap();
+        ungrouped.commit(None);
+        ungrouped.insert(3, " two").unwrap();
+        ungrouped.commit(None);
+        assert!(ungrouped.undo());
+        assert_eq!(ungrouped.runs(), vec![DocRun::Ink("one".to_string())]);
+        assert!(ungrouped.can_undo());
+    }
+
+    #[test]
+    fn a_restored_document_has_nothing_to_step_back_through() {
+        let source = SheetDocument::new();
+        source.insert(0, "written before the quit").unwrap();
+        source.commit(None);
+
+        let restored = SheetDocument::new();
+        restored.import_snapshot(&source.export_snapshot()).unwrap();
+
+        // The history is all there in the log; none of it is this
+        // document's peer's, and the stack is bound to that peer. Undo
+        // does not survive relaunch, which is the answer issue #132
+        // asked for explicitly.
+        assert_eq!(
+            restored.runs(),
+            vec![DocRun::Ink("written before the quit".to_string())]
+        );
+        assert!(!restored.can_undo());
+        assert!(!restored.can_redo());
+    }
+
+    #[test]
+    fn the_ceremony_leaves_nothing_to_step_back_through() {
+        let mut doc = SheetDocument::new();
+        doc.insert(0, "kept").unwrap();
+        doc.commit(None);
+        assert!(doc.can_undo());
+
+        doc.compact();
+
+        // The rebuild retyped the body under a fresh peer, so an
+        // unattended stack would hold one step that undid the whole
+        // page. It holds nothing, and the body is intact.
+        assert!(!doc.can_undo());
+        assert!(!doc.can_redo());
+        assert!(!doc.undo());
+        assert_eq!(doc.runs(), vec![DocRun::Ink("kept".to_string())]);
+    }
+
+    #[test]
+    fn a_local_step_back_leaves_a_peers_operations_standing() {
+        let source = SheetDocument::new();
+        let mut mirror = SheetDocument::new();
+
+        // The mirror's own sentence, then the peer's, arriving as an
+        // ordinary update batch.
+        mirror.insert(0, "mine.").unwrap();
+        mirror.commit(None);
+        source.insert(0, "theirs.").unwrap();
+        source.commit(None);
+        let delta = source.export_updates_since(&mirror.version()).unwrap();
+        mirror.import_update(&delta, &[]).unwrap();
+        let merged = mirror.utf16_len();
+        assert_eq!(merged, 12);
+
+        // One step back takes the mirror's own sentence and nothing
+        // else: the peer's text is still standing afterwards.
+        assert!(mirror.undo());
+        let left: String = mirror
+            .runs()
+            .into_iter()
+            .map(|run| match run {
+                DocRun::Ink(text) => text,
+                DocRun::Chip(_) => String::new(),
+            })
+            .collect();
+        assert_eq!(left, "theirs.");
+        assert!(!mirror.can_undo(), "the peer's ops were never candidates");
     }
 
     /// A peer id guaranteed to differ from `not`, minted from the same
