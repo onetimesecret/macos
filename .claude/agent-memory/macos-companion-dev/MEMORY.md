@@ -17,4 +17,10 @@
 - [Issue #79 editor factoring](project_issue79_editor_factoring.md): `makeInkTextView` builds the one editor without a scroller, `moveEditor` holds the swap, editing stays with the mount and a nil scroll view skips only the scroll leg
 - [Issue #79 time rail](project_issue79_time_rail.md): the rail's targets must equal `visibleTargets`', the card's two content rows are written out in full, and a View type's statics are main-actor isolated so `map` wants a closure
 - [Issue #79 perforated roll](project_issue79_perforated_roll.md): the editor is a permanent child moved by frame, a quiet day's storage is its own, and a TextKit 1 storage nobody retains is freed under the view laying it out
+- [Issue #131 rail minimap](project_issue131_rail_minimap.md): the rail says words while the roll's gutter keeps "-3d" on purpose, and the two minimap inks await dogfood
+- [Issue #98 account gate](project_issue98_account_gate.md): ADR-0027 names seven gate tokens #102 must reuse, #119/#121 built most of it first, three server facts await ratification
 - [Undo tests need a pumped run loop](project_undo_needs_pumped_runloop.md): XCTest never turns the loop, so NSUndoManager's event group stays open and one undo() takes the fixture with it
+- [Issue #132 undo manager](project_issue132_undo_manager.md): Loro's merge interval is a step-duration ceiling, a merged step keeps the first caret, and the stack dies whenever the chip roster moves
+- [Issue #102 sync surface](project_issue102_sync_surface.md): the delta stream has no author so own ops echo back as `applied`, and the signin cancel now really ends the browser trip
+- [A cancel covers the whole ceremony](feedback_cancel_covers_whole_ceremony.md): read the abort flag at every wait and under the commit lock, and give every core token a Swift sentence
+- [Stacked version bumps go silent](project_stacked_version_bumps.md): two branches bumping one crate to the same number never conflict; bump again in a follow up commit
