@@ -138,3 +138,9 @@ ADR-0017 own the superseded staged-content and object-graph decisions.
 - A supported macOS or Keychain change makes the stated write, key-storage,
   or availability assumptions unavailable. The remaining persistence policy
   must then be re-evaluated against that platform change.
+
+## Decision history
+
+- **2026-07-15:** This remains the proposed base record; its 2026-08-06 revision did not change that status.
+- **2026-08-20:** [ADR-0016](0016-content-persists-across-restart.md) superseded the named staged-content lifecycle and related consequences portions; [ADR-0017](0017-durable-tabs-expiring-pages.md) superseded the named object-graph and title-ownership portions. See [Supersession](#supersession) for scope.
+- **2026-08-20 onward:** The portions named as still standing in [Supersession](#supersession) remain in force.

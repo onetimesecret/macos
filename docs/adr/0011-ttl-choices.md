@@ -225,9 +225,10 @@ they do not exchange a paradigm or infer one from a rung.
 - The server reports an allowed link-TTL set that excludes the seven-day
   default. The app needs a separately decided selection rule against that
   authoritative set; it must not reuse the page ladder.
-- A second paradigm is ready to ship without a defined boundary schedule
-  and durable-tab rung mapping. The shared rung rule is insufficient until
-  those two decisions are explicit.
+- A proposed paradigm cannot preserve its legible nominal durations, equal
+  rung count, wrap, and click-distance invariants without displaying a
+  misleading duration. Reopen the ladder decision rather than ship a ladder
+  whose labels misrepresent its deadlines.
 - Hardware verification finds the displayed remaining time and the enforced
   expiry disagree across a timezone or daylight-saving transition. The one
   stored-deadline rule then needs to be re-examined before the boundary snap

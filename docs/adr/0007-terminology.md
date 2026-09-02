@@ -350,3 +350,9 @@ different meaning now would leave that feature unnameable later.
 Naming the operation says nothing about what it protects. The security
 properties of a conceal live in ADR-0012 and in doc 05, not in the
 word.
+
+## Decision history
+
+- **2026-07-15:** This remains the proposed base record.
+- **2026-07-24, 2026-08-05, and 2026-08-24:** [Amendment 1](#amendment-1-paste-is-a-supported-ingress-path), [Amendment 2](#amendment-2-the-reproducibility-claim-is-scoped-to-the-unsigned-artifact), and [Amendment 3](#amendment-3-conceal-and-reveal-are-the-vocabulary-promotion-is-retired) were accepted independently; they do not change the base record's proposed status.
+- **2026-08-05:** [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md) supersedes this record in part: it owns the persistence model and the authoritative narrowing of Decision 2. All other portions remain in force.
