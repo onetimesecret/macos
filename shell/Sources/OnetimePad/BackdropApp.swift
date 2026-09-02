@@ -27,6 +27,27 @@ struct BackdropApp: App {
                 // is the Settings placeholder, so the standard Edit menu
                 // is asked for by name rather than assumed.
                 TextEditingCommands()
+                // Undo is the core's stack (issue #132), so the menu
+                // has to send the same action the chord does rather
+                // than SwiftUI's own undo command, which drives the
+                // environment's `UndoManager` and knows nothing about
+                // the document. Both items post `undo:`/`redo:` down
+                // the responder chain, where the page's text view
+                // answers them. With no page holding the keyboard
+                // nothing responds, and the click is a no-op rather
+                // than a second history moving.
+                //
+                // The chords come from the keymap, like every other
+                // chord this app advertises: nil means the file unbound
+                // them, and then the items stay and lose the shortcut.
+                CommandGroup(replacing: .undoRedo) {
+                    UndoRedoItems(
+                        steps: appDelegate.editSteps,
+                        undoShortcut: appDelegate.undoShortcut,
+                        redoShortcut: appDelegate.redoShortcut,
+                        send: appDelegate.sendToResponder
+                    )
+                }
                 // The scene's automatic "Settings…" (⌘,) item would open
                 // the empty placeholder as a blank window. Repoint it so
                 // every ⌘, in the app lands on the one real Settings
@@ -52,6 +73,39 @@ struct BackdropApp: App {
                     }
                 }
             }
+    }
+}
+
+/// The Edit menu's Undo and Redo.
+///
+/// A view of its own because a `CommandGroup`'s content is a view, and
+/// a view is what can observe. The greying out has to be driven from
+/// here: a SwiftUI menu item is not the nil-targeted `NSMenuItem` the
+/// responder chain validates, it carries SwiftUI's own target, so
+/// `InkTextView.validateMenuItem` is never asked about these two and
+/// `.disabled` is the only thing that can dim them. What it reads is
+/// still the core's own answer, re-asked by the model whenever the
+/// page, its editability or its history can have moved; the text view
+/// keeps its validation for any other route that arrives nil-targeted.
+///
+/// Enablement is display, never a gate. Both ends fail closed on their
+/// own: the click posts an action nobody answers when no page holds the
+/// keyboard, and the page refuses the step outright when it is shown
+/// read-only.
+@MainActor
+private struct UndoRedoItems: View {
+    @ObservedObject var steps: EditStepAvailability
+    let undoShortcut: KeyboardShortcut?
+    let redoShortcut: KeyboardShortcut?
+    let send: (Selector) -> Void
+
+    var body: some View {
+        Button("Undo") { send(#selector(EditStepResponder.undo(_:))) }
+            .keyboardShortcut(undoShortcut)
+            .disabled(!steps.canUndo)
+        Button("Redo") { send(#selector(EditStepResponder.redo(_:))) }
+            .keyboardShortcut(redoShortcut)
+            .disabled(!steps.canRedo)
     }
 }
 
@@ -265,6 +319,42 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// the surprise, not the honesty.
     var settingsShortcut: KeyboardShortcut? {
         settingsKeystroke?.keyboardShortcut
+    }
+
+    /// The Edit menu's two undo chords, read from the keymap for the
+    /// same reason ⌘, is: the file is the authoritative list of what
+    /// the keyboard does, and a chord spelled in Swift here would
+    /// survive a user unbinding it in their own keymap.
+    ///
+    /// The page's text view claims the same chord first, because a key
+    /// equivalent reaches the key window's view chain before the main
+    /// menu. The menu carries it to show what the item costs, not to be
+    /// the thing that fires.
+    var undoShortcut: KeyboardShortcut? {
+        model.pages.keymap.menuKeystroke(for: .editorUndo)?.keyboardShortcut
+    }
+
+    var redoShortcut: KeyboardShortcut? {
+        model.pages.keymap.menuKeystroke(for: .editorRedo)?.keyboardShortcut
+    }
+
+    /// What the two items grey themselves out on: the core's answer for
+    /// the page under the editor, published by the model.
+    var editSteps: EditStepAvailability { model.pages.editSteps }
+
+    /// Post an action down the responder chain, which is how a menu
+    /// item reaches whoever is first responder. Nothing happens when
+    /// nothing answers, which is the fail-closed shape the whole seam
+    /// keeps: a menu click with no page holding the keyboard moves no
+    /// history at all.
+    ///
+    /// A `Selector` rather than a string: `undo:` misspelled would send
+    /// nothing and look exactly like the honest case of nobody
+    /// answering, which is the one failure this route cannot report.
+    /// `EditStepResponder` is what lets the compiler check the pairing
+    /// from a target that cannot see the page's text view.
+    func sendToResponder(_ selector: Selector) {
+        NSApp.sendAction(selector, to: nil, from: nil)
     }
 
     /// The Settings window, from the menu bar's ⌘, or either of the

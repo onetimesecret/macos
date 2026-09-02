@@ -71,9 +71,9 @@ final class TabLifetimeTests: XCTestCase {
 
     /// The re-key, which is the split's one real correctness trap. A
     /// reused tab must not hand its new page the dead one's text
-    /// storage or undo stack: an attachment character for a zeroized
-    /// chip within reach of ⌘Z is the resurrection ADR-0009 closed.
-    func testAReusedTabGivesItsNextPageAFreshStorageAndUndoStack() throws {
+    /// storage: an attachment character for a zeroized chip left
+    /// standing in it is the resurrection ADR-0009 closed.
+    func testAReusedTabGivesItsNextPageAFreshStorage() throws {
         let model = try makeModel()
         model.loadStateIfNeeded()
         let tab = try XCTUnwrap(model.selection)
@@ -81,7 +81,6 @@ final class TabLifetimeTests: XCTestCase {
 
         let storage = model.storage(for: firstPage)
         storage.append(NSAttributedString(string: "rotate the deploy key"))
-        let undo = model.undoManager(for: firstPage)
         XCTAssertFalse(storage.string.isEmpty)
 
         expireEverything(in: model)
@@ -95,10 +94,6 @@ final class TabLifetimeTests: XCTestCase {
         XCTAssertTrue(
             model.storage(for: secondPage).string.isEmpty,
             "the replacement page inherited the dead page's ink"
-        )
-        XCTAssertFalse(
-            model.undoManager(for: secondPage) === undo,
-            "the replacement page inherited the dead page's undo stack"
         )
     }
 
@@ -334,38 +329,6 @@ final class TabLifetimeTests: XCTestCase {
             try XCTUnwrap(model.tabs.first).paused,
             "a double-click on an empty slot held the page it had just minted"
         )
-    }
-
-    /// The editor's teardown is reached more often since the split: a
-    /// selected slot holding no page shows the empty state while other
-    /// slots still hold pages, and the next mount sheds every cached
-    /// undo manager. That is the intended scope rather than an
-    /// oversight, because each of those managers holds operations
-    /// registered against the one torn-down view (issue #23), so a
-    /// manager kept is a zombie kept. What it costs the user is ⌘Z
-    /// reaching back past a visit to an empty slot.
-    func testAMountShedsEveryPagesUndoHistoryAndNotOnlyTheMountedOne() throws {
-        let model = try makeModel()
-        model.loadStateIfNeeded()
-        let staying = try XCTUnwrap(model.selectedPageID)
-        model.newPage()
-        let doomed = try XCTUnwrap(model.selectedPageID)
-
-        let target = NSObject()
-        for page in [staying, doomed] {
-            let manager = model.undoManager(for: page)
-            manager.registerUndo(withTarget: target) { _ in }
-            XCTAssertTrue(manager.canUndo)
-        }
-
-        // What a fresh editor mount does on the way up.
-        model.discardUndoHistory()
-
-        XCTAssertFalse(
-            model.undoManager(for: staying).canUndo,
-            "a page that never left the model kept operations bound to a dead view"
-        )
-        XCTAssertFalse(model.undoManager(for: doomed).canUndo)
     }
 
     /// Closing the last tab is what empties the strip, and only then is

@@ -39,6 +39,10 @@ public enum CommandID: String, CaseIterable, Sendable {
     // The page's own presentation
     case editorToggleWrap = "editor::ToggleWrap"
 
+    // Undo, which is the core's stack now (issue #132)
+    case editorUndo = "editor::Undo"
+    case editorRedo = "editor::Redo"
+
     // The surface, and the app around it
     case surfaceHandBackKeys = "surface::HandBackKeys"
     case stateSaveNow = "state::SaveNow"
@@ -53,7 +57,10 @@ public enum CommandID: String, CaseIterable, Sendable {
     /// gestures have to stay on the second route because the text view
     /// is first responder while a page is being typed into, and because
     /// what they act on (the caret, the selection) is the text view's
-    /// alone.
+    /// alone. Undo joins them for the same reason and for one more: the
+    /// text view has to see ⌘Z before the standard Edit menu does, or
+    /// the menu item hands it to `NSUndoManager` and the core's stack
+    /// never hears about it.
     public enum Dispatch: Sendable {
         case surface
         case editor
@@ -61,7 +68,8 @@ public enum CommandID: String, CaseIterable, Sendable {
 
     public var dispatch: Dispatch {
         switch self {
-        case .clipboardSeal, .clipboardSealSelection, .editorToggleWrap:
+        case .clipboardSeal, .clipboardSealSelection, .editorToggleWrap,
+            .editorUndo, .editorRedo:
             return .editor
         default:
             return .surface

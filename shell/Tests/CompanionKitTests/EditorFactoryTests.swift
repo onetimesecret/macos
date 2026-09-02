@@ -60,7 +60,11 @@ final class EditorFactoryTests: XCTestCase {
             textView.isRichText,
             "a plain-text view drops chip attachments the moment the page is edited"
         )
-        XCTAssertTrue(textView.allowsUndo, "⌘Z is the page's own, per page (ADR-0006)")
+        XCTAssertFalse(
+            textView.allowsUndo,
+            "undo is the core's stack now (issue #132); a second AppKit history of the "
+                + "same document could only ever disagree with it"
+        )
         XCTAssertFalse(textView.isAutomaticQuoteSubstitutionEnabled)
         XCTAssertFalse(textView.isAutomaticDashSubstitutionEnabled)
         XCTAssertFalse(

@@ -710,6 +710,13 @@ impl<C: Clock> SheetStore<C> {
         // editing cannot erode it, and travels only inside the sealed
         // snapshot.
         sheet.document.commit(origin);
+        // Sealing is the app's one irreversible gesture (ADR-0009), and
+        // it has to be irreversible down here too. A step back over
+        // this commit would pull the sentinel out and hand the settle
+        // below a chip with nowhere to stand; a step forward again
+        // would stand a sentinel for bytes already zeroized, which is a
+        // document the restore path is right to call damage.
+        sheet.document.forget_undo();
         self.settle_document(id);
         if clean {
             Ok(chip)
@@ -744,6 +751,21 @@ impl<C: Clock> SheetStore<C> {
     /// body is zeroized with the same `Discarded` record the snapshot
     /// path writes. Returns whether the batch applied.
     pub fn apply_ops(&mut self, id: SheetId, ops: &[EditOp]) -> bool {
+        self.apply_batch(id, ops, false)
+    }
+
+    /// [`SheetStore::apply_ops`] for a batch that must begin its own
+    /// undo step: an edit the page made on the writer's behalf rather
+    /// than at their dictation, such as a list marker it continued or
+    /// an indent it nudged. One press takes the automation back and
+    /// leaves the words typed before it standing, which the merge
+    /// interval would otherwise refuse, the automation arriving a
+    /// keystroke after the burst it should not join.
+    pub fn apply_ops_as_new_step(&mut self, id: SheetId, ops: &[EditOp]) -> bool {
+        self.apply_batch(id, ops, true)
+    }
+
+    fn apply_batch(&mut self, id: SheetId, ops: &[EditOp], new_step: bool) -> bool {
         let Some(sheet) = self.sheet_mut(id) else {
             return false;
         };
@@ -800,9 +822,97 @@ impl<C: Clock> SheetStore<C> {
                 }
             }
         }
-        sheet.document.commit(None);
+        if new_step {
+            sheet.document.commit_as_new_step(None);
+        } else {
+            sheet.document.commit(None);
+        }
+        // A batch that stood a sentinel moved the chip roster, and the
+        // roster is the one thing no step may walk backwards over. A
+        // step back would pull the sentinel out, the settle below would
+        // read the chip as deleted and zeroize it, and the redo that
+        // should have put it back has been cleared by that same reap:
+        // one ⌘Z would destroy a sealed chip. The seal path forgets for
+        // this reason and so must this one, which is the route a drag
+        // moving a selection that holds a chip arrives on.
+        //
+        // After the commit, not inside the loop: the operations become
+        // an undo step when the transaction closes, so a stack cleared
+        // while it was still open would simply be refilled here.
+        if ops.iter().any(|op| matches!(op, EditOp::InsertChip { .. })) {
+            sheet.document.forget_undo();
+        }
         self.settle_document(id);
         clean
+    }
+
+    // -----------------------------------------------------------------
+    // Undo, and why it is the core's (issue #132, ADR-0013)
+    // -----------------------------------------------------------------
+
+    /// Take back the page's last local edit, or the last couple of
+    /// seconds of them. Returns whether anything was reverted; false
+    /// means the stack was empty, the page unknown, or the library
+    /// refused, and the seam above should leave the page alone.
+    ///
+    /// The stack is Loro's and it is bound to this document's own peer,
+    /// so it can only ever revert operations this device authored. A
+    /// neighbouring device's text is out of reach twice over: the
+    /// library refuses it by design, and a device that joined at a key
+    /// frame never held the operations an away-device undo would have
+    /// to invert (ADR-0021 section 5).
+    ///
+    /// An accepted step settles exactly as an edit does. The block
+    /// index was not narrated through it, so it rebuilds with fresh
+    /// identities, which is the standing answer for any mutation that
+    /// arrives without narration rather than a rule invented here.
+    pub fn undo(&mut self, id: SheetId) -> bool {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return false;
+        };
+        if !sheet.document.undo() {
+            return false;
+        }
+        self.settle_document(id);
+        true
+    }
+
+    /// Put back the step [`SheetStore::undo`] took, on the same terms.
+    /// Returns whether anything was restored.
+    pub fn redo(&mut self, id: SheetId) -> bool {
+        let Some(sheet) = self.sheet_mut(id) else {
+            return false;
+        };
+        if !sheet.document.redo() {
+            return false;
+        }
+        self.settle_document(id);
+        true
+    }
+
+    /// Whether the page has a step waiting to be taken back.
+    #[must_use]
+    pub fn can_undo(&self, id: SheetId) -> bool {
+        self.sheet(id)
+            .is_some_and(|sheet| sheet.document.can_undo())
+    }
+
+    /// Whether the page has a step waiting to be restored.
+    #[must_use]
+    pub fn can_redo(&self, id: SheetId) -> bool {
+        self.sheet(id)
+            .is_some_and(|sheet| sheet.document.can_redo())
+    }
+
+    /// Where the caret belongs after the page's last accepted step, in
+    /// UTF-16 code units. `None` for an unknown page, for a step that
+    /// carried no position, or when nothing has been stepped at all.
+    /// This is what stands in for `AppKit`'s selection restoration now
+    /// that the stack lives down here.
+    #[must_use]
+    pub fn restored_caret_u16(&self, id: SheetId) -> Option<u32> {
+        let caret = self.sheet(id)?.document.restored_caret()?;
+        u32::try_from(caret).ok()
     }
 
     /// Replace a page's body wholesale from a shell snapshot. A
@@ -867,6 +977,14 @@ impl<C: Clock> SheetStore<C> {
             }
         }
         sheet.document.commit(None);
+        // A wholesale restate is the one edit no step may reach behind.
+        // The retype went in as ordinary local operations, so the stack
+        // now holds a step that would put the whole superseded body
+        // back, and every step under it describes offsets in a body
+        // that no longer exists. The shell has always dropped its own
+        // history here for the same reason; the core does it now
+        // because the history is the core's.
+        sheet.document.forget_undo();
         self.settle_document(id);
         clean
     }
@@ -906,6 +1024,15 @@ impl<C: Clock> SheetStore<C> {
             }
             alive
         });
+        // A chip died in this edit, so the stack dies with it. Undoing
+        // the delete that swallowed a sentinel would stand it again for
+        // bytes that are already zeroized, and a sentinel with no chip
+        // behind it is the one shape the restore path treats as damage.
+        // This is the choke point for it: every ⌫ over a chip, every
+        // peer's delete, and every settle reaches here.
+        if !dropped.is_empty() {
+            sheet.document.forget_undo();
+        }
         let created = sheet.created_wall_ms;
         // The label resolves after the re-derivation above and after
         // the page's mutable borrow has fallen, so a chip that died in
@@ -1362,6 +1489,13 @@ impl<C: Clock> SheetStore<C> {
                 sheet.document.commit(None);
                 sheet.blocks.note_delete(pos, 1);
             }
+            // The bytes are about to die, so no step may reach the
+            // sentinel that pointed at them: undo never un-seals, and
+            // never resurrects (ADR-0009). The stack goes even when the
+            // chip had no sentinel to remove, because a chip leaving
+            // the roster is enough to make every step behind it a
+            // description of a page that no longer exists.
+            sheet.document.forget_undo();
             sheet.chips.remove(index); // zeroizes as it drops
             sheet.rebuild_segments();
             sheet.settle_blocks();
@@ -4582,5 +4716,332 @@ mod tests {
         assert!(store.set_compaction_deferred(id, false));
         assert!(!store.ceremony_due(id));
         assert_ne!(store.sheet(id).unwrap().document.peer_id(), before);
+    }
+
+    // ------------------------------------------------------------------
+    // Undo at the store (issue #132)
+    // ------------------------------------------------------------------
+
+    /// The page's body as one string, chips counted as their sentinel.
+    fn body(store: &SheetStore<ManualClock>, id: SheetId) -> String {
+        store
+            .sheet(id)
+            .unwrap()
+            .segments()
+            .iter()
+            .map(|segment| match segment {
+                Segment::Ink(text) => text.clone(),
+                Segment::Chip(_) => "\u{FFFC}".to_string(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_step_back_takes_the_projection_with_it_and_a_step_forward_returns_it() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "a first draft".into(),
+            }],
+        ));
+        assert!(store.can_undo(id));
+        assert!(!store.can_redo(id));
+
+        assert!(store.undo(id));
+        assert_eq!(body(&store, id), "");
+        // The caret comes back with the text: the edit began at the
+        // start of an empty page, and that is where the writer is left.
+        assert_eq!(store.restored_caret_u16(id), Some(0));
+        assert!(store.can_redo(id));
+
+        assert!(store.redo(id));
+        assert_eq!(body(&store, id), "a first draft");
+        assert!(!store.can_redo(id));
+    }
+
+    #[test]
+    fn an_unknown_page_steps_nowhere() {
+        let (mut store, _) = store();
+        let absent = SheetId::from_raw(4_242);
+        assert!(!store.undo(absent));
+        assert!(!store.redo(absent));
+        assert!(!store.can_undo(absent));
+        assert!(!store.can_redo(absent));
+        assert_eq!(store.restored_caret_u16(absent), None);
+    }
+
+    #[test]
+    fn a_seal_cannot_be_stepped_back() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "secret words".into(),
+            }],
+        ));
+        // The whole line goes into a chip. Sealing is the one gesture
+        // that cannot be taken back (ADR-0009), so the stack the typing
+        // built goes with it rather than leaving a step that would pull
+        // the sentinel out from under sealed bytes.
+        store.seal_text_at(id, "secret words", 0, 12).unwrap();
+        assert_eq!(body(&store, id), "\u{FFFC}");
+        assert!(!store.can_undo(id));
+        assert!(!store.undo(id));
+    }
+
+    #[test]
+    fn burning_a_chip_takes_the_stack_with_it() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        let chip = store.seal_text_at(id, "sealed", 0, 0).unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 1,
+                text: " after".into(),
+            }],
+        ));
+        assert!(store.can_undo(id));
+
+        assert!(store.delete_chip(chip));
+        // Undo never resurrects: the bytes are zeroized, so no step may
+        // stand their sentinel again.
+        assert!(!store.can_undo(id));
+        assert!(!store.can_redo(id));
+    }
+
+    #[test]
+    fn an_edit_the_page_made_itself_comes_off_in_one_press() {
+        let (mut bounded, _) = store();
+        let (mut merged, _) = store();
+        let id = bounded.new_tab().unwrap().1;
+        let other = merged.new_tab().unwrap().1;
+        let store = &mut bounded;
+        // The writer's own words, then the marker the page continued
+        // for them a keystroke later, well inside the merge interval.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "- milk".into(),
+            }],
+        ));
+        assert!(store.apply_ops_as_new_step(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 6,
+                text: "\n- ".into(),
+            }],
+        ));
+        assert_eq!(body(store, id), "- milk\n- ");
+
+        // One press takes back the marker and nothing the writer typed.
+        assert!(store.undo(id));
+        assert_eq!(body(store, id), "- milk");
+        assert!(store.can_undo(id), "the writer's own words went with it");
+
+        // The contrast is the whole evidence that the boundary is real:
+        // the same two batches without one take back both together.
+        assert!(merged.apply_ops(
+            other,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "- milk".into(),
+            }],
+        ));
+        assert!(merged.apply_ops(
+            other,
+            &[EditOp::Insert {
+                pos_u16: 6,
+                text: "\n- ".into(),
+            }],
+        ));
+        assert!(merged.undo(other));
+        assert_eq!(body(&merged, other), "");
+    }
+
+    #[test]
+    fn standing_a_sentinel_through_the_op_path_takes_the_stack_with_it() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        // A chip minted but not yet placed, then stood in the body by
+        // the operation path. That is the shape a drag arrives in: the
+        // editor emits a chip op for any storage edit whose range holds
+        // an attachment, so moving a selection that contains a chip
+        // re-inserts it rather than seals it.
+        let chip = store.seal_text(id, "sealed").unwrap();
+        assert!(store.apply_ops(id, &[EditOp::InsertChip { pos_u16: 0, chip }],));
+        assert_eq!(body(&store, id), "\u{FFFC}");
+        assert_eq!(store.sheet(id).unwrap().chips().count(), 1);
+
+        // Without the stack going here, one step back pulls the
+        // sentinel out, the settle reads the chip as deleted, and the
+        // bytes are zeroized with a Discarded record: a single ⌘Z
+        // destroys a sealed chip and no redo can bring it back. Every
+        // other path that moves the roster forgets the stack; this one
+        // must too.
+        assert!(!store.can_undo(id));
+        assert!(!store.undo(id));
+        assert_eq!(body(&store, id), "\u{FFFC}");
+        assert_eq!(store.sheet(id).unwrap().chips().count(), 1);
+    }
+
+    #[test]
+    fn a_deleted_chip_leaves_no_step_that_would_stand_it_again() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        store.seal_text_at(id, "sealed", 0, 0).unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 1,
+                text: "ink".into(),
+            }],
+        ));
+        // A backspace over the sentinel, which is how a chip dies in the
+        // editor. The settle reaps the chip, and the stack dies there.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Delete {
+                pos_u16: 0,
+                len_u16: 1,
+            }],
+        ));
+        assert_eq!(body(&store, id), "ink");
+        assert!(store.sheet(id).unwrap().chips().next().is_none());
+        assert!(!store.can_undo(id));
+    }
+
+    #[test]
+    fn a_wholesale_restate_leaves_nothing_to_step_back_through() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "typed".into(),
+            }],
+        ));
+        assert!(store.sync_document(id, vec![Segment::Ink("restated".into())]));
+        assert_eq!(body(&store, id), "restated");
+        // Every step behind the restate describes offsets into a body
+        // that is gone, and the restate itself would undo the recovery.
+        assert!(!store.can_undo(id));
+        assert!(!store.can_redo(id));
+    }
+
+    #[test]
+    fn the_ceremony_leaves_the_page_with_nothing_to_step_back_through() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "before the boundary".into(),
+            }],
+        ));
+        assert!(store.can_undo(id));
+
+        // A rung transition on a solo page compacts inline: the peer id
+        // is re-minted and the operations every step pointed into are
+        // destroyed, so the stack must be empty on the far side.
+        store.cycle_rung(slot(&store, id)).unwrap();
+        assert!(!store.can_undo(id));
+        assert!(!store.undo(id));
+        assert_eq!(body(&store, id), "before the boundary");
+    }
+
+    /// The one place a remote event destroys local state, written down
+    /// as a test so it is a decision rather than a surprise. Chip
+    /// liveness follows the document, and the document is shared: a
+    /// neighbouring device backspacing over a sentinel zeroizes the
+    /// bytes here, and the steps standing on this device would then be
+    /// steps that could stand the sentinel again over nothing. The
+    /// stack goes rather than the guarantee (ADR-0009). What the writer
+    /// loses is ⌘Z reaching back past the moment the chip died; what
+    /// they keep is the page.
+    #[test]
+    fn a_peers_chip_deletion_forgets_this_devices_steps() {
+        let (mut store, _) = store();
+        let id = store.new_tab().unwrap().1;
+        store.seal_text_at(id, "sealed", 0, 0).unwrap();
+        let chip = store.sheet(id).unwrap().chips().next().unwrap().uuid;
+
+        // The peer holds the same page, and is told it owns the chip so
+        // the sentinel is not read as damage on the way in.
+        let mirror = SheetDocument::new();
+        let shared = store
+            .export_document_updates(id, &mirror.version())
+            .unwrap();
+        mirror.import_update(&shared, &[chip]).unwrap();
+
+        // This device types after the seal. That is the step at stake.
+        assert!(store.apply_ops(
+            id,
+            &[EditOp::Insert {
+                pos_u16: 1,
+                text: "ink".into(),
+            }],
+        ));
+        assert!(store.can_undo(id));
+
+        // The peer backspaces over the sentinel and the delete arrives
+        // here as an ordinary update.
+        mirror.delete(0, 1).unwrap();
+        mirror.commit(None);
+        let away = mirror
+            .export_updates_since(&store.document_version(id).unwrap())
+            .unwrap();
+        store.apply_remote_update(id, &away).unwrap();
+
+        assert_eq!(body(&store, id), "ink");
+        assert!(store.sheet(id).unwrap().chips().next().is_none());
+        assert!(
+            !store.can_undo(id),
+            "a step survived the death of the chip it could stand again"
+        );
+    }
+
+    #[test]
+    fn a_step_back_leaves_a_peers_edits_standing() {
+        let (mut alpha, _) = store();
+        let (mut beta, _) = store();
+        let a = alpha.new_tab().unwrap().1;
+        let b = beta.new_tab().unwrap().1;
+
+        assert!(alpha.apply_ops(
+            a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "mine.".into(),
+            }],
+        ));
+        assert!(beta.apply_ops(
+            b,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "theirs.".into(),
+            }],
+        ));
+        let delta = beta
+            .export_document_updates(b, &alpha.document_version(a).unwrap())
+            .unwrap();
+        alpha.apply_remote_update(a, &delta).unwrap();
+        assert_eq!(alpha.sheet(a).unwrap().segments().len(), 1);
+
+        // One step back on this device takes this device's sentence.
+        // The peer's is not a candidate: the stack is bound to the local
+        // peer, and a joiner never holds the operations an away-device
+        // undo would have to invert (ADR-0021 section 5).
+        assert!(alpha.undo(a));
+        assert_eq!(body(&alpha, a), "theirs.");
+        assert!(!alpha.can_undo(a));
     }
 }

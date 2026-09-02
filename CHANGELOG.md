@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Undo belongs to the page's document now** (issue #132). ⌘Z and
+  ⇧⌘Z drive the core's own stack rather than AppKit's, which is what
+  makes undo safe to keep once a page is shared: the stack is bound to
+  this device's identity in the document, so a step takes back what
+  you typed and never what arrived from another device. One step is a
+  couple of seconds of writing rather than a single character, the
+  interval taken from the keystroke-logging literature's account of
+  where a writing pause falls. Undo starts empty after a relaunch and
+  after a page's history is shed, deliberately and for the same
+  reason: the operations a step would invert are gone, and a stack
+  that pretended otherwise would be lying about what it could give
+  back. Sealing, a burned chip, and a page restated whole each end the
+  stack where they stand, because undo never un-seals. The chords are
+  named in the keymap file like every other chord, so they can be
+  moved.
+
 - **The account gate has seven names, and none of them touches the
   pad** (issue #98; ADR-0027, status proposed). Signing in to sync is
   OAuth authorization code with PKCE in your own browser, returning to
@@ -109,6 +125,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never silently drop edits only the adopting device holds.
 
 ### Changed
+
+- **The seam counts both features, not one** (`companion-ffi` 0.19.0).
+  Two branches each moved the seam's minor from 0.17.0 to 0.18.0, the
+  account gate for `companion_sync_gate` and a new field in the sync
+  status, the undo stack for the five undo routes and the step that
+  applies a batch of operations as one. Stacked, they are two minor
+  features arriving together, and a single bump would have understated
+  what the header now declares, so the number moves twice. Merging the
+  two branches could not see this on its own: both parents wrote the
+  same 0.18.0 from the same ancestor, so there was no disagreement for
+  the merge to resolve. `companion-core` stays at 0.17.0 and
+  `companion-sync` at 0.4.0, each having moved once and only once.
 
 - **Nothing you typed is lost when sync stops, and a server that does
   not rotate its tokens no longer strands it** (issue #98, ADR-0027

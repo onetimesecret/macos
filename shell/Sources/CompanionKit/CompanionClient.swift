@@ -620,9 +620,19 @@ public final class CompanionClient: @unchecked Sendable {
     /// to the page's body core-side, the ADR-0013 operation path.
     /// False means the batch was rejected whole and nothing moved;
     /// the caller re-converges through `syncDocument`.
+    ///
+    /// `startingNewStep` marks a batch the page produced on the
+    /// writer's behalf rather than at their dictation (a continued list
+    /// marker, a nudged indent). It begins its own undo step, so one
+    /// press takes the automation back and leaves the words typed
+    /// before it standing.
     @discardableResult
-    public func applyOps(sheet: UInt64, json: String) -> Bool {
-        json.withCString { companion_sheet_apply_ops(handle, sheet, $0) }
+    public func applyOps(sheet: UInt64, json: String, startingNewStep: Bool = false) -> Bool {
+        json.withCString {
+            startingNewStep
+                ? companion_sheet_apply_ops_as_new_step(handle, sheet, $0)
+                : companion_sheet_apply_ops(handle, sheet, $0)
+        }
     }
 
     /// Push a whole document snapshot (JSON runs) to the core. The
@@ -632,6 +642,46 @@ public final class CompanionClient: @unchecked Sendable {
     @discardableResult
     public func syncDocument(sheet: UInt64, json: String) -> Bool {
         json.withCString { companion_sheet_sync_document(handle, sheet, $0) }
+    }
+
+    // MARK: Undo (issue #132)
+
+    /// Take back the page's last local edit, or the couple of seconds
+    /// of them the core groups into one step. False means nothing
+    /// moved, and the caller leaves the page alone.
+    ///
+    /// The stack is the core's and it is bound to that document's own
+    /// peer, so a step reverts only what this device authored. Undo
+    /// does not reach another device's text and is not meant to: the
+    /// library refuses a peer's operations by design, and a device that
+    /// joined at a key frame never held the operations an away-device
+    /// undo would have to invert (ADR-0021 section 5).
+    @discardableResult
+    public func undo(sheet: UInt64) -> Bool {
+        companion_sheet_undo(handle, sheet)
+    }
+
+    /// Put back the step `undo(sheet:)` took, on the same terms.
+    @discardableResult
+    public func redo(sheet: UInt64) -> Bool {
+        companion_sheet_redo(handle, sheet)
+    }
+
+    /// Whether the page has a step waiting in either direction.
+    public func canUndo(sheet: UInt64) -> Bool {
+        companion_sheet_can_undo(handle, sheet)
+    }
+
+    public func canRedo(sheet: UInt64) -> Bool {
+        companion_sheet_can_redo(handle, sheet)
+    }
+
+    /// Where the caret belongs after the last accepted step, in UTF-16
+    /// code units. Nil when the step carried no position, which is the
+    /// signal to leave the caret where the writer had it.
+    public func undoCaret(sheet: UInt64) -> Int? {
+        let caret = companion_sheet_undo_caret_u16(handle, sheet)
+        return caret < 0 ? nil : Int(caret)
     }
 
     // MARK: Chips

@@ -28,7 +28,10 @@ dispositions),
 core's actual usage, with dispositions),
 [`2026-0828-page-lens.md`](2026-0828-page-lens.md)
 (page history as a second projection of the same log; concept only,
-unscheduled).
+unscheduled),
+[`2026-0901-pause-boundaries.md`](2026-0901-pause-boundaries.md)
+(the keystroke-logging pause research weighed surface by surface, with
+adopt or reject on each and the rule of thumb that decides them).
 Issue: not yet filed. Origin: docs/dogfood/DOGFOOD.md, commit `2e58158`.
 
 ## Why now

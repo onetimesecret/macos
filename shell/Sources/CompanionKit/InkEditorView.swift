@@ -33,14 +33,6 @@ public struct InkEditorView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSScrollView {
-        // A fresh editor mount follows a teardown: a ledger round trip,
-        // or the empty state, which since ADR-0017 is reached whenever
-        // the selected tab holds no page and not only when the last
-        // page died. Every cached undo manager still holds operations
-        // bound to the torn-down view; shed them before this view
-        // registers its own, so ⌘Z rewrites live text instead of firing
-        // at a zombie (issue #23).
-        model.discardUndoHistory()
         let textView = Self.makeInkTextView(
             model: model, sheetID: sheetID, coordinator: context.coordinator
         )
@@ -131,7 +123,20 @@ public struct InkEditorView: NSViewRepresentable {
         // user-facing surface is still plain, ⌘V pastes plain text and
         // no ruler/font UI exists. Styling is ours alone (restyle()).
         textView.isRichText = true
-        textView.allowsUndo = true
+        // Off, because undo is the core's now (issue #132). A page's
+        // history has to live in exactly one place: the core's stack
+        // knows which operations this device authored and AppKit's does
+        // not, so a second stack could only ever disagree with it, and
+        // on a shared page it would happily revert text that arrived
+        // from another device. Leaving it on would also mean AppKit
+        // quietly retaining every deleted fragment of the page for the
+        // life of the process, with nothing left to drain it.
+        //
+        // There is no non-text undo in this app to lose: nothing but
+        // text editing ever registered an operation on that manager.
+        // The list automation's grouping calls survive as no-ops and
+        // are documented where they stand.
+        textView.allowsUndo = false
         Self.enableFinding(on: textView)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -309,6 +314,10 @@ public struct InkEditorView: NSViewRepresentable {
         // (ADR-0017), so a slot's id would keep a dead page's caret and
         // scroll alive for whatever page came next.
         coordinator.pruneViewState(keeping: Set(model.tabs.compactMap(\.pageID)))
+        // The stance may have flipped editing on or off above, so the
+        // Edit menu's two items are re-asked on every pass, before the
+        // early return that a page which did not change takes.
+        model.scheduleEditStepsRefresh()
         guard coordinator.currentSheet != sheetID else { return }
         // The page under the editor changed, so hand the editor over.
         // The scroller goes with it: on this surface the editor is the
@@ -410,16 +419,19 @@ public struct InkEditorView: NSViewRepresentable {
         // MARK: Per-page view state (ADR-0006)
 
         /// Remember the outgoing page's caret and scroll before the
-        /// swap. The pending typing group settles first, so half a
-        /// word is not left open in a page that is going away.
+        /// swap.
         ///
         /// A mount with no scroller of its own saves the caret and stops
         /// there. There is no offset belonging to this page to read, and
         /// whatever a scrolled mount once saved is left standing rather
         /// than overwritten with a guess.
+        ///
+        /// Nothing settles a typing group on the way out any more:
+        /// undo steps are the core's and each page's stack is its own,
+        /// so a swap cannot leave half a word open in a page that is
+        /// going away (issue #132).
         func saveViewState(textView: InkTextView, scrollView: NSScrollView?) {
             guard let sheet = currentSheet else { return }
-            textView.breakUndoCoalescing()
             savedCarets[sheet] = textView.selectedRange()
             guard let scrollView else { return }
             savedScrolls[sheet] = scrollView.contentView.bounds.origin
@@ -613,14 +625,66 @@ public struct InkEditorView: NSViewRepresentable {
             return NSPoint(x: offset.x, y: min(max(offset.y, 0), maxY))
         }
 
-        /// One undo history per page, from the model's cache: the text
-        /// view asks its delegate on every undo touch, so history
-        /// simply follows `currentSheet` across storage swaps — ⌘Z
-        /// after a switch rewrites the page it was typed on, never a
-        /// neighbour (ADR-0006).
-        public func undoManager(for view: NSTextView) -> UndoManager? {
-            guard let sheet = currentSheet else { return nil }
-            return model.undoManager(for: sheet)
+        /// ⌘Z and ⇧⌘Z, taken off AppKit's stack and handed to the
+        /// core's (issue #132).
+        ///
+        /// The core owns the document, so it owns what a step means:
+        /// this asks it to take one, and then puts the caret where it
+        /// says the writer's hand was. The storage has already been
+        /// rewritten from the core's runs by the time this returns, so
+        /// the clamp is against the page as it now stands.
+        ///
+        /// **A step reverts this device's operations and no others.**
+        /// Loro's manager is local to the document's own peer, and a
+        /// device that joined at a key frame never held the operations
+        /// an away-device undo would need (ADR-0021 section 5). ⌘Z is
+        /// therefore undo that is safe beside another device's edits,
+        /// not undo that reaches across them, and nothing on this route
+        /// should be built as though it could.
+        func step(back: Bool) {
+            guard let sheet = currentSheet, let textView else { return }
+            // The gate lives here rather than only at the callers. Both
+            // routes that exist today check it before they arrive, and
+            // that is still worth keeping at the chord, which has to
+            // fall through rather than be swallowed; but a page shown
+            // read-only must not be rewritten by whatever third route
+            // is added next, and this is the one place every route
+            // passes through.
+            guard textView.isEditable else { return }
+            // A composition in flight is anchored to offsets this step
+            // is about to rewrite, and the emission gate skips its
+            // bookkeeping while a projection write is in progress, so a
+            // marked span would survive into a storage that no longer
+            // holds it. Settle it on the page it was typed on first,
+            // exactly as the page swap does. A press that finds nothing
+            // on the stack has still ended the composition, which is
+            // what every other editor on the machine does with ⌘Z
+            // mid-conversion.
+            InkEditorView.discardComposition(in: textView)
+            let outcome = back ? model.undoEdit(sheet: sheet) : model.redoEdit(sheet: sheet)
+            guard outcome.applied else { return }
+            // The model rebuilt the storage from the core's runs, which
+            // are plain text carrying the base font and nothing else,
+            // so the page arrives here stripped of every attribute the
+            // markdown pass puts on it. No other route lays them back
+            // down: `textDidChange` is what usually calls the pass and
+            // a projection write never fires it, the storage delegate
+            // returns early under the emission guard, and
+            // `updateNSView` turns back at a page that did not change.
+            // A step would otherwise leave headings at body weight and
+            // fences uncoloured until the writer typed one more
+            // character.
+            restyle()
+            // A step that carried no position leaves the caret alone,
+            // clamped, rather than guessing at an offset.
+            let length = textView.textStorage?.length ?? 0
+            let landing = outcome.caret ?? textView.selectedRange().location
+            let caret = Self.clamped(NSRange(location: landing, length: 0), to: length)
+            textView.setSelectedRange(caret)
+            // Rewriting the whole storage resets the scroller, so a
+            // step taken over an edit that was off screen would put the
+            // caret somewhere the writer cannot see. Follow it.
+            textView.scrollRangeToVisible(caret)
         }
 
         // MARK: Editing (ops across the seam, ADR-0013)
@@ -737,11 +801,25 @@ public struct InkEditorView: NSViewRepresentable {
             finishComposition(in: storage, sheet: sheet)
         }
 
+        /// Set for the one edit that follows, by the keystroke handlers
+        /// that write on the writer's behalf: a continued list marker,
+        /// a nudged indent. The core gives such a batch its own undo
+        /// step, so one press takes the automation back and leaves the
+        /// words typed before it standing (issue #132).
+        ///
+        /// A one-shot rather than a mode, and consumed in `emit` rather
+        /// than cleared by the caller, because an automation edit that
+        /// somehow produced no batch must not hand its boundary to
+        /// whatever the writer types next.
+        var nextEditIsAutomation = false
+
         /// Encode and send one batch. Empty batches never cross: a
         /// no-op is not an operation.
         private func emit(_ ops: [DocumentEditOp], sheet: UInt64) {
+            let automation = nextEditIsAutomation
+            nextEditIsAutomation = false
             guard !ops.isEmpty, let json = DocumentEditOp.wireJSON(ops) else { return }
-            model.applyOps(sheet: sheet, opsJSON: json)
+            model.applyOps(sheet: sheet, opsJSON: json, startingNewStep: automation)
             onEmit?(ops)
         }
 
@@ -913,7 +991,6 @@ public struct InkEditorView: NSViewRepresentable {
                 }
             }
             textView.setSelectedRange(NSRange(location: range.location + 1, length: 0))
-            textView.undoManager?.removeAllActions()
         }
 
         static func containsChip(_ storage: NSTextStorage, in range: NSRange) -> Bool {
@@ -1712,12 +1789,25 @@ final class InkLayoutManager: NSLayoutManager {
 
 // MARK: - The text view
 
+/// The two actions the Edit menu posts down the responder chain, so
+/// that the menu's end of the route and the page's end spell them
+/// once. A menu built in the app target cannot name `InkTextView`,
+/// which is this package's own; `#selector(EditStepResponder.undo(_:))`
+/// resolves to the same `undo:` the page answers, and a rename that
+/// broke the pairing would fail to compile rather than becoming a menu
+/// item that quietly does nothing.
+@MainActor
+@objc public protocol EditStepResponder {
+    func undo(_ sender: Any?)
+    func redo(_ sender: Any?)
+}
+
 /// The page's text view: routes the seal gestures, keeps ⌘V plain,
 /// hands Esc back, and seals external drops through the core's drag
 /// route. Chips are atomic under the caret by construction — an
 /// attachment is one character: arrows step over it, one ⌫ removes it
 /// whole, selection cannot reach inside it.
-final class InkTextView: NSTextView {
+final class InkTextView: NSTextView, EditStepResponder {
     weak var coordinator: InkEditorView.Coordinator?
 
     /// A resize rewraps paragraphs without touching their content, so
@@ -1749,6 +1839,53 @@ final class InkTextView: NSTextView {
             return true
         }
         return super.performKeyEquivalent(with: event)
+    }
+
+    /// The Edit menu's Undo, which sends `undo:` down the responder
+    /// chain to whoever is first responder, and while a page is being
+    /// typed into that is this view.
+    ///
+    /// Overridden so the mouse route and the keyboard route reach the
+    /// same stack (issue #132). Without this the item would walk past
+    /// the page to `NSUndoManager`, which is a different history of the
+    /// same document and does not know which operations this device
+    /// authored. The chord is intercepted in `performKeyEquivalent`
+    /// above; a click on the menu never goes near it, so a second door
+    /// had to be closed rather than assumed shut.
+    /// Editability gates both routes, for the reason it gates the
+    /// chord: a page shown read-only must not be rewritten from a menu
+    /// either. The guard itself sits inside `step`, where every route
+    /// meets, rather than being spelled once per door.
+    @objc func undo(_ sender: Any?) {
+        coordinator?.step(back: true)
+    }
+
+    @objc func redo(_ sender: Any?) {
+        coordinator?.step(back: false)
+    }
+
+    /// The answer for any nil-targeted item that asks this view about
+    /// the two step actions: the core's, because the core holds the
+    /// stack, and `NSTextView`'s own for everything else the menu asks
+    /// about.
+    ///
+    /// It is not what greys out the app's own Edit menu. Those two
+    /// items are built in SwiftUI and carry SwiftUI's target rather
+    /// than walking the responder chain to be validated, so they are
+    /// dimmed from `PageModel.editSteps` instead, which asks the core
+    /// the same question this method does.
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard let sheet = coordinator?.currentSheet, let model = coordinator?.model else {
+            return super.validateMenuItem(item)
+        }
+        switch item.action {
+        case #selector(undo(_:)):
+            return isEditable && model.canUndoEdit(sheet: sheet)
+        case #selector(redo(_:)):
+            return isEditable && model.canRedoEdit(sheet: sheet)
+        default:
+            return super.validateMenuItem(item)
+        }
     }
 
     /// The page's chords that carry no ⌘ (⌥Z, the wrap toggle, by
@@ -1792,6 +1929,16 @@ final class InkTextView: NSTextView {
             coordinator.sealedPaste()
         case .clipboardSealSelection:
             coordinator.sealSelectionOrLine()
+        case .editorUndo, .editorRedo:
+            // A resting card and a page shown read-only both arrive
+            // here with editing off, and a chord that rewrote the
+            // document from either would be an edit made where typing
+            // is refused. `step` refuses it too; this guard is about
+            // the answer, not the refusal. The press is declined rather
+            // than swallowed, so it falls through to whatever else
+            // would have had it.
+            guard isEditable else { return false }
+            coordinator.step(back: command == .editorUndo)
         default:
             return coordinator.model.perform(command)
         }
@@ -1900,33 +2047,29 @@ final class InkTextView: NSTextView {
             // travels the ordinary edit route, so the core sees an
             // ordinary delete and provenance holds (ADR-0013).
             let prefix = NSRange(location: paragraph.location, length: line.utf16.count)
-            breakUndoCoalescing()
             // A refused edit is not a keystroke to swallow: the page
             // falls back to the newline it would have given before any
             // of this existed.
             guard shouldChangeText(in: prefix, replacementString: "") else {
                 return super.insertNewline(sender)
             }
+            // The removal is the page's own doing, so it gets its own
+            // undo step for the reason the continuation does.
+            coordinator?.nextEditIsAutomation = true
             storage.replaceCharacters(in: prefix, with: "")
             didChangeText()
             setSelectedRange(NSRange(location: paragraph.location, length: 0))
             return
         }
-        // One keystroke, one undo step: the coalescing that would
-        // otherwise fold this into the words typed before it is broken
-        // on both sides, so a single ⌘Z puts the caret back with no
-        // orphaned marker left behind. The newline and the marker go
-        // down as one `insertText`, the ordinary route every other
-        // character takes.
-        breakUndoCoalescing()
-        // Held in hand rather than asked for twice: the manager arrives
-        // from the delegate, one per page (ADR-0006), and a group has
-        // to be closed on the same manager it was opened on.
-        let undo = undoManager
-        undo?.beginUndoGrouping()
+        // One keystroke, one undo step, and since issue #132 that is
+        // the core's arrangement rather than AppKit's: the marker is an
+        // edit the page made on the writer's behalf, so the batch it
+        // emits begins its own step and a single ⌘Z takes it back with
+        // none of the words typed before it. The newline and the marker
+        // go down as one `insertText`, the ordinary route every other
+        // character takes, and the flag rides that one batch across.
+        coordinator?.nextEditIsAutomation = true
         insertText("\n" + item.successor, replacementRange: caret)
-        breakUndoCoalescing()
-        undo?.endUndoGrouping()
     }
 
     /// Tab, on a line the page reads as a list item, with the caret in
@@ -2043,19 +2186,19 @@ final class InkTextView: NSTextView {
     ///
     /// The edit travels the ordinary route (`shouldChangeText`, the
     /// edit, `didChangeText`), so the core sees an ordinary op and
-    /// ADR-0013's provenance holds with no special case, and the
-    /// coalescing is broken on both sides so one keystroke is one undo
-    /// step. False when the delegate refuses, which leaves the
+    /// ADR-0013's provenance holds with no special case, and the batch
+    /// is marked as the page's own doing so it begins its own undo step
+    /// and one press takes the depth back and none of the words
+    /// (issue #132). False when the delegate refuses, which leaves the
     /// keystroke to the ordinary tab rather than swallowing it.
     private func nudgeDepth(
         replacing range: NSRange, with replacement: String, caret: NSRange
     ) -> Bool {
         guard let storage = textStorage else { return false }
-        breakUndoCoalescing()
         guard shouldChangeText(in: range, replacementString: replacement) else { return false }
+        coordinator?.nextEditIsAutomation = true
         storage.replaceCharacters(in: range, with: replacement)
         didChangeText()
-        breakUndoCoalescing()
         // Where the caret lands is the whole of whether the gesture
         // repeats. It keeps its place relative to the line's content,
         // so after a nudge it is still in the marker region and a

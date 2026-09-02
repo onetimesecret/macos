@@ -185,10 +185,12 @@ final class DayScrollProjectionTests: XCTestCase {
 
     /// ⌘Z after the editor has moved rewrites the day it is standing on
     /// and cannot reach the one it left. Undo is as document-scoped as
-    /// the storage it rewrites: the editor asks its delegate for a
-    /// manager on every touch, and the delegate answers with the current
-    /// page's. An undo that crossed a page boundary is how a zeroized
-    /// chip's glyph comes back (ADR-0009).
+    /// the storage it rewrites, and since issue #132 that is a fact
+    /// about the core rather than about a delegate: every page's stack
+    /// lives beside that page's own document, and the step goes to the
+    /// page the editor is currently standing on. An undo that crossed a
+    /// page boundary is how a zeroized chip's glyph comes back
+    /// (ADR-0009).
     func testUndoAfterTheEditorMovesDoesNotCrossAPageBoundary() throws {
         let model = try makeModel()
         let today = try page(in: model, saying: "today")
@@ -213,15 +215,14 @@ final class DayScrollProjectionTests: XCTestCase {
         )
 
         XCTAssertEqual(roll.coordinator.currentSheet, yesterday)
-        XCTAssertTrue(
-            editor.undoManager === model.undoManager(for: yesterday),
-            "the editor is answering undo with the page it left"
+        XCTAssertNil(
+            editor.undoManager,
+            "AppKit is vending a second stack of a page the core already owns"
         )
-        XCTAssertFalse(editor.undoManager === model.undoManager(for: today))
 
-        // Whatever the manager on this side has to say, it says it about
-        // this side. The page across the perforation is untouched.
-        editor.undoManager?.undo()
+        // Whatever there is to take back on this side, it is taken back
+        // on this side. The page across the perforation is untouched.
+        roll.coordinator.step(back: true)
 
         XCTAssertEqual(
             document(of: today, in: model), todayAfterTyping,

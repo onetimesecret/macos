@@ -380,7 +380,7 @@ final class DocumentOpsWiringTests: XCTestCase {
         // The caret sits just past the chip, and sealing is not
         // undoable.
         XCTAssertEqual(textView.selectedRange(), NSRange(location: 5, length: 0))
-        XCTAssertEqual(textView.undoManager?.canUndo, false)
+        XCTAssertNil(textView.undoManager, "AppKit is vending a stack for a page it does not own")
         assertParity()
     }
 
