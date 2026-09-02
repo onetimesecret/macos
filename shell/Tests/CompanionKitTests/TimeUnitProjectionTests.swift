@@ -271,6 +271,45 @@ final class TimeUnitProjectionTests: XCTestCase {
         XCTAssertEqual(TimeUnit.day.bucket(dayOffset: -3), -3)
     }
 
+    /// The rail's own label, which is the phrase with its first letter
+    /// raised and nothing else changed (issue #131). The edges are the
+    /// two words that are not a count, today and yesterday, and the
+    /// counted form, which must stay lower case after its number:
+    /// `capitalized` would make it "2 Days Ago", a title for something
+    /// that is not a name.
+    func testTheRailDrawsThePhraseWithACapital() {
+        XCTAssertEqual(TimeUnit.day.railLabel(bucket: 0), "Today")
+        XCTAssertEqual(TimeUnit.day.railLabel(bucket: -1), "Yesterday")
+        XCTAssertEqual(TimeUnit.day.railLabel(bucket: -2), "2 days ago")
+        XCTAssertEqual(TimeUnit.day.railLabel(bucket: -7), "7 days ago")
+        // A clock that went backwards is today's, at both ends of the
+        // vocabulary, for the reason the bucketing gives.
+        XCTAssertEqual(TimeUnit.day.railLabel(bucket: 3), "Today")
+    }
+
+    /// And it is the *same* phrase: the row, its tooltip and VoiceOver
+    /// say one thing about a day, differing only in the capital a line
+    /// on its own takes. A second table of words could drift; this
+    /// asserts there is only one.
+    func testTheRailAndTheSpokenPhraseCannotDrift() {
+        for bucket in [0, -1, -2, -3, -9] {
+            XCTAssertEqual(
+                TimeUnit.day.railLabel(bucket: bucket).lowercased(),
+                TimeUnit.day.spokenLabel(bucket: bucket),
+                "the rail and the tooltip said different things about day \(bucket)")
+        }
+        let projection = project([
+            slot(tab: 1, page: 11, day: 0, content: true),
+            slot(tab: 2, page: 22, day: -1, content: true),
+            slot(tab: 3, page: 33, day: -4, content: true),
+        ])
+        XCTAssertEqual(
+            projection.units.map(\.railLabel), ["Today", "Yesterday", "4 days ago"])
+        XCTAssertEqual(
+            projection.units.map { $0.railLabel.lowercased() },
+            projection.units.map(\.spokenLabel))
+    }
+
     /// A page cannot honestly be born tomorrow, so a bucket above zero
     /// means the host clock went backwards between the stamp and the
     /// reading. The mode calls that page today's rather than inventing a

@@ -514,6 +514,18 @@ public final class PageModel: ObservableObject {
     /// directly by the views that render it.
     public let sync: SyncController
 
+    /// Where the days stand in the roll and what part of it is on
+    /// screen, published by the roll for the rail's minimap alone
+    /// (issue #131).
+    ///
+    /// An observable of its own rather than a `@Published` field here,
+    /// because the viewport moves on every scroll event and a change
+    /// published on the model would redraw the header, the status stack
+    /// and the page along with the minimap. It carries rectangles and
+    /// never ink: nothing about a page's content can reach the rail
+    /// through it.
+    public let rollGeometry = RollGeometryModel()
+
     /// Test-only visibility onto the seam client, so parity between
     /// the projection and the core's document can be asserted from
     /// outside without a second handle.

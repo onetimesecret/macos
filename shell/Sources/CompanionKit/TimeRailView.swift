@@ -21,6 +21,13 @@ import SwiftUI
 /// it lands on is the shipped create path, not a mint of its own
 /// (ADR-0017).
 ///
+/// Behind the rows, a faint minimap of the roll: a bar per day as tall a
+/// share of the rail as that day is of the document, and a band over the
+/// part the reader can see (issue #131). It is geometry and never
+/// glyphs, it is drawn first and faintly so the rows keep the column,
+/// and it answers no click, so everything above still reads as
+/// navigation.
+///
 /// It reuses `GaugeBar` and `EmptyRule` where they stand rather than
 /// moving them, so `TabStripView.swift` takes no diff at all and the
 /// claim that horizontal mode is untouched is a fact about the diff.
@@ -36,7 +43,15 @@ public struct TimeRailView: View {
     /// clamp its tests pin do not move for this mode. Whether the card
     /// wants a wider floor while the days are showing is a question for
     /// the dogfood window rather than a number to guess at now.
-    static let width: CGFloat = 56
+    ///
+    /// Ninety six points, up from fifty six, and the words are what
+    /// bought them (issue #131). It is the measure that holds the
+    /// longest phrase the rail can realistically be asked for, "10 days
+    /// ago" from a page held past its rung, in the monospaced caption
+    /// the rows draw in, with the row's own padding still around it.
+    /// Longer than that truncates at the tail, which is the net rather
+    /// than the plan.
+    static let width: CGFloat = 96
 
     public var body: some View {
         let projection = model.timeUnits
@@ -56,7 +71,7 @@ public struct TimeRailView: View {
         .padding(.horizontal, 4)
         .padding(.vertical, 6)
         .frame(width: Self.width)
-        .background(Color.panelBackground)
+        .background(RailMinimapView(roll: model.rollGeometry))
     }
 
     /// The days paired with the chords that reach them, resolved before
@@ -141,9 +156,12 @@ public struct TimeRailView: View {
     }
 
     /// What the footer prints, or nothing at all when nothing is being
-    /// held back. Short, because the column is 56 points wide; the full
-    /// sentence rides the tooltip and the accessibility label, which is
-    /// what doc 05's no-abbreviation-only rule asks for.
+    /// held back. Short, because it is a footer and not a row: it counts
+    /// what the rail is not showing, and a sentence at the bottom of the
+    /// column would weigh more than the days above it. The sentence
+    /// rides the tooltip and the accessibility label instead, and "3
+    /// blank" is words rather than an abbreviation, so doc 05's rule is
+    /// answered at both ends.
     static func hiddenPagesLine(count: Int) -> String? {
         guard count > 0 else { return nil }
         return "\(count) blank"
@@ -157,6 +175,90 @@ public struct TimeRailView: View {
             : "\(count) live pages have nothing on them"
         return "\(pages), so no day is drawn for them. Turn the time tabs off in Settings "
             + "to reach them, nothing is discarded to make room."
+    }
+}
+
+/// The rail's background: the panel it always was, with a faint reading
+/// of the roll drawn on it (issue #131).
+///
+/// What it is for is the thing a scrolled reader cannot otherwise see.
+/// The rows above say which days exist and which one is selected; they
+/// say nothing about how much page stands on each, or where in a long
+/// Today the viewport currently is. The bars say the first as height and
+/// the band says the second as position, and both are read off the same
+/// frames the roll laid out, so the proportions are the roll's own
+/// rather than a second estimate of them.
+///
+/// A scaled impression of the roll in its own space, and not a diagram
+/// of the rail. The whole document is mapped onto the whole column,
+/// while the rows over it are packed from the top and pushed apart by a
+/// spacer, so a bar and the row for the same day do not line up. That is
+/// the deal a proportional reading makes: a day holding most of the roll
+/// takes most of the column whatever height its row has. Count and order
+/// are what the two share, one shape per drawn day, newest at the top of
+/// both, and lining them up would mean laying the rows out by content,
+/// which is a different rail.
+///
+/// Faint is a requirement rather than a taste. The markers over it, a
+/// day's words, its gauge, the selection fill, are the rail's content,
+/// and a background that competed with them would have turned a
+/// navigation column into a chart. The two inks below are the numbers
+/// the dogfood window is meant to argue with.
+///
+/// Never text, at any size. A minimap that scaled glyphs down would be a
+/// second surface rendering page content, and it would have to answer
+/// for how a concealed block draws on it; rectangles cannot leak a word,
+/// which is why the measurement crossing into this view carries no ink
+/// at all (`RollGeometry`).
+///
+/// It observes the roll's own measurement rather than the model, so a
+/// scroll redraws these few rectangles and nothing else on the card. It
+/// takes no clicks, so a tap meant for the day over it still lands on
+/// the day, and it is hidden from VoiceOver, which has the rows
+/// themselves and would hear nothing here it could act on.
+struct RailMinimapView: View {
+    @ObservedObject var roll: RollGeometryModel
+
+    /// A day's share of the roll, and the reader's place in it.
+    /// Deliberately below the weight of the tertiary label the footer
+    /// draws in: at these values the minimap reads as a texture in the
+    /// panel rather than as a mark on it.
+    static let dayInk: Double = 0.10
+    static let viewportInk: Double = 0.06
+
+    var body: some View {
+        GeometryReader { proxy in
+            let geometry = roll.geometry
+            let height = proxy.size.height
+            // Identified by place in the column rather than by day. A
+            // bar is a shape in a scaled impression, not a row a reader
+            // can reach, so there is nothing for an identity to carry
+            // across a redraw; and keying by bucket would lean on an
+            // invariant belonging two types away, since `merging` folds
+            // only consecutive runs and the ids are unique only because
+            // the projection's buckets are.
+            let bars = Array(RailMinimap.bars(of: geometry, in: height).enumerated())
+            ZStack(alignment: .topLeading) {
+                // The band goes under the bars: where the two overlap
+                // the inks add, so the days the reader is actually
+                // looking at are the ones that stand out slightly.
+                if let band = RailMinimap.band(of: geometry, in: height) {
+                    Rectangle()
+                        .fill(Color.secondary.opacity(Self.viewportInk))
+                        .frame(width: proxy.size.width, height: band.height)
+                        .offset(y: band.y)
+                }
+                ForEach(bars, id: \.offset) { _, bar in
+                    Rectangle()
+                        .fill(Color.secondary.opacity(Self.dayInk))
+                        .frame(width: proxy.size.width, height: bar.height)
+                        .offset(y: bar.y)
+                }
+            }
+        }
+        .background(Color.panelBackground)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -175,9 +277,9 @@ private struct TimeRailRow: Identifiable {
     var id: Int { unit.bucket }
 }
 
-/// One day on the rail: its relative label over the gauge of the page on
-/// it that dies soonest, or the dashed rule when the day holds no page
-/// at all.
+/// One day on the rail: its relative label in words over the gauge of
+/// the page on it that dies soonest, or the dashed rule when the day
+/// holds no page at all.
 ///
 /// Internal rather than private so the three pure decisions below (the
 /// target a tap resolves to and the two tooltips) can be tested without
@@ -194,7 +296,7 @@ struct TimeUnitTab: View {
 
     var body: some View {
         VStack(spacing: 3) {
-            Text(unit.label)
+            Text(unit.railLabel)
                 .font(.system(.caption, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -258,10 +360,12 @@ struct TimeUnitTab: View {
         return Self.todayHelp(hasPage: false, chord: chord)
     }
 
-    /// A row's tooltip, naming the day in full: the rail shows "-3d"
-    /// because the column is narrow, and this is where the phrase
-    /// behind the abbreviation lives. With nothing bound it says only
-    /// what the row does, which is still true.
+    /// A row's tooltip: what the row does, in the same words the row
+    /// itself now shows. It used to be where the phrase behind "-3d"
+    /// lived, and issue #131 moved the phrase onto the rail; what is
+    /// left is the verb and the chord, which is the part a label cannot
+    /// carry. With nothing bound it says only what the row does, which
+    /// is still true.
     static func dayHelp(spokenLabel: String, chord: Keystroke?) -> String {
         chorded("Go to \(spokenLabel)", chord: chord)
     }

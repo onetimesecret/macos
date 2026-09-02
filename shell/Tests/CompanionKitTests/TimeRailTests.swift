@@ -71,6 +71,9 @@ final class TimeRailTests: XCTestCase {
         ])
         XCTAssertEqual(projection.units.map(\.label), ["Today", "-1d", "-3d"])
         XCTAssertEqual(
+            projection.units.map(\.railLabel), ["Today", "Yesterday", "3 days ago"],
+            "the rail went back to the abbreviation the wider column retired")
+        XCTAssertEqual(
             projection.units.map { TimeUnitTab.target(for: $0) },
             [.tab(1), .tab(2), .tab(3)])
     }
@@ -165,9 +168,10 @@ final class TimeRailTests: XCTestCase {
     /// The footer's line appears exactly when the projection is holding
     /// something back, and says nothing at all when it is not: a line
     /// reading "0 blank" would be chrome measuring the absence of a
-    /// problem. The short form is what fits a 56pt column; the sentence
-    /// behind it names the one place those pages can be reached from,
-    /// which is what doc 05's no-abbreviation-only rule asks for.
+    /// problem. The short form keeps the footer lighter than the days
+    /// above it; the sentence behind it names the one place those pages
+    /// can be reached from, which is what doc 05's no-abbreviation-only
+    /// rule asks for.
     func testTheHiddenPagesLineAppearsExactlyWhenSomethingIsHidden() {
         XCTAssertNil(TimeRailView.hiddenPagesLine(count: 0))
         XCTAssertEqual(TimeRailView.hiddenPagesLine(count: 1), "1 blank")
