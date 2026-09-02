@@ -1,5 +1,5 @@
 ---
-documentation_status: needs-review # draft | needs-review | reviewed | stale
+documentation_status: reviewed # draft | needs-review | reviewed | stale
 ---
 
 # ADR-0023: Hybrid markdown link affordance — ⌘-click opens, a plain click edits

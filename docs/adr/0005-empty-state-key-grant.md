@@ -1,5 +1,5 @@
 ---
-documentation_status: needs-review # draft | needs-review | reviewed | stale
+documentation_status: reviewed # draft | needs-review | reviewed | stale
 ---
 
 # ADR-0005: Empty-state key grant — a click into emptiness is a deliberate act

@@ -1,5 +1,5 @@
 ---
-documentation_status: needs-review # draft | needs-review | reviewed | stale
+documentation_status: reviewed # draft | needs-review | reviewed | stale
 ---
 
 # ADR-0019: The pad is on every Space, and does not travel between them
