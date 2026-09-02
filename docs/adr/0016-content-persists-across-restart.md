@@ -74,10 +74,10 @@ temp directory yields a live content key across reboots. So ADR-0012:38's
 does, and keeping the bound would mean correcting that claim downward
 rather than preserving it.
 
-Second, ADR-0011:6 sets the default TTL at seven days and ADR-0011:8
-justifies the rungs by calendar reasoning ("Will i need this next
-week"). On a machine that reboots weekly, a boot-bound 7d rung never
-means what its label says.
+Second, ADR-0011:69 sets the default rung at seven days and
+ADR-0011:37 justifies the rungs by calendar reasoning ("will I still
+need this next week at this time"). On a machine that reboots weekly,
+a boot-bound 7d rung never means what its label says.
 
 ## Decision
 
