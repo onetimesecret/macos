@@ -18,3 +18,4 @@
 - [Issue #79 time rail](project_issue79_time_rail.md): the rail's targets must equal `visibleTargets`', the card's two content rows are written out in full, and a View type's statics are main-actor isolated so `map` wants a closure
 - [Issue #79 perforated roll](project_issue79_perforated_roll.md): the editor is a permanent child moved by frame, a quiet day's storage is its own, and a TextKit 1 storage nobody retains is freed under the view laying it out
 - [Undo tests need a pumped run loop](project_undo_needs_pumped_runloop.md): XCTest never turns the loop, so NSUndoManager's event group stays open and one undo() takes the fixture with it
+- [Stacked version bumps go silent](project_stacked_version_bumps.md): two branches bumping one crate to the same number never conflict; bump again in a follow up commit
