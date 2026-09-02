@@ -50,17 +50,17 @@ default and whatever the person asked for at the moment of sharing.
   path was always the link speaking for itself.
 - The default TTL for a link becomes an independent choice, to be
   settled in the spec rather than inherited from whichever page
-  happened to be open. ADR-0011 is the place that thinking already
-  lives, and it is unfinished (status: draft); this ADR does not
-  settle it, it only establishes that the answer cannot be
-  `sheet.remaining()`.
+  happened to be open. At the time of this decision, ADR-0011 was the
+  unfinished draft where that thinking lived; this ADR established
+  only that the answer could not be `sheet.remaining()`. The dated
+  Resolution below records the later answer.
 - The existing test `ttl_snaps_down_the_ladder`
   (`crates/ffi/src/conceal.rs`) pins the derivation, including the
   round-up at `ladder_snapped_ttl(60) == 3600`. It is pinning a
   behaviour this ADR retires, not a property worth keeping. Removing
-  the coupling in code is tracked in issue #139; it is blocked on
-  ADR-0011 settling the link's independent default, so the code and
-  this ADR stay in tension until then.
+  the coupling in code is tracked in issue #139. It was blocked on
+  ADR-0011 settling the link's independent default; the dated
+  Resolution below records when that block was removed.
 - We give up a story that sounded protective: that sharing from a page
   could never outlive the page. It sounded protective because it
   borrowed the page's promise, but the page's promise is about the
@@ -73,6 +73,18 @@ default and whatever the person asked for at the moment of sharing.
   to answer a question about a server-side object, which removes the
   last reason for the seam to consult page state it does not otherwise
   need.
+
+## Resolution, 2026-09-01
+
+ADR-0011 is now accepted. Its section 5 sets the independent link
+default to exactly seven days when the person supplies no explicit link
+TTL. Section 4's page-boundary snap does not apply to links. Issue #139
+is therefore unblocked; the earlier Consequences above preserve the
+state of the decision when this ADR was accepted.
+
+If the server later reports an allowed-TTL set that excludes seven days,
+ADR-0011 leaves the replacement selection rule to a follow-up decision,
+matching the eject trigger below.
 
 ## Eject triggers
 
