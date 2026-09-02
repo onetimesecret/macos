@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Sync has a surface now, and off is a real off** (issue #102; app
+  0.16.0, `companion-ffi` 0.20.0). One switch in Settings, off unless
+  you turn it on, and off means the app you already had: no account,
+  no network, no word anywhere. That is checked from both sides rather
+  than promised, the shell publishing nothing and the core reporting a
+  gate that only a configure can move. Turned on, sync says where it
+  stands in one word beside the header's saving and saved, chosen by
+  the gate the core reports: signing in, sync signed out, reaching,
+  synced, and in ember the two you have to answer, sync refused and
+  sync offline. Every degraded state has a sentence of its own on the
+  page, none of them silent, including a channel with nobody awake to
+  send to. Signing in opens your own browser and can be given up on
+  while it is still open, which the core now makes real rather than
+  merely offering. Pairing shows the six digits on both screens with
+  the verdict that has to be able to fail. The device list says what
+  is attached and when the channel last saw it, and each paired
+  device can be revoked from the row it stands on. A page another
+  device is writing on says so quietly, in a word and never a dialog,
+  from the edits already arriving rather than from any new thing told
+  to the relay. The seam grew a local page id on each event so the
+  shell can say which of its own pages an arrival concerned, and the
+  sign in cancel now ends the browser trip instead of dropping a
+  ceremony nobody was waiting on.
+
 - **Undo belongs to the page's document now** (issue #132). ⌘Z and
   ⇧⌘Z drive the core's own stack rather than AppKit's, which is what
   makes undo safe to keep once a page is shared: the stack is bound to

@@ -787,7 +787,18 @@ impl SyncSession {
                         let Some(sheet_id) = sheet_of(store, page) else {
                             return;
                         };
-                        if store.apply_remote_update(sheet_id, &ops.0).is_ok() {
+                        // A device fetches back the blobs it published
+                        // itself: the delta stream is one stream and,
+                        // the relay being blind, carries no author to
+                        // filter on. Re-importing one's own operations
+                        // moves nothing, so the frontier is what tells
+                        // an arrival from an echo. Only an arrival is
+                        // news, and only an arrival is another device
+                        // writing (issue #102).
+                        let before = store.document_version(sheet_id);
+                        if store.apply_remote_update(sheet_id, &ops.0).is_ok()
+                            && store.document_version(sheet_id) != before
+                        {
                             events.push(SyncEvent::Applied(page));
                         }
                     }
@@ -1176,12 +1187,11 @@ impl SyncSession {
     }
 }
 
-/// The sheet currently holding `page`'s cross-device identity.
+/// The sheet currently holding `page`'s cross-device identity. The
+/// store owns the translation, since it owns both names; this is the
+/// spelling the session layer reads it by.
 pub(crate) fn sheet_of<C: Clock>(store: &SheetStore<C>, page: ItemId) -> Option<SheetId> {
-    store
-        .sheets()
-        .find(|sheet| sheet.uuid() == page)
-        .map(companion_core::Sheet::id)
+    store.sheet_id_of(page)
 }
 
 /// Whether `marker` is a well-formed terminal claim for `page` under
@@ -1429,7 +1439,21 @@ mod tests {
         let mut packages_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
         let mut relay = FakeRelay::default();
 
-        a.queue_ops(uuid, &full);
+        // A writes on after B adopted the frame, and publishes only
+        // what B has not seen. Publishing the adopted frame's own
+        // operations instead would be an echo rather than an arrival,
+        // and B would rightly report nothing.
+        let adopted = store_b.document_version(page_b).unwrap();
+        assert!(store_a.apply_ops(
+            page_a,
+            &[EditOp::Insert {
+                pos_u16: 11,
+                text: ", written after the frame".into()
+            }]
+        ));
+        let delta = store_a.export_document_updates(page_a, &adopted).unwrap();
+
+        a.queue_ops(uuid, &delta);
         let request = a.publish_request(0, &chain_a).unwrap();
         a.absorb_publish(&relay.accept_publish(&request)).unwrap();
 
@@ -1444,6 +1468,28 @@ mod tests {
             )
             .unwrap();
         assert!(events.contains(&SyncEvent::Applied(uuid)));
+
+        // The same batch served a second time is the echo every device
+        // fetches back from a stream with no author in it. It applies
+        // to nothing and must be reported as nothing: an event here
+        // would tell the surface that a peer is writing on a page
+        // nobody has touched (issue #102).
+        let echo = b
+            .absorb_deltas(
+                &relay.serve_fetch(0),
+                &mut store_b,
+                &mut chain_b,
+                &mut packages_b,
+                &[],
+                0,
+            )
+            .unwrap();
+        assert!(
+            !echo
+                .iter()
+                .any(|event| matches!(event, SyncEvent::Applied(_))),
+            "operations already held are not an arrival"
+        );
 
         // Draining to the frontier made B's view current: the terminal
         // gate opens. A fresh session that never drained stays quiet.
@@ -1492,6 +1538,103 @@ mod tests {
         assert!(events.contains(&SyncEvent::Terminal(uuid)));
         // Absorbing: nothing lands on the page again.
         assert!(!a.queue_terminal(uuid, &marker));
+    }
+
+    #[test]
+    fn a_peers_delete_only_batch_is_still_an_arrival() {
+        // The frontier check asks whether the document moved, and a
+        // deletion is the move a "did anything change" test most often
+        // swallows: nothing was added, the batch can be shorter than
+        // the one that inserted the text, and a length or a byte count
+        // would read it as nothing happening. What must hold is that
+        // `document_version` advances for a delete exactly as it does
+        // for an insert, so the mark a page carries when someone else
+        // is writing on it appears for a peer erasing a line too.
+        let clock = ManualClock::new();
+        let mut store_a = SheetStore::new(clock.clone());
+        let page_a = store_a.new_tab().unwrap().1;
+        assert!(store_a.apply_ops(
+            page_a,
+            &[EditOp::Insert {
+                pos_u16: 0,
+                text: "a line that will be cut".into()
+            }]
+        ));
+        let uuid = store_a.sheet(page_a).unwrap().uuid();
+
+        let mut store_b = SheetStore::new(clock.clone());
+        let page_b = store_b.new_tab().unwrap().1;
+        let pristine = store_b.document_version(page_b).unwrap();
+        let full = store_a.export_document_updates(page_a, &pristine).unwrap();
+        store_b.adopt_key_frame(page_b, uuid, &full).unwrap();
+
+        let chain_a = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut chain_b = GopKeyChain::root(CHANNEL_SECRET).unwrap();
+        let mut a = session("fp-a");
+        let mut b = session("fp-b");
+        let (pkcs8_b, _) = identity();
+        let mut packages_b = KeyPackageKeeper::mint(&pkcs8_b).unwrap();
+        let mut relay = FakeRelay::default();
+
+        // B holds the whole line. A now removes part of it and
+        // publishes nothing but that removal.
+        let adopted = store_b.document_version(page_b).unwrap();
+        assert!(store_a.apply_ops(
+            page_a,
+            &[EditOp::Delete {
+                pos_u16: 0,
+                len_u16: 7
+            }]
+        ));
+        let delta = store_a.export_document_updates(page_a, &adopted).unwrap();
+        a.queue_ops(uuid, &delta);
+        let request = a.publish_request(0, &chain_a).unwrap();
+        a.absorb_publish(&relay.accept_publish(&request)).unwrap();
+
+        let before = store_b.document_version(page_b).unwrap();
+        let events = b
+            .absorb_deltas(
+                &relay.serve_fetch(0),
+                &mut store_b,
+                &mut chain_b,
+                &mut packages_b,
+                &[],
+                0,
+            )
+            .unwrap();
+        assert!(
+            events.contains(&SyncEvent::Applied(uuid)),
+            "a peer erasing text is another device writing on the page"
+        );
+        assert_ne!(
+            store_b.document_version(page_b).unwrap(),
+            before,
+            "the frontier moves for a deletion, which is what the event rests on"
+        );
+        assert_eq!(
+            store_b.sheet(page_b).unwrap().segments(),
+            [companion_core::Segment::Ink("that will be cut".into())],
+            "and the deletion is the one A made"
+        );
+
+        // The same batch again is the echo, and an echo removes
+        // nothing a second time.
+        let echo = b
+            .absorb_deltas(
+                &relay.serve_fetch(0),
+                &mut store_b,
+                &mut chain_b,
+                &mut packages_b,
+                &[],
+                0,
+            )
+            .unwrap();
+        assert!(
+            !echo
+                .iter()
+                .any(|event| matches!(event, SyncEvent::Applied(_))),
+            "a deletion already held is not an arrival either"
+        );
     }
 
     #[test]

@@ -317,9 +317,25 @@ pub(crate) fn release_redirect(state: &mut SyncState, mine: &Arc<AtomicBool>) {
 /// patience — the user is reading a consent screen), redeem the code,
 /// and exchange it for the grant. Runs with no lock held; the caller
 /// took `pending` out first. Every failure is a §5 row as a machine
-/// token: `abandoned` (the browser never returned), `state_mismatch`,
-/// `no_code`, `unreachable`, `refused` — and all of them leave nothing
-/// stored, with retry being a fresh begin.
+/// token: `abandoned` (the browser never returned, or the user gave up
+/// on it), `state_mismatch`, `no_code`, `unreachable`, `refused`, and
+/// all of them leave nothing stored, with retry being a fresh begin.
+///
+/// `abandoned` is the ceremony's own flag, raised by a cancel or a
+/// sign-out. A user who closed the consent tab and came back to the
+/// app is told `abandoned` at once rather than after the patience runs
+/// out, and the two arrive by the same door because they are the same
+/// fact: no redirect is coming.
+///
+/// The flag is read at every wait, because the ceremony has three and
+/// only the first is the browser's. The listener watches it while it
+/// polls, so a cancel ends the trip within a poll rather than at the
+/// end of the patience. The exchange that follows a landed redirect is
+/// a network round trip of its own, seconds wide, and a give-up during
+/// those seconds has to be as final as one during the consent screen.
+/// So a grant that arrives for a ceremony nobody is waiting for any
+/// more is never parsed, and the caller that would have stored it
+/// never sees it.
 pub(crate) fn signin_finish<T: Transport>(
     pending: PendingSignin,
     patience: Duration,
@@ -334,7 +350,7 @@ pub(crate) fn signin_finish<T: Transport>(
     if abandoned.load(Ordering::Relaxed) {
         return Err("abandoned");
     }
-    let Some(query) = pending.listener.accept_redirect(patience) else {
+    let Some(query) = pending.listener.accept_redirect(patience, &abandoned) else {
         return Err("abandoned");
     };
     if abandoned.load(Ordering::Relaxed) {
@@ -994,12 +1010,17 @@ fn rotate_channel(
         .collect();
     let peers = engine.session.ceremony_peers(&identities);
     let page = crate::sync_session::page_wire_id(target);
+    // The same two names every other event carries: the identity the
+    // peers know the page by, and the local id this surface does.
+    let page_id = sheet_of(store, target).map(SheetId::raw);
     if peers.is_empty() {
         if engine
             .session
             .solo_ceremony(target, store, &mut engine.chain)
         {
-            events.push(serde_json::json!({ "kind": "ceremony_committed", "page": page }));
+            events.push(serde_json::json!({
+                "kind": "ceremony_committed", "page": page, "page_id": page_id
+            }));
             return true;
         }
     } else {
@@ -1008,7 +1029,9 @@ fn rotate_channel(
             .session
             .propose_ceremony(target, &peers, &own, now_ms)
         {
-            events.push(serde_json::json!({ "kind": "ceremony_proposed", "page": page }));
+            events.push(serde_json::json!({
+                "kind": "ceremony_proposed", "page": page, "page_id": page_id
+            }));
         }
     }
     false
@@ -1116,7 +1139,7 @@ pub(crate) fn pump(handle: &CompanionHandle, wait_seconds: u32) -> serde_json::V
                             committed = absorbed
                                 .iter()
                                 .any(|event| matches!(event, SyncEvent::CeremonyCommitted(_)));
-                            events.extend(absorbed.iter().map(event_json));
+                            events.extend(absorbed.iter().map(|event| event_json(event, store)));
                             // A drained commit compacted the page here;
                             // its cursor settles so the rebuild travels
                             // only as the frame.
@@ -1268,17 +1291,35 @@ fn publish_round(
     }
 }
 
-fn event_json(event: &SyncEvent) -> serde_json::Value {
+/// One event as the shell reads it. The `page` is the cross-device
+/// identity, which is the only name a peer can use; `page_id` is the
+/// local id the same page answers to here, so a surface can say which
+/// of its own pages an event is about without ever holding a table of
+/// identities. It is null for an event about no page and for a page
+/// this device no longer keeps, and issue #102's "another device is
+/// editing this page" is what wants it: without the translation the
+/// shell would know that something arrived and not where to say so.
+fn event_json(
+    event: &SyncEvent,
+    store: &companion_core::SheetStore<companion_core::SystemClock>,
+) -> serde_json::Value {
     let page = |page: &ItemId| crate::sync_session::page_wire_id(*page);
+    let local = |page: &ItemId| sheet_of(store, *page).map(SheetId::raw);
     match event {
-        SyncEvent::Applied(id) => serde_json::json!({ "kind": "applied", "page": page(id) }),
-        SyncEvent::CountdownMoved(id) => {
-            serde_json::json!({ "kind": "countdown_moved", "page": page(id) })
+        SyncEvent::Applied(id) => {
+            serde_json::json!({ "kind": "applied", "page": page(id), "page_id": local(id) })
         }
-        SyncEvent::Terminal(id) => serde_json::json!({ "kind": "terminal", "page": page(id) }),
+        SyncEvent::CountdownMoved(id) => {
+            serde_json::json!({ "kind": "countdown_moved", "page": page(id), "page_id": local(id) })
+        }
+        SyncEvent::Terminal(id) => {
+            serde_json::json!({ "kind": "terminal", "page": page(id), "page_id": local(id) })
+        }
         SyncEvent::RejoinRequired => serde_json::json!({ "kind": "rejoin_required" }),
         SyncEvent::CeremonyCommitted(id) => {
-            serde_json::json!({ "kind": "ceremony_committed", "page": page(id) })
+            serde_json::json!({
+                "kind": "ceremony_committed", "page": page(id), "page_id": local(id)
+            })
         }
         SyncEvent::SignedOut => serde_json::json!({ "kind": "signed_out" }),
     }
@@ -1943,6 +1984,25 @@ mod tests {
         }
     }
 
+    /// A token endpoint that answers only once the caller has given up:
+    /// it raises the flag itself and then grants, which is the window
+    /// between a redirect landing and a grant arriving, held open on
+    /// purpose. Seconds wide in life, since it is a real exchange over
+    /// a real network.
+    struct SurrenderingTransport {
+        abandoned: Arc<AtomicBool>,
+    }
+
+    impl Transport for SurrenderingTransport {
+        fn send(&self, _request: HttpRequest) -> Result<HttpResponse, TransportError> {
+            self.abandoned.store(true, Ordering::Relaxed);
+            Ok(HttpResponse {
+                status: 200,
+                body: br#"{"access_token":"at-1","refresh_token":"rt-1"}"#.to_vec(),
+            })
+        }
+    }
+
     fn configured() -> SyncState {
         SyncState {
             config: SyncConfig::parse(
@@ -2111,6 +2171,108 @@ mod tests {
         assert_eq!(signin_begin(&mut state).unwrap_err(), "busy");
         assert!(abandon_signin(&mut state));
         assert!(signin_begin(&mut state).is_ok());
+    }
+
+    #[test]
+    fn an_event_names_the_page_in_both_the_languages_the_seam_speaks() {
+        let mut store = companion_core::SheetStore::new(companion_core::SystemClock);
+        let sheet = store.new_tab().unwrap().1;
+        let page = store.sheet(sheet).unwrap().uuid();
+
+        let applied = event_json(&SyncEvent::Applied(page), &store);
+        assert_eq!(applied["kind"], "applied");
+        assert_eq!(
+            applied["page"],
+            crate::sync_session::page_wire_id(page),
+            "the peers' name for it"
+        );
+        assert_eq!(
+            applied["page_id"],
+            serde_json::json!(sheet.raw()),
+            "and this device's, which is the one a surface can point at"
+        );
+
+        // A page this device does not hold: the event still tells the
+        // shell something happened, and says honestly that it happened
+        // nowhere it can show.
+        let stranger = event_json(&SyncEvent::Applied(ItemId::random()), &store);
+        assert_eq!(stranger["page_id"], serde_json::Value::Null);
+
+        // An event about no page at all names neither.
+        let signed_out = event_json(&SyncEvent::SignedOut, &store);
+        assert_eq!(signed_out["kind"], "signed_out");
+        assert_eq!(signed_out.get("page_id"), None);
+    }
+
+    #[test]
+    fn giving_up_ends_the_browser_trip_rather_than_waiting_it_out() {
+        let mut state = configured();
+        let _ = signin_begin(&mut state).unwrap();
+        let pending = state.pending_signin.take().unwrap();
+        let abandoned = Arc::clone(&pending.abandoned);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(60));
+            abandoned.store(true, Ordering::Relaxed);
+        });
+        let transport = MockTransport::granting();
+        let began = Instant::now();
+        // The patience a real consent screen gets. Only the give-up
+        // can explain an answer that arrives in this test's lifetime.
+        let refused = signin_finish(pending, Duration::from_secs(300), &transport);
+        assert_eq!(refused.err(), Some("abandoned"));
+        assert!(began.elapsed() < Duration::from_secs(10));
+        assert!(
+            transport.seen.borrow().is_none(),
+            "a ceremony nobody finished redeems nothing"
+        );
+    }
+
+    #[test]
+    fn a_give_up_during_the_exchange_stores_nothing() {
+        // The window the first give-up missed. The redirect lands, so
+        // the listener is past caring about the flag, and the code is
+        // then exchanged over the network, which takes seconds. A user
+        // pressing the way out during those seconds was told nothing
+        // was stored while a token was on its way to the Keychain.
+        let credentials = InMemoryCredentialStore::default();
+        let mut state = configured();
+        let authorize_url = signin_begin(&mut state).unwrap();
+        let pending = state.pending_signin.take().unwrap();
+        browser_returns(&authorize_url, pending.listener.port(), None);
+        let transport = SurrenderingTransport {
+            abandoned: Arc::clone(&pending.abandoned),
+        };
+
+        let refused = signin_finish(pending, Duration::from_secs(5), &transport);
+        assert_eq!(
+            refused.err(),
+            Some("abandoned"),
+            "a grant nobody is waiting for any more is not a sign-in"
+        );
+        assert!(
+            !store_refresh_was_called(&credentials),
+            "and nothing of it may rest here"
+        );
+    }
+
+    /// Whether anything ever landed in the sync refresh account. The
+    /// finish is the only writer, so an empty account is the whole
+    /// assertion.
+    fn store_refresh_was_called(credentials: &InMemoryCredentialStore) -> bool {
+        load_refresh(credentials).is_some()
+    }
+
+    #[test]
+    fn a_fresh_ceremony_does_not_inherit_the_last_one_s_surrender() {
+        let mut state = configured();
+        let _ = signin_begin(&mut state).unwrap();
+        assert!(abandon_signin(&mut state));
+        let _ = signin_begin(&mut state).unwrap();
+        let today = state.pending_signin.as_ref().unwrap();
+        assert!(
+            !today.abandoned.load(Ordering::Relaxed),
+            "yesterday's surrender may not abandon today's browser trip"
+        );
     }
 
     #[test]

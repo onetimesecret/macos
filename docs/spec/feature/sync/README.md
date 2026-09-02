@@ -20,6 +20,11 @@ This directory holds the milestone's written specifications:
 - [account-auth.md](account-auth.md) — the OAuth flow that gates the
   relay channel, token lifetimes for an app that sleeps for days, and
   the sync/conceal credential separation (issue #98).
+- [surface.md](surface.md): what sync looks like in the app. The off
+  switch and what off means, enrolment and pairing, the device list
+  and its revocations, the header's one word, the sentence every
+  degraded state owes, and the mark a page carries while another
+  device is writing on it (issue #102).
 
 The client seams these documents drive are in the tree: the delta seam
 (`crates/core/src/document.rs`, issue #96), the sync rules and ceremony

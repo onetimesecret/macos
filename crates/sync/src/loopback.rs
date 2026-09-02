@@ -5,6 +5,7 @@
 
 use std::io::{Read as _, Write as _};
 use std::net::{Ipv4Addr, TcpListener};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// A listener bound to an ephemeral loopback port, alive for exactly
@@ -45,11 +46,23 @@ impl OneShotListener {
     /// ceremony: only the `/callback` redirect or the deadline ends
     /// the wait. The listener is consumed either way: one redirect,
     /// then gone.
+    ///
+    /// `abandoned` is the user's own way out. Five minutes is the
+    /// right patience for someone reading a consent screen and the
+    /// wrong one for someone who closed the tab and came back to the
+    /// app, so the wait is watched: a caller that sets the flag ends
+    /// it within one poll, and the ceremony reports itself abandoned
+    /// exactly as a lapsed deadline would. Without this the surface
+    /// could offer a button that stopped nothing, which is worse than
+    /// offering none (ADR-0027 §5, `signing_in`).
     #[must_use]
-    pub fn accept_redirect(self, patience: Duration) -> Option<String> {
+    pub fn accept_redirect(self, patience: Duration, abandoned: &AtomicBool) -> Option<String> {
         let deadline = std::time::Instant::now() + patience;
         self.listener.set_nonblocking(true).ok()?;
         loop {
+            if abandoned.load(Ordering::Relaxed) {
+                return None;
+            }
             let mut stream = match self.listener.accept() {
                 Ok((stream, _)) => stream,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -115,6 +128,7 @@ impl OneShotListener {
 #[cfg(test)]
 mod tests {
     use std::net::TcpStream;
+    use std::sync::Arc;
 
     use super::*;
 
@@ -132,7 +146,9 @@ mod tests {
             let _ = stream.read_to_string(&mut answer);
             answer
         });
-        let query = listener.accept_redirect(Duration::from_secs(5)).unwrap();
+        let query = listener
+            .accept_redirect(Duration::from_secs(5), &AtomicBool::new(false))
+            .unwrap();
         assert_eq!(query, "code=abc&state=xyz");
         let answer = browser.join().unwrap();
         assert!(answer.starts_with("HTTP/1.1 200"));
@@ -154,7 +170,7 @@ mod tests {
         });
         assert!(
             listener
-                .accept_redirect(Duration::from_millis(300))
+                .accept_redirect(Duration::from_millis(300), &AtomicBool::new(false))
                 .is_none()
         );
         let answer = browser.join().unwrap();
@@ -183,9 +199,44 @@ mod tests {
             let _ = stream.read_to_string(&mut answer);
             answer
         });
-        let query = listener.accept_redirect(Duration::from_secs(5)).unwrap();
+        let query = listener
+            .accept_redirect(Duration::from_secs(5), &AtomicBool::new(false))
+            .unwrap();
         assert_eq!(query, "code=abc&state=xyz");
         let answer = browser.join().unwrap();
         assert!(answer.starts_with("HTTP/1.1 200"));
+    }
+
+    #[test]
+    fn the_wait_ends_when_the_user_gives_up_on_it() {
+        let listener = OneShotListener::bind().unwrap();
+        let abandoned = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&abandoned);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(60));
+            flag.store(true, Ordering::Relaxed);
+        });
+        let began = std::time::Instant::now();
+        // A patience no test would sit through, so only the flag can
+        // explain a prompt return.
+        assert!(
+            listener
+                .accept_redirect(Duration::from_secs(300), &abandoned)
+                .is_none()
+        );
+        assert!(
+            began.elapsed() < Duration::from_secs(10),
+            "giving up has to end the wait, not merely record a wish"
+        );
+    }
+
+    #[test]
+    fn a_wait_abandoned_before_it_starts_never_binds_the_browser() {
+        let listener = OneShotListener::bind().unwrap();
+        assert!(
+            listener
+                .accept_redirect(Duration::from_secs(300), &AtomicBool::new(true))
+                .is_none()
+        );
     }
 }

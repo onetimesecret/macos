@@ -34,8 +34,35 @@ struct SyncSettingsSection: View {
                                 "Sync stops until you sign in again. Pages, sealed chips and the conceal token are untouched."
                             )
                         }
+                } else if SyncController.showsGiveUpSignin(
+                    gate: sync.status?.gate, signinPending: sync.status?.signinPending == true)
+                {
+                    // The way out of a browser trip, drawn only while
+                    // there is a trip to end and gone the moment there
+                    // is not. That is the ledger clear button's shape, and the
+                    // "way to give up" ADR-0027 §5 owes this state. The
+                    // core ends the wait; this is not a button that
+                    // merely stops listening.
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("waiting on your browser…")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Give up") { sync.giveUpSignin() }
+                            .controlSize(.small)
+                            .help(
+                                "Stops waiting for the browser. Nothing is stored and signing in again starts over."
+                            )
+                    }
                 } else {
                     Button("Sign in…") { sync.signIn() }
+                        // The one state the row above returns false
+                        // for while a trip still exists: a gate that
+                        // names something other than signing in with a
+                        // stale pending beside it. Beginning a second
+                        // ceremony there earns a `busy` sentence and
+                        // nothing else, and the disable costs nothing.
                         .disabled(sync.status?.signinPending == true)
                 }
             }
@@ -105,6 +132,9 @@ private struct SyncDeviceRow: View {
                 .foregroundStyle(.secondary)
             Text(title)
                 .font(.caption)
+            Text(seen)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.tertiary)
             Spacer()
             Text(badge)
                 .font(.system(.caption2, design: .monospaced))
@@ -129,12 +159,32 @@ private struct SyncDeviceRow: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("\(title), \(badge)"))
+        .accessibilityLabel(Text("\(title), \(seen), \(badge)"))
     }
 
     private var title: String {
         if device.thisDevice { return "this Mac" }
         return device.label.isEmpty ? "paired device" : device.label
+    }
+
+    /// When the channel last saw this device. This Mac is exempt: it
+    /// is being looked at, so saying when it was last seen would be a
+    /// strange thing to tell someone about the machine in front of
+    /// them.
+    ///
+    /// The clock is read here, in a computed property, so a Settings
+    /// window left open shows a stamp that ages only when something
+    /// else redraws the row. That is accepted rather than overlooked:
+    /// the stamp is the relay's attach time and coarse by design, and
+    /// the roster behind it only refreshes when this Mac attaches, so
+    /// a ticker driving this line would animate a number that is not
+    /// moving.
+    private var seen: String {
+        if device.thisDevice { return "here" }
+        return SyncController.lastSeen(
+            attachedWallMs: device.attachedMs,
+            nowWallMs: UInt64(max(0, Date().timeIntervalSince1970 * 1000))
+        )
     }
 
     private var badge: String {

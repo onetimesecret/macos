@@ -68,9 +68,44 @@ final class SyncSurfaceTests: XCTestCase {
                 enabled: true, status: status(enrolled: 0), trouble: nil, peers: 0))
     }
 
+    func testABrowserTripSaysSoAndOffersTheWayOut() {
+        XCTAssertEqual(
+            SyncController.sentence(
+                enabled: true,
+                status: status(signedIn: false, attached: false, gate: .signingIn),
+                trouble: nil, peers: nil),
+            "waiting on your browser to finish signing in; Settings can give up on it"
+        )
+        // The control exists exactly while the trip does, which is the
+        // gated banner's shape rather than a disabled button.
+        XCTAssertTrue(
+            SyncController.showsGiveUpSignin(gate: .signingIn, signinPending: true))
+        XCTAssertFalse(
+            SyncController.showsGiveUpSignin(gate: .signedOut, signinPending: false))
+        XCTAssertFalse(
+            SyncController.showsGiveUpSignin(gate: .attached, signinPending: true),
+            "the gate is the authority; a stale pending flag does not draw a way out")
+        // A core that names no gate leaves the pending flag standing.
+        XCTAssertTrue(SyncController.showsGiveUpSignin(gate: nil, signinPending: true))
+        XCTAssertFalse(SyncController.showsGiveUpSignin(gate: nil, signinPending: false))
+    }
+
+    func testGivingUpReadsDifferentlyFromABrowserThatNeverReturned() {
+        // The core answers both with `abandoned`, because to it they
+        // are one fact. Only the shell knows which the user did.
+        XCTAssertEqual(
+            SyncController.signinSentence(reason: "cancelled"),
+            "the sign-in was given up; nothing was stored"
+        )
+        XCTAssertNotEqual(
+            SyncController.signinSentence(reason: "cancelled"),
+            SyncController.signinSentence(reason: "abandoned")
+        )
+    }
+
     func testEverySigninFailureRowHasASentence() {
         let rows = [
-            "abandoned", "state_mismatch", "no_code", "unreachable",
+            "abandoned", "cancelled", "state_mismatch", "no_code", "unreachable",
             "keychain", "busy", "not_configured", "refused",
         ]
         for row in rows {
@@ -221,6 +256,99 @@ final class SyncSurfaceTests: XCTestCase {
                 enabled: false, status: status(gate: .refused), trouble: .refused, peers: nil))
     }
 
+    // MARK: The header word (issue #102, criterion 4)
+
+    private func word(
+        gate: SyncGate?, trouble: SyncController.Trouble? = nil, peers: Int? = 1,
+        enrolled: Int = 1, enabled: Bool = true
+    ) -> SyncHeaderWord? {
+        SyncController.headerWord(
+            enabled: enabled,
+            status: status(attached: gate == .attached, enrolled: enrolled, gate: gate),
+            trouble: trouble,
+            peers: peers
+        )
+    }
+
+    func testTheHeaderSaysNothingAboutSyncWhileItIsOff() {
+        XCTAssertNil(word(gate: .attached, enabled: false))
+        XCTAssertNil(
+            word(gate: .refused, trouble: .refused, enabled: false),
+            "off is silence even when the last thing sync heard was a refusal")
+        XCTAssertNil(word(gate: .off), "and a switch over no relay owes the header nothing")
+    }
+
+    func testEveryGateStateThatSpeaksHasItsOwnHeaderWord() {
+        let speaking: [SyncGate] = [.signedOut, .signingIn, .refused, .unreachable, .ready, .attached]
+        let words = speaking.map { word(gate: $0)?.text }
+        for (gate, text) in zip(speaking, words) {
+            XCTAssertNotNil(text, "\(gate) may not be silent in the header")
+        }
+        XCTAssertEqual(
+            Set(words.compactMap { $0 }).count, speaking.count,
+            "no two gate states share a word")
+        XCTAssertEqual(word(gate: .signedOut)?.text, "sync signed out")
+        XCTAssertEqual(word(gate: .signingIn)?.text, "signing in")
+        XCTAssertEqual(word(gate: .refused)?.text, "sync refused")
+        XCTAssertEqual(word(gate: .unreachable)?.text, "sync offline")
+        XCTAssertEqual(word(gate: .ready)?.text, "reaching")
+        XCTAssertEqual(word(gate: .attached)?.text, "synced")
+    }
+
+    func testTheLoudWordsAreTheOnesAUserMustActOn() {
+        XCTAssertEqual(word(gate: .refused)?.tone, .loud)
+        XCTAssertEqual(word(gate: .unreachable)?.tone, .loud)
+        XCTAssertEqual(
+            word(gate: .attached, trouble: .behind)?.tone, .loud,
+            "falling behind is not a gate state and still has to be loud")
+        // A working channel is not news, so it is drawn as quietly as
+        // the persistence word's `saved`.
+        XCTAssertEqual(word(gate: .attached)?.tone, .quiet)
+        XCTAssertEqual(word(gate: .ready)?.tone, .plain)
+        XCTAssertEqual(word(gate: .signingIn)?.tone, .plain)
+    }
+
+    func testFallingBehindOutranksTheGatesGoodNews() {
+        XCTAssertEqual(word(gate: .attached, trouble: .behind)?.text, "sync behind")
+        XCTAssertEqual(word(gate: .ready, trouble: .behind)?.text, "sync behind")
+        // But the account axis still wins over it where the gate names
+        // a condition of its own: a refused account is why nothing is
+        // arriving, and rejoining cannot be attempted through it.
+        XCTAssertEqual(word(gate: .attached, trouble: .refused)?.text, "synced")
+    }
+
+    func testAttachedWithNobodyAwakeDoesNotClaimToBeSynced() {
+        XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 2)?.text, "sync waiting")
+        // With nothing enrolled there is nothing waiting: an empty
+        // channel is genuinely up to date.
+        XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 0)?.text, "synced")
+    }
+
+    func testACoreWithNoGateLeavesTheShellsOwnReadingStanding() {
+        // A core built before the gate existed, or one a version ahead
+        // naming a state this build never heard of.
+        XCTAssertEqual(word(gate: nil, trouble: .unreachable)?.text, "sync offline")
+        XCTAssertEqual(word(gate: nil, trouble: .signedOut)?.text, "sync signed out")
+        XCTAssertNil(word(gate: nil, trouble: nil), "and it invents nothing to say")
+    }
+
+    func testTheHeaderWordAndTheStandingSentenceNeverDisagree() {
+        // Every degraded condition that earns a sentence earns a word,
+        // so the page and the header can never be caught telling a user
+        // two different things about one channel.
+        let troubles: [SyncController.Trouble] = [.signedOut, .refused, .unreachable, .behind]
+        for trouble in troubles {
+            let gate = SyncController.reconciled(trouble: trouble, gate: nil)
+            XCTAssertNotNil(
+                SyncController.sentence(
+                    enabled: true, status: status(gate: nil), trouble: gate, peers: 1))
+            XCTAssertNotNil(
+                SyncController.headerWord(
+                    enabled: true, status: status(gate: nil), trouble: gate, peers: 1),
+                "\(trouble) speaks on the page and must speak in the header too")
+        }
+    }
+
     func testSyncStatusDecoding() throws {
         let json = """
         {
@@ -286,13 +414,85 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertFalse(list.devices[2].verified, "a stranger reads as one")
     }
 
+    // MARK: A page being written elsewhere (issue #102, criterion 6)
+
+    func testAPageKeepsItsMarkOnlyWhileTheEditIsRecent() {
+        let now = Date()
+        let marks: [UInt64: Date] = [
+            11: now.addingTimeInterval(-5),
+            22: now.addingTimeInterval(-SyncController.elsewhereWindow - 1),
+        ]
+        XCTAssertEqual(
+            SyncController.editedElsewhere(marks: marks, now: now), [11],
+            "a peer who stopped writing a while ago is not writing now")
+        // And the mark lapses on its own, without another event.
+        XCTAssertEqual(
+            SyncController.editedElsewhere(
+                marks: marks, now: now.addingTimeInterval(SyncController.elsewhereWindow)),
+            [],
+            "the mark says now, and now passes")
+    }
+
+    func testNoMarksMeansNoPagesMarked() {
+        XCTAssertEqual(SyncController.editedElsewhere(marks: [:], now: Date()), [])
+    }
+
+    func testTheDeviceListSaysWhenEachWasLastSeen() {
+        let now: UInt64 = 1_000_000_000_000
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: nil, nowWallMs: now),
+            "not seen on this channel",
+            "a paired device the roster does not carry is absent, not recent")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 30_000, nowWallMs: now),
+            "seen just now")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 5 * 60_000, nowWallMs: now),
+            "seen 5 minutes ago")
+        // The band the just-now threshold hands to the minutes: ninety
+        // seconds through a hundred and nineteen is one minute, and one
+        // minute is singular like every other unit here.
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 90_000, nowWallMs: now),
+            "seen 1 minute ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 119_000, nowWallMs: now),
+            "seen 1 minute ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 120_000, nowWallMs: now),
+            "seen 2 minutes ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 3_600_000, nowWallMs: now),
+            "seen 1 hour ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 5 * 3_600_000, nowWallMs: now),
+            "seen 5 hours ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 24 * 3_600_000, nowWallMs: now),
+            "seen 1 day ago")
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now - 9 * 24 * 3_600_000, nowWallMs: now),
+            "seen 9 days ago")
+    }
+
+    func testADeviceStampedInTheFutureIsAClockNotATimeTraveller() {
+        // Two machines, two clocks: the peer's attach stamp can land
+        // ahead of this Mac's now, and "seen in -3 minutes" would be
+        // the surface reporting the skew as news.
+        let now: UInt64 = 1_000_000_000_000
+        XCTAssertEqual(
+            SyncController.lastSeen(attachedWallMs: now + 90_000, nowWallMs: now),
+            "seen just now")
+    }
+
     func testPumpOutcomeDecoding() throws {
         let json = """
         {
             "ok": true,
             "reason": null,
             "events": [
-                {"kind": "applied", "page": "0011"},
+                {"kind": "applied", "page": "0011", "page_id": 7},
+                {"kind": "applied", "page": "0022", "page_id": null},
                 {"kind": "rejoin_required", "page": null}
             ],
             "state": null
@@ -300,9 +500,27 @@ final class SyncSurfaceTests: XCTestCase {
         """
         let outcome = try JSONDecoder().decode(SyncPumpOutcome.self, from: Data(json.utf8))
         XCTAssertTrue(outcome.ok)
-        XCTAssertEqual(outcome.events.count, 2)
+        XCTAssertEqual(outcome.events.count, 3)
         XCTAssertEqual(outcome.events[0].kind, "applied")
         XCTAssertEqual(outcome.events[0].page, "0011")
-        XCTAssertNil(outcome.events[1].page)
+        XCTAssertEqual(
+            outcome.events[0].pageID, 7,
+            "the local id is what a surface can point a mark at")
+        XCTAssertNil(
+            outcome.events[1].pageID,
+            "a page this device no longer keeps is named honestly as none")
+        XCTAssertNil(outcome.events[2].page)
+    }
+
+    func testAnEventFromACoreWithNoLocalPageIdStillDecodes() throws {
+        // A core built before the local id joined the event: the whole
+        // pump answer may not be lost over one absent field.
+        let json = """
+        {"ok": true, "reason": null, "state": null,
+         "events": [{"kind": "applied", "page": "0011"}]}
+        """
+        let outcome = try JSONDecoder().decode(SyncPumpOutcome.self, from: Data(json.utf8))
+        XCTAssertEqual(outcome.events.count, 1)
+        XCTAssertNil(outcome.events[0].pageID)
     }
 }

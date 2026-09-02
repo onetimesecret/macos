@@ -412,6 +412,18 @@ impl<C: Clock> SheetStore<C> {
         self.sheets().find(|s| s.id == id)
     }
 
+    /// The local id of the page a cross-device identity names, if one
+    /// stands here. Peers address a page only by its `uuid`, since
+    /// local ids never leave the process, so this is the translation
+    /// back: what arrived from another device, said in the ids the
+    /// surface already holds. `None` for a page this device has
+    /// expired, closed, or never had, which is an ordinary answer
+    /// rather than an error.
+    #[must_use]
+    pub fn sheet_id_of(&self, page: ItemId) -> Option<SheetId> {
+        self.sheets().find(|sheet| sheet.uuid == page).map(|s| s.id)
+    }
+
     /// A tab by id.
     #[must_use]
     pub fn tab(&self, id: TabId) -> Option<&Tab> {
@@ -2149,6 +2161,25 @@ mod tests {
         let tab = store.tabs().next().unwrap();
         assert_eq!(tab.rung(), Ttl::default());
         assert_eq!(tab.page().unwrap().remaining_label(store.now()), "8h");
+    }
+
+    #[test]
+    fn a_cross_device_identity_names_the_local_page_it_stands_in() {
+        let (mut store, _) = store();
+        let first = store.new_tab().unwrap().1;
+        let second = store.new_tab().unwrap().1;
+        let identity = store.sheet(first).unwrap().uuid();
+        assert_eq!(store.sheet_id_of(identity), Some(first));
+        assert_ne!(store.sheet_id_of(identity), Some(second));
+        assert_eq!(
+            store.sheet_id_of(ItemId::random()),
+            None,
+            "an identity no page here holds is an ordinary answer"
+        );
+        // A page this device has let go is one of those: what a peer
+        // says about it can no longer be shown anywhere.
+        store.close_tab(slot(&store, first));
+        assert_eq!(store.sheet_id_of(identity), None);
     }
 
     #[test]

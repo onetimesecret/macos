@@ -902,7 +902,10 @@ char *companion_sync_signin_begin(CompanionHandle *handle);
  * ceremony ended by companion_sync_signin_cancel or
  * companion_sync_signout while this call was out, including one ended
  * after the redirect landed: the grant is dropped rather than
- * persisted. Free with companion_string_free().
+ * persisted. A cancel that landed before this call ran leaves nothing
+ * to find, and the answer is "no_ceremony": the flag went with the
+ * ceremony it ended, so the surface is what remembers whose ending it
+ * was. Free with companion_string_free().
  */
 char *companion_sync_signin_finish(CompanionHandle *handle,
                                    uint64_t patience_ms);

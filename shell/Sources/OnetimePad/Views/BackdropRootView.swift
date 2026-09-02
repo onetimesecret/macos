@@ -19,9 +19,16 @@ struct BackdropRootView: View {
     /// they change and not only when the stance does.
     @ObservedObject var pages: PageModel
 
+    /// The sync controller, observed on its own account: it is a
+    /// nested `ObservableObject`, and a nested object's changes do not
+    /// republish through the model that holds it, so the header's sync
+    /// word would otherwise stand at whatever it read first.
+    @ObservedObject var sync: SyncController
+
     init(model: BackdropModel) {
         self.model = model
         pages = model.pages
+        sync = model.pages.sync
     }
 
     /// Where the pointer was when the manipulation in flight began, in
@@ -231,6 +238,13 @@ struct BackdropRootView: View {
             // state instead, because "saved" would then describe the
             // ledger leg while the pages go nowhere.
             saveIndicator
+            // And whether the session's edits are reaching the user's
+            // other devices (issue #102), in the same shape and beside
+            // the same word: one lower-case word, absent while sync is
+            // off, quiet when the channel is well, ember when it needs
+            // acting on. The gate the core reports chooses it; nothing
+            // here infers a state of its own.
+            syncIndicator
             // A countdown belongs to a page, so a slot holding none
             // shows no label: there is nothing counting down, and the
             // rung it keeps for its next page is not a deadline
@@ -292,6 +306,28 @@ struct BackdropRootView: View {
                     .help("The last write was refused; the app keeps retrying. Quitting now will warn before any loss.")
                     .accessibilityLabel(Text("Save failed, retrying"))
             }
+        }
+    }
+
+    /// The header's sync word. Nothing at all while sync is off, which
+    /// is the first acceptance criterion of issue #102 held in the one
+    /// place a user would notice it missing.
+    @ViewBuilder
+    private var syncIndicator: some View {
+        if let word = sync.headerWord {
+            Text(word.text)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(tone(word.tone))
+                .help(word.help)
+                .accessibilityLabel(Text(word.spoken))
+        }
+    }
+
+    private func tone(_ tone: SyncHeaderWord.Tone) -> AnyShapeStyle {
+        switch tone {
+        case .quiet: return AnyShapeStyle(.tertiary)
+        case .plain: return AnyShapeStyle(.secondary)
+        case .loud: return AnyShapeStyle(Color.ember)
         }
     }
 
