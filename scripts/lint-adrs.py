@@ -17,8 +17,15 @@ from pathlib import Path
 DOC_STATUS = {"draft", "needs-review", "reviewed", "stale"}
 ADR_STATUS = {"proposed", "accepted", "rejected", "superseded"}
 REQUIRED_SECTIONS = ("Context", "Decision", "Consequences", "Eject triggers")
+RELATION_FIELDS = {
+    "Depends on",
+    "Superseded by",
+    "Superseded in part by",
+    "Supersedes",
+    "Supersedes in part",
+}
 
-ADR_FILE = re.compile(r"^(\d{4})-[a-z0-9-]+\.md$")
+ADR_FILE = re.compile(r"^(\d{4})-(?:[a-z0-9]+-)*[a-z0-9]+\.md$")
 TITLE = re.compile(r"^# ADR-(\d{4}): \S")
 # A canonical metadata bullet: "- **Field:** value", value optionally on
 # the following lines.
@@ -27,7 +34,9 @@ LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 # Inline code spans; a link written inside one is an example, not a link.
 CODE_SPAN = re.compile(r"`[^`]*`")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-DOC_STATUS_LINE = re.compile(r"^documentation_status:[ \t]*([a-z-]+)[ \t]*(?:#.*)?$")
+DOC_STATUS_LINE = re.compile(
+    r"^documentation_status:[ \t]*([a-z-]+)[ \t]*(?:#.*)?$"
+)
 # The frontmatter key restated as a visible field, which would let the two
 # copies drift.
 VISIBLE_DOC_STATUS = re.compile(r"documentation[_ -]status", re.IGNORECASE)
@@ -41,6 +50,48 @@ def split_frontmatter(lines: list[str]) -> tuple[list[str], int]:
         if lines[i].rstrip() == "---":
             return lines[1:i], i + 1
     return [], 0
+
+
+def outside_fences(lines: list[str]) -> list[tuple[int, str]]:
+    """Return numbered Markdown lines that are not inside code fences."""
+    visible: list[tuple[int, str]] = []
+    fence: str | None = None
+    for line_no, raw in enumerate(lines, start=1):
+        stripped = raw.lstrip()
+        marker = next(
+            (
+                candidate
+                for candidate in ("```", "~~~")
+                if stripped.startswith(candidate)
+            ),
+            None,
+        )
+        if marker:
+            if fence is None:
+                fence = marker
+            elif marker == fence:
+                fence = None
+            continue
+        if fence is None:
+            visible.append((line_no, raw))
+    return visible
+
+
+def field_block(lines: list[str], line_no: int) -> str:
+    """Return one metadata bullet and its indented continuation lines."""
+    block = [lines[line_no - 1]]
+    for raw in lines[line_no:]:
+        if not raw.strip() or raw.startswith(("- **", "## ")):
+            break
+        if not raw.startswith(("  ", "\t")):
+            break
+        block.append(raw)
+    return "\n".join(block)
+
+
+def clean_link_target(target: str) -> str:
+    """Remove an optional Markdown link title from a link target."""
+    return target.strip().split(" ", 1)[0]
 
 
 def check(path: Path, adr_dir: Path) -> list[str]:
@@ -70,36 +121,52 @@ def check(path: Path, adr_dir: Path) -> list[str]:
             if m
         ]
         raw_keys = [
-            i for i, raw in enumerate(front, start=2)
+            i
+            for i, raw in enumerate(front, start=2)
             if raw.strip().startswith("documentation_status")
         ]
         if not raw_keys:
             bad(1, "frontmatter has no documentation_status")
         elif len(raw_keys) > 1:
-            bad(raw_keys[1], "frontmatter has more than one documentation_status")
+            bad(
+                raw_keys[1],
+                "frontmatter has more than one documentation_status",
+            )
         elif not found:
-            bad(raw_keys[0], "documentation_status is not a bare value plus optional # comment")
+            bad(
+                raw_keys[0],
+                "documentation_status is not a bare value plus optional # comment",
+            )
         elif found[0][1] not in DOC_STATUS:
-            bad(found[0][0], f"documentation_status '{found[0][1]}' is not one of {sorted(DOC_STATUS)}")
+            bad(
+                found[0][0],
+                f"documentation_status '{found[0][1]}' is not one of {sorted(DOC_STATUS)}",
+            )
 
-    body = lines[body_start:]
+    visible_lines = outside_fences(lines)
+    body = [(i, raw) for i, raw in visible_lines if i > body_start]
 
-    titles = [i for i, raw in enumerate(body, start=body_start + 1) if raw.startswith("# ")]
+    titles = [i for i, raw in body if raw.startswith("# ")]
     if len(titles) != 1:
-        bad(None, f"expected exactly one level-one heading, found {len(titles)}")
+        bad(
+            None, f"expected exactly one level-one heading, found {len(titles)}"
+        )
     else:
         raw = lines[titles[0] - 1]
         m = TITLE.match(raw)
         if not m:
             bad(titles[0], "title is not '# ADR-NNNN: Title'")
         elif m.group(1) != number:
-            bad(titles[0], f"title says ADR-{m.group(1)}, filename says {number}")
+            bad(
+                titles[0],
+                f"title says ADR-{m.group(1)}, filename says {number}",
+            )
 
     # Canonical metadata bullets, which live between the title and the first
     # section heading.
     fields: dict[str, tuple[int, str]] = {}
     duplicates: list[tuple[int, str]] = []
-    for i, raw in enumerate(body, start=body_start + 1):
+    for i, raw in body:
         if raw.startswith("## "):
             break
         m = FIELD.match(raw)
@@ -114,20 +181,37 @@ def check(path: Path, adr_dir: Path) -> list[str]:
     for line_no, key in duplicates:
         bad(line_no, f"metadata field '{key}' appears more than once")
 
+    if "Decision history" in fields:
+        bad(
+            fields["Decision history"][0],
+            "Decision history must be a dated '## Decision history' section, not metadata",
+        )
+
+    status: str | None = None
     if "Status" not in fields:
         bad(None, "no canonical '- **Status:**' metadata field")
     else:
-        line_no, value = fields["Status"]
-        if value not in ADR_STATUS:
-            bad(line_no, f"Status '{value}' is not one of {sorted(ADR_STATUS)}")
-        elif value == "superseded":
-            if "Superseded by" not in fields:
-                bad(line_no, "Status is superseded but no 'Superseded by' field names a successor")
-            else:
-                sb_line, sb_value = fields["Superseded by"]
-                tail = "\n".join(lines[sb_line - 1 : sb_line + 6])
-                if not LINK.search(tail):
-                    bad(sb_line, "'Superseded by' does not link the successor ADR")
+        line_no, status = fields["Status"]
+        if status not in ADR_STATUS:
+            bad(
+                line_no, f"Status '{status}' is not one of {sorted(ADR_STATUS)}"
+            )
+        elif status == "superseded" and "Superseded by" not in fields:
+            bad(
+                line_no,
+                "Status is superseded but no 'Superseded by' field names a successor",
+            )
+
+    if status != "superseded" and "Superseded by" in fields:
+        bad(
+            fields["Superseded by"][0],
+            "'Superseded by' requires Status 'superseded'",
+        )
+    if status == "superseded" and "Superseded in part by" in fields:
+        bad(
+            fields["Superseded in part by"][0],
+            "a partial supersession retains the predecessor's existing Status",
+        )
 
     if "Date" not in fields:
         bad(None, "no canonical '- **Date:**' metadata field")
@@ -136,28 +220,44 @@ def check(path: Path, adr_dir: Path) -> list[str]:
 
     for key, (line_no, _) in fields.items():
         if VISIBLE_DOC_STATUS.search(key):
-            bad(line_no, "documentation_status is restated as a visible metadata field")
+            bad(
+                line_no,
+                "documentation_status is restated as a visible metadata field",
+            )
 
-    headings = {raw[3:].strip() for raw in body if raw.startswith("## ")}
+    for key in sorted(RELATION_FIELDS.intersection(fields)):
+        line_no, _ = fields[key]
+        targets = LINK.findall(CODE_SPAN.sub("", field_block(lines, line_no)))
+        adr_targets = []
+        for raw_target in targets:
+            target = clean_link_target(raw_target)
+            rel, _, _ = target.partition("#")
+            if (
+                not target.startswith(("http://", "https://", "mailto:", "#"))
+                and rel
+                and ADR_FILE.match(Path(rel).name)
+            ):
+                adr_targets.append(target)
+        if not adr_targets:
+            bad(line_no, f"'{key}' does not link a local ADR")
+
+    headings = [raw[3:].strip() for _, raw in body if raw.startswith("## ")]
     for section in REQUIRED_SECTIONS:
-        if section not in headings:
+        count = headings.count(section)
+        if count == 0:
             bad(None, f"missing required '## {section}' section")
+        elif count > 1:
+            bad(None, f"required section '## {section}' appears more than once")
 
-    in_fence = False
-    for i, raw in enumerate(lines, start=1):
-        if raw.lstrip().startswith("```"):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
-        for target in LINK.findall(CODE_SPAN.sub("", raw)):
-            target = target.strip().split(" ")[0]
+    for i, raw in visible_lines:
+        for raw_target in LINK.findall(CODE_SPAN.sub("", raw)):
+            target = clean_link_target(raw_target)
             if target.startswith(("http://", "https://", "mailto:", "#")):
                 continue
             rel, _, _ = target.partition("#")
             if not rel:
                 continue
-            if not (adr_dir / rel).exists():
+            if not (path.parent / rel).exists():
                 bad(i, f"link target does not resolve: {target}")
 
     return problems
@@ -190,7 +290,10 @@ def main(argv: list[str]) -> int:
     for problem in problems:
         print(problem)
     if problems:
-        print(f"\n{len(problems)} problem(s) in {len(files)} ADR(s)", file=sys.stderr)
+        print(
+            f"\n{len(problems)} problem(s) in {len(files)} ADR(s)",
+            file=sys.stderr,
+        )
         return 1
     print(f"{len(files)} ADRs OK")
     return 0

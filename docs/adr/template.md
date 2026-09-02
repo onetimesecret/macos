@@ -6,9 +6,10 @@ documentation_status: draft # needs-review | reviewed | stale
 
 - **Status:** proposed | accepted | rejected | superseded
 - **Date:** YYYY-MM-DD
-- **Superseded by:** ADR-NNNN (optional)
-- **Supersedes:** ADR-NNNN (optional)
-- **Depends on:** ADR-NNNN (optional)
+- **Superseded by:** [ADR-NNNN](NNNN-slug.md) (optional; whole decision)
+- **Superseded in part by:** [ADR-NNNN](NNNN-slug.md) (optional; named portion)
+- **Supersedes:** [ADR-NNNN](NNNN-slug.md) (optional)
+- **Depends on:** [ADR-NNNN](NNNN-slug.md) (optional)
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 

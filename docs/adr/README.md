@@ -12,10 +12,11 @@ Start from [template.md](template.md).
 
 `scripts/lint-adrs.py` checks the structural half of this guide: frontmatter
 carries one valid `documentation_status`, the record carries one canonical
-`Status` and a `Date`, the four required sections are present, a superseded
-record names and links its successor, and local links resolve. It judges no
-content, length, or style. CI runs it on every pull request; run it locally
-with `python3 scripts/lint-adrs.py docs/adr`.
+`Status` and a `Date`, `Decision history` is a section rather than metadata,
+the four required sections are present, relationship fields link ADRs, whole
+and partial supersession agree with `Status`, and local links resolve. It
+judges no content, length, or style. CI runs it on every pull request; run it
+locally with `python3 scripts/lint-adrs.py docs/adr`.
 
 ## Scope
 
@@ -57,11 +58,13 @@ it exactly `## Decision history` and use dated bullets for lifecycle events.
 act ratified an already accepted decision; it is not a review or implementation
 date and does not change `Status` or `Date`.
 
-Use `Supersedes`, `Superseded by`, and `Depends on` when they help a reader
-navigate the decision graph. `Superseded by: ADR-NNNN` is required when
-`Status` is `superseded`; `Supersedes` belongs on the successor. A successor may
-supersede only a named decision or section of an earlier ADR. Describe that
-relationship in prose and link to both records.
+Use `Supersedes`, `Superseded by`, `Superseded in part by`, and `Depends on`
+when they help a reader navigate the decision graph. `Superseded by: ADR-NNNN`
+is required when `Status` is `superseded`; `Supersedes` belongs on the
+successor. A partial replacement uses `Superseded in part by` and does not
+change the predecessor's `Status`. A successor may supersede only a named
+decision or section of an earlier ADR. Describe that relationship in prose and
+link to both records.
 
 `documentation_status` records document maintenance independently of the ADR's
 architectural status:
@@ -116,9 +119,12 @@ proposal requires a new ADR that links to the rejected record when useful.
 ### Superseded
 
 A superseded ADR remains the historical record of its accepted decision. Set
-`Status` to `superseded`, add `Superseded by: ADR-NNNN`, and describe any partial
-replacement in its `Decision history`. The successor uses `Supersedes` to link
-back.
+`Status` to `superseded` and add `Superseded by: ADR-NNNN` only when the whole
+decision has been replaced. The successor uses `Supersedes` to link back.
+
+When a successor replaces only a named decision or section, retain the
+predecessor's existing `Status`, add `Superseded in part by`, and identify the
+replaced and still-standing portions in `Decision history`.
 
 A changed decision, changed trade-off, or new scope requires a successor ADR.
 Do not silently update an accepted ADR in place.

@@ -6,9 +6,6 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-09-01
-- **Decision history:** Testing `rodauth-oauth` against a running server
-  resolved the three previously flagged items: the loopback port, refresh
-  policy, and token scope. Each is now decided in its corresponding section.
 - **Depends on:**
   [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md) section 3,
   which decided that the account and the device are two gates and that
@@ -569,3 +566,9 @@ ceremony is the duplicate merge the settled cursor exists to prevent.
   reaches a condition the seven states do not name. The ladder is
   amended rather than stretched, because a state that has to be
   inferred from two others is the inference this ADR removed.
+
+## Decision history
+
+- **2026-09-01:** Accepted after testing `rodauth-oauth` against a running
+  server resolved the loopback-port, refresh-policy, and token-scope questions.
+  Each answer is recorded in its corresponding decision section.

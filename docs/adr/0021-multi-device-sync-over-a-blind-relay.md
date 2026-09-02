@@ -6,9 +6,6 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-08-25
-- **Decision history:** The two items drafted for ratification were decided
-  by the maintainer in PR #113: the one-key-frame join stands, and a paused
-  page stays paused until it is unpaused.
 - **Depends on:**
   [ADR-0013](0013-document-provenance-and-block-metadata.md), which
   decided the shape of sync in the abstract: broadcast rules rather than
@@ -485,6 +482,12 @@ establishing that the account is not the device.
 - The purge argument appears anywhere phrased as a server-side promise.
   That is a violation of section 2 and ADR-0007, not a drift to
   accommodate.
+
+## Decision history
+
+- **2026-08-25:** Accepted after maintainer ratification in PR #113. The
+  one-key-frame join stood as drafted; a paused page stays paused until it
+  is unpaused.
 
 ## Amendment 1: the frame carries a welcome, and the chain rests
 
