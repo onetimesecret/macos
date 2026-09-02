@@ -9,7 +9,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 - **Status:** accepted
 - **Date:** 2026-09-01
 - **Depends on:**
-  [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md) section 3,
+  [ADR-0021](../../../adr/0021-multi-device-sync-over-a-blind-relay.md) section 3,
   which decided that the account and the device are two gates and that
   both must be passed. This ADR decides the account gate alone: which
   flow proves the account, how the proof survives an app that sleeps
@@ -17,11 +17,11 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
   proof is refused. It grants no device the right to read content;
   that is issue #97's pairing ceremony and is not renegotiated here.
 - **Leaves standing:**
-  [ADR-0004](0004-keychain-prompt-timing.md)'s rule that key access
+  [ADR-0004](../../../adr/0004-keychain-prompt-timing.md)'s rule that key access
   happens on use rather than at launch; section 4 says why a
   background refresh belongs in the key material store rather than
   beside the API token.
-  [ADR-0016](0016-content-persists-across-restart.md) section 3's
+  [ADR-0016](../../../adr/0016-content-persists-across-restart.md) section 3's
   `ThisDeviceOnly` protection class, unamended: the refresh token
   takes the same class as every other secret in that store, and rides
   no iCloud Keychain (ADR-0021 section 8).

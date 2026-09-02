@@ -130,7 +130,7 @@ is one `UserDefaults` boolean, `showsTimeUnits`, default false.
 
 The full argument, the three answers the issue asked for and the change
 map are in
-[`../spec/feature/vertical-time-tabs/README.md`](../spec/feature/vertical-time-tabs/README.md).
+[`the feature specification`](README.md).
 
 ## Required work
 
@@ -561,9 +561,9 @@ the toggle alone.
 
 ## See also
 
-[`../spec/feature/vertical-time-tabs/README.md`](../spec/feature/vertical-time-tabs/README.md),
+[`the feature specification`](README.md),
 which carries the full argument, the three answers, the change map and
-the open questions. [ADR-0017](0017-durable-tabs-expiring-pages.md) for
+the open questions. [ADR-0017](../../../adr/0017-durable-tabs-expiring-pages.md) for
 the tab/page split whose eject trigger this decision has to answer, and
-[ADR-0009](0009-chip-deletion-deliberate-final.md) for why a day whose
+[ADR-0009](../../../adr/0009-chip-deletion-deliberate-final.md) for why a day whose
 page expired leaves no marker behind it.

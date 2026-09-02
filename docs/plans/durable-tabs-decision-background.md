@@ -8,7 +8,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-08-20
-- **Depends on:** [ADR-0016](0016-content-persists-across-restart.md). This
+- **Depends on:** [ADR-0016](../adr/0016-content-persists-across-restart.md). This
   ADR's object-graph change rides the same format break and does not ship
   without it, and the residual exposure argued below assumes ADR-0016's
   durable key. Inside that break this split lands first, before ADR-0016
