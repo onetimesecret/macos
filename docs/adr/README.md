@@ -12,9 +12,9 @@ Start from [template.md](template.md).
 
 ## Scope
 
-One ADR owns one decision that can be accepted, superseded, and revisited as a
-unit. It may include the evidence and alternatives necessary to understand that
-decision; there is no target word count.
+One ADR owns one decision that can be accepted or rejected, then revisited or,
+if accepted, superseded as a unit. It may include the evidence and alternatives
+necessary to understand that decision; there is no target word count.
 
 Make a new ADR rather than extending an existing one when the proposed change:
 
@@ -36,17 +36,39 @@ the ADR:
 
 ## Metadata and relationships
 
-Use the template's canonical `Status` value exactly: `proposed`, `accepted`,
-or `superseded by ADR-NNNN`. The date is the date of the decision; use separate
-metadata such as `Drafted`, `Evidence collected`, `Implemented`, or `Decision
-history` for other dates.
+Use these canonical `Status` values exactly: `proposed`, `accepted`, `rejected`,
+or `superseded`. This is the ADR's architectural status.
 
-Use `Supersedes` and `Depends on` when they help a reader navigate the decision
-graph. A successor may supersede only a named decision or section of an earlier
-ADR. Describe that relationship in prose and link to both records.
+For a proposed ADR, `Date` is the date it first enters `proposed` status. On
+acceptance, replace it with the acceptance date. Do not change it for review,
+implementation, rejection, or supersession; record those events in `Decision
+history` instead.
 
-`documentation_status` records the quality and review state of the document; it
-does not change the decision's architectural status.
+`Decision history` is a dated Markdown section, not metadata. If present, name
+it exactly `## Decision history` and use dated bullets for lifecycle events.
+`Ratified` is optional metadata only for the date a separate formal governance
+act ratified an already accepted decision; it is not a review or implementation
+date and does not change `Status` or `Date`.
+
+Use `Supersedes`, `Superseded by`, and `Depends on` when they help a reader
+navigate the decision graph. `Superseded by: ADR-NNNN` is required when
+`Status` is `superseded`; `Supersedes` belongs on the successor. A successor may
+supersede only a named decision or section of an earlier ADR. Describe that
+relationship in prose and link to both records.
+
+`documentation_status` records document maintenance independently of the ADR's
+architectural status:
+
+- `draft`: still being written and not ready for review.
+- `needs-review`: ready for document review, but review is pending.
+- `reviewed`: document review found it accurate and usable at that time; this is
+  not architectural acceptance or ratification.
+- `stale`: known changes, gaps, or aging references require document review;
+  this does not by itself reopen or change the decision.
+
+A proposed ADR may be `reviewed`, and an accepted ADR may be `draft` or `stale`.
+Use eject triggers and successor ADRs, not `documentation_status`, for a changed
+architectural decision.
 
 ## Lifecycle
 
@@ -62,12 +84,13 @@ When a decision is accepted, its `Context`, `Decision`, `Consequences`, and
 `Eject triggers` become the historical record. Do not rewrite them to reflect
 later implementation, results, or a new conclusion.
 
-An accepted ADR may gain a short, dated `Decision history` section for lifecycle
-events, with links to their canonical records:
+Use a short, dated `Decision history` section for lifecycle events, with links
+to their canonical records:
 
 ```md
 ## Decision history
 
+- 2026-08-28: Proposed.
 - 2026-09-01: Accepted.
 - 2026-09-12: Implemented in PR #123.
 - 2026-10-03: Superseded in part by ADR-0042, which replaces the link-default
@@ -77,9 +100,21 @@ events, with links to their canonical records:
 Use an appended, dated `Erratum` only to correct a factual error in the record.
 State the correction and why it matters; leave the original statement intact.
 
+### Rejected
+
+A rejected ADR is terminal. It records a proposal that was considered and not
+adopted; do not later change it to `accepted` or `superseded`. A materially new
+proposal requires a new ADR that links to the rejected record when useful.
+
+### Superseded
+
+A superseded ADR remains the historical record of its accepted decision. Set
+`Status` to `superseded`, add `Superseded by: ADR-NNNN`, and describe any partial
+replacement in its `Decision history`. The successor uses `Supersedes` to link
+back.
+
 A changed decision, changed trade-off, or new scope requires a successor ADR.
-The successor links back to its predecessor, and the predecessor's status or
-Decision history links forward. Do not silently update an accepted ADR in place.
+Do not silently update an accepted ADR in place.
 
 This rule applies going forward. Existing ADRs remain records of their own
 writing and amendment history; do not rewrite them solely to conform to this

@@ -4,11 +4,11 @@ documentation_status: draft # needs-review | reviewed | stale
 
 # ADR-NNNN: Title
 
-- **Status:** proposed | accepted | superseded by ADR-NNNN
+- **Status:** proposed | accepted | rejected | superseded
 - **Date:** YYYY-MM-DD
+- **Superseded by:** ADR-NNNN (optional)
 - **Supersedes:** ADR-NNNN (optional)
 - **Depends on:** ADR-NNNN (optional)
-- **Documentation status:** draft | needs-review | reviewed | stale
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 
@@ -19,7 +19,9 @@ spec sections that apply.
 
 ## Decision
 
-The decision, in one or two sentences, active voice.
+State the decision in one or two sentences, using active voice.
+
+Add only the clauses needed to define its boundary.
 
 ## Consequences
 
