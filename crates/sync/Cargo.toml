@@ -1,6 +1,6 @@
 [package]
 name = "companion-sync"
-version = "0.3.0"
+version = "0.4.0"
 description = "The sync channel's client half: OAuth PKCE account auth (docs/spec/feature/sync/account-auth.md) and the relay message set (docs/spec/feature/sync/relay-protocol.md §4), sans-IO over ots-client's transport seam."
 publish = false
 edition.workspace = true

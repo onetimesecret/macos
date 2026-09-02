@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The account gate has seven names, and none of them touches the
+  pad** (issue #98; ADR-0027, status proposed). Signing in to sync is
+  OAuth authorization code with PKCE in your own browser, returning to
+  a listener the app opens for one redirect and closes, which is the
+  native app recommendation followed as written: no web view, no
+  pasted token, no password the app could ever see. Where that sign-in
+  stands is now one value the core reports rather than a state the
+  interface pieced together: off, signed out, signing in, refused,
+  unreachable, ready or attached. The distinction it exists for is a
+  server that said no against a server that said nothing. A refusal
+  deletes the token resting here and stands until you sign in again; a
+  server that did not answer deletes nothing and clears itself the
+  moment one does. Sync credentials stay separate from the credentials
+  a conceal uses, and revoking either leaves the other standing. None
+  of these states can stop you writing: an expired or refused sign-in
+  turns sync off and the pad keeps working with no account and no
+  network, which is what it did before sync existed.
+
 - **Lists continue themselves, and nothing else** (ADR-0024). Return
   at the end of a list item starts the next one: the same indent, a
   bullet repeating itself, an ordered marker counting on with the
@@ -91,6 +109,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never silently drop edits only the adopting device holds.
 
 ### Changed
+
+- **Nothing you typed is lost when sync stops, and a server that does
+  not rotate its tokens no longer strands it** (issue #98, ADR-0027
+  §2 and §7). A page being synced kept a mark for how far its edits
+  had been sent, and the mark moved when they were queued rather than
+  when they arrived, so a sign-in refused between the two left the
+  peers a hole nothing later filled. The mark now moves only on the
+  relay's acknowledgement, and anything queued and unsent goes back on
+  the books for the next attach. Separately, a refresh answer without
+  a new token is a success rather than a refusal, which is what the
+  standard says and what a server configured without rotation
+  actually sends: sync waking from days of sleep against one used to
+  sign itself out.
 
 - **The relay protocol folded in what building its client taught, and
   ADR-0021 decided how a sleeping device catches up** (issues #99 and

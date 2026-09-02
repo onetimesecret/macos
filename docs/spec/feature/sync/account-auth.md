@@ -1,5 +1,13 @@
 # Account auth for the relay channel
 
+**Decided in [ADR-0027](../../../adr/0027-account-auth-gates-the-sync-channel.md)**,
+which turns this document into a decision, adds the failure modes
+for each choice, and settles the three things this spec left implicit:
+the gate as a state the core reports rather than the shell infers
+(§5's table below), a server that declines to rotate refresh tokens,
+and what happens to edits queued for peers when the gate closes mid
+session. Where the two disagree, the ADR governs.
+
 **Status:** built, spec first — the order issue
 [#98](https://github.com/onetimesecret/macos/issues/98)'s acceptance
 criteria require: the flow, its failure modes and the reasons were
@@ -25,9 +33,13 @@ The app authenticates with **OAuth 2.0 authorization code + PKCE, in
 the user's default browser, returning on a loopback redirect** — the
 native-app BCP, RFC 8252, followed as written: public client, no
 client secret, `S256` code challenge, exact-match loopback redirect URI
-(`http://127.0.0.1:{ephemeral}/callback`), `state` checked on return.
-The app opens the browser, listens once on an ephemeral loopback port,
-exchanges the code, and closes the listener.
+(`http://127.0.0.1:{ephemeral}/callback`), `state` checked on return,
+and `scope=sync` asked for explicitly. The app opens the browser,
+listens once on an ephemeral loopback port, exchanges the code, and
+closes the listener. The redirect URI is **registered portless**
+server side (`http://127.0.0.1/callback`), which is what lets any
+ephemeral port match; ADR-0027 §1 says why that registration is a hard
+requirement rather than a detail.
 
 The issue asks where the browser step lands for an app that "is not a
 browser and has no server side to receive a redirect". The BCP's
@@ -62,11 +74,19 @@ lifetimes are chosen for that shape:
 - **Refresh token:** long idle allowance (90 days without use),
   **rotated on every use** with server-side reuse detection. Waking
   from days of sleep means one refresh before the first attach, which
-  is the intended path, not an error path.
+  is the intended path, not an error path. Rotation is requested and
+  never required: RFC 6749 §6 makes the new token optional, so a
+  refresh answer carrying an access token and no refresh token is a
+  success and the resting token stands (ADR-0027 §2). Requiring one
+  would refuse every grant a non-rotating server issues, behind a
+  `2xx` the client could not explain.
 - **Expiry mid-session:** the relay answers an expired access token
   with `401`; the client refreshes and retries the one request. The
   long-poll (`relay-protocol.md` §4) simply returns on the same `401`
-  and re-enters after the refresh. The client never pre-judges expiry
+  and re-enters after the refresh, but on the retry clock rather than
+  at once: a `401` comes back instantly instead of holding the poll
+  open, so an immediate re-entry against a relay that keeps refusing
+  would be a hot loop. The client never pre-judges expiry
   by its own clock — the server's `401` is the only authority, so clock
   skew cannot invent an outage.
 - **Refresh refused** (revoked account-side, rotation reuse tripped,
@@ -133,8 +153,15 @@ attach or publish actually needs the network.
 | Redirect arrives with wrong `state` | Abort, nothing stored, retry offered. |
 | `401` mid-session | Refresh once, retry once; on second `401`, treat as refresh refused. |
 | Refresh refused or reuse detected | Sync signed out with its sentence; pad untouched; re-enrol via §1. |
-| No network at refresh time | Sync degraded with its sentence ("the relay cannot be reached"); retry follows the publish clock, not a hot loop. |
+| No network at refresh time | Sync degraded with its sentence ("sync could not reach the server"); retry follows the publish clock, not a hot loop. |
 | Token or grant revoked account-side | Indistinguishable from refresh refused, handled identically. |
+
+Every one of these lands on one of ADR-0027 §5's seven gate states,
+which the core reports as a machine token in the sync status (`gate`)
+and through `companion_sync_gate`. Closing the gate dissolves the
+engine, and the dissolve rewinds each enrolled page to what the relay
+acknowledged, so an account failure costs the peers a delay and never
+an edit (ADR-0027 §7).
 
 Every one of these ends in a state issue #102 owes a sentence, and none
 of them may be silent — an expired token disabling sync without a word

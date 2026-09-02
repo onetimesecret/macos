@@ -19,6 +19,19 @@ use zeroize::Zeroizing;
 
 use crate::b64;
 
+/// The one scope the sync client asks for, and the only scope the
+/// relay's client application is registered with server side
+/// (ADR-0027 §3). The registration is the ceiling: a consent screen
+/// offers the application's registered scopes rather than the
+/// requested ones, so an application holding nothing but this is what
+/// keeps a leaked sync token from concealing, reading account data, or
+/// acting as the account anywhere else. It is sent explicitly on the
+/// authorization request and never on a refresh: narrowing on refresh
+/// is silently ignored and the refresh answer carries no scope back,
+/// so the scope is fixed at authorization and asking again would be
+/// theatre.
+pub const SYNC_SCOPE: &str = "sync";
+
 /// A refusal from the auth ceremony or the token machinery. Everything
 /// here is user-visible state, never a panic: auth failing leaves the
 /// pad untouched (the spec's degraded-state rule).
@@ -72,7 +85,11 @@ impl AuthCeremony {
     /// Mint the ceremony material and the authorization URL to open in
     /// the system browser. `port` is the ephemeral loopback port the
     /// listener actually bound ([`crate::loopback::OneShotListener`]),
-    /// so the redirect URI matches exactly (RFC 8252 §7.3).
+    /// so the redirect URI matches exactly (RFC 8252 §7.3). The URL
+    /// names [`SYNC_SCOPE`] explicitly: a client that omits scope is
+    /// offered the application's whole registered set, which is a
+    /// width the client should not accept by silence even where the
+    /// registration is narrow.
     ///
     /// # Errors
     ///
@@ -98,9 +115,10 @@ impl AuthCeremony {
         let challenge = b64::encode_url_nopad(digest(&SHA256, verifier.as_bytes()).as_ref());
         let redirect_uri = format!("http://127.0.0.1:{port}/callback");
         let url = format!(
-            "{authorize_endpoint}?response_type=code&client_id={}&redirect_uri={}&code_challenge={challenge}&code_challenge_method=S256&state={state}",
+            "{authorize_endpoint}?response_type=code&client_id={}&redirect_uri={}&code_challenge={challenge}&code_challenge_method=S256&state={state}&scope={}",
             form_encode(client_id),
             form_encode(&redirect_uri),
+            form_encode(SYNC_SCOPE),
         );
         Ok((
             Self {
@@ -161,7 +179,11 @@ pub struct TokenGrant {
 ///
 /// [`SyncAuthError::Refused`] on any non-2xx status or a body missing
 /// either token — a grant without a refresh token cannot serve an app
-/// that sleeps for days, so it is refused rather than half-kept.
+/// that sleeps for days, so it is refused rather than half-kept. An
+/// empty string is a missing token, the same reading
+/// [`parse_refresh_response`] takes: an empty refresh token written to
+/// the keychain would answer "signed in" forever while every refresh
+/// failed.
 pub fn parse_token_response(response: &HttpResponse) -> Result<TokenGrant, SyncAuthError> {
     if !(200..300).contains(&response.status) {
         return Err(SyncAuthError::Refused(response.status));
@@ -172,12 +194,74 @@ pub fn parse_token_response(response: &HttpResponse) -> Result<TokenGrant, SyncA
         value
             .get(key)
             .and_then(serde_json::Value::as_str)
-            .map(|s| Zeroizing::new(s.to_owned()))
+            .filter(|token| !token.is_empty())
+            .map(|token| Zeroizing::new(token.to_owned()))
     };
     match (token("access_token"), token("refresh_token")) {
         (Some(access), Some(refresh)) => Ok(TokenGrant { access, refresh }),
         _ => Err(SyncAuthError::Refused(response.status)),
     }
+}
+
+/// Parse a *refresh* answer, where the rotated token is optional.
+///
+/// RFC 6749 §6 makes the new refresh token optional in a refresh
+/// response, and a server configured without rotation simply omits it.
+/// A client that insisted on one would refuse every grant such a
+/// server issues, and would refuse them behind a `2xx` it could not
+/// even explain, so sync would be permanently unable to wake up
+/// against a perfectly conformant server (ADR-0027 §2: rotation is
+/// requested, never required). The access token is still mandatory:
+/// a refresh answer without one has told us nothing we can attach
+/// with.
+///
+/// # Errors
+///
+/// [`SyncAuthError::Refused`] with the status on a non-2xx answer, a
+/// body that is not JSON, or a body with no access token.
+fn parse_refresh_response(
+    response: &HttpResponse,
+) -> Result<(Zeroizing<String>, Option<Zeroizing<String>>), SyncAuthError> {
+    if !(200..300).contains(&response.status) {
+        return Err(SyncAuthError::Refused(response.status));
+    }
+    let value: serde_json::Value = serde_json::from_slice(&response.body)
+        .map_err(|_| SyncAuthError::Refused(response.status))?;
+    let token = |key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .filter(|token| !token.is_empty())
+            .map(|token| Zeroizing::new(token.to_owned()))
+    };
+    let access = token("access_token").ok_or(SyncAuthError::Refused(response.status))?;
+    Ok((access, token("refresh_token")))
+}
+
+/// Whether the token endpoint said *this grant is dead* rather than
+/// *not now*, or *you asked wrongly*. The status alone cannot say it:
+/// RFC 6749 §5.2 answers `invalid_request`, `invalid_client`,
+/// `unauthorized_client`, `unsupported_grant_type`, `invalid_scope`
+/// and `invalid_grant` all with the same `400`, and only the last is
+/// about the grant. The others are about the request or the
+/// registration, and deleting a perfectly good refresh token would
+/// not fix any of them. A `408` or a `429` is 4xx and unambiguously
+/// transient, and a `403` from a captive portal or a WAF challenge is
+/// not the authorization server speaking at all: neither carries an
+/// `error` field, and an HTML body carries nothing this can read. So
+/// the verdict is taken from the body, never off the status, and the
+/// default is to keep the credential (ADR-0027 §2: a server that said
+/// slow down is not a server that said no).
+fn grant_is_dead(response: &HttpResponse) -> bool {
+    if !(400..500).contains(&response.status) {
+        return false;
+    }
+    serde_json::from_slice::<serde_json::Value>(&response.body)
+        .ok()
+        .as_ref()
+        .and_then(|value| value.get("error"))
+        .and_then(serde_json::Value::as_str)
+        == Some("invalid_grant")
 }
 
 /// The token lifetimes of §2, as a machine: access token in memory,
@@ -250,14 +334,18 @@ impl TokenKeeper {
         Ok(token_request(&self.token_endpoint, body))
     }
 
-    /// Absorb the refresh answer. On success the rotated refresh token
-    /// is returned for persisting. Only the token endpoint's own
-    /// refusal — a `4xx`, the server saying this grant is dead — signs
-    /// the keeper out with both tokens dropped, for the caller to
-    /// surface issue #102's sentence: "Sync is signed out; the pad is
-    /// unaffected." Anything else (a `5xx`, a gateway mangling the
-    /// body) is the endpoint being unwell, not the grant being
-    /// revoked: the refresh token is kept and the next pump retries.
+    /// Absorb the refresh answer. `Ok(Some(token))` is a rotated
+    /// refresh token for the caller to persist; `Ok(None)` is a server
+    /// that declined to rotate, whose grant stands unchanged and whose
+    /// stored token is still the right one, so there is nothing to
+    /// write (ADR-0027 §2). Only the token endpoint naming
+    /// `invalid_grant` signs the keeper out with both tokens dropped,
+    /// for the caller to surface issue #102's sentence: "Sync is
+    /// signed out; the pad is unaffected." Anything else (a `5xx`, a
+    /// rate limit, a gateway mangling the body, a `400` about the
+    /// request rather than the grant) is the endpoint being unwell or
+    /// misasked, not the grant being revoked: the refresh token is
+    /// kept and the next pump retries.
     ///
     /// # Errors
     ///
@@ -267,10 +355,17 @@ impl TokenKeeper {
     pub fn absorb_refresh(
         &mut self,
         response: &HttpResponse,
-    ) -> Result<Zeroizing<String>, SyncAuthError> {
-        match parse_token_response(response) {
-            Ok(grant) => Ok(self.absorb(grant)),
-            Err(_) if (400..500).contains(&response.status) => {
+    ) -> Result<Option<Zeroizing<String>>, SyncAuthError> {
+        match parse_refresh_response(response) {
+            Ok((access, rotated)) => {
+                self.access = Some(access);
+                if let Some(rotated) = rotated {
+                    self.refresh = Some(rotated.clone());
+                    return Ok(Some(rotated));
+                }
+                Ok(None)
+            }
+            Err(_) if grant_is_dead(response) => {
                 self.access = None;
                 self.refresh = None;
                 Err(SyncAuthError::SignedOut)
@@ -366,6 +461,52 @@ mod tests {
     }
 
     #[test]
+    fn the_authorize_url_asks_for_exactly_the_sync_scope() {
+        let (_, url) = ceremony();
+        assert!(url.contains("&scope=sync"), "{url}");
+        assert_eq!(
+            url.matches("scope=").count(),
+            1,
+            "code_challenge_method is not a scope and neither is anything else"
+        );
+    }
+
+    #[test]
+    fn no_scope_is_asked_for_or_expected_on_a_refresh() {
+        let mut keeper = TokenKeeper::new(
+            "https://eu.onetimesecret.com/auth/token",
+            "companion-macos",
+            Some(Zeroizing::new("rt-0".into())),
+        );
+        let request = keeper.refresh_request().unwrap();
+        let body = String::from_utf8(request.body.unwrap().to_vec()).unwrap();
+        assert!(
+            !body.contains("scope"),
+            "narrowing on refresh is ignored server side; the scope is fixed at authorization"
+        );
+        // And the answer carrying none back is an ordinary grant.
+        let unscoped = HttpResponse {
+            status: 200,
+            body: br#"{"access_token":"at-1","refresh_token":"rt-1"}"#.to_vec(),
+        };
+        assert!(keeper.absorb_refresh(&unscoped).is_ok());
+        assert_eq!(keeper.access(), Some("at-1"));
+    }
+
+    #[test]
+    fn a_grant_that_names_no_scope_is_still_a_grant() {
+        let response = HttpResponse {
+            status: 200,
+            body: br#"{"access_token":"at-1","refresh_token":"rt-1","token_type":"bearer"}"#
+                .to_vec(),
+        };
+        assert!(
+            parse_token_response(&response).is_ok(),
+            "the server may omit scope from the token response, and does"
+        );
+    }
+
+    #[test]
     fn redeem_refuses_a_wrong_or_missing_state() {
         let (forged, _) = ceremony();
         let err = forged.redeem("code=abc&state=forged").unwrap_err();
@@ -407,13 +548,64 @@ mod tests {
         let request = keeper.refresh_request().unwrap();
         let body = String::from_utf8(request.body.unwrap().to_vec()).unwrap();
         assert!(body.contains("refresh_token=rt-0"));
-        let rotated = keeper.absorb_refresh(&grant_response()).unwrap();
+        let rotated = keeper.absorb_refresh(&grant_response()).unwrap().unwrap();
         assert_eq!(&*rotated, "rt-1");
         assert_eq!(keeper.access(), Some("at-1"));
         // The next refresh uses the rotated token, not the original.
         let request = keeper.refresh_request().unwrap();
         let body = String::from_utf8(request.body.unwrap().to_vec()).unwrap();
         assert!(body.contains("refresh_token=rt-1"));
+    }
+
+    #[test]
+    fn a_server_that_declines_to_rotate_keeps_the_grant_alive() {
+        let mut keeper = TokenKeeper::new(
+            "https://eu.onetimesecret.com/auth/token",
+            "companion-macos",
+            Some(Zeroizing::new("rt-0".into())),
+        );
+        let _ = keeper.refresh_request().unwrap();
+        // RFC 6749 §6: the new refresh token is optional, and a server
+        // configured without rotation omits it.
+        let unrotated = HttpResponse {
+            status: 200,
+            body: br#"{"access_token":"at-9","expires_in":3600}"#.to_vec(),
+        };
+        assert_eq!(
+            keeper.absorb_refresh(&unrotated).unwrap(),
+            None,
+            "nothing rotated, so there is nothing for the caller to persist"
+        );
+        assert_eq!(keeper.access(), Some("at-9"), "the grant did land");
+        assert!(keeper.signed_in());
+        // And the held token is still the one that refreshes, so the
+        // next wake from sleep works rather than signing sync out.
+        let request = keeper.refresh_request().unwrap();
+        let body = String::from_utf8(request.body.unwrap().to_vec()).unwrap();
+        assert!(body.contains("refresh_token=rt-0"));
+    }
+
+    #[test]
+    fn a_refresh_answer_without_an_access_token_is_not_a_grant() {
+        let mut keeper = TokenKeeper::new(
+            "https://eu.onetimesecret.com/auth/token",
+            "companion-macos",
+            Some(Zeroizing::new("rt-0".into())),
+        );
+        let _ = keeper.refresh_request().unwrap();
+        let empty = HttpResponse {
+            status: 200,
+            body: br#"{"refresh_token":"rt-1"}"#.to_vec(),
+        };
+        assert_eq!(
+            keeper.absorb_refresh(&empty).unwrap_err(),
+            SyncAuthError::Refused(200),
+            "a 2xx with nothing to attach with is the endpoint being unwell"
+        );
+        // Unwell is not revoked: the grant stands and the next pump
+        // retries with it.
+        assert!(keeper.signed_in());
+        assert!(keeper.access().is_none());
     }
 
     #[test]
@@ -437,6 +629,91 @@ mod tests {
             keeper.refresh_request().unwrap_err(),
             SyncAuthError::SignedOut
         );
+    }
+
+    #[test]
+    fn an_empty_token_is_not_a_token_in_either_parser() {
+        // An empty refresh token written to the keychain would answer
+        // "signed in" forever while every refresh failed.
+        let grant = HttpResponse {
+            status: 200,
+            body: br#"{"access_token":"","refresh_token":""}"#.to_vec(),
+        };
+        assert_eq!(
+            parse_token_response(&grant).err(),
+            Some(SyncAuthError::Refused(200))
+        );
+    }
+
+    #[test]
+    fn a_throttled_token_endpoint_is_not_a_dead_grant() {
+        let mut keeper = TokenKeeper::new(
+            "https://eu.onetimesecret.com/auth/token",
+            "companion-macos",
+            Some(Zeroizing::new("rt-0".into())),
+        );
+        let _ = keeper.refresh_request().unwrap();
+        // A server that said slow down is not a server that said no.
+        let throttled = HttpResponse {
+            status: 429,
+            body: br#"{"error":"slow_down"}"#.to_vec(),
+        };
+        assert_eq!(
+            keeper.absorb_refresh(&throttled).unwrap_err(),
+            SyncAuthError::Refused(429)
+        );
+        assert!(keeper.signed_in(), "a rate limit deletes nothing");
+    }
+
+    #[test]
+    fn only_invalid_grant_pronounces_the_grant_dead() {
+        // RFC 6749 §5.2 answers all of these with the same `400`, and
+        // only the last of them is about the grant.
+        for code in [
+            "invalid_request",
+            "invalid_client",
+            "unauthorized_client",
+            "unsupported_grant_type",
+            "invalid_scope",
+        ] {
+            let mut keeper = TokenKeeper::new(
+                "https://eu.onetimesecret.com/auth/token",
+                "companion-macos",
+                Some(Zeroizing::new("rt-0".into())),
+            );
+            let _ = keeper.refresh_request().unwrap();
+            let refusal = HttpResponse {
+                status: 400,
+                body: format!(r#"{{"error":"{code}"}}"#).into_bytes(),
+            };
+            assert_eq!(
+                keeper.absorb_refresh(&refusal).unwrap_err(),
+                SyncAuthError::Refused(400),
+                "{code} is a fault in the request or the registration, not a dead grant"
+            );
+            assert!(keeper.signed_in(), "{code} may not delete a good token");
+        }
+    }
+
+    #[test]
+    fn a_4xx_that_named_no_error_keeps_the_grant() {
+        let mut keeper = TokenKeeper::new(
+            "https://eu.onetimesecret.com/auth/token",
+            "companion-macos",
+            Some(Zeroizing::new("rt-0".into())),
+        );
+        let _ = keeper.refresh_request().unwrap();
+        // A captive portal or a WAF challenge: 4xx, and not the
+        // authorization server speaking at all.
+        let challenge = HttpResponse {
+            status: 403,
+            body: b"<html><body>are you a robot</body></html>".to_vec(),
+        };
+        assert_eq!(
+            keeper.absorb_refresh(&challenge).unwrap_err(),
+            SyncAuthError::Refused(403)
+        );
+        assert!(keeper.signed_in());
     }
 
     #[test]
