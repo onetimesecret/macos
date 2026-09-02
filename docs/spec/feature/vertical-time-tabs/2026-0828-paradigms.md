@@ -32,7 +32,17 @@ loses nothing, for the same reason flipping the Settings toggle
 loses nothing.
 
 ## The TTL ladder is the daily paradigm's instance
-(updated 2026-08-29 after re-reading `docs/tenets.md`)
+(updated 2026-08-29 after re-reading `docs/tenets.md`;
+graduated 2026-09-01 into ADR-0011, accepted)
+
+**This section has graduated.** ADR-0011 is now accepted and carries
+the rule (section 1), the per-ladder ceiling (section 2), the default
+rung (section 3), grace (section 4) and the no-rewrite guarantee
+(section 6). What follows is the argument that got it there, kept for
+its reasoning. Where the two differ, the ADR governs, and it differs
+in two places: the default rung is the ceiling rather than 8h, and
+grace is a boundary snap at creation under a setting rather than
+padding inside a rung.
 
 An earlier version of this note ended the argument with "the lens
 never outreaches the ladder." That is the move tenet №3 forbids:
@@ -40,8 +50,8 @@ citing the ladder instead of letting the idea argue against it. Run
 through the tenets, the paradigm concept wins the argument, and the
 ladder is what modifies.
 
-The case in tenet terms. ADR-0011 (still a draft) grounds the ladder
-in intuition, not in retention doctrine: a rung must be a duration
+The case in tenet terms. ADR-0011 (a draft when this was written)
+grounds the ladder in intuition, not in retention doctrine: a rung must be a duration
 the user can rationalize ("will I need this next week at this day
 and time"), padded with grace the way an alarm set for "tomorrow"
 forgives midnight. That question is tempo-relative. "Will I need
@@ -60,8 +70,8 @@ The necessary modifications to the ladder, when paradigms build:
   hourly ladder reaches shorter; a weekly or monthly ladder reaches
   longer (order of 2 weeks, 1 month, a quarter as its ceiling).
   Rungs stay a fixed legible set, never arbitrary durations, and
-  ADR-0011's grace padding (a unit plus a forgiving fraction) keeps
-  its shape at every tempo.
+  ADR-0011's grace keeps its shape at every tempo (as a boundary
+  snap, per that ADR's section 4, not as padding inside a rung).
 - **"No forever" survives as the invariant that does generalize.**
   Every paradigm's ladder has a ceiling of roughly a few
   paradigm-units. What was wrong was reading the daily ceiling as
@@ -70,8 +80,10 @@ The necessary modifications to the ladder, when paradigms build:
   count, same wrap, same five-clicks-to-the-cliff distance
   (`ttl.rs` tests this today), so the gesture's muscle memory
   survives a paradigm switch.
-- **The default rung is paradigm-relative.** 8h ("a working day")
-  is the daily default; each ladder names its own.
+- **The default rung is paradigm-relative.** Each ladder names its
+  own. This note said 8h ("a working day"); ADR-0011 section 3
+  decided the default is the ladder's ceiling instead, so on the
+  daily ladder it is 7d.
 - **Switching paradigms rewrites no living page.** Tenet №1's
   "never by accident": existing pages keep the rung they were
   given; new pages take the new paradigm's default; a rung that is
@@ -88,10 +100,13 @@ The necessary modifications to the ladder, when paradigms build:
   size budget is the named bound and gets measured against
   month-scale pages before a long ladder ships.
 
-Where this graduates: ADR-0011 is the home for the principle (rungs
-are intuitive durations at the surface's tempo; the current ladder
-is the daily instance), and it is a draft, so the restatement is an
-edit, not an amendment ceremony.
+Where this graduated: ADR-0011, accepted 2026-09-01. The principle
+landed as written (rungs are intuitive durations at the surface's
+tempo; the current ladder is the daily instance). ADR-0011 also
+settles two things this note left open by assumption: a link's TTL
+does not follow the paradigm at all (section 5, following ADR-0026),
+and the default rung is the ceiling rather than the 8h this note
+named.
 
 ## Open questions, parked with the concept
 

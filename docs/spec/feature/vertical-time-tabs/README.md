@@ -31,7 +31,8 @@ time rail".
 Side doc:
 [`2026-0828-paradigms.md`](2026-0828-paradigms.md)
 (paradigms, the duration the UI optimizes for; concept only,
-unscheduled).
+unscheduled, though its TTL-ladder section graduated into ADR-0011,
+accepted 2026-09-01).
 
 ## The shape #79 asks for
 
