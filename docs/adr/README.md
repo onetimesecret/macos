@@ -10,6 +10,13 @@ tracker or a replacement for an issue, plan, test record, or feature spec.
 
 Start from [template.md](template.md).
 
+`scripts/lint-adrs.py` checks the structural half of this guide: frontmatter
+carries one valid `documentation_status`, the record carries one canonical
+`Status` and a `Date`, the four required sections are present, a superseded
+record names and links its successor, and local links resolve. It judges no
+content, length, or style. CI runs it on every pull request; run it locally
+with `python3 scripts/lint-adrs.py docs/adr`.
+
 ## Scope
 
 One ADR owns one decision that can be accepted or rejected, then revisited or,
