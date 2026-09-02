@@ -114,15 +114,38 @@ A content-derived title carried into the persistent ledger is content-derived da
 
 Superseded in part by [ADR-0016](0016-content-persists-across-restart.md), which removes the boot-session bound on staged content and makes TTL the only mechanism that destroys it.
 
-Superseded: the **Staged content** subsection headed at line 34, running to line 51, except lines 47 and 49, which stand; including the crypto-erasure claim at line 41, the deterministic boot-UUID backstop at line 43, the does-not-claim paragraph at line 45, and the boot-versus-user-session paragraph at line 51. Also line 63's monotonic rule as it applies to staged content, and consequences 98, 100 and 101. ADR-0016 sections 3, 4 and 8 carry the replacements.
+Superseded: the **Staged content, bounded to the boot session** subsection
+in full, except its two keychain-availability paragraphs (*Keychain
+availability (implementation constraint)* and *Amendment 2026-08-10*), which
+stand. That covers the two-half key derivation and both half bullets, the
+crypto-erasure-at-reboot claim, the deterministic boot-UUID backstop and its
+fail-closed clause, the "note what this does and does not claim" paragraph,
+and the boot-versus-user-session paragraph. Also the monotonic rule in the
+TTL bullets as it applies to staged content, and the boot-bound clauses of
+three consequences: the ciphertext-exists-during-a-boot-session bullet, the
+boot-session UUID check in the audit-story bullet, and
+"non-persistent-beyond-boot" in the brand-tension bullet. ADR-0016 sections 3, 4 and 8 carry the replacements.
 
-Still standing, unamended: the framing at lines 22 to 27, item identity at line 32, keychain tiering at lines 47 and 49, the write policy at lines 53 to 59, the title derivation, its 80 character cap and the documented exception at lines 70 and 74, the entire ledger subsection at lines 76 to 85, and supporting decisions at lines 88 to 93. Line 63's live-timer requirement and its load-path backstop also stand; only the clock the load path ages by changes.
+Still standing, unamended: the **Framing** items, **Item identity**, the two
+keychain-availability paragraphs above, the **Write policy** bullets, the
+title derivation with its 80 character cap and its documented wall-clock
+exception, the entire **Ledger** subsection, and **Supporting decisions**.
+The live-timer requirement in the TTL bullets and its load-path backstop also
+stand; only the clock the load path ages by changes.
 
-[ADR-0017](0017-durable-tabs-expiring-pages.md) carries the object graph change, the durable Tab versus expiring Page split, which rides the same one-time format break as ADR-0016.
+[ADR-0017](0017-durable-tabs-expiring-pages.md) carries the object graph
+change, the durable Tab versus expiring Page split, which rides the same
+one-time format break as ADR-0016.
 
-ADR-0017 also amends the titles subsection: line 68's title as a property of the page and line 72's user-set title become properties of the durable Tab, `title_is_user_set` disappears, and line 71's `MMDD-HHmm` placeholder renders from the Tab's creation stamp. Line 70's derivation and cap and line 74's documented exception stand, page-side.
+ADR-0017 also amends the **Titles** subsection: the title as a property of
+the page and the user-set title become properties of the durable Tab,
+`title_is_user_set` disappears, and the `MMDD-HHmm` placeholder renders from
+the Tab's creation stamp. The derivation, its cap, and the documented
+exception stand, page-side.
 
-The body above is left as written, because an ADR is a record of a decision taken. Line references from other ADRs address this file's own line numbers directly.
+The body above is left as written, because an ADR is a record of a decision
+taken. Successor ADRs name the subsections they replace rather than citing
+this file's line numbers.
 
 ## Eject triggers
 

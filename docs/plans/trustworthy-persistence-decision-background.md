@@ -9,37 +9,36 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 - **Status:** accepted
 - **Date:** 2026-08-20
 - **Supersedes in part:**
-  [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md).
-  Superseded: lines 34 to 51 except 47 and 49, which is the **Staged
-  content, bounded to the boot session** subsection minus its keychain
-  tiering paragraphs. That covers the two-half derivation as stated at
-  36 to 39, the crypto-erasure claim at 41, the
-  deterministic boot-UUID backstop and its fail-closed clause at 43, the
-  does-not-claim paragraph at 45, and the boot-versus-user-session
-  paragraph at 51. Also line 63, the monotonic rule, **for staged
-  content only**, which section 4 below narrows rather than replaces;
-  line 63's live-timer requirement and its load-path backstop stand.
-  Also consequences 98, 100 and 101, redrafted in section 8.
-- **Left standing in ADR-0012, unamended:** framing at 22 to 27; item
-  identity at 32; keychain tiering and its Amendment 2026-08-10 at 47
-  and 49, carried forward and leaned on in section 3; the write policy
-  at 53 to 59; titles at 66 to 74, unamended by this ADR (ADR-0017
-  moves the user-set title at 72 and the placeholder stamp at 71 onto
-  the Tab); the whole ledger subsection at 76 to
-  85, whose wall-clock retention exception at 83 now agrees with
-  content; supporting decisions at 88 to 93, including the
-  bundle-id-derived keychain ACL identity note at 90.
+  [ADR-0012](../adr/0012-framing-threat-boundary-and-persistence-model.md).
+  Superseded: the **Staged content, bounded to the boot session**
+  subsection minus its two keychain-tiering paragraphs. That covers the
+  two-half derivation, the crypto-erasure claim, the deterministic
+  boot-UUID backstop and its fail-closed clause, the does-not-claim
+  paragraph, and the boot-versus-user-session paragraph. Also the
+  monotonic rule in the TTL bullets, **for staged content only**, which
+  section 4 below narrows rather than replaces; the live-timer
+  requirement and its load-path backstop stand. Also the boot-bound
+  clauses of the ciphertext-during-a-boot-session, audit-story and
+  brand-tension consequences, redrafted in section 8.
+- **Left standing in ADR-0012, unamended:** the framing items; item
+  identity; keychain tiering and its Amendment 2026-08-10, carried
+  forward and leaned on in section 3; the write policy; the titles
+  subsection, unamended by this ADR (ADR-0017 moves the user-set title
+  and the placeholder stamp onto the Tab); the whole ledger subsection,
+  whose wall-clock retention exception now agrees with content; and
+  supporting decisions, including the bundle-id-derived keychain ACL
+  identity note.
 - **Rides the same format break:**
-  [ADR-0017](0017-durable-tabs-expiring-pages.md), "Durable tabs,
+  [ADR-0017](../adr/0017-durable-tabs-expiring-pages.md), "Durable tabs,
   expiring pages"; see section 9.
 
 ## Context
 
 Issue #44 asks for the durability and security contract for unexpired
 pages. The maintainer's own report is what opened the milestone
-(`docs/dogfood/ABERRATIONS.md:74`): "I lost a whole bunch of stuff b/c I
-accepted a system update without considering onetime pad", followed at
-line 75 by "If we already have the TTL expiration, we don't gain much by
+(`docs/dogfood/ABERRATIONS.md`): "I lost a whole bunch of stuff b/c I
+accepted a system update without considering onetime pad", followed in the same
+note by "If we already have the TTL expiration, we don't gain much by
 flushing everything upon restart. We just make it annoying to use."
 
 What the tree did on 2026-08-20, when this decision was taken, verified
