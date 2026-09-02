@@ -66,3 +66,11 @@ the install destination, quitting it gracefully before removing it.
   surfaces.
 - Restoring the panel is a `git revert` of the removal plus a target
   entry in Package.swift, not an excavation.
+
+## Eject triggers
+
+- A supported product requirement needs the panel's distinct posture and
+  cannot be met by OnetimePad or a future sibling form factor.
+- Maintaining the archived panel's documented behavior becomes necessary for
+  a supported migration or compatibility commitment. Restoration then needs
+  a new ADR rather than a quiet recovery of the archived target.

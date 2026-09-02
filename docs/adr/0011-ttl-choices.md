@@ -5,7 +5,8 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 # ADR-0011: TTL rungs are intuitive durations at the surface's tempo
 
 - **Status:** accepted
-- **Date:** 2026-07-15, decided 2026-09-01
+- **Date:** 2026-09-01
+- **Drafted:** 2026-07-15
 
 ## Context
 
@@ -218,3 +219,16 @@ they do not exchange a paradigm or infer one from a rung.
   the named bound and gets measured against month-scale pages before
   any ladder longer than the daily one ships (tenet 2: the artifact's
   contract scales, and must be checked rather than assumed).
+
+## Eject triggers
+
+- The server reports an allowed link-TTL set that excludes the seven-day
+  default. The app needs a separately decided selection rule against that
+  authoritative set; it must not reuse the page ladder.
+- A second paradigm is ready to ship without a defined boundary schedule
+  and durable-tab rung mapping. The shared rung rule is insufficient until
+  those two decisions are explicit.
+- Hardware verification finds the displayed remaining time and the enforced
+  expiry disagree across a timezone or daylight-saving transition. The one
+  stored-deadline rule then needs to be re-examined before the boundary snap
+  remains enabled by default.

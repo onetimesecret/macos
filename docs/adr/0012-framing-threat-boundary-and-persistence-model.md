@@ -4,8 +4,13 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 # ADR-0012: OTS macOS staging companion — framing, threat boundary, and persistence model
 
-Status: Proposed (revised). Superseded in part by ADR-0016 and ADR-0017; see Supersession at the end of this file.
-Date: 2026-07-15, revised 2026-08-06 (incorporates external review + implementation findings)
+- **Status:** proposed
+- **Date:** 2026-07-15
+- **Revised:** 2026-08-06 — incorporates external review and implementation
+  findings.
+- **Superseded in part by:** [ADR-0016](0016-content-persists-across-restart.md)
+  and [ADR-0017](0017-durable-tabs-expiring-pages.md); see Supersession at
+  the end of this file.
 
 ## Context
 
@@ -118,3 +123,18 @@ Still standing, unamended: the framing at lines 22 to 27, item identity at line 
 ADR-0017 also amends the titles subsection: line 68's title as a property of the page and line 72's user-set title become properties of the durable Tab, `title_is_user_set` disappears, and line 71's `MMDD-HHmm` placeholder renders from the Tab's creation stamp. Line 70's derivation and cap and line 74's documented exception stand, page-side.
 
 The body above is left as written, because an ADR is a record of a decision taken. Line references from other ADRs address this file's own line numbers directly.
+
+## Eject triggers
+
+These apply only to the portions this ADR still governs; ADR-0016 and
+ADR-0017 own the superseded staged-content and object-graph decisions.
+
+- Reproducible evidence shows that a surviving public framing claim is false
+  or materially broader than the implementation can support. The claim must
+  be narrowed or moved to a successor ADR.
+- A requirement needs the ledger to retain body content, excerpts, or another
+  content-derived field beyond the capped title. That is a new retention
+  decision and reopens the ledger boundary.
+- A supported macOS or Keychain change makes the stated write, key-storage,
+  or availability assumptions unavailable. The remaining persistence policy
+  must then be re-evaluated against that platform change.

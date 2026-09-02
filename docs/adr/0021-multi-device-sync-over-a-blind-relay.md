@@ -5,11 +5,10 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 # ADR-0021: Multi device sync over a blind relay
 
 - **Status:** accepted
-- **Date:** 2026-08-25. Drafted with two items flagged for ratification;
-  both were decided by the maintainer the same day (PR #113): the
-  one-key-frame join stands as drafted, and the fail-closed hold was
-  rejected in favor of the rule section 6 now records, a paused page
-  stays paused until it is unpaused.
+- **Date:** 2026-08-25
+- **Decision history:** The two items drafted for ratification were decided
+  by the maintainer in PR #113: the one-key-frame join stands, and a paused
+  page stays paused until it is unpaused.
 - **Depends on:**
   [ADR-0013](0013-document-provenance-and-block-metadata.md), which
   decided the shape of sync in the abstract: broadcast rules rather than
@@ -489,10 +488,10 @@ establishing that the account is not the device.
 
 ## Amendment 1: the frame carries a welcome, and the chain rests
 
-- **Status:** proposed — flagged for ratification, as the original
-  draft's two items were (both decided in PR #113); revised the same
-  day to meet the ratification review's conditions (PR #121)
+- **Status:** proposed
 - **Date:** 2026-08-27
+- **Revision history:** Flagged for ratification and revised the same day to
+  meet the review conditions in PR #121.
 
 ### The question
 

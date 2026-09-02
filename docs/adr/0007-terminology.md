@@ -105,10 +105,11 @@ Choose terminology by what is defensible, not by what is aspirational:
 
 ## Amendment 1: paste is a supported ingress path
 
-- **Status:** accepted, implemented 2026-07-25 (seal-from-pasteboard
-  clears the board in the same locked operation and reports a failed
-  clear; summoning the panel offers to take what is on the board)
+- **Status:** accepted
 - **Date:** 2026-07-24
+- **Implemented:** 2026-07-25 — seal-from-pasteboard clears the board in
+  the same locked operation and reports a failed clear; summoning the panel
+  offers to take what is on the board.
 
 Folded into this ADR rather than filed separately. The ADR is still
 proposed, so the changes are applied in place above and recorded here;
@@ -225,10 +226,11 @@ what already exists, and that finding belongs here.
 
 ## Amendment 2: the reproducibility claim is scoped to the unsigned artifact
 
-- **Status:** accepted, implemented 2026-08-05 (`scripts/build-app.sh`
-  and `scripts/build-backdrop.sh` emit `dist/<name>.presig.sha256`
-  before signing; CI fails if the file is empty)
+- **Status:** accepted
 - **Date:** 2026-08-05
+- **Implemented:** 2026-08-05 — `scripts/build-app.sh` and
+  `scripts/build-backdrop.sh` emit `dist/<name>.presig.sha256` before
+  signing; CI fails if the file is empty.
 
 Folded in here rather than filed separately, as with Amendment 1. The
 decision text above is edited in place; this section records what

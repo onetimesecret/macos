@@ -6,6 +6,8 @@ documentation_status: draft # needs-review | reviewed | stale
 
 - **Status:** proposed | accepted | superseded by ADR-NNNN
 - **Date:** YYYY-MM-DD
+- **Supersedes:** ADR-NNNN (optional)
+- **Depends on:** ADR-NNNN (optional)
 - **Documentation status:** draft | needs-review | reviewed | stale
 
 ## Context

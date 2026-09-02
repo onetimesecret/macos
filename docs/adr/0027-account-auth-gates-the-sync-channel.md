@@ -4,12 +4,11 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 # ADR-0027: Account auth gates the sync channel
 
-- **Status:** accepted, 2026-09-01. The three items this ADR first
-  raised as flagged, the loopback port in section 1, the refresh
-  policy in section 2 and the token's scope in section 3, were
-  answered by testing rodauth-oauth against a running server, and each
-  is now a decision in the section that raised it.
+- **Status:** accepted
 - **Date:** 2026-09-01
+- **Decision history:** Testing `rodauth-oauth` against a running server
+  resolved the three previously flagged items: the loopback port, refresh
+  policy, and token scope. Each is now decided in its corresponding section.
 - **Depends on:**
   [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md) section 3,
   which decided that the account and the device are two gates and that

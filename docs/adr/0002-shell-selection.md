@@ -4,8 +4,9 @@ documentation_status: reviewed # draft | needs-review | reviewed | stale
 
 # ADR-0002: Shell selection
 
-- **Status:** accepted — Swift/AppKit shell over the Rust core
-- **Date:** 2026-07-08 (evidence); decided 2026-07-13
+- **Status:** accepted
+- **Date:** 2026-07-13
+- **Evidence collected:** 2026-07-08
 
 ## Context
 
