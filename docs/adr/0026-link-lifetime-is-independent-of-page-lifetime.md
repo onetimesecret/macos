@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0026: A link's lifetime is not the page's lifetime
 
 - **Status:** accepted

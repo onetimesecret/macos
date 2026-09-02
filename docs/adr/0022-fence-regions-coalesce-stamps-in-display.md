@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0022: Fence regions coalesce stamps in display; the core block model is unchanged
 
 - **Status:** accepted

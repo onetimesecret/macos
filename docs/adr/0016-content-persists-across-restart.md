@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0016: Staged content persists across restart
 
 - **Status:** accepted

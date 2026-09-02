@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0027: Account auth gates the sync channel
 
 - **Status:** accepted, 2026-09-01. The three items this ADR first

@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0025: Block revisions, and history dies with its page
 
 - **Status:** proposed

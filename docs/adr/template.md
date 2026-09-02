@@ -1,7 +1,12 @@
+---
+documentation_status: draft # needs-review | reviewed | stale
+---
+
 # ADR-NNNN: Title
 
 - **Status:** proposed | accepted | superseded by ADR-NNNN
 - **Date:** YYYY-MM-DD
+- **Documentation status:** draft | needs-review | reviewed | stale
 
 ## Context
 

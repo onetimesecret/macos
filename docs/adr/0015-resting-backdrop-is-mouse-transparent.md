@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0015: The resting backdrop is mouse transparent, wholly or not at all
 
 - **Status:** accepted

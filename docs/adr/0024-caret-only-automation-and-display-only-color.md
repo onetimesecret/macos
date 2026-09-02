@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0024: Automation writes only on the caret's line; syntax color is display only
 
 - **Status:** accepted

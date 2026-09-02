@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0020: A day is a projection of live pages
 
 - **Status:** proposed

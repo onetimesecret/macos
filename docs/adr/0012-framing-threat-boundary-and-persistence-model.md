@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0012: OTS macOS staging companion — framing, threat boundary, and persistence model
 
 Status: Proposed (revised). Superseded in part by ADR-0016 and ADR-0017; see Supersession at the end of this file.

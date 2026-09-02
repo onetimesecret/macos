@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0001: UI-agnostic Rust core, thin platform shell
 
 - **Status:** accepted

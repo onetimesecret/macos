@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0011: TTL rungs are intuitive durations at the surface's tempo
 
 - **Status:** accepted

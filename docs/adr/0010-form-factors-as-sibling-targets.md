@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0010: Form factors are sibling shell targets over the one core
 
 - **Status:** accepted
