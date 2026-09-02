@@ -11,6 +11,12 @@ import XCTest
 /// storage the editor lays out moved with it, and the caret landed where
 /// the core said the writer's hand had been.
 ///
+/// One part of the route is left uncovered: the scroll that follows a
+/// step. The editor stood up here has no scroll view around it, and
+/// wrapping it in one so a case could assert that a scroller moved
+/// would be testing AppKit's scrolling rather than anything this route
+/// decides.
+///
 /// The model is built with its seams named. A `PageModel` under the test
 /// runner with default seams resolves to the installed app's own state
 /// directory, and a suite that types into that is a suite that edits
