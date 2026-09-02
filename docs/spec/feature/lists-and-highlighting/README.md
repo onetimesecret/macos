@@ -47,7 +47,7 @@ the friction:
 
 One prior confusion to close: colored code seen in screenshots of other
 tools is theirs, not ours, and nothing colored can arrive by paste
-because ⌘V is forced plain (`paste(_:)` at `InkEditorView.swift:1791`).
+because ⌘V is forced plain (`paste(_:)` at `InkEditorView.swift`).
 That stays.
 
 ## Doctrine: what has to be argued before code
@@ -68,7 +68,7 @@ contract. The bytes never change, select-all-copy returns exactly what
 was typed, and chips, the ledger and the roll's quiet renderings remain
 uncolored. The resting glance is not among them: it mounts the editable
 page itself, read only (ADR-0006), so it carries this color exactly as
-it has carried heading weight since amendment B. `docs/design-brief.md:32` is left as written; the principles
+it has carried heading weight since amendment B. `docs/design-brief.md` is left as written; the principles
 doc is where amendments are recorded, per its own header.
 
 ### The caret-only automation law (ADR-0024)
@@ -117,7 +117,7 @@ space   = one space
 
 Recognition is a pure, nonisolated static parser
 (`InkStyle.listMarker(of:)`, mirroring `headingMarker(of:)` at
-`InkEditorView.swift:2237`), returning indent, marker kind and marker
+`InkEditorView.swift`), returning indent, marker kind and marker
 length, testable without a view.
 
 ### Behaviour
@@ -155,8 +155,8 @@ same classification `restyle` computed, so the two can never disagree.
 
 - A new `LineKind` case, `.list(markerLength: Int)`, produced by
   `FenceScanner.classify` for body lines that parse as items
-  (`InkEditorView.swift:2566`). Additive; existing cases untouched.
-- `styleParagraph` (`InkEditorView.swift:1226`) gives `.list` a hanging
+  (`InkEditorView.swift`). Additive; existing cases untouched.
+- `styleParagraph` (`InkEditorView.swift`) gives `.list` a hanging
   indent: `headIndent` set so wrapped lines align under the content, not
   under the marker. Monospaced page makes the width exact: (indent +
   marker + space) × the base font's advancement.
@@ -167,7 +167,7 @@ same classification `restyle` computed, so the two can never disagree.
 
 ### Where it hooks
 
-`InkTextView` (`InkEditorView.swift:1708`) already owns the keyboard
+`InkTextView` (`InkEditorView.swift`) already owns the keyboard
 seam (`keyDown`, `performKeyEquivalent`, `insertText`). Add:
 
 - `override func insertNewline(_:)`: read the caret's paragraph, ask the
@@ -178,7 +178,7 @@ seam (`keyDown`, `performKeyEquivalent`, `insertText`). Add:
   gated to list lines with the caret in the marker region; otherwise
   defer to super.
 - Coordinator: retain the per-paragraph kinds the last `restyle` walk
-  computed (it already builds them at `InkEditorView.swift:1031`; today
+  computed (it already builds them at `InkEditorView.swift`; today
   they are consumed and dropped), keyed by paragraph range, so the
   keystroke path reads classification instead of re-scanning the page.
 
@@ -237,15 +237,15 @@ In `InkStyle`, semantic and theme-adaptive by construction:
 Fixed in one place so tests can assert them and dark mode costs
 nothing. Font never changes: color only, on `baseFont`, so metrics,
 wrapping and the wash geometry (`slabRect`,
-`InkEditorView.swift:1687`) are untouched.
+`InkEditorView.swift`) are untouched.
 
 ### Where it hooks
 
-- Pass 1 of `restyle` (`InkEditorView.swift:1031`) already walks lines
+- Pass 1 of `restyle` (`InkEditorView.swift`) already walks lines
   in document order with the scanner; the tokenizer runs beside it,
   attaching each paragraph's tokens to the walk tuple. Cross-line
   tokenizer state lives where cross-line fence state already lives.
-- `styleParagraph`'s `case .code` (`InkEditorView.swift:1302`) stops
+- `styleParagraph`'s `case .code` (`InkEditorView.swift`) stops
   being `break`: after the base attributes, lay each token's
   `foregroundColor` down. Fence rules stay dimmed
   `tertiaryLabelColor`; the info string on the opening rule is part of

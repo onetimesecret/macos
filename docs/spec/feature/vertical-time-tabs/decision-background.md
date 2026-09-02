@@ -8,13 +8,13 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 - **Status:** proposed
 - **Date:** 2026-08-24
-- **Depends on:** [ADR-0006](0006-persistent-editor-storage-swap.md) (one
+- **Depends on:** [ADR-0006](../../../adr/0006-persistent-editor-storage-swap.md) (one
   persistent editor, whose invariant the contiguous roll must keep
   literally rather than argue around),
-  [ADR-0016](0016-content-persists-across-restart.md) (the TTL is the
+  [ADR-0016](../../../adr/0016-content-persists-across-restart.md) (the TTL is the
   only mechanism that destroys staged content the user did not ask to
-  destroy, ADR-0016:86) and
-  [ADR-0017](0017-durable-tabs-expiring-pages.md) (durable tabs,
+  destroy, ADR-0016) and
+  [ADR-0017](../../../adr/0017-durable-tabs-expiring-pages.md) (durable tabs,
   expiring pages, and the eject trigger this decision has to answer).
 
 ## Context
@@ -29,17 +29,17 @@ Two answers are available and they lead to different applications.
 The durable answer makes a day an object the app creates, names, orders
 and reaps. Every version of it trips something already settled. A
 tab-per-day meets `DEFAULT_SHEET_CAP = 9`
-(crates/core/src/store.rs:31), which is refuse-don't-evict by design and
+(crates/core/src/store.rs), which is refuse-don't-evict by design and
 which `restore` enforces on the way in as well, refusing a file that
 claims more tabs than the cap as `Malformed`
-(crates/core/src/persist.rs:252), and it makes the calendar a second
+(crates/core/src/persist.rs), and it makes the calendar a second
 lifetime mechanism for a durable slot, the condition
 ADR-0017 names in as many words as its own eject trigger, which reopens
 that ADR and ADR-0016 or does not ship. A persisted day object needs a
 field in the snapshot, and the framing rule buys only *appended,
 tolerantly read* fields; the module header says outright that a field
 which moved, changed width or changed meaning is outside what the rule
-buys (crates/core/src/persist.rs:62-74), and a new magic refuses every
+buys (crates/core/src/persist.rs), and a new magic refuses every
 existing sealed file.
 
 The derived answer makes a day a query over the pages that already
@@ -51,7 +51,7 @@ Two further constraints bound the mechanism rather than the model. Doc
 05's frugality budget targets ~0% idle CPU with no periodic wakeups and
 expiry scheduled rather than polled, and the shell arms exactly one
 timer, from `companion_next_event_ms`
-(shell/Sources/CompanionKit/PageModel.swift:2345), which folds page
+(shell/Sources/CompanionKit/PageModel.swift), which folds page
 deadlines and hold lapses and nothing else; a relative label that
 changes at local midnight must therefore not become a second timer or a
 new arm on the first. And doc 05 commits to `prefers-reduced-motion` swapping animation
@@ -59,8 +59,8 @@ for stepped states, with no parallax and no bounce, which the issue's
 word "autoscroll" has to be read against.
 
 The only calendar arithmetic in the tree today is `placeholder_title`
-(crates/core/src/sheet.rs:712-721), which buckets a wall stamp by the
-store's own UTC offset at crates/core/src/sheet.rs:715. There is no
+(crates/core/src/sheet.rs), which buckets a wall stamp by the
+store's own UTC offset at crates/core/src/sheet.rs. There is no
 notion of a day anywhere else in core.
 
 ## Decision
@@ -92,15 +92,15 @@ what removes the shell's need to know what "today" is.
 **No calendar arm and no second timer.** Because `page_day_offset` is
 recomputed on every `companion_tabs_json`, the cosmetic redraw the app
 already runs re-reads the summaries and the labels roll over on their
-own (shell/Sources/CompanionKit/PageModel.swift:2338, at 1 Hz raised and
-every 30 s at rest, shell/Sources/OnetimePad/BackdropStance.swift:182-187).
+own (shell/Sources/CompanionKit/PageModel.swift, at 1 Hz raised and
+every 30 s at rest, shell/Sources/OnetimePad/BackdropStance.swift).
 `SheetStore::next_event` is untouched, `companion_expire_due` gains no
 new reason to fire, and no `Timer` is added.
 
 **Content is the ledger's bar.** A unit is listed when one of its pages
 holds non-whitespace ink or at least one chip, the exact predicate
 `entomb` already applies to decide whether a dying page did anything
-worth recording (crates/core/src/store.rs:1364-1371), extracted as
+worth recording (crates/core/src/store.rs), extracted as
 `Sheet::has_content()` and called by both. A day therefore gets a row
 exactly when its page would leave a mark in the ledger. Two exemptions:
 today's unit is always listed, and the unit holding the selected page is
@@ -189,21 +189,21 @@ decision's status waits on.
 
 1. `pub fn local_day(wall_ms: u64, utc_offset_seconds: i32) -> i64`,
    hoisted out of the arithmetic already inside `placeholder_title`
-   (crates/core/src/sheet.rs:712-721, the
-   `local_seconds.div_euclid(86_400)` line at :715), with
+   (crates/core/src/sheet.rs, the
+   `local_seconds.div_euclid(86_400)` line), with
    `placeholder_title` calling it and re-exported from
    crates/core/src/lib.rs to satisfy `missing_docs`. Its doc comment
    states that the offset is read at render time, so a stamp within an
    hour of local midnight can bucket differently after a DST change. That
    is the property `placeholder_title` already has and its tests already
-   pin (crates/core/src/sheet.rs:1170-1185).
+   pin (crates/core/src/sheet.rs).
 
    **Landed.** The conversion to local seconds both readings need came
    out with it, as a private `local_seconds` beside it, so the day and
    the clock face on a label are read out of one line rather than two
    copies of it.
 2. `Sheet::has_content()`, holding the predicate that is inline in
-   `entomb` today (crates/core/src/store.rs:1364-1371): any
+   `entomb` today (crates/core/src/store.rs): any
    `Segment::Ink` that is not whitespace, or a non-empty chip vector.
    `entomb` calls it, so there is one predicate with two callers rather
    than two definitions that can drift. A `Sheet::local_day` convenience
@@ -212,14 +212,14 @@ decision's status waits on.
    **Landed.** `entomb` asks the page rather than walking it, and a
    test in the store puts the two readers over the same matrix of
    pages: the predicate before the page dies, the ledger after.
-3. `SheetStore::wall_ms()` beside `now()` (crates/core/src/store.rs:450)
-   and `local_offset_seconds()` (:402), because computing a *relative*
+3. `SheetStore::wall_ms()` beside `now()` (crates/core/src/store.rs)
+   and `local_offset_seconds()`, because computing a *relative*
    offset needs today's stamp as well as the page's. **Landed.**
-4. `summary_json` (crates/ffi/src/lib.rs:2385) takes the current wall
+4. `summary_json` (crates/ffi/src/lib.rs) takes the current wall
    stamp and gains exactly two keys, `page_day_offset` and
    `page_has_content`, with JSON null for the first when the slot holds
    no page, matching `page_id`'s established null.
-   `companion_tabs_json` (crates/ffi/src/lib.rs:978) reads the stamp
+   `companion_tabs_json` (crates/ffi/src/lib.rs) reads the stamp
    once per call and passes it down. No new FFI symbol, no new route.
 
    **Landed.** The stamp is read before the walk starts, so every row
@@ -227,14 +227,14 @@ decision's status waits on.
    born a minute apart cannot straddle a midnight that passed halfway
    down the strip.
 5. The header's field-contract block for `companion_tabs_json`
-   (crates/ffi/include/companion_ffi.h:213-235) gains the two fields in
+   (crates/ffi/include/companion_ffi.h) gains the two fields in
    the same commit as the fields themselves: that the offset is
    relative, computed with the store's own UTC offset, recomputed on
    every call rather than cached, and null exactly when `has_page` is
    false. The header is hand-maintained (ADR-0003), so it is the
    contract document as well as the declaration. **Landed**, in that
    commit.
-6. `TabSummary` (shell/Sources/CompanionKit/CompanionClient.swift:26)
+6. `TabSummary` (shell/Sources/CompanionKit/CompanionClient.swift)
    decodes both fields, each with a doc comment saying why the stamp is
    the page's and not the tab's. **Landed**, with a contract test
    decoding both off a live core, including the null offset on a slot
@@ -255,7 +255,7 @@ decision's status waits on.
    quietly disappear out of a day that is on screen and the hidden
    count stays a count of days nobody can reach.
 8. `showsTimeUnits` on `PageModel`, in the `wrapsLines` pattern
-   (shell/Sources/CompanionKit/PageModel.swift:333-336, seeded at :634),
+   (shell/Sources/CompanionKit/PageModel.swift, seeded),
    writing only to the injected `UserDefaults`. It deliberately does not
    call `markDirty()`, which would take the sudden-termination hold and
    arm a debounced ciphertext write, buying a fresh sealed generation
@@ -264,8 +264,8 @@ decision's status waits on.
    **Landed.** A test flips it both ways across an edit and asserts the
    strip, the two emptiness predicates, the selection, the save status
    and the arming counter are all where they were.
-9. `select(index:)` (shell/Sources/CompanionKit/PageModel.swift:1394)
-   and `step(_:)` (:1401) route through a mode-aware list of targets
+9. `select(index:)` (shell/Sources/CompanionKit/PageModel.swift)
+   and `step(_:)` route through a mode-aware list of targets
    whose value with the mode off equals the strip element for element,
    pinned by a dedicated test. That test is the evidence for "horizontal
    mode is unchanged".
@@ -277,10 +277,10 @@ decision's status waits on.
    passes unedited.
 10. `openToday()`: select today's tab when a live page is there, else go
     through the shipped create path (`newPage()`,
-    shell/Sources/CompanionKit/PageModel.swift:1673, and
-    `createPageAndFocus(in:)`, :1716) unchanged, with the cap refusal
+    shell/Sources/CompanionKit/PageModel.swift, and
+    `createPageAndFocus(in:)`) unchanged, with the cap refusal
     naming the Settings toggle in this mode. The `.pageNew` arm
-    (shell/Sources/CompanionKit/Keymap/KeymapRegistry.swift:27-28)
+    (shell/Sources/CompanionKit/Keymap/KeymapRegistry.swift)
     branches on the mode. No new `CommandID`, no keymap row.
 
     **Landed**, through `newPage()`. The refusal is the shipped one with
@@ -289,23 +289,23 @@ decision's status waits on.
     of them still.
 11. The editor factoring: building the one persistent `InkTextView`
     separates from wrapping it in a scroll view
-    (shell/Sources/CompanionKit/InkEditorView.swift:35, and
-    `scrollStack(for:)` at :141 whose unbounded `maxSize` is
+    (shell/Sources/CompanionKit/InkEditorView.swift, and
+    `scrollStack(for:)` whose unbounded `maxSize` is
     load-bearing), and the page-swap ceremony separates from
-    `updateNSView` (:248-303) so a second surface can mount the same
+    `updateNSView` so a second surface can mount the same
     editor without forking it. The contract comments move with the code
-    they guard, `shedLayoutManagers` still runs at mount (:58), and the
+    they guard, `shedLayoutManagers` still runs at mount, and the
     existing suite passes unedited.
 
     **Landed.** The building is
     `InkEditorView.makeInkTextView(model:sheetID:coordinator:)`
-    (shell/Sources/CompanionKit/InkEditorView.swift:107, with the mount's
-    shed at :121) and the swap is
-    `Coordinator.moveEditor(_:to:storage:restoringScrollIn:)` (:370-397),
+    (shell/Sources/CompanionKit/InkEditorView.swift, with the mount's
+    shed) and the swap is
+    `Coordinator.moveEditor(_:to:storage:restoringScrollIn:)`,
     statement for statement and in the order they were in, with the
     contract comments carried across beside the code they guard.
-    `makeNSView` (:35) and `updateNSView` (:283-310) are thin callers and
-    `scrollStack(for:)` (:176) did not move a character. The line numbers
+    `makeNSView` and `updateNSView` are thin callers and
+    `scrollStack(for:)` did not move a character. The line numbers
     in the paragraph above name the tree this decision was written
     against, before the factoring moved them.
 
@@ -321,33 +321,32 @@ decision's status waits on.
     take, since one scroller over several days has an offset belonging to
     the roll rather than to any page in it.
 12. The rail: a new `TimeRailView` reusing `GaugeBar`
-    (shell/Sources/CompanionKit/TabStripView.swift:435) and `EmptyRule`
-    (:416) where they stand, so TabStripView.swift takes no diff; the
+    (shell/Sources/CompanionKit/TabStripView.swift) and `EmptyRule` where they stand, so TabStripView.swift takes no diff; the
     card's content row branching as a whole expression
-    (shell/Sources/OnetimePad/Views/BackdropRootView.swift:99-115, with
-    the strip row at :112-114 absent while the mode is on); and the
+    (shell/Sources/OnetimePad/Views/BackdropRootView.swift, with
+    the strip row absent while the mode is on); and the
     toggle in `ConnectionSettingsView`
-    (shell/Sources/CompanionKit/SettingsSections.swift:114-119), not in
+    (shell/Sources/CompanionKit/SettingsSections.swift), not in
     `BackdropSettingsView`'s Surface form, whose hard-coded
     `.frame(height: 120)`
-    (shell/Sources/OnetimePad/BackdropSettingsWindow.swift:81) clips new
+    (shell/Sources/OnetimePad/BackdropSettingsWindow.swift) clips new
     rows silently.
 
     **Landed**, in shell/Sources/CompanionKit/TimeRailView.swift.
-    `TabStripView.swift` did take no diff: `GaugeBar` is still at :435
-    and `EmptyRule` at :416, used from a second file in the same module.
+    `TabStripView.swift` did take no diff: `GaugeBar` is still
+    and `EmptyRule`, used from a second file in the same module.
     The card branches at
-    shell/Sources/OnetimePad/Views/BackdropRootView.swift:114 with the
-    strip row at :139, and the toggle sits at
-    shell/Sources/CompanionKit/SettingsSections.swift:122. The Surface
+    shell/Sources/OnetimePad/Views/BackdropRootView.swift with the
+    strip row, and the toggle sits at
+    shell/Sources/CompanionKit/SettingsSections.swift. The Surface
     form's `.frame(height: 120)` is still at
-    shell/Sources/OnetimePad/BackdropSettingsWindow.swift:81, untouched
+    shell/Sources/OnetimePad/BackdropSettingsWindow.swift, untouched
     and unraised, because nothing was added to it. The line numbers in
     the paragraph above name the tree this decision was written against.
 
     Three things came out of the work that the item had not named.
     First, `TimeUnitProjection.Unit` gained `spokenRemaining`
-    (shell/Sources/CompanionKit/TimeUnits.swift:134): the rail carries
+    (shell/Sources/CompanionKit/TimeUnits.swift): the rail carries
     `SheetTab`'s accessibility triple and the third of those had no
     source, and looking it up in the summaries would have let a row
     speak one page's clock while drawing another's. The gauge already
@@ -366,15 +365,14 @@ decision's status waits on.
     `removeFromSuperview` is never called, and every other visible page a
     non-focusable rendering over its **own** `NSTextStorage` seeded from
     `documentRuns(sheet:)`
-    (shell/Sources/CompanionKit/CompanionClient.swift:672). The quiet
+    (shell/Sources/CompanionKit/CompanionClient.swift). The quiet
     renderings never enter `storages`
-    (shell/Sources/CompanionKit/PageModel.swift:429) or `undoManagers`
-    (:439), and are pruned in `refresh()` (:1234) on the same live-page
+    (shell/Sources/CompanionKit/PageModel.swift) or `undoManagers`, and are pruned in `refresh()` on the same live-page
     set. `PageContentView` gains one branch
-    (shell/Sources/CompanionKit/PageSurface.swift:39-47) with the
+    (shell/Sources/CompanionKit/PageSurface.swift) with the
     ADR-0006 contract comment about the absent `.id(page)` intact. Every
     path that moves the editor between day regions goes through the
-    focus law's refocus (:1576, private today).
+    focus law's refocus (private today).
 
     **Landed**, in shell/Sources/CompanionKit/DayScrollView.swift:
     `DayScrollView` over `DayStackView`, with `DayHeaderView`,
@@ -387,9 +385,9 @@ decision's status waits on.
     set as `storages` and `undoManagers`, all in
     shell/Sources/CompanionKit/PageModel.swift;
     `CompanionClient.documentRuns(sheet:)` is at
-    shell/Sources/CompanionKit/CompanionClient.swift:703.
+    shell/Sources/CompanionKit/CompanionClient.swift.
     `PageContentView` branches at
-    shell/Sources/CompanionKit/PageSurface.swift:42 with the ADR-0006
+    shell/Sources/CompanionKit/PageSurface.swift with the ADR-0006
     contract comment about the absent `.id(page)` intact below it, and
     `refocusEditorIfKeyed` is internal now and called from the one path
     that moves the editor between days
@@ -429,9 +427,9 @@ decision's status waits on.
     One thing was spent that branch 5 had banked:
     shell/Sources/CompanionKit/TabStripView.swift takes one diff after
     all. The rename alert moved out of `SheetTab`'s private method into a
-    shared `TabRenamePrompt` (:362), because the roll's gutter offers the
+    shared `TabRenamePrompt`, because the roll's gutter offers the
     same verb and the alert's text is a rule about what a tab name is.
-    `GaugeBar` (:459) and `EmptyRule` (:440) are still used where they
+    `GaugeBar` and `EmptyRule` are still used where they
     stand.
 14. A hardware procedure under docs/qa/verification-procedures/, in the
     shape of the existing ones: midnight arriving while the card rests, a
@@ -480,7 +478,7 @@ goes off. This ADR is proposed rather than accepted precisely so that
 reading gets tested in review before the prototype is trusted.
 
 The mode shows only the days the rungs let live. The backdrop opens tabs
-at the 7d rung (shell/Sources/CompanionKit/FormFactor.swift:229), so Day
+at the 7d rung (shell/Sources/CompanionKit/FormFactor.swift), so Day
 -1 through Day -6 are reachable out of the box, but a pad re-rung to 8h
 shows only Day 0 and can read as broken rather than as empty. A
 mode-specific default rung is refused: that would be the mode reaching

@@ -9,16 +9,16 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 - **Status:** accepted
 - **Date:** 2026-08-25
 - **Depends on:**
-  [ADR-0013](0013-document-provenance-and-block-metadata.md), which
+  [ADR-0013](../../../adr/0013-document-provenance-and-block-metadata.md), which
   decided the shape of sync in the abstract: broadcast rules rather than
   archive rules, a device joins at the current key frame and structurally
   never receives the ops behind it, and a relay holds at most one GOP of
-  encrypted deltas (ADR-0013:420-431). This ADR decides the relay
+  encrypted deltas (ADR-0013). This ADR decides the relay
   itself: what it stores, how devices come to trust each other, and what
   the relay is admitted to learn.
-- **Leaves standing:** [ADR-0010](0010-form-factors-as-sibling-targets.md)'s
+- **Leaves standing:** [ADR-0010](../../../adr/0010-form-factors-as-sibling-targets.md)'s
   two-instances-two-stores stance, unamended; section 7 says why.
-  [ADR-0016](0016-content-persists-across-restart.md) section 3's
+  [ADR-0016](../../../adr/0016-content-persists-across-restart.md) section 3's
   keychain protection class, unamended; section 8 says what that costs
   sync and why the cost is kept.
 
@@ -26,38 +26,38 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 Issue #92 settled the doctrine first: the network boundary now reads "at
 most two outbound destinations, TLS-only, and no others"
-(docs/spec/design/05-technical-direction.md:107-117). The first is the
+(docs/spec/design/05-technical-direction.md). The first is the
 configured OTS server, reached only on an explicit conceal. The second
 is this relay, reached only for a page the user has shared to their own
 enrolled devices. This ADR cannot contradict that boundary and does not:
 everything below widens `crates/transport`'s allowlist from one entry to
 two and changes nothing else about it. The transport still refuses any
-non-`https://` URL before a socket opens (crates/transport/src/lib.rs:44).
+non-`https://` URL before a socket opens (crates/transport/src/lib.rs).
 
 Nothing below is built. What exists is the CRDT foundation and the local
 discipline the relay must not weaken:
 
 - The document module is the only file in the crate that touches Loro
   and it exports exactly one shape: `export_snapshot`, the full document
-  with history (crates/core/src/document.rs:214), merged back whole by
-  `import_snapshot` (crates/core/src/document.rs:225). Deltas since a
+  with history (crates/core/src/document.rs), merged back whole by
+  `import_snapshot` (crates/core/src/document.rs). Deltas since a
   frontier have no representation anywhere in the tree (issue #96).
 - The compaction ceremony is purely local. It fires from an accepted
-  `cycle_rung` (crates/core/src/store.rs:1113), an accepted `set_rung`
-  (crates/core/src/store.rs:1139) and a pause top-up
-  (crates/core/src/store.rs:1196), and the rebuild types the body into a
+  `cycle_rung` (crates/core/src/store.rs), an accepted `set_rung`
+  (crates/core/src/store.rs) and a pause top-up
+  (crates/core/src/store.rs), and the rebuild types the body into a
   fresh document under a freshly minted peer id because a `StateOnly`
   export was measured to keep the old one
-  (crates/core/src/document.rs:365-393).
+  (crates/core/src/document.rs).
 - There is one content key per form factor per state directory,
   `HKDF(keychain_half, file_half)` under one versioned info string
-  (crates/ffi/src/persist.rs:204, :448). No per GOP key exists
+  (crates/ffi/src/persist.rs). No per GOP key exists
   (issue #95).
 - Expiry deadlines are `Instant` values on a sleep-inclusive monotonic
   clock, comparable only inside one boot session
-  (crates/core/src/clock.rs:17-25). The only place wall time touches a
+  (crates/core/src/clock.rs). The only place wall time touches a
   deadline is the restart gap, `wall_away_ms`
-  (crates/ffi/src/lib.rs:1516).
+  (crates/ffi/src/lib.rs).
 - Account auth is HTTP Basic behind the `AuthStrategy` trait in
   `crates/ots-client`; OAuth is the capability onetimesecret is adding
   (issue #98).
@@ -65,7 +65,7 @@ discipline the relay must not weaken:
 Three disciplines bound the answer. ADR-0007 forbids claims a critic
 with a debugger can falsify, and its Amendment 3 fixes the vocabulary:
 the exit ramp is conceal, and the retired word is not used here. The
-ledger's content-free construction (crates/core/src/ledger.rs:1-16) is
+ledger's content-free construction (crates/core/src/ledger.rs) is
 the model for how to admit what a component learns rather than claiming
 it learns nothing. And docs/design-brief.md requires that no account is
 needed for the core loop, so sync must be strictly additive.
@@ -85,7 +85,7 @@ with sync off is indistinguishable from today's app (issue #102).
 
 ### 1. The relay storage contract
 
-The delta from ADR-0013, stated plainly. ADR-0013:509-511 allowed a
+The delta from ADR-0013, stated plainly. ADR-0013 allowed a
 relay to be "at most a store-and-forward buffer of encrypted deltas
 since the last key frame, purged by the ceremony". This ADR fixes the
 contract as: per channel, the relay holds
@@ -98,16 +98,16 @@ contract as: per channel, the relay holds
 
 It holds nothing else. It never holds a content key, a per GOP key or a
 pairing secret; it cannot merge, compact or read a delta, because every
-byte it stores is ciphertext sealed by a device (ADR-0013:388-391 is
+byte it stores is ciphertext sealed by a device (ADR-0013 is
 explicit that end to end encryption makes the relay a store-and-forward
 archive rather than a participant, which is why section 2's purge
 argument has to be structural). A device that was offline for longer
 than one GOP recovers by rejoining at the current key frame, not by
 asking for history, which is the join-at-key-frame semantics
-ADR-0013:423-426 already decided.
+ADR-0013 already decided.
 
 **Rejected: an archive relay.** A relay that retains deltas past the
-ceremony is the durable op-log archive ADR-0013:384-391 names as the
+ceremony is the durable op-log archive ADR-0013 names as the
 thing the ceremony exists to destroy. Retention would make every
 deleted character recoverable for the life of the page from a single
 server, which inverts the product.
@@ -124,7 +124,7 @@ the onetimesecret repo. Issue #96 builds the delta seam the protocol
 needs: delta export since a frontier and the matching reject-whole
 import, in the crate-private style `document.rs` already enforces, with
 the peer id never crossing a ceremony boundary
-(crates/core/src/document.rs:369-393).
+(crates/core/src/document.rs).
 
 ### 2. Purge is structural, not a promise
 
@@ -148,15 +148,15 @@ hygiene and refused as the argument.
 channel would make every retained delta decryptable for the life of the
 channel, so a compromised relay accumulates bounded storage but
 unbounded readable history the moment the key leaks. The per GOP
-derivation is what makes ADR-0013:430-431's "bounded by one GOP" true
+derivation is what makes ADR-0013's "bounded by one GOP" true
 against a relay that lies about purging.
 
 **Required work.** Issue #95 builds the derivation (a third branch
 beside `CONTENT_KEY_INFO` and `FILE_HALF_NAME_INFO`,
-crates/ffi/src/persist.rs:204, :214, versioned like both), the rotation
+crates/ffi/src/persist.rs, versioned like both), the rotation
 at the ceremony, and the destruction of the outgoing key, with the
 ledger key untouched throughout. Issue #101 makes the ceremony a
-coordinated protocol event, which ADR-0013:411-418 already requires:
+coordinated protocol event, which ADR-0013 already requires:
 proposal, acceptance, confirmation, and the rule that a ceremony not
 confirmed by every attached device leaves every device on the old GOP
 rather than splitting them across a boundary. Rotating the transport
@@ -186,7 +186,7 @@ independently, and both must be passed.
 **Rejected: iCloud Keychain as the key channel.** Apple ships exactly
 this mechanism, and ADR-0016 section 3 deliberately opted the durable
 keychain half out of it with `ThisDeviceOnly`
-(crates/credentials/src/lib.rs:637-646). Using iCloud Keychain for the
+(crates/credentials/src/lib.rs). Using iCloud Keychain for the
 transport key would put key custody inside an ecosystem the threat
 model does not include and undo a protection the design already paid
 for. Section 8 keeps the class and states the consequence.
@@ -200,7 +200,7 @@ make the background act as powerful as the deliberate one.
 
 Even blind, the relay learns. This section is the decided admission, in
 the spirit of the ledger's content-free discipline
-(crates/core/src/ledger.rs:1-16): state what the component holds so the
+(crates/core/src/ledger.rs): state what the component holds so the
 claim is checkable, rather than claiming it holds nothing.
 
 An honest relay operator, or anyone who compromises one, learns:
@@ -211,13 +211,13 @@ An honest relay operator, or anyone who compromises one, learns:
    device attaches with its own connection.
 3. **Delta timing**, which is typing rhythm at the resolution the
    client publishes. `set_change_merge_interval(0)` keeps every commit
-   its own change (crates/core/src/document.rs:89), so unbatched
+   its own change (crates/core/src/document.rs), so unbatched
    publishing would make the rhythm nearly keystroke-grade. The
    protocol must batch on a clock, not on commit boundaries, and issue
    #99's backpressure section owns the number.
 4. **Delta sizes**, a weak fingerprint of edit activity. The ledger
    buckets sizes for exactly this reason
-   (`SizeClass`, crates/core/src/ledger.rs:63-75); the protocol should
+   (`SizeClass`, crates/core/src/ledger.rs); the protocol should
    pad or bucket for the same one.
 5. **Ceremony times**, because the ceremony purges the buffer and
    supersedes the key frame, and with them the rung-transition rhythm
@@ -299,8 +299,8 @@ sentence, not a silent spinner.
 Expiry is the product, and two devices holding one page must agree on
 when it dies. What replicates is the policy, `(created_wall_ms,
 ttl_ms)`, never the deadline. `Instant` cannot cross a boot session,
-let alone a machine (crates/core/src/clock.rs:17-25,
-crates/ffi/src/lib.rs:1516), and is not made to try. Each device
+let alone a machine (crates/core/src/clock.rs,
+crates/ffi/src/lib.rs), and is not made to try. Each device
 computes its own deadline on its own clock. That is Signal's
 disappearing-messages model: client-side enforcement, no cross-device
 timer synchronization, skew accepted.
@@ -314,7 +314,7 @@ Three rules on top of the replicated policy:
 across every candidate a device knows: its own computation and every
 peer's published expiry. A peer can shorten a page's life and can never
 extend one, which is the rule `wall_away_ms` already follows locally
-(crates/ffi/src/lib.rs:1516): a restore only ever subtracts. Clock skew
+(crates/ffi/src/lib.rs): a restore only ever subtracts. Clock skew
 that makes the numbers say a page died before it was created is the
 minimum rule working as intended: the page dies. Dying early is
 recoverable; living long is the failure this app exists to prevent.
@@ -331,15 +331,15 @@ hold rule below is the one gate on who may publish that marker.
 Destroying the key kills the relay's buffered ciphertext for that page
 for everyone at once, which is stronger than deleting bytes and is the
 same structural argument as section 2. Locally, expiry stays
-`expire_due`'s entombment (crates/core/src/store.rs:1266, :1364); the
+`expire_due`'s entombment (crates/core/src/store.rs); the
 marker is what makes the second device's entombment agree with the
 first's, and each device writes its own ledger record, so two wall
 stamped ledgers describing one death is expected and correct.
 
 **The hold is a replicated register, and the hold wins.** Ratified
 2026-08-25: a paused page stays paused until it is unpaused. The pause
-machine (crates/core/src/store.rs:1160; one hour first press,
-twenty-four hours topped up, crates/core/src/store.rs:39, :43) becomes
+machine (crates/core/src/store.rs; one hour first press,
+twenty-four hours topped up, crates/core/src/store.rs) becomes
 a replicated register on the logical clock, and a live hold suspends
 the countdown on every device exactly as it suspends it locally. The
 hold is not a clock candidate under the minimum rule; it is policy,
@@ -384,12 +384,12 @@ subject to the same never-extend arithmetic.
 
 ADR-0010's stance stands: two running form factors are two core
 instances with two stores, and neither reads the other's pages
-(ADR-0010:80-83). This ADR does not supersede it and does not use the
+(ADR-0010). This ADR does not supersede it and does not use the
 relay to join two form factors on one machine. For enrolment purposes a
 core instance is a device: the panel and the backdrop on one Mac are
 two enrollable peers exactly as a laptop and a desktop are, unusual
 only in sharing a keyboard. If users ask for the same pages in both
-form factors, that is ADR-0010's own eject trigger (ADR-0010:116-119)
+form factors, that is ADR-0010's own eject trigger (ADR-0010)
 and its answer is core-side and local, a daemon or a shared sealed
 store, not a round trip through a server for two processes an IPC apart.
 Routing local sharing through the relay would put content on the
@@ -400,7 +400,7 @@ does not license.
 ### 8. ADR-0016 section 3 and the key that must travel
 
 The keychain half stays `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`
-(crates/credentials/src/lib.rs:637-646), and ADR-0016 section 3's
+(crates/credentials/src/lib.rs), and ADR-0016 section 3's
 observation that `ThisDeviceOnly` "keeps a half that is durable across
 boots out of iCloud Keychain" hardens here from a property into a
 rule: no key in this design rides iCloud Keychain, ever. The content
@@ -423,7 +423,7 @@ establishing that the account is not the device.
   not change shape for sync.
 - The network boundary doctrine holds at two destinations and
   `crates/transport`'s allowlist widens by one entry. Every claim in
-  docs/spec/design/05-technical-direction.md:107-117 about the relay
+  docs/spec/design/05-technical-direction.md about the relay
   (ciphertext only, opt-in per page, holds nothing past the page's own
   TTL) is made true by sections 1, 2 and 6 rather than asserted.
 - A compromised relay is bounded, and the bound is stated: one GOP of
@@ -479,7 +479,7 @@ establishing that the account is not the device.
   the claim.
 - Users ask for the same pages in both form factors on one machine.
   That fires ADR-0010's trigger, not this ADR's design: the answer is
-  local (ADR-0010:116-119), and reaching for the relay instead is
+  local (ADR-0010), and reaching for the relay instead is
   evidence this section was forgotten, not that it was wrong.
 - The purge argument appears anywhere phrased as a server-side promise.
   That is a violation of section 2 and ADR-0007, not a drift to
@@ -512,15 +512,15 @@ incoming GOP key, which is exactly the key it lacks.
 Three facts sharpen the question before any answer:
 
 1. **Entropy cannot catch a device up.** The chain salts each incoming
-   key with the outgoing one (`crates/ffi/src/gop.rs:104-116`), so
+   key with the outgoing one (`crates/ffi/src/gop.rs`), so
    entropy for epoch n is useless without the key for epoch n−1.
    Re-delivering entropy helps only a device exactly one step behind
    that also held the outgoing key — which is nobody the question is
    about.
 2. **Re-pairing, as built, does not recover either.** The pairing
    grant delivers the channel secret
-   (`crates/ffi/src/pairing.rs:322-327`), and the chain roots from it
-   at epoch zero (`gop.rs:82-88`). After the channel's first ceremony
+   (`crates/ffi/src/pairing.rs`), and the chain roots from it
+   at epoch zero (`gop.rs`). After the channel's first ceremony
    no root derivation reaches the current epoch. Worse, the chain
    state lives only in memory: a mere relaunch strands a device the
    same way, and the only recovery the built pieces actually offer is

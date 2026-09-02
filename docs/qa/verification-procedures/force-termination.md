@@ -19,9 +19,8 @@ window: the interval between the keystroke and the write it schedules.
 ## Prerequisite: rebuild and reinstall first
 
 Two format breaks landed with ADR-0016: the envelope went `OTSSEAL2` to
-`OTSSEAL3` (`crates/ffi/src/persist.rs:154`, `:176`) and the ledger
-payload went `OTSLEDR1` to `OTSLEDR2` (`crates/core/src/persist.rs:111`,
-`:127`). An older installed copy cannot read the files this build
+`OTSSEAL3` (`crates/ffi/src/persist.rs`) and the ledger
+payload went `OTSLEDR1` to `OTSLEDR2` (`crates/core/src/persist.rs`). An older installed copy cannot read the files this build
 writes. Start clean:
 
 ```sh
@@ -37,25 +36,24 @@ ls -la "$STATE"
 ```
 
 The directory is named for the bundle id plus `.noindex`
-(`shell/Sources/CompanionKit/FormFactor.swift:155`, `:214`) and holds
-`state.sealed` (`FormFactor.swift:79`), `ledger.sealed` (`:84`) and one
-`ots-companion-key-half-<32 hex>` (`crates/ffi/src/persist.rs:232`).
+(`shell/Sources/CompanionKit/FormFactor.swift`) and holds
+`state.sealed` (`FormFactor.swift`), `ledger.sealed` and one
+`ots-companion-key-half-<32 hex>` (`crates/ffi/src/persist.rs`).
 
 Every write goes to `<name>.<16 hex>.tmp` and is renamed over the real
-file (`write_private`, `crates/ffi/src/persist.rs:1251`, the rename at
-`:1271`), and launch sweeps whatever a death stranded there
-(`sweep_stranded_temps`, `crates/ffi/src/persist.rs:883`). A SIGKILL can
+file (`write_private`, `crates/ffi/src/persist.rs`, the rename), and launch sweeps whatever a death stranded there
+(`sweep_stranded_temps`, `crates/ffi/src/persist.rs`). A SIGKILL can
 strand one just as a power cut can, so the same observable applies here;
 `power-loss.md` case 2 is where the sweep itself is made deterministic.
 
 What decides the loss is the debounce. A keystroke marks the model
 dirty, which takes a sudden-termination hold and arms a two second
-timer (`shell/Sources/CompanionKit/PageModel.swift:472`, `:932`, `:939`);
+timer (`shell/Sources/CompanionKit/PageModel.swift`);
 the write happens at the timer's far end, and the hold is released only
 once the write settles. The hold is real rather than decorative because
 the bundle declares `NSSupportsSuddenTermination`
 (`shell/OnetimePad-Info.plist`), which is what the latch at
-`PageModel.swift:101` exists to take back. A `kill -9` ignores the hold
+`PageModel.swift` exists to take back. A `kill -9` ignores the hold
 entirely, which is the point of this case: it prices the window the
 latch protects against everything except the one death that cannot be
 negotiated with.
@@ -101,9 +99,9 @@ recorded in step 1, or a newer one, and is never absent. The line typed
 in step 2 is the only thing that may be missing, and losing it is the
 documented cost of the debounce rather than a failure. Any temp file
 recorded in step 3 is gone after launch. No refusal line appears
-(`crates/ffi/src/persist.rs:693`, `:700`, `:707`, `:717`) and no
+(`crates/ffi/src/persist.rs`) and no
 "restore failed over an existing state file; withholding the save
-licence" line appears (`shell/Sources/CompanionKit/PageModel.swift:674`).
+licence" line appears (`shell/Sources/CompanionKit/PageModel.swift`).
 
 **Fail:** an empty pad; content older than the last settled write coming
 back, which would mean a generation was lost rather than a burst; a temp
@@ -138,8 +136,8 @@ route, and record the outcome for each:
    window (⌥⌘Esc), select OnetimePad, and press Force Quit. Confirm the
    dialog kills it outright rather than routing through
    `applicationShouldTerminate`, that is, no quit warning appears
-   (`shell/Sources/OnetimePad/BackdropApp.swift:123`,
-   `shell/Sources/CompanionKit/QuitPrompt.swift:83`). If a warning does
+   (`shell/Sources/OnetimePad/BackdropApp.swift`,
+   `shell/Sources/CompanionKit/QuitPrompt.swift`). If a warning does
    appear you pressed Quit rather than Force Quit, and this is not the
    case under test.
 2. **A rebuild over a live dev instance.** Package and launch the debug
@@ -148,7 +146,7 @@ route, and record the outcome for each:
    in-place re-sign SIGKILLs the running copy. This shape has its own
    state directory,
    `com.onetimesecret.companion.backdrop.debug.noindex`
-   (`shell/Sources/CompanionKit/FormFactor.swift:214`), so check that
+   (`shell/Sources/CompanionKit/FormFactor.swift`), so check that
    one, and confirm the release copy's directory was not touched.
 
 **Pass, for both:** the same result as case 1. At most the unsettled

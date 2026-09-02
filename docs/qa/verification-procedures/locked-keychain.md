@@ -5,8 +5,8 @@
 section 10, case 6 (unavailable encryption key), and section 7's
 binding rule that a failed restore never replaces prior state with empty
 state. Every automated test runs against `InMemoryCredentialStore` or a
-double (`crates/credentials/src/lib.rs:1151`) and the one real keychain
-test is `#[ignore]`d (`crates/credentials/src/lib.rs:1302`), so CI
+double (`crates/credentials/src/lib.rs`) and the one real keychain
+test is `#[ignore]`d (`crates/credentials/src/lib.rs`), so CI
 cannot reach this.
 **Owner:** delano.
 **Status:** open. Not yet run on hardware.
@@ -14,8 +14,8 @@ cannot reach this.
 ## Prerequisite: rebuild and reinstall first
 
 The envelope went `OTSSEAL2` to `OTSSEAL3`
-(`crates/ffi/src/persist.rs:154`, `:176`) and the ledger payload went
-`OTSLEDR1` to `OTSLEDR2` (`crates/core/src/persist.rs:111`, `:127`). An
+(`crates/ffi/src/persist.rs`) and the ledger payload went
+`OTSLEDR1` to `OTSLEDR2` (`crates/core/src/persist.rs`). An
 older installed copy cannot read the files this build writes.
 
 ```sh
@@ -28,12 +28,11 @@ scripts/install.sh
 No build this tree produces carries the keychain access group
 entitlement, so the halves are ordinary login keychain items: the
 `DefaultFile` add scope sets no `kSecAttrAccessible`
-(`crates/credentials/src/lib.rs:647-651`), and the lock gate is the
+(`crates/credentials/src/lib.rs`), and the lock gate is the
 login keychain's own. The item is a generic password with service equal
 to the bundle id and account `state-key`
-(`crates/ffi/src/persist.rs:186`; the ledger's is `ledger-key` at
-`:196`; the dictionaries are built from `kSecClass`, `kSecAttrService`
-and `kSecAttrAccount` alone, `crates/credentials/src/lib.rs:530-531`).
+(`crates/ffi/src/persist.rs`; the ledger's is `ledger-key`; the dictionaries are built from `kSecClass`, `kSecAttrService`
+and `kSecAttrAccount` alone, `crates/credentials/src/lib.rs`).
 
 ```sh
 STATE=~/Library/Application\ Support/com.onetimesecret.companion.backdrop.noindex
@@ -46,16 +45,16 @@ log stream --style compact --predicate \
 ## What the code must do in both cases
 
 `load_key_for` loads and never mints
-(`crates/ffi/src/persist.rs:262-281`). A backend that refuses is logged
-as "companion-ffi: the state-key item would not load (...)" (`:278`) and
+(`crates/ffi/src/persist.rs`). A backend that refuses is logged
+as "companion-ffi: the state-key item would not load (...)" and
 returns `None`. The key closure then fails inside `open_state`, which
 logs "the state file carries this build's envelope, but its content key
-could not be assembled" and returns `Opened::Refused` (`:679-687`). The
+could not be assembled" and returns `Opened::Refused`. The
 seam maps that to a failed restore and leaves the file exactly where it
-is (`crates/ffi/src/lib.rs:1315`). The shell probes the file after the
+is (`crates/ffi/src/lib.rs`). The shell probes the file after the
 restore, finds it present, and withholds the save licence
-(`shell/Sources/CompanionKit/PageModel.swift:718-723`), so nothing is
-written over it for the whole session (`:1075-1081`).
+(`shell/Sources/CompanionKit/PageModel.swift`), so nothing is
+written over it for the whole session.
 
 ## Case 1: the keychain is locked when the app loads
 
@@ -95,28 +94,27 @@ written over it for the whole session (`:1075-1081`).
   stays and this session will not write one".
 - The shell logs "restore failed over an existing state file;
   withholding the save licence"
-  (`shell/Sources/CompanionKit/PageModel.swift:724-728`), and the ledger's
-  own line about not recording to the audit trail (`:750-763`) if the
+  (`shell/Sources/CompanionKit/PageModel.swift`), and the ledger's
+  own line about not recording to the audit trail if the
   ledger key was refused too.
 - Both sha256 values are **identical** to step 2, after the typing and
   after the quit. No overwrite.
 - `state.sealed`, `ledger.sealed` and the `ots-companion-key-half-<32 hex>`
   file are all still present, with the same names. No erase, and no
   rotation: rotation deletes the keychain half
-  (`crates/ffi/src/persist.rs:355-372`) and must not run on this path.
+  (`crates/ffi/src/persist.rs`) and must not run on this path.
 - The `state-key` item still exists once the keychain is unlocked.
 - The quit alert says "This session was never being saved" and names the
   discard as the way to keep the session's content
-  (`shell/Sources/CompanionKit/QuitPrompt.swift:48-73`, reply at
-  `:83-93`, presented at
-  `shell/Sources/OnetimePad/BackdropApp.swift:123-134`). It is the
+  (`shell/Sources/CompanionKit/QuitPrompt.swift`, reply, presented at
+  `shell/Sources/OnetimePad/BackdropApp.swift`). It is the
   withheld licence being said out loud at the last moment it still
   matters (issue #49), not a save failure: the session owes no write.
   Quit Anyway leaves the file untouched.
 
 **Fail:** any change to either sha256, a missing file, a missing key
 half, a missing keychain item, a superseded disposal line
-(`crates/ffi/src/lib.rs:1354`), or a quit that says nothing at all,
+(`crates/ffi/src/lib.rs`), or a quit that says nothing at all,
 which is the silence issue #49 exists to end.
 
 7. Recover:

@@ -39,10 +39,10 @@ Three constraints bound the answer before any flow is chosen.
 
 1. **The core loop needs no account and no network.** That is a
    load bearing exclusion, not an omission
-   (docs/design-brief.md:75-80). Every state this ADR names has to
+   (docs/design-brief.md). Every state this ADR names has to
    leave the pad fully usable.
 2. **The network boundary is two destinations, TLS only**
-   (docs/spec/design/05-technical-direction.md:107-119). Account auth
+   (docs/spec/design/05-technical-direction.md). Account auth
    adds no third: the token endpoint lives on the configured OTS
    server, which is destination one, and the relay is destination two.
    The driver's transport is built bounded to exactly those two hosts.
@@ -67,19 +67,19 @@ Standing before this ADR:
 
 - The ceremony: `AuthCeremony::begin` mints the PKCE verifier, the
   `S256` challenge, the `state` and the exact loopback redirect URI
-  (crates/sync/src/oauth.rs:98), and `redeem` checks the returned
+  (crates/sync/src/oauth.rs), and `redeem` checks the returned
   `state` before building the token request
-  (crates/sync/src/oauth.rs:151). The one shot listener that receives
+  (crates/sync/src/oauth.rs). The one shot listener that receives
   the redirect is crates/sync/src/loopback.rs.
 - The lifetimes: `TokenKeeper` holds the access token in memory only
   and treats the server's refusal as the only expiry authority
-  (crates/sync/src/oauth.rs:270).
+  (crates/sync/src/oauth.rs).
 - The strategy: `BearerAuth` is a second `AuthStrategy` beside
   `BasicAuth`, added without touching the conceal path
-  (crates/ots-client/src/auth.rs:49).
+  (crates/ots-client/src/auth.rs).
 - The resting place: the refresh token rests under its own account,
   `sync-oauth-refresh`, in the key material store
-  (crates/ffi/src/sync_driver.rs:46).
+  (crates/ffi/src/sync_driver.rs).
 - The driver: sign in, refresh, sign out, attach, pump
   (crates/ffi/src/sync_driver.rs), and the shell's states and
   sentences (shell/Sources/CompanionKit/SyncController.swift).
@@ -291,7 +291,7 @@ the user revoking the grant in their account settings, and it is the
 server's to improve.
 
 Issue #98's answer to open question 21
-(docs/spec/design/06-open-questions.md:180-183) stands: the desktop
+(docs/spec/design/06-open-questions.md) stands: the desktop
 app's requirement of v3 auth is a long idle refresh window and nothing
 else. It does not want a device claim inside the token, which would re
 entangle the two gates ADR-0021 section 3 separated.
@@ -299,7 +299,7 @@ entangle the two gates ADR-0021 section 3 separated.
 ### 3. Sync credentials are separate from conceal credentials
 
 The conceal path keeps HTTP Basic, an `extid` and an API token behind
-the `AuthStrategy` trait (crates/ots-client/src/auth.rs:10-13), under
+the `AuthStrategy` trait (crates/ots-client/src/auth.rs), under
 the `api-token` account. The sync path holds an OAuth refresh token
 under `sync-oauth-refresh`. They are two credentials for two acts and
 neither revocation reaches the other.
@@ -346,7 +346,7 @@ registration is the ceiling and silence is not a narrowing.
 The relay's client application is registered with exactly one scope,
 `sync`, and holds nothing else. The app always sends `scope=sync` on
 the authorization request
-(`SYNC_SCOPE`, crates/sync/src/oauth.rs:33), and every relay endpoint
+(`SYNC_SCOPE`, crates/sync/src/oauth.rs), and every relay endpoint
 requires that one scope. A leaked sync token can therefore attach to
 the channel and do nothing else: it cannot conceal, read account data,
 or act as the account anywhere.
@@ -385,7 +385,7 @@ independent enough that any one of them decides it:
   on a schedule the token knows nothing about.
 - **The precedent is already in the tree.** The ledger key sits in the
   same store for the same reason: not everything belongs under the
-  rotating content key (crates/credentials/src/lib.rs:149-151).
+  rotating content key (crates/credentials/src/lib.rs).
 
 **Rejected: the login keychain beside the API token.** The refresh
 happens in the background, and the login keychain's ACL prompt is a
@@ -526,7 +526,7 @@ ceremony is the duplicate merge the settled cursor exists to prevent.
   changes any client behaviour and both are being sent upstream. The
   consent form answers `500` when nothing is ticked, because a nil
   scope reaches `check_valid_scopes?`
-  (`oauth_authorize_base.rb:125`). And `require_oauth_authorization`
+  (`oauth_authorize_base.rb`). And `require_oauth_authorization`
   with several scopes is an OR rather than an AND, which is a
   primitive this ADR neither describes nor depends on: the relay has
   one scope, so the question does not arise here.

@@ -12,8 +12,8 @@ cannot reach a real Keychain ACL.
 ## Prerequisite: rebuild and reinstall first
 
 The envelope went `OTSSEAL2` to `OTSSEAL3`
-(`crates/ffi/src/persist.rs:154`, `:176`) and the ledger payload went
-`OTSLEDR1` to `OTSLEDR2` (`crates/core/src/persist.rs:111`, `:127`). An
+(`crates/ffi/src/persist.rs`) and the ledger payload went
+`OTSLEDR1` to `OTSLEDR2` (`crates/core/src/persist.rs`). An
 older installed copy cannot read what this build writes.
 
 ```sh
@@ -24,7 +24,7 @@ scripts/install.sh
 Pin `CODESIGN_IDENTITY` in `scripts/local.env` before this run, because
 this procedure is about what happens when that identity changes, and an
 install that was ad hoc signed to begin with has nothing to change from
-(`scripts/install.sh:43-47`).
+(`scripts/install.sh`).
 
 ## Where to look
 
@@ -37,24 +37,23 @@ log stream --style compact --predicate \
 
 The state directory name is the running build's bundle id plus
 `.noindex` and the Keychain service is that same id
-(`shell/Sources/CompanionKit/FormFactor.swift:172-181`, `:205-213`), so
+(`shell/Sources/CompanionKit/FormFactor.swift`), so
 a `.debug` suffix moves both. The content key is assembled from a
 keychain half under account `state-key`
-(`crates/ffi/src/persist.rs:186`) and a file half named
-`ots-companion-key-half-<32 hex>` in the state directory (`:232`,
-`:451`).
+(`crates/ffi/src/persist.rs`) and a file half named
+`ots-companion-key-half-<32 hex>` in the state directory.
 
 ## Case 1: a different signing identity refuses and erases nothing
 
 The Keychain ACL is derived from the signing identity and the bundle id
-(ADR-0012:90). A bundle signed by someone else is a different caller to
+(ADR-0012). A bundle signed by someone else is a different caller to
 the Keychain, so `load_key_for` gets an error or a denial and returns
-`None` (`crates/ffi/src/persist.rs:262-281`), the key closure fails, and
+`None` (`crates/ffi/src/persist.rs`), the key closure fails, and
 `open_state` returns `Opened::Refused` without touching the file
-(`crates/ffi/src/persist.rs:679-687`). Refusal, not disposal: the
+(`crates/ffi/src/persist.rs`). Refusal, not disposal: the
 superseded arm is the only destructive one and it fires on a byte string
 in `SUPERSEDED_MAGICS`, never on a key failure
-(`crates/ffi/src/lib.rs:1315-1316`).
+(`crates/ffi/src/lib.rs`).
 
 1. With the installed app, create two pages, one with a sealed chip.
    Quit with ⌘Q.
@@ -91,17 +90,17 @@ in `SUPERSEDED_MAGICS`, never on a key failure
   "the state file carries this build's envelope, but its content key
   could not be assembled. Either the keychain half would not load or the
   file half is missing from the state directory; the file stays and this
-  session will not write one" (`crates/ffi/src/persist.rs:680-685`).
+  session will not write one" (`crates/ffi/src/persist.rs`).
   When the Keychain answers with an error rather than silence, the
   preceding line is "companion-ffi: the state-key item would not load
-  (...)" (`crates/ffi/src/persist.rs:278`).
+  (...)" (`crates/ffi/src/persist.rs`).
 - The shell then logs "restore failed over an existing state file;
   withholding the save licence"
-  (`shell/Sources/CompanionKit/PageModel.swift:635`).
+  (`shell/Sources/CompanionKit/PageModel.swift`).
 - `state.sealed` is still present and its sha256 is **identical** to
   step 2, including after the typing and the quit: a session without the
   licence never rewrites the file
-  (`shell/Sources/CompanionKit/PageModel.swift:916-927`).
+  (`shell/Sources/CompanionKit/PageModel.swift`).
 - The `ots-companion-key-half-<32 hex>` file is still present and
   unchanged, and the `state-key` keychain item still exists. Nothing
   rotated: rotation has two triggers and a refusal is neither
@@ -110,7 +109,7 @@ in `SUPERSEDED_MAGICS`, never on a key failure
 
 **Fail:** an erased or rewritten `state.sealed`, a changed sha256, a
 missing key half, a missing keychain item, or a log line from the
-superseded arm (`crates/ffi/src/lib.rs:1354`), which would mean a key
+superseded arm (`crates/ffi/src/lib.rs`), which would mean a key
 failure was routed into the destructive path.
 
 7. Restore the original identity and confirm recovery is real:
@@ -129,9 +128,9 @@ than erasing.
 ## Case 2: `.debug` and release keep separate state
 
 `package-app.sh --debug` appends `.debug` to the bundle id
-(`scripts/package-app.sh:135-139`), and `resolvedBundleIdentifier`
+(`scripts/package-app.sh`), and `resolvedBundleIdentifier`
 accepts exactly one dot free configuration suffix
-(`shell/Sources/CompanionKit/FormFactor.swift:172-181`), so the debug
+(`shell/Sources/CompanionKit/FormFactor.swift`), so the debug
 copy resolves its own state directory, its own Keychain service and its
 own log subsystem. Two copies that shared them would clobber one
 another's `state.sealed` on one debounce.
@@ -145,7 +144,7 @@ another's `state.sealed` on one debounce.
    ```
 
    It packages the debug bundle under the `.debug` id and launches it
-   from `dist/` (`scripts/dev.sh:1-11`).
+   from `dist/` (`scripts/dev.sh`).
 3. In the debug copy, create a page reading `DEBUG ONE`. Quit it.
 4. Inspect both directories:
 
