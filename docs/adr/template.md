@@ -10,6 +10,8 @@ documentation_status: draft # needs-review | reviewed | stale
 - **Depends on:** ADR-NNNN (optional)
 - **Documentation status:** draft | needs-review | reviewed | stale
 
+Read [ADR conventions](README.md) before filing or changing an ADR.
+
 ## Context
 
 What situation forces a decision, and what constraints bound it. Link the
