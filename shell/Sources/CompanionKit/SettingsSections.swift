@@ -119,6 +119,13 @@ public struct ConnectionSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                Toggle("Round a page's deadline up to the hour, or to midnight", isOn: $model.snapsToBoundaries)
+            } header: {
+                Text("A rung names a duration; this lets the deadline land where the clock does. Under a day it rounds up to the next whole hour, from a day up to the next midnight, and never by more than a day. Pages already counting down keep the deadline they have.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Toggle("A page a day, with time tabs down the side", isOn: $model.showsTimeUnits)
             } header: {
                 Text(timeUnitsCaption)
