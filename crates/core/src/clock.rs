@@ -48,6 +48,18 @@ pub trait Clock {
     /// Seconds east of UTC for the user's current locale, so a placeholder
     /// title reads as the local wall clock.
     fn local_offset_seconds(&self) -> i32;
+
+    /// Seconds east of UTC for the user's current locale at the Unix
+    /// second `wall_secs`, which may lie in the future. The boundary
+    /// snap (ADR-0011 section 4) asks this for the instants around a
+    /// nominal deadline, so a daylight-saving change between now and
+    /// then lands the deadline on the boundary the wall clock will
+    /// actually strike. The zone consulted is the device's zone *now*;
+    /// the answer is stored once and never revisited.
+    fn local_offset_seconds_at(&self, wall_secs: u64) -> i32 {
+        let _ = wall_secs;
+        self.local_offset_seconds()
+    }
 }
 
 /// The real thing: monotonic, and it keeps counting while the system
@@ -67,18 +79,25 @@ impl Clock for SystemClock {
     }
 
     fn local_offset_seconds(&self) -> i32 {
-        local_offset_seconds()
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        local_offset_seconds_at(secs)
+    }
+
+    fn local_offset_seconds_at(&self, wall_secs: u64) -> i32 {
+        local_offset_seconds_at(wall_secs)
     }
 }
 
-/// Seconds east of UTC for the current locale. This is the one place the
-/// crate reads calendar-aware state from the OS: `localtime_r` consults
-/// the time zone database, which no monotonic clock can do.
+/// Seconds east of UTC for the current locale at the Unix second
+/// `secs`. This is the one place the crate reads calendar-aware state
+/// from the OS: `localtime_r` consults the time zone database, which no
+/// monotonic clock can do, and it answers for any instant the database
+/// covers, so a daylight-saving change ahead of now is read as the
+/// database has it.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn local_offset_seconds() -> i32 {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
+fn local_offset_seconds_at(secs: u64) -> i32 {
     let time = libc::time_t::try_from(secs).unwrap_or(libc::time_t::MAX);
     // SAFETY: `tm` is a plain C struct of integers and one pointer, for
     // which all-zero is a valid bit pattern; `localtime_r` overwrites it
@@ -94,9 +113,9 @@ fn local_offset_seconds() -> i32 {
 }
 
 /// Elsewhere: no portable time zone query worth an unsafe block, so a
-/// placeholder title reads as UTC.
+/// placeholder title reads as UTC and the boundary snap rounds to UTC.
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn local_offset_seconds() -> i32 {
+fn local_offset_seconds_at(_secs: u64) -> i32 {
     0
 }
 
@@ -161,13 +180,37 @@ pub(crate) fn sleep_inclusive_ns() -> u64 {
 /// clock.
 const MANUAL_CLOCK_BASE_WALL_MS: u64 = 1_700_000_000_000;
 
+/// The zone a [`ManualClock`] reports: a standing offset, and the
+/// transitions that override it from a given Unix second on, so a test
+/// can put a daylight-saving change ahead of a deadline without
+/// consulting the host's zone database.
+#[derive(Debug, Default)]
+struct ManualZone {
+    offset_seconds: i32,
+    /// `(from_secs, offset_seconds)`, ascending; the last entry at or
+    /// before an instant is in force there.
+    transitions: Vec<(u64, i32)>,
+}
+
+impl ManualZone {
+    fn offset_at(&self, secs: u64) -> i32 {
+        self.transitions
+            .iter()
+            .rev()
+            .find(|(from, _)| *from <= secs)
+            .map_or(self.offset_seconds, |(_, offset)| *offset)
+    }
+}
+
 /// A clock that only moves when told to — for tests and the demo.
 #[derive(Debug, Clone)]
 pub struct ManualClock {
     base: Instant,
     offset: Arc<Mutex<Duration>>,
     base_wall_ms: u64,
-    offset_seconds: i32,
+    /// Shared like the offset, so a clone handed to a store sees the
+    /// zone change a test makes on its own copy afterwards.
+    zone: Arc<Mutex<ManualZone>>,
 }
 
 impl ManualClock {
@@ -179,7 +222,7 @@ impl ManualClock {
             base: Instant::now(),
             offset: Arc::new(Mutex::new(Duration::ZERO)),
             base_wall_ms: MANUAL_CLOCK_BASE_WALL_MS,
-            offset_seconds: 0,
+            zone: Arc::new(Mutex::new(ManualZone::default())),
         }
     }
 
@@ -192,9 +235,34 @@ impl ManualClock {
 
     /// Report `seconds` east of UTC as the local offset.
     #[must_use]
-    pub fn with_local_offset_seconds(mut self, seconds: i32) -> Self {
-        self.offset_seconds = seconds;
+    pub fn with_local_offset_seconds(self, seconds: i32) -> Self {
+        self.set_local_offset_seconds(seconds);
         self
+    }
+
+    /// Schedule zone transitions: from each Unix second on, the paired
+    /// offset is in force, until the next entry. Ascending order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (a prior panic mid-update).
+    #[must_use]
+    pub fn with_zone_transitions(self, transitions: Vec<(u64, i32)>) -> Self {
+        self.zone.lock().expect("zone lock poisoned").transitions = transitions;
+        self
+    }
+
+    /// Move the device to a zone `seconds` east of UTC, dropping any
+    /// scheduled transitions: what a test does after a deadline is set,
+    /// to show the deadline does not move with the zone.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lock is poisoned (a prior panic mid-update).
+    pub fn set_local_offset_seconds(&self, seconds: i32) {
+        let mut zone = self.zone.lock().expect("zone lock poisoned");
+        zone.offset_seconds = seconds;
+        zone.transitions.clear();
     }
 
     /// Advance the clock by `delta`.
@@ -229,7 +297,14 @@ impl Clock for ManualClock {
     }
 
     fn local_offset_seconds(&self) -> i32 {
-        self.offset_seconds
+        self.local_offset_seconds_at(self.wall_ms() / 1000)
+    }
+
+    fn local_offset_seconds_at(&self, wall_secs: u64) -> i32 {
+        self.zone
+            .lock()
+            .expect("zone lock poisoned")
+            .offset_at(wall_secs)
     }
 }
 
@@ -304,6 +379,26 @@ mod tests {
     #[test]
     fn local_offset_is_within_a_day() {
         assert!(SystemClock.local_offset_seconds().abs() <= 14 * 3600);
+        // And for an instant a week out, which is as far as the daily
+        // ladder ever asks.
+        let ahead = SystemClock.wall_ms() / 1000 + 7 * 24 * 3600;
+        assert!(SystemClock.local_offset_seconds_at(ahead).abs() <= 14 * 3600);
+    }
+
+    #[test]
+    fn manual_zone_transitions_take_effect_from_their_instant() {
+        let clock = ManualClock::new()
+            .with_local_offset_seconds(-8 * 3600)
+            .with_zone_transitions(vec![(1_000, -7 * 3600), (2_000, -8 * 3600)]);
+        assert_eq!(clock.local_offset_seconds_at(999), -8 * 3600);
+        assert_eq!(clock.local_offset_seconds_at(1_000), -7 * 3600);
+        assert_eq!(clock.local_offset_seconds_at(1_999), -7 * 3600);
+        assert_eq!(clock.local_offset_seconds_at(2_000), -8 * 3600);
+        // Moving zones clears the schedule and the clone sees it too.
+        let shared = clock.clone();
+        clock.set_local_offset_seconds(3600);
+        assert_eq!(shared.local_offset_seconds_at(1_500), 3600);
+        assert_eq!(shared.local_offset_seconds(), 3600);
     }
 
     #[test]

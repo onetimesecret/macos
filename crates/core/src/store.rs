@@ -21,7 +21,7 @@ use crate::sheet::{
     SheetId, TITLE_CAP, Tab, TabId, derive_title,
 };
 use crate::sync::{ExpiryPolicy, HoldRegister};
-use crate::ttl::Ttl;
+use crate::ttl::{self, Ttl};
 
 /// The sheet cap: 9, the natural limit of the keyboard map (⌘1–⌘9;
 /// ⌘0 belongs to the ledger). At the wall the store *refuses* the tenth
@@ -205,6 +205,12 @@ pub struct SheetStore<C: Clock> {
     pub(crate) ledger: VecDeque<LedgerRecord>,
     pub(crate) cap: usize,
     pub(crate) default_rung: Ttl,
+    /// Whether applying a rung rounds the deadline up to the next
+    /// calendar boundary (ADR-0011 section 4). On by default; the
+    /// shell persists the user's choice in its own settings domain and
+    /// tells the store at launch and on every flip. Consulted only
+    /// when a rung is applied: flipping it recalculates nothing.
+    pub(crate) grace_snap: bool,
     pub(crate) next_tab_id: u64,
     pub(crate) next_sheet_id: u64,
     pub(crate) next_chip_id: u64,
@@ -220,6 +226,7 @@ impl<C: Clock> SheetStore<C> {
             ledger: VecDeque::new(),
             cap: DEFAULT_SHEET_CAP,
             default_rung: Ttl::default(),
+            grace_snap: true,
             next_tab_id: 1,
             next_sheet_id: 1,
             next_chip_id: 1,
@@ -233,11 +240,46 @@ impl<C: Clock> SheetStore<C> {
         self
     }
 
-    /// Override the default rung for new pages (settings surface).
+    /// Override the default rung for new tabs (settings surface).
     #[must_use]
     pub fn with_default_rung(mut self, rung: Ttl) -> Self {
         self.default_rung = rung;
         self
+    }
+
+    /// Start with the boundary snap on or off (ADR-0011 section 4).
+    #[must_use]
+    pub fn with_grace_snap(mut self, on: bool) -> Self {
+        self.grace_snap = on;
+        self
+    }
+
+    /// Turn the boundary snap on or off for rungs applied from now on.
+    /// Every deadline already set stands exactly as it was calculated
+    /// (ADR-0011 section 4: toggling never recalculates).
+    pub fn set_grace_snap(&mut self, on: bool) {
+        self.grace_snap = on;
+    }
+
+    /// Whether the boundary snap is on.
+    #[must_use]
+    pub fn grace_snap(&self) -> bool {
+        self.grace_snap
+    }
+
+    /// The life a page gets when `rung` is applied now: the nominal
+    /// duration, or with the snap on, the duration to the calendar
+    /// boundary the deadline rounds up to. Read once per application,
+    /// against the device's zone as it stands, and the result is what
+    /// both the label and the timer are set from.
+    fn life_for(&self, rung: Ttl) -> Duration {
+        if !self.grace_snap {
+            return rung.duration();
+        }
+        let clock = &self.clock;
+        ttl::graced_life(rung, clock.wall_ms(), &|secs| {
+            clock.local_offset_seconds_at(secs)
+        })
     }
 
     // -----------------------------------------------------------------
@@ -295,8 +337,8 @@ impl<C: Clock> SheetStore<C> {
         let uuid = ItemId::random();
         let document = SheetDocument::new();
         let blocks = BlockIndex::for_document(&document);
+        let life = self.life_for(self.tabs[index].rung);
         let slot = &mut self.tabs[index];
-        let rung = slot.rung;
         slot.page = Some(Sheet {
             id,
             uuid,
@@ -307,7 +349,7 @@ impl<C: Clock> SheetStore<C> {
             blocks,
             chips: Vec::new(),
             clock: SheetClock::Running {
-                deadline: now + rung.duration(),
+                deadline: now + life,
             },
             total_held: Duration::ZERO,
             ceremony: CeremonyState::Immediate,
@@ -1666,29 +1708,8 @@ impl<C: Clock> SheetStore<C> {
     /// a due page, and the rung it keeps is the one its next page is
     /// born at.
     pub fn cycle_rung(&mut self, id: TabId) -> Option<Ttl> {
-        let now = self.clock.now();
-        let tab = self.tab_mut(id)?;
-        let rung = tab.rung.shorter();
-        let Some(sheet) = tab.page.as_mut() else {
-            tab.rung = rung;
-            return Some(rung);
-        };
-        normalize(sheet, now);
-        if sheet.remaining(now).is_zero() {
-            return None; // due; the timer will reap it
-        }
-        set_clock(tab, rung, now);
-        // A rung transition is the compaction boundary (ADR-0013): the
-        // ceremony runs on the same clockwork as everything else, after
-        // the transition is accepted, so a due page's refusal above
-        // means compaction can never race the reap. With peers
-        // attached the boundary becomes a proposal instead
-        // (issue #101), and the gesture itself is not held up.
-        tab.page
-            .as_mut()
-            .expect("the tab holds the page found")
-            .compact_or_defer();
-        Some(rung)
+        let rung = self.tab(id)?.rung.shorter();
+        self.apply_rung(id, rung)
     }
 
     /// Set a tab to a specific rung, resetting its page's clock to it.
@@ -1697,7 +1718,16 @@ impl<C: Clock> SheetStore<C> {
     /// no clock to reset and no document to compact, and an empty tab
     /// is not a due page.
     pub fn set_rung(&mut self, id: TabId, rung: Ttl) -> Option<Ttl> {
+        self.apply_rung(id, rung)
+    }
+
+    /// What both rung gestures do once the rung is chosen: store it on
+    /// the tab, and if the tab holds a live page, reset that page's
+    /// clock to the life the rung gives it now ([`Self::life_for`], so
+    /// the snap setting is consulted here and nowhere later).
+    fn apply_rung(&mut self, id: TabId, rung: Ttl) -> Option<Ttl> {
         let now = self.clock.now();
+        let life = self.life_for(rung);
         let tab = self.tab_mut(id)?;
         let Some(sheet) = tab.page.as_mut() else {
             tab.rung = rung;
@@ -1707,10 +1737,13 @@ impl<C: Clock> SheetStore<C> {
         if sheet.remaining(now).is_zero() {
             return None; // due; the timer will reap it
         }
-        set_clock(tab, rung, now);
-        // The same boundary as [`SheetStore::cycle_rung`]: any accepted
-        // rung transition sheds the history, or proposes to, when
-        // peers are attached.
+        set_clock(tab, rung, life, now);
+        // A rung transition is the compaction boundary (ADR-0013): the
+        // ceremony runs on the same clockwork as everything else, after
+        // the transition is accepted, so a due page's refusal above
+        // means compaction can never race the reap. With peers
+        // attached the boundary becomes a proposal instead
+        // (issue #101), and the gesture itself is not held up.
         tab.page
             .as_mut()
             .expect("the tab holds the page found")
@@ -2089,18 +2122,22 @@ fn sim_admit(units: &mut Vec<SimUnit>, chips: &[SealedChip], op: &EditOp) -> boo
 }
 
 /// Store `rung` on the tab and reset its (normalized) page's clock to
-/// the full value. The rung is the slot's from here on, so it stands
-/// whether or not a page is there to take it.
-fn set_clock(tab: &mut Tab, rung: Ttl, now: Instant) {
+/// `life`, the rung's full value as calculated at this application
+/// (nominal, or snapped to a boundary). The rung is the slot's from
+/// here on, so it stands whether or not a page is there to take it. A
+/// held page takes `life` as its frozen remainder: the snap was read
+/// against the clock now, and the hold, being a suspension, carries
+/// that remainder forward unchanged to whenever it releases.
+fn set_clock(tab: &mut Tab, rung: Ttl, life: Duration, now: Instant) {
     tab.rung = rung;
     let Some(sheet) = tab.page.as_mut() else {
         return;
     };
     match &mut sheet.clock {
-        SheetClock::Running { deadline } => *deadline = now + rung.duration(),
+        SheetClock::Running { deadline } => *deadline = now + life,
         SheetClock::Held {
             frozen_remaining, ..
-        } => *frozen_remaining = rung.duration(),
+        } => *frozen_remaining = life,
     }
 }
 
@@ -2111,9 +2148,28 @@ mod tests {
     use crate::ledger::LEDGER_RETENTION_MS;
     use crate::sync::PageChannel;
 
+    /// The eight hour rung, which the clock arithmetic below was written
+    /// against when it was the default (ADR-0011 section 3 moved the
+    /// default to the ceiling; see `a_new_tab_opens_at_the_ceiling`).
+    fn eight_hours() -> Ttl {
+        Ttl::from_secs(8 * 60 * 60).unwrap()
+    }
+
+    /// A store on `clock` with the boundary snap off, so a rung's
+    /// nominal duration is what every clock assertion below reads, and
+    /// with new tabs on the eight hour rung the hold and expiry
+    /// arithmetic was written against. The snap has its own tests
+    /// (`grace_snap_*`), which turn it on deliberately, and the default
+    /// rung its own.
+    fn store_on(clock: ManualClock) -> SheetStore<ManualClock> {
+        SheetStore::new(clock)
+            .with_grace_snap(false)
+            .with_default_rung(eight_hours())
+    }
+
     fn store() -> (SheetStore<ManualClock>, ManualClock) {
         let clock = ManualClock::new();
-        (SheetStore::new(clock.clone()), clock)
+        (store_on(clock.clone()), clock)
     }
 
     const HOUR: Duration = Duration::from_secs(60 * 60);
@@ -2159,8 +2215,176 @@ mod tests {
         let order: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
         assert_eq!(order, vec![first, second]);
         let tab = store.tabs().next().unwrap();
-        assert_eq!(tab.rung(), Ttl::default());
+        assert_eq!(
+            tab.rung(),
+            eight_hours(),
+            "the rung this suite's store hands out"
+        );
         assert_eq!(tab.page().unwrap().remaining_label(store.now()), "8h");
+    }
+
+    /// ADR-0011 section 3: with no override, a new durable tab is
+    /// created at the top of its ladder, and the page it holds is born
+    /// with the whole week. Only a new tab consults the default; a
+    /// replacement page takes the rung its tab kept
+    /// (`open_page_mints_at_the_tabs_rung_and_refuses_an_occupied_tab`).
+    #[test]
+    fn a_new_tab_opens_at_the_ceiling() {
+        let clock = ManualClock::new();
+        let mut store = SheetStore::new(clock.clone()).with_grace_snap(false);
+        let id = store.new_tab().unwrap().1;
+        let tab = store.tabs().next().unwrap();
+        assert_eq!(tab.rung(), Ttl::MAX);
+        assert_eq!(tab.rung(), Ttl::default());
+        assert_eq!(tab.page().unwrap().remaining_label(store.now()), "7d");
+        assert_eq!(store.next_event().unwrap() - store.now(), 7 * 24 * HOUR);
+        // Five clicks to the precarious end, and the sixth wraps up.
+        for expected in ["3d", "24h", "8h", "3h", "1h", "7d"] {
+            assert_eq!(
+                store.cycle_rung(slot(&store, id)).unwrap().to_string(),
+                expected
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // The boundary snap (ADR-0011 section 4)
+    // ------------------------------------------------------------------
+
+    /// 2026-06-10 16:20:00 UTC, which is 09:20 in Los Angeles: no
+    /// boundary near it on either schedule, so every snap below is a
+    /// visible extension.
+    const SNAP_WALL_MS: u64 = 1_781_108_400_000;
+    const LOS_ANGELES: i32 = -7 * 3600;
+
+    /// A store with the snap on, in Los Angeles, at a quarter past the
+    /// hour; the rung the clock arithmetic reads is set per test.
+    fn snapping_store() -> (SheetStore<ManualClock>, ManualClock) {
+        let clock = ManualClock::new()
+            .with_wall_ms(SNAP_WALL_MS)
+            .with_local_offset_seconds(LOS_ANGELES);
+        (SheetStore::new(clock.clone()), clock)
+    }
+
+    #[test]
+    fn grace_snap_rounds_a_new_pages_deadline_up_to_the_boundary() {
+        let (mut store, _clock) = snapping_store();
+        assert!(store.grace_snap(), "on unless the shell turns it off");
+        let id = store.new_tab().unwrap().1; // 7d, midnight schedule
+        let now = store.now();
+        let remaining = store.sheet(id).unwrap().remaining(now);
+        // 09:20 PDT plus a week is 09:20 PDT next Wednesday; midnight
+        // after that is 14h40m on.
+        assert_eq!(
+            remaining,
+            7 * 24 * HOUR + 14 * HOUR + Duration::from_secs(40 * 60)
+        );
+        // The label and the timer read the one stored deadline.
+        assert_eq!(store.next_event().unwrap() - now, remaining);
+        assert_eq!(store.sheet(id).unwrap().remaining_label(now), "7d 14h");
+
+        // A short rung applied to the live page rounds to the hour.
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap(); // 1h
+        let remaining = store.sheet(id).unwrap().remaining(now);
+        assert_eq!(remaining, HOUR + Duration::from_secs(40 * 60));
+        assert_eq!(store.next_event().unwrap() - now, remaining);
+        assert_eq!(store.cycle_rung(slot(&store, id)).unwrap(), Ttl::MAX);
+        assert_eq!(
+            store.sheet(id).unwrap().remaining(now),
+            7 * 24 * HOUR + 14 * HOUR + Duration::from_secs(40 * 60),
+            "the click gesture goes through the same calculation"
+        );
+    }
+
+    #[test]
+    fn grace_snap_off_makes_every_rung_exact() {
+        let (mut store, _clock) = snapping_store();
+        store.set_grace_snap(false);
+        let id = store.new_tab().unwrap().1;
+        let now = store.now();
+        assert_eq!(store.sheet(id).unwrap().remaining(now), 7 * 24 * HOUR);
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap();
+        assert_eq!(store.sheet(id).unwrap().remaining(now), HOUR);
+        assert_eq!(store.next_event().unwrap() - now, HOUR);
+    }
+
+    #[test]
+    fn grace_snap_toggling_never_recalculates_an_existing_deadline() {
+        let (mut store, _clock) = snapping_store();
+        let id = store.new_tab().unwrap().1;
+        let now = store.now();
+        let snapped = store.sheet(id).unwrap().remaining(now);
+        store.set_grace_snap(false);
+        assert_eq!(store.sheet(id).unwrap().remaining(now), snapped);
+        assert_eq!(store.next_event().unwrap() - now, snapped);
+        // And the other way: an exact deadline is not rounded later.
+        let exact = store.new_tab().unwrap().1;
+        store.set_grace_snap(true);
+        assert_eq!(store.sheet(exact).unwrap().remaining(now), 7 * 24 * HOUR);
+    }
+
+    #[test]
+    fn grace_snap_reads_the_zone_at_application_and_never_again() {
+        let (mut store, clock) = snapping_store();
+        let id = store.new_tab().unwrap().1;
+        let now = store.now();
+        let here = store.sheet(id).unwrap().remaining(now);
+        // The device flies to Berlin. The deadline is a stored instant
+        // and stays exactly where Los Angeles' midnight put it.
+        clock.set_local_offset_seconds(2 * 3600);
+        assert_eq!(store.sheet(id).unwrap().remaining(now), here);
+        assert_eq!(store.next_event().unwrap() - now, here);
+        // The next application reads Berlin's midnight instead.
+        store.set_rung(slot(&store, id), Ttl::MAX).unwrap();
+        let there = store.sheet(id).unwrap().remaining(now);
+        assert_ne!(there, here);
+        // 18:20 CEST plus a week, then to midnight: 5h40m on.
+        assert_eq!(
+            there,
+            7 * 24 * HOUR + 5 * HOUR + Duration::from_secs(40 * 60)
+        );
+    }
+
+    #[test]
+    fn grace_snap_on_a_held_page_sets_the_frozen_life() {
+        let (mut store, clock) = snapping_store();
+        let id = store.new_tab().unwrap().1;
+        assert!(store.pause_press(slot(&store, id)));
+        store.set_rung(slot(&store, id), Ttl::MIN).unwrap(); // 1h, snapped to 10:00
+        let now = store.now();
+        let sheet = store.sheet(id).unwrap();
+        assert!(sheet.is_held(now));
+        assert_eq!(sheet.remaining(now), HOUR + Duration::from_secs(40 * 60));
+        // The hold carries that remainder forward unchanged: released
+        // half an hour on, the page has the same life left, so the snap
+        // is a one-time reading and not a promise about the wall clock.
+        clock.advance(HOUR / 2);
+        assert!(store.pause_press(slot(&store, id))); // top up
+        assert!(store.pause_press(slot(&store, id))); // release
+        let now = store.now();
+        assert_eq!(
+            store.sheet(id).unwrap().remaining(now),
+            HOUR + Duration::from_secs(40 * 60)
+        );
+    }
+
+    #[test]
+    fn grace_snap_replacement_pages_take_the_tabs_rung_through_the_snap() {
+        let (mut store, clock) = snapping_store();
+        let id = store.new_tab().unwrap().1;
+        let tab = slot(&store, id);
+        store.set_rung(tab, Ttl::MIN).unwrap(); // 1h, snapped to 10:00 PDT
+        clock.advance(2 * HOUR);
+        assert_eq!(store.expire_due(), vec![id]);
+        // 11:20 PDT: the replacement is minted at the tab's 1h rung and
+        // snaps to noon, forty minutes on, consulting no default.
+        let next = store.open_page(tab).unwrap();
+        let now = store.now();
+        assert_eq!(store.tab(tab).unwrap().rung(), Ttl::MIN);
+        assert_eq!(
+            store.sheet(next).unwrap().remaining(now),
+            HOUR + Duration::from_secs(40 * 60)
+        );
     }
 
     #[test]
@@ -4407,8 +4631,8 @@ mod tests {
     ) {
         let alpha_clock = ManualClock::new().with_wall_ms(WALL);
         let beta_clock = ManualClock::new().with_wall_ms(WALL + skew_ms);
-        let mut alpha = SheetStore::new(alpha_clock.clone());
-        let mut beta = SheetStore::new(beta_clock.clone());
+        let mut alpha = store_on(alpha_clock.clone());
+        let mut beta = store_on(beta_clock.clone());
         let a = alpha.new_tab().unwrap().1;
         let b = beta.new_tab().unwrap().1;
         assert!(alpha.apply_ops(
@@ -4444,7 +4668,7 @@ mod tests {
 
         // The earlier reading fires first: beta's page dies a skew
         // early by its own clock…
-        let to_early_deadline = Ttl::default().duration() - SKEW;
+        let to_early_deadline = eight_hours().duration() - SKEW;
         alpha_clock.advance(to_early_deadline);
         beta_clock.advance(to_early_deadline);
         assert_eq!(beta.expire_due(), vec![b]);
@@ -4474,7 +4698,7 @@ mod tests {
     #[test]
     fn a_hold_survives_a_peers_offline_deadline_and_the_returner_rejoins() {
         let (mut alpha, mut beta, a, b, uuid, alpha_clock, beta_clock) = shared_page(0);
-        let rung = Ttl::default().duration();
+        let rung = eight_hours().duration();
 
         // One hour before the shared deadline, alpha holds the page.
         // Beta is offline: the register never reaches it, and its view
