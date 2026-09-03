@@ -13,8 +13,8 @@ are not renegotiated here: the storage bound and join rule
 (ADR-0021 §1, §5), structural purge (§2), account-is-not-the-device
 (§3), the metadata admission (§4), the expiry rule (§6), and the
 network boundary of at most two outbound destinations, TLS-only
-(`docs/spec/design/05-technical-direction.md:107-117`,
-`crates/transport/src/lib.rs:44`).
+(`docs/spec/design/05-technical-direction.md`,
+`crates/transport/src/lib.rs`).
 
 ## 1. The channel model
 
@@ -103,7 +103,7 @@ lifetimes:
   open, until a waking device publishes the terminal marker and its
   ceremony purges (§5, ADR-0021 §6) or the channel ages out. The
   derivable per-page bound is the next ceremony, not the page's own
-  TTL (`docs/spec/design/05-technical-direction.md:107-117` states the
+  TTL (`docs/spec/design/05-technical-direction.md` states the
   per-device story this bound approximates).
 
 ## 4. The message set
@@ -289,7 +289,7 @@ requires batching on a clock, and this document owns the number:
   (`crates/core/src/store.rs`).
 - **Pad every sealed blob** to the next power-of-two size, 256 bytes
   minimum, 64 KiB maximum bucket — the ledger's `SizeClass` discipline
-  (`crates/core/src/ledger.rs:61-75`) applied to the wire: the exact
+  (`crates/core/src/ledger.rs`) applied to the wire: the exact
   length is a weak fingerprint of content, so the relay gets buckets.
 - Long-poll `wait` is 25 seconds, inside ordinary LB idle timeouts, and
   a fetch returning empty re-polls immediately: delivery latency is

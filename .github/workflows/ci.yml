@@ -169,6 +169,24 @@ jobs:
             || { echo "dist/OnetimePad.presig.sha256 is missing or empty" >&2; exit 1; }
           cat dist/OnetimePad.presig.sha256
 
+  # The ADR conventions (docs/adr/README.md) are structural enough to
+  # check: required metadata, the four sections every record carries,
+  # and links that resolve. It checks nothing about content or length.
+  adr-lint:
+    name: ADR conventions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Pinned rather than inherited from the runner image, so that a
+      # runner image changing its default python cannot change what this
+      # job runs. The linter is plain 3.x, so the pin is about
+      # reproducibility, not about a feature floor.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Lint ADRs
+        run: python3 scripts/lint-adrs.py docs/adr
+
   # A backstop for the "never commit a secret" rule (adopted from the
   # prototype skeleton, PR #5). Scans the full history, so checkout is
   # unshallow. The binary is version-pinned AND checksum-verified (from

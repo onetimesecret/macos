@@ -1,7 +1,13 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0003: Core ⇄ shell binding mechanism
 
-- **Status:** proposed — recommendation below, decision reserved
+- **Status:** proposed
 - **Date:** 2026-07-08
+
+The recommendation below awaits the maintainer's decision.
 
 ## Context
 

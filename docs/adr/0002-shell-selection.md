@@ -1,7 +1,11 @@
+---
+documentation_status: reviewed # draft | needs-review | reviewed | stale
+---
+
 # ADR-0002: Shell selection
 
-- **Status:** accepted — Swift/AppKit shell over the Rust core
-- **Date:** 2026-07-08 (evidence); decided 2026-07-13
+- **Status:** accepted
+- **Date:** 2026-07-13
 
 ## Context
 
@@ -143,3 +147,9 @@ proceeding.
 - The C-ABI seam forces a boundary-law breach — any change that needs
   sealed bytes on the Swift side is evidence the seam is misdrawn, and
   two of those is evidence the shell choice is.
+
+## Decision history
+
+- **2026-07-08:** Spike evidence collected; the Measurements section records
+  that session.
+- **2026-07-13:** Accepted.

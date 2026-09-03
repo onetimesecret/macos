@@ -31,7 +31,8 @@ time rail".
 Side doc:
 [`2026-0828-paradigms.md`](2026-0828-paradigms.md)
 (paradigms, the duration the UI optimizes for; concept only,
-unscheduled).
+unscheduled, though its TTL-ladder section graduated into ADR-0011,
+accepted 2026-09-01).
 
 ## The shape #79 asks for
 
@@ -70,21 +71,21 @@ page's own birth stamp, computed on every read and stored nowhere.
 through the store's own UTC offset (the same offset the tab's
 `MMDD-HHmm` placeholder renders from) and a page has a local day index.
 That fold used to be one line inside `placeholder_title`; branch 2
-hoisted it into `local_day` (`crates/core/src/sheet.rs:762`, the
-`local_seconds(…).div_euclid(86_400)` at `:763`), which
+hoisted it into `local_day` (`crates/core/src/sheet.rs`, the
+`local_seconds(…).div_euclid(86_400)`), which
 `placeholder_title` now calls, so the label and the day are read out of
 one line rather than two copies of it. Subtract today's index from the
 page's and the answer is a small relative integer: 0 for a page born
 today, -1 for one born yesterday. That integer, and one boolean saying
 whether the page holds anything, are the only two facts the seam gains
-(`crates/ffi/src/lib.rs:2402`, `summary_json`).
+(`crates/ffi/src/lib.rs`, `summary_json`).
 
 Everything follows from that arithmetic and nothing else exists:
 
 - **Nothing durable.** No `Day` type, no day index in the snapshot, no
   day name, no day that survives its pages. `OTSSNAP4` gains no byte and
   the magic does not move; the framing rule that makes an appended field
-  cheap (`crates/core/src/persist.rs:62-74`) is not spent, because there
+  cheap (`crates/core/src/persist.rs`) is not spent, because there
   is nothing to append.
 - **The page's stamp, not the tab's.** `Tab::created_wall_ms` is the
   slot's birthday, and `open_page` mints today's page into slots that are
@@ -101,8 +102,8 @@ Everything follows from that arithmetic and nothing else exists:
 - **Relative, so midnight needs nothing.** Because the offset is
   recomputed on every `companion_tabs_json`, the cosmetic redraw the app
   already runs re-reads it and the labels roll over on their own
-  (`shell/Sources/CompanionKit/PageModel.swift:2338`, at 1 Hz raised and
-  every 30 s at rest, `shell/Sources/OnetimePad/BackdropStance.swift:182-187`).
+  (`shell/Sources/CompanionKit/PageModel.swift`, at 1 Hz raised and
+  every 30 s at rest, `shell/Sources/OnetimePad/BackdropStance.swift`).
   `next_event` gains no calendar arm, `companion_expire_due` gains no new
   reason to fire, and the shell adds no second timer. The honest cost is
   a label up to 30 s stale at local midnight while the card rests, and it
@@ -110,7 +111,7 @@ Everything follows from that arithmetic and nothing else exists:
 - **The offset is read now, not stored.** A stamp within an hour of local
   midnight can bucket differently after a DST change or a flight. That is
   the property `placeholder_title` already has and its tests already pin
-  (`crates/core/src/sheet.rs:1170-1185`); the day inherits it rather than
+  (`crates/core/src/sheet.rs`); the day inherits it rather than
   inventing a second, disagreeing answer. Fixing it would mean storing a
   day index, which is a durable field this prototype has not earned.
 
@@ -126,7 +127,7 @@ re-dates none, re-orders none and re-labels none. A tab's id, name, rung
 and strip position are what they were, and the mode never offers close.
 A unit disappears from the rail for one reason: the live page keyed to
 it expired under its TTL, which is the one mechanism ADR-0016 allows to
-destroy content the user did not ask to destroy (ADR-0016:86).
+destroy content the user did not ask to destroy (ADR-0016).
 Underneath the rail the tab is still standing, still named, still empty,
 exactly as `expire_due` leaves it, and it is visible again the moment the
 toggle goes off.
@@ -140,13 +141,13 @@ core state, so there is nothing to lose and nothing to migrate.
 ## Why the cap does not move
 
 `DEFAULT_SHEET_CAP` is nine and stays nine
-(`crates/core/src/store.rs:31`). Refuse-don't-evict stays too: doc 04 is
+(`crates/core/src/store.rs`). Refuse-don't-evict stays too: doc 04 is
 explicit that silent eviction of deliberately placed content would break
 trust, and eviction is by the TTL the user chose.
 
 The arithmetic that says nine is enough. A page's countdown runs at most
 seven days, the ladder's ceiling, with no forever rung
-(`crates/core/src/ttl.rs:26-33`, `:45-46`). A seven-day span, wherever
+(`crates/core/src/ttl.rs`). A seven-day span, wherever
 inside a day it begins, touches at most eight distinct local days: the
 day it starts on, six whole days, and the day it ends on. So the pages
 alive at any one moment were born on at most eight local days, and eight
@@ -157,7 +158,7 @@ One case escapes that arithmetic, and it is better stated than hidden. A
 held page outlives its rung: every further pause press tops the hold up
 to twenty-four hours from now, and the store says so in as many words:
 repeated pauses are how a page outlives its rung
-(`crates/core/src/store.rs:1191-1195`). A page held across a week can be
+(`crates/core/src/store.rs`). A page held across a week can be
 born nine or ten days back and still be alive, and the rail will show its
 day. This costs nothing structurally. The rail's length is bounded by the
 number of live pages, which the cap already bounds at nine, plus the
@@ -187,7 +188,7 @@ countdown on nothing, and `reconciledSelection` deliberately never mints.
 Entering the mode mints nothing. Launching mints nothing. `refresh()`
 mints nothing. The rail mints nothing on selection. An empty Day 0 shows
 the empty state the app already ships, with its Return grant intact
-(`shell/Sources/CompanionKit/PageSurface.swift:281`, `EmptyStateKeyGrant`).
+(`shell/Sources/CompanionKit/PageSurface.swift`, `EmptyStateKeyGrant`).
 
 Because every mint stamps `wall_ms()`, which is now, every page the
 user creates lands in Day 0 by construction. The gesture-only rule and
@@ -237,7 +238,7 @@ never inferred from the shell.
 
 It is not a new predicate. It is the one `SheetStore::entomb` already
 applies to decide whether a dying page did anything worth recording
-(`crates/core/src/store.rs:1364-1371`). The work extracts it as
+(`crates/core/src/store.rs`). The work extracts it as
 `Sheet::has_content()`, rewires `entomb` to call it, and exposes it as a
 single boolean, `page_has_content`, on the tab summary, with a test
 asserting the two agree over a matrix of pages. The property that buys is
@@ -251,7 +252,7 @@ second emptiness predicate in a codebase that already carries two
 security-load-bearing ones: `holds_no_page` fires key rotation and
 `has_no_tabs` is the only condition that unlinks the sealed file, and the
 header warns in as many words against recomputing either shell-side
-(`crates/ffi/include/companion_ffi.h:237-253`).
+(`crates/ffi/include/companion_ffi.h`).
 
 The answer crosses the seam as a bool, never as text, so the boundary law
 holds and `companion_sheet_document_json` is never used as a content
@@ -300,8 +301,8 @@ changed, and a long Day 0 wants a scroll after each summon.
 **The rail** is a fixed ~~56pt~~ 96pt column on the leading edge of the
 content row, one row per visible unit, newest at the top. A row carries
 the relative label, the shipped `GaugeBar`
-(`shell/Sources/CompanionKit/TabStripView.swift:435`) fed from the unit's
-soonest-dying page, or `EmptyRule` (`:416`) when it holds none, and the
+(`shell/Sources/CompanionKit/TabStripView.swift`) fed from the unit's
+soonest-dying page, or `EmptyRule` when it holds none, and the
 same accessibility triple `SheetTab` uses: a spoken label, a spoken
 remaining value, and the selected trait. ~~Abbreviated labels ("-3d")
 ride the rail while the full phrase rides the tooltip and the
@@ -327,13 +328,13 @@ strip's background and the strip's selected fill. Four decisions were kept out o
 are pure functions with tests of their own, in the idiom
 `TabStripView.newPageHelp` set:
 
-- `TimeUnitTab.target(for:)` (`:209`), where a tap lands. It maps a
+- `TimeUnitTab.target(for:)`, where a tap lands. It maps a
   unit to its first slot in strip order, and to `.today` only where a
   day answers to no slot at all, which is exactly what
   `PageModel.visibleTargets` does with the same units. A click on the
   second row and ⌘2 therefore cannot disagree about where the second day
   is, and a test asserts the two lists element for element.
-- `TimeRailView.selectedBucket(projection:selection:)` (`:98`), which
+- `TimeRailView.selectedBucket(projection:selection:)`, which
   row is lit. It follows the selected page's day rather than the row
   last clicked, so a selection the keyboard moved, or one that fell onto
   another day after an expiry, moves the mark too. A selection standing
@@ -342,21 +343,20 @@ are pure functions with tests of their own, in the idiom
   on screen is then not on the rail. An empty Today answers to no slot,
   so it takes the mark only by elimination: on the pad where no drawn
   day holds a page, and today is where the next page would land.
-- `TimeRailView.chord(forRowAt:keymap:)` (`:115`), which chord a
+- `TimeRailView.chord(forRowAt:keymap:)`, which chord a
   tooltip may name, asked of the keymap rather than spelled into the
   view, so a user who moved ⌘2 moves the tooltip with it and a user who
   unbound it gets a tooltip that says only what the row does. A tenth
   row has no chord and cannot: ten live days would take ten live pages,
   one over the cap.
-- `TimeRailView.hiddenPagesLine(count:)` and `hiddenPagesHelp(count:)`
-  (`:126`, `:133`), the footer. The short form fits the 56pt column and
+- `TimeRailView.hiddenPagesLine(count:)` and `hiddenPagesHelp(count:)`, the footer. The short form fits the 56pt column and
   the sentence behind it names the toggle, which is what doc 05's
   no-abbreviation-only rule asks for. It is absent entirely at zero: a
   line reading "0 blank" would be chrome measuring the absence of a
   problem.
 
 `TimeUnitProjection.Unit` gained one field for the rail,
-`spokenRemaining` (`shell/Sources/CompanionKit/TimeUnits.swift:134`),
+`spokenRemaining` (`shell/Sources/CompanionKit/TimeUnits.swift`),
 taken from the same soonest-dying page as the gauge. A view reaching
 back into the summaries for the spoken half could have picked a
 different page from the one the bar is drawn from, and the row would
@@ -475,7 +475,7 @@ the exact class of bug issues #19, #22 and #23 closed. Every other
 visible page is a quiet region: a non-editable, non-selectable text view
 that refuses first responder, over its **own** `NSTextStorage` seeded
 from `client.documentRuns(sheet:)`
-(`shell/Sources/CompanionKit/CompanionClient.swift:672`). Private
+(`shell/Sources/CompanionKit/CompanionClient.swift`). Private
 storages keep the roll entirely out of the model's `storages`,
 `undoManagers`, `shedLayoutManagers(from:keeping:)` and
 `assertProjectionParity`: each storage in the app still has exactly one
@@ -506,12 +506,11 @@ branch to get wrong.
 
 `showsTimeUnits` is a `@Published` boolean on `PageModel` whose `didSet`
 writes to the injected `UserDefaults` and is seeded in `init`, following the
-`wrapsLines` pattern (`shell/Sources/CompanionKit/PageModel.swift:333-336`
-and `:634`), and defaults to false. Its row goes in `ConnectionSettingsView`
-(`shell/Sources/CompanionKit/SettingsSections.swift:114-119`), not in
+`wrapsLines` pattern (`shell/Sources/CompanionKit/PageModel.swift`), and defaults to false. Its row goes in `ConnectionSettingsView`
+(`shell/Sources/CompanionKit/SettingsSections.swift`), not in
 `BackdropSettingsView`'s Surface form, whose hard-coded
 `.frame(height: 120)`
-(`shell/Sources/OnetimePad/BackdropSettingsWindow.swift:81`) clips new
+(`shell/Sources/OnetimePad/BackdropSettingsWindow.swift`) clips new
 rows silently.
 
 `HiddenUI` is the wrong tool and deliberately so: its flags are
@@ -529,11 +528,11 @@ The keyboard gains no new chord. `CommandID` raw values are published
 contract (a user's own `keymap.json` names them), and a binding placed
 in `.tabStrip` would validate, log `contextNotConsulted` and do nothing,
 because `KeymapContext.isConsulted` is true only for `.editor`
-(`shell/Sources/CompanionKit/Keymap/CommandID.swift:105-107`). Instead
+(`shell/Sources/CompanionKit/Keymap/CommandID.swift`). Instead
 ⌘1 to ⌘9 and ⌥⌘←/→ route through a mode-aware list of targets whose value
 with the mode off equals the strip element for element, pinned by a
 dedicated test, and ⌘N branches to `openToday()` while the mode is on
-(`shell/Sources/CompanionKit/Keymap/KeymapRegistry.swift:27-28`).
+(`shell/Sources/CompanionKit/Keymap/KeymapRegistry.swift`).
 
 The strip's verbs are not dropped, they move to the page. Each page's
 day-header gutter inside the roll carries its title, its countdown and a
@@ -567,14 +566,13 @@ the dogfood window ADR-0020 waits on.
    amendment to the standing interaction model, and the ADR carries its
    own acceptance gate and eject triggers instead.
 2. **The seam says which day a page was born on.** `local_day`
-   (`crates/core/src/sheet.rs:762`) hoisted out of `placeholder_title`,
-   which is now one of its two callers (`:779`); `Sheet::has_content()`
-   (`:597`) extracted from `entomb` (`crates/core/src/store.rs:1387`);
-   `SheetStore::wall_ms()` (`crates/core/src/store.rs:467`) beside
-   `now()` (`:450`); two additive keys on `summary_json`
-   (`crates/ffi/src/lib.rs:2402`) with the header's field contract
+   (`crates/core/src/sheet.rs`) hoisted out of `placeholder_title`,
+   which is now one of its two callers; `Sheet::has_content()` extracted from `entomb` (`crates/core/src/store.rs`);
+   `SheetStore::wall_ms()` (`crates/core/src/store.rs`) beside
+   `now()`; two additive keys on `summary_json`
+   (`crates/ffi/src/lib.rs`) with the header's field contract
    extended in the same commit
-   (`crates/ffi/include/companion_ffi.h:213-253`), and the two fields
+   (`crates/ffi/include/companion_ffi.h`), and the two fields
    decoded onto `TabSummary`. No new FFI symbol and nothing a user can
    see.
 3. **The projection.** A pure `TimeUnitProjection` over the tab
@@ -586,22 +584,22 @@ the dogfood window ADR-0020 waits on.
    from wrapping it in a scroll view, and the page-swap ceremony from
    `updateNSView`. **Landed**, as
    `InkEditorView.makeInkTextView(model:sheetID:coordinator:)`
-   (`shell/Sources/CompanionKit/InkEditorView.swift:107`) and
-   `Coordinator.moveEditor(_:to:storage:restoringScrollIn:)` (`:370`),
-   with `makeNSView` (`:35`), `updateNSView` (`:283`) and
-   `scrollStack(for:)` (`:176`) as they were. The review evidence for
+   (`shell/Sources/CompanionKit/InkEditorView.swift`) and
+   `Coordinator.moveEditor(_:to:storage:restoringScrollIn:)`,
+   with `makeNSView`, `updateNSView` and
+   `scrollStack(for:)` as they were. The review evidence for
    that branch is the sentence "behaviour does not change on this
    branch", backed by the existing suite unedited.
 5. **The rail.** `TimeRailView`, the Settings toggle, the mode-aware
    selection wired up, and the hidden-blank-pages footer. **Landed**, in
    `shell/Sources/CompanionKit/TimeRailView.swift`, with the card's
    content row branching as a whole expression
-   (`shell/Sources/OnetimePad/Views/BackdropRootView.swift:114`) and the
+   (`shell/Sources/OnetimePad/Views/BackdropRootView.swift`) and the
    off-path view tree written out identically to today's rather than
    wrapped, so "pixel-identical when the toggle is off" is structural and
-   not a hope. The strip row (`:139`) is simply absent while the mode is
+   not a hope. The strip row is simply absent while the mode is
    on. The toggle is one row in `ConnectionSettingsView`
-   (`shell/Sources/CompanionKit/SettingsSections.swift:122`) whose
+   (`shell/Sources/CompanionKit/SettingsSections.swift`) whose
    caption says all three things: prototype, moves no content, and which
    verbs it costs while it is on.
 6. **The perforated roll.** The contiguous scroll, the day headers and
@@ -616,7 +614,7 @@ the dogfood window ADR-0020 waits on.
    went stale twice inside the branch that wrote them, and a name is
    `grep`-able where a number is only ever a claim about a moment.
    `PageContentView` branches at
-   `shell/Sources/CompanionKit/PageSurface.swift:42`; the renderings, the
+   `shell/Sources/CompanionKit/PageSurface.swift`; the renderings, the
    invalidation every mutation site now calls and the liveness prune are
    `PageModel.quietRendering(for:)`, `invalidateQuietRendering(for:)` and
    the filter inside `refresh()`; and the summon's re-anchor is
@@ -651,8 +649,8 @@ decision that is Rust, the more of it is validated before a PR exists.
   born after; the day index follows the offset the clock reports,
   including a negative one; whitespace alone is not content; a chip with
   no ink is content; the placeholder stamp did not move
-  (`the_placeholder_stamp_did_not_move`, `crates/core/src/sheet.rs:1254`,
-  re-asserting every case the label's own tests pin at `:1237`); the
+  (`the_placeholder_stamp_did_not_move`, `crates/core/src/sheet.rs`,
+  re-asserting every case the label's own tests pin); the
   content
   predicate is the one the ledger already used, over a matrix of pages;
   and an expiring page still leaves its tab standing in place.
@@ -660,7 +658,7 @@ decision that is Rust, the more of it is validated before a PR exists.
   against a reading of today a day later and six days later. Not by
   ageing the page: the ageing seam is a snapshot restored at a later
   wall stamp, and a restore carries every creation stamp through
-  untouched (`crates/core/src/persist.rs:1189-1190` asserts exactly
+  untouched (`crates/core/src/persist.rs` asserts exactly
   that), so the far side of a local midnight is reached by moving today
   and never by moving the page. An empty slot reports no day and no
   content; the fifteen existing summary keys are unchanged; and the
@@ -972,7 +970,7 @@ the height that arrived, so nothing shifts under a sentence being read.
    ~0% idle-CPU budget is a poor trade for it.
 8. **Does the mode read as broken on a pad whose rungs make history
    invisible?** The backdrop opens tabs at the 7d rung
-   (`shell/Sources/CompanionKit/FormFactor.swift:229`), so Day -1 through
+   (`shell/Sources/CompanionKit/FormFactor.swift`), so Day -1 through
    Day -6 are reachable out of the box, but a pad re-rung to 8h shows only
    Day 0. *Leaning:* say it rather than paper over it, in the spec and in
    the QA procedure. A mode-specific default rung is refused: that is the

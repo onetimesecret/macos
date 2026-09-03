@@ -1,7 +1,17 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0012: OTS macOS staging companion — framing, threat boundary, and persistence model
 
-Status: Proposed (revised). Superseded in part by ADR-0016 and ADR-0017; see Supersession at the end of this file.
-Date: 2026-07-15, revised 2026-08-06 (incorporates external review + implementation findings)
+- **Status:** proposed
+- **Date:** 2026-07-15
+- **Supersedes in part:** [ADR-0007](0007-terminology.md), whose persistence
+  model this record owns, and whose Decision 2 it restates in the narrower form
+  recorded in that record's Amendment 2. Everything else in ADR-0007 stands.
+- **Superseded in part by:** [ADR-0016](0016-content-persists-across-restart.md)
+  and [ADR-0017](0017-durable-tabs-expiring-pages.md); see Supersession at
+  the end of this file.
 
 ## Context
 
@@ -105,12 +115,60 @@ A content-derived title carried into the persistent ledger is content-derived da
 
 Superseded in part by [ADR-0016](0016-content-persists-across-restart.md), which removes the boot-session bound on staged content and makes TTL the only mechanism that destroys it.
 
-Superseded: the **Staged content** subsection headed at line 34, running to line 51, except lines 47 and 49, which stand; including the crypto-erasure claim at line 41, the deterministic boot-UUID backstop at line 43, the does-not-claim paragraph at line 45, and the boot-versus-user-session paragraph at line 51. Also line 63's monotonic rule as it applies to staged content, and consequences 98, 100 and 101. ADR-0016 sections 3, 4 and 8 carry the replacements.
+Superseded: the **Staged content, bounded to the boot session** subsection
+in full, except its two keychain-availability paragraphs (*Keychain
+availability (implementation constraint)* and *Amendment 2026-08-10*), which
+stand. That covers the two-half key derivation and both half bullets, the
+crypto-erasure-at-reboot claim, the deterministic boot-UUID backstop and its
+fail-closed clause, the "note what this does and does not claim" paragraph,
+and the boot-versus-user-session paragraph. Also the monotonic rule in the
+TTL bullets as it applies to staged content, and the boot-bound clauses of
+three consequences: the ciphertext-exists-during-a-boot-session bullet, the
+boot-session UUID check in the audit-story bullet, and
+"non-persistent-beyond-boot" in the brand-tension bullet. [ADR-0016](0016-content-persists-across-restart.md)
+carries the replacements; the numbered sections that once stated them in detail
+now live in the
+[persistence decision background](../plans/trustworthy-persistence-decision-background.md).
 
-Still standing, unamended: the framing at lines 22 to 27, item identity at line 32, keychain tiering at lines 47 and 49, the write policy at lines 53 to 59, the title derivation, its 80 character cap and the documented exception at lines 70 and 74, the entire ledger subsection at lines 76 to 85, and supporting decisions at lines 88 to 93. Line 63's live-timer requirement and its load-path backstop also stand; only the clock the load path ages by changes.
+Still standing, unamended: the **Framing** items, **Item identity**, the two
+keychain-availability paragraphs above, the **Write policy** bullets, the
+title derivation with its 80 character cap and its documented wall-clock
+exception, the entire **Ledger** subsection, and **Supporting decisions**.
+The live-timer requirement in the TTL bullets and its load-path backstop also
+stand; only the clock the load path ages by changes.
 
-[ADR-0017](0017-durable-tabs-expiring-pages.md) carries the object graph change, the durable Tab versus expiring Page split, which rides the same one-time format break as ADR-0016.
+[ADR-0017](0017-durable-tabs-expiring-pages.md) carries the object graph
+change, the durable Tab versus expiring Page split, which rides the same
+one-time format break as ADR-0016.
 
-ADR-0017 also amends the titles subsection: line 68's title as a property of the page and line 72's user-set title become properties of the durable Tab, `title_is_user_set` disappears, and line 71's `MMDD-HHmm` placeholder renders from the Tab's creation stamp. Line 70's derivation and cap and line 74's documented exception stand, page-side.
+ADR-0017 also amends the **Titles** subsection: the title as a property of
+the page and the user-set title become properties of the durable Tab,
+`title_is_user_set` disappears, and the `MMDD-HHmm` placeholder renders from
+the Tab's creation stamp. The derivation, its cap, and the documented
+exception stand, page-side.
 
-The body above is left as written, because an ADR is a record of a decision taken. Line references from other ADRs address this file's own line numbers directly.
+The body above is left as written, because an ADR is a record of a decision
+taken. Successor ADRs name the subsections they replace rather than citing
+this file's line numbers.
+
+## Eject triggers
+
+These apply only to the portions this ADR still governs; ADR-0016 and
+ADR-0017 own the superseded staged-content and object-graph decisions.
+
+- Reproducible evidence shows that a surviving public framing claim is false
+  or materially broader than the implementation can support. The claim must
+  be narrowed or moved to a successor ADR.
+- A requirement needs the ledger to retain body content, excerpts, or another
+  content-derived field beyond the capped title. That is a new retention
+  decision and reopens the ledger boundary.
+- A supported macOS or Keychain change makes the stated write, key-storage,
+  or availability assumptions unavailable. The remaining persistence policy
+  must then be re-evaluated against that platform change.
+
+## Decision history
+
+- **2026-07-15:** This remains the proposed base record.
+- **2026-08-06:** Revised to incorporate external review and implementation findings. The revision did not change the proposed status.
+- **2026-08-20:** [ADR-0016](0016-content-persists-across-restart.md) superseded the named staged-content lifecycle and related consequences portions; [ADR-0017](0017-durable-tabs-expiring-pages.md) superseded the named object-graph and title-ownership portions. See [Supersession](#supersession) for scope.
+- **2026-08-20 onward:** The portions named as still standing in [Supersession](#supersession) remain in force.

@@ -10,9 +10,9 @@ not yet run.
 ## Prerequisite: rebuild and reinstall first
 
 Two format breaks landed with ADR-0016. The sealed envelope went
-`OTSSEAL2` to `OTSSEAL3` (`crates/ffi/src/persist.rs:154`, superseded
-set at `:176`) and the ledger payload went `OTSLEDR1` to `OTSLEDR2`
-(`crates/core/src/persist.rs:111`, superseded set at `:127`). An older
+`OTSSEAL2` to `OTSSEAL3` (`crates/ffi/src/persist.rs`, superseded
+set) and the ledger payload went `OTSLEDR1` to `OTSLEDR2`
+(`crates/core/src/persist.rs`, superseded set). An older
 installed copy cannot read the files this build writes, and this build
 disposes of the files that copy wrote. So the run starts from a fresh
 install:
@@ -31,25 +31,24 @@ confirmations this procedure depends on.
 ## Where to look
 
 The state directory is the form factor's bundle id plus `.noindex`
-under Application Support (`shell/Sources/CompanionKit/FormFactor.swift:197`,
-`:210`; the release id is at `:154`):
+under Application Support (`shell/Sources/CompanionKit/FormFactor.swift`; the release id is):
 
 ```sh
 STATE=~/Library/Application\ Support/com.onetimesecret.companion.backdrop.noindex
 ls -la "$STATE"
 ```
 
-Expect `state.sealed` (`shell/Sources/CompanionKit/FormFactor.swift:79`,
-named `STATE_FILE_NAME` in `crates/ffi/src/persist.rs:901`),
-`ledger.sealed` (`FormFactor.swift:84`), and one file half named
+Expect `state.sealed` (`shell/Sources/CompanionKit/FormFactor.swift`,
+named `STATE_FILE_NAME` in `crates/ffi/src/persist.rs`),
+`ledger.sealed` (`FormFactor.swift`), and one file half named
 `ots-companion-key-half-` followed by 32 hex digits
-(`crates/ffi/src/persist.rs:232`, `:451`).
+(`crates/ffi/src/persist.rs`).
 
 The core's refusals reach the unified log through the shell's sink,
 subsystem equal to the bundle id, category `core`
-(`shell/Sources/CompanionKit/CoreDiagnostics.swift:57`,
-`shell/Sources/CompanionKit/PageModel.swift:511`); the shell's own
-persistence lines use category `persistence` (`PageModel.swift:520`).
+(`shell/Sources/CompanionKit/CoreDiagnostics.swift`,
+`shell/Sources/CompanionKit/PageModel.swift`); the shell's own
+persistence lines use category `persistence` (`PageModel.swift`).
 Watch both:
 
 ```sh
@@ -74,28 +73,28 @@ After the fact, the same predicate under
 **Pass:** all three pages are back with their chips. Each countdown is
 shorter by roughly the wall clock time the machine was away, and by no
 more than that. No line in the log says the restore failed
-(`PageModel.swift:635`, "restore failed over an existing state file;
+(`PageModel.swift`, "restore failed over an existing state file;
 withholding the save licence"), and no `companion-ffi:` fault appears.
 `state.sealed` and the same file half are still in the state directory,
 and the half's name is unchanged, because nothing rotated.
 
 **Fail:** an empty pad, or a countdown that moved by something other
 than the elapsed wall clock, or any of the four refusal lines from
-`crates/ffi/src/persist.rs:666`, `:673`, `:680`, `:690` in the log.
+`crates/ffi/src/persist.rs` in the log.
 
 ## Case 2: a reboot with the pad emptied first, confirming rotation ran
 
 Rotation now has two triggers and only two (ADR-0016 section 6). This
 tests the first: the pad empties. Emptying it drops the state file
 through `companion_persist_erase`, which rotates both halves before it
-erases (`crates/ffi/src/lib.rs:1479-1480`, `crates/ffi/src/persist.rs:355-370`,
-`erase_file_halves` at `:393`).
+erases (`crates/ffi/src/lib.rs`, `crates/ffi/src/persist.rs`,
+`erase_file_halves`).
 
 1. Start from case 1's install, with pages present.
 2. Record the current file half name and the keychain half. The
    keychain item is a generic password under service equal to the
    bundle id and account `state-key`
-   (`crates/ffi/src/persist.rs:186`):
+   (`crates/ffi/src/persist.rs`):
 
    ```sh
    ls "$STATE"/ots-companion-key-half-*
@@ -106,7 +105,7 @@ erases (`crates/ffi/src/lib.rs:1479-1480`, `crates/ffi/src/persist.rs:355-370`,
    the prompt is the ACL working, not a failure.
 3. Close every page so no tab holds a page.
 4. Quit with ⌘Q, so the quit flush runs
-   (`shell/Sources/OnetimePad/BackdropApp.swift:123-134`).
+   (`shell/Sources/OnetimePad/BackdropApp.swift`).
 5. `ls -la "$STATE"` again.
 
    **Pass at this point:** `state.sealed` is gone, no
@@ -114,14 +113,14 @@ erases (`crates/ffi/src/lib.rs:1479-1480`, `crates/ffi/src/persist.rs:355-370`,
    `security find-generic-password` for `state-key` reports the item is
    not found. `ledger.sealed` is untouched: a ledger clear is a
    different gesture under a different key
-   (`crates/ffi/src/persist.rs:196`, `crates/ffi/src/persist.rs:867` on
+   (`crates/ffi/src/persist.rs` on
    why the drop decides from the path).
 
    **Fail:** either half still present, or the log carries
    "companion-ffi: the content file was left alone because its file
-   half could not be erased" (`crates/ffi/src/lib.rs:1490`) or
+   half could not be erased" (`crates/ffi/src/lib.rs`) or
    "companion-ffi: the rotation erased the file half but could not
-   delete the state-key item" (`crates/ffi/src/persist.rs:364`).
+   delete the state-key item" (`crates/ffi/src/persist.rs`).
 6. Reboot. Log back in, launch the app, type one line on the fresh
    page, and wait past the debounce.
 7. `ls "$STATE"` once more.
@@ -134,7 +133,7 @@ is the whole observable of rotation; nothing logs on the success path.
 
 **Fail:** the same half name comes back, which would mean the keychain
 half survived the rotation, since the name is derived from it
-(`crates/ffi/src/persist.rs:451-460`).
+(`crates/ffi/src/persist.rs`).
 
 ## Case 3: a reboot with a page paused, confirming it returns paused
 
@@ -142,8 +141,8 @@ A hold takes the gap first, and only the part of the gap beyond the
 hold reaches the countdown (ADR-0016 section 4).
 
 1. With a live pad, double click a tab to hold that page's clock at 1h
-   (`shell/Sources/CompanionKit/TabStripView.swift:189`,
-   `shell/Sources/CompanionKit/PageModel.swift:1507`). The tab shows
+   (`shell/Sources/CompanionKit/TabStripView.swift`,
+   `shell/Sources/CompanionKit/PageModel.swift`). The tab shows
    the ⏸1h marking.
 2. Note the held page's frozen remaining time and a second, unheld
    page's remaining time.

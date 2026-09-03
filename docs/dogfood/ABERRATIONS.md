@@ -96,10 +96,10 @@ As a user, if I'm going to trust this pad as a safe place to paste things, I als
 2026-08-19: triage index (additive; the notes above remain the record)
 
 - **Graduate to ADR / decision:** reboot persistence versus the current
-  boot-session security boundary (graduated 2026-08-20, from the note at
-  line 74: [ADR-0016](../adr/0016-content-persists-across-restart.md));
+  boot-session security boundary (graduated 2026-08-20, from the "I
+  lost a whole bunch of stuff" note: [ADR-0016](../adr/0016-content-persists-across-restart.md));
   separating durable tabs from expiring pages (graduated 2026-08-20, from
-  the note at lines 67 to 69:
+  the "multiple tabs, each with TTLs" note:
   [ADR-0017](../adr/0017-durable-tabs-expiring-pages.md), which defers
   the separate visual treatment for the first line and the tab title);
   list continuation as a single block; block-sorting interaction.

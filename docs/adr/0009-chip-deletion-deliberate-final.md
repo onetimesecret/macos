@@ -1,3 +1,7 @@
+---
+documentation_status: reviewed # draft | needs-review | reviewed | stale
+---
+
 # ADR-0009: Chip removal is deliberate and final
 
 - **Status:** proposed

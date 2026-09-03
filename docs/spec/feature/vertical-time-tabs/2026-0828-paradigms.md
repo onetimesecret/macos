@@ -20,19 +20,32 @@ surface assumes. The current and default paradigm is **daily**
   is too fine a grain and most days would be empty rungs on the
   rail.
 
-## Why it is architecturally cheap
+## Why re-bucketing is architecturally cheap
 
-ADR-0020's model does the work already: a unit of time is a query
+ADR-0020's projection is the cheap part: a unit of time is a query
 over the pages' own birth stamps, computed on every read and stored
-nowhere. A paradigm switch is a re-bucketing of the same projection.
-No data changes, no migration, no page is touched; the sealed
-format, the tab model, and the TTL ladder are as untouched by a
-paradigm as they are by the existing day view. Flipping paradigms
-loses nothing, for the same reason flipping the Settings toggle
-loses nothing.
+nowhere. Changing the time-tab buckets therefore requires no page
+data migration and does not rewrite a page.
+
+Paradigm-specific TTL ladders are separate work and are not free.
+ADR-0017 stores the rung on a durable tab, so a second paradigm needs
+the tab-mapping, persistence, gauge and click decisions that ADR-0011
+section 6 deliberately leaves for that implementation. Re-bucketing
+can ship only after those choices preserve every live deadline.
 
 ## The TTL ladder is the daily paradigm's instance
-(updated 2026-08-29 after re-reading `docs/tenets.md`)
+(updated 2026-08-29 after re-reading `docs/tenets.md`;
+graduated 2026-09-01 into ADR-0011, accepted)
+
+**This section has graduated.** ADR-0011 is now accepted and carries
+the rule (section 1), the per-ladder ceiling (section 2), the default
+rung (section 3), grace (section 4) and the live-deadline invariant
+(section 6). What follows is the argument that got it there, kept for
+its reasoning. Where the two differ, the ADR governs. In particular,
+the default for a new durable tab is the ceiling rather than 8h,
+grace is a bounded boundary snap under a setting rather than padding
+inside a rung, and mapping an existing tab to another ladder remains
+future work.
 
 An earlier version of this note ended the argument with "the lens
 never outreaches the ladder." That is the move tenet №3 forbids:
@@ -40,8 +53,8 @@ citing the ladder instead of letting the idea argue against it. Run
 through the tenets, the paradigm concept wins the argument, and the
 ladder is what modifies.
 
-The case in tenet terms. ADR-0011 (still a draft) grounds the ladder
-in intuition, not in retention doctrine: a rung must be a duration
+The case in tenet terms. ADR-0011 (a draft when this was written)
+grounds the ladder in intuition, not in retention doctrine: a rung must be a duration
 the user can rationalize ("will I need this next week at this day
 and time"), padded with grace the way an alarm set for "tomorrow"
 forgives midnight. That question is tempo-relative. "Will I need
@@ -60,38 +73,44 @@ The necessary modifications to the ladder, when paradigms build:
   hourly ladder reaches shorter; a weekly or monthly ladder reaches
   longer (order of 2 weeks, 1 month, a quarter as its ceiling).
   Rungs stay a fixed legible set, never arbitrary durations, and
-  ADR-0011's grace padding (a unit plus a forgiving fraction) keeps
-  its shape at every tempo.
+  ADR-0011's grace keeps its shape at every tempo (as a boundary
+  snap, per that ADR's section 4, not as padding inside a rung).
 - **"No forever" survives as the invariant that does generalize.**
   Every paradigm's ladder has a ceiling of roughly a few
   paradigm-units. What was wrong was reading the daily ceiling as
   the product's ceiling.
 - **The click mechanics are per-ladder invariants.** Same rung
   count, same wrap, same five-clicks-to-the-cliff distance
-  (`ttl.rs` tests this today), so the gesture's muscle memory
-  survives a paradigm switch.
-- **The default rung is paradigm-relative.** 8h ("a working day")
-  is the daily default; each ladder names its own.
-- **Switching paradigms rewrites no living page.** Tenet №1's
-  "never by accident": existing pages keep the rung they were
-  given; new pages take the new paradigm's default; a rung that is
-  off the current ladder still displays honestly as the duration it
-  is, because a rung is a duration on the page, and only the
-  *click ladder* is paradigm-relative. This also keeps sync sound:
-  devices on different paradigms exchange pages carrying plain
-  durations, and ADR-0021's expiry-clock rules are untouched.
+  (`ttl.rs` tests this today), so each ladder preserves the gesture.
+  How an existing tab moves between ladders remains open below.
+- **The default rung is paradigm-relative.** Each ladder names the
+  default assigned to a new durable tab. This note said 8h ("a
+  working day"); ADR-0011 section 3 decided that default is the
+  ladder's ceiling, so on the daily ladder it is 7d. A replacement
+  page in an existing tab uses that tab's retained rung, per
+  ADR-0017.
+- **Switching paradigms rewrites no live deadline.** The page owns its
+  clock and deadline; the durable tab owns its rung. ADR-0011 section
+  6 preserves the live deadline but deliberately leaves the existing
+  tab's ladder mapping to the work that introduces a second paradigm.
+  Sync remains sound because devices exchange ADR-0021's
+  `(anchor_wall_ms, ttl_ms)` expiry policy and apply its never-extend
+  minimum rule; they do not exchange or infer a paradigm.
 - **The artifact's contract scales, and must be checked, not
-  assumed** (tenet №2). Nothing in the at-rest story (ADR-0012 key
-  lifecycle, crypto erasure, refusal at next open) is
-  duration-dependent in principle, but a month-long page holds its
-  keys and, under ADR-0025, its history for a month; the op-log
-  size budget is the named bound and gets measured against
-  month-scale pages before a long ladder ships.
+  assumed** (tenet №2). Nothing in ADR-0016's current persistence,
+  expiry and key-rotation story is duration-dependent in principle,
+  but a month-long page holds its keys and, under ADR-0025, its
+  history for its actual lifetime; the op-log size budget is the
+  named bound and gets measured against month-scale pages before a
+  long ladder ships.
 
-Where this graduates: ADR-0011 is the home for the principle (rungs
-are intuitive durations at the surface's tempo; the current ladder
-is the daily instance), and it is a draft, so the restatement is an
-edit, not an amendment ceremony.
+Where this graduated: ADR-0011, accepted 2026-09-01. The principle
+landed as written (rungs are intuitive durations at the surface's
+tempo; the current ladder is the daily instance). ADR-0011 also
+settles two things this note left open by assumption: a link's TTL
+does not follow the paradigm at all (section 5, following ADR-0026),
+and the default rung is the ceiling rather than the 8h this note
+named.
 
 ## Open questions, parked with the concept
 
@@ -104,6 +123,10 @@ edit, not an amendment ceremony.
 - What the marker vocabulary is per paradigm (now / -1h / -2h,
   Today / -1d, this week / -1w), kept relative so labels stay true
   by construction.
+- How a durable tab's stored rung moves between ladders: retain the
+  originating ladder or map into the new one, including the first
+  click, gauge denominator, persistence and sync behavior. ADR-0011
+  section 6 requires that either answer leave a live deadline alone.
 
 ## Status
 

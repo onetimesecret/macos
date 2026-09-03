@@ -144,7 +144,7 @@ with a current leaning where one exists.
 
     *Whose clock expires a page* (issue #100). Deadlines are today
     `Instant` values on a sleep-inclusive monotonic clock, comparable
-    only inside one boot session (`crates/ffi/src/lib.rs:1498`), so a
+    only inside one boot session (`crates/ffi/src/lib.rs`), so a
     deadline cannot be replicated as a deadline. Prior art says
     replicate the policy `(created_wall_ms, ttl_ms)` and let each device
     compute its own deadline on its own clock: that is Signal's

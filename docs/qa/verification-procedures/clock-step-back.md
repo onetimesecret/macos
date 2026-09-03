@@ -5,7 +5,7 @@
 section 4 (aging across a restart, on two clocks) and section 10, case
 7. The arithmetic is already pinned automatically:
 `crates/core/src/persist.rs`, `a_backwards_wall_clock_grants_no_extra_life`
-(the `saturating_sub` at `crates/core/src/persist.rs:244`) proves a
+(the `saturating_sub` at `crates/core/src/persist.rs`) proves a
 backward gap reads as zero rather than as a credit, and
 `time_away_drains_the_countdown` proves a forward one drains. So this
 procedure is belt and braces, and its rationale is honest about that:
@@ -39,9 +39,8 @@ Two more consequences to expect rather than report as failures:
 ## Prerequisite: rebuild and reinstall first
 
 Two format breaks landed with ADR-0016: the envelope went `OTSSEAL2` to
-`OTSSEAL3` (`crates/ffi/src/persist.rs:154`, `:176`) and the ledger
-payload went `OTSLEDR1` to `OTSLEDR2` (`crates/core/src/persist.rs:111`,
-`:127`). An older installed copy cannot read the files this build
+`OTSSEAL3` (`crates/ffi/src/persist.rs`) and the ledger
+payload went `OTSLEDR1` to `OTSLEDR2` (`crates/core/src/persist.rs`). An older installed copy cannot read the files this build
 writes. Start clean:
 
 ```sh
@@ -57,14 +56,14 @@ ls -la "$STATE"
 ```
 
 The directory is named for the bundle id plus `.noindex`
-(`shell/Sources/CompanionKit/FormFactor.swift:155`, `:214`). The number
+(`shell/Sources/CompanionKit/FormFactor.swift`). The number
 this procedure moves lives in the sealed file's authenticated header:
 `sealed_wall_ms`, the wall clock reading at the last save. Restore
 computes `away = wall_now.saturating_sub(sealed_wall_ms)` and subtracts
 it, and that is the only place in the lifetime math that reads the
 calendar clock at all (ADR-0016 section 4). Every interval a running
 process observes is charged on the sleep-inclusive monotonic clock
-instead (`crates/core/src/clock.rs:88`), which is not settable, which is
+instead (`crates/core/src/clock.rs`), which is not settable, which is
 what case 2 below is for.
 
 Record the current time source before touching anything, so the restore
@@ -88,8 +87,8 @@ log show --last 30m --style compact --predicate \
 1. Launch the installed app. Create two pages with ink, one of them
    holding a sealed chip. Put both on the 3d or 7d rung, by clicking the
    tab's TTL label to step the ladder or from the tab's context menu
-   (`shell/Sources/CompanionKit/TabStripView.swift:228`,
-   `crates/core/src/ttl.rs:26`), so the fabricated gap in step 5 cannot
+   (`shell/Sources/CompanionKit/TabStripView.swift`,
+   `crates/core/src/ttl.rs`), so the fabricated gap in step 5 cannot
    expire them out from under the observation. Note each page's
    remaining time as spoken or shown, to the minute.
 2. Quit with ⌘Q and let the quit flush run, so the file carries a stamp
@@ -115,9 +114,9 @@ one's remaining time is the value recorded in step 1, unchanged to
 within the couple of minutes the procedure itself took. The page aged by
 zero. No countdown grew, no page came back with more life than its rung
 allows, and nothing was revived out of the ledger. No refusal line
-appears (`crates/ffi/src/persist.rs:693`, `:700`, `:707`, `:717`) and no
+appears (`crates/ffi/src/persist.rs`) and no
 "restore failed over an existing state file; withholding the save
-licence" line appears (`shell/Sources/CompanionKit/PageModel.swift:674`).
+licence" line appears (`shell/Sources/CompanionKit/PageModel.swift`).
 
 **Fail:** any page whose remaining time went **up**, which is the
 never-rewind invariant of ADR-0016 section 4 broken and the reason this
@@ -141,7 +140,7 @@ gone; or a refusal.
 
 Section 4's first bullet: inside a running session the countdown is
 charged on a monotonic clock that no `date` call can move
-(`crates/core/src/clock.rs:88`). This case is a minute's work and it is
+(`crates/core/src/clock.rs`). This case is a minute's work and it is
 the one that would catch a regression that put the calendar clock back
 into the live timer.
 

@@ -1,7 +1,17 @@
+---
+documentation_status: draft # needs-review | reviewed | stale
+---
+
 # ADR-NNNN: Title
 
-- **Status:** proposed | accepted | superseded by ADR-NNNN
+- **Status:** proposed | accepted | rejected | superseded
 - **Date:** YYYY-MM-DD
+- **Superseded by:** [ADR-NNNN](NNNN-slug.md) (optional; whole decision)
+- **Superseded in part by:** [ADR-NNNN](NNNN-slug.md) (optional; named portion)
+- **Supersedes:** [ADR-NNNN](NNNN-slug.md) (optional)
+- **Depends on:** [ADR-NNNN](NNNN-slug.md) (optional)
+
+Read [ADR conventions](README.md) before filing or changing an ADR.
 
 ## Context
 
@@ -10,7 +20,9 @@ spec sections that apply.
 
 ## Decision
 
-The decision, in one or two sentences, active voice.
+State the decision in one or two sentences, using active voice.
+
+Add only the clauses needed to define its boundary.
 
 ## Consequences
 

@@ -1,3 +1,7 @@
+---
+documentation_status: reviewed # draft | needs-review | reviewed | stale
+---
+
 # ADR-0004: Keychain prompt timing — presence is not readability
 
 - **Status:** accepted

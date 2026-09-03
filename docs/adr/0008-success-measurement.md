@@ -1,3 +1,7 @@
+---
+documentation_status: needs-review # draft | needs-review | reviewed | stale
+---
+
 # ADR-0008: Success is never judged by engagement metrics
 
 - **Status:** proposed

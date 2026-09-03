@@ -17,11 +17,12 @@ the product changes.
 
 ## adr/
 
-Numbered architecture decision records, ADR-0001 upward, plus
-[template.md](adr/template.md). One decision per file, named
-`NNNN-slug.md`. An ADR is an argument with a context and consequences,
-not a veto: an idea that cuts against one reopens it rather than being
-cancelled by it. New decisions take the next free number.
+Numbered architecture decision records, ADR-0001 upward, plus the
+[template](adr/template.md) and [ADR conventions](adr/README.md). One
+decision per file, named `NNNN-slug.md`. An ADR is an argument with a
+context and consequences, not a veto: an idea that cuts against one
+reopens it rather than being cancelled by it. New decisions take the next
+free number.
 
 ## archive/
 
@@ -90,5 +91,5 @@ to constrain later work move into an ADR.
 - Kebab-case filenames for new documents.
 - Dated prefixes, `YYYY-MMDD`, for research reports and for side documents inside a feature spec. SOTO entries use `YYYY-MM-DD` per their own convention.
 - Archive rather than delete. A superseded document keeps its history and its links.
-- ADRs follow [the template](adr/template.md) and can be reopened by a good argument.
+- ADRs follow [the template](adr/template.md) and [ADR conventions](adr/README.md); they can be reopened by a good argument.
 - Relative links between documents, so the tree reads the same on disk and on GitHub.

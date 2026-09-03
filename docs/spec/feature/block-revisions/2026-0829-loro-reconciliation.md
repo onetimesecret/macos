@@ -63,15 +63,15 @@ fifteen concepts:
 | 2 | Container | Partial. Text only; no Map, List, Tree, or Counter, no nesting. Chips live beside the document as sealed records; block identity lives outside it in `BlockIndex`. |
 | 3 | Attached/detached | Not used. No checkout anywhere; the only second view is a discarded trial `fork()` on the update path. Becomes load-bearing under ADR-0025 part 1. |
 | 4 | OpLog/DocState | Partial. The op log is read via version vector, frontiers, and `get_change`; the two version pointers are never distinguished, which is safe only because nothing detaches. |
-| 5 | Ops and Changes | Used heavily; the provenance substrate. `span_provenance` reads exactly `ChangeMeta.timestamp` and `.message()` (`document.rs:555`). |
+| 5 | Ops and Changes | Used heavily; the provenance substrate. `span_provenance` reads exactly `ChangeMeta.timestamp` and `.message()` (`document.rs`). |
 | 6 | Transactions | Partial. Explicit commit at every mutation boundary; commit messages carry paste origin. |
 | 7 | Frontiers | Partial. Read for emptiness and the newest stamp only; nothing ever encodes or stores one. |
-| 8 | Version Vector | Used. The opaque sync cursor (`document.rs:414`), deliberately unreadable above the module. |
+| 8 | Version Vector | Used. The opaque sync cursor (`document.rs`), deliberately unreadable above the module. |
 | 9 | Cursor | Used twice over: persisted block anchors revalidated on restore, and the per-character op-id probe behind provenance. |
 | 10 | Import Status | Partial. Fail-closed on the update path (`UpdateRefusal::MissingHistory`); `import_snapshot` discards the status, benign while snapshots are self-contained sealed bytes. |
 | 11 | PeerID | Used, as an anti-linkability asset: random per instance, re-minted at restore and compaction, never persisted (see the inversions below). |
 | 12 | Eg-Walker | Not used at the API level; compaction is a re-type from runs, not a replay. |
-| 13 | Shallow snapshots | Measured and rejected: the recorded spike (`document.rs:1038`) shows state-only export sheds deleted text but keeps the authoring peer id. |
+| 13 | Shallow snapshots | Measured and rejected: the recorded spike (`document.rs`) shows state-only export sheds deleted text but keeps the authoring peer id. |
 | 14 | Choosing types | Settled and narrow: text plus marks, UTF-16 normalized at the module boundary, all structure kept outside the CRDT. |
 | 15 | When not CRDTs | Practiced. Ledger, chips, TTL clocks, tab metadata, and block grouping all live outside; the relay is the authority shape ADR-0021 chose. |
 
@@ -102,13 +102,13 @@ fifteen concepts:
    `set_detached_editing`. The measured-cost settle item and the
    matching eject trigger are reworded to match.
 2. **"Merging disabled" was overstated.**
-   `set_change_merge_interval(0)` (`document.rs:172`) still
+   `set_change_merge_interval(0)` (`document.rs`) still
    coalesces same-peer commits sharing a message inside one
    wall-clock second, because the library's test is `<= 0` over
    whole-second stamps. Far below any boundary the ADR derives, so
    harmless to part 1, but the context line now says what is true.
    A paste's origin-carrying commit stays unmerged only because its
-   message differs. The comment at `document.rs:159` deserves the
+   message differs. The comment at `document.rs` deserves the
    same word the next time that file is touched.
 
 ## Where the doctrine inverts the report
@@ -183,18 +183,18 @@ argument starts honest:
 
 - **Undo does not survive relaunch, deliberately.** The manager is
   bound where the document is constructed
-  (`document.rs:194`), which makes every construction path a rebind: a
+  (`document.rs`), which makes every construction path a rebind: a
   restore reads a snapshot into a document minted there, and the
   ceremony rebuilds into one. Both re-mint the peer id, so a stack
   carried across either would point into operations that no longer
   exist. Starting empty is therefore a property of the construction
   rather than a rule to remember, and it matches what AppKit offered,
   a stack that died with the window. The compaction path clears
-  explicitly on top of that (`document.rs:686`), because the rebuild
+  explicitly on top of that (`document.rs`), because the rebuild
   is typed in as local operations and would otherwise leave one step
   that undid the whole page.
 - **The merge interval is two seconds**
-  (`document.rs:59`), the research's figure, argued in full at
+  (`document.rs`), the research's figure, argued in full at
   [`2026-0901-pause-boundaries.md`](2026-0901-pause-boundaries.md)
   along with the caveat that the library's rule is a ceiling on a
   step's growth rather than the idle-gap detector the literature
@@ -208,7 +208,7 @@ argument starts honest:
   (ADR-0009), and a sentinel standing for zeroized bytes is the one
   document shape the restore path calls damage.
 - **The edits the page makes for the writer begin their own step**
-  (`document.rs:259`): a continued list marker, a nudged indent. They
+  (`document.rs`): a continued list marker, a nudged indent. They
   arrive a keystroke after the burst they should not join, so the
   interval is dropped across that one commit and one press takes the
   automation back alone.
@@ -261,9 +261,9 @@ argument starts honest:
   shallow export ever returns from rejection.
 - `set_record_timestamp` is runtime configuration that must be
   reapplied per document instance; every construction path here
-  already does (`document.rs:158`).
+  already does (`document.rs`).
 - `blocks_meta()` already re-derives provenance per character per
   read, so ADR-0025's derivation walk joins a read path that is
   O(document) per refresh, not a newly expensive one.
-- The sealed container magic is `OTSSNAP4` (`persist.rs:102`);
+- The sealed container magic is `OTSSNAP4` (`persist.rs`);
   earlier notes citing `OTSSNAP3` are stale.

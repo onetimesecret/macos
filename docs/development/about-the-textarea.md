@@ -16,38 +16,38 @@ Where the editing surface actually lives
 │                                                                           │
 │  InkEditorView.swift                                                      │
 │  ┌─────────────────────────────────────────────────────────────────────┐  │
-│  │ makeNSView():64..96   THE SWITCHBOARD                               │  │
-│  │   :68  isRichText            = true    (chips need attachments)     │  │
-│  │   :70  allowsUndo            = true    ✓ per-page undo (:358)      │  │
-│  │   :71  usesFindPanel         = false   ✗ ⌘F is dead here           │  │
-│  │   :72  quote substitution    = false   ✗ deliberate                 │  │
-│  │   :73  dash substitution     = false   ✗ deliberate                 │  │
-│  │   :74  spelling correction   = false   ✗ deliberate                 │  │
+│  │ makeNSView()   THE SWITCHBOARD                                      │  │
+│  │   isRichText            = true    (chips need attachments)          │  │
+│  │   allowsUndo            = true    ✓ per-page undo                  │  │
+│  │   usesFindPanel         = false   ✗ ⌘F is dead here                │  │
+│  │   quote substitution    = false   ✗ deliberate                      │  │
+│  │   dash substitution     = false   ✗ deliberate                      │  │
+│  │   spelling correction   = false   ✗ deliberate                      │  │
 │  │        (continuous spellcheck, grammar, text replacement, ruler,    │  │
 │  │         link detection, incremental search: never mentioned)        │  │
 │  ├─────────────────────────────────────────────────────────────────────┤  │
-│  │ scrollStack():113   WRAP IS WELDED ON                               │  │
-│  │   :49  container.widthTracksTextView = true                         │  │
-│  │   :118 isHorizontallyResizable       = false                        │  │
-│  │   :125 hasVerticalScroller           = true   (no horizontal)       │  │
+│  │ scrollStack()   WRAP IS WELDED ON                                   │  │
+│  │   container.widthTracksTextView = true                              │  │
+│  │   isHorizontallyResizable       = false                             │  │
+│  │   hasVerticalScroller           = true   (no horizontal)            │  │
 │  ├─────────────────────────────────────────────────────────────────────┤  │
-│  │ InkTextView:980   key routing                                       │  │
-│  │   :991 performKeyEquivalent  → ⇧⌘V seal, ⌘↩ seal line             │  │
-│  │   :1009 paste()              → forced pasteAsPlainText              │  │
-│  │   :1019 setMarkedText        → IME gate                             │  │
+│  │ InkTextView   key routing                                           │  │
+│  │   performKeyEquivalent  → ⇧⌘V seal, ⌘↩ seal line                  │  │
+│  │   paste()              → forced pasteAsPlainText                    │  │
+│  │   setMarkedText        → IME gate                                   │  │
 │  ├─────────────────────────────────────────────────────────────────────┤  │
-│  │ restyle():736   display-only markdown                               │  │
-│  │   headings by weight, markers dimmed in place (:1194)               │  │
+│  │ restyle()   display-only markdown                                   │  │
+│  │   headings by weight, markers dimmed in place                       │  │
 │  │   fenced blocks read literally, markup inert (issue #75)            │  │
 │  │   block provenance labels laid out as NSTextField subviews          │  │
 │  └────────────────────────┬────────────────────────────────────────────┘  │
 │                           │                                               │
-│  THE EMISSION POINT  textStorage(_:didProcessEditing:):398                │
-│  every character edit AppKit makes, from any source, becomes ops (:486)   │
+│  THE EMISSION POINT  textStorage(_:didProcessEditing:)                    │
+│  every character edit AppKit makes, from any source, becomes ops          │
 └───────────────────────────┼───────────────────────────────────────────────┘
                             │ companion_sheet_apply_ops   [ins | del | chip]
 ┌─ RUST CORE ───────────────▼───────────────────────────────────────────────┐
-│  store.rs:514  apply_ops        document.rs  runs + marks                 │
+│  store.rs  apply_ops        document.rs  runs + marks                     │
 │  blocks.rs     BlockIndex: split mints an id, merge kills one,            │
 │                created/modified derived from op timestamps                │
 │  NO text-editing verbs at all: no search, no transform, no line ops.      │
@@ -59,11 +59,11 @@ What that buys you, and what it costs
 
 Already working, unclaimed: undo/redo per page, select all, cut/copy, word and paragraph motion, option-arrow word jump, emoji picker (⌃⌘Space), Services menu, dictation, macOS text selection semantics, autoscroll, drag-to-move within the page.
 
-Free, switched off at line 71: find, find and replace, find next/previous, use selection for find, jump to selection. Flipping usesFindPanel = true plus usesFindBar = true gives you NSTextFinder with an inline find bar and replace all, no core work whatsoever. Search reads storage.string, which the shell already holds; Rust never needs to know.
+Free, switched off in `makeNSView()`: find, find and replace, find next/previous, use selection for find, jump to selection. Flipping usesFindPanel = true plus usesFindBar = true gives you NSTextFinder with an inline find bar and replace all, no core work whatsoever. Search reads storage.string, which the shell already holds; Rust never needs to know.
 
 One flag each, but each is a policy call: continuous spell checking, grammar, smart insert/delete, automatic text replacement, data detectors, ruler with tab stops. These were left off by omission, not by an ADR.
 
-Genuinely absent, real work: word wrap toggle (rewire container width, isHorizontallyResizable, add a horizontal scroller), line numbers (NSRulerView client), go to line, word/character count, move line up/down, duplicate line, sort lines, case transforms, auto-indent, list continuation, inline emphasis styling (deferred on purpose, InkEditorView.swift:1192). AppKit gives you none of these; every one is shell-side and each mutating one emits ops for free through the delegate at :398.
+Genuinely absent, real work: word wrap toggle (rewire container width, isHorizontallyResizable, add a horizontal scroller), line numbers (NSRulerView client), go to line, word/character count, move line up/down, duplicate line, sort lines, case transforms, auto-indent, list continuation, inline emphasis styling (deferred on purpose, InkEditorView.swift). AppKit gives you none of these; every one is shell-side and each mutating one emits ops for free through the delegate at :398.
 
 The two things that make this not a pure switch flip
 

@@ -10,9 +10,8 @@ the machine running it.
 ## Prerequisite: rebuild and reinstall first
 
 Two format breaks landed with ADR-0016: the envelope went `OTSSEAL2` to
-`OTSSEAL3` (`crates/ffi/src/persist.rs:154`, `:176`) and the ledger
-payload went `OTSLEDR1` to `OTSLEDR2` (`crates/core/src/persist.rs:111`,
-`:127`). An older installed copy cannot read the files this build
+`OTSSEAL3` (`crates/ffi/src/persist.rs`) and the ledger
+payload went `OTSLEDR1` to `OTSLEDR2` (`crates/core/src/persist.rs`). An older installed copy cannot read the files this build
 writes. Start clean:
 
 ```sh
@@ -28,24 +27,24 @@ ls -la "$STATE"
 ```
 
 The directory is named for the bundle id plus `.noindex`
-(`shell/Sources/CompanionKit/FormFactor.swift:154`, `:210`) and holds
+(`shell/Sources/CompanionKit/FormFactor.swift`) and holds
 `state.sealed`, `ledger.sealed` and one
-`ots-companion-key-half-<32 hex>` (`crates/ffi/src/persist.rs:232`).
+`ots-companion-key-half-<32 hex>` (`crates/ffi/src/persist.rs`).
 
 Every write goes to `<name>.<16 hex>.tmp` and is renamed over the real
-file (`crates/ffi/src/persist.rs:1144-1146`, the fsync and rename
-sequence in `write_private` at `:1139-1165`). A death between the write and the rename
+file (`crates/ffi/src/persist.rs`, the fsync and rename
+sequence in `write_private`). A death between the write and the rename
 strands that temp file holding a complete sealed generation, or a
 complete copy of a key half.
 
 Launch sweeps them. `companion_persist_restore` calls
 `sweep_stranded_temps` on the containing directory before it reads the
-state file (`crates/ffi/src/lib.rs:1303`, the sweep at
-`crates/ffi/src/persist.rs:840-853`), and it erases each one with the
+state file (`crates/ffi/src/lib.rs`, the sweep at
+`crates/ffi/src/persist.rs`), and it erases each one with the
 same discipline the ciphertext gets: zero, truncate, unlink, confirm
-absent (`crates/ffi/src/persist.rs:790-816`). The shape is matched
+absent (`crates/ffi/src/persist.rs`). The shape is matched
 exactly, some name, a dot, sixteen hex digits, `.tmp`
-(`crates/ffi/src/persist.rs:856-864`).
+(`crates/ffi/src/persist.rs`).
 
 Log predicate for the launch that follows the cut:
 
@@ -82,9 +81,9 @@ log show --last 30m --style compact --predicate \
 burst of typing inside the debounce window. Countdowns are shorter by
 the wall clock time the machine was off. Any temp file recorded in step
 3 is gone from the directory after launch. No refusal line appears
-(`crates/ffi/src/persist.rs:666`, `:673`, `:680`, `:690`) and no
+(`crates/ffi/src/persist.rs`) and no
 "restore failed over an existing state file" line appears
-(`shell/Sources/CompanionKit/PageModel.swift:635`).
+(`shell/Sources/CompanionKit/PageModel.swift`).
 
 **Fail:** an empty pad; or a temp file that is still there after a
 launch; or a refusal, which would mean the rename landed a file the
@@ -110,7 +109,7 @@ confirms it removes nothing else.
    The first three match the shape exactly. The fourth does not, and it
    is the control: a sweep that takes it is matching on the `.tmp`
    suffix alone, which is the bug the exact match exists to prevent
-   (`crates/ffi/src/persist.rs:828-833`, `:856-864`).
+   (`crates/ffi/src/persist.rs`).
 3. Launch the app.
 4. `ls -la "$STATE"`.
 
@@ -124,7 +123,7 @@ the real state file or the real key half being taken by the sweep,
 which would present as an empty pad or as
 "companion-ffi: the state file carries this build's envelope, but its
 content key could not be assembled" in the log
-(`crates/ffi/src/persist.rs:680`).
+(`crates/ffi/src/persist.rs`).
 
 5. Clean up the control file by hand afterwards.
 
