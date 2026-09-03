@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A new page opens with the whole week, and a deadline lands where
+  the clock does** (issue #146, ADR-0011; app 0.17.0, `companion-ffi`
+  0.21.0, `companion-core` 0.18.0). A new tab now starts at the top
+  of the ladder, seven days, on both surfaces, so every shortening is
+  a deliberate click and the wrap stays on the harmless end. Applying
+  a rung rounds its deadline up to the next boundary the clock will
+  strike: the next whole hour for rungs under a day, the next local
+  midnight from a day up, never by more than a day. A page opened at
+  four in the afternoon on the 24h rung is due at midnight the day
+  after tomorrow, not at four o'clock. The rounding happens once, when
+  the rung is applied, from the timezone the Mac is in at that moment;
+  flying somewhere else moves nothing, and nothing survives its
+  displayed expiry by any margin. The label and the timer read one
+  stored deadline. It is a switch in Settings, on unless you turn it
+  off, and turning it off makes every rung exactly its named duration
+  from then on while leaving pages already counting down alone.
+
 - **Sync has a surface now, and off is a real off** (issue #102; app
   0.16.0, `companion-ffi` 0.20.0). One switch in Settings, off unless
   you turn it on, and off means the app you already had: no account,

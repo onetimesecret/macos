@@ -205,6 +205,13 @@ they do not exchange a paradigm or infer one from a rung.
   deadline path shared by display and enforcement. Tests cover the
   setting in both positions, exact boundaries, short rungs, weekends,
   timezone changes and both daylight-saving transitions.
+- A snapped deadline honestly exceeds its rung's nominal duration, so
+  the restore clamp of ADR-0016 bounds a persisted span by the rung's
+  longest life, nominal plus the largest extension section 4 allows
+  (`Ttl::longest_life` in `crates/core/src/ttl.rs`), rather than by
+  the rung alone: eight days on the 7d rung, two hours on the 1h rung.
+  The ladder's ceiling is unchanged, so ADR-0016's eject trigger on a
+  ceiling above seven days is not tripped.
 - #139 is unblocked. Its step 1 sources the conceal default from
   section 5's exact seven days instead of `sheet.remaining(now)`, and
   `ladder_snapped_ttl` loses its last caller.
@@ -237,3 +244,8 @@ they do not exchange a paradigm or infer one from a rung.
 - **2026-07-15:** Drafted as a page of notes and left in draft.
 - **2026-09-01:** Accepted, resolving the draft-versus-code contradiction in
   the draft's favor.
+- **2026-09-02:** Sections 3 and 4 implemented for the daily paradigm
+  (issue #146): the default rung is the ceiling, the boundary snap
+  calculates one stored deadline per application from the device zone
+  at that moment, and the setting is a persisted shell preference,
+  on by default, with a Settings toggle.

@@ -45,8 +45,9 @@ state file only when no tabs remain.
 Use two clocks. A sleep-inclusive monotonic clock measures intervals observed by
 a running process. On restore, wall time measures only the unobserved gap since
 the last sealed write. Persist remaining life and subtract the non-negative gap,
-clamped to the tab's rung and hold ceiling. Restore may shorten or preserve life,
-never extend it.
+clamped to the longest life the tab's rung can give a page (its nominal duration
+plus the most the ADR-0011 boundary snap may add) and to the hold ceiling.
+Restore may shorten or preserve life, never extend it.
 
 A failed restore withholds the save licence and leaves the prior file untouched.
 The user may explicitly discard unreadable state to regain the licence. Do not
@@ -94,3 +95,6 @@ permanently unable to save; unknown or damaged formats continue to fail closed.
 - **2026-09-02:** The record was split into this ADR and the linked persistence
   decision background, which now carries the numbered sections other documents
   cite.
+- **2026-09-02:** The restore clamp's bound became the rung's longest life
+  rather than the rung, because ADR-0011 section 4's boundary snap writes
+  deadlines that honestly exceed the nominal rung (issue #146).
