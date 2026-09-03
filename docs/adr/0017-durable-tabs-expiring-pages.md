@@ -7,6 +7,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 - **Status:** accepted
 - **Date:** 2026-08-20
 - **Depends on:** [ADR-0016](0016-content-persists-across-restart.md). The object-graph change shipped in the same persistence format break.
+- **Supersedes in part:** [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md), specifically its object-graph portions and the title-ownership portions its Supersession section names: the user-set title and the `MMDD-HHmm` placeholder stamp become properties of the durable Tab, and `title_is_user_set` disappears. Title derivation, its 80 character cap, and its documented exception stand, page-side.
 
 ## Context
 
@@ -81,3 +82,6 @@ removes the state file.
 - **2026-08-20:** Accepted to ship with ADR-0016's persistence format break.
 - Implementation sequencing and completed work are recorded in the linked plan
   and decision background, not in this ADR.
+- **2026-09-02:** The record was split into this ADR and the linked durable-tabs
+  decision background, which now carries the field-level inventory and the
+  required-work list.

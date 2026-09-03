@@ -7,7 +7,6 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 - **Status:** accepted
 - **Date:** 2026-08-25
 - **Depends on:** [ADR-0013](0013-document-provenance-and-block-metadata.md).
-- **Leaves standing:** [ADR-0010](0010-form-factors-as-sibling-targets.md) and [ADR-0016](0016-content-persists-across-restart.md)'s `ThisDeviceOnly` key protection.
 
 ## Context
 
@@ -22,6 +21,15 @@ states in the [sync surface specification](../spec/feature/sync/surface.md), and
 delivery sequencing in the [multi-device sync plan](../plans/multi-device-sync.md).
 Extended security analysis and amendment development are preserved in the
 [relay decision background](../spec/feature/sync/relay-decision-background.md).
+Numbered sections of this ADR cited elsewhere in the tree, such as "ADR-0021
+section 3" or "§6", now live in that relay decision background rather than in
+this record.
+
+This decision leaves [ADR-0010](0010-form-factors-as-sibling-targets.md)
+standing, unamended, and leaves standing
+[ADR-0016](0016-content-persists-across-restart.md)'s `ThisDeviceOnly` key
+protection: keys reach a device through pairing rather than through iCloud
+Keychain.
 
 ## Decision
 
@@ -93,3 +101,6 @@ state requires a fresh identity and revocation of the stale fingerprint.
 - **2026-08-27:** The recovery design added persisted chain position and
   per-device welcomes bound to the canonical frame. The protocol specification
   is the authoritative message-shape record.
+- **2026-09-02:** The record was split into this ADR and the linked relay
+  decision background, which now carries the numbered sections other documents
+  cite.

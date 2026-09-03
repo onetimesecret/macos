@@ -6,25 +6,22 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 > Supporting analysis and implementation history for [ADR-0027](../../../adr/0027-account-auth-gates-the-sync-channel.md). The [account-auth specification](account-auth.md) is authoritative for flow and state-machine details.
 
-- **Status:** accepted
-- **Date:** 2026-09-01
-- **Depends on:**
-  [ADR-0021](../../../adr/0021-multi-device-sync-over-a-blind-relay.md) section 3,
-  which decided that the account and the device are two gates and that
-  both must be passed. This ADR decides the account gate alone: which
-  flow proves the account, how the proof survives an app that sleeps
-  for days, where the proof rests, and what the client shows when the
-  proof is refused. It grants no device the right to read content;
-  that is issue #97's pairing ceremony and is not renegotiated here.
-- **Leaves standing:**
-  [ADR-0004](../../../adr/0004-keychain-prompt-timing.md)'s rule that key access
-  happens on use rather than at launch; section 4 says why a
-  background refresh belongs in the key material store rather than
-  beside the API token.
-  [ADR-0016](../../../adr/0016-content-persists-across-restart.md) section 3's
-  `ThisDeviceOnly` protection class, unamended: the refresh token
-  takes the same class as every other secret in that store, and rides
-  no iCloud Keychain (ADR-0021 section 8).
+This background was written on 2026-09-01, alongside the decision it supports.
+It rests on
+[ADR-0021](../../../adr/0021-multi-device-sync-over-a-blind-relay.md), which
+decided that the account and the device are two gates and that both must be
+passed. ADR-0027 decides the account gate alone: which flow proves the account,
+how the proof survives an app that sleeps for days, where the proof rests, and
+what the client shows when the proof is refused. It grants no device the right
+to read content; that is issue #97's pairing ceremony and is not renegotiated
+here. It leaves standing
+[ADR-0004](../../../adr/0004-keychain-prompt-timing.md)'s rule that key access
+happens on use rather than at launch, and section 4 says why a background
+refresh belongs in the key material store rather than beside the API token. It
+also leaves standing
+[ADR-0016](../../../adr/0016-content-persists-across-restart.md)'s
+`ThisDeviceOnly` protection class: the refresh token takes the same class as
+every other secret in that store, and rides no iCloud Keychain.
 
 ## Context
 

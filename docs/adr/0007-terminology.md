@@ -107,9 +107,10 @@ Choose terminology by what is defensible, not by what is aspirational:
 
 - **Status:** accepted
 - **Date:** 2026-07-24
-- **Implemented:** 2026-07-25 — seal-from-pasteboard clears the board in
-  the same locked operation and reports a failed clear; summoning the panel
-  offers to take what is on the board.
+
+Implemented on 2026-07-25: seal-from-pasteboard clears the board in the same
+locked operation and reports a failed clear; summoning the panel offers to take
+what is on the board.
 
 Folded into this ADR rather than filed separately. The ADR is still
 proposed, so the changes are applied in place above and recorded here;
@@ -228,9 +229,10 @@ what already exists, and that finding belongs here.
 
 - **Status:** accepted
 - **Date:** 2026-08-05
-- **Implemented:** 2026-08-05 — `scripts/build-app.sh` and
-  `scripts/build-backdrop.sh` emit `dist/<name>.presig.sha256` before
-  signing; CI fails if the file is empty.
+
+Implemented on 2026-08-05: `scripts/build-app.sh` and
+`scripts/build-backdrop.sh` emit `dist/<name>.presig.sha256` before signing, and
+CI fails if the file is empty.
 
 Folded in here rather than filed separately, as with Amendment 1. The
 decision text above is edited in place; this section records what
@@ -354,5 +356,8 @@ word.
 ## Decision history
 
 - **2026-07-15:** This remains the proposed base record.
-- **2026-07-24, 2026-08-05, and 2026-08-24:** [Amendment 1](#amendment-1-paste-is-a-supported-ingress-path), [Amendment 2](#amendment-2-the-reproducibility-claim-is-scoped-to-the-unsigned-artifact), and [Amendment 3](#amendment-3-conceal-and-reveal-are-the-vocabulary-promotion-is-retired) were accepted independently; they do not change the base record's proposed status.
+- **2026-07-24:** [Amendment 1](#amendment-1-paste-is-a-supported-ingress-path) was accepted. Each amendment is accepted independently, and none of them changes the base record's proposed status.
+- **2026-07-25:** [Amendment 1](#amendment-1-paste-is-a-supported-ingress-path) was implemented: seal-from-pasteboard clears the board in the same locked operation.
+- **2026-08-05:** [Amendment 2](#amendment-2-the-reproducibility-claim-is-scoped-to-the-unsigned-artifact) was accepted, then implemented: the build scripts emit a pre-signature digest and CI checks it.
 - **2026-08-05:** [ADR-0012](0012-framing-threat-boundary-and-persistence-model.md) supersedes this record in part: it owns the persistence model and the authoritative narrowing of Decision 2. All other portions remain in force.
+- **2026-08-24:** [Amendment 3](#amendment-3-conceal-and-reveal-are-the-vocabulary-promotion-is-retired) was accepted.

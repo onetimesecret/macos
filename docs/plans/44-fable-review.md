@@ -96,7 +96,7 @@ gap the review named in prose but did not number.
 | 2 | important | Applied. Minting fires only on a user selection gesture, never from restore and never from `refresh()` reconciliation. The expire-in-place case renders the empty tab state. |
 | 3 | important | Applied. The replay exposure no longer borrows the clock case's argument. It names the adversary as any same-user process, states that it cannot read the app's memory or the key, and prices acceptance on the anti-rollback counter's keychain write per save. The matching eject trigger was corrected too. |
 | 4 | important | Applied. The "already accepted in larger form" comparative is gone. Both exposures are stated flat, ending "Larger per byte, shorter per calendar." |
-| 5 | minor | Applied. Both ADR-0016's header and ADR-0012's Supersession section now read "lines 34 to 51 except 47 and 49". |
+| 5 | minor | Applied. As of the disposition date, both ADR-0016's header and ADR-0012's Supersession section read "lines 34 to 51 except 47 and 49". Line-number citations were removed from the ADRs on 2026-09-02; both records now name the superseded subsections instead. |
 | 6 | minor | Applied. Section 1 separates the running case from the held case and points at section 4. |
 | 7 | minor | Applied. Section 9 names `OTSSEAL3` and `OTSSNAP4`, states the known superseded set is one entry at this break, and pins "erased" to `erase_state`'s zero, truncate, unlink discipline. |
 

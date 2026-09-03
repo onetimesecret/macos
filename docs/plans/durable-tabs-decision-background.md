@@ -6,13 +6,14 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 > Supporting historical analysis for [ADR-0017](../adr/0017-durable-tabs-expiring-pages.md). This document preserves the field-level design and implementation inventory; it is not the current work tracker.
 
-- **Status:** accepted
-- **Date:** 2026-08-20
-- **Depends on:** [ADR-0016](../adr/0016-content-persists-across-restart.md). This
-  ADR's object-graph change rides the same format break and does not ship
-  without it, and the residual exposure argued below assumes ADR-0016's
-  durable key. Inside that break this split lands first, before ADR-0016
-  section 4's `drained_ms`; required work item 2 states why.
+This background was written on 2026-08-20, alongside the decision it supports.
+ADR-0017's object-graph change rides
+[ADR-0016](../adr/0016-content-persists-across-restart.md)'s format break and
+does not ship without it, and the residual exposure argued below assumes
+ADR-0016's durable key. Inside that break this split lands first, before the
+`drained_ms` question in section 4 of the
+[persistence decision background](trustworthy-persistence-decision-background.md);
+required work item 2 states why.
 
 ## Context
 

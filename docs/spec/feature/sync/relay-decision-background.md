@@ -6,21 +6,19 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 > Supporting analysis and amendment history for [ADR-0021](../../../adr/0021-multi-device-sync-over-a-blind-relay.md). The [relay protocol](relay-protocol.md) is authoritative for message shapes and wire behavior; GitHub issues and the [milestone plan](../../../plans/multi-device-sync.md) own execution status.
 
-- **Status:** accepted
-- **Date:** 2026-08-25
-- **Depends on:**
-  [ADR-0013](../../../adr/0013-document-provenance-and-block-metadata.md), which
-  decided the shape of sync in the abstract: broadcast rules rather than
-  archive rules, a device joins at the current key frame and structurally
-  never receives the ops behind it, and a relay holds at most one GOP of
-  encrypted deltas (ADR-0013). This ADR decides the relay
-  itself: what it stores, how devices come to trust each other, and what
-  the relay is admitted to learn.
-- **Leaves standing:** [ADR-0010](../../../adr/0010-form-factors-as-sibling-targets.md)'s
-  two-instances-two-stores stance, unamended; section 7 says why.
-  [ADR-0016](../../../adr/0016-content-persists-across-restart.md) section 3's
-  keychain protection class, unamended; section 8 says what that costs
-  sync and why the cost is kept.
+This background was written on 2026-08-25, alongside the decision it supports.
+It rests on
+[ADR-0013](../../../adr/0013-document-provenance-and-block-metadata.md), which
+decided the shape of sync in the abstract: broadcast rules rather than archive
+rules, a device joins at the current key frame and structurally never receives
+the ops behind it, and a relay holds at most one GOP of encrypted deltas.
+ADR-0021 decides the relay itself: what it stores, how devices come to trust
+each other, and what the relay is admitted to learn. It amends
+[ADR-0010](../../../adr/0010-form-factors-as-sibling-targets.md)'s
+two-instances-two-stores stance no more than it amends
+[ADR-0016](../../../adr/0016-content-persists-across-restart.md)'s keychain
+protection class: section 7 says why the first stands, and section 8 says what
+the second costs sync and why that cost is kept.
 
 ## Context
 

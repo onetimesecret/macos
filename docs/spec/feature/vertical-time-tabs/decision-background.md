@@ -6,16 +6,15 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 > Supporting design and implementation history for [ADR-0020](../../../adr/0020-a-day-is-a-projection-of-live-pages.md). The sibling [feature specification](README.md) is the canonical product/design document.
 
-- **Status:** proposed
-- **Date:** 2026-08-24
-- **Depends on:** [ADR-0006](../../../adr/0006-persistent-editor-storage-swap.md) (one
-  persistent editor, whose invariant the contiguous roll must keep
-  literally rather than argue around),
-  [ADR-0016](../../../adr/0016-content-persists-across-restart.md) (the TTL is the
-  only mechanism that destroys staged content the user did not ask to
-  destroy, ADR-0016) and
-  [ADR-0017](../../../adr/0017-durable-tabs-expiring-pages.md) (durable tabs,
-  expiring pages, and the eject trigger this decision has to answer).
+This background was written on 2026-08-24, alongside the decision it supports.
+The decision rests on
+[ADR-0006](../../../adr/0006-persistent-editor-storage-swap.md) (one persistent
+editor, whose invariant the contiguous roll must keep literally rather than
+argue around),
+[ADR-0016](../../../adr/0016-content-persists-across-restart.md) (the TTL is the
+only mechanism that destroys staged content the user did not ask to destroy) and
+[ADR-0017](../../../adr/0017-durable-tabs-expiring-pages.md) (durable tabs,
+expiring pages, and the eject trigger this decision has to answer).
 
 ## Context
 

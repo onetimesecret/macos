@@ -12,11 +12,18 @@ Start from [template.md](template.md).
 
 `scripts/lint-adrs.py` checks the structural half of this guide: frontmatter
 carries one valid `documentation_status`, the record carries one canonical
-`Status` and a `Date`, `Decision history` is a section rather than metadata,
-the four required sections are present, relationship fields link ADRs, whole
-and partial supersession agree with `Status`, and local links resolve. It
-judges no content, length, or style. CI runs it on every pull request; run it
-locally with `python3 scripts/lint-adrs.py docs/adr`.
+`Status` and a `Date`, every metadata key is one this guide names,
+`Decision history` is a section rather than metadata, the four required
+sections are present, relationship fields link ADRs, whole and partial
+supersession agree with `Status` and are claimed from both records, and local
+links resolve. A link that carries a `#fragment` into a Markdown file in this
+repository, or a fragment written on its own, must match a heading in the file
+it points at; fragments into other file types and into paths outside the
+repository are not checked. It reads metadata only from the block between the
+title and the first `## ` heading, so a `Status` line written anywhere later
+is invisible to it, and a passing run proves nothing about content, length,
+style, or whether the argument recorded is sound. CI runs it on every pull
+request; run it locally with `python3 scripts/lint-adrs.py docs/adr`.
 
 ## Scope
 

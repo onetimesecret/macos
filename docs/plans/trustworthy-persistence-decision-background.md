@@ -6,31 +6,13 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 > Supporting historical analysis for [ADR-0016](../adr/0016-content-persists-across-restart.md). This document preserves implementation chronology, citations, and test planning. GitHub issues and the [recovery matrix](../qa/recovery-matrix.md) are authoritative for current execution and coverage status.
 
-- **Status:** accepted
-- **Date:** 2026-08-20
-- **Supersedes in part:**
-  [ADR-0012](../adr/0012-framing-threat-boundary-and-persistence-model.md).
-  Superseded: the **Staged content, bounded to the boot session**
-  subsection minus its two keychain-tiering paragraphs. That covers the
-  two-half derivation, the crypto-erasure claim, the deterministic
-  boot-UUID backstop and its fail-closed clause, the does-not-claim
-  paragraph, and the boot-versus-user-session paragraph. Also the
-  monotonic rule in the TTL bullets, **for staged content only**, which
-  section 4 below narrows rather than replaces; the live-timer
-  requirement and its load-path backstop stand. Also the boot-bound
-  clauses of the ciphertext-during-a-boot-session, audit-story and
-  brand-tension consequences, redrafted in section 8.
-- **Left standing in ADR-0012, unamended:** the framing items; item
-  identity; keychain tiering and its Amendment 2026-08-10, carried
-  forward and leaned on in section 3; the write policy; the titles
-  subsection, unamended by this ADR (ADR-0017 moves the user-set title
-  and the placeholder stamp onto the Tab); the whole ledger subsection,
-  whose wall-clock retention exception now agrees with content; and
-  supporting decisions, including the bundle-id-derived keychain ACL
-  identity note.
-- **Rides the same format break:**
-  [ADR-0017](../adr/0017-durable-tabs-expiring-pages.md), "Durable tabs,
-  expiring pages"; see section 9.
+This background was written on 2026-08-20, alongside the decision it supports.
+[ADR-0012](../adr/0012-framing-threat-boundary-and-persistence-model.md)'s
+Supersession section is the single authority on what ADR-0016 replaced and what
+was left standing; sections 3, 4 and 8 below carry the supporting detail. The
+change rode the same one-time format break as
+[ADR-0017](../adr/0017-durable-tabs-expiring-pages.md), "Durable tabs, expiring
+pages"; see section 9.
 
 ## Context
 

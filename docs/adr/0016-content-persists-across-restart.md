@@ -23,6 +23,9 @@ allow restore to increase a page's remaining life.
 
 The implementation chronology and detailed evidence are preserved in
 [the persistence decision background](../plans/trustworthy-persistence-decision-background.md).
+Numbered sections of this ADR cited elsewhere in the tree, such as "ADR-0016
+section 3" or "section 4", now live in that persistence decision background
+rather than in this record.
 Execution status belongs in the [trustworthy persistence plan](../plans/trustworthy-persistence.md),
 and coverage belongs in the [recovery matrix](../qa/recovery-matrix.md).
 
@@ -88,3 +91,6 @@ permanently unable to save; unknown or damaged formats continue to fail closed.
 - **2026-08-23:** Remaining-life persistence was retained instead of adding a
   `drained_ms` field; the same never-extend invariant is enforced by subtraction
   and clamping.
+- **2026-09-02:** The record was split into this ADR and the linked persistence
+  decision background, which now carries the numbered sections other documents
+  cite.

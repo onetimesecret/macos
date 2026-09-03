@@ -6,7 +6,6 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-09-01
-- **Drafted:** 2026-07-15
 
 ## Context
 
@@ -18,8 +17,7 @@ puts all of the weight on the rung set, because the rungs are the
 entire vocabulary a person has for saying how long something should
 live.
 
-This ADR sat in draft for six weeks as a page of notes. Three things
-came due at once and forced it:
+Three things came due at once and forced the decision:
 
 - **ADR-0026** (accepted) ejected the page's clock as an input to a
   concealed link's TTL and deferred the replacement default here.
@@ -233,3 +231,9 @@ they do not exchange a paradigm or infer one from a rung.
   expiry disagree across a timezone or daylight-saving transition. The one
   stored-deadline rule then needs to be re-examined before the boundary snap
   remains enabled by default.
+
+## Decision history
+
+- **2026-07-15:** Drafted as a page of notes and left in draft.
+- **2026-09-01:** Accepted, resolving the draft-versus-code contradiction in
+  the draft's favor.

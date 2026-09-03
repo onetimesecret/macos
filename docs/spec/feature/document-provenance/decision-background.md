@@ -6,8 +6,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 > Supporting product, interaction, and alternative analysis for [ADR-0013](../../../adr/0013-document-provenance-and-block-metadata.md). The ADR is authoritative for the architecture choice.
 
-- **Status:** accepted
-- **Date:** 2026-08-05
+This background was written on 2026-08-05, alongside the decision it supports.
 
 ## Context
 

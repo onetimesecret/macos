@@ -6,8 +6,9 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 - **Status:** proposed
 - **Date:** 2026-07-15
-- **Revised:** 2026-08-06 — incorporates external review and implementation
-  findings.
+- **Supersedes in part:** [ADR-0007](0007-terminology.md), whose persistence
+  model this record owns, and whose Decision 2 it restates in the narrower form
+  recorded in that record's Amendment 2. Everything else in ADR-0007 stands.
 - **Superseded in part by:** [ADR-0016](0016-content-persists-across-restart.md)
   and [ADR-0017](0017-durable-tabs-expiring-pages.md); see Supersession at
   the end of this file.
@@ -124,7 +125,10 @@ and the boot-versus-user-session paragraph. Also the monotonic rule in the
 TTL bullets as it applies to staged content, and the boot-bound clauses of
 three consequences: the ciphertext-exists-during-a-boot-session bullet, the
 boot-session UUID check in the audit-story bullet, and
-"non-persistent-beyond-boot" in the brand-tension bullet. ADR-0016 sections 3, 4 and 8 carry the replacements.
+"non-persistent-beyond-boot" in the brand-tension bullet. [ADR-0016](0016-content-persists-across-restart.md)
+carries the replacements; the numbered sections that once stated them in detail
+now live in the
+[persistence decision background](../plans/trustworthy-persistence-decision-background.md).
 
 Still standing, unamended: the **Framing** items, **Item identity**, the two
 keychain-availability paragraphs above, the **Write policy** bullets, the
@@ -164,6 +168,7 @@ ADR-0017 own the superseded staged-content and object-graph decisions.
 
 ## Decision history
 
-- **2026-07-15:** This remains the proposed base record; its 2026-08-06 revision did not change that status.
+- **2026-07-15:** This remains the proposed base record.
+- **2026-08-06:** Revised to incorporate external review and implementation findings. The revision did not change the proposed status.
 - **2026-08-20:** [ADR-0016](0016-content-persists-across-restart.md) superseded the named staged-content lifecycle and related consequences portions; [ADR-0017](0017-durable-tabs-expiring-pages.md) superseded the named object-graph and title-ownership portions. See [Supersession](#supersession) for scope.
 - **2026-08-20 onward:** The portions named as still standing in [Supersession](#supersession) remain in force.

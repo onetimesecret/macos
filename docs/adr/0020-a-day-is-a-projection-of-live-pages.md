@@ -22,7 +22,9 @@ Product behavior, interaction details, implementation mapping, and open question
 belong in the [vertical-time-tabs specification](../spec/feature/vertical-time-tabs/README.md).
 The original implementation chronology is preserved in its
 [decision background](../spec/feature/vertical-time-tabs/decision-background.md),
-and hardware checks live in the
+which also carries the required-work, deferred and see-also material this
+record shed in the split.
+Hardware checks live in the
 [vertical-time-tabs verification procedure](../qa/verification-procedures/vertical-time-tabs.md).
 
 ## Decision
@@ -79,3 +81,6 @@ Page.
 
 - **2026-08-25:** The prototype implementation and verification procedure landed.
   The decision remains proposed pending its dogfood window.
+- **2026-09-02:** The record was split into this ADR and the linked decision
+  background, which now carries the required-work, deferred and see-also
+  material.

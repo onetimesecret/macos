@@ -23,6 +23,8 @@ Three architectures were considered: a block-tree document, attributed ranges
 over a flat stream, and an operation log or conflict-free replicated data type
 (CRDT). The supporting analysis and later product-level choices are preserved in
 [the document-provenance design background](../spec/feature/document-provenance/decision-background.md).
+The three numbered architecture sections this record once carried now live in
+that design background rather than here.
 
 ## Decision
 
@@ -79,3 +81,5 @@ change.
 
 - **2026-08-07:** Architecture 3 and Loro were selected. Related interaction and
   retention choices were developed in the linked design background.
+- **2026-09-02:** The record was split into this ADR and the linked design
+  background, which now carries the three numbered architecture sections.

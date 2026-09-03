@@ -7,7 +7,6 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 - **Status:** accepted
 - **Date:** 2026-09-01
 - **Depends on:** [ADR-0021](0021-multi-device-sync-over-a-blind-relay.md), which separates account admission from device trust.
-- **Leaves standing:** [ADR-0004](0004-keychain-prompt-timing.md) and [ADR-0016](0016-content-persists-across-restart.md)'s `ThisDeviceOnly` protection class.
 
 ## Context
 
@@ -20,6 +19,15 @@ The complete flow, server requirements, response handling, and state-machine
 contract belong in the [account-auth specification](../spec/feature/sync/account-auth.md).
 Implementation-era analysis is preserved in the
 [account-auth decision background](../spec/feature/sync/account-auth-decision-background.md).
+Numbered sections of this ADR cited elsewhere in the tree, such as "ADR-0027
+section 4", now live in that account-auth decision background rather than in
+this record.
+
+This decision leaves [ADR-0004](0004-keychain-prompt-timing.md)'s rule that key
+access happens on use rather than at launch standing, and leaves standing
+[ADR-0016](0016-content-persists-across-restart.md)'s `ThisDeviceOnly`
+protection class: the refresh token takes the same class as every other secret
+in that store.
 
 ## Decision
 
@@ -82,3 +90,6 @@ Never rewind across a compaction boundary or silently discard unpublished work.
 
 - **2026-09-01:** Accepted after testing the portless loopback registration,
   refresh behavior, and scope behavior against a running `rodauth-oauth` server.
+- **2026-09-02:** The record was split into this ADR and the linked account-auth
+  decision background, which now carries the numbered sections other documents
+  cite.
