@@ -14,6 +14,8 @@ import re
 import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 DOC_STATUS = {"draft", "needs-review", "reviewed", "stale"}
 ADR_STATUS = {"proposed", "accepted", "rejected", "superseded"}
 REQUIRED_SECTIONS = ("Context", "Decision", "Consequences", "Eject triggers")
@@ -24,6 +26,18 @@ RELATION_FIELDS = {
     "Supersedes",
     "Supersedes in part",
 }
+# Every metadata key the README makes canonical. Lifecycle events belong in
+# the dated '## Decision history' section, not here, so the list stays short
+# on purpose. documentation_status is frontmatter and is deliberately absent.
+ALLOWED_FIELDS = {"Status", "Date", "Ratified"} | RELATION_FIELDS
+# Relationships the README requires a back reference for. 'Depends on' is
+# navigational only, so it carries no reciprocal obligation.
+RECIPROCAL_FIELDS = {
+    "Superseded by": "Supersedes",
+    "Supersedes": "Superseded by",
+    "Superseded in part by": "Supersedes in part",
+    "Supersedes in part": "Superseded in part by",
+}
 
 ADR_FILE = re.compile(r"^(\d{4})-(?:[a-z0-9]+-)*[a-z0-9]+\.md$")
 TITLE = re.compile(r"^# ADR-(\d{4}): \S")
@@ -31,8 +45,9 @@ TITLE = re.compile(r"^# ADR-(\d{4}): \S")
 # the following lines.
 FIELD = re.compile(r"^- \*\*([^*]+):\*\*[ \t]*(.*)$")
 LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
-# Inline code spans; a link written inside one is an example, not a link.
-CODE_SPAN = re.compile(r"`[^`]*`")
+# Inline code spans of any backtick run length; a link written inside one is
+# an example, not a link.
+CODE_SPAN = re.compile(r"(`+).*?\1")
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DOC_STATUS_LINE = re.compile(
     r"^documentation_status:[ \t]*([a-z-]+)[ \t]*(?:#.*)?$"
@@ -40,16 +55,27 @@ DOC_STATUS_LINE = re.compile(
 # The frontmatter key restated as a visible field, which would let the two
 # copies drift.
 VISIBLE_DOC_STATUS = re.compile(r"documentation[_ -]status", re.IGNORECASE)
+# A Markdown inline link, reduced to its text when a heading is slugged.
+INLINE_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+SLUG_STRIP = re.compile(r"[^\w\- ]", re.UNICODE)
 
 
-def split_frontmatter(lines: list[str]) -> tuple[list[str], int]:
-    """Return the frontmatter lines and the index of the body's first line."""
+def split_frontmatter(lines: list[str]) -> tuple[list[str], int, str | None]:
+    """Split a file into frontmatter and body.
+
+    Returns the frontmatter lines, the index of the body's first line, and
+    an error tag: "missing" when there is no opening `---`, "unterminated"
+    when the opening `---` has no closing partner, None otherwise. The two
+    failures are distinct: an unterminated block has no body at all, so
+    scanning one as body would count a `# ` line inside the frontmatter as
+    the record's title.
+    """
     if not lines or lines[0].rstrip() != "---":
-        return [], 0
+        return [], 0, "missing"
     for i in range(1, len(lines)):
         if lines[i].rstrip() == "---":
-            return lines[1:i], i + 1
-    return [], 0
+            return lines[1:i], i + 1, None
+    return lines[1:], len(lines), "unterminated"
 
 
 def outside_fences(lines: list[str]) -> list[tuple[int, str]]:
@@ -94,8 +120,73 @@ def clean_link_target(target: str) -> str:
     return target.strip().split(" ", 1)[0]
 
 
-def check(path: Path, adr_dir: Path) -> list[str]:
+def slugify(heading: str) -> str:
+    """Slug a heading the way GitHub anchors do."""
+    text = INLINE_LINK.sub(r"\1", heading).strip()
+    text = SLUG_STRIP.sub("", text.lower())
+    return text.replace(" ", "-")
+
+
+_ANCHOR_CACHE: dict[Path, set[str] | None] = {}
+
+
+def anchors(path: Path) -> set[str] | None:
+    """Return the anchors of a Markdown file, or None if it cannot be read.
+
+    Duplicate headings take GitHub's `-1`, `-2`, ... suffixes.
+    """
+    resolved = path.resolve()
+    if resolved in _ANCHOR_CACHE:
+        return _ANCHOR_CACHE[resolved]
+    try:
+        lines = resolved.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        _ANCHOR_CACHE[resolved] = None
+        return None
+    found: set[str] = set()
+    counts: dict[str, int] = {}
+    for _, raw in outside_fences(lines):
+        m = re.match(r"^(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$", raw)
+        if not m:
+            continue
+        slug = slugify(m.group(2))
+        if not slug:
+            continue
+        seen = counts.get(slug, 0)
+        counts[slug] = seen + 1
+        found.add(slug if seen == 0 else f"{slug}-{seen}")
+    _ANCHOR_CACHE[resolved] = found
+    return found
+
+
+def inside_repo(path: Path) -> bool:
+    try:
+        path.resolve().relative_to(REPO_ROOT)
+    except ValueError:
+        return False
+    return True
+
+
+def adr_numbers(text: str) -> list[str]:
+    """Return the ADR numbers linked from a stretch of metadata text."""
+    numbers: list[str] = []
+    for raw_target in LINK.findall(CODE_SPAN.sub("", text)):
+        target = clean_link_target(raw_target)
+        if target.startswith(("http://", "https://", "mailto:", "#")):
+            continue
+        rel, _, _ = target.partition("#")
+        if not rel:
+            continue
+        m = ADR_FILE.match(Path(rel).name)
+        if m and m.group(1) not in numbers:
+            numbers.append(m.group(1))
+    return numbers
+
+
+def check(path: Path) -> tuple[list[str], dict[str, tuple[int, list[str]]]]:
+    """Check one ADR. Returns its problems and its relationship claims."""
     problems: list[str] = []
+    relations: dict[str, tuple[int, list[str]]] = {}
 
     def bad(line_no: int | None, msg: str) -> None:
         where = f"{path.name}:{line_no}" if line_no else path.name
@@ -104,15 +195,20 @@ def check(path: Path, adr_dir: Path) -> list[str]:
     name_match = ADR_FILE.match(path.name)
     if not name_match:
         bad(None, "filename is not NNNN-lower-kebab-slug.md")
-        return problems
+        return problems, relations
     number = name_match.group(1)
 
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
-    front, body_start = split_frontmatter(lines)
+    front, body_start, front_error = split_frontmatter(lines)
 
-    if not front:
+    if front_error == "unterminated":
+        bad(1, "frontmatter block opens with --- but is never closed")
+        return problems, relations
+    if front_error == "missing":
         bad(1, "missing --- frontmatter block")
+    elif not front:
+        bad(1, "frontmatter block is empty")
     else:
         found = [
             (i, m.group(1))
@@ -187,6 +283,18 @@ def check(path: Path, adr_dir: Path) -> list[str]:
             "Decision history must be a dated '## Decision history' section, not metadata",
         )
 
+    for key, (line_no, _) in sorted(fields.items(), key=lambda kv: kv[1][0]):
+        if key in ALLOWED_FIELDS or key == "Decision history":
+            continue
+        if VISIBLE_DOC_STATUS.search(key):
+            continue
+        bad(
+            line_no,
+            f"metadata field '{key}' is not canonical; "
+            f"allowed keys are {sorted(ALLOWED_FIELDS)}, and lifecycle "
+            "events belong in '## Decision history'",
+        )
+
     status: str | None = None
     if "Status" not in fields:
         bad(None, "no canonical '- **Status:**' metadata field")
@@ -218,6 +326,12 @@ def check(path: Path, adr_dir: Path) -> list[str]:
     elif not ISO_DATE.match(fields["Date"][1]):
         bad(fields["Date"][0], f"Date '{fields['Date'][1]}' is not YYYY-MM-DD")
 
+    if "Ratified" in fields and not ISO_DATE.match(fields["Ratified"][1]):
+        bad(
+            fields["Ratified"][0],
+            f"Ratified '{fields['Ratified'][1]}' is not YYYY-MM-DD",
+        )
+
     for key, (line_no, _) in fields.items():
         if VISIBLE_DOC_STATUS.search(key):
             bad(
@@ -227,19 +341,11 @@ def check(path: Path, adr_dir: Path) -> list[str]:
 
     for key in sorted(RELATION_FIELDS.intersection(fields)):
         line_no, _ = fields[key]
-        targets = LINK.findall(CODE_SPAN.sub("", field_block(lines, line_no)))
-        adr_targets = []
-        for raw_target in targets:
-            target = clean_link_target(raw_target)
-            rel, _, _ = target.partition("#")
-            if (
-                not target.startswith(("http://", "https://", "mailto:", "#"))
-                and rel
-                and ADR_FILE.match(Path(rel).name)
-            ):
-                adr_targets.append(target)
+        adr_targets = adr_numbers(field_block(lines, line_no))
         if not adr_targets:
             bad(line_no, f"'{key}' does not link a local ADR")
+        else:
+            relations[key] = (line_no, adr_targets)
 
     headings = [raw[3:].strip() for _, raw in body if raw.startswith("## ")]
     for section in REQUIRED_SECTIONS:
@@ -249,17 +355,67 @@ def check(path: Path, adr_dir: Path) -> list[str]:
         elif count > 1:
             bad(None, f"required section '## {section}' appears more than once")
 
+    own_anchors = anchors(path)
     for i, raw in visible_lines:
         for raw_target in LINK.findall(CODE_SPAN.sub("", raw)):
             target = clean_link_target(raw_target)
-            if target.startswith(("http://", "https://", "mailto:", "#")):
+            if target.startswith(("http://", "https://", "mailto:")):
                 continue
-            rel, _, _ = target.partition("#")
+            rel, _, fragment = target.partition("#")
             if not rel:
+                # A fragment-only link points into this same file.
+                if (
+                    fragment
+                    and own_anchors is not None
+                    and fragment.lower() not in own_anchors
+                ):
+                    bad(
+                        i,
+                        f"link fragment has no matching heading: {target}",
+                    )
                 continue
-            if not (path.parent / rel).exists():
+            destination = path.parent / rel
+            if not destination.exists():
                 bad(i, f"link target does not resolve: {target}")
+                continue
+            if not fragment:
+                continue
+            if destination.suffix.lower() != ".md" or not inside_repo(
+                destination
+            ):
+                continue
+            target_anchors = anchors(destination)
+            if target_anchors is None:
+                continue
+            if fragment.lower() not in target_anchors:
+                bad(i, f"link fragment has no matching heading: {target}")
 
+    return problems, relations
+
+
+def reciprocity(
+    records: dict[str, dict[str, tuple[int, list[str]]]],
+    paths: dict[str, Path],
+) -> list[str]:
+    """Check that every declared supersession is claimed from both sides."""
+    problems: list[str] = []
+    for number in sorted(records):
+        relations = records[number]
+        for key, mirror in RECIPROCAL_FIELDS.items():
+            if key not in relations:
+                continue
+            line_no, targets = relations[key]
+            for other in targets:
+                if other not in records:
+                    continue
+                back = records[other].get(mirror)
+                if back and number in back[1]:
+                    continue
+                problems.append(
+                    f"{paths[number].name}:{line_no}: '{key}' names "
+                    f"ADR-{other}, but {paths[other].name} has no "
+                    f"'{mirror}' naming ADR-{number}"
+                )
     return problems
 
 
@@ -275,9 +431,11 @@ def main(argv: list[str]) -> int:
         return 2
 
     numbers: dict[str, Path] = {}
+    records: dict[str, dict[str, tuple[int, list[str]]]] = {}
     problems: list[str] = []
     for path in files:
         m = ADR_FILE.match(path.name)
+        file_problems, relations = check(path)
         if m:
             if m.group(1) in numbers:
                 problems.append(
@@ -285,7 +443,10 @@ def main(argv: list[str]) -> int:
                 )
             else:
                 numbers[m.group(1)] = path
-        problems.extend(check(path, adr_dir))
+                records[m.group(1)] = relations
+        problems.extend(file_problems)
+
+    problems.extend(reciprocity(records, numbers))
 
     for problem in problems:
         print(problem)
