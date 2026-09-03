@@ -2143,6 +2143,30 @@ pub unsafe extern "C" fn companion_tab_set_rung(
     guard.store.set_rung(TabId::from_raw(tab), ttl).is_some()
 }
 
+/// Turn the boundary snap on or off (ADR-0011 section 4). On, a rung
+/// applied from now on rounds its deadline up to the next whole local
+/// clock hour (rungs under a day) or local midnight (a day and up),
+/// by at most the smaller of a day and the rung. Off, a rung's
+/// deadline is exactly its nominal duration. The setting lives in the
+/// shell's own defaults domain, so the shell tells the core at launch
+/// and on every flip; the core starts with it on. Flipping it
+/// recalculates nothing: every deadline already set stands. Returns
+/// false only for a null handle or a poisoned lock.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_set_grace_snap(handle: *mut CompanionHandle, on: bool) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.store.set_grace_snap(on);
+    true
+}
+
 /// The pause gesture (double-click a tab), a three state cycle: the
 /// first press holds the page's clock for **1 hour**; a press while
 /// held tops the hold up to **24 hours from now** — never cumulative;
@@ -4370,8 +4394,10 @@ mod tests {
             let (tab, sheet) = new_page(handle);
             assert_ne!(sheet, 0);
 
-            // Default rung is 8h; the one armed timer is under that and
-            // far above zero.
+            // On the 8h rung with the snap off, the one armed timer is
+            // under that and far above zero.
+            assert!(companion_set_grace_snap(handle, false));
+            assert!(companion_tab_set_rung(handle, tab, 2)); // 8h
             let ms = companion_next_event_ms(handle);
             assert!(ms > 7 * 60 * 60 * 1000, "deadline ms: {ms}");
             assert!(ms <= 8 * 60 * 60 * 1000, "deadline ms: {ms}");
@@ -4389,6 +4415,51 @@ mod tests {
             assert!(sheets.contains("spoken_remaining"), "{sheets}");
 
             assert_eq!(companion_expire_due(handle), 0, "nothing due yet");
+            companion_free(handle);
+        }
+    }
+
+    /// ADR-0011 sections 3 and 4 at the seam: a new tab opens on the
+    /// ceiling, and with the snap on (the core's own default) its
+    /// deadline rounds up to a local midnight, by at most a day; with
+    /// the snap off a rung is exactly its nominal duration. Flipping
+    /// the setting moves no deadline already set.
+    #[test]
+    fn a_new_tab_opens_on_the_ceiling_and_the_snap_rounds_its_deadline_up() {
+        const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+        let handle = handle();
+        unsafe {
+            let (tab, _) = new_page(handle);
+            let sheets = take_json(companion_tabs_json(handle));
+            assert!(sheets.contains("\"rung_label\":\"7d\""), "{sheets}");
+
+            // Snapped: a week, plus however long until the midnight
+            // after it, and never a day more.
+            let snapped = companion_next_event_ms(handle);
+            assert!(snapped >= 7 * DAY_MS, "deadline ms: {snapped}");
+            assert!(snapped <= 8 * DAY_MS, "deadline ms: {snapped}");
+
+            // Turning the snap off moves nothing that is already set…
+            assert!(companion_set_grace_snap(handle, false));
+            let unmoved = companion_next_event_ms(handle);
+            assert!((snapped - unmoved).abs() < 1_000, "{snapped} vs {unmoved}");
+
+            // …and the next application is exact: 7d to the millisecond
+            // or a hair under, never over.
+            assert!(companion_tab_set_rung(handle, tab, 5)); // 7d
+            let exact = companion_next_event_ms(handle);
+            assert!(exact <= 7 * DAY_MS, "deadline ms: {exact}");
+            assert!(exact > 7 * DAY_MS - 1_000, "deadline ms: {exact}");
+
+            // Back on, an hour rung rounds up to the next whole clock
+            // hour: more than the hour only by the minutes to it.
+            assert!(companion_set_grace_snap(handle, true));
+            assert!(companion_tab_set_rung(handle, tab, 0)); // 1h
+            let hour = companion_next_event_ms(handle);
+            assert!(hour >= 60 * 60 * 1000 - 1_000, "deadline ms: {hour}");
+            assert!(hour <= 2 * 60 * 60 * 1000, "deadline ms: {hour}");
+
+            assert!(!companion_set_grace_snap(std::ptr::null_mut(), true));
             companion_free(handle);
         }
     }
