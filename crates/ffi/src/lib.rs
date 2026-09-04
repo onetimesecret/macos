@@ -452,9 +452,7 @@ pub unsafe extern "C" fn companion_test_wire_last_json(
         return ptr::null_mut();
     };
     match &guard.wire {
-        Wire::Stub(stub) => stub
-            .last_json()
-            .map_or(ptr::null_mut(), into_c_string),
+        Wire::Stub(stub) => stub.last_json().map_or(ptr::null_mut(), into_c_string),
         Wire::Real(_) => ptr::null_mut(),
     }
 }
@@ -2480,7 +2478,12 @@ pub unsafe extern "C" fn companion_chip_conceal(
             return conceal_error("this chip is not text");
         };
         let payload = Zeroizing::new(text.to_owned());
-        (conn, load_token(&*guard.credentials), payload, guard.wire.clone())
+        (
+            conn,
+            load_token(&*guard.credentials),
+            payload,
+            guard.wire.clone(),
+        )
     };
     let (conn, token, payload, wire) = staged;
 
@@ -2531,7 +2534,12 @@ pub unsafe extern "C" fn companion_sheet_conceal(
         if payload.trim().is_empty() {
             return conceal_error("nothing to conceal");
         }
-        (conn, load_token(&*guard.credentials), payload, guard.wire.clone())
+        (
+            conn,
+            load_token(&*guard.credentials),
+            payload,
+            guard.wire.clone(),
+        )
     };
     let (conn, token, payload, wire) = staged;
 
@@ -3680,8 +3688,15 @@ mod tests {
             let chip_id = serde_json::from_str::<serde_json::Value>(&chip).unwrap()["chip_id"]
                 .as_u64()
                 .unwrap();
-            assert!(companion_test_wire_stub(handle, 200, cstring(OK_BODY).as_ptr()));
-            assert!(companion_test_wire_last_json(handle).is_null(), "nothing sent yet");
+            assert!(companion_test_wire_stub(
+                handle,
+                200,
+                cstring(OK_BODY).as_ptr()
+            ));
+            assert!(
+                companion_test_wire_last_json(handle).is_null(),
+                "nothing sent yet"
+            );
 
             // Options naming nothing: the link's own seven days.
             let result = take_json(companion_chip_conceal(handle, chip_id, ptr::null()));
@@ -3689,10 +3704,18 @@ mod tests {
             assert_eq!(v["ok"], true);
             assert_eq!(v["receipt_id"], "rcpt_9f2");
             let record = take_json(companion_test_wire_last_json(handle));
-            assert!(!record.contains("hunter2"), "the payload never crosses: {record}");
+            assert!(
+                !record.contains("hunter2"),
+                "the payload never crosses: {record}"
+            );
             let r: serde_json::Value = serde_json::from_str(&record).unwrap();
             assert_eq!(r["method"], "POST");
-            assert!(r["url"].as_str().unwrap().ends_with("/api/v3/guest/secret/conceal"));
+            assert!(
+                r["url"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("/api/v3/guest/secret/conceal")
+            );
             assert_eq!(r["authorized"], false);
             assert_eq!(r["ttl"], 604_800);
             assert_eq!(r["share_domain"], "eu.onetimesecret.com");
@@ -3708,7 +3731,10 @@ mod tests {
             ));
             assert!(result.contains(r#""ok":true"#));
             let record = take_json(companion_test_wire_last_json(handle));
-            assert!(!record.contains("swordfish"), "the passphrase never crosses: {record}");
+            assert!(
+                !record.contains("swordfish"),
+                "the passphrase never crosses: {record}"
+            );
             let r: serde_json::Value = serde_json::from_str(&record).unwrap();
             assert_eq!(r["ttl"], 3600);
             assert_eq!(r["has_passphrase"], true);
@@ -3719,13 +3745,22 @@ mod tests {
             let result = take_json(companion_chip_conceal(handle, chip_id, ptr::null()));
             let v: serde_json::Value = serde_json::from_str(&result).unwrap();
             assert_eq!(v["ok"], false);
-            assert!(v["error"].as_str().unwrap().contains("could not reach the server"));
+            assert!(
+                v["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("could not reach the server")
+            );
             let record = take_json(companion_test_wire_last_json(handle));
             let r: serde_json::Value = serde_json::from_str(&record).unwrap();
             assert_eq!(r["ttl"], 604_800);
 
             // The Settings test rides the same wire.
-            assert!(companion_test_wire_stub(handle, 200, cstring("{}").as_ptr()));
+            assert!(companion_test_wire_stub(
+                handle,
+                200,
+                cstring("{}").as_ptr()
+            ));
             let result = take_json(companion_connection_test(handle));
             assert!(result.contains(r#""ok":true"#));
             let record = take_json(companion_test_wire_last_json(handle));
