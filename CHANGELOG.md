@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A conceal can now be driven to the wire in the shell suite**
+  (`companion_test_wire_stub`, `companion_test_wire_last_json`;
+  `companion-ffi` 0.23.0). Both conceal routes and the Settings test
+  built the real transport inline, and that transport is TLS-only
+  against one configured host, so no Swift test could send a conceal
+  anywhere and nothing asserted that the figure on a draft is the
+  figure on the wire. The handle now holds its transport, built once
+  with it as the transport crate asks, and under `test-util` a seam
+  swaps in a stub that answers every request the same way and keeps,
+  per request, a summary made at send time from the non-secret fields
+  of the body: the method, the URL, whether a token rode along, the
+  TTL, the share domain, whether a passphrase was set, the recipient.
+  The body is dropped before the send returns, so the record holds no
+  payload and no passphrase and crosses the seam like any other JSON.
+  Two shell tests use it: a client sending nil gets the seam's own
+  seven days, and a draft walked off its default arrives on the wire
+  with its own figure. Both stub an outage rather than a link, since
+  a link would land on the real clipboard. The seam sits behind the
+  off-by-default `test-util` feature (ADR-0018), and the release
+  packaging check names both symbols.
+
 - **A new page opens with the whole week, and a deadline lands where
   the clock does** (issue #146, ADR-0011; app 0.17.0, `companion-ffi`
   0.21.0, `companion-core` 0.18.0). A new tab now starts at the top
