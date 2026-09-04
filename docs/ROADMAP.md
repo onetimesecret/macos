@@ -2,7 +2,28 @@
 
 GitHub milestones and issues are the source of truth for delivery status. This document is a short index to current work and durable plans.
 
-## Current milestone
+## Current work
+
+No milestone is open. Milestones 3 and 4 both closed out in the first days of September 2026 and are listed below, and no issue in the repository is currently open.
+
+- The [paradigms note](spec/feature/vertical-time-tabs/2026-0828-paradigms.md) carries the parked questions, including the durable tab mapping that ADR-0011 section 6 requires before a second paradigm may ship. They stay parked until a second paradigm is wanted.
+- [ADR-0025](adr/0025-block-revision-history.md) (block revision history) is still proposed. It anchors the undo work already landed and is the next decision to settle when block level history is picked up again.
+
+## Completed milestones
+
+### [Editing rhythm and the time rail](https://github.com/onetimesecret/macos/milestone/4)
+
+**Goal:** land the refinements deferred out of the sync milestone, plus the standing judgment calls the sync work surfaced: a writing rhythm that stays safe beside other devices, time rail reading polish for vertical tabs mode, and TTL semantics once the page clock stopped standing in for a link's lifetime.
+
+- [#131 Time rail: word labels and a faint minimap background](https://github.com/onetimesecret/macos/issues/131)
+- [#132 Adopt Loro's UndoManager before remote ops land in live documents](https://github.com/onetimesecret/macos/issues/132)
+- [#133 Weigh the pause research at word, sentence, and paragraph boundaries](https://github.com/onetimesecret/macos/issues/133)
+- [#145 Finish ADR-0011 and settle the link default TTL](https://github.com/onetimesecret/macos/issues/145)
+- [#146 Implement ADR-0011: ceiling default rung, grace boundary snap, grace setting](https://github.com/onetimesecret/macos/issues/146)
+
+[#139 Remove the page-to-link TTL coupling that ADR-0026 retires](https://github.com/onetimesecret/macos/issues/139) was tracked outside the milestone because it was blocked until ADR-0011 named the link default. It landed in PR 149 once #146 had merged, so the milestone's TTL goal is met in full.
+
+Decisions: [ADR-0011](adr/0011-ttl-choices.md) (TTL rungs are intuitive durations at the surface's tempo; the default rung is the ceiling, a deadline snaps to a clock boundary at creation, and a link's default is a fixed seven days) and [ADR-0026](adr/0026-link-lifetime-is-independent-of-page-lifetime.md) (a link's lifetime is not the page's lifetime). The undo work is anchored on [ADR-0025](adr/0025-block-revision-history.md), still proposed. The pause weighing lives in [the pause boundaries note](spec/feature/block-revisions/2026-0901-pause-boundaries.md).
 
 ### [Multi device sync](https://github.com/onetimesecret/macos/milestone/3)
 
@@ -20,9 +41,9 @@ GitHub milestones and issues are the source of truth for delivery status. This d
 - [#101 Make the compaction ceremony a coordinated protocol event](https://github.com/onetimesecret/macos/issues/101)
 - [#102 What sync looks like in the app: enrolment, status, and the off switch](https://github.com/onetimesecret/macos/issues/102)
 
-See the [detailed plan](plans/multi-device-sync.md).
+Decisions: [ADR-0021](adr/0021-multi-device-sync-over-a-blind-relay.md) (multi device sync over a blind relay: the earliest known expiry wins across devices, and a joining device starts at the current key frame) and [ADR-0027](adr/0027-account-auth-gates-the-sync-channel.md) (account auth gates the sync channel).
 
-## Completed milestones
+See the [detailed plan](plans/multi-device-sync.md).
 
 ### [Dogfood fixes](https://github.com/onetimesecret/macos/milestone/2)
 
@@ -38,7 +59,7 @@ See the [detailed plan](plans/multi-device-sync.md).
 - [#77 Cmd-n as the default new page shortcut](https://github.com/onetimesecret/macos/issues/77)
 - [#78 Hide the ledger, resize arrows, page button, and header dot](https://github.com/onetimesecret/macos/issues/78)
 
-[#79 Explore a page per unit of time with vertical time tabs](https://github.com/onetimesecret/macos/issues/79) remains open. It is an exploration of a different tab model rather than a fault, so it was deliberately not treated as a blocker for closing this milestone, and it carries forward on its own.
+[#79 Explore a page per unit of time with vertical time tabs](https://github.com/onetimesecret/macos/issues/79) is an exploration of a different tab model rather than a fault, so it was deliberately not treated as a blocker for closing this milestone. It carried forward on its own and closed on 25 August 2026.
 
 Decisions: [ADR-0019](adr/0019-the-pad-is-on-every-space.md) (the pad is on every Space, and does not travel between them).
 
