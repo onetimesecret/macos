@@ -1,8 +1,10 @@
 import SwiftUI
 
 /// The conceal confirmation, inline and in place (docs/spec/04 — not
-/// a modal): destination, TTL seeded from the page's remaining time,
-/// optional passphrase and recipient, one confirming click. The network
+/// a modal): destination, TTL starting at the link's own seven-day
+/// default (ADR-0011 section 5, never the page's remaining time per
+/// ADR-0026), optional passphrase and recipient, one confirming click.
+/// The network
 /// boundary is explicit — nothing leaves until "Create link". Failure
 /// is inline with retry; success says the link is on the clipboard and
 /// offers Burn local copy.
