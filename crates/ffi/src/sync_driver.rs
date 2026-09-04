@@ -2331,6 +2331,7 @@ mod tests {
             last_write: None,
             connection: None,
             credentials,
+            wire: crate::conceal::Wire::real(),
             sync: SyncState::default(),
         }
     }

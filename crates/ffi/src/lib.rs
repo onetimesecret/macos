@@ -87,8 +87,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use companion_credentials::{CredentialStore, credential_store_for, default_credential_store};
-use companion_transport::UreqTransport;
-use conceal::{ConcealOpts, Concealed, Connection, conceal};
+use conceal::{ConcealOpts, Concealed, Connection, Wire, conceal};
 use ots_client::Transport as _;
 
 use companion_core::{
@@ -244,6 +243,11 @@ struct Companion {
     /// in-memory store in tests and off macOS. The token itself never
     /// sits in `connection`.
     credentials: Arc<dyn CredentialStore>,
+    /// The transport a conceal and the Settings test go out on: the
+    /// real one in every shipping build, a stub only when a test-util
+    /// seam installs one. Held here so it is built once per handle and
+    /// read under the same lock as the connection.
+    wire: Wire,
     /// Everything sync holds (issues #98 and #102). Default is
     /// all-off: a handle that never configures sync behaves
     /// bit-for-bit like one built before sync existed.
@@ -388,6 +392,73 @@ pub unsafe extern "C" fn companion_test_age_ms(handle: *mut CompanionHandle, gap
         .is_ok()
 }
 
+/// Replace the handle's transport with a stub that answers every
+/// request with `status` and `body` (a `status` of zero answers
+/// nothing: every send fails as an outage) and keeps, per request, a
+/// redacted record readable through [`companion_test_wire_last_json`].
+/// The shipping wire is TLS-only against one configured host, so
+/// without this no test can drive a conceal to the wire; with it the
+/// shell suite can assert what its draft became on the way out, which
+/// is the one claim the Rust mock tests cannot make for it. Returns
+/// whether the stub was installed.
+///
+/// Compiled only under the `test-util` feature (ADR-0018): the release
+/// artifact never exports this symbol, and the packaging path checks.
+///
+/// # Safety
+/// `handle` must be a valid handle. `body` must be null or a valid,
+/// NUL-terminated C string.
+#[cfg(feature = "test-util")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_test_wire_stub(
+    handle: *mut CompanionHandle,
+    status: u16,
+    body: *const c_char,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let body = unsafe { cstr(body) }.unwrap_or("");
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.wire = Wire::Stub(Arc::new(conceal::StubWire::answering(status, body)));
+    true
+}
+
+/// The most recent request the stub installed by
+/// [`companion_test_wire_stub`] saw, as JSON:
+/// `{"method", "url", "authorized", "ttl", "share_domain",
+///   "has_passphrase", "recipient"}`. The record is a summary made at
+/// send time from the non-secret fields of the body, which was then
+/// dropped: no payload and no passphrase ever sits in it, so it crosses
+/// the seam on the same terms as every other JSON here. Null when no
+/// stub is installed or nothing has been sent yet. Free with
+/// [`companion_string_free`].
+///
+/// Compiled only under the `test-util` feature (ADR-0018).
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[cfg(feature = "test-util")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_test_wire_last_json(
+    handle: *mut CompanionHandle,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    match &guard.wire {
+        Wire::Stub(stub) => stub
+            .last_json()
+            .map_or(ptr::null_mut(), into_c_string),
+        Wire::Real(_) => ptr::null_mut(),
+    }
+}
+
 fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
     companion_core::harden_process();
     // The one place the backend is chosen: the real system clipboard on
@@ -403,6 +474,7 @@ fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
         last_write: None,
         connection: None,
         credentials,
+        wire: Wire::real(),
         sync: sync_driver::SyncState::default(),
     };
     Box::into_raw(Box::new(CompanionHandle {
@@ -2320,17 +2392,17 @@ pub unsafe extern "C" fn companion_connection_test(handle: *mut CompanionHandle)
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
-    let conn = {
+    let (conn, wire) = {
         let Ok(guard) = handle.inner.lock() else {
             return ptr::null_mut();
         };
-        guard.connection.clone()
+        (guard.connection.clone(), guard.wire.clone())
     };
     let Some(conn) = conn else {
         return conceal_error("no connection configured");
     };
     let api = ots_client::Api::new(conn.server_url, Box::new(ots_client::NoAuth));
-    let result = match companion_transport::UreqTransport::new().send(api.status_request()) {
+    let result = match wire.send(api.status_request()) {
         Ok(response) if (200..300).contains(&response.status) => {
             serde_json::json!({ "ok": true })
         }
@@ -2408,11 +2480,11 @@ pub unsafe extern "C" fn companion_chip_conceal(
             return conceal_error("this chip is not text");
         };
         let payload = Zeroizing::new(text.to_owned());
-        (conn, load_token(&*guard.credentials), payload)
+        (conn, load_token(&*guard.credentials), payload, guard.wire.clone())
     };
-    let (conn, token, payload) = staged;
+    let (conn, token, payload, wire) = staged;
 
-    match conceal(&conn, token, payload, &opts, UreqTransport::new()) {
+    match conceal(&conn, token, payload, &opts, wire) {
         Ok(concealed) => finish_conceal(handle, concealed, Concealable::Chip(chip)),
         Err(message) => conceal_error(&message),
     }
@@ -2459,11 +2531,11 @@ pub unsafe extern "C" fn companion_sheet_conceal(
         if payload.trim().is_empty() {
             return conceal_error("nothing to conceal");
         }
-        (conn, load_token(&*guard.credentials), payload)
+        (conn, load_token(&*guard.credentials), payload, guard.wire.clone())
     };
-    let (conn, token, payload) = staged;
+    let (conn, token, payload, wire) = staged;
 
-    match conceal(&conn, token, payload, &opts, UreqTransport::new()) {
+    match conceal(&conn, token, payload, &opts, wire) {
         Ok(concealed) => finish_conceal(handle, concealed, Concealable::Page(sheet)),
         Err(message) => conceal_error(&message),
     }
@@ -3337,6 +3409,7 @@ mod tests {
             last_write: None,
             connection: None,
             credentials,
+            wire: Wire::real(),
             sync: sync_driver::SyncState::default(),
         };
         Box::into_raw(Box::new(CompanionHandle {
@@ -3572,6 +3645,95 @@ mod tests {
             companion_free(first);
             companion_free(second);
             companion_free(third);
+        }
+    }
+
+    /// The wire seam's contract: a stub installed on a handle takes the
+    /// conceal a shell would send, the seam's own seven days when the
+    /// options name nothing and the named value when they do, and what
+    /// it hands back is a record that carries neither the payload nor
+    /// the passphrase. Gated with the seam (ADR-0018): run it with
+    /// `cargo test -p companion-ffi --features test-util`.
+    #[cfg(feature = "test-util")]
+    #[test]
+    fn wire_stub_records_the_conceal_without_its_secret() {
+        const OK_BODY: &str = r#"{"record":{
+            "receipt":{"identifier":"rcpt_9f2"},
+            "secret":{"identifier":"scrt_1","key":"abcdef"},
+            "share_domain":null}}"#;
+        let handle = handle();
+        unsafe {
+            // Nothing to read before a stub stands.
+            assert!(companion_test_wire_last_json(handle).is_null());
+            assert!(companion_connection_configure(
+                handle,
+                cstring(r#"{"server_url": "https://eu.onetimesecret.com"}"#).as_ptr()
+            ));
+            let (_tab, sheet) = new_page(handle);
+            let chip = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring("hunter2 hunter2").as_ptr(),
+                0,
+                0,
+            ));
+            let chip_id = serde_json::from_str::<serde_json::Value>(&chip).unwrap()["chip_id"]
+                .as_u64()
+                .unwrap();
+            assert!(companion_test_wire_stub(handle, 200, cstring(OK_BODY).as_ptr()));
+            assert!(companion_test_wire_last_json(handle).is_null(), "nothing sent yet");
+
+            // Options naming nothing: the link's own seven days.
+            let result = take_json(companion_chip_conceal(handle, chip_id, ptr::null()));
+            let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+            assert_eq!(v["ok"], true);
+            assert_eq!(v["receipt_id"], "rcpt_9f2");
+            let record = take_json(companion_test_wire_last_json(handle));
+            assert!(!record.contains("hunter2"), "the payload never crosses: {record}");
+            let r: serde_json::Value = serde_json::from_str(&record).unwrap();
+            assert_eq!(r["method"], "POST");
+            assert!(r["url"].as_str().unwrap().ends_with("/api/v3/guest/secret/conceal"));
+            assert_eq!(r["authorized"], false);
+            assert_eq!(r["ttl"], 604_800);
+            assert_eq!(r["share_domain"], "eu.onetimesecret.com");
+            assert_eq!(r["has_passphrase"], false);
+            assert!(r["recipient"].is_null());
+
+            // Options naming a value: that value, unchanged, and the
+            // passphrase reduced to the fact of one.
+            let result = take_json(companion_chip_conceal(
+                handle,
+                chip_id,
+                cstring(r#"{"ttl_secs": 3600, "passphrase": "swordfish"}"#).as_ptr(),
+            ));
+            assert!(result.contains(r#""ok":true"#));
+            let record = take_json(companion_test_wire_last_json(handle));
+            assert!(!record.contains("swordfish"), "the passphrase never crosses: {record}");
+            let r: serde_json::Value = serde_json::from_str(&record).unwrap();
+            assert_eq!(r["ttl"], 3600);
+            assert_eq!(r["has_passphrase"], true);
+
+            // A status of zero is an outage: the request is still on
+            // record, the result is the client's outage message.
+            assert!(companion_test_wire_stub(handle, 0, ptr::null()));
+            let result = take_json(companion_chip_conceal(handle, chip_id, ptr::null()));
+            let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+            assert_eq!(v["ok"], false);
+            assert!(v["error"].as_str().unwrap().contains("could not reach the server"));
+            let record = take_json(companion_test_wire_last_json(handle));
+            let r: serde_json::Value = serde_json::from_str(&record).unwrap();
+            assert_eq!(r["ttl"], 604_800);
+
+            // The Settings test rides the same wire.
+            assert!(companion_test_wire_stub(handle, 200, cstring("{}").as_ptr()));
+            let result = take_json(companion_connection_test(handle));
+            assert!(result.contains(r#""ok":true"#));
+            let record = take_json(companion_test_wire_last_json(handle));
+            let r: serde_json::Value = serde_json::from_str(&record).unwrap();
+            assert_eq!(r["method"], "GET");
+            assert!(r["url"].as_str().unwrap().ends_with("/api/v3/status"));
+            assert!(r["ttl"].is_null());
+            companion_free(handle);
         }
     }
 

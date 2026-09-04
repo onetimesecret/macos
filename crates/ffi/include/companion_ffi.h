@@ -130,6 +130,28 @@ CompanionHandle *companion_new_ephemeral(const char *tag);
  * (ADR-0018), on the same terms as companion_new_ephemeral() above. */
 bool companion_test_age_ms(CompanionHandle *handle, uint64_t gap_ms);
 
+/* Replace the handle's transport with a stub that answers every request
+ * with `status` and `body` (a `status` of zero answers nothing: every
+ * send fails as an outage) and keeps, per request, a redacted record
+ * readable through companion_test_wire_last_json(). The shipping wire
+ * is TLS-only against one configured host, so without this no test can
+ * drive a conceal to the wire; with it the shell suite can assert what
+ * its draft became on the way out. Returns whether the stub was
+ * installed. The symbol exists only in test-util builds of the core
+ * (ADR-0018), on the same terms as companion_new_ephemeral() above. */
+bool companion_test_wire_stub(CompanionHandle *handle, uint16_t status,
+                              const char *body);
+
+/* The most recent request the stub saw, as JSON:
+ *   {"method", "url", "authorized": bool, "ttl": u64|null,
+ *    "share_domain": string|null, "has_passphrase": bool,
+ *    "recipient": string|null}
+ * A summary made at send time from the non-secret fields of the body,
+ * which was then dropped: no payload and no passphrase ever sits in it.
+ * Null when no stub is installed or nothing has been sent yet. Free
+ * with companion_string_free(). Test-util builds only (ADR-0018). */
+char *companion_test_wire_last_json(CompanionHandle *handle);
+
 void companion_free(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */
