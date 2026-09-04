@@ -12,11 +12,8 @@
 //! never opens a socket. The extern fns in `lib.rs` pair it with
 //! `UreqTransport`, the one real transport.
 
-use std::time::Duration;
-
-use companion_core::TTL_LADDER;
 use ots_client::{
-    AuthStrategy, BasicAuth, Client, ConcealPayload, Error, NoAuth, Transport, share_link, snap_ttl,
+    AuthStrategy, BasicAuth, Client, ConcealPayload, Error, NoAuth, Transport, share_link,
 };
 use zeroize::Zeroizing;
 
@@ -88,13 +85,14 @@ impl ConcealOpts {
     }
 }
 
-/// The sheet's remaining time snapped **down** to a ladder value — the
-/// concealed secret never outlives the local intent (open question №13).
-pub(crate) fn ladder_snapped_ttl(remaining: Duration) -> u64 {
-    let allowed: Vec<u64> = TTL_LADDER.iter().map(Duration::as_secs).collect();
-    // The ladder is non-empty, so `snap_ttl` always finds a value.
-    snap_ttl(remaining.as_secs(), &allowed).unwrap_or_else(|| TTL_LADDER[0].as_secs())
-}
+/// The link's own default TTL when the caller names none: exactly seven
+/// days (ADR-0011 section 5). A link's lifetime is chosen as a link's
+/// lifetime; the page it was cut from is not an input (ADR-0026), so no
+/// page clock and no page ladder is consulted here. If the server ever
+/// reports an allowed-TTL set that excludes this value, the selection
+/// rule against that list is a separate decision (ADR-0011 eject
+/// trigger), not a fallback to the page ladder.
+pub(crate) const LINK_DEFAULT_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 
 /// The outcome the seam reports: the share link (for the clipboard,
 /// core-side) and the receipt identifier (the only thing retained).
@@ -117,11 +115,10 @@ pub(crate) fn conceal<T: Transport>(
     token: Option<Zeroizing<String>>,
     payload: Zeroizing<String>,
     opts: &ConcealOpts,
-    default_ttl_secs: u64,
     transport: T,
 ) -> Result<Concealed, String> {
     let mut conceal_payload = ConcealPayload::new(payload.as_str(), conn.effective_share_domain())
-        .with_ttl(opts.ttl_secs.unwrap_or(default_ttl_secs));
+        .with_ttl(opts.ttl_secs.unwrap_or(LINK_DEFAULT_TTL_SECS));
     if let Some(passphrase) = &opts.passphrase {
         conceal_payload = conceal_payload.with_passphrase(passphrase.as_str());
     }
@@ -218,7 +215,6 @@ mod tests {
             Some(Zeroizing::new("tok".into())),
             Zeroizing::new("the payload".into()),
             &defaults(),
-            28_800,
             &transport,
         )
         .unwrap();
@@ -238,7 +234,6 @@ mod tests {
             None,
             Zeroizing::new("p".into()),
             &defaults(),
-            3_600,
             &transport,
         )
         .unwrap();
@@ -252,15 +247,7 @@ mod tests {
     fn payload_carries_ttl_and_derived_share_domain() {
         let transport = MockTransport::returning(200, OK_BODY);
         let opts = ConcealOpts::parse(Some(r#"{"ttl_secs": 3600}"#)).unwrap();
-        conceal(
-            &conn(),
-            None,
-            Zeroizing::new("p".into()),
-            &opts,
-            28_800,
-            &transport,
-        )
-        .unwrap();
+        conceal(&conn(), None, Zeroizing::new("p".into()), &opts, &transport).unwrap();
         let seen = transport.seen.borrow();
         let body = seen.as_ref().unwrap().body.as_ref().unwrap();
         let v: serde_json::Value = serde_json::from_slice(body).unwrap();
@@ -276,7 +263,6 @@ mod tests {
             None,
             Zeroizing::new("p".into()),
             &defaults(),
-            3_600,
             &transport,
         )
         .unwrap_err();
@@ -288,7 +274,6 @@ mod tests {
             Some(Zeroizing::new("tok".into())),
             Zeroizing::new("p".into()),
             &defaults(),
-            3_600,
             &transport,
         )
         .unwrap_err();
@@ -296,11 +281,23 @@ mod tests {
     }
 
     #[test]
-    fn ttl_snaps_down_the_ladder() {
-        // 5h remaining → 3h rung, never 8h.
-        assert_eq!(ladder_snapped_ttl(Duration::from_secs(5 * 3600)), 3 * 3600);
-        // Shorter than every rung → the smallest rung, not zero.
-        assert_eq!(ladder_snapped_ttl(Duration::from_secs(60)), 3600);
+    fn ttl_defaults_to_seven_days_when_unnamed() {
+        // ADR-0011 section 5: the link default is a fixed seven days and
+        // takes no page clock as an input (ADR-0026).
+        let transport = MockTransport::returning(200, OK_BODY);
+        conceal(
+            &conn(),
+            None,
+            Zeroizing::new("p".into()),
+            &defaults(),
+            &transport,
+        )
+        .unwrap();
+        let seen = transport.seen.borrow();
+        let body = seen.as_ref().unwrap().body.as_ref().unwrap();
+        let v: serde_json::Value = serde_json::from_slice(body).unwrap();
+        assert_eq!(v["secret"]["ttl"], 604_800);
+        assert_eq!(LINK_DEFAULT_TTL_SECS, 7 * 24 * 3600);
     }
 
     #[test]

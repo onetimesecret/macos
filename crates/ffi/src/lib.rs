@@ -88,7 +88,7 @@ use std::time::Duration;
 
 use companion_credentials::{CredentialStore, credential_store_for, default_credential_store};
 use companion_transport::UreqTransport;
-use conceal::{ConcealOpts, Concealed, Connection, conceal, ladder_snapped_ttl};
+use conceal::{ConcealOpts, Concealed, Connection, conceal};
 use ots_client::Transport as _;
 
 use companion_core::{
@@ -2348,8 +2348,9 @@ pub unsafe extern "C" fn companion_connection_test(handle: *mut CompanionHandle)
 
 /// Conceal one sealed chip into a one-time link: the ↗ on a chip's
 /// hover actions. `opts_json` is `{"ttl_secs"?, "passphrase"?,
-/// "recipient"?}` or null (all defaults; TTL defaults to the page's
-/// remaining time snapped **down** the ladder). The sealed bytes travel
+/// "recipient"?}` or null (all defaults; the TTL defaults to the link's
+/// own seven days, ADR-0011 section 5, and takes nothing from the page's
+/// clock, ADR-0026). The sealed bytes travel
 /// core → client → transport and never through the caller; on success
 /// the share link is on the clipboard (transient-marked) and only the
 /// receipt id stays on the chip. **Blocks for the round-trip** — call
@@ -2400,7 +2401,6 @@ pub unsafe extern "C" fn companion_chip_conceal(
                 "this chip holds an image, which cannot travel as a text secret yet",
             );
         }
-        let default_ttl = ladder_snapped_ttl(sheet.remaining(guard.store.now()));
         let Some(bytes) = guard.store.chip_payload(chip) else {
             return conceal_error("that content is gone");
         };
@@ -2408,18 +2408,11 @@ pub unsafe extern "C" fn companion_chip_conceal(
             return conceal_error("this chip is not text");
         };
         let payload = Zeroizing::new(text.to_owned());
-        (conn, load_token(&*guard.credentials), payload, default_ttl)
+        (conn, load_token(&*guard.credentials), payload)
     };
-    let (conn, token, payload, default_ttl) = staged;
+    let (conn, token, payload) = staged;
 
-    match conceal(
-        &conn,
-        token,
-        payload,
-        &opts,
-        default_ttl,
-        UreqTransport::new(),
-    ) {
+    match conceal(&conn, token, payload, &opts, UreqTransport::new()) {
         Ok(concealed) => finish_conceal(handle, concealed, Concealable::Chip(chip)),
         Err(message) => conceal_error(&message),
     }
@@ -2466,24 +2459,11 @@ pub unsafe extern "C" fn companion_sheet_conceal(
         if payload.trim().is_empty() {
             return conceal_error("nothing to conceal");
         }
-        let default_ttl = guard
-            .store
-            .sheet(sheet)
-            .map_or(TTL_LADDER[0].as_secs(), |s| {
-                ladder_snapped_ttl(s.remaining(guard.store.now()))
-            });
-        (conn, load_token(&*guard.credentials), payload, default_ttl)
+        (conn, load_token(&*guard.credentials), payload)
     };
-    let (conn, token, payload, default_ttl) = staged;
+    let (conn, token, payload) = staged;
 
-    match conceal(
-        &conn,
-        token,
-        payload,
-        &opts,
-        default_ttl,
-        UreqTransport::new(),
-    ) {
+    match conceal(&conn, token, payload, &opts, UreqTransport::new()) {
         Ok(concealed) => finish_conceal(handle, concealed, Concealable::Page(sheet)),
         Err(message) => conceal_error(&message),
     }

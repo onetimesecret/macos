@@ -802,7 +802,8 @@ char *companion_connection_test(CompanionHandle *handle);
 /*
  * Conceal one sealed chip into a one-time link (the chip's hover ↗).
  * opts_json: {"ttl_secs"?, "passphrase"?, "recipient"?} or NULL (TTL
- * defaults to the page's remaining time snapped DOWN the ladder).
+ * defaults to the link's own seven days, ADR-0011 section 5; the
+ * page's clock is not an input, ADR-0026).
  * Sealed bytes travel core -> client -> transport, never through the
  * caller. On success the share link is on the clipboard (transient)
  * and only the receipt id stays on the chip. BLOCKS for the round-trip
