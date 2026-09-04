@@ -249,3 +249,6 @@ they do not exchange a paradigm or infer one from a rung.
   calculates one stored deadline per application from the device zone
   at that moment, and the setting is a persisted shell preference,
   on by default, with a Settings toggle.
+- **2026-09-03:** Section 5 implemented (issue #139): the conceal default
+  is the fixed seven days in both the seam and the shell. Neither the
+  page's clock nor the page ladder is an input to a link's TTL.

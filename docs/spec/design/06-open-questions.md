@@ -24,8 +24,10 @@ with a current leaning where one exists.
 - **Capacity** (was Q3). 9 sheets — the keyboard-map wall (⌘0 belongs to
   the ledger). Refuse-don't-evict unchanged. Whether 9 is too generous
   remains open (below).
-- **Default TTL** (was Q1). 8h stands; it survived three design rounds
-  without a challenger.
+- **Default TTL** (was Q1). 8h stood through three design rounds
+  without a challenger. ADR-0011 section 3 (2026-09-01) then moved the
+  default to the ladder's ceiling, seven days, so that every shortening
+  is a deliberate click.
 - **Expiry undo** (was Q5). Expiry stays silent; the ledger is the
   answer for ink (the typed context is what a tombstone was for), and
   sealed bytes get no tombstone of any kind.
@@ -105,9 +107,15 @@ with a current leaning where one exists.
     concealing work with zero configuration out of the box (great for
     self-hosters, but link provenance/trust questions for
     onetimesecret.com defaults)?
-16. **TTL semantics across a conceal.** Snap sheet-remaining time to
+16. **TTL semantics across a conceal.** ~~Snap sheet-remaining time to
     server-allowed TTLs — up, down, or nearest? Down is the conservative
-    (never outlive intent) leaning.
+    (never outlive intent) leaning.~~ Answered by ADR-0026 (2026-08-31)
+    and ADR-0011 section 5 (2026-09-01): the sheet's remaining time is
+    not an input to a link's TTL at all. A link defaults to exactly
+    seven days and an explicit choice replaces it. Snapping against a
+    server-reported allowed set is a separate decision if such a set
+    ever arrives (ADR-0026's second eject trigger). The coupling left
+    the code on 2026-09-03 (issue #139).
 17. **Global shortcut collisions.** ⇧⌘V is "paste and match style" in
     many editors; inside our own window that claim is ours, but the
     muscle-memory collision is real (⌥V is the held fallback). ⌘1–9/⌘0
