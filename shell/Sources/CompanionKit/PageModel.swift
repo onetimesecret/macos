@@ -294,7 +294,7 @@ public final class EditStepAvailability: ObservableObject {
 @MainActor
 public final class PageModel: ObservableObject {
     /// What this form factor decides differently — where its Keychain
-    /// items and sealed file live, which rung a fresh page opens on.
+    /// items and sealed file live.
     public let formFactor: FormFactor
 
     /// The strip: one entry per durable tab, in visible order, whether
@@ -388,6 +388,21 @@ public final class PageModel: ObservableObject {
         didSet { defaults.set(wrapsLines, forKey: Self.wrapKey) }
     }
     private static let wrapKey = "wrapsLines"
+
+    /// Whether a rung, when applied, rounds its deadline up to the next
+    /// whole clock hour (rungs under a day) or local midnight (a day and
+    /// up), by at most a day (ADR-0011 section 4). On unless turned
+    /// off. The value is the shell's, in this form factor's defaults,
+    /// and the core is told at launch and on every flip; the core
+    /// consults it only when a rung is applied, so flipping it moves no
+    /// deadline already set.
+    @Published public var snapsToBoundaries: Bool {
+        didSet {
+            defaults.set(snapsToBoundaries, forKey: Self.graceSnapKey)
+            client.setGraceSnap(snapsToBoundaries)
+        }
+    }
+    private static let graceSnapKey = "snapsToBoundaries"
 
     /// Whether the surface groups the live pages by the day they were
     /// born on and stands the tabs down the side, instead of showing
@@ -806,6 +821,11 @@ public final class PageModel: ObservableObject {
         // upgrade must not rearrange the pad of somebody who never
         // asked for a second way of looking at it (issue #79).
         showsTimeUnits = defaults.object(forKey: Self.timeUnitsKey) as? Bool ?? false
+        // Unset → on (ADR-0011 section 4). Told to the core here because
+        // a property observer does not run during init.
+        let snapsToBoundaries = defaults.object(forKey: Self.graceSnapKey) as? Bool ?? true
+        self.snapsToBoundaries = snapsToBoundaries
+        self.client.setGraceSnap(snapsToBoundaries)
         // No pages yet: the restore is the caller's to time
         // (`loadStateIfNeeded`). The panel defers it to the first
         // reveal, so launching at login never raises a Keychain prompt
@@ -2019,15 +2039,13 @@ public final class PageModel: ObservableObject {
             + "toggle in Settings"
     }
 
-    /// A new tab at this form factor's opening rung, holding a new
-    /// page. 0 means the store refused at the cap of 9. Returns the
-    /// TAB's id, which is what the selection keeps.
+    /// A new tab at the ladder's top rung (ADR-0011 section 3, the
+    /// core's own default), holding a new page. 0 means the store
+    /// refused at the cap of 9. Returns the TAB's id, which is what the
+    /// selection keeps.
     @discardableResult
     private func newTab() -> UInt64 {
         let id = client.newTab()
-        if id != 0, let rung = formFactor.defaultRung {
-            _ = client.setRung(tab: id, rung: rung)
-        }
         // A refusal at the cap changed nothing; only a real tab is dirt.
         if id != 0 { markDirty() }
         return id

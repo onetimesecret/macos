@@ -32,7 +32,7 @@ final class CoreContractTests: XCTestCase {
         // stamp, "MMDD-HHmm" in local time. The exact string depends on
         // the host clock and zone, so assert the shape.
         assertPlaceholderTitle(sheet.title)
-        XCTAssertEqual(Rung(rawValue: sheet.rungCode), .eightHours) // the default rung
+        XCTAssertEqual(Rung(rawValue: sheet.rungCode), .sevenDays) // the ceiling, ADR-0011 section 3
         XCTAssertEqual(sheet.chipCount, 0)
         XCTAssertFalse(sheet.paused)
         XCTAssertFalse(sheet.spokenRemaining.isEmpty)
@@ -56,10 +56,13 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(sheet.title, "deploy friday")
         XCTAssertEqual(sheet.chipCount, 1)
 
-        // The clock: cycling tapers down the ladder; the pause cycles
-        // hold → top up → release, and the summary says which press
-        // comes next so the tab can label the gesture honestly.
-        XCTAssertEqual(client.cycleRung(tab: tabID), .threeHours)
+        // The clock: cycling tapers down the ladder from the ceiling;
+        // the pause cycles hold → top up → release, and the summary
+        // says which press comes next so the tab can label the gesture
+        // honestly. The snap is off here so the bound below is the
+        // rung's own duration (the snap has its own suite).
+        XCTAssertTrue(client.setGraceSnap(false))
+        XCTAssertEqual(client.cycleRung(tab: tabID), .threeDays)
         XCTAssertTrue(client.pausePress(tab: tabID))
         sheet = try XCTUnwrap(client.tabs().first)
         XCTAssertTrue(sheet.paused)
@@ -81,8 +84,8 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(sheet.holdRemainingMs, 0)
         // The release gives the page back its own countdown, not a
         // longer one: it resumes on the rung the cycling left it.
-        XCTAssertEqual(Rung(rawValue: sheet.rungCode), .threeHours)
-        XCTAssertLessThanOrEqual(sheet.remainingMs, 3 * 60 * 60 * 1000)
+        XCTAssertEqual(Rung(rawValue: sheet.rungCode), .threeDays)
+        XCTAssertLessThanOrEqual(sheet.remainingMs, 3 * 24 * 60 * 60 * 1000)
 
         // Death: the page leaves the store and the ledger keeps the
         // account of what happened to it. Metadata only, newest first.

@@ -10,9 +10,10 @@ import Foundation
 /// the same code, and the same code touching sealed content must not
 /// exist twice. What is genuinely per-form-factor is small enough to fit
 /// here (where the Keychain items live, where the sealed file rests,
-/// which defaults domain holds the settings, which rung a fresh page
-/// opens on), so the difference is data the shared model reads rather
-/// than a second copy of the model.
+/// which defaults domain holds the settings), so the difference is data
+/// the shared model reads rather than a second copy of the model. The
+/// rung a fresh tab opens on used to be here too; ADR-0011 section 3
+/// made it the ladder's, the same for every surface.
 public struct FormFactor: Sendable {
     /// Scopes this form factor's Keychain items, always the running
     /// build's own identifier (ADR-0012: services derive from the bundle
@@ -36,22 +37,14 @@ public struct FormFactor: Sendable {
     /// The unified-log subsystem for this form factor's trails.
     public let loggerSubsystem: String
 
-    /// The rung a fresh page opens on, or nil for the core's own
-    /// default. The backdrop favours a week, a span you can reason
-    /// about by the calendar ("still need this next Friday?"), where
-    /// the panel opens shorter.
-    public let defaultRung: Rung?
-
     public init(
         credentialService: String,
         stateDirectory: String,
-        loggerSubsystem: String,
-        defaultRung: Rung?
+        loggerSubsystem: String
     ) {
         self.credentialService = credentialService
         self.stateDirectory = stateDirectory
         self.loggerSubsystem = loggerSubsystem
-        self.defaultRung = defaultRung
     }
 
     /// Where the sealed store rests between runs. Ciphertext only: the
@@ -199,8 +192,7 @@ public struct FormFactor: Sendable {
         return running
     }
 
-    /// The summoned panel (docs/spec/04): accessory posture, the core's
-    /// default opening rung.
+    /// The summoned panel (docs/spec/04): accessory posture.
     ///
     /// Computed rather than stored, because the identifier it derives
     /// everything from is a property of the running build: a `.debug`
@@ -212,8 +204,7 @@ public struct FormFactor: Sendable {
         return FormFactor(
             credentialService: id,
             stateDirectory: "\(id).noindex",
-            loggerSubsystem: id,
-            defaultRung: nil
+            loggerSubsystem: id
         )
     }
 
@@ -225,8 +216,7 @@ public struct FormFactor: Sendable {
         return FormFactor(
             credentialService: id,
             stateDirectory: "\(id).noindex",
-            loggerSubsystem: id,
-            defaultRung: .sevenDays
+            loggerSubsystem: id
         )
     }
 }

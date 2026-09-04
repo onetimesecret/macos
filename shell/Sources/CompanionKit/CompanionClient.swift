@@ -745,6 +745,15 @@ public final class CompanionClient: @unchecked Sendable {
         companion_tab_set_rung(handle, tab, rung.rawValue)
     }
 
+    /// The boundary snap (ADR-0011 section 4): on, a rung applied from
+    /// now on rounds its deadline up to the next whole clock hour or
+    /// local midnight, by at most a day; off, a rung is exactly its
+    /// nominal duration. Deadlines already set never move.
+    @discardableResult
+    public func setGraceSnap(_ on: Bool) -> Bool {
+        companion_set_grace_snap(handle, on)
+    }
+
     /// Double-click the tab: hold 1h, top up to 24h from now, then
     /// release, the countdown resumes where it froze. False for a slot
     /// with no page in it, which has no clock to hold.

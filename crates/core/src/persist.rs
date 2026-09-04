@@ -893,7 +893,7 @@ fn read_tab(
                 now,
                 away,
                 wall_ms,
-                rung.duration(),
+                rung.longest_life(),
                 next_sheet_id,
                 next_chip_id,
             )?)
@@ -914,16 +914,17 @@ fn read_tab(
     })
 }
 
-/// One page record. `ceiling` is the duration of the rung its tab was
-/// read at, and it bounds every life span this record can claim: seven
-/// days is the top of the ladder, so seven days is the most life a
-/// restored page may come back holding, whatever the bytes say
-/// (ADR-0016 section 10, case 7). A hold is bounded too, but by the
-/// ceiling the pause gesture sets rather than by the rung, since a
-/// suspension is not life the ladder measures. On the honest write path the bound
-/// holds by construction, since a rung click sets the deadline to the
-/// rung's own duration and restore only ever subtracts. It is a file
-/// nobody in this process wrote that the clamp is for: a stale or
+/// One page record. `ceiling` is the longest life the rung its tab was
+/// read at can give a page ([`Ttl::longest_life`]: the nominal duration
+/// plus the most the boundary snap may add, ADR-0011 section 4), and it
+/// bounds every life span this record can claim: eight days is the most
+/// a restored page on the 7d rung may come back holding, whatever the
+/// bytes say (ADR-0016 section 10, case 7). A hold is bounded too, but
+/// by the ceiling the pause gesture sets rather than by the rung, since
+/// a suspension is not life the ladder measures. On the honest write
+/// path the bound holds by construction, since a rung click sets the
+/// deadline to at most that life and restore only ever subtracts. It is
+/// a file nobody in this process wrote that the clamp is for: a stale or
 /// hand-edited span is the one number a replayed generation can move
 /// (ADR-0016 section 8), and the ladder's ceiling is what it must not
 /// move past.
@@ -1235,9 +1236,21 @@ mod tests {
 
     const HOUR: Duration = Duration::from_secs(60 * 60);
 
+    /// A store on `clock` with the boundary snap off, so a rung's
+    /// nominal duration is what every clock assertion below reads, and
+    /// with new tabs on the eight hour rung the time-away arithmetic was
+    /// written against (ADR-0011 section 3 moved the default to the
+    /// ceiling; the store's own tests cover that). The snap's own
+    /// round trip is `a_snapped_deadline_survives_the_round_trip`.
+    fn store_on(clock: ManualClock) -> SheetStore<ManualClock> {
+        SheetStore::new(clock)
+            .with_grace_snap(false)
+            .with_default_rung(Ttl::from_secs(8 * 60 * 60).unwrap())
+    }
+
     fn store() -> (SheetStore<ManualClock>, ManualClock) {
         let clock = ManualClock::new();
-        (SheetStore::new(clock.clone()), clock)
+        (store_on(clock.clone()), clock)
     }
 
     /// The slot a page stands in, for the tab-addressed routes.
@@ -1289,7 +1302,7 @@ mod tests {
         let (original, clock, first, second) = populated();
         let snapshot = original.snapshot(1_000_000);
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         let restored = revived.restore(&snapshot, 1_000_000).unwrap();
         assert_eq!(restored, 2);
 
@@ -1380,7 +1393,7 @@ mod tests {
 
         let snapshot = store.snapshot(0);
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 0).unwrap();
         let sheet = revived.sheets().next().unwrap();
         assert_eq!(
@@ -1438,7 +1451,7 @@ mod tests {
         // The ceremony destroyed the ops that proved the 11:00 cut and
         // no surviving character can vote for it, so the file is the
         // only place that stamp can live between launches.
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
         let sheet = revived.sheets().next().unwrap();
         assert_eq!(
@@ -1467,7 +1480,7 @@ mod tests {
         // which is a far worse answer than costing them an hour on a
         // timestamp.
         let older = without_the_page_floor(&snapshot, floor_len(store.sheet(id).unwrap()));
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&older, wall).unwrap(), 1);
         let sheet = revived.sheets().next().unwrap();
         assert_eq!(sheet.segments(), [Segment::Ink("hello\n".into())]);
@@ -1548,7 +1561,7 @@ mod tests {
             "the graduated origin must survive into the sealed file"
         );
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
         let sheet = revived.sheets().next().unwrap();
         assert_eq!(sheet.segments(), segments.as_slice());
@@ -1587,7 +1600,7 @@ mod tests {
 
         let wall = real_wall_ms();
         let snapshot = store.snapshot(wall);
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
 
         // A rebuild knows only paragraphs; the recorded grouping is what
@@ -1631,7 +1644,7 @@ mod tests {
         }
         let wall = real_wall_ms();
         let snapshot = store.snapshot(wall);
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&snapshot, wall).unwrap(), 1);
         let metas = revived.sheets().next().unwrap().blocks_meta();
 
@@ -1676,7 +1689,7 @@ mod tests {
             "the page's derived title must not be in the file"
         );
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 0).unwrap();
         let tab = revived.tabs().next().unwrap();
         assert_eq!(tab.name(), Some("quarterly numbers"));
@@ -1685,6 +1698,32 @@ mod tests {
             tab.page().unwrap().derived_title(),
             Some("something else"),
             "recomputed from the restored segments, not read back"
+        );
+    }
+
+    /// A snapped deadline honestly exceeds its rung's nominal duration,
+    /// and the restore clamp admits it: the ceiling is the rung's
+    /// longest life, not the rung (ADR-0011 section 4). Time away still
+    /// drains it like any other span.
+    #[test]
+    fn a_snapped_deadline_survives_the_round_trip() {
+        // 2026-06-10 16:20 UTC, 09:20 in Los Angeles: 7d snaps to the
+        // midnight 14h40m past nominal.
+        let clock = ManualClock::new()
+            .with_wall_ms(1_781_108_400_000)
+            .with_local_offset_seconds(-7 * 3600);
+        let mut store = SheetStore::new(clock.clone());
+        let id = store.new_tab().unwrap().1;
+        let snapped = 7 * 24 * HOUR + 14 * HOUR + Duration::from_secs(40 * 60);
+        assert_eq!(store.sheet(id).unwrap().remaining(store.now()), snapped);
+        let snapshot = store.snapshot(0);
+
+        let mut revived = store_on(clock.clone());
+        revived.restore(&snapshot, 3 * 60 * 60 * 1000).unwrap();
+        assert_eq!(
+            revived.sheet(id).unwrap().remaining(revived.now()),
+            snapped - 3 * HOUR,
+            "the snap was clamped away by a restore reading the nominal rung"
         );
     }
 
@@ -1698,7 +1737,7 @@ mod tests {
         assert!(store.sync_document(unnamed, vec![Segment::Ink("errands".into())]));
 
         let snapshot = store.snapshot(0);
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&snapshot, 0).unwrap(), 2);
 
         let tabs: Vec<&Tab> = revived.tabs().collect();
@@ -1707,7 +1746,7 @@ mod tests {
         assert_eq!(tabs[0].rung(), Ttl::MIN);
         assert_eq!(tabs[0].label(0), "quarterly numbers");
         assert_eq!(tabs[1].name(), None, "an unnamed tab stays unnamed");
-        assert_eq!(tabs[1].rung(), Ttl::default());
+        assert_eq!(tabs[1].rung(), Ttl::from_secs(8 * 60 * 60).unwrap());
         assert_eq!(tabs[1].label(0), "errands", "its page supplies the label");
         // Identity is what persists, for the slot as much as the page.
         let before: Vec<ItemId> = store.tabs().map(Tab::uuid).collect();
@@ -1740,7 +1779,7 @@ mod tests {
             "a resealed empty strip must carry no page content"
         );
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&snapshot, 0).unwrap(), 0, "no live page");
         let tabs: Vec<&Tab> = revived.tabs().collect();
         assert_eq!(tabs.len(), 2, "both slots came back");
@@ -1865,7 +1904,7 @@ mod tests {
         let ledger = original.ledger_snapshot();
         let expected: Vec<LedgerRecord> = original.ledger().cloned().collect();
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         let restored = revived.restore_ledger(&ledger, 0).unwrap();
         assert_eq!(restored, expected.len());
         let records: Vec<LedgerRecord> = revived.ledger().cloned().collect();
@@ -1899,7 +1938,7 @@ mod tests {
 
         // A death recorded before the file lands, which is the shape of
         // what `expire_due` leaves behind on the way in.
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         let doomed = revived.new_tab().unwrap().1;
         assert!(revived.sync_document(doomed, vec![Segment::Ink("overnight".into())]));
         assert!(revived.close_tab(slot(&revived, doomed)));
@@ -1977,7 +2016,7 @@ mod tests {
         let ledger = original.ledger_snapshot();
         assert!(original.ledger().count() > 0);
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         let far_future =
             original.ledger().next().unwrap().at_wall_ms() + crate::LEDGER_RETENTION_MS + 1;
         assert_eq!(revived.restore_ledger(&ledger, far_future).unwrap(), 0);
@@ -2072,7 +2111,7 @@ mod tests {
             .collect();
 
         let snapshot = store.snapshot(0);
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 0).unwrap();
 
         let ids: Vec<u64> = revived.sheets().map(|s| s.id().raw()).collect();
@@ -2354,7 +2393,7 @@ mod tests {
         let snapshot = original.snapshot(1_000_000);
         let extended = with_trailing_field(&snapshot, MAGIC.len() + 16, b"a tab field from 2027");
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&extended, 1_000_000).unwrap(), 2);
         let order: Vec<SheetId> = revived.sheets().map(Sheet::id).collect();
         assert_eq!(
@@ -2371,7 +2410,7 @@ mod tests {
         let snapshot = original.snapshot(1_000_000);
         let extended = with_page_tail(&snapshot, b"a page field from 2027");
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&extended, 1_000_000).unwrap(), 2);
         let order: Vec<SheetId> = revived.sheets().map(Sheet::id).collect();
         assert_eq!(
@@ -2450,7 +2489,7 @@ mod tests {
             b"a block field from 2027",
         );
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(revived.restore(&extended, wall).unwrap(), 1);
         assert_eq!(
             revived.sheets().next().unwrap().blocks_meta(),
@@ -2471,7 +2510,7 @@ mod tests {
         let extended =
             with_trailing_field(&ledger, LEDGER_MAGIC.len() + 8, b"a ledger field from 2027");
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(
             revived.restore_ledger(&extended, 0).unwrap(),
             expected.len()
@@ -2668,7 +2707,7 @@ mod tests {
         // Two hours pass while the app is closed (wall time only — the
         // monotonic test clock stays put, as a reboot would leave it).
         let two_hours_ms = 2 * 60 * 60 * 1000;
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, two_hours_ms).unwrap();
 
         let remaining = revived.sheet(id).unwrap().remaining(revived.now());
@@ -2683,7 +2722,7 @@ mod tests {
         let snapshot = store.snapshot(0);
 
         let nine_hours_ms = 9 * 60 * 60 * 1000;
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, nine_hours_ms).unwrap();
         let expired = revived.expire_due();
         assert_eq!(expired, vec![id]);
@@ -2704,7 +2743,7 @@ mod tests {
         let snapshot = store.snapshot(0);
 
         // Away 30 minutes: still held, hold shrunk, frozen life intact.
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 30 * 60 * 1000).unwrap();
         let now = revived.now();
         let sheet = revived.sheet(id).unwrap();
@@ -2714,7 +2753,7 @@ mod tests {
 
         // Away 3 hours: the hold lapsed 2h ago; the countdown drained
         // from where it froze.
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 3 * 60 * 60 * 1000).unwrap();
         let now = revived.now();
         let sheet = revived.sheet(id).unwrap();
@@ -2743,7 +2782,7 @@ mod tests {
 
         // No time away at all, so what the page comes back holding is
         // what the writer wrote down rather than what a gap charged it.
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 0).unwrap();
         let now = revived.now();
         let sheet = revived.sheet(id).unwrap();
@@ -2758,7 +2797,7 @@ mod tests {
             Duration::ZERO
         );
         let snapshot = store.snapshot(0);
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 0).unwrap();
         assert_eq!(
             revived.sheet(id).unwrap().remaining(revived.now()),
@@ -2782,7 +2821,7 @@ mod tests {
         assert!(store.pause_press(slot(&store, topped))); // topped up to 24h
         let snapshot = store.snapshot(0);
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 30 * 60 * 1000).unwrap();
         let now = revived.now();
         assert!(revived.sheet(first).unwrap().is_held(now));
@@ -2806,21 +2845,23 @@ mod tests {
         clock.advance(2 * HOUR); // 6h left on the 8h rung
         let snapshot = store.snapshot(1_000_000_000);
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         revived.restore(&snapshot, 5).unwrap(); // wall clock moved back
         let remaining = revived.sheet(id).unwrap().remaining(revived.now());
         assert_eq!(remaining, 6 * HOUR);
     }
 
-    /// Seven days is the top of the ladder, so seven days is the most
-    /// life any restored page may hold, and a page on a shorter rung may
-    /// hold no more than that rung (ADR-0016 section 10, case 7). The
-    /// honest write path satisfies this by construction: every rung
-    /// click sets the deadline to the rung's own duration and restore
-    /// only ever subtracts. The file is where it can stop being true,
-    /// because the span is the one number a stale or hand-edited
-    /// generation can move (ADR-0016 section 8), so the span is read
-    /// against the rung rather than at face value.
+    /// Seven days is the top of the ladder, and a day is the most the
+    /// boundary snap may add to it (ADR-0011 section 4), so eight days
+    /// is the most life any restored page may hold, and a page on a
+    /// shorter rung may hold no more than that rung's own longest life
+    /// (ADR-0016 section 10, case 7). The honest write path satisfies
+    /// this by construction: every rung click sets the deadline to at
+    /// most that life and restore only ever subtracts. The file is
+    /// where it can stop being true, because the span is the one
+    /// number a stale or hand-edited generation can move (ADR-0016
+    /// section 8), so the span is read against the rung rather than at
+    /// face value.
     #[test]
     fn no_restored_page_comes_back_holding_more_life_than_its_rung() {
         let doc = SheetDocument::new();
@@ -2842,7 +2883,8 @@ mod tests {
             ))
         };
 
-        // The ladder's own ceiling, asked for by a file claiming a month.
+        // The ladder's own ceiling, asked for by a file claiming a month:
+        // the week, plus the day the snap may have added to it.
         let (mut at_the_ceiling, _clock) = store();
         at_the_ceiling
             .restore(&on_rung(7 * 24 * 60 * 60, &running(thirty_days_ms)), 0)
@@ -2853,12 +2895,17 @@ mod tests {
                 .next()
                 .unwrap()
                 .remaining(at_the_ceiling.now()),
-            Duration::from_secs(7 * 24 * 60 * 60),
+            Ttl::MAX.longest_life(),
             "a file claiming a month of life was believed"
+        );
+        assert_eq!(
+            Ttl::MAX.longest_life(),
+            Duration::from_secs(8 * 24 * 60 * 60)
         );
 
         // And the same page on the 1h rung is bounded by the rung it
-        // was actually written on, not merely by the top of the ladder.
+        // was actually written on, not merely by the top of the ladder:
+        // an hour, plus the hour the snap may add to a short rung.
         let (mut on_the_hour, _clock) = store();
         on_the_hour
             .restore(&on_rung(60 * 60, &running(thirty_days_ms)), 0)
@@ -2869,8 +2916,8 @@ mod tests {
                 .next()
                 .unwrap()
                 .remaining(on_the_hour.now()),
-            HOUR,
-            "an hour's page came back with more than an hour"
+            2 * HOUR,
+            "an hour's page came back with more than its longest life"
         );
     }
 
@@ -2901,7 +2948,7 @@ mod tests {
         assert!(sheet.is_held(now), "the hold itself did not survive");
         assert_eq!(
             sheet.remaining(now),
-            HOUR,
+            2 * HOUR,
             "a hold froze more life than the rung ever held"
         );
     }
@@ -2934,9 +2981,10 @@ mod tests {
         };
 
         // A first hold claiming a month, on the one hour rung: the hold
-        // comes back an hour long, and an hour after that the frozen
-        // span (itself bounded by the rung) runs out and the page is
-        // reaped rather than sitting on its plaintext for a month.
+        // comes back an hour long, and two hours after that the frozen
+        // span (itself bounded by the rung's longest life, an hour plus
+        // the hour a snap may add) runs out and the page is reaped
+        // rather than sitting on its plaintext for a month.
         let (mut first_hold, clock) = store();
         first_hold
             .restore(&held(1, a_month_ms, a_month_ms), 0)
@@ -2963,7 +3011,7 @@ mod tests {
             first_hold.expire_due().is_empty(),
             "the frozen hour was skipped"
         );
-        clock.advance(HOUR);
+        clock.advance(2 * HOUR);
         assert_eq!(
             first_hold.expire_due().len(),
             1,
@@ -3071,7 +3119,7 @@ mod tests {
         let (original, clock, ..) = populated();
         let snapshot = original.snapshot(0);
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         assert_eq!(
             revived.restore(b"not a snapshot at all", 0),
             Err(RestoreError::UnknownFormat)
@@ -3098,7 +3146,7 @@ mod tests {
         let snapshot = original.snapshot(7_000);
         let ledger = original.ledger_snapshot();
 
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
         for cut in 0..snapshot.len() {
             assert!(
                 revived.restore(&snapshot[..cut], 7_000).is_err(),
@@ -3126,7 +3174,7 @@ mod tests {
     #[test]
     fn a_hostile_length_is_rejected_before_it_allocates() {
         let (_, clock, ..) = populated();
-        let mut revived = SheetStore::new(clock.clone());
+        let mut revived = store_on(clock.clone());
 
         // A tab count of u64::MAX, with no tabs behind it.
         let mut hostile = Vec::new();

@@ -199,14 +199,6 @@ final class FormFactorTests: XCTestCase {
         XCTAssertEqual(FormFactor.backdrop.loggerSubsystem, FormFactor.backdrop.credentialService)
     }
 
-    /// The backdrop opens a week out, where the panel takes the core's
-    /// own shorter default: a span you can reason about by the calendar
-    /// suits a surface you are looking at all day.
-    func testTheBackdropOpensOnItsOwnRung() {
-        XCTAssertEqual(FormFactor.backdrop.defaultRung, .sevenDays)
-        XCTAssertNil(FormFactor.panel.defaultRung)
-    }
-
     // MARK: The refusal that keeps a test off the installed app's data
 
     private static let xctestRunner = "com.apple.dt.xctest.tool"

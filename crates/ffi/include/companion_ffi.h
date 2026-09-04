@@ -43,7 +43,8 @@ typedef struct CompanionHandle CompanionHandle;
 
 /*
  * TTL ladder rung codes, in ascending order (docs/spec/04). Passed to
- * companion_tab_set_rung(); returned by companion_tab_cycle_rung().
+ * companion_tab_set_rung(); returned by companion_tab_cycle_rung(). A
+ * new tab opens on the top rung, 7d (ADR-0011 section 3).
  */
 typedef enum {
     COMPANION_RUNG_1H  = 0,
@@ -526,6 +527,15 @@ int companion_tab_cycle_rung(CompanionHandle *handle, uint64_t tab);
  * success; a tab holding no page stores the rung and succeeds, having
  * no clock to reset. */
 bool companion_tab_set_rung(CompanionHandle *handle, uint64_t tab, int rung);
+
+/* The boundary snap (ADR-0011 section 4). On, a rung applied from now
+ * on rounds its deadline up to the next whole local clock hour (rungs
+ * under a day) or local midnight (a day and up), by at most the smaller
+ * of a day and the rung; off, a deadline is exactly the rung's nominal
+ * duration. The core starts with it on. The shell owns the persisted
+ * setting and calls this at launch and on every flip. Flipping it never
+ * moves a deadline already set. Returns false only for a null handle. */
+bool companion_set_grace_snap(CompanionHandle *handle, bool on);
 
 /*
  * The pause gesture (double-click a tab), a three state cycle: first
