@@ -167,6 +167,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A link's time to live is the link's own** (issue #139, ADR-0026,
+  ADR-0011 section 5; app 0.18.0, `companion-ffi` 0.22.0). Creating a
+  link used to borrow the page's remaining time and round it down the
+  ladder, so a page with an hour left produced a link that died in an
+  hour, and a page with five hours left produced a three-hour link.
+  That took a promise the page makes about bytes on this Mac and
+  applied it to a payload that had already left. The conceal form now
+  opens on seven days, the link's own default, whatever the page's
+  clock says, and any rung you pick there is the link's own choice.
+  The seam applies the same seven days when the shell names nothing.
+  A snapping rule comes back only if the server starts reporting an
+  allowed set, and it will answer to that list, not to any page.
+
 - **The seam counts both features, not one** (`companion-ffi` 0.19.0).
   Two branches each moved the seam's minor from 0.17.0 to 0.18.0, the
   account gate for `companion_sync_gate` and a new field in the sync
