@@ -9,14 +9,16 @@
 //!
 //! This half is sans-network: it builds and interprets the conceal
 //! call through any [`Transport`], so tests drive it with a mock and CI
-//! never opens a socket. The extern fns in `lib.rs` pair it with
-//! `UreqTransport`, the one real transport.
+//! never opens a socket. The extern fns in `lib.rs` pair it with the
+//! handle's [`Wire`]: `UreqTransport`, the one real transport, in every
+//! shipping build, and under `test-util` optionally a [`StubWire`] the
+//! Swift suite installs so a conceal can be driven to the wire and
+//! read back without a socket.
 
-use std::time::Duration;
-
-use companion_core::TTL_LADDER;
+use companion_transport::UreqTransport;
 use ots_client::{
-    AuthStrategy, BasicAuth, Client, ConcealPayload, Error, NoAuth, Transport, share_link, snap_ttl,
+    AuthStrategy, BasicAuth, Client, ConcealPayload, Error, HttpRequest, HttpResponse, NoAuth,
+    Transport, TransportError, share_link,
 };
 use zeroize::Zeroizing;
 
@@ -49,8 +51,9 @@ impl Connection {
     }
 }
 
-/// Options the confirmation step gathers. All optional: TTL defaults to
-/// the sheet's remaining time snapped to the ladder.
+/// Options the confirmation step gathers. All optional: an unnamed TTL
+/// is [`LINK_DEFAULT_TTL_SECS`], the link's own seven days (ADR-0011
+/// section 5); the page's remaining time is not an input (ADR-0026).
 pub(crate) struct ConcealOpts {
     pub ttl_secs: Option<u64>,
     pub passphrase: Option<Zeroizing<String>>,
@@ -88,13 +91,14 @@ impl ConcealOpts {
     }
 }
 
-/// The sheet's remaining time snapped **down** to a ladder value — the
-/// concealed secret never outlives the local intent (open question №13).
-pub(crate) fn ladder_snapped_ttl(remaining: Duration) -> u64 {
-    let allowed: Vec<u64> = TTL_LADDER.iter().map(Duration::as_secs).collect();
-    // The ladder is non-empty, so `snap_ttl` always finds a value.
-    snap_ttl(remaining.as_secs(), &allowed).unwrap_or_else(|| TTL_LADDER[0].as_secs())
-}
+/// The link's own default TTL when the caller names none: exactly seven
+/// days (ADR-0011 section 5). A link's lifetime is chosen as a link's
+/// lifetime; the page it was cut from is not an input (ADR-0026), so no
+/// page clock and no page ladder is consulted here. If the server ever
+/// reports an allowed-TTL set that excludes this value, the selection
+/// rule against that list is a separate decision (ADR-0011 eject
+/// trigger), not a fallback to the page ladder.
+pub(crate) const LINK_DEFAULT_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 
 /// The outcome the seam reports: the share link (for the clipboard,
 /// core-side) and the receipt identifier (the only thing retained).
@@ -117,11 +121,10 @@ pub(crate) fn conceal<T: Transport>(
     token: Option<Zeroizing<String>>,
     payload: Zeroizing<String>,
     opts: &ConcealOpts,
-    default_ttl_secs: u64,
     transport: T,
 ) -> Result<Concealed, String> {
     let mut conceal_payload = ConcealPayload::new(payload.as_str(), conn.effective_share_domain())
-        .with_ttl(opts.ttl_secs.unwrap_or(default_ttl_secs));
+        .with_ttl(opts.ttl_secs.unwrap_or(LINK_DEFAULT_TTL_SECS));
     if let Some(passphrase) = &opts.passphrase {
         conceal_payload = conceal_payload.with_passphrase(passphrase.as_str());
     }
@@ -153,11 +156,160 @@ pub(crate) fn conceal<T: Transport>(
     }
 }
 
+/// The transport a handle sends on. One per handle, built with it:
+/// the real transport is cheap to clone (an `Arc`-shared agent), and
+/// the transport crate asks for one agent reused over building a fresh
+/// one per call. In a shipping build this is `UreqTransport` and
+/// nothing else; the `Stub` arm exists only under `test-util`
+/// (ADR-0018), installed by `companion_test_wire_stub`, so the release
+/// artifact carries one arm and the match below is a plain call.
+#[derive(Clone)]
+pub(crate) enum Wire {
+    /// The one real transport: TLS-only, the network boundary of doc 05.
+    Real(UreqTransport),
+    /// A canned answer and a redacted record of what was asked, for
+    /// the shell suite. Never constructed outside the seam.
+    #[cfg(feature = "test-util")]
+    Stub(std::sync::Arc<StubWire>),
+}
+
+impl Wire {
+    /// A handle's wire as every shipping constructor builds it.
+    pub(crate) fn real() -> Self {
+        Self::Real(UreqTransport::new())
+    }
+}
+
+impl Transport for Wire {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, TransportError> {
+        match self {
+            Self::Real(transport) => transport.send(request),
+            #[cfg(feature = "test-util")]
+            Self::Stub(stub) => stub.send(request),
+        }
+    }
+}
+
+/// A transport that answers every request from one canned response
+/// and keeps, per request, only a redacted summary: the method, the
+/// URL, whether an `Authorization` header rode along, and the
+/// non-secret fields of a conceal body. The body itself is read once
+/// for those fields and dropped, zeroizing, before `send` returns, so
+/// the record holds no payload and no passphrase and can cross the
+/// seam like any other non-secret JSON. A test seam, compiled only
+/// under `test-util` (ADR-0018).
+#[cfg(feature = "test-util")]
+pub(crate) struct StubWire {
+    /// `Ok(status, body)` for an HTTP answer of any status; `Err` for
+    /// a delivery failure before any status exists, the way an outage
+    /// looks to the client.
+    answer: Result<(u16, Vec<u8>), String>,
+    /// Every request seen, oldest first.
+    seen: std::sync::Mutex<Vec<WireRecord>>,
+}
+
+/// What [`StubWire`] keeps of one request. Rendered as JSON by
+/// [`StubWire::last_json`]:
+/// `{"method", "url", "authorized", "ttl", "share_domain",
+///   "has_passphrase", "recipient"}`, the last four null or false when
+/// the body carried no conceal payload.
+#[cfg(feature = "test-util")]
+#[derive(Clone, Debug)]
+pub(crate) struct WireRecord {
+    method: String,
+    url: String,
+    authorized: bool,
+    ttl: Option<u64>,
+    share_domain: Option<String>,
+    has_passphrase: bool,
+    recipient: Option<String>,
+}
+
+#[cfg(feature = "test-util")]
+impl StubWire {
+    /// A stub answering with `status` and `body`. A `status` of zero
+    /// means no answer at all: every send fails as an outage.
+    pub(crate) fn answering(status: u16, body: &str) -> Self {
+        let answer = if status == 0 {
+            Err("stubbed outage".to_owned())
+        } else {
+            Ok((status, body.as_bytes().to_vec()))
+        };
+        Self {
+            answer,
+            seen: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// The most recent request's record as JSON, or `None` before the
+    /// first send.
+    pub(crate) fn last_json(&self) -> Option<String> {
+        let seen = self
+            .seen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        seen.last().map(|record| {
+            serde_json::json!({
+                "method": record.method,
+                "url": record.url,
+                "authorized": record.authorized,
+                "ttl": record.ttl,
+                "share_domain": record.share_domain,
+                "has_passphrase": record.has_passphrase,
+                "recipient": record.recipient,
+            })
+            .to_string()
+        })
+    }
+
+    /// The redaction: the four non-secret fields of a conceal body,
+    /// read by name, and nothing else of it. Anything unparseable is
+    /// simply an absence, never an echo.
+    fn summarize(request: &HttpRequest) -> WireRecord {
+        let body = request
+            .body
+            .as_deref()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok());
+        let secret = body.as_ref().and_then(|value| value.get("secret"));
+        let field = |name: &str| secret.and_then(|value| value.get(name));
+        WireRecord {
+            method: request.method.to_owned(),
+            url: request.url.clone(),
+            authorized: request.header("Authorization").is_some(),
+            ttl: field("ttl").and_then(serde_json::Value::as_u64),
+            share_domain: field("share_domain")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            has_passphrase: field("passphrase").is_some_and(|value| !value.is_null()),
+            recipient: field("recipient")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+        }
+    }
+}
+
+#[cfg(feature = "test-util")]
+impl Transport for StubWire {
+    fn send(&self, request: HttpRequest) -> Result<HttpResponse, TransportError> {
+        let record = Self::summarize(&request);
+        drop(request);
+        self.seen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(record);
+        match &self.answer {
+            Ok((status, body)) => Ok(HttpResponse {
+                status: *status,
+                body: body.clone(),
+            }),
+            Err(message) => Err(TransportError(message.clone())),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
-
-    use ots_client::{HttpRequest, HttpResponse, TransportError};
 
     use super::*;
 
@@ -218,7 +370,6 @@ mod tests {
             Some(Zeroizing::new("tok".into())),
             Zeroizing::new("the payload".into()),
             &defaults(),
-            28_800,
             &transport,
         )
         .unwrap();
@@ -238,7 +389,6 @@ mod tests {
             None,
             Zeroizing::new("p".into()),
             &defaults(),
-            3_600,
             &transport,
         )
         .unwrap();
@@ -252,15 +402,7 @@ mod tests {
     fn payload_carries_ttl_and_derived_share_domain() {
         let transport = MockTransport::returning(200, OK_BODY);
         let opts = ConcealOpts::parse(Some(r#"{"ttl_secs": 3600}"#)).unwrap();
-        conceal(
-            &conn(),
-            None,
-            Zeroizing::new("p".into()),
-            &opts,
-            28_800,
-            &transport,
-        )
-        .unwrap();
+        conceal(&conn(), None, Zeroizing::new("p".into()), &opts, &transport).unwrap();
         let seen = transport.seen.borrow();
         let body = seen.as_ref().unwrap().body.as_ref().unwrap();
         let v: serde_json::Value = serde_json::from_slice(body).unwrap();
@@ -276,7 +418,6 @@ mod tests {
             None,
             Zeroizing::new("p".into()),
             &defaults(),
-            3_600,
             &transport,
         )
         .unwrap_err();
@@ -288,7 +429,6 @@ mod tests {
             Some(Zeroizing::new("tok".into())),
             Zeroizing::new("p".into()),
             &defaults(),
-            3_600,
             &transport,
         )
         .unwrap_err();
@@ -296,11 +436,22 @@ mod tests {
     }
 
     #[test]
-    fn ttl_snaps_down_the_ladder() {
-        // 5h remaining → 3h rung, never 8h.
-        assert_eq!(ladder_snapped_ttl(Duration::from_secs(5 * 3600)), 3 * 3600);
-        // Shorter than every rung → the smallest rung, not zero.
-        assert_eq!(ladder_snapped_ttl(Duration::from_secs(60)), 3600);
+    fn ttl_defaults_to_seven_days_when_unnamed() {
+        // ADR-0011 section 5: the link default is a fixed seven days and
+        // takes no page clock as an input (ADR-0026).
+        let transport = MockTransport::returning(200, OK_BODY);
+        conceal(
+            &conn(),
+            None,
+            Zeroizing::new("p".into()),
+            &defaults(),
+            &transport,
+        )
+        .unwrap();
+        let seen = transport.seen.borrow();
+        let body = seen.as_ref().unwrap().body.as_ref().unwrap();
+        let v: serde_json::Value = serde_json::from_slice(body).unwrap();
+        assert_eq!(v["secret"]["ttl"], 604_800);
     }
 
     #[test]

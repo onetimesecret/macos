@@ -90,6 +90,19 @@ If the server later reports an allowed-TTL set that excludes seven days,
 ADR-0011 leaves the replacement selection rule to a follow-up decision,
 matching the eject trigger below.
 
+## Resolution, 2026-09-03
+
+The coupling is out of the code (issue #139). Neither conceal call site
+in `crates/ffi/src/lib.rs` reads the page's clock any more; `conceal`
+in `crates/ffi/src/conceal.rs` takes no default from its caller and
+applies `LINK_DEFAULT_TTL_SECS`, seven days, when the options name no
+TTL. `ladder_snapped_ttl` and `ttl_snaps_down_the_ladder` are gone,
+replaced by a test that pins the seven-day default. The shell's conceal
+draft opens on the same seven days and no longer consults the tab's
+remaining time. `snap_ttl` stays in `crates/ots-client/src/api.rs`
+with its comment rewritten, kept for the second eject trigger below and
+nothing else.
+
 ## Eject triggers
 
 - The product grows a deliberate, user-visible "share for as long as

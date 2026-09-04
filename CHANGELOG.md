@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A conceal can now be driven to the wire in the shell suite**
+  (`companion_test_wire_stub`, `companion_test_wire_last_json`;
+  `companion-ffi` 0.23.0). Both conceal routes and the Settings test
+  built the real transport inline, and that transport is TLS-only
+  against one configured host, so no Swift test could send a conceal
+  anywhere and nothing asserted that the figure on a draft is the
+  figure on the wire. The handle now holds its transport, built once
+  with it as the transport crate asks, and under `test-util` a seam
+  swaps in a stub that answers every request the same way and keeps,
+  per request, a summary made at send time from the non-secret fields
+  of the body: the method, the URL, whether a token rode along, the
+  TTL, the share domain, whether a passphrase was set, the recipient.
+  The body is dropped before the send returns, so the record holds no
+  payload and no passphrase and crosses the seam like any other JSON.
+  Two shell tests use it: a client sending nil gets the seam's own
+  seven days, and a draft walked off its default arrives on the wire
+  with its own figure. Both stub an outage rather than a link, since
+  a link would land on the real clipboard. The seam sits behind the
+  off-by-default `test-util` feature (ADR-0018), and the release
+  packaging check names both symbols.
+
 - **A new page opens with the whole week, and a deadline lands where
   the clock does** (issue #146, ADR-0011; app 0.17.0, `companion-ffi`
   0.21.0, `companion-core` 0.18.0). A new tab now starts at the top
@@ -166,6 +187,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never silently drop edits only the adopting device holds.
 
 ### Changed
+
+- **A link's time to live is the link's own** (issue #139, ADR-0026,
+  ADR-0011 section 5; app 0.18.0, `companion-ffi` 0.22.0). Creating a
+  link used to borrow the page's remaining time and round it down the
+  ladder, so a page with an hour left produced a link that died in an
+  hour, and a page with five hours left produced a three-hour link.
+  That took a promise the page makes about bytes on this Mac and
+  applied it to a payload that had already left. The conceal form now
+  opens on seven days, the link's own default, whatever the page's
+  clock says, and any rung you pick there is the link's own choice.
+  The seam applies the same seven days when the shell names nothing.
+  A snapping rule comes back only if the server starts reporting an
+  allowed set, and it will answer to that list, not to any page.
 
 - **The seam counts both features, not one** (`companion-ffi` 0.19.0).
   Two branches each moved the seam's minor from 0.17.0 to 0.18.0, the

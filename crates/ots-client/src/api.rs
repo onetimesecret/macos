@@ -166,11 +166,14 @@ pub fn share_link(base_url: &str, data: &ConcealData) -> String {
     }
 }
 
-/// Snap a cell's remaining TTL to a server-allowed value, **downward**:
-/// the concealed secret should never outlive the local intent (open
-/// question №13). Falls back to the smallest allowed value when the
-/// remaining time is shorter than all of them; `None` only when
-/// `allowed` is empty.
+/// Snap a requested TTL to a server-allowed value, **downward**. Falls
+/// back to the smallest allowed value when the request is shorter than
+/// all of them; `None` only when `allowed` is empty.
+///
+/// The request is the link's own: a page's remaining time is not an
+/// input to a link's lifetime (ADR-0026), and the companion no longer
+/// derives one from the other. This helper stays for the day the server
+/// reports an allowed set per request (ADR-0026's second eject trigger).
 #[must_use]
 pub fn snap_ttl(remaining_secs: u64, allowed: &[u64]) -> Option<u64> {
     allowed

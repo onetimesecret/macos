@@ -21,8 +21,10 @@ pub struct ConcealPayload {
     pub secret: Zeroizing<String>,
     /// Domain the share link should live on.
     pub share_domain: String,
-    /// Requested TTL in seconds — snap to a server-allowed value first
-    /// (see [`crate::snap_ttl`]).
+    /// Requested TTL in seconds, sent as given. The server reports no
+    /// allowed set today, and a caller must not snap this against a
+    /// page's ladder: a link's lifetime is its own (ADR-0026).
+    /// [`crate::snap_ttl`] waits for the day the server names a set.
     pub ttl: Option<u64>,
     /// Optional passphrase gate on the secret.
     pub passphrase: Option<Zeroizing<String>>,

@@ -48,8 +48,10 @@ public struct ConcealDraft {
     }
 
     public let target: Target
-    /// Requested TTL, seeded from the page's remaining time snapped
-    /// down the ladder (the core applies the same default when nil).
+    /// Requested TTL. It starts at the link's own default, seven days,
+    /// which the core applies too when the shell sends nil (ADR-0011
+    /// section 5). The page's remaining time is not an input: a link's
+    /// lifetime is chosen as a link's lifetime (ADR-0026).
     public var ttlSecs: UInt64
     public var passphrase = ""
     public var recipient = ""
@@ -66,13 +68,10 @@ public struct ConcealDraft {
         self.ttlSecs = ttlSecs
     }
 
-    /// The ladder rungs at or under the page's remaining time — the
-    /// concealed secret never outlives the local intent (doc 06 №13).
-    public static func snappedTtl(remainingMs: UInt64) -> UInt64 {
-        let ladder: [UInt64] = [3600, 10800, 28800, 86400, 259_200, 604_800]
-        let remaining = remainingMs / 1000
-        return ladder.last { $0 <= remaining } ?? ladder[0]
-    }
+    /// The link's default TTL when the person chooses none: exactly
+    /// seven days (ADR-0011 section 5). Not a rung of the page ladder,
+    /// even though the picker happens to offer the same value.
+    public static let defaultTtlSecs: UInt64 = 7 * 24 * 60 * 60
 }
 
 /// The hold ADR-0012 requires while the in-memory store differs from
@@ -2720,17 +2719,10 @@ public final class PageModel: ObservableObject {
     /// network boundary is the one confirming click.
     public func beginConceal(_ target: ConcealDraft.Target) {
         notice = nil
-        // A page draft names a page; a chip draft borrows the selected
-        // slot's page, which is the page the chip is showing on.
-        let pageId: UInt64? = switch target {
-        case .page(let id): id
-        case .chip: selectedPageID
-        }
-        let remaining = tabs.first { $0.pageID == pageId }?.remainingMs ?? 0
-        concealDraft = ConcealDraft(
-            target: target,
-            ttlSecs: ConcealDraft.snappedTtl(remainingMs: remaining)
-        )
+        // The draft opens on the link's own default. Which page the
+        // target sits on, and how long that page has left, is not
+        // consulted (ADR-0026).
+        concealDraft = ConcealDraft(target: target, ttlSecs: ConcealDraft.defaultTtlSecs)
     }
 
     /// The confirming click: one POST, off the main actor — the core

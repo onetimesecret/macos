@@ -22,13 +22,13 @@ use companion_core::{
 use companion_credentials::default_credential_store;
 use companion_pasteboard::{ContentKind, MemoryPasteboard, Pasteboard, WriteOptions};
 use companion_transport::UreqTransport;
-use ots_client::{Api, BasicAuth, Client, ConcealPayload, NoAuth, share_link, snap_ttl};
+use ots_client::{Api, BasicAuth, Client, ConcealPayload, NoAuth, share_link};
 
 const DEMO_SERVER: &str = "https://eu.onetimesecret.com";
 
-/// Server-allowed TTLs a real client would learn from the config
-/// endpoint at connection-test time (docs/spec/05).
-const ALLOWED_TTLS: &[u64] = &[300, 1800, 3600, 14_400, 28_800, 86_400, 259_200, 604_800];
+/// A link's default TTL: exactly seven days (ADR-0011 section 5). The
+/// page it was cut from is not an input (ADR-0026).
+const LINK_DEFAULT_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 
 /// Keychain (or dev-store) accounts `login`/`logout` manage. Two items
 /// rather than one, so neither half is ever a full credential alone.
@@ -615,20 +615,18 @@ fn payload_for(
 }
 
 fn conceal(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
-    let now = store.now();
     let Some(text) = payload_for(store, page, arg) else {
         if !arg.trim().is_empty() && arg.trim() != "page" && nth_chip(store, page, arg).is_none() {
             println!("usage: conceal <chip #|page>");
         }
         return;
     };
-    let remaining = store.sheet(page).map_or(0, |s| s.remaining(now).as_secs());
-    let snapped = snap_ttl(remaining, ALLOWED_TTLS).expect("non-empty ladder");
+    let ttl = LINK_DEFAULT_TTL_SECS;
     let chars = text.chars().count();
 
     // Build the real request through the real client — then don't send it.
     let api = Api::new(DEMO_SERVER, Box::new(NoAuth));
-    let payload = ConcealPayload::new(text.as_str(), "eu.onetimesecret.com").with_ttl(snapped);
+    let payload = ConcealPayload::new(text.as_str(), "eu.onetimesecret.com").with_ttl(ttl);
     let request = api
         .guest_conceal_request(&payload)
         .expect("payload serializes");
@@ -639,13 +637,12 @@ fn conceal(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
         println!("   {name}: {value}");
     }
     println!(
-        "   {{\"secret\":{{\"kind\":\"conceal\",\"secret\":\"{}\",\"share_domain\":\"eu.onetimesecret.com\",\"ttl\":{snapped}}}}}",
+        "   {{\"secret\":{{\"kind\":\"conceal\",\"secret\":\"{}\",\"share_domain\":\"eu.onetimesecret.com\",\"ttl\":{ttl}}}}}",
         "•".repeat(chars.min(12))
     );
     println!(
-        "   ttl: {} remaining on the page → {} (snapped down; never outlives intent)",
-        companion_core::ttl::human_remaining(Duration::from_secs(remaining)),
-        companion_core::ttl::human_remaining(Duration::from_secs(snapped)),
+        "   ttl: {} (the link's own default; the page's clock is not an input)",
+        companion_core::ttl::human_remaining(Duration::from_secs(ttl)),
     );
     if let Some(raw) = nth_chip(store, page, arg) {
         store.mark_chip_concealed(companion_core::ChipId::from_raw(raw), "dry-run".into());
@@ -662,13 +659,11 @@ fn conceal(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
 /// chip; the share link lands on the clipboard, not in any local
 /// history (docs/spec/05). Sealed bytes travel core → client directly.
 fn send(store: &mut SheetStore<ManualClock>, page: SheetId, arg: &str) {
-    let now = store.now();
     let Some(text) = payload_for(store, page, arg) else {
         return;
     };
-    let remaining = store.sheet(page).map_or(0, |s| s.remaining(now).as_secs());
-    let snapped = snap_ttl(remaining, ALLOWED_TTLS).expect("non-empty ladder");
-    let payload = ConcealPayload::new(text.as_str(), "eu.onetimesecret.com").with_ttl(snapped);
+    let payload =
+        ConcealPayload::new(text.as_str(), "eu.onetimesecret.com").with_ttl(LINK_DEFAULT_TTL_SECS);
     let transport = UreqTransport::new();
     let creds = default_credential_store();
     let stored = creds

@@ -354,8 +354,9 @@ hover actions (conceal that sealed content) and **↗ page** in the footer
 1. If no account is configured, an inline hint links to Settings →
    Connection, plus a guest-mode option where the server allows it.
 2. An inline, in-place confirmation (not a modal): destination
-   (`share_domain`), TTL (seeded from the sheet's remaining time, snapped
-   to the server's allowed values), optional passphrase, optional
+   (`share_domain`), TTL (the link's own default of seven days per
+   ADR-0011 section 5, or a value chosen here; the sheet's remaining
+   time is not an input, per ADR-0026), optional passphrase, optional
    recipient. One confirming click. The network boundary is explicit.
 3. `POST /api/v3/secret/conceal` (Basic auth: org `extid` + API token,
    until PASETO lands). Sealed bytes travel core → client directly, never

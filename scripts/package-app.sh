@@ -117,7 +117,7 @@ if [[ "$CONFIG" == "release" ]]; then
   # added later is not named here, so add the symbol when you add the
   # export.
   if SEAM="$(nm -gU "$BIN" 2>/dev/null |
-      grep -o -E '_companion_(new_ephemeral|test_age_ms)$' | head -n 1)"; then
+      grep -o -E '_companion_(new_ephemeral|test_age_ms|test_wire_stub|test_wire_last_json)$' | head -n 1)"; then
     if [[ -n "$SEAM" ]]; then
       echo "release binary exports ${SEAM#_}, a test-only seam" >&2
       echo "(ADR-0018): bindings/ holds the dev xcframework. Rebuild the release" >&2
