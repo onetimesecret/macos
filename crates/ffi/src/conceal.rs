@@ -46,8 +46,9 @@ impl Connection {
     }
 }
 
-/// Options the confirmation step gathers. All optional: TTL defaults to
-/// the sheet's remaining time snapped to the ladder.
+/// Options the confirmation step gathers. All optional: an unnamed TTL
+/// is [`LINK_DEFAULT_TTL_SECS`], the link's own seven days (ADR-0011
+/// section 5); the page's remaining time is not an input (ADR-0026).
 pub(crate) struct ConcealOpts {
     pub ttl_secs: Option<u64>,
     pub passphrase: Option<Zeroizing<String>>,
@@ -297,7 +298,6 @@ mod tests {
         let body = seen.as_ref().unwrap().body.as_ref().unwrap();
         let v: serde_json::Value = serde_json::from_slice(body).unwrap();
         assert_eq!(v["secret"]["ttl"], 604_800);
-        assert_eq!(LINK_DEFAULT_TTL_SECS, 7 * 24 * 3600);
     }
 
     #[test]

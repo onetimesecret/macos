@@ -17,9 +17,11 @@ public struct ConcealView: View {
         self.draft = draft
     }
 
-    /// The ladder as (seconds, label) — the same rungs the countdown
-    /// speaks (docs/spec/04).
-    private static let ladder: [(secs: UInt64, label: String)] = [
+    /// The link's TTL choices as (seconds, label). The values coincide
+    /// with the page ladder's rungs, but the link default is not a rung
+    /// of any ladder (ADR-0011 section 5; `ConcealDraft.defaultTtlSecs`):
+    /// a link's lifetime is its own, never the page's (ADR-0026).
+    private static let linkTtlChoices: [(secs: UInt64, label: String)] = [
         (3600, "1 hour"), (10800, "3 hours"), (28800, "8 hours"),
         (86400, "24 hours"), (259_200, "3 days"), (604_800, "7 days"),
     ]
@@ -95,14 +97,14 @@ public struct ConcealView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Picker("Link time to live", selection: ttlBinding) {
-                    ForEach(Self.ladder, id: \.secs) { rung in
+                    ForEach(Self.linkTtlChoices, id: \.secs) { rung in
                         Text(rung.label).tag(rung.secs)
                     }
                 }
                 .labelsHidden()
                 .controlSize(.small)
                 .frame(maxWidth: 110)
-                Text("· seeded from the page's clock, snapped down")
+                Text("· defaults to the link's own 7 days; the page's clock is not an input")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.tertiary)
             }

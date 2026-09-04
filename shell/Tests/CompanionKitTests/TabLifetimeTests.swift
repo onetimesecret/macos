@@ -131,6 +131,29 @@ final class TabLifetimeTests: XCTestCase {
         XCTAssertEqual(model.coreClient.ledger().first?.title, "payroll")
     }
 
+    /// The conceal draft opens on the link's own seven days (ADR-0011
+    /// section 5), whatever the page's clock says (ADR-0026, issue
+    /// #139). A page on the ceiling and the link default share a value,
+    /// so the page is first walked to the shortest rung: only then does
+    /// a draft that followed the page's clock read differently from one
+    /// that did not.
+    func testTheConcealDraftOpensOnSevenDaysWhateverThePageRungIs() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        model.newPage()
+        let tab = try XCTUnwrap(model.selection)
+        let page = try XCTUnwrap(model.selectedPageID)
+        XCTAssertTrue(model.coreClient.setRung(tab: tab, rung: .oneHour))
+        model.refresh()
+        let remainingMs = try XCTUnwrap(model.tabs.first { $0.id == tab }?.remainingMs)
+        XCTAssertLessThan(remainingMs, 604_800 * 1_000, "the page is off the ceiling")
+
+        model.beginConceal(.page(page))
+        let draft = try XCTUnwrap(model.concealDraft)
+        XCTAssertEqual(draft.ttlSecs, 604_800, "the link's own seven days, not the page's hour")
+        XCTAssertEqual(ConcealDraft.defaultTtlSecs, 604_800, "the spec's number, pinned")
+    }
+
     /// ⌘1 through ⌘9 index slots, not live pages, so ⌘2 means the same
     /// slot next week and lands on it whether or not it holds a page.
     func testCommandNumberIndexesSlotsAndOpensIntoAnEmptyOne() throws {
