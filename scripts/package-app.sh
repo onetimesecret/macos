@@ -113,17 +113,26 @@ BIN="$(swift build --package-path shell -c "$CONFIG" --show-bin-path)/OnetimePad
 # build.
 if [[ "$CONFIG" == "release" ]]; then
   echo "==> Verifying no test seams in the release binary (ADR-0018)"
+  # The check fails closed: an nm that errors, or a binary that lost
+  # its C exports, would otherwise read as "no seam found" and pass. A
+  # symbol every shape exports has to be visible before the absence of
+  # a seam means anything.
+  EXPORTS="$(nm -gU "$BIN" 2>/dev/null || true)"
+  if ! grep -q -E '_companion_free$' <<<"$EXPORTS"; then
+    echo "nm found no companion exports in $BIN, so the seam check cannot" >&2
+    echo "run (ADR-0018). The symbol table is unreadable or the core is not" >&2
+    echo "linked; fix that before packaging a release." >&2
+    exit 1
+  fi
   # One pattern per gated seam: the check is worth nothing if a seam
   # added later is not named here, so add the symbol when you add the
   # export.
-  if SEAM="$(nm -gU "$BIN" 2>/dev/null |
-      grep -o -E '_companion_(new_ephemeral|test_age_ms|test_wire_stub|test_wire_last_json)$' | head -n 1)"; then
-    if [[ -n "$SEAM" ]]; then
-      echo "release binary exports ${SEAM#_}, a test-only seam" >&2
-      echo "(ADR-0018): bindings/ holds the dev xcframework. Rebuild the release" >&2
-      echo "shape with scripts/build-core.sh (no flags) and package again." >&2
-      exit 1
-    fi
+  SEAM="$(grep -o -E '_companion_(new_ephemeral|test_age_ms|test_wire_stub|test_wire_last_json)$' <<<"$EXPORTS" | head -n 1 || true)"
+  if [[ -n "$SEAM" ]]; then
+    echo "release binary exports ${SEAM#_}, a test-only seam" >&2
+    echo "(ADR-0018): bindings/ holds the dev xcframework. Rebuild the release" >&2
+    echo "shape with scripts/build-core.sh (no flags) and package again." >&2
+    exit 1
   fi
 fi
 
