@@ -45,9 +45,73 @@ pub const FILE_ID_TAG: u64 = 1 << 63;
 /// limit so the notice can state it rather than guess it.
 pub const FILE_SIZE_LIMIT: usize = 4 * 1024 * 1024;
 
+/// The largest draft snapshot the drafts file will carry, in bytes.
+///
+/// A draft is an operation log, not the file's text, so it grows with
+/// how much editing has happened rather than with how big the file is.
+/// Four times [`FILE_SIZE_LIMIT`] is generous for any session a person
+/// would recognise as one sitting, and it is what stops `drafts.sealed`
+/// from growing without bound behind an app that is never quit.
+///
+/// **This bound can fire, and the file size limit does not prevent it.**
+/// A 4 MiB file edited for long enough produces a snapshot larger than
+/// 16 MiB, because every operation ever committed is in it until a
+/// compaction, and files get no compaction ceremony. So the refusal is
+/// a real path rather than a defensive constant: a draft over the bound
+/// is left out of the drafts file, the file's record is written as
+/// identity only, and the restore turns that into a
+/// [`DroppedReason::DraftTooLarge`] notice naming the file. Losing one
+/// oversized draft and saying so is the better answer than a sealed
+/// file that grows until the disk complains.
+pub const DRAFT_SNAPSHOT_LIMIT: usize = 4 * FILE_SIZE_LIMIT;
+
 /// The UTF-8 byte order mark, stripped at open and put back at save for
 /// a file that arrived with one.
 const UTF8_BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
+
+/// Why a file that was in the drafts file is not in the roster, or came
+/// back with less than it was staged with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DroppedReason {
+    /// Nothing is at the file's last known path any more. Only a clean
+    /// file is dropped for this: a dirty one keeps its draft and stands
+    /// in a [`FileConflict::Missing`] conflict instead.
+    Missing,
+    /// Something is at the path, but this build will not open it: not
+    /// UTF-8, past [`FILE_SIZE_LIMIT`], or a read the platform refused.
+    Unreadable,
+    /// The file's draft was larger than [`DRAFT_SNAPSHOT_LIMIT`] when
+    /// the drafts file was written, so it was left out. The file itself
+    /// came back, filled from disk and clean; what is gone is the
+    /// unsaved editing that had been staged behind it.
+    DraftTooLarge,
+}
+
+impl DroppedReason {
+    /// The wire form of the enum, as the notices JSON spells it.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "missing",
+            Self::Unreadable => "unreadable",
+            Self::DraftTooLarge => "draftTooLarge",
+        }
+    }
+}
+
+/// One thing the shell has to tell the user about after a drafts save
+/// or a drafts restore. Carries the file's name and path so a notice
+/// can name it, and nothing else: this is not an error type and there
+/// is nothing here to recover from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileNotice {
+    /// The file's display name.
+    pub name: String,
+    /// The file's last known path.
+    pub path: String,
+    /// What happened to it.
+    pub reason: DroppedReason,
+}
 
 /// An open file's id: a `u64` with [`FILE_ID_TAG`] set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -261,9 +325,9 @@ pub struct OpenFile {
     /// The same document type a page uses, with one peer and no remote.
     document: SheetDocument,
     /// The text last read from or written to disk, normalised the way
-    /// the buffer holds it. `None` for a file whose buffer came back
-    /// from a draft, where this store never saw the disk copy and the
-    /// persisted dirty flag is the only answer there is.
+    /// the buffer holds it. `None` only while this store has not seen
+    /// the disk copy: a draft restored beside a file that changed under
+    /// it, where the persisted dirty flag is the only answer there is.
     saved_text: Option<String>,
     witness: Option<FileWitness>,
     line_ending: LineEnding,
@@ -275,6 +339,16 @@ pub struct OpenFile {
     last_edited_ms: u64,
     /// Whether this buffer came back from `drafts.sealed`.
     restored_from_draft: bool,
+    /// Whether the buffer was filled from a disk copy that had changed
+    /// since the draft was written. A clean file reloads without
+    /// asking, and this is what lets the shell post the notice for it
+    /// afterwards. Sticky until [`FileStore::clear_reload_notice`].
+    externally_reloaded: bool,
+    /// Whether the drafts file carried this record dirty but without a
+    /// snapshot, which happens only when the snapshot was over
+    /// [`DRAFT_SNAPSHOT_LIMIT`] at the save. Set at restore and read
+    /// once by the hydration, which turns it into a notice.
+    draft_dropped: bool,
     /// The shell's bookmark for this file, opaque here. Empty until the
     /// shell attaches one.
     bookmark: Vec<u8>,
@@ -340,6 +414,16 @@ impl OpenFile {
         self.restored_from_draft
     }
 
+    /// Whether the buffer was filled from a disk copy that had changed
+    /// since the draft was written, which is the one reload a person
+    /// gets without being asked. Stays true until the shell says it has
+    /// posted the notice, so a roster read is a plain read and reading
+    /// it twice loses nothing.
+    #[must_use]
+    pub fn externally_reloaded(&self) -> bool {
+        self.externally_reloaded
+    }
+
     /// The shell's bookmark for this file, opaque to this crate.
     #[must_use]
     pub fn bookmark(&self) -> &[u8] {
@@ -381,6 +465,11 @@ impl OpenFile {
 
     /// Adopt the text now on disk as both the buffer and the saved
     /// copy, discarding whatever the buffer held.
+    ///
+    /// Deliberately does not touch `restored_from_draft`: a reload
+    /// clears it because the buffer is no longer a draft's, and the
+    /// hydration keeps it because the tab still came back from one.
+    /// The two callers say which they mean.
     fn adopt(&mut self, read: ReadFile) {
         self.document = document_holding(&read.text);
         self.saved_text = Some(read.text);
@@ -389,7 +478,15 @@ impl OpenFile {
         self.has_bom = read.has_bom;
         self.dirty = false;
         self.conflict = FileConflict::None;
-        self.restored_from_draft = false;
+    }
+
+    /// This file as a notice the shell can put in front of a person.
+    fn notice(&self, reason: DroppedReason) -> FileNotice {
+        FileNotice {
+            name: self.name(),
+            path: self.path.to_string_lossy().into_owned(),
+            reason,
+        }
     }
 }
 
@@ -440,6 +537,8 @@ impl FileStore {
             conflict: FileConflict::None,
             last_edited_ms: 0,
             restored_from_draft: false,
+            externally_reloaded: false,
+            draft_dropped: false,
             bookmark: Vec::new(),
         });
         Ok(id)
@@ -690,8 +789,26 @@ impl FileStore {
         let read = read_file(io, &path)?;
         if let Some(file) = self.file_mut(id) {
             file.adopt(read);
+            // The buffer is the file's own text now, not a draft's, and
+            // the reload notice it may have been carrying is answered
+            // by the reload itself.
+            file.restored_from_draft = false;
+            file.externally_reloaded = false;
         }
         Ok(())
+    }
+
+    /// Say that the shell has posted the reload notice for this file,
+    /// so the roster stops reporting one. The roster itself is a plain
+    /// read: nothing there clears on being looked at, because a shell
+    /// redraws its strip more than once and a notice that vanished on
+    /// the first read would be a notice nobody ever saw.
+    pub fn clear_reload_notice(&mut self, id: FileId) -> bool {
+        let Some(file) = self.file_mut(id) else {
+            return false;
+        };
+        file.externally_reloaded = false;
+        true
     }
 
     /// Every open file, in open order. The roster the strip draws and
@@ -714,9 +831,15 @@ impl FileStore {
     /// valid state to sit in.
     ///
     /// `snapshot` is the buffer's Loro snapshot for a dirty file and
-    /// `None` for a clean one. A clean file comes back holding nothing:
-    /// its text is on disk, and the shell fills it with a reload. That
-    /// is why a clean record carries identity only.
+    /// `None` for a clean one, whose text is on disk. A record that is
+    /// dirty and carries no snapshot is the one case that is neither:
+    /// the draft was over [`DRAFT_SNAPSHOT_LIMIT`] when the file was
+    /// written, so it was left out. That is remembered here and turned
+    /// into a notice by [`FileStore::hydrate_restored`].
+    ///
+    /// The buffer this leaves is not yet ready to draw: nothing has
+    /// looked at the disk. [`FileStore::hydrate_restored`] is the
+    /// second half of a restore and every caller owes it.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn adopt_restored(
         &mut self,
@@ -751,17 +874,145 @@ impl FileStore {
             conflict: FileConflict::None,
             last_edited_ms,
             restored_from_draft: true,
+            externally_reloaded: false,
+            draft_dropped: dirty && snapshot.is_none(),
             bookmark,
         });
         Ok(id)
     }
 
-    /// The Loro snapshot of a dirty file's buffer, for the drafts
-    /// record. `None` for a clean file, which records identity only.
-    pub(crate) fn draft_snapshot(&self, id: FileId) -> Option<zeroize::Zeroizing<Vec<u8>>> {
-        let file = self.file(id)?;
-        file.dirty.then(|| file.document.export_snapshot())
+    /// The second half of a drafts restore: look at the disk, and leave
+    /// every restored file in a state the shell can draw without asking
+    /// anything further.
+    ///
+    /// One record at a time, and never a whole-restore failure. A file
+    /// that cannot be reopened is dropped from the roster or left
+    /// standing in a conflict, and either way it leaves a
+    /// [`FileNotice`]; the files beside it come back regardless. A
+    /// launch that loses every open tab because one of them was on an
+    /// unmounted volume would be the worse answer by a distance.
+    ///
+    /// The six cases, which are the whole of this function:
+    ///
+    /// | record | on disk | outcome |
+    /// | --- | --- | --- |
+    /// | clean | unchanged | filled from disk, clean |
+    /// | clean | changed | filled from disk, clean, reload notice set |
+    /// | clean | missing or unreadable | dropped, notice |
+    /// | dirty | unchanged | draft kept, saved text learned from disk |
+    /// | dirty | changed | draft kept, [`FileConflict::Changed`] |
+    /// | dirty | missing | draft kept, [`FileConflict::Missing`] |
+    ///
+    /// A dirty record whose draft was over
+    /// [`DRAFT_SNAPSHOT_LIMIT`] has no draft to keep, so it takes the
+    /// clean path and leaves a [`DroppedReason::DraftTooLarge`] notice.
+    ///
+    /// The dirty and unchanged case is the one worth reading twice. The
+    /// draft's own text stands, and the disk copy becomes the saved
+    /// text, so dirtiness is computed truthfully from here on and
+    /// stepping the draft back to what the file holds reads as clean.
+    /// The persisted last edit stamp survives, because the header of a
+    /// restored dirty file states the draft's age and re-stamping it at
+    /// launch would make every draft look new.
+    pub fn hydrate_restored(&mut self, io: &dyn FileIo) -> Vec<FileNotice> {
+        let mut notices = Vec::new();
+        let mut kept = Vec::with_capacity(self.files.len());
+        for mut file in std::mem::take(&mut self.files) {
+            if !file.restored_from_draft {
+                kept.push(file);
+                continue;
+            }
+            // A draft that was left out of the drafts file is not a
+            // draft any more. Say so once, then take the clean path.
+            let staged = file.dirty && !file.draft_dropped;
+            if file.draft_dropped {
+                notices.push(file.notice(DroppedReason::DraftTooLarge));
+                file.dirty = false;
+                file.draft_dropped = false;
+            }
+            match read_file(io, &file.path) {
+                Ok(read) => {
+                    let unchanged = file.witness == Some(read.witness);
+                    if !staged {
+                        file.adopt(read);
+                        file.externally_reloaded = !unchanged;
+                    } else if unchanged {
+                        // The draft stands. What it gains is a saved
+                        // text to be measured against.
+                        file.line_ending = read.line_ending;
+                        file.has_bom = read.has_bom;
+                        file.witness = Some(read.witness);
+                        file.saved_text = Some(read.text);
+                        file.conflict = FileConflict::None;
+                        file.resettle_dirty();
+                    } else {
+                        // Two texts and no way to reconcile them. The
+                        // draft stands and the person chooses.
+                        file.conflict = FileConflict::Changed;
+                        file.saved_text = None;
+                    }
+                    kept.push(file);
+                }
+                Err(OpenRefusal::Io(io::ErrorKind::NotFound)) => {
+                    if staged {
+                        file.conflict = FileConflict::Missing;
+                        file.witness = None;
+                        kept.push(file);
+                    } else {
+                        notices.push(file.notice(DroppedReason::Missing));
+                    }
+                }
+                Err(_) => {
+                    if staged {
+                        // Something is there and this build will not
+                        // read it, so take theirs is not on offer. The
+                        // conflict is what refuses the save until the
+                        // person picks keep mine or save as.
+                        file.conflict = FileConflict::Changed;
+                        file.saved_text = None;
+                        kept.push(file);
+                    } else {
+                        notices.push(file.notice(DroppedReason::Unreadable));
+                    }
+                }
+            }
+        }
+        self.files = kept;
+        notices
     }
+
+    /// What the drafts record for this file carries in its snapshot
+    /// slot. Exported once, because a snapshot is the largest thing
+    /// this module allocates and a second copy would have to be wiped.
+    pub(crate) fn draft_body(&self, id: FileId) -> DraftBody {
+        let Some(file) = self.file(id) else {
+            return DraftBody::None;
+        };
+        if !file.dirty {
+            return DraftBody::None;
+        }
+        let snapshot = file.document.export_snapshot();
+        if snapshot.len() > DRAFT_SNAPSHOT_LIMIT {
+            return DraftBody::Oversized;
+        }
+        DraftBody::Snapshot(snapshot)
+    }
+
+    /// The notice for a draft the drafts file would not carry.
+    pub(crate) fn oversize_notice(&self, id: FileId) -> Option<FileNotice> {
+        Some(self.file(id)?.notice(DroppedReason::DraftTooLarge))
+    }
+}
+
+/// What a file contributes to its drafts record's snapshot slot.
+pub(crate) enum DraftBody {
+    /// A clean file: identity only, since its text is on disk.
+    None,
+    /// A dirty file's buffer.
+    Snapshot(zeroize::Zeroizing<Vec<u8>>),
+    /// A dirty file whose buffer is over [`DRAFT_SNAPSHOT_LIMIT`]. The
+    /// record is written without it, and the restore says so.
+    Oversized,
 }
 
 /// The persisted view of one open file, read by `file_persist`.

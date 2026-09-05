@@ -1109,7 +1109,18 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
  *       "lineEnding":        "lf" | "crlf",
  *       "hasBOM":            bool,     a UTF-8 BOM, preserved on save
  *       "lastEditedAt":      u64,      Unix seconds, 0 when never
- *       "restoredFromDraft": bool      came back from drafts.sealed
+ *       "restoredFromDraft": bool,     came back from drafts.sealed
+ *       "externallyReloaded": bool     filled from a disk copy that had
+ *                                      changed, so the shell owes one
+ *                                      notice; sticky until
+ *                                      companion_file_clear_reload_notice()
+ *     }
+ *
+ *   companion_drafts_notices_json(), an array of:
+ *     {
+ *       "name":   string,
+ *       "path":   string,
+ *       "reason": "missing" | "unreadable" | "draftTooLarge"
  *     }
  *
  *   companion_file_check():
@@ -1210,6 +1221,18 @@ bool companion_file_reload(CompanionHandle *handle, uint64_t file);
 char *companion_file_roster_json(CompanionHandle *handle);
 
 /*
+ * Say that the shell has posted the reload notice for a file, so its
+ * roster row stops carrying "externallyReloaded".
+ *
+ * The roster is a plain read and clears nothing when it is read: a
+ * shell redraws its strip more than once, and a flag that vanished on
+ * the first read would be a notice nobody ever saw. This is the
+ * acknowledgement. Returns false for an unknown file.
+ */
+bool companion_file_clear_reload_notice(CompanionHandle *handle,
+                                        uint64_t file);
+
+/*
  * Keep mine: the first of the three conflict resolutions, and the only
  * one with no other entry point. Take theirs is companion_file_reload()
  * and the third is companion_file_save_as(). Clears the conflict and
@@ -1255,10 +1278,51 @@ char *companion_file_bookmark_b64(CompanionHandle *handle, uint64_t file);
  * companion_persist_erase() erases it from the same place. The shell
  * must therefore name the file "drafts.sealed" and keep it in the state
  * directory, the same coupling the state file's own name already has.
+ * The three calls below take their path from the shell like every other
+ * path on this ABI; only the rotation, which is handed the state file
+ * and no other path, goes looking for the name.
+ *
+ * A draft larger than four times the file size limit is left out of the
+ * file and its record written as identity only. The save still
+ * succeeds: one oversized draft must not cost a person every other open
+ * file. It shows up as a "draftTooLarge" entry in the notices below.
+ *
+ * companion_drafts_restore() returns a roster that is ready to draw.
+ * Every restored record is reconciled against the file on disk before
+ * it returns, so the shell owes nothing afterwards but the notices:
+ *
+ *   - A clean file is filled from disk. If the disk copy had changed it
+ *     is filled anyway, without asking, and its row carries
+ *     "externallyReloaded" until the call above answers it.
+ *   - A dirty file keeps its draft. Against an unchanged disk copy the
+ *     draft is measured against it, so "isDirty" is truthful from then
+ *     on and stepping back to the file's text reads as clean, and the
+ *     persisted "lastEditedAt" survives. Against a changed one the file
+ *     stands in a "changed" conflict; against a missing one, "missing".
+ *   - A clean file that is gone or unreadable is dropped from the
+ *     roster and named in the notices.
+ *
+ * One unreadable file never fails the restore whole: the files beside
+ * it come back regardless. False means the drafts file itself did not
+ * open, which covers a fresh start with no file at all.
  */
 bool companion_drafts_save(CompanionHandle *handle, const char *path);
 bool companion_drafts_restore(CompanionHandle *handle, const char *path);
 bool companion_drafts_erase(CompanionHandle *handle, const char *path);
+
+/*
+ * Everything the last drafts save or drafts restore has to tell the
+ * user about, as an array of the notice shape above. An empty array is
+ * the ordinary answer. Null when the answer cannot be had. Free with
+ * companion_string_free().
+ *
+ * Reading drains the list. This is a call the shell makes once after a
+ * restore, not a view it polls, and an entry that stayed would be
+ * posted again on the next launch. The roster's own "externallyReloaded"
+ * flag is the opposite and is deliberately so: it is polled, so it is
+ * sticky and companion_file_clear_reload_notice() answers it.
+ */
+char *companion_drafts_notices_json(CompanionHandle *handle);
 
 /* Free a string returned by this library. Null is a no-op. */
 void companion_string_free(char *s);

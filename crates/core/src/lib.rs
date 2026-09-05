@@ -48,8 +48,9 @@ pub mod ttl;
 pub use blocks::BlockMeta;
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use files::{
-    ExternalState, FILE_ID_TAG, FILE_SIZE_LIMIT, FileConflict, FileId, FileIo, FileStore,
-    FileWitness, LineEnding, OpenFile, OpenRefusal, SaveError, StepOutcome,
+    DRAFT_SNAPSHOT_LIMIT, DroppedReason, ExternalState, FILE_ID_TAG, FILE_SIZE_LIMIT, FileConflict,
+    FileId, FileIo, FileNotice, FileStore, FileWitness, LineEnding, OpenFile, OpenRefusal,
+    SaveError, StepOutcome,
 };
 pub use harden::harden_process;
 pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecord, SizeClass};

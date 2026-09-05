@@ -261,6 +261,10 @@ struct Companion {
     /// Why the last `companion_file_open` on this handle refused, held
     /// until the next open so the shell can ask in a second call.
     last_open_refusal: Option<companion_core::OpenRefusal>,
+    /// What the last drafts save or drafts restore has to tell the user
+    /// about: files that did not come back, and drafts that were too
+    /// large to stage. Drained by `companion_drafts_notices_json`.
+    drafts_notices: Vec<companion_core::FileNotice>,
 }
 
 /// The credential-store account holding the API token (scoped by the
@@ -485,6 +489,7 @@ fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
         sync: sync_driver::SyncState::default(),
         files: companion_core::FileStore::new(),
         last_open_refusal: None,
+        drafts_notices: Vec::new(),
     };
     Box::into_raw(Box::new(CompanionHandle {
         inner: Mutex::new(companion),
@@ -1755,7 +1760,7 @@ pub unsafe extern "C" fn companion_persist_rotate_and_save(
     };
     // Taken for its exclusion as much as for the credentials: an
     // ordinary save in flight owns the same path and the same halves.
-    let Ok(guard) = handle.inner.lock() else {
+    let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
     let path = Path::new(path);
@@ -1795,7 +1800,7 @@ pub unsafe extern "C" fn companion_persist_rotate_and_save(
     // file survives a crash inside the window, and a person's unsaved
     // typing outranks the tab names, rungs and strip order this call's
     // own residual already accepts. See `files::reseal_drafts_beside`.
-    let drafts = files::reseal_drafts_beside(&guard, path);
+    let drafts = files::reseal_drafts_beside(&mut guard, path);
     seal_state_to(&guard, path) && drafts
 }
 
@@ -3512,6 +3517,7 @@ mod tests {
             sync: sync_driver::SyncState::default(),
             files: companion_core::FileStore::new(),
             last_open_refusal: None,
+            drafts_notices: Vec::new(),
         };
         Box::into_raw(Box::new(CompanionHandle {
             inner: Mutex::new(companion),

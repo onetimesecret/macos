@@ -46,10 +46,16 @@ use crate::{Companion, CompanionHandle, cstr, into_c_string, parse_ops, persist,
 /// holding both keys.
 const DRAFTS_MAGIC: &[u8; 8] = b"OTSDRFE1";
 
-/// The drafts file's name, as the shell spells it. A copy of a name the
-/// shell owns, the same coupling `persist::STATE_FILE_NAME` already
-/// carries, and it is what lets a rotation find the drafts file from
-/// the state path it was handed.
+/// The drafts file's default name.
+///
+/// **The shell owns the name.** Every `companion_drafts_*` entry point
+/// takes its path from the caller and never consults this, exactly as
+/// `companion_persist_save` does, so `FormFactor` is free to put the
+/// file where it likes. This constant exists for the one caller that
+/// has no path to be given: a key rotation is handed the state file and
+/// has to find the drafts file beside it. That is the same coupling
+/// `persist::STATE_FILE_NAME` already carries, and if the shell renames
+/// the file the rotation stops finding it.
 pub(crate) const DRAFTS_FILE_NAME: &str = "drafts.sealed";
 
 /// The drafts file that sits beside `state_path`.
@@ -643,6 +649,7 @@ pub unsafe extern "C" fn companion_file_roster_json(handle: *mut CompanionHandle
                 "hasBOM": file.has_bom(),
                 "lastEditedAt": file.last_edited_at(),
                 "restoredFromDraft": file.restored_from_draft(),
+                "externallyReloaded": file.externally_reloaded(),
             })
         })
         .collect();
@@ -652,6 +659,31 @@ pub unsafe extern "C" fn companion_file_roster_json(handle: *mut CompanionHandle
     }
 }
 
+/// Say that the shell has posted the reload notice for a file, so the
+/// roster stops reporting one.
+///
+/// The roster is a plain read and clears nothing: a shell redraws its
+/// strip more than once, and a flag that vanished on the first read
+/// would be a notice nobody ever saw. This is the acknowledgement, and
+/// it is the only thing that turns `externallyReloaded` off short of a
+/// reload.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_clear_reload_notice(
+    handle: *mut CompanionHandle,
+    file: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.files.clear_reload_notice(FileId(file))
+}
+
 // ---------------------------------------------------------------------------
 // Drafts: the third sealed file
 // ---------------------------------------------------------------------------
@@ -659,6 +691,11 @@ pub unsafe extern "C" fn companion_file_roster_json(handle: *mut CompanionHandle
 /// Seal the open file roster and every dirty file's draft to `path`,
 /// under the same content key as the state file and under an envelope
 /// magic of its own.
+///
+/// A draft larger than `DRAFT_SNAPSHOT_LIMIT` is left out and the file
+/// is recorded as identity only, which leaves a `draftTooLarge` entry
+/// in [`companion_drafts_notices_json`]. The save still succeeds: one
+/// oversized draft must not cost the person every other open file.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid C string.
@@ -673,10 +710,16 @@ pub unsafe extern "C" fn companion_drafts_save(
     let Some(path) = (unsafe { cstr(path) }) else {
         return false;
     };
-    let Ok(guard) = handle.inner.lock() else {
+    let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    seal_drafts_to(&guard, Path::new(path))
+    match seal_drafts_to(&guard, Path::new(path)) {
+        Some(oversized) => {
+            guard.drafts_notices.extend(oversized);
+            true
+        }
+        None => false,
+    }
 }
 
 /// Seal the roster as it stands and write it to `path`, minting the
@@ -684,24 +727,26 @@ pub unsafe extern "C" fn companion_drafts_save(
 /// with the rotation, which has to do the identical write after it has
 /// taken the old halves away.
 ///
+/// `None` is a write that did not land. `Some` carries the drafts that
+/// were too large to go in, which the caller turns into notices; an
+/// empty vector is the ordinary answer.
+///
 /// The caller holds the lock.
-pub(crate) fn seal_drafts_to(state: &Companion, path: &Path) -> bool {
-    let Some(wall_ms) = wall_now_ms() else {
-        return false;
-    };
-    let Some(key) = persist::ensure_state_key(state.credentials.as_ref(), path) else {
-        return false;
-    };
+pub(crate) fn seal_drafts_to(
+    state: &Companion,
+    path: &Path,
+) -> Option<Vec<companion_core::FileNotice>> {
+    let wall_ms = wall_now_ms()?;
+    let key = persist::ensure_state_key(state.credentials.as_ref(), path)?;
+    let emitted = file_persist::emit(&state.files, wall_ms);
     // The buffer holds a person's unsaved typing, so it is wiped on the
     // way out whatever happens to the write.
-    let plaintext = Zeroizing::new(file_persist::emit(&state.files, wall_ms));
-    let Some(sealed) = persist::seal_body(&key, DRAFTS_MAGIC, &plaintext) else {
-        return false;
-    };
+    let plaintext = Zeroizing::new(emitted.bytes);
+    let sealed = persist::seal_body(&key, DRAFTS_MAGIC, &plaintext)?;
     let mut file = Vec::with_capacity(DRAFTS_MAGIC.len() + sealed.len());
     file.extend_from_slice(DRAFTS_MAGIC);
     file.extend_from_slice(&sealed);
-    persist::write_private(path, &file)
+    persist::write_private(path, &file).then_some(emitted.oversized)
 }
 
 /// Restore the roster and the drafts at launch. False covers a fresh
@@ -714,6 +759,28 @@ pub(crate) fn seal_drafts_to(state: &Companion, path: &Path) -> bool {
 /// here fails it too. Nothing about a record's shape decides which
 /// store it lands in: `file_persist::restore` writes only into the file
 /// store and cannot reach the sheet store at all.
+///
+/// **The roster this returns is ready to draw.** Every restored record
+/// is reconciled against the file on disk before this returns, so the
+/// shell owes nothing afterwards but the notices:
+///
+///   - A clean file is filled from disk. If the disk copy had changed
+///     it is filled anyway, without asking, and its roster row carries
+///     `externallyReloaded` until
+///     [`companion_file_clear_reload_notice`] answers it.
+///   - A dirty file keeps its draft. If the disk copy is unchanged the
+///     draft is measured against it, so dirtiness is truthful from here
+///     on and stepping back to the file's text reads as clean; the
+///     persisted `lastEditedAt` survives, since the header states the
+///     draft's age. If the disk copy changed, the file stands in a
+///     `changed` conflict; if it is gone, a `missing` one.
+///   - A clean file that is gone or unreadable is dropped from the
+///     roster and named in [`companion_drafts_notices_json`].
+///
+/// **One unreadable file never fails the restore.** The files beside it
+/// come back regardless: a launch that lost every open tab because one
+/// of them was on an unmounted volume would be the worse answer by a
+/// distance. False here means the drafts file itself did not open.
 ///
 /// # Safety
 /// `handle` must be a valid handle; `path` a valid C string.
@@ -763,15 +830,71 @@ pub unsafe extern "C" fn companion_drafts_restore(
     let Some(wall_ms) = wall_now_ms() else {
         return false;
     };
-    match file_persist::restore(&mut guard.files, &plaintext, wall_ms) {
-        Ok(_) => true,
-        Err(error) => {
-            diag_fault!(
-                "companion-ffi: the drafts file authenticated but the core rejected the \
-                 snapshot inside it ({error})."
-            );
-            false
-        }
+    if let Err(error) = file_persist::restore(&mut guard.files, &plaintext, wall_ms) {
+        diag_fault!(
+            "companion-ffi: the drafts file authenticated but the core rejected the \
+             snapshot inside it ({error})."
+        );
+        return false;
+    }
+    // The second half of the restore: look at the disk, and leave every
+    // file in a state the shell can draw. Per file, so one that cannot
+    // be reopened costs its own tab and nothing else.
+    let notices = guard.files.hydrate_restored(&RealFileIo);
+    guard.drafts_notices.extend(notices);
+    true
+}
+
+/// Everything the last drafts save or drafts restore has to tell the
+/// user about, as JSON:
+///
+/// ```text
+/// [{"name": string, "path": string,
+///   "reason": "missing" | "unreadable" | "draftTooLarge"}]
+/// ```
+///
+/// `missing` and `unreadable` are files that were open at the last quit
+/// and are not in the roster now: nothing is at the path any more, or
+/// something is and this build will not open it. `draftTooLarge` is a
+/// file that did come back, filled from disk and clean, whose unsaved
+/// editing was over the drafts file's size bound and was not staged.
+///
+/// **Reading drains the list.** This is a call the shell makes once
+/// after a restore, not a view it polls, and an entry that stayed would
+/// be posted again on the next launch. The roster's own
+/// `externallyReloaded` flag is the opposite and is deliberately so: it
+/// is polled, so it is sticky and
+/// [`companion_file_clear_reload_notice`] answers it.
+///
+/// An empty array is the ordinary answer. Null when the answer cannot
+/// be had. Free with `companion_string_free`.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_drafts_notices_json(
+    handle: *mut CompanionHandle,
+) -> *mut c_char {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return ptr::null_mut();
+    };
+    let notices: Vec<serde_json::Value> = guard
+        .drafts_notices
+        .drain(..)
+        .map(|notice| {
+            serde_json::json!({
+                "name": notice.name,
+                "path": notice.path,
+                "reason": notice.reason.as_str(),
+            })
+        })
+        .collect();
+    match serde_json::to_string(&notices) {
+        Ok(json) => into_c_string(json),
+        Err(_) => ptr::null_mut(),
     }
 }
 
@@ -825,21 +948,26 @@ pub unsafe extern "C" fn companion_drafts_erase(
 ///
 /// Returns whether the drafts are readable under the new key, which for
 /// an install with no drafts file is trivially true.
-pub(crate) fn reseal_drafts_beside(state: &Companion, state_path: &Path) -> bool {
+pub(crate) fn reseal_drafts_beside(state: &mut Companion, state_path: &Path) -> bool {
     let Some(path) = drafts_path_beside(state_path) else {
         return true;
     };
     if !path.exists() && state.files.files().is_empty() {
         return true;
     }
-    if seal_drafts_to(state, &path) {
-        return true;
+    match seal_drafts_to(state, &path) {
+        Some(oversized) => {
+            state.drafts_notices.extend(oversized);
+            true
+        }
+        None => {
+            diag_fault!(
+                "companion-ffi: the drafts file could not be rewritten under the rotated \
+                 content key. Every unsaved file edit staged in it is unreadable from now on."
+            );
+            false
+        }
     }
-    diag_fault!(
-        "companion-ffi: the drafts file could not be rewritten under the rotated content key. \
-         Every unsaved file edit staged in it is unreadable from now on."
-    );
-    false
 }
 
 /// Erase the drafts file that sits beside `state_path`. The other half
@@ -902,6 +1030,7 @@ mod tests {
             sync: crate::sync_driver::SyncState::default(),
             files: companion_core::FileStore::new(),
             last_open_refusal: None,
+            drafts_notices: Vec::new(),
         };
         Box::into_raw(Box::new(CompanionHandle {
             inner: std::sync::Mutex::new(companion),
@@ -1225,6 +1354,182 @@ mod tests {
         serde_json::from_str(&json).unwrap()
     }
 
+    unsafe fn notices(handle: *mut CompanionHandle) -> serde_json::Value {
+        let json = unsafe { take_json(companion_drafts_notices_json(handle)) };
+        serde_json::from_str(&json).unwrap()
+    }
+
+    /// One clean file and one dirty one staged into a drafts file, and
+    /// the credential store that opens it again. The caller changes
+    /// what is on disk before relaunching.
+    fn staged(
+        tag: &str,
+    ) -> (
+        std::sync::Arc<dyn companion_credentials::CredentialStore>,
+        PathBuf,
+        PathBuf,
+        PathBuf,
+        CString,
+    ) {
+        let keys = credentials();
+        let handle = handle_with(keys.clone());
+        let dir = scratch_dir(tag);
+        let drafts = dir.join(DRAFTS_FILE_NAME);
+        let clean = dir.join("clean.txt");
+        let dirty = dir.join("dirty.txt");
+        std::fs::write(&clean, b"clean body\n").unwrap();
+        std::fs::write(&dirty, b"dirty body\n").unwrap();
+        let drafts_c = cstring(&drafts.to_string_lossy());
+        unsafe {
+            open(handle, &clean);
+            let id = open(handle, &dirty);
+            let ops = cstring(r#"[{"ins":{"at":0,"text":"typed "}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            assert!(companion_drafts_save(handle, drafts_c.as_ptr()));
+            // A save reports no notices when nothing was left out.
+            assert_eq!(notices(handle), serde_json::json!([]));
+            crate::companion_free(handle);
+        }
+        (keys, dir, clean, dirty, drafts_c)
+    }
+
+    #[test]
+    fn a_restore_hands_back_a_roster_that_is_ready_to_draw() {
+        let (keys, dir, _clean, _dirty, drafts_c) = staged("hydrate");
+        let handle = handle_with(keys);
+        unsafe {
+            assert!(companion_drafts_restore(handle, drafts_c.as_ptr()));
+            let row = roster(handle);
+            // The clean file arrived filled from disk, with nothing to
+            // say about it. The shell calls no reload of its own.
+            assert_eq!(row[0]["isDirty"], serde_json::json!(false));
+            assert_eq!(row[0]["externallyReloaded"], serde_json::json!(false));
+            let clean_id = row[0]["id"].as_u64().unwrap();
+            assert_eq!(
+                take_json(companion_file_runs_json(handle, clean_id)),
+                r#"[{"ink":"clean body\n"}]"#
+            );
+            // The dirty one kept its draft and knows the disk copy.
+            assert_eq!(row[1]["isDirty"], serde_json::json!(true));
+            assert_eq!(row[1]["conflict"], serde_json::json!("none"));
+            let dirty_id = row[1]["id"].as_u64().unwrap();
+            let ops = cstring(r#"[{"del":{"at":0,"len":6}}]"#);
+            assert!(companion_file_apply_ops(handle, dirty_id, ops.as_ptr()));
+            assert_eq!(
+                roster(handle)[1]["isDirty"],
+                serde_json::json!(false),
+                "back at the file's own text is clean"
+            );
+            assert_eq!(notices(handle), serde_json::json!([]));
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn a_clean_file_that_changed_comes_back_reloaded_with_a_sticky_flag() {
+        let (keys, dir, clean, _dirty, drafts_c) = staged("reloaded");
+        std::fs::write(&clean, b"somebody else wrote this\n").unwrap();
+        let handle = handle_with(keys);
+        unsafe {
+            assert!(companion_drafts_restore(handle, drafts_c.as_ptr()));
+            let row = roster(handle);
+            let id = row[0]["id"].as_u64().unwrap();
+            assert_eq!(row[0]["isDirty"], serde_json::json!(false));
+            assert_eq!(row[0]["externallyReloaded"], serde_json::json!(true));
+            assert_eq!(
+                take_json(companion_file_runs_json(handle, id)),
+                r#"[{"ink":"somebody else wrote this\n"}]"#
+            );
+            // Reading the roster again does not lose the flag; only the
+            // acknowledgement clears it.
+            assert_eq!(
+                roster(handle)[0]["externallyReloaded"],
+                serde_json::json!(true)
+            );
+            assert!(companion_file_clear_reload_notice(handle, id));
+            assert_eq!(
+                roster(handle)[0]["externallyReloaded"],
+                serde_json::json!(false)
+            );
+            assert!(!companion_file_clear_reload_notice(handle, 0));
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn a_dirty_file_whose_disk_copy_changed_comes_back_in_a_conflict() {
+        let (keys, dir, _clean, dirty, drafts_c) = staged("conflicted");
+        std::fs::write(&dirty, b"somebody else wrote this\n").unwrap();
+        let handle = handle_with(keys);
+        unsafe {
+            assert!(companion_drafts_restore(handle, drafts_c.as_ptr()));
+            let row = roster(handle);
+            let id = row[1]["id"].as_u64().unwrap();
+            assert_eq!(row[1]["isDirty"], serde_json::json!(true));
+            assert_eq!(row[1]["conflict"], serde_json::json!("changed"));
+            assert_eq!(
+                take_json(companion_file_runs_json(handle, id)),
+                r#"[{"ink":"typed dirty body\n"}]"#
+            );
+            assert!(!companion_file_save(handle, id));
+            assert!(companion_file_resolve_keep_mine(handle, id));
+            assert!(companion_file_save(handle, id));
+        }
+        assert_eq!(std::fs::read(&dirty).unwrap(), b"typed dirty body\n");
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn a_missing_file_drops_the_clean_one_and_keeps_the_dirty_one() {
+        let (keys, dir, clean, dirty, drafts_c) = staged("gone");
+        std::fs::remove_file(&clean).unwrap();
+        std::fs::remove_file(&dirty).unwrap();
+        let handle = handle_with(keys);
+        unsafe {
+            assert!(
+                companion_drafts_restore(handle, drafts_c.as_ptr()),
+                "one unreadable file must not fail the restore whole"
+            );
+            let row = roster(handle);
+            assert_eq!(row.as_array().unwrap().len(), 1);
+            assert_eq!(row[0]["path"], serde_json::json!(dirty.to_string_lossy()));
+            assert_eq!(row[0]["conflict"], serde_json::json!("missing"));
+            assert_eq!(row[0]["isDirty"], serde_json::json!(true));
+
+            let posted = notices(handle);
+            assert_eq!(posted.as_array().unwrap().len(), 1);
+            assert_eq!(posted[0]["name"], serde_json::json!("clean.txt"));
+            assert_eq!(
+                posted[0]["path"],
+                serde_json::json!(clean.to_string_lossy())
+            );
+            assert_eq!(posted[0]["reason"], serde_json::json!("missing"));
+            // Reading drains: the notice is not posted twice.
+            assert_eq!(notices(handle), serde_json::json!([]));
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn a_clean_file_this_build_will_not_open_is_dropped_and_named() {
+        let (keys, dir, clean, _dirty, drafts_c) = staged("unreadable");
+        std::fs::write(&clean, [0x66, 0x6f, 0xFF, 0xFE]).unwrap();
+        let handle = handle_with(keys);
+        unsafe {
+            assert!(companion_drafts_restore(handle, drafts_c.as_ptr()));
+            assert_eq!(roster(handle).as_array().unwrap().len(), 1);
+            let posted = notices(handle);
+            assert_eq!(posted[0]["name"], serde_json::json!("clean.txt"));
+            assert_eq!(posted[0]["reason"], serde_json::json!("unreadable"));
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn the_draft_size_bound_is_four_times_the_file_size_limit() {
+        assert_eq!(companion_core::DRAFT_SNAPSHOT_LIMIT, 4 * LIMIT);
+    }
+
     #[test]
     fn erasing_the_drafts_file_leaves_nothing_at_the_path() {
         let (handle, dir) = scratch("drafts-erase");
@@ -1424,6 +1729,7 @@ mod tests {
             let mark = cstring("");
             assert!(!companion_file_set_bookmark(handle, page, mark.as_ptr()));
             assert!(companion_file_bookmark_b64(handle, page).is_null());
+            assert!(!companion_file_clear_reload_notice(handle, page));
 
             assert!(!dir.join("nope.txt").exists());
             // The page and the file both stood through all of it.
@@ -1453,9 +1759,11 @@ mod tests {
             assert!(!companion_file_set_bookmark(null, 1, ptr::null()));
             assert!(companion_file_bookmark_b64(null, 1).is_null());
             assert!(companion_file_roster_json(null).is_null());
+            assert!(!companion_file_clear_reload_notice(null, 1));
             assert!(!companion_drafts_save(null, ptr::null()));
             assert!(!companion_drafts_restore(null, ptr::null()));
             assert!(!companion_drafts_erase(null, ptr::null()));
+            assert!(companion_drafts_notices_json(null).is_null());
         }
     }
 }
