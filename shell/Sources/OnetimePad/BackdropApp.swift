@@ -277,6 +277,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// hangs off the distinction is the roll's anchor, see
     /// `BackdropRaise`.
     func applicationDidBecomeActive(_ notification: Notification) {
+        // Ahead of the raise's own exemptions, and ahead of the launch
+        // window: coming back to the app is exactly when a checkout, a
+        // formatter or another editor has had its turn at a file, and
+        // that is true whether or not this particular activation
+        // raises the card (decisions.md item 5).
+        pages.checkOpenFilesOnActivate()
         if Date().timeIntervalSince(launchedAt) < 2 { return }
         if aboutActivation {
             aboutActivation = false

@@ -1114,7 +1114,17 @@ public struct InkEditorView: NSViewRepresentable {
         func restyle() {
             guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
             let text = storage.string as NSString
-            let metas = model.coreClient.blocks(sheet: sheet)
+            // A file gets no block stamps, and the route is not merely
+            // skipped for dull values: `blocks(sheet:)` is a
+            // companion_sheet_* route, and a tagged id reaching it is
+            // refused core-side. Asking anyway would spend a refused
+            // call on every keystroke. A file's document does carry
+            // change timestamps, because it is a SheetDocument like any
+            // other, but they describe when this process happened to
+            // read the file rather than when a person wrote a
+            // paragraph, so there is nothing true to show
+            // (decisions.md item 15).
+            let metas = sheet.isFileID ? [] : model.coreClient.blocks(sheet: sheet)
             // First pass: walk the page block by block and classify
             // every paragraph. One scanner serves the whole page, since
             // a fence opened in one block goes on holding the lines of

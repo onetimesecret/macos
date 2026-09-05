@@ -137,6 +137,38 @@ public struct FileSummary: Identifiable, Codable, Hashable, Sendable {
     /// The buffer came back from the drafts file at launch rather than
     /// from the file on disk.
     public let restoredFromDraft: Bool
+    /// The buffer was filled from a disk copy that had changed while
+    /// the app was away, so one notice is owed.
+    ///
+    /// Sticky, unlike the drafts notices, and cleared only by
+    /// `clearFileReloadNotice(_:)`. The roster is read every time the
+    /// strip redraws, so a flag that vanished on the first read would
+    /// be a notice nobody ever saw.
+    ///
+    /// Defaulted rather than required, because a roster written by a
+    /// core that predates the key still decodes: the file was not
+    /// reloaded behind anyone's back, which is what false says.
+    public var externallyReloaded: Bool = false
+}
+
+/// Something a drafts save or restore has to tell the person about,
+/// after the fact.
+public struct DraftNotice: Codable, Hashable, Sendable {
+    public let name: String
+    public let path: String
+    public let reason: DraftNoticeReason
+}
+
+/// Why a file the drafts file named is not on the surface, or why its
+/// unsaved edits are not.
+public enum DraftNoticeReason: String, Codable, Hashable, Sendable {
+    /// The file is no longer at its path.
+    case missing
+    /// The file is there and would not be read.
+    case unreadable
+    /// The unsaved edits were too large to seal, so the file came back
+    /// as itself and the edits did not.
+    case draftTooLarge
 }
 
 /// Whether something else wrote the file since the core last read or
@@ -1300,6 +1332,50 @@ public final class CompanionClient: @unchecked Sendable {
     /// Every open file, in open order.
     public func fileRoster() -> [FileSummary] {
         decodeJSON([FileSummary].self, from: companion_file_roster_json(handle)) ?? []
+    }
+
+    /// Keep mine: the first of the three conflict resolutions, and the
+    /// only one with no other entry point. Take theirs is
+    /// `reloadFile(_:)` and the third is `saveFile(_:as:)`. It clears
+    /// the conflict and lets the next save write over whatever is on
+    /// disk, so it is called only after the person has chosen.
+    @discardableResult
+    public func resolveFileKeepMine(_ file: UInt64) -> Bool {
+        companion_file_resolve_keep_mine(handle, file)
+    }
+
+    /// Attach the shell's bookmark for a file, as standard base64. The
+    /// blob is opaque to the core: it is carried into the drafts file
+    /// and handed back at the next launch. An empty string clears it.
+    ///
+    /// Base64 rather than raw bytes because no byte buffer has ever
+    /// crossed this ABI, and a plain text file is not the place to
+    /// invent the first one.
+    @discardableResult
+    public func setFileBookmark(_ file: UInt64, base64: String) -> Bool {
+        base64.withCString { companion_file_set_bookmark(handle, file, $0) }
+    }
+
+    /// The bookmark last attached to a file, or an empty string when
+    /// none was. Nil for a file the core does not hold.
+    public func fileBookmarkBase64(_ file: UInt64) -> String? {
+        guard let ptr = companion_file_bookmark_b64(handle, file) else { return nil }
+        defer { companion_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    /// Say that the reload notice for a file has been posted, so its
+    /// roster row stops carrying `externallyReloaded`.
+    @discardableResult
+    public func clearFileReloadNotice(_ file: UInt64) -> Bool {
+        companion_file_clear_reload_notice(handle, file)
+    }
+
+    /// Everything the last drafts save or restore has to tell the
+    /// person about. Reading drains the list, so this is asked once
+    /// after a restore rather than polled.
+    public func draftNotices() -> [DraftNotice] {
+        decodeJSON([DraftNotice].self, from: companion_drafts_notices_json(handle)) ?? []
     }
 
     /// Seal the open file roster and every dirty file's draft to

@@ -251,17 +251,25 @@ final class FileSurfaceTests: XCTestCase {
         model.select(target: .file(id))
         model.perform(.pageClose)
         XCTAssertEqual(model.tabs.count, 1, "on a file the close chord leaves the tabs alone")
-        XCTAssertNotNil(model.notice)
+        // The file was never in the core, so the close finds an empty
+        // roster and the selection falls back to the pad. That fall is
+        // what says the chord took the file's arm and not the tab's.
+        XCTAssertNil(model.selectedFile, "on a file the close chord closed the file")
     }
 
-    /// The two new ids reach the two stubs, which is all the keymap can
-    /// promise until the model lane wires the panels behind them.
+    /// The two new ids reach the two file commands.
+    ///
+    /// What they do once there is the panel's answer, and under the
+    /// runner every panel cancels (`RefusingFilePanels`), so this says
+    /// the routing exists and stops: a cancelled Open opens nothing
+    /// and a cancelled Save As writes nothing, both silently, which is
+    /// what a person who dismissed a panel expects.
     func testTheTwoNewCommandsAreTheModelsToRun() throws {
         let model = isolatedModel(defaults: try defaults())
         XCTAssertTrue(model.perform(.fileOpen))
-        XCTAssertNotNil(model.notice)
-        model.notice = nil
+        XCTAssertTrue(model.openFiles.isEmpty, "a cancelled panel opens nothing")
+        XCTAssertNil(model.notice, "a cancelled panel says nothing")
         XCTAssertTrue(model.perform(.fileSaveAs))
-        XCTAssertNotNil(model.notice)
+        XCTAssertNil(model.notice)
     }
 }
