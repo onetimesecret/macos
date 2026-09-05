@@ -6,7 +6,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-08-25
-- **Depends on:** [ADR-0013](0013-document-provenance-and-block-metadata.md).
+- **Depends on:** [ADR-0013](0013-bounded-document-history-and-block-metadata.md).
 
 ## Context
 

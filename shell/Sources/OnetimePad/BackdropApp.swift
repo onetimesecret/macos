@@ -27,6 +27,21 @@ struct BackdropApp: App {
                 // is the Settings placeholder, so the standard Edit menu
                 // is asked for by name rather than assumed.
                 TextEditingCommands()
+                // The app's first File menu (ADR-0028). Every item
+                // dispatches the same command id the chord does, so
+                // there is one implementation of each verb and the menu
+                // cannot drift from the keyboard; the chords are read
+                // out of the keymap for the reason ⌘, is, so a person
+                // who rebound one sees their own chord here.
+                CommandMenu("File") {
+                    FileMenuItems(
+                        pages: appDelegate.pages,
+                        openShortcut: appDelegate.shortcut(for: .fileOpen),
+                        saveShortcut: appDelegate.shortcut(for: .stateSaveNow),
+                        saveAsShortcut: appDelegate.shortcut(for: .fileSaveAs),
+                        closeShortcut: appDelegate.shortcut(for: .pageClose)
+                    )
+                }
                 // Undo is the core's stack (issue #132), so the menu
                 // has to send the same action the chord does rather
                 // than SwiftUI's own undo command, which drives the
@@ -73,6 +88,54 @@ struct BackdropApp: App {
                     }
                 }
             }
+    }
+}
+
+/// The File menu: Open, Save, Save As and Close File (ADR-0028).
+///
+/// A view of its own for `UndoRedoItems`' reason: a `CommandMenu`'s
+/// content is a view, and a view is what can observe the model whose
+/// state greys three of these four out.
+///
+/// Every item goes through `perform`, the same route the chord takes,
+/// so each verb has one implementation. Save, Save As and Close File
+/// are dimmed while a page rather than a file is showing, because on a
+/// page those chords mean something else entirely and a menu that
+/// offered them under a file's names would be lying about what the
+/// click does.
+///
+/// Enablement is display and never a gate: the model's own arms decide
+/// what happens, and a click that arrives anyway lands on the page
+/// reading of the chord rather than on nothing.
+@MainActor
+private struct FileMenuItems: View {
+    @ObservedObject var pages: PageModel
+    let openShortcut: KeyboardShortcut?
+    let saveShortcut: KeyboardShortcut?
+    let saveAsShortcut: KeyboardShortcut?
+    let closeShortcut: KeyboardShortcut?
+
+    /// Whether the surface is showing a file, which is what the three
+    /// file verbs need to be true.
+    private var onAFile: Bool {
+        if case .file = pages.activeTarget { return true }
+        return false
+    }
+
+    var body: some View {
+        Button("Open…") { pages.perform(.fileOpen) }
+            .keyboardShortcut(openShortcut)
+        Divider()
+        Button("Save") { pages.perform(.stateSaveNow) }
+            .keyboardShortcut(saveShortcut)
+            .disabled(!onAFile)
+        Button("Save As…") { pages.perform(.fileSaveAs) }
+            .keyboardShortcut(saveAsShortcut)
+            .disabled(!onAFile)
+        Divider()
+        Button("Close File") { pages.perform(.pageClose) }
+            .keyboardShortcut(closeShortcut)
+            .disabled(!onAFile)
     }
 }
 
@@ -214,6 +277,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// hangs off the distinction is the roll's anchor, see
     /// `BackdropRaise`.
     func applicationDidBecomeActive(_ notification: Notification) {
+        // Ahead of the raise's own exemptions, and ahead of the launch
+        // window: coming back to the app is exactly when a checkout, a
+        // formatter or another editor has had its turn at a file, and
+        // that is true whether or not this particular activation
+        // raises the card (decisions.md item 5).
+        pages.checkOpenFilesOnActivate()
         if Date().timeIntervalSince(launchedAt) < 2 { return }
         if aboutActivation {
             aboutActivation = false
@@ -233,6 +302,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
+        // The same activation, so the same file check. This is the
+        // route a Dock click takes while the app is already frontmost,
+        // which `applicationDidBecomeActive` never sees, and a person
+        // coming back through it is owed the same answer about what
+        // else wrote their files.
+        pages.checkOpenFilesOnActivate()
         model.raise(.activation)
         return false
     }
@@ -337,6 +412,20 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     var redoShortcut: KeyboardShortcut? {
         model.pages.keymap.menuKeystroke(for: .editorRedo)?.keyboardShortcut
     }
+
+    /// Any command's advertised chord, on the same terms as the three
+    /// above: the keymap decides, and nil means the file took the
+    /// binding away and the item keeps its place without a chord.
+    ///
+    /// General rather than one property per command because the File
+    /// menu needs four of them and four near-identical properties would
+    /// be four places for the same rule to be written differently.
+    func shortcut(for command: CommandID) -> KeyboardShortcut? {
+        model.pages.keymap.menuKeystroke(for: command)?.keyboardShortcut
+    }
+
+    /// The model the File menu reads its enablement from.
+    var pages: PageModel { model.pages }
 
     /// What the two items grey themselves out on: the core's answer for
     /// the page under the editor, published by the model.

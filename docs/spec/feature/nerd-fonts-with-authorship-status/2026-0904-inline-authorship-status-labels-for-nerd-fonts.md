@@ -1,19 +1,19 @@
-# 2026-0904-inline-typographic-provenance-for-nerd-fonts.md
+# 2026-0904-inline-authorship-status-labels-for-nerd-fonts.md
 
-# Inline Typographic Provenance for Nerd Fonts
+# Inline Authorship-Status Labels for Nerd Fonts
 
 ## Status
 
 This document proposes a lightweight convention for distinguishing human-written and AI-written text using Unicode code points embedded directly in the text.
 
-It is intentionally **not** a comprehensive provenance, authentication, or cryptographic attestation system. The encoded character sequence is the metadata. A modified Nerd Font provides the preferred presentation layer.
+It is intentionally **not** an authentication or cryptographic attestation system. The encoded character sequence is the metadata. A modified Nerd Font provides the preferred presentation layer.
 
 ## 1. Goals
 
 The design should:
 
-- Preserve provenance during ordinary copy and paste.
-- Allow provenance to survive when only part of a document is copied.
+- Preserve authorship-status labels during ordinary copy and paste.
+- Allow labels to survive when only part of a document is copied.
 - Require no sidecar file, manifest, signature, or external service.
 - Let existing programs participate without modification.
 - Render pleasantly with a supporting Nerd Font.
@@ -29,13 +29,13 @@ The design does not attempt to:
 
 - Prove that text was written by a human or an AI.
 - Authenticate the person, model, or application making the designation.
-- Prevent someone from removing or changing provenance.
+- Prevent someone from removing or changing a label.
 - Represent a complete editing history.
 - Verify that text assumed human was in fact written by a human.
 
 This is a labeling convention, not a trust system.
 
-## 3. Provenance model
+## 3. Authorship-status model
 
 The initial profile defines four states:
 
@@ -50,18 +50,18 @@ An optional future profile may add states such as `human-edited AI` or `mixed`.
 
 Plain Unicode is assumed human rather than treated as unmarked. This is a deliberate adoption choice. Every existing program already produces plain text, and readers already take plain text to be human-written. Naming that assumption lets existing programs participate without modification. Only tools that emit AI text need to change, which is where the marking obligation belongs.
 
-The assumption is a default, not a claim. Explicit human is the forward-compatibility path: a program that wants to opt in can assert authorship rather than inherit it, and text it produces stays distinguishable from the assumed-human pool if a later profile tightens the default. Unknown exists for tools that handle text of mixed or lost origin, such as an editor receiving a paste, and prefer to say so rather than let it fall into the default.
+The assumption is a default, not a claim. Explicit human is the forward-compatibility path: a program that wants to opt in can make an explicit designation rather than inherit the default, and its text stays distinguishable from the assumed-human pool if a later profile tightens the default. Unknown exists for tools that handle text of mixed or lost origin, such as an editor receiving a paste, and prefer to say so rather than let it fall into the default.
 
 ## 4. Dual encoding
 
-A single supporting font implements two encodings for AI provenance.
+A single supporting font implements two encodings for an AI authorship-status label.
 
 ### 4.1 Variation-selector encoding
 
 A variation selector follows each marked base character:
 
 ```text
-<base character> <provenance variation selector>
+<base character> <authorship-status variation selector>
 ```
 
 Conceptually:
@@ -86,7 +86,7 @@ Example private convention:
 
 These assignments are a private protocol between encoders, decoders, and supporting fonts. They are not standardized Unicode variation sequences.
 
-The font maps the sequences to provenance-aware glyphs:
+The font maps the sequences to authorship-status-aware glyphs:
 
 ```text
 U+0041 U+E0100 → A.human
@@ -99,7 +99,7 @@ Without a supporting font:
 U+0041 U+E0101 → ordinary-looking A
 ```
 
-This is the **soft provenance** representation.
+This is the **soft-label** representation.
 
 ### 4.2 PUA encoding
 
@@ -123,7 +123,7 @@ Without that font, the character normally appears as tofu or another missing-gly
 U+F0041 → □
 ```
 
-This is the **hard provenance** representation. Failure is visible rather than silently degrading to ordinary-looking text.
+This is the **hard-label** representation. Failure is visible rather than silently degrading to ordinary-looking text.
 
 Unicode provides two supplementary private-use ranges: `U+F0000–U+FFFFD` and `U+100000–U+10FFFD`.[^3] The profile should use these supplementary areas rather than the crowded BMP PUA.
 
@@ -176,21 +176,21 @@ The project must publish a machine-readable mapping, for example:
   "pua": {
     "U+F0041": {
       "base": "U+0041",
-      "provenance": "ai"
+      "authorship_status": "ai"
     },
     "U+F0061": {
       "base": "U+0061",
-      "provenance": "ai"
+      "authorship_status": "ai"
     }
   }
 }
 ```
 
-The mapping version must remain stable. Once a PUA code point has been published, it must not later be assigned to a different base character or provenance state.
+The mapping version must remain stable. Once a PUA code point has been published, it must not later be assigned to a different base character or authorship-status value.
 
 ## 6. Granularity
 
-Provenance should normally be encoded per character or grapheme cluster.
+Authorship-status labels should normally be encoded per character or grapheme cluster.
 
 For simple characters carrying an explicit designation:
 
@@ -202,15 +202,15 @@ l + VS_HUMAN
 o + VS_HUMAN
 ```
 
-For combining sequences, the provenance selector should be placed after the complete grapheme’s ordinary code-point sequence, subject to shaping tests:
+For combining sequences, the authorship-status selector should be placed after the complete grapheme’s ordinary code-point sequence, subject to shaping tests:
 
 ```text
-<base> <combining marks> <provenance selector>
+<base> <combining marks> <authorship-status selector>
 ```
 
 Punctuation should be marked according to its originating span. Whitespace may remain unmarked in the first profile, reducing rendering and text-processing edge cases.
 
-Per-character encoding means that copying a word or fragment also copies its provenance. It avoids document-level envelopes and chunk-boundary rules.
+Per-character encoding means that copying a word or fragment also copies its authorship-status label. It avoids document-level envelopes and chunk-boundary rules.
 
 ## 7. Presentation
 
@@ -224,7 +224,7 @@ Human and AI variants use visually identical outlines:
 A.human ≈ A.ai ≈ A
 ```
 
-Provenance remains machine-readable but is not visually emphasized.
+The authorship-status label remains machine-readable but is not visually emphasized.
 
 ### Subtle presentation
 
@@ -240,34 +240,34 @@ AI glyphs receive a restrained distinction, such as:
 
 AI glyphs are visibly marked throughout the text. This is useful for inspection, editing, and demonstrations but may reduce readability.
 
-All provenance variants should retain the base glyph’s normal metrics:
+All authorship-status variants should retain the base glyph’s normal metrics:
 
 - Same advance width.
 - Same side bearings where practical.
 - Same vertical metrics.
 - No unexpected change in line height.
 
-Nerd Fonts distinguishes Mono, regular, and Propo variants. Mono fonts are intended for single-cell terminal use, while regular variants may contain larger icons and Propo variants serve proportional interfaces.[^116853#46-48] Provenance glyphs should remain character-width rather than adopting Nerd Fonts’ larger icon metrics. Double-width behavior varies between terminals and should be avoided.[^116853#76-76]
+Nerd Fonts distinguishes Mono, regular, and Propo variants. Mono fonts are intended for single-cell terminal use, while regular variants may contain larger icons and Propo variants serve proportional interfaces.[^116853#46-48] Authorship-status glyphs should remain character-width rather than adopting Nerd Fonts’ larger icon metrics. Double-width behavior varies between terminals and should be avoided.[^116853#76-76]
 
 ## 8. Nerd Fonts integration
 
 The feature should be implemented as an optional `font-patcher` capability:
 
 ```bash
-font-patcher Input.ttf --provenance
+font-patcher Input.ttf --authorship-status
 ```
 
 Possible presentation options:
 
 ```bash
-font-patcher Input.ttf --provenance=identical
-font-patcher Input.ttf --provenance=subtle
-font-patcher Input.ttf --provenance=explicit
+font-patcher Input.ttf --authorship-status=identical
+font-patcher Input.ttf --authorship-status=subtle
+font-patcher Input.ttf --authorship-status=explicit
 ```
 
 The patching process would:
 
-1. Read the provenance mapping definition.
+1. Read the authorship-status mapping definition.
 2. Duplicate or derive the required base glyphs.
 3. Create `.human`, `.ai`, and optional extension glyphs.
 4. Add ordinary `cmap` entries for the PUA mappings.
@@ -281,26 +281,26 @@ Nerd Fonts’ development toolchain already includes FontForge and recommends or
 
 Nerd Fonts already remaps several icon sets because their original PUA assignments collide. Examples include Devicons, Font Awesome Extension, Material Design, Weather Icons, and Octicons.[^a42ef7#17-27]
 
-The provenance profile therefore must:
+The authorship-status profile therefore must:
 
 - Avoid the BMP PUA used extensively by existing icon sets.
 - Use an explicitly reserved supplementary PUA range.
 - Maintain a registry within the project.
 - Test for overlap with all existing Nerd Font mappings.
-- Never recycle published provenance assignments.
+- Never recycle published authorship-status assignments.
 
-PUA rendering can also require application-specific configuration. For example, recent versions of `less` may require `LESSUTFCHARDEF` to recognize private-use ranges correctly.[^116853#136-146] Such behavior is acceptable for hard provenance: unsupported software may expose or reject the private characters instead of quietly presenting them as ordinary text.
+PUA rendering can also require application-specific configuration. For example, recent versions of `less` may require `LESSUTFCHARDEF` to recognize private-use ranges correctly.[^116853#136-146] Such behavior is acceptable for hard labels: unsupported software may expose or reject the private characters instead of quietly presenting them as ordinary text.
 
 ## 10. Copy and paste
 
-Both representations store provenance in the Unicode text itself:
+Both representations store the authorship-status label in the Unicode text itself:
 
 ```text
 Soft: base character + selector
 Hard: private-use character
 ```
 
-Copying rendered text should ordinarily copy those code points. Copying a substring preserves the provenance of the selected characters without needing surrounding context.
+Copying rendered text should ordinarily copy those code points. Copying a substring preserves the authorship-status label of the selected characters without needing surrounding context.
 
 The two modes make different tradeoffs:
 
@@ -311,9 +311,9 @@ The two modes make different tradeoffs:
 | Independent encoded character | No                                   | Yes                         |
 | Likely sanitizer treatment    | May be stripped as default-ignorable | May be retained or rejected |
 | Reversible                    | Yes                                  | Yes, with mapping table     |
-| Partial-copy provenance       | Yes                                  | Yes                         |
+| Partial-copy labels           | Yes                                  | Yes                         |
 
-No Unicode mechanism can guarantee preservation through every clipboard, sanitizer, normalization pipeline, or plain-ASCII conversion. If provenance code points are removed, the remaining text falls back to assumed human.
+No Unicode mechanism can guarantee preservation through every clipboard, sanitizer, normalization pipeline, or plain-ASCII conversion. If authorship-status code points are removed, the remaining text falls back to assumed human.
 
 That fallback favors whoever emitted the AI text. Stripping an AI selector promotes the text to the default rather than to unknown. This asymmetry is the strongest argument for PUA mode on AI text: an unsupported or rejected PUA character fails visibly instead of quietly joining the assumed-human pool.
 
@@ -322,14 +322,14 @@ That fallback favors whoever emitted the AI text. Stripping an AI selector promo
 A small reference tool should support:
 
 ```bash
-nfprov inspect file.txt
-nfprov mark --human file.txt
-nfprov mark --unknown file.txt
-nfprov mark --ai --mode=vs file.txt
-nfprov mark --ai --mode=pua file.txt
-nfprov convert --from=vs --to=pua file.txt
-nfprov convert --from=pua --to=vs file.txt
-nfprov strip file.txt
+nflabel inspect file.txt
+nflabel mark --human file.txt
+nflabel mark --unknown file.txt
+nflabel mark --ai --mode=vs file.txt
+nflabel mark --ai --mode=pua file.txt
+nflabel convert --from=vs --to=pua file.txt
+nflabel convert --from=pua --to=vs file.txt
+nflabel strip file.txt
 ```
 
 Core transformations are straightforward:
@@ -356,9 +356,9 @@ Decoders must preserve unrecognized code points rather than guessing their inten
 
 Editors that understand the profile should:
 
-- Preserve provenance when moving text.
-- Apply the current provenance mode to newly typed characters.
-- Preserve existing provenance when changing presentation.
+- Preserve authorship-status labels when moving text.
+- Apply the current authorship-status mode to newly typed characters.
+- Preserve existing labels when changing presentation.
 - Provide explicit conversion among plain, explicit human, AI, and unknown states.
 - Treat deletion and replacement using ordinary character-editing semantics.
 - Avoid silently converting PUA characters into ordinary Unicode.
@@ -428,26 +428,26 @@ Presentation:
 | Environment                       | Result                                                |
 | --------------------------------- | ----------------------------------------------------- |
 | Supporting font, identical style  | Ordinary readable sentence                            |
-| Supporting font, subtle style     | Readable sentence with subtle provenance distinctions |
+| Supporting font, subtle style     | Readable sentence with subtle authorship-status distinctions |
 | Unsupported font, VS AI encoding  | Entire sentence appears as ordinary text              |
 | Unsupported font, PUA AI encoding | Human portion is readable; AI portion appears as tofu |
 
 ## 15. Summary
 
-The design uses one Nerd Font to support two complementary forms of inline provenance:
+The design uses one Nerd Font to support two complementary forms of inline authorship-status labeling:
 
-- **Variation selectors** attach provenance to ordinary Unicode characters and degrade gracefully to plain text.
-- **PUA counterparts** make provenance part of the encoded character itself and cause unsupported AI text to fail visibly as tofu.
-- Both representations map to the same provenance-aware glyphs in the supporting font.
-- Copying any marked fragment carries its character-level metadata with it.
+- **Variation selectors** attach a label to ordinary Unicode characters and degrade gracefully to plain text.
+- **PUA counterparts** make the label part of the encoded character itself and cause unsupported AI text to fail visibly as tofu.
+- Both representations map to the same authorship-status-aware glyphs in the supporting font.
+- Copying any marked fragment carries its character-level label with it.
 - Ordinary Unicode remains unmarked rather than being treated as proof of human authorship.
 
 The core model is:
 
 ```text
-Base character + variation selector = soft provenance
-Private-use counterpart             = hard provenance
-Nerd Font glyph                      = presentation
+Base character + variation selector = soft label
+Private-use counterpart             = hard label
+Nerd Font glyph                     = presentation
 ```
 
 **References**

@@ -57,10 +57,31 @@ public struct TimeRailView: View {
         let projection = model.timeUnits
         let selected = Self.selectedBucket(projection: projection, selection: model.selection)
         VStack(spacing: 2) {
+            // The Files shelf: fixed, above the days, and drawn only
+            // when a file is open (ADR-0028). Files are navigation
+            // peers and not dated regions, so they sit outside the roll
+            // entirely rather than taking a day of their own, and
+            // nothing here reaches `TimeUnitProjection.project`, which
+            // is the ADR-0020 guarantee kept structurally: a file never
+            // enters `tabs`, so the projection cannot see one.
+            if !model.openFiles.isEmpty {
+                GroupLabel(text: "FILES")
+                ForEach(model.openFiles) { file in
+                    FileShelfRow(
+                        file: file,
+                        selected: model.selectedFile == file.id && !model.showingLedger,
+                        model: model
+                    )
+                }
+                GroupLabel(text: "PAD")
+            }
             ForEach(rows(of: projection)) { row in
                 TimeUnitTab(
                     unit: row.unit,
-                    selected: !model.showingLedger && row.unit.bucket == selected,
+                    // A file showing replaces the roll, so no day is
+                    // the day on screen while one is selected.
+                    selected: !model.showingLedger && model.selectedFile == nil
+                        && row.unit.bucket == selected,
                     chord: row.chord,
                     model: model
                 )
@@ -80,8 +101,19 @@ public struct TimeRailView: View {
     /// identity, which is the pairing this walk exists to make.
     private func rows(of projection: TimeUnitProjection) -> [TimeRailRow] {
         var rows: [TimeRailRow] = []
+        // The days start after the open files, because `visibleTargets`
+        // draws files first in both modes and `select(index:)` indexes
+        // that array. Numbering the days from zero would print command
+        // 1 beside today while command 1 selected the first file, which
+        // is a label that lies about the chord it names. The Files
+        // shelf sits above the days on screen for the same reason, so
+        // the offset is what the rail already looks like.
+        let openFiles = model.openFiles.count
         for (index, unit) in projection.units.enumerated() {
-            let chord = Self.chord(forRowAt: index, keymap: model.keymap)
+            let chord = Self.chord(
+                forRowAt: Self.targetIndex(forDay: index, openFileCount: openFiles),
+                keymap: model.keymap
+            )
             rows.append(TimeRailRow(unit: unit, chord: chord))
         }
         return rows
@@ -148,6 +180,19 @@ public struct TimeRailView: View {
     /// who unbound it gets a tooltip that says only what the row does.
     /// Nothing is bound past the ninth row, and a tenth day (which
     /// takes ten live pages, one over the cap) simply has no chord.
+    /// Where the day at `day` sits in `PageModel.visibleTargets`,
+    /// which is the array `select(index:)` indexes.
+    ///
+    /// Pure, and the only expression of the offset, so the chord a row
+    /// prints and the chord that reaches that row are one arithmetic
+    /// rather than two that have to be kept in step. Files come first
+    /// in both layouts, which is the lead's decision, so the days
+    /// start after them; numbering the days from zero would print
+    /// command 1 beside today while command 1 selected the first file.
+    nonisolated static func targetIndex(forDay day: Int, openFileCount: Int) -> Int {
+        openFileCount + day
+    }
+
     static func chord(forRowAt index: Int, keymap: ResolvedKeymap) -> Keystroke? {
         let number = index + 1
         guard let command = CommandID.allCases.first(where: { $0.selectsPageNumber == number })
@@ -259,6 +304,56 @@ struct RailMinimapView: View {
         .background(Color.panelBackground)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// One open file on the rail's Files shelf: the filename over the
+/// unsaved marker, in the shape a day row already has so the column
+/// reads as one column.
+///
+/// It draws no gauge and no dashed rule where a day draws one. A day
+/// with no page draws the dash because a day is a place a page could
+/// stand; a file is never a place a page stands, and a mark that said
+/// otherwise would be the misreading the two classes exist to prevent.
+///
+/// Where a day says how long its soonest page has left, a file says
+/// saved or unsaved, in words. Same seat, different fact, and neither
+/// one is a countdown on the other.
+struct FileShelfRow: View {
+    let file: FileSummary
+    let selected: Bool
+    @ObservedObject var model: PageModel
+
+    var body: some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 3) {
+                Image(systemName: "doc")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(file.name)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            ZStack {
+                if file.isDirty { UnsavedDot() }
+            }
+            .frame(height: 3)
+            .padding(.horizontal, 3)
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(selected ? Color.cellBackground : .clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { model.select(target: .file(file.id)) }
+        .help(FileRowLabel.help(for: file))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 }
 

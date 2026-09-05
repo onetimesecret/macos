@@ -1077,6 +1077,298 @@ char *companion_sync_pairing_confirm(CompanionHandle *handle, bool matched);
  */
 bool companion_sync_pairing_cancel(CompanionHandle *handle);
 
+/* ------------------------------------------------------------------ */
+/* Files: the peer content class to pages                              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A file on disk is the artifact. A file is not a page and not a tab:
+ * it has no TTL, no gauge, no rung, it is never in the day roll, it is
+ * never counted against the nine page cap, and it is never synced.
+ * Saving is explicit and nothing here autosaves in place.
+ *
+ * Ids. Every id below is tagged with the high bit (1 << 63), which no
+ * page id ever carries. The tag is defined once in
+ * crates/core/src/files.rs as FILE_ID_TAG and mirrored once in Swift as
+ * CompanionClient.fileIDTag. Every companion_sheet_* entry point that
+ * takes a sheet id refuses a tagged id by returning its own failure
+ * value, so a file id can never address page zero.
+ *
+ * Paths in, bytes never. The file IO is done in the core, so nothing
+ * here needs a byte buffer convention this ABI has never had.
+ *
+ * JSON shapes, fixed here as the contract:
+ *
+ *   FileSummary, the element type of companion_file_roster_json():
+ *     {
+ *       "id":                u64,      tagged, as above
+ *       "name":              string,   the file's display name
+ *       "path":              string,   the last known path
+ *       "isDirty":           bool,     the buffer holds unsaved edits
+ *       "conflict":          "none" | "changed" | "missing",
+ *       "lineEnding":        "lf" | "crlf",
+ *       "hasBOM":            bool,     a UTF-8 BOM, preserved on save
+ *       "lastEditedAt":      u64,      Unix seconds, 0 when never
+ *       "restoredFromDraft": bool,     came back from drafts.sealed
+ *       "externallyReloaded": bool     filled from a disk copy that had
+ *                                      changed, so the shell owes one
+ *                                      notice; sticky until
+ *                                      companion_file_clear_reload_notice()
+ *     }
+ *
+ *   companion_drafts_notices_json(), an array of:
+ *     {
+ *       "name":   string,
+ *       "path":   string,
+ *       "reason": "missing" | "unreadable" | "draftTooLarge"
+ *     }
+ *
+ *   companion_file_check():
+ *     {"state": "unchanged" | "changed" | "missing", "path": string}
+ *
+ *   companion_file_open_error_json():
+ *     {"error": "notUtf8" | "tooLarge" | "io",
+ *      "limit": u64,      present only for "tooLarge", in bytes
+ *      "detail": string}  present only for "io"
+ *
+ *   companion_file_undo() and companion_file_redo() return a
+ *   StepOutcome: {"applied": bool, "caretUTF16": i64}. The two fields
+ *   are the pair companion_sheet_undo() and
+ *   companion_sheet_undo_caret_u16() already answer for a page, in one
+ *   call rather than two, with -1 for a step that carried no position.
+ *
+ *   companion_file_runs_json() reuses the existing runs shape exactly:
+ *   the same array companion_sheet_document_json() returns. A file
+ *   holds no chips, so in practice its runs are ink only.
+ */
+
+/*
+ * Open the file at path. Returns its tagged id, or 0 when the open
+ * refused; ask companion_file_open_error_json() why. UTF-8 only:
+ * invalid UTF-8 is refused rather than opened read only or opened with
+ * replacement characters. Files above 4 MiB are refused. Anything that
+ * is not a regular file, a directory or a pipe or a device, is refused
+ * as an "io" error rather than read.
+ *
+ * The path is resolved through every symlink once, here, and the
+ * resolved path is what the roster reports and what a save writes to,
+ * so opening a dotfile that links into a repository changes the file in
+ * the repository and leaves the link a link. Two paths that resolve to
+ * one file are one open file: the existing id comes back rather than a
+ * second buffer.
+ */
+uint64_t companion_file_open(CompanionHandle *handle, const char *path);
+
+/*
+ * Why the last companion_file_open() on this handle refused. Null when
+ * nothing has refused. Free with companion_string_free().
+ */
+char *companion_file_open_error_json(CompanionHandle *handle);
+
+/*
+ * Close the file and drop its buffer. The draft goes with it: a draft
+ * never outlives its tab, so reopening the file later never brings back
+ * old edits. The Save, Discard, Cancel review for a dirty file is the
+ * shell's and happens before this call.
+ */
+bool companion_file_close(CompanionHandle *handle, uint64_t file);
+
+/*
+ * The file's body as document runs, the same shape
+ * companion_sheet_document_json() returns. Null for an unknown file.
+ * Free with companion_string_free().
+ */
+char *companion_file_runs_json(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Apply an ordered edit batch (JSON operations, UTF-16 offsets) to the
+ * file's body. False means the batch was rejected whole and nothing
+ * moved. The _as_new_step form is for a batch the app produced on the
+ * writer's behalf: it begins its own undo step.
+ */
+bool companion_file_apply_ops(CompanionHandle *handle, uint64_t file,
+                              const char *ops_json);
+bool companion_file_apply_ops_as_new_step(CompanionHandle *handle,
+                                          uint64_t file,
+                                          const char *ops_json);
+
+/*
+ * Whether the file has a step waiting to be taken back, and one waiting
+ * to be restored. False for an unknown file, and false whenever the
+ * answer cannot be had, which is what companion_sheet_can_undo() and
+ * companion_sheet_can_redo() answer for a page.
+ *
+ * The pair exists because those page routes refuse a tagged id by
+ * design, so a shell that asked them about a file was told no rather
+ * than told the truth, and the undo menu item stayed grey over a file
+ * with a full stack. Route by id: a file id here, a page id there.
+ */
+bool companion_file_can_undo(CompanionHandle *handle, uint64_t file);
+bool companion_file_can_redo(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Take back the file's last local edit step, and put it back. Both
+ * return a StepOutcome as above, or null for an unknown file. Free with
+ * companion_string_free().
+ */
+char *companion_file_undo(CompanionHandle *handle, uint64_t file);
+char *companion_file_redo(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Write the buffer back to the file's own path. A UTF-8 BOM and the
+ * line ending style the file arrived with are preserved. False when the
+ * write refused, which includes a file standing in a conflict nobody
+ * has resolved yet.
+ */
+bool companion_file_save(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Write the buffer to path and adopt it as the file's path.
+ *
+ * Refused, with nothing written, when another open file already holds
+ * that path: two buffers over one file race each other on save, which
+ * is why companion_file_open() hands back the existing id for a path
+ * that is already open. The shell's answer is to tell the person the
+ * file is open in another tab, not to close it for them.
+ */
+bool companion_file_save_as(CompanionHandle *handle, uint64_t file,
+                            const char *path);
+
+/*
+ * Whether anything else has written the file since the core last read
+ * or wrote it. Returns {state, path} as above; null for an unknown
+ * file. Free with companion_string_free(). Ask on activate and before
+ * every save.
+ */
+char *companion_file_check(CompanionHandle *handle, uint64_t file);
+
+/* Re-read the file, discarding whatever the buffer held. */
+bool companion_file_reload(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Every open file, in open order, as an array of FileSummary. Null when
+ * the answer cannot be had. Free with companion_string_free().
+ */
+char *companion_file_roster_json(CompanionHandle *handle);
+
+/*
+ * Say that the shell has posted the reload notice for a file, so its
+ * roster row stops carrying "externallyReloaded".
+ *
+ * The roster is a plain read and clears nothing when it is read: a
+ * shell redraws its strip more than once, and a flag that vanished on
+ * the first read would be a notice nobody ever saw. This is the
+ * acknowledgement. Returns false for an unknown file.
+ */
+bool companion_file_clear_reload_notice(CompanionHandle *handle,
+                                        uint64_t file);
+
+/*
+ * Keep mine: the first of the three conflict resolutions, and the only
+ * one with no other entry point. Take theirs is companion_file_reload()
+ * and the third is companion_file_save_as(). Clears the conflict and
+ * lets the next save overwrite whatever is on disk; the shell calls it
+ * only after the person has chosen. Returns false for an unknown file.
+ *
+ * The consent survives the check the shell makes before every save, and
+ * is spent by that one save. Without that, checking before saving would
+ * put the conflict straight back and keep mine would be a button that
+ * does nothing.
+ */
+bool companion_file_resolve_keep_mine(CompanionHandle *handle,
+                                      uint64_t file);
+
+/*
+ * Attach the shell's bookmark for a file, as standard base64. The blob
+ * is opaque to the core: nothing here resolves it or inspects it, it is
+ * carried into the drafts file and handed back at the next launch.
+ * Base64 rather than a byte buffer because no byte buffer has ever
+ * crossed this ABI. An empty string clears the bookmark. Returns false
+ * for an unknown file or text that is not base64.
+ */
+bool companion_file_set_bookmark(CompanionHandle *handle, uint64_t file,
+                                 const char *bookmark_b64);
+
+/*
+ * The bookmark last attached to a file, as standard base64, or an empty
+ * string when none was. Null for an unknown file. Free with
+ * companion_string_free(). The shell reads this after a drafts restore
+ * to resolve the file it should reopen.
+ */
+char *companion_file_bookmark_b64(CompanionHandle *handle, uint64_t file);
+
+/*
+ * The drafts file. A third sealed file beside the state file and the
+ * ledger, plaintext magic OTSDRFT1, its own envelope magic, sealed
+ * under the same content key as the state file. It carries the roster
+ * of open files and, for each dirty one, its unsaved edits, so a
+ * relaunch restores every open file tab and a dirty one comes back with
+ * its unsaved marker.
+ *
+ * Sharing the content key means every rotation of the content halves
+ * must rewrite this file in the same operation, or the drafts become
+ * unreadable without anyone asking for that. Both routes that rotate do
+ * it, and they find the drafts file as "drafts.sealed" beside the state
+ * file they were given, so the shell must name the file that and keep
+ * it in the state directory: the same coupling the state file's own
+ * name already has.
+ *
+ * companion_persist_rotate_and_save() reseals it, drafts before the
+ * state file.
+ *
+ * companion_persist_erase() reseals it too whenever any file is still
+ * open, and drops it only when the roster is empty. That route fires
+ * when the last page tab goes, which is a page lifecycle event, and a
+ * person can be holding a dirty file tab at that moment: their unsaved
+ * typing is not a page's to discard. An explicit discard has its own
+ * door, companion_drafts_erase(), which is the one call that always
+ * removes the file.
+ * The three calls below take their path from the shell like every other
+ * path on this ABI; only the rotation, which is handed the state file
+ * and no other path, goes looking for the name.
+ *
+ * A draft larger than four times the file size limit is left out of the
+ * file and its record written as identity only. The save still
+ * succeeds: one oversized draft must not cost a person every other open
+ * file. It shows up as a "draftTooLarge" entry in the notices below.
+ *
+ * companion_drafts_restore() returns a roster that is ready to draw.
+ * Every restored record is reconciled against the file on disk before
+ * it returns, so the shell owes nothing afterwards but the notices:
+ *
+ *   - A clean file is filled from disk. If the disk copy had changed it
+ *     is filled anyway, without asking, and its row carries
+ *     "externallyReloaded" until the call above answers it.
+ *   - A dirty file keeps its draft. Against an unchanged disk copy the
+ *     draft is measured against it, so "isDirty" is truthful from then
+ *     on and stepping back to the file's text reads as clean, and the
+ *     persisted "lastEditedAt" survives. Against a changed one the file
+ *     stands in a "changed" conflict; against a missing one, "missing".
+ *   - A clean file that is gone or unreadable is dropped from the
+ *     roster and named in the notices.
+ *
+ * One unreadable file never fails the restore whole: the files beside
+ * it come back regardless. False means the drafts file itself did not
+ * open, which covers a fresh start with no file at all.
+ */
+bool companion_drafts_save(CompanionHandle *handle, const char *path);
+bool companion_drafts_restore(CompanionHandle *handle, const char *path);
+bool companion_drafts_erase(CompanionHandle *handle, const char *path);
+
+/*
+ * Everything the last drafts save or drafts restore has to tell the
+ * user about, as an array of the notice shape above. An empty array is
+ * the ordinary answer. Null when the answer cannot be had. Free with
+ * companion_string_free().
+ *
+ * Reading drains the list. This is a call the shell makes once after a
+ * restore, not a view it polls, and an entry that stayed would be
+ * posted again on the next launch. The roster's own "externallyReloaded"
+ * flag is the opposite and is deliberately so: it is polled, so it is
+ * sticky and companion_file_clear_reload_notice() answers it.
+ */
+char *companion_drafts_notices_json(CompanionHandle *handle);
+
 /* Free a string returned by this library. Null is a no-op. */
 void companion_string_free(char *s);
 

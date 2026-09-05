@@ -108,6 +108,121 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+/// A non-secret snapshot of one open file, decoded from the core's
+/// JSON (see crates/ffi/include/companion_ffi.h for the field
+/// contract). A file is a peer content class to a page: the file on disk is
+/// the artifact, saving is explicit, and none of a page's clock fields
+/// have a meaning here, which is why this is its own type beside
+/// `TabSummary` rather than more optionals on that one.
+public struct FileSummary: Identifiable, Codable, Hashable, Sendable {
+    /// The file's id, tagged with `CompanionClient.fileIDTag`.
+    public let id: UInt64
+    /// The display name, which is the last path component.
+    public let name: String
+    /// The last known path.
+    public let path: String
+    /// The buffer holds edits the file on disk does not.
+    public let isDirty: Bool
+    /// Whether something else wrote the file, and what.
+    public let conflict: FileConflict
+    /// The line ending style the file arrived with, preserved on save.
+    public let lineEnding: FileLineEnding
+    /// The file arrived with a UTF-8 BOM, preserved on save.
+    public let hasBOM: Bool
+    /// When the buffer was last edited, Unix seconds, or 0 when it has
+    /// not been. The header states this beside the unsaved marker on a
+    /// file restored from a draft, so a person can see the draft's age
+    /// before pressing the save chord.
+    public let lastEditedAt: UInt64
+    /// The buffer came back from the drafts file at launch rather than
+    /// from the file on disk.
+    public let restoredFromDraft: Bool
+    /// The buffer was filled from a disk copy that had changed while
+    /// the app was away, so one notice is owed.
+    ///
+    /// Sticky, unlike the drafts notices, and cleared only by
+    /// `clearFileReloadNotice(_:)`. The roster is read every time the
+    /// strip redraws, so a flag that vanished on the first read would
+    /// be a notice nobody ever saw.
+    ///
+    /// Defaulted rather than required, because a roster written by a
+    /// core that predates the key still decodes: the file was not
+    /// reloaded behind anyone's back, which is what false says.
+    public var externallyReloaded: Bool = false
+}
+
+/// Something a drafts save or restore has to tell the person about,
+/// after the fact.
+public struct DraftNotice: Codable, Hashable, Sendable {
+    public let name: String
+    public let path: String
+    public let reason: DraftNoticeReason
+}
+
+/// Why a file the drafts file named is not on the surface, or why its
+/// unsaved edits are not.
+public enum DraftNoticeReason: String, Codable, Hashable, Sendable {
+    /// The file is no longer at its path.
+    case missing
+    /// The file is there and would not be read.
+    case unreadable
+    /// The unsaved edits were too large to seal, so the file came back
+    /// as itself and the edits did not.
+    case draftTooLarge
+}
+
+/// Whether something else wrote the file since the core last read or
+/// wrote it, and what.
+public enum FileConflict: String, Codable, Hashable, Sendable {
+    case none
+    case changed
+    case missing
+}
+
+/// The line ending style a file arrived with. Decided at open,
+/// preserved on save, never changed after.
+public enum FileLineEnding: String, Codable, Hashable, Sendable {
+    case lf
+    case crlf
+}
+
+/// What a fresh look at the filesystem says about an open file.
+///
+/// The three readings are the check's own and not `FileConflict`'s: a
+/// clean file that changed on disk is reloaded without asking and never
+/// enters a conflict at all, so "unchanged" and "none" are answers to
+/// two different questions and are spelled differently on the wire.
+public enum FileCheckState: String, Codable, Hashable, Sendable {
+    case unchanged
+    case changed
+    case missing
+}
+
+/// The result of `CompanionClient.checkFile(_:)`.
+public struct FileCheck: Codable, Hashable, Sendable {
+    public let state: FileCheckState
+    public let path: String
+}
+
+extension UInt64 {
+    /// Whether this id addresses an open file rather than a page. The
+    /// one question every routing branch in the shell asks; the tag it
+    /// reads is `CompanionClient.fileIDTag`, mirrored from
+    /// crates/core/src/files.rs.
+    public var isFileID: Bool { self & CompanionClient.fileIDTag != 0 }
+}
+
+/// What one undo or redo step did: whether anything moved, and where
+/// the caret belongs afterwards.
+public struct StepOutcome: Codable, Hashable, Sendable {
+    public let applied: Bool
+    /// Caret position in UTF-16 code units, or nil when the step
+    /// carried no position and the caret stays where the writer had it.
+    public var caret: Int? { caretUTF16 < 0 ? nil : Int(caretUTF16) }
+
+    let caretUTF16: Int64
+}
+
 /// The two emptiness answers, taken together in one call because they
 /// are one question asked twice (ADR-0017) and the shell derives
 /// neither.
@@ -1125,6 +1240,178 @@ public final class CompanionClient: @unchecked Sendable {
     @discardableResult
     public func persistErase(at path: String) -> Bool {
         path.withCString { companion_persist_erase(handle, $0) }
+    }
+
+    // MARK: Files: the peer content class to pages
+
+    /// The high bit, set on every file id and on no page id.
+    ///
+    /// The mirror of `FILE_ID_TAG` in crates/core/src/files.rs, which
+    /// is where it is defined. Two stores share one `UInt64` across the
+    /// seam, so this is not a convention: every `companion_sheet_*`
+    /// entry point refuses a tagged id core-side, and the shell routes
+    /// on the same bit rather than on a parallel bookkeeping set that
+    /// could drift.
+    public static let fileIDTag: UInt64 = 1 << 63
+
+    /// Open the file at `path`, returning its tagged id, or nil when
+    /// the open refused. Ask `openFileError()` why.
+    public func openFile(path: String) -> UInt64? {
+        let id = path.withCString { companion_file_open(handle, $0) }
+        return id == 0 ? nil : id
+    }
+
+    /// Why the last `openFile(path:)` refused, as the raw JSON the
+    /// header describes. Nil when nothing has refused.
+    public func openFileErrorJSON() -> String? {
+        guard let ptr = companion_file_open_error_json(handle) else { return nil }
+        defer { companion_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    /// Close the file and drop its buffer. The draft goes with it: a
+    /// draft never outlives its tab. The Save, Discard, Cancel review
+    /// for a dirty file happens before this call.
+    @discardableResult
+    public func closeFile(_ file: UInt64) -> Bool {
+        companion_file_close(handle, file)
+    }
+
+    /// The file's document runs, the same shape a page's arrive in.
+    public func fileRuns(_ file: UInt64) -> [RestoredRun] {
+        decodeJSON([RestoredRun].self, from: companion_file_runs_json(handle, file)) ?? []
+    }
+
+    /// Apply an ordered edit batch to the file's body. False means the
+    /// batch was rejected whole and nothing moved.
+    @discardableResult
+    public func applyFileOps(_ file: UInt64, json: String, startingNewStep: Bool = false) -> Bool {
+        json.withCString {
+            startingNewStep
+                ? companion_file_apply_ops_as_new_step(handle, file, $0)
+                : companion_file_apply_ops(handle, file, $0)
+        }
+    }
+
+    /// Take back the file's last local edit step.
+    public func undoFile(_ file: UInt64) -> StepOutcome? {
+        decodeJSON(StepOutcome.self, from: companion_file_undo(handle, file))
+    }
+
+    /// Put back the step `undoFile(_:)` took, on the same terms.
+    public func redoFile(_ file: UInt64) -> StepOutcome? {
+        decodeJSON(StepOutcome.self, from: companion_file_redo(handle, file))
+    }
+
+    /// Whether the file has a step waiting in either direction: what
+    /// the Edit menu's two items grey themselves out on.
+    ///
+    /// Its own pair rather than the page's, because the page's route
+    /// refuses a tagged id and answers false, which would tell the
+    /// menu that a file with a full undo stack had nothing to take
+    /// back.
+    public func canUndoFile(_ file: UInt64) -> Bool {
+        companion_file_can_undo(handle, file)
+    }
+
+    public func canRedoFile(_ file: UInt64) -> Bool {
+        companion_file_can_redo(handle, file)
+    }
+
+    /// Write the buffer back to the file's own path. False when the
+    /// write refused, which includes a file standing in a conflict
+    /// nobody has resolved yet.
+    @discardableResult
+    public func saveFile(_ file: UInt64) -> Bool {
+        companion_file_save(handle, file)
+    }
+
+    /// Write the buffer to `path` and adopt it as the file's path.
+    @discardableResult
+    public func saveFile(_ file: UInt64, as path: String) -> Bool {
+        path.withCString { companion_file_save_as(handle, file, $0) }
+    }
+
+    /// Whether anything else wrote the file since the core last read or
+    /// wrote it. Asked on activate and before every save.
+    public func checkFile(_ file: UInt64) -> FileCheck? {
+        decodeJSON(FileCheck.self, from: companion_file_check(handle, file))
+    }
+
+    /// Re-read the file, discarding whatever the buffer held.
+    @discardableResult
+    public func reloadFile(_ file: UInt64) -> Bool {
+        companion_file_reload(handle, file)
+    }
+
+    /// Every open file, in open order.
+    public func fileRoster() -> [FileSummary] {
+        decodeJSON([FileSummary].self, from: companion_file_roster_json(handle)) ?? []
+    }
+
+    /// Keep mine: the first of the three conflict resolutions, and the
+    /// only one with no other entry point. Take theirs is
+    /// `reloadFile(_:)` and the third is `saveFile(_:as:)`. It clears
+    /// the conflict and lets the next save write over whatever is on
+    /// disk, so it is called only after the person has chosen.
+    @discardableResult
+    public func resolveFileKeepMine(_ file: UInt64) -> Bool {
+        companion_file_resolve_keep_mine(handle, file)
+    }
+
+    /// Attach the shell's bookmark for a file, as standard base64. The
+    /// blob is opaque to the core: it is carried into the drafts file
+    /// and handed back at the next launch. An empty string clears it.
+    ///
+    /// Base64 rather than raw bytes because no byte buffer has ever
+    /// crossed this ABI, and a plain text file is not the place to
+    /// invent the first one.
+    @discardableResult
+    public func setFileBookmark(_ file: UInt64, base64: String) -> Bool {
+        base64.withCString { companion_file_set_bookmark(handle, file, $0) }
+    }
+
+    /// The bookmark last attached to a file, or an empty string when
+    /// none was. Nil for a file the core does not hold.
+    public func fileBookmarkBase64(_ file: UInt64) -> String? {
+        guard let ptr = companion_file_bookmark_b64(handle, file) else { return nil }
+        defer { companion_string_free(ptr) }
+        return String(cString: ptr)
+    }
+
+    /// Say that the reload notice for a file has been posted, so its
+    /// roster row stops carrying `externallyReloaded`.
+    @discardableResult
+    public func clearFileReloadNotice(_ file: UInt64) -> Bool {
+        companion_file_clear_reload_notice(handle, file)
+    }
+
+    /// Everything the last drafts save or restore has to tell the
+    /// person about. Reading drains the list, so this is asked once
+    /// after a restore rather than polled.
+    public func draftNotices() -> [DraftNotice] {
+        decodeJSON([DraftNotice].self, from: companion_drafts_notices_json(handle)) ?? []
+    }
+
+    /// Seal the open file roster and every dirty file's draft to
+    /// `path`, under the same content key as the state file.
+    @discardableResult
+    public func draftsSave(to path: String) -> Bool {
+        path.withCString { companion_drafts_save(handle, $0) }
+    }
+
+    /// Restore the roster and the drafts at launch. False covers a
+    /// fresh start with no file as much as a refused one.
+    @discardableResult
+    public func draftsRestore(from path: String) -> Bool {
+        path.withCString { companion_drafts_restore(handle, $0) }
+    }
+
+    /// Drop the drafts file at `path`. True when the path is confirmed
+    /// empty, including when there was nothing there to begin with.
+    @discardableResult
+    public func draftsErase(at path: String) -> Bool {
+        path.withCString { companion_drafts_erase(handle, $0) }
     }
 
     /// The core's version string.

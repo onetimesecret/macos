@@ -258,6 +258,22 @@ public enum SurfaceTarget: Equatable, Sendable {
     /// Today, holding no page yet. Selecting it takes the shipped
     /// create path; nothing here is minted by being drawn (ADR-0017).
     case today
+    /// An open file, by its tagged file id. A file is the second
+    /// content class and not a Tab: it has no rung, no countdown and no
+    /// day, so it addresses nothing on the strip's page side and
+    /// carries its own id instead.
+    case file(UInt64)
+}
+
+/// What a person chose to do about a file that changed on disk while
+/// their own copy held unsaved edits.
+public enum FileConflictResolution: Equatable, Sendable {
+    /// Keep the buffer and overwrite the file on the next save.
+    case keepMine
+    /// Discard the buffer and reload the file.
+    case takeTheirs
+    /// Write the buffer somewhere else and leave the file alone.
+    case saveAs
 }
 
 /// Whether the page holding the keyboard has a step waiting in each
@@ -300,6 +316,45 @@ public final class PageModel: ObservableObject {
     /// or not the tab holds a page (ADR-0017). A tab whose page expired
     /// keeps its place here, named and empty.
     @Published public private(set) var tabs: [TabSummary] = []
+
+    /// Every open file, in open order. A parallel array beside `tabs`
+    /// rather than entries within it: files are never counted against
+    /// the nine page cap, never in the day roll and never synced, and
+    /// keeping them out of `tabs` is what makes those facts structural
+    /// rather than rules a reader has to remember.
+    @Published public private(set) var openFiles: [FileSummary] = []
+
+    /// The open file the surface is showing, by its tagged id, or nil
+    /// while the surface is showing a page.
+    ///
+    /// A second selection rather than a value folded into `selection`,
+    /// because the two answer different questions and both have to
+    /// survive the other being moved: a person who reads a file and
+    /// goes back to the roll expects the slot they left to still be the
+    /// selected slot. Selecting any tab clears this, so the two are
+    /// never both live.
+    @Published public private(set) var selectedFile: UInt64?
+
+    /// What the surface is showing, as one value: the open file when
+    /// one is selected, otherwise the selected slot, otherwise today.
+    ///
+    /// The header, the menu enablement and the two second readings of
+    /// the save and close chords all ask this one question, so there is
+    /// one answer for them to disagree about rather than four.
+    public var activeTarget: SurfaceTarget {
+        if let selectedFile { return .file(selectedFile) }
+        if let selection { return .tab(selection) }
+        return .today
+    }
+
+    /// The selected file's own summary, or nil when a page is showing.
+    /// Nil also when the selection names a file the roster no longer
+    /// holds, which is what a close leaves behind for the instant
+    /// before the refresh lands.
+    public var activeFile: FileSummary? {
+        guard let selectedFile else { return nil }
+        return openFiles.first { $0.id == selectedFile }
+    }
 
     /// The visibly selected **tab**, the slot the editor shows a page
     /// from and the gestures act on. It is the tab's id and never the
@@ -678,6 +733,13 @@ public final class PageModel: ObservableObject {
     private let stateFileURL: URL
     private let ledgerFileURL: URL
 
+    /// The third sealed file, resolved from the same seam so a test
+    /// derives it from the directory it owns rather than spelling the
+    /// name. The core finds it by that name beside the state file, so
+    /// a test that spelled its own would be testing a path the app
+    /// never writes.
+    private let draftsFileURL: URL
+
     /// The interval after a refused write. Longer than the debounce: a
     /// full volume or a denied Keychain prompt does not clear in two
     /// seconds, and retrying at the debounce cadence would spend the
@@ -801,6 +863,8 @@ public final class PageModel: ObservableObject {
             ?? formFactor.stateFileURL
         ledgerFileURL = seams.stateDirectory.map(FormFactor.ledgerFileURL(in:))
             ?? formFactor.ledgerFileURL
+        draftsFileURL = seams.stateDirectory.map(FormFactor.draftsFileURL(in:))
+            ?? formFactor.draftsFileURL
         saveDebounce = seams.saveDebounce ?? Self.saveDebounce
         saveRetryDebounce = seams.saveRetryDebounce ?? Self.saveRetryDebounce
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
@@ -852,6 +916,25 @@ public final class PageModel: ObservableObject {
             self?.refresh()
         }
     }
+
+    /// The one route to a file panel, a bookmark, or a modal review.
+    ///
+    /// `lazy` so no panel object is built at init, and `var` so a test
+    /// can put scripted panels in its place. It is not in `Seams`
+    /// because nothing here is resolved during the init that `Seams`
+    /// exists to steer: a panel is raised by a gesture, long after the
+    /// model is standing, so a plain settable property is the whole of
+    /// what the injection needs.
+    public lazy var fileCoordinator = FileCoordinator()
+
+    /// Whether the drafts file owes a write.
+    ///
+    /// Separate from the sealed store's dirtiness because the two are
+    /// licensed separately. A session whose state restore was refused
+    /// may not write over yesterday's pages, and that refusal says
+    /// nothing about a file the person opened by hand in this session:
+    /// their unsaved typing still deserves to survive a crash.
+    private var draftsDirty = false
 
     /// Whether the first reveal has run — restore is attempted once.
     private var stateLoaded = false
@@ -977,6 +1060,13 @@ public final class PageModel: ObservableObject {
         }
         refresh()
         selection = tabs.first?.id
+        // The third sealed file, after the pages and after the
+        // selection settles. It is licensed by nothing: a state file
+        // that would not open says nothing about the drafts, which are
+        // a different file that either opens or does not, and refusing
+        // to read them because of the other one would lose a person's
+        // unsaved typing to an unrelated failure.
+        restoreDrafts()
         // The load is settled, mint included: what happens from here is
         // the user's work, and only that arms the quit warning.
         mutatedSinceLoad = false
@@ -1206,6 +1296,30 @@ public final class PageModel: ObservableObject {
         scheduleSave(after: saveDebounce)
     }
 
+    /// A file moved: the drafts file now differs from what is open.
+    ///
+    /// It rides the same debounce and the same force-save path as the
+    /// sealed state, which is the whole of decisions.md item 3's crash
+    /// safety: a dirty file's unsaved typing is nowhere but in memory
+    /// until this window closes, exactly as a page's is, and no
+    /// longer.
+    ///
+    /// It does not go through `markDirty`, and the difference is the
+    /// licence. `markDirty` stands down when this session may write
+    /// neither of the two sealed files, which is the right answer for
+    /// yesterday's pages and the wrong one for a file the person
+    /// opened by hand ten seconds ago: that file's draft is sealed
+    /// under the content key but is not the state file, and refusing
+    /// to write it would lose work this session created and can
+    /// perfectly well store.
+    private func markFilesDirty() {
+        draftsDirty = true
+        mutatedSinceLoad = true
+        terminationLatch.acquire()
+        if saveStatus != .failed { saveStatus = .saving }
+        scheduleSave(after: saveDebounce)
+    }
+
     /// Arm the deferred write, unless one is already armed. The timer
     /// runs in `.common` so a tracked menu cannot stall the write past
     /// its window; the failure retry runs in `.default` instead, so it
@@ -1269,9 +1383,12 @@ public final class PageModel: ObservableObject {
         saveTimer?.invalidate()
         saveTimer = nil
         saveSchedule.begin()
-        guard Self.writesEitherFile(
+        let licensed = Self.writesEitherFile(
             loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence
-        ) else { return true }
+        )
+        // Drafts owe a write on their own terms, so this stands down
+        // only when neither of the two has anything to do.
+        guard licensed || draftsDirty else { return true }
         // Both files rest in this directory, so one preparation covers
         // them: it is created if missing, and marked so Time Machine
         // leaves the ciphertext generations alone (`.noindex` in the
@@ -1290,8 +1407,17 @@ public final class PageModel: ObservableObject {
         // neither, which drops nothing and rotates nothing, and is the
         // reading that loses nothing.
         let emptiness = client.emptiness()
+        // The drafts leg goes first, and the order is the decision.
+        // The content leg below can rotate the key halves, which
+        // reseals the drafts file in the same core operation, or drop
+        // the content file, which takes the drafts with it
+        // (decisions.md item 14). Writing the drafts afterwards would
+        // put them back the moment an emptied pad was supposed to have
+        // discarded them, so they are written first and whatever the
+        // content leg decides about them stands.
+        let draftsSaved = saveDrafts(in: url.deletingLastPathComponent())
         let saved: Bool
-        if !saveLicence {
+        if !licensed || !saveLicence {
             // Deliberately left alone, which is settled, not refused:
             // this session could not read the file and so may not write
             // over it. The ledger below is a different file under a
@@ -1338,7 +1464,7 @@ public final class PageModel: ObservableObject {
         // The ledger's own write, under its own licence and its own key.
         // One debounce covers both files: the ledger only ever changes
         // on a mutation that already marked the store dirty.
-        let ledgerSaved = ledgerLicence
+        let ledgerSaved = licensed && ledgerLicence
             ? client.ledgerSave(to: ledgerFileURL.path)
             : true
         if !ledgerSaved {
@@ -1351,7 +1477,7 @@ public final class PageModel: ObservableObject {
         // therefore stays taken while EITHER file still owes a write,
         // which is what the conjunction says. A leg with no licence
         // reports true because it owes nothing, not because it wrote.
-        let settled = saved && ledgerSaved
+        let settled = saved && ledgerSaved && draftsSaved
         // The surface's answer, from the write's own outcome and
         // nowhere else. On the withheld-content leg this can read
         // "saved" while the pages went nowhere; the surface shows the
@@ -1368,6 +1494,119 @@ public final class PageModel: ObservableObject {
         }
         terminationLatch.settle(saved: settled)
         return settled
+    }
+
+    // MARK: Files: the third sealed file
+
+    /// The drafts leg of a write: the roster of open files and, for
+    /// each dirty one, the edits nobody has saved yet.
+    ///
+    /// It writes only when something moved, and with nothing open it
+    /// drops the file rather than sealing an empty roster over it: an
+    /// empty roster on disk is what the next launch would read as "no
+    /// files", which is also what no file at all says, and of the two
+    /// the absent file is the one that leaves nothing behind.
+    ///
+    /// The directory is passed in rather than read from the stored URL
+    /// so that this and the state file cannot be resolved from two
+    /// different places. The core finds the drafts beside the state
+    /// path it is handed, so the two names must sit in one directory
+    /// or a rotation will not find them.
+    private func saveDrafts(in directory: URL) -> Bool {
+        guard draftsDirty else { return true }
+        let path = FormFactor.draftsFileURL(in: directory).path
+        let wrote = openFiles.isEmpty
+            ? client.draftsErase(at: path)
+            : client.draftsSave(to: path)
+        if wrote {
+            draftsDirty = false
+        } else {
+            logger.error("the drafts file was not written; unsaved file edits are in memory only")
+        }
+        return wrote
+    }
+
+    /// Bring back the files that were open when the app last went
+    /// away, and the unsaved edits any of them held.
+    ///
+    /// Run right after the page state restore and after the selection
+    /// settles on a tab, so a relaunch opens where the person left the
+    /// pad rather than on whichever file happens to be first. The
+    /// files come back as tabs; which surface is showing is a separate
+    /// question and this does not answer it.
+    ///
+    /// The restore hands back a roster that is ready to draw: a clean
+    /// file is already filled from disk, a dirty one already holds its
+    /// draft, and a file that is gone is already off the roster. So
+    /// nothing here reads a file. What is owed is the talking: the
+    /// files that were dropped, the drafts that were too large to
+    /// seal, and each clean file that came back from a disk copy that
+    /// had changed while the app was away.
+    private func restoreDrafts() {
+        guard client.draftsRestore(from: draftsFileURL.path) else { return }
+        refreshOpenFiles()
+        for file in openFiles { refreshBookmark(for: file) }
+        // The reload flag is sticky, so it is answered as it is
+        // posted. Reading the roster does not drain it, deliberately:
+        // the strip redraws more than once and a flag that vanished on
+        // the first read would be a notice nobody ever saw.
+        let reloaded = openFiles.filter(\.externallyReloaded)
+        for file in reloaded { client.clearFileReloadNotice(file.id) }
+        // Drained rather than polled, once, here.
+        let notices = client.draftNotices()
+        if let sentence = Self.launchNotice(reloaded: reloaded, notices: notices) {
+            flash(sentence)
+        }
+        // The roster on disk and the roster in memory now agree, so
+        // nothing is owed until the person touches a file again.
+        draftsDirty = false
+    }
+
+    /// The one line a launch says about the files it brought back.
+    ///
+    /// One line and not four, because they arrive together and a
+    /// person reading four in a row reads none of them. Files are
+    /// named, because a general warning about unsaved work is exactly
+    /// the warning nobody can act on.
+    public nonisolated static func launchNotice(
+        reloaded: [FileSummary], notices: [DraftNotice]
+    ) -> String? {
+        var clauses: [String] = []
+        if !reloaded.isEmpty {
+            clauses.append(
+                "\(englishList(reloaded.map(\.name))) changed on disk and was read again")
+        }
+        for reason in [DraftNoticeReason.missing, .unreadable, .draftTooLarge] {
+            let names = notices.filter { $0.reason == reason }.map(\.name)
+            guard !names.isEmpty else { continue }
+            switch reason {
+            case .missing:
+                clauses.append("\(englishList(names)) is no longer at its path")
+            case .unreadable:
+                clauses.append("\(englishList(names)) could not be read")
+            case .draftTooLarge:
+                clauses.append("unsaved changes to \(englishList(names)) were too large to keep")
+            }
+        }
+        guard !clauses.isEmpty else { return nil }
+        return englishList(clauses) + "."
+    }
+
+    /// Resolve a restored file's bookmark and make a fresh one if the
+    /// old one came back stale, which is what a rename or a move
+    /// leaves behind.
+    ///
+    /// Everything it does happens inside the coordinator's access
+    /// bracket, which is the arrangement that makes the sandbox a
+    /// one-line change rather than an audit.
+    private func refreshBookmark(for file: FileSummary) {
+        guard let base64 = client.fileBookmarkBase64(file.id), !base64.isEmpty,
+              let data = Data(base64Encoded: base64)
+        else { return }
+        _ = FileCoordinator.withAccess(toBookmark: data) { url, isStale in
+            guard isStale, let fresh = FileCoordinator.refreshedBookmark(after: url) else { return }
+            client.setFileBookmark(file.id, base64: fresh.base64EncodedString())
+        }
     }
 
     /// The quit alert's truth table (issue #49). A refused write is the
@@ -1467,7 +1706,17 @@ public final class PageModel: ObservableObject {
         // page: keyed by the slot, a reused tab would inherit the dead
         // page's storage, and its attachment character for a zeroized
         // chip with it (ADR-0009, ADR-0017 item 9).
-        storages = storages.filter { livePages.contains($0.key) }
+        //
+        // A file id is exempt, and the exemption is not a courtesy: a
+        // file is never in `tabs`, so it is never in `livePages`, and
+        // without this line the first refresh after a file is opened
+        // drops the storage the one persistent text view is still
+        // laying out. Every restate path then guards on a map entry
+        // that is gone and silently does nothing, which is how a Take
+        // theirs can report the file was read again while the editor
+        // still shows the discarded draft. A file's storage is dropped
+        // by exactly one place, the close, which does it by name.
+        storages = storages.filter { $0.key.isFileID || livePages.contains($0.key) }
         // The roll's renderings of the days the editor is not standing
         // on go the same way and on the same set. They are plaintext of
         // a page, so an entry outliving its page would be exactly the
@@ -1571,10 +1820,24 @@ public final class PageModel: ObservableObject {
     /// the fresh storage with the editor's own attributes, so restored
     /// ink and chips are indistinguishable from typed ones. A page born
     /// in this process replays as empty.
+    /// The runs behind an id, from whichever of the two stores holds
+    /// it.
+    ///
+    /// One function rather than a branch at each of the four call
+    /// sites, because the four have to agree: a storage built from one
+    /// store and restated from the other would silently replace a
+    /// file's text with a page's. The tag is the whole of the
+    /// decision, and the core refuses the wrong store on its own side
+    /// too, so a mistake here fails loudly rather than reading page
+    /// zero.
+    private func runs(of id: UInt64) -> [RestoredRun] {
+        id.isFileID ? client.fileRuns(id) : client.documentRuns(sheet: id)
+    }
+
     public func storage(for id: UInt64) -> NSTextStorage {
         if let existing = storages[id] { return existing }
         let created = NSTextStorage()
-        for run in client.documentRuns(sheet: id) {
+        for run in runs(of: id) {
             switch run {
             case .ink(let text):
                 created.append(NSAttributedString(
@@ -1668,9 +1931,16 @@ public final class PageModel: ObservableObject {
     /// holding more than one page answers with the first of them in
     /// strip order, and only today can be a day with no page at all,
     /// which is the single `.today` entry.
+    ///
+    /// Open files come first, in open order, in both modes, which is
+    /// the order both layouts draw: the FILES group sits before the PAD
+    /// group on the strip and the Files shelf sits above the days on
+    /// the rail. With no file open the array is exactly what it has
+    /// always been, element for element, in both modes.
     public var visibleTargets: [SurfaceTarget] {
-        guard showsTimeUnits else { return tabs.map { .tab($0.id) } }
-        return timeUnits.units.map { unit -> SurfaceTarget in
+        let files = openFiles.map { SurfaceTarget.file($0.id) }
+        guard showsTimeUnits else { return files + tabs.map { .tab($0.id) } }
+        return files + timeUnits.units.map { unit -> SurfaceTarget in
             guard let tab = unit.tabIDs.first else { return .today }
             return .tab(tab)
         }
@@ -1690,6 +1960,517 @@ public final class PageModel: ObservableObject {
             select(id)
         case .today:
             openToday()
+        case .file(let id):
+            selectFile(id)
+        }
+    }
+
+    /// Show an open file. The roll gives way to that file alone, and
+    /// the slot the person left keeps its place, so selecting a day
+    /// afterwards puts them back where they were.
+    ///
+    /// It mints nothing and starts no clock, which is the whole of what
+    /// separates this from `select(_:)`: a file is not a slot, and
+    /// there is no empty file to conjure.
+    public func selectFile(_ id: UInt64) {
+        showingLedger = false
+        guard selectedFile != id else { return }
+        selectedFile = id
+        refocusEditorIfKeyed()
+    }
+
+    /// The roster the surface draws, restated.
+    ///
+    /// Internal because populating it is the model lane's work, not the
+    /// view's: the file store is what will call this, and the tests
+    /// call it to stand a roster up without a file on disk. It drops a
+    /// selection naming a file the roster no longer holds, so a closed
+    /// file cannot leave the surface pointing at nothing.
+    func standOpenFiles(_ files: [FileSummary]) {
+        openFiles = files
+        if let selectedFile, !files.contains(where: { $0.id == selectedFile }) {
+            self.selectedFile = nil
+        }
+        forgetFilesOffTheRoster(files)
+    }
+
+    /// The counterpart to the tag exemption in the two prunes.
+    ///
+    /// A file's storage, caret and scroll are exempt from the page
+    /// prunes because a file is never in `tabs`, so nothing there can
+    /// ever drop them. This is what does, and it hangs off the roster
+    /// rather than off any one gesture: every way a file leaves,
+    /// whether a close after Save or Discard or the automatic drop of
+    /// a clean file that was gone at restore, ends in a roster that no
+    /// longer names it, and this runs on all of them. Keyed on the tag
+    /// so a page id can never be swept by it.
+    private func forgetFilesOffTheRoster(_ files: [FileSummary]) {
+        let live = Set(files.map(\.id))
+        let gone = storages.keys.filter { $0.isFileID && !live.contains($0) }
+        // The editor's own two maps are asked for as well, because
+        // the caret and the scroll are the editor's and it is the one
+        // object that can drop them.
+        let coordinator = (activeEditor as? InkTextView)?.coordinator
+        for id in gone {
+            storages[id] = nil
+            coordinator?.forgetViewState(for: id)
+        }
+        // A file can leave with no storage ever built, if it was never
+        // drawn, and the editor may still hold a caret for it from a
+        // mount that came and went. So the editor's maps are swept on
+        // their own terms too rather than only alongside a storage.
+        if let coordinator {
+            for id in coordinator.viewStateKeys.carets.union(coordinator.viewStateKeys.scrolls)
+            where id.isFileID && !live.contains(id) {
+                coordinator.forgetViewState(for: id)
+            }
+        }
+    }
+
+    // MARK: Files: the peer content class to pages
+
+    /// Restate the roster from the core, which is the authority for
+    /// every file's name, path, dirtiness and conflict.
+    ///
+    /// Called after everything that could have moved any of those: an
+    /// open, an edit, a save, a reload, a close, a conflict
+    /// resolution, a restore. The roster is asked for whole rather
+    /// than patched, so no field the shell forgot to update can drift
+    /// away from what the core holds.
+    public func refreshOpenFiles() {
+        standOpenFiles(client.fileRoster())
+    }
+
+    /// Ask for a file and open it. The panel lives in the file
+    /// coordinator, never here.
+    public func openFile() {
+        guard let url = fileCoordinator.chooseFileToOpen() else { return }
+        openFile(at: url)
+    }
+
+    /// Open the file at `url`, the path a panel or a drop produced.
+    ///
+    /// The core does the reading, so this refuses nothing itself: a
+    /// file that is not UTF-8, or is past the size limit, or will not
+    /// be read at all comes back as a refusal naming itself, and the
+    /// panel's own type filter is a convenience rather than the rule.
+    public func openFile(at url: URL) {
+        guard let id = client.openFile(path: url.path) else {
+            flash(Self.openRefusalNotice(
+                name: url.lastPathComponent, json: client.openFileErrorJSON()
+            ))
+            return
+        }
+        // The bookmark is taken at the open and at every Save As, and
+        // never later: those are the two moments the shell holds a URL
+        // the person just named. It is handed straight to the core,
+        // which carries it into the drafts file and gives it back at
+        // the next launch.
+        if let data = FileCoordinator.bookmark(for: url) {
+            client.setFileBookmark(id, base64: data.base64EncodedString())
+        }
+        // A reopen of a file that is already open hands back the same
+        // id core-side, so the editor may be mounted over this exact
+        // storage right now. Restate it in place rather than dropping
+        // the entry: dropping it would leave the text view laying out
+        // an object the model no longer knows about, and nothing would
+        // rebuild it, because `selectFile` returns early on a
+        // selection that did not change and `updateNSView` returns
+        // early on a sheet that did not change.
+        if storages[id] != nil {
+            restateStorage(sheet: id)
+        }
+        refreshOpenFiles()
+        selectFile(id)
+        markFilesDirty()
+    }
+
+    /// Write the selected file back to its own path. The second reading
+    /// of the save chord: on a page it flushes sealed state as it
+    /// always has.
+    public func saveActiveFile() {
+        guard let file = activeFile else { return }
+        saveFile(file.id)
+    }
+
+    /// Write one file, with the before-save check decisions.md item 5
+    /// asks for.
+    ///
+    /// The check runs first and can itself put the file into a
+    /// conflict, which is the point: a save that discovered the change
+    /// only by overwriting it would be the one outcome nobody wants.
+    /// A file already standing in an unresolved conflict is refused
+    /// out loud, since the banner's three actions are the way out and
+    /// silently writing would make the banner a lie.
+    @discardableResult
+    public func saveFile(_ id: UInt64) -> Bool {
+        guard let before = openFiles.first(where: { $0.id == id }) else { return false }
+        guard before.conflict == .none else {
+            flash(Self.unresolvedConflictNotice(name: before.name))
+            return false
+        }
+        // The check can reload a clean file out from under the save,
+        // which the person is owed a word about, and it can put a
+        // dirty one into a conflict, which the banner says instead.
+        if let outcome = applyCheck(for: id), let sentence = Self.activationNotice([outcome]) {
+            flash(sentence)
+        }
+        guard let file = openFiles.first(where: { $0.id == id }) else { return false }
+        guard file.conflict == .none else { return false }
+        guard client.saveFile(id) else {
+            flash(Self.writeRefusalNotice(name: file.name))
+            return false
+        }
+        // The roster is what the header and the dots read, and a save
+        // moved the dirty flag and the conflict, so the surface is
+        // restated before anything else looks at it. The drafts owe a
+        // write too: this file no longer carries a snapshot.
+        refreshOpenFiles()
+        markFilesDirty()
+        return true
+    }
+
+    /// Write the selected file somewhere else and adopt that path.
+    public func saveActiveFileAs() {
+        guard let file = activeFile else { return }
+        guard let url = fileCoordinator.chooseDestination(suggestedName: file.name) else { return }
+        // The core refuses a target another open file already holds,
+        // and the only signal it can give is false, which also covers
+        // an ordinary write failure. The roster is the same answer and
+        // it is here, so the refusal gets its own sentence rather than
+        // a general one. Asked before the call rather than after,
+        // because a false afterwards cannot be told apart.
+        // Compared on the resolved path, because the roster's path is
+        // the one the core resolved through symlinks at open and the
+        // panel hands back whatever the person navigated to. On this
+        // system /tmp and /private/tmp are the same directory, and a
+        // comparison that missed that would let the core refuse with
+        // nothing but a false to say why.
+        let target = URL(fileURLWithPath: url.path).resolvingSymlinksInPath().path
+        // Picking the file's own name in the save panel is a save, not
+        // a save as, and every save is checked immediately before it
+        // writes (decisions.md item 5). Without this the one path that
+        // can overwrite a changed disk copy with no conflict raised is
+        // the panel, which is the last place a person would expect it.
+        if URL(fileURLWithPath: file.path).resolvingSymlinksInPath().path == target {
+            saveFile(file.id)
+            return
+        }
+        if let held = openFiles.first(where: {
+            $0.id != file.id
+                && URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == target
+        }) {
+            flash(Self.pathInUseNotice(name: held.name))
+            return
+        }
+        guard client.saveFile(file.id, as: url.path) else {
+            flash(Self.writeRefusalNotice(name: url.lastPathComponent))
+            return
+        }
+        // The identity moved, so the bookmark has to move with it, or
+        // the next launch would reopen the file the person saved away
+        // from.
+        if let data = FileCoordinator.bookmark(for: url) {
+            client.setFileBookmark(file.id, base64: data.base64EncodedString())
+        }
+        refreshOpenFiles()
+        markFilesDirty()
+    }
+
+    /// Close the selected file. A dirty one takes the Save, Discard,
+    /// Cancel review first, and the draft dies with the tab either way.
+    /// Returns whether the file actually closed, so a caller that
+    /// moved the selection to raise the review can put it back.
+    @discardableResult
+    public func closeActiveFile() -> Bool {
+        guard let file = activeFile else { return false }
+        if file.isDirty {
+            switch fileCoordinator.reviewUnsavedFile(named: file.name) {
+            case .cancel:
+                return false
+            case .save:
+                // A save that refused leaves the file open. Closing
+                // anyway would discard the very edits the person just
+                // asked to keep.
+                guard saveFile(file.id) else { return false }
+            case .discard:
+                break
+            }
+        }
+        client.closeFile(file.id)
+        storages[file.id] = nil
+        // The roster no longer names it, and `standOpenFiles` drops a
+        // selection pointing at a file that is gone, so the surface
+        // falls back to the pad on its own.
+        refreshOpenFiles()
+        markFilesDirty()
+        return true
+    }
+
+    /// Close a named file, which is what the ✕ on a row asks for.
+    ///
+    /// It makes that file the active one first, so the review a dirty
+    /// file raises is about the file the person can see. Closing
+    /// through the one active path keeps the review, the draft's death
+    /// and the roster update in a single place rather than two that
+    /// would have to agree.
+    public func closeFile(_ id: UInt64) {
+        // Cancel means nothing happened, and the selection is part of
+        // nothing. Without this a Cancel leaves the person looking at
+        // a file they were not on, which is the one gesture that is
+        // supposed to change least.
+        let wasShowing = selectedFile
+        selectFile(id)
+        let closed = closeActiveFile()
+        if !closed, selectedFile == id, wasShowing != id {
+            selectedFile = wasShowing
+            refocusEditorIfKeyed()
+        }
+    }
+
+    /// What the pad says when something is dropped on it that it does
+    /// not open. Named rather than typed at the drop site so the drop
+    /// and the open panel refuse in the same words.
+    ///
+    /// It says the name and not the type, because the type identifier a
+    /// drop carries is not a phrase anybody recognises, and the person
+    /// dropping already knows which item they dragged.
+    public static func unsupportedDropNotice(name: String) -> String {
+        "\(name) is not a plain text or Markdown file, so it was not opened."
+    }
+
+    /// Refuse a drop the pad does not open, saying so rather than
+    /// pasting the item's bytes into whatever page is under the cursor.
+    public func refuseUnsupportedDrop(name: String) {
+        flash(Self.unsupportedDropNotice(name: name))
+    }
+
+    /// Settle a file that changed on disk under unsaved edits. Save
+    /// stays refused until one of the three is chosen.
+    public func resolveConflict(_ resolution: FileConflictResolution) {
+        guard let file = activeFile else { return }
+        switch resolution {
+        case .keepMine:
+            // No confirmation. Nothing is lost at this moment: the
+            // copy on disk is overwritten by the next save, which is
+            // its own deliberate gesture and has its own chord.
+            client.resolveFileKeepMine(file.id)
+        case .takeTheirs:
+            // This one does ask, because it is the only one of the
+            // three that throws the person's typing away, and it
+            // throws it away now rather than later.
+            guard fileCoordinator.confirmDiscardingEdits(named: file.name) else { return }
+            guard client.reloadFile(file.id) else {
+                flash(Self.readRefusalNotice(name: file.name))
+                return
+            }
+            restateStorage(sheet: file.id)
+        case .saveAs:
+            // Save As settles the conflict by moving the identity
+            // somewhere nothing else has written, so it is the same
+            // path the chord takes and not a variant of it.
+            saveActiveFileAs()
+            return
+        }
+        refreshOpenFiles()
+        markFilesDirty()
+    }
+
+    // MARK: Files: what else wrote them
+
+    /// Ask of every open file whether anything else has written it.
+    ///
+    /// Decisions.md item 5's first half: on activate. The second half,
+    /// before a save, is inside `saveFile(_:)`, and both go through
+    /// `applyCheck(for:)` so the two moments cannot come to different
+    /// conclusions about the same file.
+    /// One notice, not one per file. A checkout that rewrote three
+    /// open files posts three flashes in the same turn of the run
+    /// loop, and `flash` overwrites, so the person would see only the
+    /// last of them and would be owed the other two. The outcomes are
+    /// collected and said together, the way the launch says its own.
+    public func checkOpenFilesOnActivate() {
+        var outcomes: [CheckOutcome] = []
+        for file in openFiles {
+            if let outcome = applyCheck(for: file.id) { outcomes.append(outcome) }
+        }
+        if let sentence = Self.activationNotice(outcomes) { flash(sentence) }
+    }
+
+    /// What one file's check had to say, gathered rather than posted.
+    enum CheckOutcome: Equatable {
+        case reloaded(String)
+        case unreadable(String)
+        case missing(String)
+    }
+
+    /// The activation's single sentence, on the same shape as the
+    /// launch's.
+    static func activationNotice(_ outcomes: [CheckOutcome]) -> String? {
+        var reloaded: [String] = []
+        var unreadable: [String] = []
+        var missing: [String] = []
+        for outcome in outcomes {
+            switch outcome {
+            case .reloaded(let name): reloaded.append(name)
+            case .unreadable(let name): unreadable.append(name)
+            case .missing(let name): missing.append(name)
+            }
+        }
+        // One file keeps the wording it had, so the single file case,
+        // which is nearly every case, reads exactly as before.
+        if reloaded.count == 1, unreadable.isEmpty, missing.isEmpty {
+            return reloadedNotice(name: reloaded[0])
+        }
+        if missing.count == 1, unreadable.isEmpty, reloaded.isEmpty {
+            return missingNotice(name: missing[0])
+        }
+        if unreadable.count == 1, reloaded.isEmpty, missing.isEmpty {
+            return readRefusalNotice(name: unreadable[0])
+        }
+        var clauses: [String] = []
+        if !reloaded.isEmpty {
+            clauses.append("\(englishList(reloaded)) changed on disk and was read again")
+        }
+        if !unreadable.isEmpty {
+            clauses.append("\(englishList(unreadable)) could not be read")
+        }
+        if !missing.isEmpty {
+            clauses.append("\(englishList(missing)) is no longer at its path")
+        }
+        guard !clauses.isEmpty else { return nil }
+        return englishList(clauses) + "."
+    }
+
+    /// One file's check, and what follows from the answer.
+    ///
+    /// A clean file that changed is read again without asking and the
+    /// notice is posted afterwards, always: a person whose scroll
+    /// position moved because a checkout ran under them deserves to
+    /// know why. A dirty file that changed enters a conflict, which
+    /// the core sets from the same call, and the banner takes it from
+    /// there. A file that is no longer at its path says so.
+    /// Returns what the caller owes the person, or nil when the file
+    /// is where it was. It says nothing itself, so a caller checking
+    /// several files can say one thing about all of them.
+    @discardableResult
+    private func applyCheck(for id: UInt64) -> CheckOutcome? {
+        guard let file = openFiles.first(where: { $0.id == id }),
+              let check = client.checkFile(id)
+        else { return nil }
+        switch check.state {
+        case .unchanged:
+            return nil
+        case .changed:
+            if file.isDirty {
+                // The conflict is already set core-side by the check
+                // itself. Restating the roster is what puts the banner
+                // on screen, and the banner is the notice: a person
+                // looking at three buttons does not also need a line.
+                refreshOpenFiles()
+                return nil
+            }
+            if client.reloadFile(id) {
+                restateStorage(sheet: id)
+                refreshOpenFiles()
+                return .reloaded(file.name)
+            }
+            refreshOpenFiles()
+            return .unreadable(file.name)
+        case .missing:
+            refreshOpenFiles()
+            return .missing(file.name)
+        }
+    }
+
+    // MARK: Files: the sentences
+
+    /// The core's open refusal, decoded and said in one sentence
+    /// naming the file, and the limit when there is one.
+    ///
+    /// Static and pure so the wording is testable without a file on
+    /// disk that is genuinely 4 MiB or genuinely not UTF-8.
+    public nonisolated static func openRefusalNotice(name: String, json: String?) -> String {
+        struct Refusal: Decodable {
+            let error: String
+            let limit: UInt64?
+        }
+        guard let json,
+              let data = json.data(using: .utf8),
+              let refusal = try? JSONDecoder().decode(Refusal.self, from: data)
+        else {
+            return "\(name) could not be opened."
+        }
+        switch refusal.error {
+        case "notUtf8":
+            return "\(name) is not UTF-8 text, so it was not opened."
+        case "tooLarge":
+            let limit = refusal.limit.map(Self.sizePhrase(bytes:)) ?? "the size limit"
+            return "\(name) is larger than \(limit), so it was not opened."
+        default:
+            return "\(name) could not be read, so it was not opened."
+        }
+    }
+
+    /// A byte count as a phrase a person reads rather than counts.
+    /// Whole binary megabytes get their own name; anything else stays
+    /// in bytes rather than being rounded into a number that is not
+    /// the limit.
+    nonisolated static func sizePhrase(bytes: UInt64) -> String {
+        let mib: UInt64 = 1024 * 1024
+        if bytes >= mib, bytes % mib == 0 { return "\(bytes / mib) MiB" }
+        return "\(bytes) bytes"
+    }
+
+    public nonisolated static func unresolvedConflictNotice(name: String) -> String {
+        "\(name) changed on disk. Choose keep mine, take theirs, or Save As before saving."
+    }
+
+    public nonisolated static func writeRefusalNotice(name: String) -> String {
+        "\(name) could not be written."
+    }
+
+    /// Save As onto a path another open file already holds. Two
+    /// buffers over one file would each believe they were the file, so
+    /// the core refuses before anything is written.
+    public nonisolated static func pathInUseNotice(name: String) -> String {
+        "\(name) is already open, so nothing was written to it. Close it first, or choose another name."
+    }
+
+    public nonisolated static func readRefusalNotice(name: String) -> String {
+        "\(name) could not be read."
+    }
+
+    public nonisolated static func reloadedNotice(name: String) -> String {
+        "\(name) changed on disk and was read again."
+    }
+
+    public nonisolated static func missingNotice(name: String) -> String {
+        "\(name) is no longer at its path."
+    }
+
+    /// What a discard of the sealed content file also takes with it.
+    ///
+    /// Decisions.md item 14. The drafts are sealed under the content
+    /// key, so anything that drops or rotates that key drops them too,
+    /// and a person is owed the filenames rather than a general
+    /// warning about unsaved work. Nil when nothing is at risk, so a
+    /// caller can append it or not.
+    public nonisolated static func draftsAtRiskSentence(files: [FileSummary]) -> String? {
+        let dirty = files.filter(\.isDirty).map(\.name)
+        guard !dirty.isEmpty else { return nil }
+        return "Unsaved changes to \(englishList(dirty)) go with it."
+    }
+
+    /// A list a person reads out loud, which is the only reason this
+    /// is not `joined(separator:)`.
+    nonisolated static func englishList(_ items: [String]) -> String {
+        switch items.count {
+        case 0: return ""
+        case 1: return items[0]
+        case 2: return "\(items[0]) and \(items[1])"
+        default:
+            return items.dropLast().joined(separator: ", ") + ", and " + items[items.count - 1]
         }
     }
 
@@ -1703,11 +2484,14 @@ public final class PageModel: ObservableObject {
     /// page expired, in a mode that draws no such slot) starts the
     /// walk at the top, where today is.
     private func indexOfSelection(within targets: [SurfaceTarget]) -> Int {
+        if let selectedFile, let at = targets.firstIndex(of: .file(selectedFile)) { return at }
         guard let selection else { return 0 }
         if showsTimeUnits, let day = timeUnits.units.firstIndex(
             where: { $0.tabIDs.contains(selection) }
         ) {
-            return day
+            // The days start after the Files shelf, so the day's own
+            // place is its index past the files the rail drew above it.
+            return openFiles.count + day
         }
         return targets.firstIndex(of: .tab(selection)) ?? 0
     }
@@ -1726,6 +2510,11 @@ public final class PageModel: ObservableObject {
     /// leaves an empty tab rather than a fresh countdown on nothing.
     public func select(_ id: UInt64) {
         let leavingLedger = showingLedger
+        // A slot and a file are never both showing, so choosing a slot
+        // puts the file away. The file itself stays open and keeps its
+        // place in the FILES group; only the surface moved.
+        let leavingFile = selectedFile != nil
+        selectedFile = nil
         showingLedger = false
         selection = id
         let minted = openPageIfSlotIsEmpty(id)
@@ -1738,7 +2527,7 @@ public final class PageModel: ObservableObject {
         // when it unmounts. A plain switch between two pages takes
         // neither arm: it keeps its editor, keeps its focus, and asks
         // for nothing.
-        if leavingLedger || minted { refocusEditorIfKeyed() }
+        if leavingLedger || leavingFile || minted { refocusEditorIfKeyed() }
     }
 
     /// ⌘1 to ⌘9: jump by visible order. With the strip that is the
@@ -2054,6 +2843,9 @@ public final class PageModel: ObservableObject {
     /// says so.
     public func newPage() {
         notice = nil
+        // A page asked for now is a page to look at now, so the file
+        // that was showing gives way to it.
+        selectedFile = nil
         let created = newTab()
         if created == 0 {
             flash(Self.capRefusal(showsTimeUnits: showsTimeUnits))
@@ -2480,6 +3272,22 @@ public final class PageModel: ObservableObject {
     /// writer's behalf (a continued list marker, a nudged indent) so it
     /// begins its own undo step and comes off in one press.
     public func applyOps(sheet: UInt64, opsJSON: String, startingNewStep: Bool = false) {
+        // Files route first, on the tag and nothing else. A file has no
+        // quiet rendering on the roll, no chips to reap, and its
+        // dirtiness is the file's own rather than the sealed store's,
+        // so it takes none of the page bookkeeping below.
+        if sheet.isFileID {
+            let accepted = client.applyFileOps(
+                sheet, json: opsJSON, startingNewStep: startingNewStep)
+            if accepted {
+                markFilesDirty()
+                refreshOpenFiles()
+            } else {
+                logger.error("the core rejected a file edit batch; restating the file whole")
+                restateStorage(sheet: sheet)
+            }
+            return
+        }
         let accepted = client.applyOps(
             sheet: sheet, json: opsJSON, startingNewStep: startingNewStep)
         if accepted {
@@ -2529,23 +3337,51 @@ public final class PageModel: ObservableObject {
     /// key-frame law being reopened first.
     @discardableResult
     public func undoEdit(sheet: UInt64) -> StepOutcome {
-        step(sheet: sheet) { self.client.undo(sheet: sheet) }
+        if sheet.isFileID { return fileStep(sheet) { self.client.undoFile(sheet) } }
+        return step(sheet: sheet) { self.client.undo(sheet: sheet) }
     }
 
     /// Put the step back, on the same terms.
     @discardableResult
     public func redoEdit(sheet: UInt64) -> StepOutcome {
-        step(sheet: sheet) { self.client.redo(sheet: sheet) }
+        if sheet.isFileID { return fileStep(sheet) { self.client.redoFile(sheet) } }
+        return step(sheet: sheet) { self.client.redo(sheet: sheet) }
+    }
+
+    /// The file half of `step`, routed here rather than at the editor
+    /// so that one id decides one store in one place.
+    ///
+    /// The editor asks the model for a step by the id it is mounted
+    /// over, and that id is already the tagged one for a file, so the
+    /// switch belongs where the id first reaches a store. A second
+    /// switch in the view would be a second thing to keep in step, and
+    /// ADR-0006's single persistent text view is precisely the
+    /// arrangement where a mis-switch reverts the wrong document.
+    ///
+    /// The core answers both halves at once for a file, which is why
+    /// there is no second call for the caret: the outcome carries it.
+    private func fileStep(_ file: UInt64, _ take: () -> CompanionKit.StepOutcome?) -> StepOutcome {
+        guard let outcome = take(), outcome.applied else { return .nothing }
+        restateStorage(sheet: file)
+        markFilesDirty()
+        refreshOpenFiles()
+        return StepOutcome(applied: true, caret: outcome.caret)
     }
 
     /// Whether the page has a step waiting in either direction: what a
     /// menu item or an affordance would grey out on.
+    ///
+    /// Routed on the tag like every other document question. The
+    /// page's route refuses a tagged id and answers false, so without
+    /// the branch the menu would grey both items over a file whose
+    /// undo stack is full, and the menu would be saying something
+    /// untrue about a chord that works.
     public func canUndoEdit(sheet: UInt64) -> Bool {
-        client.canUndo(sheet: sheet)
+        sheet.isFileID ? client.canUndoFile(sheet) : client.canUndo(sheet: sheet)
     }
 
     public func canRedoEdit(sheet: UInt64) -> Bool {
-        client.canRedo(sheet: sheet)
+        sheet.isFileID ? client.canRedoFile(sheet) : client.canRedo(sheet: sheet)
     }
 
     /// Re-ask the core what the Edit menu should read as, and publish
@@ -2566,9 +3402,11 @@ public final class PageModel: ObservableObject {
             editSteps.stand(canUndo: false, canRedo: false)
             return
         }
+        // Through the routed pair, not the client's page route: the id
+        // under the editor is a file's whenever a file is showing.
         editSteps.stand(
-            canUndo: client.canUndo(sheet: sheet),
-            canRedo: client.canRedo(sheet: sheet)
+            canUndo: canUndoEdit(sheet: sheet),
+            canRedo: canRedoEdit(sheet: sheet)
         )
     }
 
@@ -2613,7 +3451,7 @@ public final class PageModel: ObservableObject {
     private func restateStorage(sheet: UInt64) {
         guard let storage = storages[sheet] else { return }
         let rebuilt = NSMutableAttributedString()
-        for run in client.documentRuns(sheet: sheet) {
+        for run in runs(of: sheet) {
             switch run {
             case .ink(let text):
                 rebuilt.append(NSAttributedString(
@@ -2636,6 +3474,15 @@ public final class PageModel: ObservableObject {
     /// `recoverProjection`; programmatic rewrites (a burn) come here
     /// directly.
     public func syncDocument(sheet: UInt64, runs: [DocumentRun]) {
+        // A file has no wholesale mirror. The core has no
+        // companion_file_sync_document, deliberately: the mirror exists
+        // for chip liveness after a refused batch, and a file holds no
+        // chips. The file recovery is a restate from the core's own
+        // runs, which `applyOps` above already takes.
+        if sheet.isFileID {
+            restateStorage(sheet: sheet)
+            return
+        }
         let objects: [[String: Any]] = runs.map {
             switch $0 {
             case .ink(let text): ["ink": text]

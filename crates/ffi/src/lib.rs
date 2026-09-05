@@ -62,6 +62,7 @@
 
 mod conceal;
 mod diagnostics;
+mod files;
 // Public on purpose, unlike its siblings: the sync session layer that
 // will drive it is not built yet (issues #97–#99), and the GOP key
 // chain must meanwhile be reachable by the tests and callers that
@@ -91,8 +92,8 @@ use conceal::{ConcealOpts, Concealed, Connection, Wire, conceal};
 use ots_client::Transport as _;
 
 use companion_core::{
-    ChipId, ChipMeta, DestinationClass, EditOp, LedgerEvent, RestoreError, Segment, Sheet, SheetId,
-    SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, TabId, Ttl, local_day,
+    ChipId, ChipMeta, DestinationClass, EditOp, FileId, LedgerEvent, RestoreError, Segment, Sheet,
+    SheetId, SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, TabId, Ttl, local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -252,6 +253,18 @@ struct Companion {
     /// all-off: a handle that never configures sync behaves
     /// bit-for-bit like one built before sync existed.
     sync: sync_driver::SyncState,
+    /// Open files, the peer content class to pages (ADR-0028). A separate
+    /// store from `store` on purpose: nothing that turns state into
+    /// relay payload can reach it, so sync exclusion is structural
+    /// rather than a rule anybody has to remember.
+    files: companion_core::FileStore,
+    /// Why the last `companion_file_open` on this handle refused, held
+    /// until the next open so the shell can ask in a second call.
+    last_open_refusal: Option<companion_core::OpenRefusal>,
+    /// What the last drafts save or drafts restore has to tell the user
+    /// about: files that did not come back, and drafts that were too
+    /// large to stage. Drained by `companion_drafts_notices_json`.
+    drafts_notices: Vec<companion_core::FileNotice>,
 }
 
 /// The credential-store account holding the API token (scoped by the
@@ -474,6 +487,9 @@ fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
         credentials,
         wire: Wire::real(),
         sync: sync_driver::SyncState::default(),
+        files: companion_core::FileStore::new(),
+        last_open_refusal: None,
+        drafts_notices: Vec::new(),
     };
     Box::into_raw(Box::new(CompanionHandle {
         inner: Mutex::new(companion),
@@ -697,6 +713,9 @@ pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
     if !cleared_out.is_null() {
         unsafe { cleared_out.write(false) };
     }
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -799,6 +818,9 @@ pub unsafe extern "C" fn companion_sheet_seal_text(
     at_utf16: u32,
     len_utf16: u32,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -840,6 +862,9 @@ pub unsafe extern "C" fn companion_sheet_seal_from_drag(
     at_utf16: u32,
     len_utf16: u32,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -917,6 +942,9 @@ pub unsafe extern "C" fn companion_sheet_sync_document(
     sheet: u64,
     json: *const c_char,
 ) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -956,6 +984,9 @@ pub unsafe extern "C" fn companion_sheet_apply_ops(
     sheet: u64,
     json: *const c_char,
 ) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -989,6 +1020,9 @@ pub unsafe extern "C" fn companion_sheet_apply_ops_as_new_step(
     sheet: u64,
     json: *const c_char,
 ) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -1030,6 +1064,9 @@ pub unsafe extern "C" fn companion_sheet_apply_ops_as_new_step(
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_sheet_undo(handle: *mut CompanionHandle, sheet: u64) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -1046,6 +1083,9 @@ pub unsafe extern "C" fn companion_sheet_undo(handle: *mut CompanionHandle, shee
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_sheet_redo(handle: *mut CompanionHandle, sheet: u64) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -1065,6 +1105,9 @@ pub unsafe extern "C" fn companion_sheet_can_undo(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -1083,6 +1126,9 @@ pub unsafe extern "C" fn companion_sheet_can_redo(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -1107,6 +1153,9 @@ pub unsafe extern "C" fn companion_sheet_undo_caret_u16(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> i64 {
+    if is_file_id(sheet) {
+        return -1;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return -1;
     };
@@ -1408,6 +1457,9 @@ pub unsafe extern "C" fn companion_sheet_document_json(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -1459,6 +1511,9 @@ pub unsafe extern "C" fn companion_sheet_meta_json(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -1500,6 +1555,9 @@ pub unsafe extern "C" fn companion_sheet_blocks_json(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -1702,7 +1760,7 @@ pub unsafe extern "C" fn companion_persist_rotate_and_save(
     };
     // Taken for its exclusion as much as for the credentials: an
     // ordinary save in flight owns the same path and the same halves.
-    let Ok(guard) = handle.inner.lock() else {
+    let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
     let path = Path::new(path);
@@ -1734,7 +1792,16 @@ pub unsafe extern "C" fn companion_persist_rotate_and_save(
         }
         persist::Erasure::Gone => {}
     }
-    seal_state_to(&guard, path)
+    // Drafts before the strip. Both files rested under the halves this
+    // rotation just destroyed, so both have to be rewritten under the
+    // new ones, and there is no ordering that keeps either readable
+    // across the instant the old half dies: the new key does not exist
+    // until the old halves are gone. What the ordering decides is which
+    // file survives a crash inside the window, and a person's unsaved
+    // typing outranks the tab names, rungs and strip order this call's
+    // own residual already accepts. See `files::reseal_drafts_beside`.
+    let drafts = files::reseal_drafts_beside(&mut guard, path);
+    seal_state_to(&guard, path) && drafts
 }
 
 /// The milliseconds of wall-clock time between the stamp a file was
@@ -1990,7 +2057,7 @@ pub unsafe extern "C" fn companion_persist_erase(
     };
     // Taken for its exclusion as much as for the credentials: a save in
     // flight owns the same path and the same halves.
-    let Ok(guard) = handle.inner.lock() else {
+    let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
     let path = Path::new(path);
@@ -2012,6 +2079,50 @@ pub unsafe extern "C" fn companion_persist_erase(
              would forget nothing and would consume the retry."
         );
         return false;
+    }
+    // The drafts file rested under the halves the rotation above just
+    // destroyed, so something has to happen to it either way. Which
+    // thing depends on whether any file is still open, and getting this
+    // wrong is silent data loss.
+    //
+    // **An open file's draft is not this call's to discard.** This
+    // route fires when the last tab goes, which is a page lifecycle
+    // event; a person can be holding a dirty file tab with an hour of
+    // unsaved typing in it at that moment, and they did not ask for it
+    // to go anywhere. ADR-0028 says a draft dies on a save, an explicit
+    // discard, or an erase of the app's state, and lead decision 14
+    // says predicates keyed on pages and tabs neither trigger nor block
+    // on drafts. So an open roster means the drafts are resealed under
+    // the new halves, exactly as the rotation route does it, and only
+    // an empty roster lets the file go.
+    //
+    // The explicit discard has its own door and always did:
+    // `companion_drafts_erase`, which the shell calls when the person
+    // asks for it. Nothing here needs to stand in for that.
+    //
+    // A ledger clear arrives at this same entry point and must leave
+    // drafts alone entirely, which is what the content file predicate
+    // is doing on the outside of both branches.
+    if persist::drop_takes_the_content_key(path) {
+        if guard.files.files().is_empty() {
+            if !files::erase_drafts_beside(path) {
+                diag_fault!(
+                    "companion-ffi: the drafts file could not be dropped. It is already \
+                     unreadable, the rotation having taken its key, so what is left at the \
+                     path is inert bytes."
+                );
+            }
+        } else if !files::reseal_drafts_beside(&mut guard, path) {
+            // Said and not acted on: the content file still goes. The
+            // drafts are unreadable from here whatever happens next,
+            // and refusing the drop would leave the ciphertext this
+            // call exists to remove sitting on disk as well.
+            diag_fault!(
+                "companion-ffi: open files were staged, but their drafts could not be \
+                 rewritten under the rotated content key. Every unsaved file edit is \
+                 unreadable from now on."
+            );
+        }
     }
     persist::erase_state(path)
 }
@@ -2512,6 +2623,9 @@ pub unsafe extern "C" fn companion_sheet_conceal(
     sheet: u64,
     opts_json: *const c_char,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -3368,6 +3482,20 @@ unsafe fn cstr<'a>(p: *const c_char) -> Option<&'a str> {
     unsafe { CStr::from_ptr(p) }.to_str().ok()
 }
 
+/// Whether a raw id off the wire addresses an open file rather than a
+/// page.
+///
+/// Two stores share one `u64` on this ABI, so every `companion_sheet_*`
+/// entry point that takes a sheet id asks this first and returns its
+/// own failure value when the answer is yes. A file id that fell
+/// through would address page zero and quietly edit somebody else's
+/// text; refusing is the only safe reading. The tag itself is
+/// `companion_core::FILE_ID_TAG`, defined once in
+/// `crates/core/src/files.rs` and mirrored once in Swift.
+fn is_file_id(sheet: u64) -> bool {
+    FileId::is_tagged(sheet)
+}
+
 /// Move a Rust `String` into an owned C string pointer (caller frees).
 fn into_c_string(s: String) -> *mut c_char {
     match CString::new(s) {
@@ -3419,6 +3547,9 @@ mod tests {
             credentials,
             wire: Wire::real(),
             sync: sync_driver::SyncState::default(),
+            files: companion_core::FileStore::new(),
+            last_open_refusal: None,
+            drafts_notices: Vec::new(),
         };
         Box::into_raw(Box::new(CompanionHandle {
             inner: Mutex::new(companion),
@@ -6885,17 +7016,6 @@ mod tests {
         }
     }
 
-    /// The loopback port the ceremony bound, read back out of the
-    /// authorize URL's percent-encoded redirect URI.
-    fn loopback_port(authorize_url: &str) -> u16 {
-        authorize_url
-            .split("127.0.0.1%3A")
-            .nth(1)
-            .and_then(|rest| rest.split("%2F").next())
-            .and_then(|port| port.parse().ok())
-            .expect("the authorize URL carries the redirect the listener bound")
-    }
-
     fn sync_configured(handle: *mut CompanionHandle) {
         let config = cstring(
             r#"{"relay_url":"https://relay.example",
@@ -6927,7 +7047,6 @@ mod tests {
 
     #[test]
     fn signing_out_ends_a_browser_trip_that_is_still_out() {
-        use std::io::Write as _;
         let credentials: Arc<dyn CredentialStore> =
             Arc::new(companion_credentials::InMemoryCredentialStore::default());
         unsafe {
@@ -6935,7 +7054,7 @@ mod tests {
             sync_configured(handle);
             let begun: serde_json::Value =
                 serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
-            let port = loopback_port(begun["authorize_url"].as_str().unwrap());
+            assert_eq!(begun["ok"], true);
 
             let address = handle as usize;
             let waiting = std::thread::spawn(move || {
@@ -6952,11 +7071,12 @@ mod tests {
                 "the gesture takes effect at once, not when the browser gets round to it"
             );
 
-            // And now the browser comes back with a perfectly good
-            // code. It buys nothing: the ceremony was ended, so no
-            // token request is built and nothing is persisted.
-            let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
-            write!(stream, "GET /callback?code=abc&state=x HTTP/1.1\r\n\r\n").unwrap();
+            // Sign-out raises this ceremony's abandon flag. The listener
+            // reads it inside its poll and gives up, so the finish returns
+            // abandoned rather than waiting out its patience. The redirect
+            // arriving after that buys nothing; the driver test
+            // a_give_up_during_the_exchange_stores_nothing holds that case
+            // without the race this test used to carry.
             let late: serde_json::Value = serde_json::from_str(&waiting.join().unwrap()).unwrap();
             assert_eq!(
                 late["reason"], "abandoned",
@@ -7155,5 +7275,68 @@ mod tests {
             spoken_remaining(Duration::from_secs(3 * 24 * 60 * 60)),
             "about 3 days remaining"
         );
+    }
+
+    /// A file id handed to a page route must fail loudly rather than
+    /// address page zero. The tag is the high bit, so a tagged id is
+    /// the live page's own id with that bit set: every route below
+    /// answers for the untagged form and refuses the tagged one, which
+    /// is what rules out a guard that merely fails on an unknown id.
+    #[test]
+    fn page_routes_refuse_a_file_id() {
+        unsafe {
+            let handle = handle();
+            let (_tab, page) = new_page(handle);
+            let tagged = page | companion_core::FILE_ID_TAG;
+            assert!(is_file_id(tagged));
+            assert!(!is_file_id(page));
+
+            let ops = cstring(r#"[{"ins": {"at": 0, "text": "hello"}}]"#);
+            assert!(companion_sheet_apply_ops(handle, page, ops.as_ptr()));
+            assert!(!companion_sheet_apply_ops(handle, tagged, ops.as_ptr()));
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                handle,
+                tagged,
+                ops.as_ptr()
+            ));
+
+            let runs = take_json(companion_sheet_document_json(handle, page));
+            assert!(runs.contains("hello"));
+            assert!(companion_sheet_document_json(handle, tagged).is_null());
+            assert!(companion_sheet_meta_json(handle, tagged).is_null());
+            assert!(companion_sheet_blocks_json(handle, tagged).is_null());
+
+            assert!(companion_sheet_can_undo(handle, page));
+            assert!(!companion_sheet_can_undo(handle, tagged));
+            assert!(!companion_sheet_can_redo(handle, tagged));
+            assert!(!companion_sheet_undo(handle, tagged));
+            assert!(!companion_sheet_redo(handle, tagged));
+            assert_eq!(companion_sheet_undo_caret_u16(handle, tagged), -1);
+
+            let doc = cstring(r#"[{"ink": "hello"}]"#);
+            assert!(companion_sheet_sync_document(handle, page, doc.as_ptr()));
+            assert!(!companion_sheet_sync_document(handle, tagged, doc.as_ptr()));
+
+            seed(handle, "a secret");
+            let mut cleared = false;
+            assert!(
+                companion_sheet_seal_from_pasteboard(handle, tagged, 0, 0, &raw mut cleared)
+                    .is_null()
+            );
+            assert!(!cleared);
+            let text = cstring("a secret");
+            assert!(companion_sheet_seal_text(handle, tagged, text.as_ptr(), 0, 0).is_null());
+            assert!(companion_sheet_seal_from_drag(handle, tagged, 0, 0).is_null());
+
+            let opts = cstring("{}");
+            assert!(companion_sheet_conceal(handle, tagged, opts.as_ptr()).is_null());
+
+            // The page is exactly where it was: nothing a refusal did
+            // reached the store.
+            let after = take_json(companion_sheet_document_json(handle, page));
+            assert!(after.contains("hello"));
+
+            companion_free(handle);
+        }
     }
 }

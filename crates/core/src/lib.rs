@@ -34,6 +34,8 @@ pub mod clock;
 // module's seam (ADR-0013), and the store speaks to it in UTF-16 code
 // units only.
 mod document;
+pub mod file_persist;
+pub mod files;
 pub mod harden;
 pub mod ledger;
 pub mod persist;
@@ -45,6 +47,11 @@ pub mod ttl;
 
 pub use blocks::BlockMeta;
 pub use clock::{Clock, ManualClock, SystemClock};
+pub use files::{
+    DRAFT_SNAPSHOT_LIMIT, DroppedReason, ExternalState, FILE_ID_TAG, FILE_SIZE_LIMIT, FileConflict,
+    FileId, FileIo, FileNotice, FileStore, FileWitness, LineEnding, OpenFile, OpenRefusal,
+    SaveError, StepOutcome,
+};
 pub use harden::harden_process;
 pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecord, SizeClass};
 pub use persist::RestoreError;

@@ -77,6 +77,31 @@ public struct FormFactor: Sendable {
         directory.appendingPathComponent("ledger.sealed")
     }
 
+    /// The drafts file's place beside both, under the same rule again.
+    ///
+    /// It holds the roster of open files and, for a file with unsaved
+    /// edits, those edits, so a relaunch brings every open file back
+    /// and a dirty one comes back with its marker. Sealed under the
+    /// same content key as the state file, which is what makes
+    /// emptying the pad discard drafts too.
+    ///
+    /// **The core knows this name too**, as `DRAFTS_FILE_NAME` in
+    /// `crates/ffi/src/files.rs`. It finds the file as "drafts.sealed"
+    /// beside the state path it was handed, so that a key rotation can
+    /// reseal it and an erase of the content file can take it along.
+    /// Renaming this without renaming that one leaves the drafts
+    /// unreadable at the next rotation, with nothing saying so, so
+    /// change both together.
+    public static func draftsFileURL(in directory: URL) -> URL {
+        directory.appendingPathComponent("drafts.sealed")
+    }
+
+    /// Where the drafts rest for this form factor: beside the state
+    /// file, exactly as the ledger does.
+    public var draftsFileURL: URL {
+        Self.draftsFileURL(in: stateFileURL.deletingLastPathComponent())
+    }
+
     /// Where the ledger rests: its own file under its own long-lived
     /// key (ADR-0012), so discarding staged content at a new boot
     /// session leaves the audit record intact. Metadata plus the

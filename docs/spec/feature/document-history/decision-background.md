@@ -2,9 +2,9 @@
 documentation_status: needs-review # draft | needs-review | reviewed | stale
 ---
 
-# Document provenance decision background
+# Bounded document history and block metadata: decision background
 
-> Supporting product, interaction, and alternative analysis for [ADR-0013](../../../adr/0013-document-provenance-and-block-metadata.md). The ADR is authoritative for the architecture choice.
+> Supporting product, interaction, and alternative analysis for [ADR-0013](../../../adr/0013-bounded-document-history-and-block-metadata.md). The ADR is authoritative for the architecture choice.
 
 This background was written on 2026-08-05, alongside the decision it supports.
 
@@ -28,12 +28,12 @@ is minted by a gesture. Nothing else in the page has a name.
 
 An early framing split typed text from pasted text, giving identity to
 pastes only. That is the wrong axis and is recorded here as rejected.
-No collaborative document system draws that line, because provenance is
+No collaborative document system draws that line, because block metadata is
 a property of edits against a structured document, not of the gesture
 that produced the characters. Enter and paste are the same kind of
 event.
 
-### The reframe: provenance is retention
+### The reframe: history is retention
 
 Every architecture that can say when a paragraph was created is an
 architecture that remembers something after the user stopped looking at
@@ -72,8 +72,8 @@ Identity as attribute spans over an otherwise flat text stream. Deep
 prior art in OOXML: every run carries an RSID stamping the editing
 session that produced it, and tracked changes are metadata elements
 wrapped around runs, carrying author and date. Approximate and
-session-granular, and it has carried per-range provenance in production
-for decades.
+session-granular, and it has carried per-range revision metadata in
+production for decades.
 
 In this codebase this is the TextKit 1 route: a paragraph-id attribute
 maintained by structure diffing in
@@ -90,8 +90,8 @@ edit already contained and the transport discarded.
 ### 3. Operation log or CRDT
 
 No metadata stored on the text at all. Every insertion has intrinsic
-identity (actor plus logical clock), and provenance is derived from the
-op history. Prior art: Google Docs deriving per-range editors from its
+identity (actor plus logical clock), and block metadata is derived from
+the operation history. Prior art: Google Docs deriving per-range editors from its
 revision log; Peritext (Ink and Switch) for rich text with anchors and
 marks that survive concurrent editing; Automerge, which implements
 Peritext marks and carries actor, timestamp and message on every
@@ -125,15 +125,15 @@ still a leaning stand unchanged as the reasons for the decision.
 
 First, it removes work rather than adding it. The full-document resync
 per keystroke is the step that destroys identity; sending operations
-instead of snapshots is a fix to an existing weak seam, and provenance
-falls out of it rather than being bolted on. All three candidate
+instead of snapshots is a fix to an existing weak seam, and the required
+history and metadata fall out of it rather than being bolted on. All three candidate
 libraries carry stable position types that survive edits underneath
 them (Automerge and Loro cursors, yrs sticky indices), which would
 delete the clamping and forced-layout machinery in
 `InkEditorView.Coordinator.restoreViewState` outright.
 
 Second, it puts the record on the correct side of the security
-boundary. A provenance log is sensitive: it records what someone wrote
+boundary. Retained operation history is sensitive: it records what someone wrote
 and when, including what they thought better of. The core is where
 zeroizing and crypto erasure already live (ADR-0012). Keeping the
 record anywhere else creates a second, weaker retention story.
@@ -142,7 +142,7 @@ Third, the metadata can become correct by construction. Created is the
 earliest op touching a block, modified is the latest, with no update
 site to forget and no drift. The origin URL rides on the change that
 introduced the text rather than on the characters, since a paste is one
-change: provenance attaches to the event, where editing cannot erode
+change: source metadata attaches to the event, where editing cannot erode
 it. The core would read `public.url` and the HTML flavor's source
 metadata during its own pasteboard read, so the sealed-paste contract
 in ADR-0007 Amendment 1 holds unchanged and the shell still never
@@ -301,7 +301,7 @@ One architectural ripple: reorder-by-drag wants a move operation
 with identity, so the block keeps its id, its metadata and its
 interaction count across the move. Loro ships a movable list as a
 library primitive; Automerge and yrs express a move as delete plus
-reinsert, which mints a fresh identity and orphans the provenance
+reinsert, which mints a fresh identity and orphans the metadata
 this ADR exists to keep. That sharpens the library ranking's spine
 without reordering it.
 
@@ -356,7 +356,7 @@ compression. A snapshot is an I-frame, a full state that needs no
 history to interpret. Incremental updates are P-frames, meaningful
 only relative to what came before. The ceremony is the GOP boundary:
 emit a fresh key frame and everything behind it can be cut. The
-provenance horizon is the seek limit, reconstruction back to the last
+history horizon is the seek limit, reconstruction back to the last
 key frame and no further. What is novel is only the application, using
 the boundary for forgetting rather than for bitrate.
 
@@ -370,12 +370,12 @@ text survives; the record of everything it used to be does not.
 Run it on the same clockwork as everything else, at rung transitions.
 At that moment metadata graduates: values that were derived from ops
 become materialized fields on the block, because the ops that proved
-them are being destroyed. Provenance is derived while it is young and
-cheap to recompute, then frozen into a summary the instant its evidence
+them are being destroyed. Block metadata is derived while the history is
+available and cheap to recompute, then frozen into a summary the instant its evidence
 expires.
 
 That yields a defensible claim for the security model, scoped to a
-locally authoritative document: full provenance within the compaction
+locally authoritative document: reconstructible history within the compaction
 horizon, a materialized summary beyond it, and no reconstructible
 record of deleted content past that boundary on this device. Bounded
 memory, matching bounded pages. The scope qualifier is load-bearing and
@@ -472,7 +472,7 @@ If architecture 3 is chosen:
 - Library choice is a three-way call, and the Swift binding situation
   weighs more than feature tables suggest for a macOS-native app.
   Automerge: change objects carry actor, timestamp and message
-  natively, marks are Peritext, the history API is the provenance
+  natively, marks are Peritext, the history API is the history
   query surface, and automerge-swift is the actively polished Apple
   binding — but no shipped undo, and history retention is what the
   compaction ceremony must fight. yrs: fastest, free origin-scoped
@@ -481,13 +481,13 @@ If architecture 3 is chosen:
   modified and origin all become stored fields), no history API, and
   yswift is an experimental binding that lags yrs releases, so
   choosing yrs means budgeting to own a UniFFI binding. Loro: commit
-  timestamps and metadata recover the provenance-rides-the-change
+  timestamps and metadata recover the source-metadata-rides-the-change
   property, Peritext-informed marks, a shipped undo manager, a native
   tree type for blocks, first-party Swift bindings, and shallow
   snapshots that are very nearly the compaction ceremony as a library
   primitive — the cost is the smallest community, the youngest sync
   story, and no editor-binding ecosystem. Ranked against this ADR's
-  criteria (provenance, forgetting, Swift-native, collaboration at
+  criteria (history-derived metadata, forgetting, Swift-native, collaboration at
   handful-of-peers scale rather than Docs scale): Loro, then
   Automerge, then yrs — with the explicit caveat that Loro's youth is
   the bet, and that yrs moves to the front only if a web client
@@ -574,7 +574,7 @@ Once decided, this ADR gets revisited when:
 - yswift graduates to a maintained, release-tracking binding, or
   automerge-swift ships undo, either of which reshuffles the library
   ranking above.
-- Provenance data appears in a threat model as an asset in its own
+- Operation history appears in a threat model as an asset in its own
   right, rather than as metadata about assets, which would move the
   compaction horizon from a convenience to a requirement.
 - Document size or op-log growth crosses a budget on real pages,

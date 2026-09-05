@@ -290,6 +290,13 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   machine's records (issue #102, ADR-0027 section 5, ADR-0021 section
   3). Blocked on the relay. Not an ADR-0016 case.
 
+- [`file-draft-lifecycle.md`](verification-procedures/file-draft-lifecycle.md).
+  Owner: delano. A dirty file backed document across a SIGKILL and a
+  relaunch, the draft's own last edit time on the header, the automatic
+  content erase resealing rather than dropping the draft when the last
+  page tab closes, and the close review ending the draft
+  (ADR-0028). Not an ADR-0016 case: a file is not staged content.
+
 Whether any of them has been run is recorded in each file's own Status
 line and Results table, which is the one place a run belongs. A tally
 kept here as well would only be a second copy to go stale.

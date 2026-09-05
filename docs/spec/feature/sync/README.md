@@ -2,7 +2,7 @@
 
 The same pages on a user's own devices, over a server that cannot read
 them. The decisions live in
-[ADR-0013](../../../adr/0013-document-provenance-and-block-metadata.md)
+[ADR-0013](../../../adr/0013-bounded-document-history-and-block-metadata.md)
 (broadcast rules, the compaction ceremony, one GOP) and
 [ADR-0021](../../../adr/0021-multi-device-sync-over-a-blind-relay.md)
 (the relay, pairing, the metadata admission, the join and expiry

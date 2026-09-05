@@ -34,7 +34,16 @@ extension PageModel {
             // both readings keep working under the chord they chose.
             if showsTimeUnits { openToday() } else { newPage() }
         case .pageClose:
-            closeCurrent()
+            // ⌘W closes what is on screen. On a file that is the file,
+            // with the Save, Discard or Cancel review when it holds
+            // unsaved edits; on a page it is the page, as it always
+            // was. The second reading rather than a third id, for
+            // `.pageNew`'s reason above (ADR-0028).
+            if case .file = activeTarget { closeActiveFile() } else { closeCurrent() }
+        case .fileOpen:
+            openFile()
+        case .fileSaveAs:
+            saveActiveFileAs()
         case .pagePrevious:
             step(-1)
         case .pageNext:
@@ -44,7 +53,13 @@ extension PageModel {
         case .surfaceHandBackKeys:
             escape()
         case .stateSaveNow:
-            _ = saveState()
+            // ⌘S asks for what is on screen to be on disk. On a file
+            // that writes the file, which is the one place in the app
+            // where a chord reaches a person's own filesystem, and it
+            // is refused while that file is in conflict. On a page it
+            // flushes the sealed state file, exactly as it always has
+            // (issue #46). One intent, two readings, no rebinding.
+            if case .file = activeTarget { saveActiveFile() } else { _ = saveState() }
         case .appSettings:
             onOpenSettings?()
         case .editorToggleWrap:

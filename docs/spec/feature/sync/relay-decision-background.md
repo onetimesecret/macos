@@ -8,7 +8,7 @@ documentation_status: needs-review # draft | needs-review | reviewed | stale
 
 This background was written on 2026-08-25, alongside the decision it supports.
 It rests on
-[ADR-0013](../../../adr/0013-document-provenance-and-block-metadata.md), which
+[ADR-0013](../../../adr/0013-bounded-document-history-and-block-metadata.md), which
 decided the shape of sync in the abstract: broadcast rules rather than archive
 rules, a device joins at the current key frame and structurally never receives
 the ops behind it, and a relay holds at most one GOP of encrypted deltas.

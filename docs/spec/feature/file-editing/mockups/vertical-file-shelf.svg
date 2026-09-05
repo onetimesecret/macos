@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">OnetimePad vertical time tabs with a file shelf</title>
+  <desc id="desc">A dark OnetimePad window with open files in a fixed section above the existing Today and previous-day time rail. Yesterday is selected and the center remains the continuous Pad roll.</desc>
+  <defs>
+    <style>
+      .ui { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+      .mono { font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+      .label { fill: #dedad4; }
+      .muted { fill: #9b9690; }
+      .dim { fill: #6f6a65; }
+      .ink { fill: #d8d4cf; }
+      .accent { fill: #d2643d; }
+      .line { stroke: #47433f; }
+    </style>
+    <clipPath id="windowClip"><rect x="60" y="50" width="1320" height="800" rx="18"/></clipPath>
+  </defs>
+
+  <rect width="1440" height="900" fill="#151412"/>
+  <rect x="60" y="50" width="1320" height="800" rx="18" fill="#252321" stroke="#d2643d" stroke-width="3"/>
+
+  <g clip-path="url(#windowClip)">
+    <!-- Header -->
+    <rect x="60" y="50" width="1320" height="48" fill="#292725"/>
+    <line x1="60" y1="98" x2="1380" y2="98" class="line"/>
+    <text x="80" y="80" class="mono muted" font-size="15" font-weight="600">OnetimePad</text>
+    <text x="1182" y="80" class="mono dim" font-size="12">6d 2h</text>
+    <g transform="translate(1330 62)" fill="none" stroke="#aaa49e" stroke-width="1.5">
+      <path d="M10 2v11M5 6h10M7 13l3 5 3-5"/>
+    </g>
+
+    <!-- Sidebar -->
+    <rect x="60" y="98" width="205" height="752" fill="#252422"/>
+    <line x1="265" y1="98" x2="265" y2="850" class="line"/>
+
+    <text x="78" y="129" class="mono dim" font-size="10" letter-spacing="1.5">FILES</text>
+    <g transform="translate(70 142)">
+      <rect width="185" height="42" rx="7" fill="#2b2927"/>
+      <path d="M14 9h8l4 4v17H14z" fill="none" stroke="#918b85" stroke-width="1.2"/>
+      <path d="M22 9v4h4" fill="none" stroke="#918b85" stroke-width="1.2"/>
+      <text x="36" y="26" class="mono muted" font-size="13">README.md</text>
+    </g>
+    <g transform="translate(70 188)">
+      <rect width="185" height="42" rx="7" fill="#2b2927"/>
+      <path d="M14 9h8l4 4v17H14z" fill="none" stroke="#918b85" stroke-width="1.2"/>
+      <path d="M22 9v4h4" fill="none" stroke="#918b85" stroke-width="1.2"/>
+      <text x="36" y="26" class="mono muted" font-size="13">notes.txt</text>
+      <circle cx="169" cy="21" r="3.5" fill="#d2643d"/>
+    </g>
+
+    <line x1="76" y1="247" x2="249" y2="247" stroke="#514c47"/>
+    <text x="78" y="273" class="mono dim" font-size="10" letter-spacing="1.5">PAD</text>
+
+    <g transform="translate(70 286)">
+      <rect width="185" height="49" rx="7" fill="#2b2927"/>
+      <text x="14" y="24" class="mono muted" font-size="14" font-weight="600">Today</text>
+      <rect x="10" y="39" width="165" height="4" rx="2" fill="#4b4843"/>
+      <rect x="10" y="39" width="124" height="4" rx="2" fill="#8a857f"/>
+    </g>
+    <g transform="translate(70 341)">
+      <rect width="185" height="49" rx="7" fill="#3a3734"/>
+      <text x="14" y="24" class="mono label" font-size="14" font-weight="650">Yesterday</text>
+      <rect x="10" y="39" width="165" height="4" rx="2" fill="#4b4843"/>
+      <rect x="10" y="39" width="105" height="4" rx="2" fill="#aaa49e"/>
+    </g>
+    <g transform="translate(70 396)">
+      <rect width="185" height="49" rx="7" fill="#2b2927"/>
+      <text x="14" y="24" class="mono muted" font-size="14" font-weight="600">3 days ago</text>
+      <rect x="10" y="39" width="165" height="4" rx="2" fill="#4b4843"/>
+      <rect x="10" y="39" width="66" height="4" rx="2" fill="#8a857f"/>
+    </g>
+    <g transform="translate(70 451)">
+      <rect width="185" height="49" rx="7" fill="#2b2927"/>
+      <text x="14" y="24" class="mono muted" font-size="14" font-weight="600">4 days ago</text>
+      <rect x="10" y="39" width="165" height="4" rx="2" fill="#4b4843"/>
+      <rect x="10" y="39" width="50" height="4" rx="2" fill="#8a857f"/>
+    </g>
+
+    <text x="78" y="817" class="mono dim" font-size="10">files stay fixed</text>
+    <text x="78" y="833" class="mono dim" font-size="10">days remain temporal</text>
+
+    <!-- Continuous Pad roll -->
+    <rect x="266" y="98" width="1114" height="752" fill="#272522"/>
+    <g class="mono">
+      <text x="292" y="134" class="dim" font-size="13">Today</text>
+      <text x="1344" y="134" text-anchor="end" class="dim" font-size="12">6d 2h</text>
+      <line x1="292" y1="151" x2="1350" y2="151" stroke="#706b65" stroke-dasharray="4 5"/>
+
+      <text x="292" y="184" class="dim" font-size="13">-1d</text>
+      <text x="338" y="184" class="muted" font-size="14">notes from yesterday</text>
+      <text x="1344" y="184" text-anchor="end" class="dim" font-size="12">5d 7h</text>
+
+      <text x="338" y="236" class="dim" font-size="12">Thu 22:29</text>
+      <text x="338" y="270" class="label" font-size="20" font-weight="600">What to work on next</text>
+      <text x="338" y="319" class="dim" font-size="12">Thu 21:00</text>
+      <text x="338" y="352" class="ink" font-size="16">1. Open plain-text and Markdown files without</text>
+      <text x="362" y="378" class="ink" font-size="16">borrowing the Pad page lifetime.</text>
+      <text x="338" y="425" class="dim" font-size="12">Thu 21:00</text>
+      <text x="338" y="458" class="ink" font-size="16">2. Keep file identity and save state visible.</text>
+      <text x="338" y="505" class="dim" font-size="12">Thu 21:00</text>
+      <text x="338" y="538" class="ink" font-size="16">3. Let the time rail remain a projection of pages.</text>
+
+      <line x1="292" y1="596" x2="1350" y2="596" stroke="#706b65" stroke-dasharray="4 5"/>
+      <text x="292" y="626" class="dim" font-size="13">-3d</text>
+      <text x="338" y="626" class="muted" font-size="14">older live page</text>
+      <text x="1344" y="626" text-anchor="end" class="dim" font-size="12">3d 3h</text>
+      <text x="338" y="681" class="ink" font-size="16">Files are navigation peers, not dated regions in this roll.</text>
+    </g>
+
+    <!-- Status strip -->
+    <line x1="266" y1="808" x2="1380" y2="808" class="line"/>
+    <text x="292" y="834" class="mono dim" font-size="11">selecting a file replaces the roll with that file; selecting a day returns here</text>
+  </g>
+</svg>

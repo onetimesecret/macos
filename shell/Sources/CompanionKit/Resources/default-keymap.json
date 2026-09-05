@@ -91,6 +91,18 @@
       // while the page itself holds the keyboard.
       "alt-z": "editor::ToggleWrap",
 
+      // Files, the peer content class to pages (ADR-0028). Two ids and two
+      // chords, both of which macOS had left free here: the pad had no
+      // File menu at all until this feature, so nothing was holding
+      // cmd-o or cmd-shift-s.
+      //
+      // Saving a file and closing one are not here, because they are
+      // not new chords. cmd-s below and cmd-w above each gain a second
+      // reading on a file target, so a person who rebound either one
+      // keeps both meanings under the chord they chose.
+      "cmd-o": "file::Open",
+      "cmd-shift-s": "file::SaveAs",
+
       // The app around the page.
       "cmd-s": "state::SaveNow",
       "cmd-,": "app::Settings",

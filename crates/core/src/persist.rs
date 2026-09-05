@@ -432,7 +432,7 @@ impl<C: Clock> SheetStore<C> {
 // exact-size preallocation cannot drift from what is written.
 // ---------------------------------------------------------------------------
 
-trait Sink {
+pub(crate) trait Sink {
     fn raw(&mut self, bytes: &[u8]);
     fn u8(&mut self, value: u8);
     fn u64(&mut self, value: u64);
@@ -440,7 +440,7 @@ trait Sink {
     fn bytes(&mut self, value: &[u8]);
 }
 
-struct Sizer(usize);
+pub(crate) struct Sizer(pub(crate) usize);
 
 impl Sink for Sizer {
     fn raw(&mut self, bytes: &[u8]) {
@@ -457,7 +457,7 @@ impl Sink for Sizer {
     }
 }
 
-struct Writer<'a>(&'a mut Vec<u8>);
+pub(crate) struct Writer<'a>(pub(crate) &'a mut Vec<u8>);
 
 impl Sink for Writer<'_> {
     fn raw(&mut self, bytes: &[u8]) {
@@ -486,7 +486,7 @@ impl Sink for Writer<'_> {
 /// second copy of those is a second allocation that has to be wiped.
 /// The body is therefore called twice and must be a pure function of
 /// what it captures.
-fn framed(out: &mut dyn Sink, body: impl Fn(&mut dyn Sink)) {
+pub(crate) fn framed(out: &mut dyn Sink, body: impl Fn(&mut dyn Sink)) {
     let mut sizer = Sizer(0);
     body(&mut sizer);
     out.u64(sizer.0 as u64);
@@ -766,13 +766,13 @@ fn ms(duration: Duration) -> u64 {
 // snapshot before the store is touched.
 // ---------------------------------------------------------------------------
 
-struct Reader<'a> {
-    buf: &'a [u8],
-    pos: usize,
+pub(crate) struct Reader<'a> {
+    pub(crate) buf: &'a [u8],
+    pub(crate) pos: usize,
 }
 
 impl<'a> Reader<'a> {
-    fn raw(&mut self, len: usize) -> Option<&'a [u8]> {
+    pub(crate) fn raw(&mut self, len: usize) -> Option<&'a [u8]> {
         let end = self.pos.checked_add(len)?;
         if end > self.buf.len() {
             return None;
@@ -782,21 +782,21 @@ impl<'a> Reader<'a> {
         Some(slice)
     }
 
-    fn u8(&mut self) -> Option<u8> {
+    pub(crate) fn u8(&mut self) -> Option<u8> {
         self.raw(1).map(|s| s[0])
     }
 
-    fn u64(&mut self) -> Option<u64> {
+    pub(crate) fn u64(&mut self) -> Option<u64> {
         self.raw(8)
             .map(|s| u64::from_le_bytes(s.try_into().expect("raw(8) is 8 bytes")))
     }
 
-    fn bytes(&mut self) -> Option<&'a [u8]> {
+    pub(crate) fn bytes(&mut self) -> Option<&'a [u8]> {
         let len = usize::try_from(self.u64()?).ok()?;
         self.raw(len)
     }
 
-    fn str(&mut self) -> Option<&'a str> {
+    pub(crate) fn str(&mut self) -> Option<&'a str> {
         std::str::from_utf8(self.bytes()?).ok()
     }
 
@@ -812,21 +812,21 @@ impl<'a> Reader<'a> {
     /// returned reader is deliberately never asked whether it is
     /// [`done`](Reader::done) — an unread tail is the rule working, not
     /// damage.
-    fn framed(&mut self) -> Option<Reader<'a>> {
+    pub(crate) fn framed(&mut self) -> Option<Reader<'a>> {
         Some(Reader {
             buf: self.bytes()?,
             pos: 0,
         })
     }
 
-    fn done(&self) -> bool {
+    pub(crate) fn done(&self) -> bool {
         self.pos == self.buf.len()
     }
 }
 
 /// A count field. Each counted element is at least one byte, so a count
 /// beyond the buffer's remainder is damage — reject before allocating.
-fn count(reader: &mut Reader<'_>) -> Result<usize, RestoreError> {
+pub(crate) fn count(reader: &mut Reader<'_>) -> Result<usize, RestoreError> {
     let value = usize::try_from(reader.u64().ok_or(RestoreError::Malformed)?)
         .map_err(|_| RestoreError::Malformed)?;
     if value > reader.buf.len() - reader.pos {
