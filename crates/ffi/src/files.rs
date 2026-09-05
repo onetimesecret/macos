@@ -135,7 +135,7 @@ fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt as _;
-        options.custom_flags(libc::O_NONBLOCK);
+        options.custom_flags(persist::O_NONBLOCK);
     }
     let mut file = options.open(path)?;
     // Asked again through the open file itself, which no substitution

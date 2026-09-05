@@ -1089,15 +1089,17 @@ const O_NOFOLLOW: i32 = libc::O_NOFOLLOW;
 #[cfg(target_os = "linux")]
 const O_NOFOLLOW: i32 = 0x0002_0000;
 
-/// `O_NONBLOCK` on the one target that ships.
+/// `O_NONBLOCK` on the one target that ships. Shared with the file
+/// reader in `files.rs`, which opens with the same flag for the same
+/// planted-FIFO reason.
 #[cfg(target_os = "macos")]
-const O_NONBLOCK: i32 = libc::O_NONBLOCK;
+pub(crate) const O_NONBLOCK: i32 = libc::O_NONBLOCK;
 
 /// `O_NONBLOCK` on the Linux test host, the same ABI constant story as
 /// [`O_NOFOLLOW`] above (`04000` in the kernel's `fcntl.h`); the FIFO
 /// test below fails loudly if it ever stops being the flag.
 #[cfg(target_os = "linux")]
-const O_NONBLOCK: i32 = 0x0000_0800;
+pub(crate) const O_NONBLOCK: i32 = 0x0000_0800;
 
 /// Credential stores that behave in ways the in-memory one cannot, so
 /// the tests can see behaviour the shipping backends have and it does
