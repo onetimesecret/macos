@@ -252,6 +252,21 @@ pub trait FileIo {
     /// # Errors
     /// Whatever the platform said about the stat.
     fn stat(&self, path: &Path) -> io::Result<FileWitness>;
+
+    /// Resolve `path` to the real file it names, following every
+    /// symlink on the way. Called once at open, so that a save lands on
+    /// the file rather than on the link that pointed at it: a person
+    /// who opens a dotfile that links into a repository expects the
+    /// repository's copy to change and the link to stay a link.
+    ///
+    /// The default is the identity, which is what a headless test wants
+    /// and what a platform with no such notion would answer.
+    ///
+    /// # Errors
+    /// Whatever the platform said about the resolution.
+    fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+        Ok(path.to_path_buf())
+    }
 }
 
 /// Why an open, or a reload, refused.
@@ -279,6 +294,11 @@ pub enum SaveError {
     Conflict,
     /// No file with that id is open.
     UnknownFile,
+    /// The target path is already open under another id. Two buffers
+    /// over one file race each other on save, which is the reason
+    /// [`FileStore::open`] deduplicates by path, and a save as that
+    /// adopted an open path would arrange exactly that.
+    PathInUse,
     /// The write itself failed. The file on disk is untouched.
     Io(io::ErrorKind),
 }
@@ -344,6 +364,11 @@ pub struct OpenFile {
     /// asking, and this is what lets the shell post the notice for it
     /// afterwards. Sticky until [`FileStore::clear_reload_notice`].
     externally_reloaded: bool,
+    /// Whether a keep mine is standing: the person has looked at a
+    /// divergence and said their buffer wins. Set by
+    /// [`FileStore::resolve_keep_mine`] and cleared by the save it
+    /// licenses, so one choice buys one save.
+    overwrite_next_save: bool,
     /// Whether the drafts file carried this record dirty but without a
     /// snapshot, which happens only when the snapshot was over
     /// [`DRAFT_SNAPSHOT_LIMIT`] at the save. Set at restore and read
@@ -519,7 +544,17 @@ impl FileStore {
     /// [`OpenRefusal::TooLarge`] above [`FILE_SIZE_LIMIT`], and
     /// [`OpenRefusal::Io`] for a read the platform refused.
     pub fn open(&mut self, io: &dyn FileIo, path: &Path) -> Result<FileId, OpenRefusal> {
-        if let Some(open) = self.files.iter().find(|file| file.path == path) {
+        // Resolved once, here, and every later stat, read and write
+        // uses the answer. Two files that reach the same bytes through
+        // different links are one file, so the deduplication below is
+        // asked after the resolution rather than before it, and a save
+        // lands on the file rather than replacing the link with a copy
+        // of it. A path that will not resolve is refused before
+        // anything else looks at it.
+        let path = &io
+            .canonicalize(path)
+            .map_err(|e| OpenRefusal::Io(e.kind()))?;
+        if let Some(open) = self.files.iter().find(|file| file.path == *path) {
             return Ok(open.id);
         }
         let read = read_file(io, path)?;
@@ -527,7 +562,7 @@ impl FileStore {
         let id = FileId(FILE_ID_TAG | self.next_id);
         self.files.push(OpenFile {
             id,
-            path: path.to_path_buf(),
+            path: path.clone(),
             document: document_holding(&read.text),
             saved_text: Some(read.text),
             witness: Some(read.witness),
@@ -538,6 +573,7 @@ impl FileStore {
             last_edited_ms: 0,
             restored_from_draft: false,
             externally_reloaded: false,
+            overwrite_next_save: false,
             draft_dropped: false,
             bookmark: Vec::new(),
         });
@@ -637,12 +673,19 @@ impl FileStore {
                 break;
             }
         }
+        // The transaction closes either way: whatever did land is a
+        // change, and leaving it open would fold it into the next one.
         if new_step {
             file.document.commit_as_new_step(None);
         } else {
             file.document.commit(None);
         }
-        file.last_edited_ms = wall_ms;
+        // The stamp is only taken for a batch that applied whole. A
+        // caller told its batch was refused must not then find the file
+        // claiming an edit at that moment.
+        if clean {
+            file.last_edited_ms = wall_ms;
+        }
         file.resettle_dirty();
         clean
     }
@@ -700,14 +743,31 @@ impl FileStore {
     /// conflict stands: writing somewhere else cannot overwrite the
     /// change that caused the conflict.
     ///
+    /// A target another file is already open on is refused rather than
+    /// adopted. [`FileStore::open`] deduplicates by path because two
+    /// buffers over one file race each other on save, and a save as is
+    /// not entitled to arrange what an open is not allowed to. The
+    /// shell's answer is to tell the person the file is already open,
+    /// not to close their other tab for them.
+    ///
     /// # Errors
     ///
+    /// [`SaveError::PathInUse`] for a target another open file holds,
     /// [`SaveError::UnknownFile`] for an id nothing is open under, and
     /// [`SaveError::Io`] for a write the platform refused.
     pub fn save_as(&mut self, io: &dyn FileIo, id: FileId, path: &Path) -> Result<(), SaveError> {
+        // Resolved the way an open resolves, so the comparison below
+        // and the path adopted afterwards are in the same terms as
+        // every other path in the store. The target need not exist yet,
+        // so it is the directory that gets resolved and the name that
+        // gets joined back on.
+        let path = &resolve_target(io, path);
+        if self.files.iter().any(|f| f.id != id && f.path == *path) {
+            return Err(SaveError::PathInUse);
+        }
         let file = self.file_mut(id).ok_or(SaveError::UnknownFile)?;
         write_and_settle(io, file, path)?;
-        file.path = path.to_path_buf();
+        file.path = path.clone();
         Ok(())
     }
 
@@ -743,11 +803,21 @@ impl FileStore {
     /// reloads it without asking and posts a notice. A dirty buffer
     /// does, and stays there until one of the three resolutions is
     /// taken.
+    /// Returns the state it found, which is the true answer either way:
+    /// a caller that wants to know whether the file moved is told, even
+    /// while a keep mine stands.
     pub fn refresh_conflict(&mut self, io: &dyn FileIo, id: FileId) -> ExternalState {
         let state = self.check(io, id);
         if let Some(file) = self.file_mut(id) {
             file.conflict = match (state, file.dirty) {
                 (ExternalState::Unchanged, _) | (_, false) => FileConflict::None,
+                // A person who chose keep mine has answered this
+                // question already. Without this arm the shell's own
+                // documented flow defeats the choice: it checks before
+                // every save, the check re-enters the conflict, and the
+                // save it was checking for is refused. Keep mine would
+                // be a button that does nothing.
+                _ if file.overwrite_next_save => FileConflict::None,
                 (ExternalState::Changed, true) => FileConflict::Changed,
                 (ExternalState::Missing, true) => FileConflict::Missing,
             };
@@ -756,19 +826,25 @@ impl FileStore {
     }
 
     /// Keep mine: the first of the three conflict resolutions. The
-    /// buffer stands and the next save overwrites whatever is on disk,
-    /// so the witness is dropped rather than refreshed. Take theirs is
-    /// [`FileStore::reload`] and the third is [`FileStore::save_as`].
-    pub fn resolve_keep_mine(&mut self, id: FileId) -> bool {
+    /// buffer stands and the next save overwrites whatever is on disk.
+    /// Take theirs is [`FileStore::reload`] and the third is
+    /// [`FileStore::save_as`].
+    ///
+    /// Two things happen, and both are needed. The witness is refreshed
+    /// from the disk copy the person has just decided to overwrite, so
+    /// it describes what is actually there rather than a generation
+    /// that is gone. And a consent flag is set that survives until the
+    /// save it was given for, because a file that is missing has no
+    /// witness to take and because the disk copy may change again
+    /// between the choice and the keystroke. Only the save clears it,
+    /// so exactly one save is licensed by exactly one choice.
+    pub fn resolve_keep_mine(&mut self, io: &dyn FileIo, id: FileId) -> bool {
         let Some(file) = self.file_mut(id) else {
             return false;
         };
         file.conflict = FileConflict::None;
-        // The witness described a file this buffer is about to
-        // overwrite on purpose. Dropping it means the next check
-        // answers `Changed` until a save takes a fresh one, which is
-        // the honest answer for a buffer that has diverged by consent.
-        file.witness = None;
+        file.overwrite_next_save = true;
+        file.witness = io.stat(&file.path).ok();
         true
     }
 
@@ -823,7 +899,11 @@ impl FileStore {
     /// than an append.
     pub(crate) fn clear(&mut self) {
         self.files.clear();
-        self.next_id = 0;
+        // The counter is deliberately not reset. Only launch calls this
+        // today, but a restore in a live session would otherwise hand
+        // out an id the shell is still holding for a file it closed,
+        // and a stale id that resolves to the wrong buffer is the one
+        // failure this module's tagging exists to prevent.
     }
 
     /// Put back one file from a drafts record. Everything a restore
@@ -875,6 +955,7 @@ impl FileStore {
             last_edited_ms,
             restored_from_draft: true,
             externally_reloaded: false,
+            overwrite_next_save: false,
             draft_dropped: dirty && snapshot.is_none(),
             bookmark,
         });
@@ -922,16 +1003,23 @@ impl FileStore {
                 kept.push(file);
                 continue;
             }
-            // A draft that was left out of the drafts file is not a
-            // draft any more. Say so once, then take the clean path.
             let staged = file.dirty && !file.draft_dropped;
-            if file.draft_dropped {
-                notices.push(file.notice(DroppedReason::DraftTooLarge));
+            // A draft that was left out of the drafts file is not a
+            // draft any more. The notice for it waits until the file is
+            // known to be coming back: a file that is also gone from
+            // disk gets one notice about that and not two about one
+            // thing, since "your draft was too large" is no use to
+            // somebody whose file is not there either.
+            let dropped_draft = file.draft_dropped;
+            if dropped_draft {
                 file.dirty = false;
                 file.draft_dropped = false;
             }
             match read_file(io, &file.path) {
                 Ok(read) => {
+                    if dropped_draft {
+                        notices.push(file.notice(DroppedReason::DraftTooLarge));
+                    }
                     let unchanged = file.witness == Some(read.witness);
                     if !staged {
                         file.adopt(read);
@@ -1056,7 +1144,43 @@ struct ReadFile {
 /// Read, refuse, strip and normalise. The one place bytes become a
 /// buffer.
 fn read_file(io: &dyn FileIo, path: &Path) -> Result<ReadFile, OpenRefusal> {
+    for _ in 0..READ_ATTEMPTS {
+        match read_once(io, path)? {
+            Some(read) => return Ok(read),
+            // Somebody wrote the file while this read was in progress,
+            // so the bytes and the witness describe different
+            // generations. Read it again rather than keep a pair that
+            // does not go together.
+            None => continue,
+        }
+    }
+    // Something is rewriting the file faster than it can be read. The
+    // one thing that must not happen is opening it anyway: the witness
+    // would describe a generation the buffer does not hold, `check`
+    // would answer `Unchanged` forever, and the next save would
+    // overwrite the other writer without a word.
+    Err(OpenRefusal::Io(io::ErrorKind::Interrupted))
+}
+
+/// How many times a read is retried against a file that is being
+/// written underneath it before the open is refused.
+const READ_ATTEMPTS: usize = 3;
+
+/// One read bracketed by two stats. `None` means the two stats
+/// disagreed, so the bytes and the witness are from different
+/// generations and the pair must be thrown away.
+///
+/// The stat before matters as much as the stat after: it is what
+/// answers a path that is not a regular file before any byte of it is
+/// read, and on a real filesystem a read of a pipe or a device is not
+/// something to start and then reconsider.
+fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefusal> {
+    let before = io.stat(path).map_err(|e| OpenRefusal::Io(e.kind()))?;
     let bytes = io.read(path).map_err(|e| OpenRefusal::Io(e.kind()))?;
+    let after = io.stat(path).map_err(|e| OpenRefusal::Io(e.kind()))?;
+    if before != after {
+        return Ok(None);
+    }
     // The size is answered before the UTF-8 decode, so an enormous file
     // is refused for its size rather than after a decode of it.
     if bytes.len() > FILE_SIZE_LIMIT {
@@ -1072,13 +1196,31 @@ fn read_file(io: &dyn FileIo, path: &Path) -> Result<ReadFile, OpenRefusal> {
     };
     let text = std::str::from_utf8(body).map_err(|_| OpenRefusal::NotUtf8)?;
     let line_ending = LineEnding::detect(text);
-    let witness = io.stat(path).map_err(|e| OpenRefusal::Io(e.kind()))?;
-    Ok(ReadFile {
+    Ok(Some(ReadFile {
         text: text.replace("\r\n", "\n"),
-        witness,
+        witness: after,
         line_ending,
         has_bom,
-    })
+    }))
+}
+
+/// A save target, in the same terms as every path the store holds.
+///
+/// A file that does not exist yet cannot be resolved, so its directory
+/// is resolved instead and the name joined back on. Anything that will
+/// not resolve at all is used as it was given: a save that is going to
+/// fail should fail on the write, where the reason is the platform's,
+/// rather than here.
+fn resolve_target(io: &dyn FileIo, path: &Path) -> PathBuf {
+    if let Ok(resolved) = io.canonicalize(path) {
+        return resolved;
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => io
+            .canonicalize(parent)
+            .map_or_else(|_| path.to_path_buf(), |dir| dir.join(name)),
+        _ => path.to_path_buf(),
+    }
 }
 
 /// A fresh document holding exactly `text`, with an empty undo stack:
@@ -1126,6 +1268,8 @@ fn write_and_settle(io: &dyn FileIo, file: &mut OpenFile, path: &Path) -> Result
     file.dirty = false;
     file.conflict = FileConflict::None;
     file.restored_from_draft = false;
+    // The consent was for this save. The next divergence asks again.
+    file.overwrite_next_save = false;
     Ok(())
 }
 
@@ -1189,6 +1333,9 @@ mod tests {
         /// produce different witnesses, the way a real mtime would.
         tick: Mutex<i128>,
         stamps: Mutex<HashMap<PathBuf, i128>>,
+        /// Link name to target, resolved by `canonicalize` the way the
+        /// real implementation resolves a symlink.
+        links: Mutex<HashMap<PathBuf, PathBuf>>,
     }
 
     impl MemoryIo {
@@ -1196,6 +1343,13 @@ mod tests {
             let io = Self::default();
             io.put(path, bytes);
             io
+        }
+
+        fn link(&self, from: &str, to: &str) {
+            self.links
+                .lock()
+                .unwrap()
+                .insert(PathBuf::from(from), PathBuf::from(to));
         }
 
         fn put(&self, path: &str, bytes: &[u8]) {
@@ -1245,6 +1399,63 @@ mod tests {
                 ino: 1,
                 size: bytes.len() as u64,
                 mtime_ns: *self.stamps.lock().unwrap().get(path).unwrap_or(&0),
+            })
+        }
+
+        fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+            Ok(self
+                .links
+                .lock()
+                .unwrap()
+                .get(path)
+                .cloned()
+                .unwrap_or_else(|| path.to_path_buf()))
+        }
+    }
+
+    /// A filesystem whose file is rewritten underneath every read: the
+    /// window between the read and the stat, made reliable. `shifts` is
+    /// how many times it moves before it settles.
+    struct ShiftingIo {
+        settled: Vec<u8>,
+        moving: Vec<u8>,
+        left: Mutex<usize>,
+        generation: Mutex<i128>,
+    }
+
+    impl ShiftingIo {
+        fn new(moving: &[u8], shifts: usize) -> Self {
+            Self {
+                settled: b"settled".to_vec(),
+                moving: moving.to_vec(),
+                left: Mutex::new(shifts),
+                generation: Mutex::new(0),
+            }
+        }
+    }
+
+    impl FileIo for ShiftingIo {
+        fn read(&self, _path: &Path) -> io::Result<Vec<u8>> {
+            let mut left = self.left.lock().unwrap();
+            if *left == 0 {
+                return Ok(self.settled.clone());
+            }
+            // The write lands here, between the caller's two stats.
+            *left -= 1;
+            *self.generation.lock().unwrap() += 1;
+            Ok(self.moving.clone())
+        }
+
+        fn write_atomic(&self, _path: &Path, _bytes: &[u8]) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn stat(&self, _path: &Path) -> io::Result<FileWitness> {
+            Ok(FileWitness {
+                dev: 1,
+                ino: 1,
+                size: 0,
+                mtime_ns: *self.generation.lock().unwrap(),
             })
         }
     }
@@ -1481,7 +1692,7 @@ mod tests {
         assert_eq!(store.save(&io, id), Err(SaveError::Conflict));
         assert_eq!(io.bytes("/k.txt"), b"theirs", "nothing was written");
 
-        assert!(store.resolve_keep_mine(id));
+        assert!(store.resolve_keep_mine(&io, id));
         assert_eq!(store.file(id).unwrap().conflict(), FileConflict::None);
         store.save(&io, id).unwrap();
         assert_eq!(io.bytes("/k.txt"), b"one mine");
@@ -1525,6 +1736,154 @@ mod tests {
         assert_eq!(store.file(id).unwrap().conflict(), FileConflict::None);
         assert_eq!(io.bytes("/o.txt"), b"theirs");
         assert_eq!(io.bytes("/copy.txt"), b"one mine");
+    }
+
+    #[test]
+    fn keep_mine_survives_the_check_the_shell_makes_before_every_save() {
+        // The documented flow: check on activate, check again before
+        // the save. Without the standing consent the second check puts
+        // the conflict back and keep mine never writes anything.
+        let io = MemoryIo::with("/k2.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k2.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.put("/k2.txt", b"theirs");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
+        assert!(store.resolve_keep_mine(&io, id));
+
+        // The shell checks again, as the header tells it to.
+        let state = store.refresh_conflict(&io, id);
+        assert_eq!(state, ExternalState::Unchanged, "the fresh witness matches");
+        assert_eq!(store.file(id).unwrap().conflict(), FileConflict::None);
+        store.save(&io, id).expect("keep mine then save must write");
+        assert_eq!(io.bytes("/k2.txt"), b"one mine");
+    }
+
+    #[test]
+    fn keep_mine_over_a_missing_file_still_saves() {
+        // There is no witness to take here, so the consent flag is the
+        // only thing carrying the choice through the pre save check.
+        let io = MemoryIo::with("/k3.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k3.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.remove("/k3.txt");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Missing);
+        assert_eq!(store.file(id).unwrap().conflict(), FileConflict::Missing);
+        assert!(store.resolve_keep_mine(&io, id));
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Missing);
+        assert_eq!(
+            store.file(id).unwrap().conflict(),
+            FileConflict::None,
+            "the person has answered this question"
+        );
+        store.save(&io, id).expect("keep mine recreates the file");
+        assert_eq!(io.bytes("/k3.txt"), b"one mine");
+    }
+
+    #[test]
+    fn the_consent_is_spent_by_the_save_it_was_given_for() {
+        let io = MemoryIo::with("/k4.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/k4.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.put("/k4.txt", b"theirs");
+        store.refresh_conflict(&io, id);
+        assert!(store.resolve_keep_mine(&io, id));
+        store.save(&io, id).unwrap();
+
+        // A second divergence asks again rather than riding the first
+        // answer.
+        assert!(store.apply_ops(id, &[ins(0, "more ")], 2));
+        io.put("/k4.txt", b"and again");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
+        assert_eq!(store.file(id).unwrap().conflict(), FileConflict::Changed);
+        assert_eq!(store.save(&io, id), Err(SaveError::Conflict));
+    }
+
+    #[test]
+    fn save_as_onto_a_path_another_file_holds_is_refused() {
+        let io = MemoryIo::with("/one.txt", b"first");
+        io.put("/two.txt", b"second");
+        let mut store = FileStore::new();
+        let first = store.open(&io, Path::new("/one.txt")).unwrap();
+        let second = store.open(&io, Path::new("/two.txt")).unwrap();
+        assert_eq!(
+            store.save_as(&io, first, Path::new("/two.txt")),
+            Err(SaveError::PathInUse)
+        );
+        assert_eq!(io.bytes("/two.txt"), b"second", "nothing was written");
+        assert_eq!(store.files().len(), 2);
+        assert_eq!(store.file(first).unwrap().path(), Path::new("/one.txt"));
+
+        // Saving as its own path is not another file's path.
+        store.save_as(&io, second, Path::new("/two.txt")).unwrap();
+    }
+
+    #[test]
+    fn a_write_between_the_read_and_the_stat_is_never_invisible() {
+        // A filesystem that rewrites the file once, underneath the
+        // read. The pair of stats disagree, so the read is taken again
+        // rather than kept with a witness from the wrong generation.
+        let io = ShiftingIo::new(b"one", 1);
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/s.txt")).unwrap();
+        assert_eq!(
+            store.text(id).unwrap(),
+            "settled",
+            "the buffer holds the generation its witness describes"
+        );
+        assert_eq!(
+            store.check(&io, id),
+            ExternalState::Unchanged,
+            "and the check agrees, because the two go together"
+        );
+    }
+
+    #[test]
+    fn a_file_rewritten_faster_than_it_reads_is_refused_rather_than_opened() {
+        // Never opened with a mismatched pair: that would make `check`
+        // answer Unchanged forever and the next save would overwrite
+        // the other writer without a word.
+        let io = ShiftingIo::new(b"one", 99);
+        let mut store = FileStore::new();
+        assert_eq!(
+            store.open(&io, Path::new("/s.txt")),
+            Err(OpenRefusal::Io(io::ErrorKind::Interrupted))
+        );
+        assert!(store.files().is_empty());
+    }
+
+    #[test]
+    fn a_symlink_is_resolved_once_at_open() {
+        // The seam's own resolution, which the real one implements with
+        // `std::fs::canonicalize`: the store keeps the resolved path,
+        // so a save lands on the file rather than on the link.
+        let io = MemoryIo::with("/real.txt", b"body");
+        io.link("/link.txt", "/real.txt");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/link.txt")).unwrap();
+        assert_eq!(store.file(id).unwrap().path(), Path::new("/real.txt"));
+        assert_eq!(store.file(id).unwrap().name(), "real.txt");
+
+        // And the two paths are one open file, not two buffers racing.
+        assert_eq!(store.open(&io, Path::new("/real.txt")).unwrap(), id);
+        assert_eq!(store.files().len(), 1);
+    }
+
+    #[test]
+    fn a_refused_batch_stamps_no_edit_time() {
+        let io = MemoryIo::with("/st.txt", b"abc");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/st.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, "d")], 7_000));
+        assert_eq!(store.file(id).unwrap().last_edited_at(), 7);
+        assert!(!store.apply_ops(id, &[ins(400, "x")], 9_000));
+        assert_eq!(
+            store.file(id).unwrap().last_edited_at(),
+            7,
+            "a batch the caller was told was refused claims no edit"
+        );
     }
 
     #[test]

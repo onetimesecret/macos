@@ -29,7 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a save preserves the mode the file already had and lands whole or
   not at all. A file is dirty when its buffer differs from the text
   last read or written, so typing a word and deleting it again
-  returns the file to clean. Checking stats the file and says
+  returns the file to clean; the one case with no such text to
+  compare against is a draft restored beside a file that changed
+  underneath it, which stands in a conflict and keeps the flag it was
+  saved with. Checking stats the file and says
   unchanged, changed or missing; a changed file under unsaved edits
   enters a conflict, and a save stays refused until keep mine, take
   theirs or save as is chosen.

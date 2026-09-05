@@ -157,9 +157,15 @@ Saving is explicit. There is no autosave to the file.
 - **Cmd S** writes the buffer to the file. The write is atomic: the
   bytes go to a temporary file in the same directory, are flushed, and
   are then renamed over the target, so a crash or a full disk leaves
-  either the old file or the new one and never a truncated one. File
-  permissions, ownership and extended attributes are preserved across
-  the replace.
+  either the old file or the new one and never a truncated one. The
+  file's permission bits are preserved across the replace, and a file
+  opened through a symlink is resolved to the real file when it opens,
+  so the save lands on that file and the link stays a link. Be plain
+  about what a replace cannot carry: the new file is a new inode, so a
+  second hard link to the old one keeps pointing at the old text, and
+  extended attributes and any ownership the writer cannot set do not
+  survive. A file that is one of several hard links, or that carries
+  tags or other extended attributes, will lose them on the first save.
 - **Save As** raises a save panel, writes to the chosen location, and
   the tab follows the new file. A new bookmark is taken. The original
   file is left exactly as it was.

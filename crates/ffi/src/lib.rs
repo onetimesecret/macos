@@ -2057,7 +2057,7 @@ pub unsafe extern "C" fn companion_persist_erase(
     };
     // Taken for its exclusion as much as for the credentials: a save in
     // flight owns the same path and the same halves.
-    let Ok(guard) = handle.inner.lock() else {
+    let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
     let path = Path::new(path);
@@ -2080,17 +2080,49 @@ pub unsafe extern "C" fn companion_persist_erase(
         );
         return false;
     }
-    // The gesture that drops the content file discards drafts with it:
-    // they rest under the same key and describe the same session. It
-    // runs after the rotation, which has already made them unreadable,
-    // so this is the tidy rather than the forgetting. Only a content
-    // drop takes them; a ledger clear arrives here too and must leave
-    // a person's unsaved file edits alone.
-    if persist::drop_takes_the_content_key(path) && !files::erase_drafts_beside(path) {
-        diag_fault!(
-            "companion-ffi: the drafts file could not be dropped. It is already unreadable, \
-             the rotation having taken its key, so what is left at the path is inert bytes."
-        );
+    // The drafts file rested under the halves the rotation above just
+    // destroyed, so something has to happen to it either way. Which
+    // thing depends on whether any file is still open, and getting this
+    // wrong is silent data loss.
+    //
+    // **An open file's draft is not this call's to discard.** This
+    // route fires when the last tab goes, which is a page lifecycle
+    // event; a person can be holding a dirty file tab with an hour of
+    // unsaved typing in it at that moment, and they did not ask for it
+    // to go anywhere. ADR-0028 says a draft dies on a save, an explicit
+    // discard, or an erase of the app's state, and lead decision 14
+    // says predicates keyed on pages and tabs neither trigger nor block
+    // on drafts. So an open roster means the drafts are resealed under
+    // the new halves, exactly as the rotation route does it, and only
+    // an empty roster lets the file go.
+    //
+    // The explicit discard has its own door and always did:
+    // `companion_drafts_erase`, which the shell calls when the person
+    // asks for it. Nothing here needs to stand in for that.
+    //
+    // A ledger clear arrives at this same entry point and must leave
+    // drafts alone entirely, which is what the content file predicate
+    // is doing on the outside of both branches.
+    if persist::drop_takes_the_content_key(path) {
+        if guard.files.files().is_empty() {
+            if !files::erase_drafts_beside(path) {
+                diag_fault!(
+                    "companion-ffi: the drafts file could not be dropped. It is already \
+                     unreadable, the rotation having taken its key, so what is left at the \
+                     path is inert bytes."
+                );
+            }
+        } else if !files::reseal_drafts_beside(&mut guard, path) {
+            // Said and not acted on: the content file still goes. The
+            // drafts are unreadable from here whatever happens next,
+            // and refusing the drop would leave the ciphertext this
+            // call exists to remove sitting on disk as well.
+            diag_fault!(
+                "companion-ffi: open files were staged, but their drafts could not be \
+                 rewritten under the rotated content key. Every unsaved file edit is \
+                 unreadable from now on."
+            );
+        }
     }
     persist::erase_state(path)
 }

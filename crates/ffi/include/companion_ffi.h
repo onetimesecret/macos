@@ -1146,7 +1146,16 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
  * Open the file at path. Returns its tagged id, or 0 when the open
  * refused; ask companion_file_open_error_json() why. UTF-8 only:
  * invalid UTF-8 is refused rather than opened read only or opened with
- * replacement characters. Files above 4 MiB are refused.
+ * replacement characters. Files above 4 MiB are refused. Anything that
+ * is not a regular file, a directory or a pipe or a device, is refused
+ * as an "io" error rather than read.
+ *
+ * The path is resolved through every symlink once, here, and the
+ * resolved path is what the roster reports and what a save writes to,
+ * so opening a dotfile that links into a repository changes the file in
+ * the repository and leaves the link a link. Two paths that resolve to
+ * one file are one open file: the existing id comes back rather than a
+ * second buffer.
  */
 uint64_t companion_file_open(CompanionHandle *handle, const char *path);
 
@@ -1199,7 +1208,15 @@ char *companion_file_redo(CompanionHandle *handle, uint64_t file);
  */
 bool companion_file_save(CompanionHandle *handle, uint64_t file);
 
-/* Write the buffer to path and adopt it as the file's path. */
+/*
+ * Write the buffer to path and adopt it as the file's path.
+ *
+ * Refused, with nothing written, when another open file already holds
+ * that path: two buffers over one file race each other on save, which
+ * is why companion_file_open() hands back the existing id for a path
+ * that is already open. The shell's answer is to tell the person the
+ * file is open in another tab, not to close it for them.
+ */
 bool companion_file_save_as(CompanionHandle *handle, uint64_t file,
                             const char *path);
 
@@ -1238,6 +1255,11 @@ bool companion_file_clear_reload_notice(CompanionHandle *handle,
  * and the third is companion_file_save_as(). Clears the conflict and
  * lets the next save overwrite whatever is on disk; the shell calls it
  * only after the person has chosen. Returns false for an unknown file.
+ *
+ * The consent survives the check the shell makes before every save, and
+ * is spent by that one save. Without that, checking before saving would
+ * put the conflict straight back and keep mine would be a button that
+ * does nothing.
  */
 bool companion_file_resolve_keep_mine(CompanionHandle *handle,
                                       uint64_t file);
@@ -1269,15 +1291,24 @@ char *companion_file_bookmark_b64(CompanionHandle *handle, uint64_t file);
  * relaunch restores every open file tab and a dirty one comes back with
  * its unsaved marker.
  *
- * Sharing the content key is deliberate: rotating the content halves is
- * what discards drafts, so emptying the pad discards them too. Any
- * rotation must rewrite this file in the same operation, or the drafts
- * become unreadable without anyone asking for that. That rewrite
- * happens inside companion_persist_rotate_and_save(), which finds the
- * drafts file as "drafts.sealed" beside the state file it was given.
- * companion_persist_erase() erases it from the same place. The shell
- * must therefore name the file "drafts.sealed" and keep it in the state
- * directory, the same coupling the state file's own name already has.
+ * Sharing the content key means every rotation of the content halves
+ * must rewrite this file in the same operation, or the drafts become
+ * unreadable without anyone asking for that. Both routes that rotate do
+ * it, and they find the drafts file as "drafts.sealed" beside the state
+ * file they were given, so the shell must name the file that and keep
+ * it in the state directory: the same coupling the state file's own
+ * name already has.
+ *
+ * companion_persist_rotate_and_save() reseals it, drafts before the
+ * state file.
+ *
+ * companion_persist_erase() reseals it too whenever any file is still
+ * open, and drops it only when the roster is empty. That route fires
+ * when the last page tab goes, which is a page lifecycle event, and a
+ * person can be holding a dirty file tab at that moment: their unsaved
+ * typing is not a page's to discard. An explicit discard has its own
+ * door, companion_drafts_erase(), which is the one call that always
+ * removes the file.
  * The three calls below take their path from the shell like every other
  * path on this ABI; only the rotation, which is handed the state file
  * and no other path, goes looking for the name.

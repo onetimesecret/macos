@@ -604,7 +604,7 @@ mod tests {
         );
         assert_eq!(back.save(&io, id), Err(crate::files::SaveError::Conflict));
         // And the three resolutions still work from here.
-        assert!(back.resolve_keep_mine(id));
+        assert!(back.resolve_keep_mine(&io, id));
         back.save(&io, id).unwrap();
     }
 

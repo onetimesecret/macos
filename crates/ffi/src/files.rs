@@ -80,7 +80,7 @@ pub(crate) struct RealFileIo;
 
 impl FileIo for RealFileIo {
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
-        std::fs::read(path)
+        read_regular_file(path)
     }
 
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -88,8 +88,64 @@ impl FileIo for RealFileIo {
     }
 
     fn stat(&self, path: &Path) -> io::Result<FileWitness> {
-        witness_of(&std::fs::metadata(path)?)
+        let metadata = std::fs::metadata(path)?;
+        if !metadata.file_type().is_file() {
+            // A directory, a pipe, a socket or a device is not a text
+            // file, and answering a witness for one would let the store
+            // go on to read it. The core turns this into an `io`
+            // refusal the shell can name.
+            return Err(io::Error::from(io::ErrorKind::InvalidInput));
+        }
+        witness_of(&metadata)
     }
+
+    fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+        std::fs::canonicalize(path)
+    }
+}
+
+/// Read a whole file, having first established that it is one.
+///
+/// **A bare `std::fs::read` is not safe here.** The path comes from a
+/// person, or from a drafts record written before whatever is at the
+/// path now. If it is a named pipe with no writer, the `open` inside
+/// `std::fs::read` blocks and never returns, and both callers hold the
+/// handle mutex across it, so the whole app stops answering with no
+/// error and nothing to see. Two things prevent it, because either one
+/// alone has a race in it:
+///
+///  - the stat first, which refuses everything that is not a regular
+///    file, and
+///  - `O_NONBLOCK` on the open, so a pipe that was substituted in the
+///    window between the stat and the open fails `ENXIO` instead of
+///    parking forever. On a regular file the flag is inert.
+///
+/// `O_NOFOLLOW` is deliberately not set: symlinks are followed on
+/// purpose, once, at open, and the path held from then on is the
+/// resolved one.
+fn read_regular_file(path: &Path) -> io::Result<Vec<u8>> {
+    use std::io::Read as _;
+
+    let metadata = std::fs::metadata(path)?;
+    if !metadata.file_type().is_file() {
+        return Err(io::Error::from(io::ErrorKind::InvalidInput));
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let mut file = options.open(path)?;
+    // Asked again through the open file itself, which no substitution
+    // at the name can change afterwards.
+    if !file.metadata()?.file_type().is_file() {
+        return Err(io::Error::from(io::ErrorKind::InvalidInput));
+    }
+    let mut bytes = Vec::with_capacity(metadata.len().try_into().unwrap_or(0));
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 #[cfg(unix)]
@@ -483,6 +539,13 @@ fn report_save(outcome: Result<(), SaveError>) -> bool {
             );
             false
         }
+        Err(SaveError::PathInUse) => {
+            diag_fault!(
+                "companion-ffi: a save as named a path another open file already holds. Two \
+                 buffers over one file would race each other on save, so nothing was written."
+            );
+            false
+        }
         Err(SaveError::UnknownFile) => {
             diag_fault!("companion-ffi: a file save named an id nothing is open under.");
             false
@@ -568,7 +631,7 @@ pub unsafe extern "C" fn companion_file_resolve_keep_mine(
     let Ok(mut guard) = handle.inner.lock() else {
         return false;
     };
-    guard.files.resolve_keep_mine(FileId(file))
+    guard.files.resolve_keep_mine(&RealFileIo, FileId(file))
 }
 
 /// Attach the shell's bookmark for a file, as standard base64. Opaque
@@ -1010,7 +1073,11 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        dir
+        // Resolved, because the store resolves every path it is given
+        // and the temp directory on macOS is reached through a symlink.
+        // A test that compared an unresolved path against the roster
+        // would be asserting the wrong thing.
+        std::fs::canonicalize(&dir).unwrap()
     }
 
     /// A handle over the in-process board with credentials that never
@@ -1526,6 +1593,212 @@ mod tests {
     }
 
     #[test]
+    fn a_fifo_is_refused_rather_than_blocked_on() {
+        // A bare `std::fs::read` of a pipe with no writer parks in
+        // `open(2)` forever with the handle mutex held, which stops the
+        // whole app answering. The open must come back instead.
+        //
+        // The work runs on a second thread and the assertion waits on a
+        // channel, so a regression is a test that fails on a timeout
+        // rather than a suite that hangs.
+        let (handle, dir) = scratch("fifo");
+        let fifo = dir.join("pipe");
+        let name = CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
+        // SAFETY: a path in this test's own fresh directory.
+        let made = unsafe { libc::mkfifo(name.as_ptr(), 0o600) };
+        assert_eq!(made, 0, "mkfifo: {}", io::Error::last_os_error());
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let carried = handle as usize;
+        let worker = std::thread::spawn(move || {
+            let handle = carried as *mut CompanionHandle;
+            let path = cstring(&fifo.to_string_lossy());
+            let id = unsafe { companion_file_open(handle, path.as_ptr()) };
+            let error = unsafe { companion_file_open_error_json(handle) };
+            let error = if error.is_null() {
+                String::new()
+            } else {
+                unsafe { take_json(error) }
+            };
+            let _ = tx.send((id, error));
+        });
+        let (id, error) = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("opening a pipe must return rather than park forever");
+        worker.join().unwrap();
+        assert_eq!(id, 0, "a pipe is not a file this build opens");
+        let error: serde_json::Value = serde_json::from_str(&error).unwrap();
+        assert_eq!(error["error"], serde_json::json!("io"));
+
+        // The handle still answers, which is the property that matters:
+        // nothing walked off holding the lock.
+        unsafe {
+            assert_eq!(roster(handle), serde_json::json!([]));
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn a_directory_at_the_path_is_refused() {
+        let (handle, dir) = scratch("dir");
+        let inner = dir.join("folder");
+        std::fs::create_dir(&inner).unwrap();
+        unsafe {
+            assert_eq!(open(handle, &inner), 0);
+            let error: serde_json::Value =
+                serde_json::from_str(&take_json(companion_file_open_error_json(handle))).unwrap();
+            assert_eq!(error["error"], serde_json::json!("io"));
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_is_followed_at_open_and_the_save_lands_on_the_real_file() {
+        let (handle, dir) = scratch("symlink");
+        let real = dir.join("real.txt");
+        let link = dir.join("link.txt");
+        std::fs::write(&real, b"body").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        unsafe {
+            let id = open(handle, &link);
+            assert_ne!(id, 0);
+            let ops = cstring(r#"[{"ins":{"at":4,"text":"!"}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            assert!(companion_file_save(handle, id));
+
+            // Opening the real path is the same file, not a second one.
+            assert_eq!(open(handle, &real), id);
+            assert_eq!(roster(handle).as_array().unwrap().len(), 1);
+        }
+        assert_eq!(std::fs::read(&real).unwrap(), b"body!");
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the link is still a link"
+        );
+        assert_eq!(std::fs::read(&link).unwrap(), b"body!");
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn keep_mine_then_save_writes_through_the_documented_flow() {
+        // Check on activate, choose keep mine, check again before the
+        // save because the header says to, then save. Every step over
+        // the seam, because the bug this pins was invisible under it.
+        let (handle, dir) = scratch("keepmine");
+        let file = dir.join("k.txt");
+        std::fs::write(&file, b"one").unwrap();
+        unsafe {
+            let id = open(handle, &file);
+            let ops = cstring(r#"[{"ins":{"at":3,"text":" mine"}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            std::fs::write(&file, b"theirs").unwrap();
+
+            let check: serde_json::Value =
+                serde_json::from_str(&take_json(companion_file_check(handle, id))).unwrap();
+            assert_eq!(check["state"], serde_json::json!("changed"));
+            assert!(companion_file_resolve_keep_mine(handle, id));
+
+            let again: serde_json::Value =
+                serde_json::from_str(&take_json(companion_file_check(handle, id))).unwrap();
+            assert_eq!(again["state"], serde_json::json!("unchanged"));
+            assert_eq!(roster(handle)[0]["conflict"], serde_json::json!("none"));
+            assert!(companion_file_save(handle, id));
+        }
+        assert_eq!(std::fs::read(&file).unwrap(), b"one mine");
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn save_as_onto_another_open_file_is_refused() {
+        let (handle, dir) = scratch("inuse");
+        let one = dir.join("one.txt");
+        let two = dir.join("two.txt");
+        std::fs::write(&one, b"first").unwrap();
+        std::fs::write(&two, b"second").unwrap();
+        unsafe {
+            let first = open(handle, &one);
+            open(handle, &two);
+            let target = cstring(&two.to_string_lossy());
+            assert!(!companion_file_save_as(handle, first, target.as_ptr()));
+            let row = roster(handle);
+            assert_eq!(row.as_array().unwrap().len(), 2);
+            assert_eq!(row[0]["path"], serde_json::json!(one.to_string_lossy()));
+        }
+        assert_eq!(std::fs::read(&two).unwrap(), b"second");
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn dropping_the_content_file_keeps_an_open_file_s_draft() {
+        // The last page tab going away is a page lifecycle event. A
+        // person holding a dirty file tab at that moment did not ask
+        // for their unsaved typing to go anywhere.
+        let keys = credentials();
+        let handle = handle_with(keys.clone());
+        let dir = scratch_dir("erase-keeps");
+        let state = dir.join("state.sealed");
+        let drafts = dir.join(DRAFTS_FILE_NAME);
+        let file = dir.join("live.txt");
+        std::fs::write(&file, b"one").unwrap();
+        let state_c = cstring(&state.to_string_lossy());
+        let drafts_c = cstring(&drafts.to_string_lossy());
+        unsafe {
+            let id = open(handle, &file);
+            let ops = cstring(r#"[{"ins":{"at":0,"text":"typed "}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            assert!(crate::companion_persist_save(handle, state_c.as_ptr()));
+            assert!(companion_drafts_save(handle, drafts_c.as_ptr()));
+
+            // The last page tab goes: the shell drops the content file.
+            assert!(crate::companion_persist_erase(handle, state_c.as_ptr()));
+            crate::companion_free(handle);
+        }
+        assert!(!state.exists(), "the content file went");
+        assert!(drafts.exists(), "the draft did not");
+
+        // And it opens under the halves the drop minted.
+        let relaunch = handle_with(keys);
+        unsafe {
+            assert!(companion_drafts_restore(relaunch, drafts_c.as_ptr()));
+            let row = roster(relaunch);
+            assert_eq!(row.as_array().unwrap().len(), 1);
+            assert_eq!(row[0]["isDirty"], serde_json::json!(true));
+            let id = row[0]["id"].as_u64().unwrap();
+            assert_eq!(
+                take_json(companion_file_runs_json(relaunch, id)),
+                r#"[{"ink":"typed one"}]"#
+            );
+        }
+        cleanup(relaunch, &dir);
+    }
+
+    #[test]
+    fn dropping_the_content_file_with_no_file_open_takes_the_drafts() {
+        let (handle, dir) = scratch("erase-empty");
+        let state = dir.join("state.sealed");
+        let drafts = dir.join(DRAFTS_FILE_NAME);
+        let file = dir.join("gone.txt");
+        std::fs::write(&file, b"one").unwrap();
+        let state_c = cstring(&state.to_string_lossy());
+        let drafts_c = cstring(&drafts.to_string_lossy());
+        unsafe {
+            let id = open(handle, &file);
+            assert!(crate::companion_persist_save(handle, state_c.as_ptr()));
+            assert!(companion_drafts_save(handle, drafts_c.as_ptr()));
+            // The tab is closed, so nothing is staged any more.
+            assert!(companion_file_close(handle, id));
+            assert!(crate::companion_persist_erase(handle, state_c.as_ptr()));
+        }
+        assert!(!state.exists());
+        assert!(!drafts.exists(), "an empty roster lets the file go");
+        cleanup(handle, &dir);
+    }
+
+    #[test]
     fn the_draft_size_bound_is_four_times_the_file_size_limit() {
         assert_eq!(companion_core::DRAFT_SNAPSHOT_LIMIT, 4 * LIMIT);
     }
@@ -1601,23 +1874,25 @@ mod tests {
     }
 
     #[test]
-    fn erasing_the_content_file_takes_the_drafts_with_it() {
+    fn the_explicit_discard_always_takes_the_drafts() {
+        // `companion_drafts_erase` is the door for a person who asked
+        // to discard their unsaved file edits, and it takes them
+        // whether or not the file is still open. That is what lets
+        // `companion_persist_erase` be careful.
         let (handle, dir) = scratch("erase-pair");
-        let state = dir.join("state.sealed");
         let drafts = dir.join(DRAFTS_FILE_NAME);
         let file = dir.join("x.txt");
         std::fs::write(&file, b"one").unwrap();
-        let state_c = cstring(&state.to_string_lossy());
         let drafts_c = cstring(&drafts.to_string_lossy());
         unsafe {
-            open(handle, &file);
-            assert!(crate::companion_persist_save(handle, state_c.as_ptr()));
+            let id = open(handle, &file);
+            let ops = cstring(r#"[{"ins":{"at":0,"text":"typed "}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
             assert!(companion_drafts_save(handle, drafts_c.as_ptr()));
             assert!(drafts.exists());
-            assert!(crate::companion_persist_erase(handle, state_c.as_ptr()));
+            assert!(companion_drafts_erase(handle, drafts_c.as_ptr()));
         }
-        assert!(!state.exists());
-        assert!(!drafts.exists(), "the content drop discards drafts too");
+        assert!(!drafts.exists(), "an explicit discard is not conditional");
         cleanup(handle, &dir);
     }
 
