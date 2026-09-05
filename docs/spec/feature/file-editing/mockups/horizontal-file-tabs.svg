@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">OnetimePad horizontal tabs with open files</title>
+  <desc id="desc">A dark OnetimePad window showing README.md as a file-backed document. File tabs are grouped separately from expiring Pad page tabs along the bottom.</desc>
+  <defs>
+    <style>
+      .ui { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+      .mono { font-family: "SFMono-Regular", Menlo, Consolas, monospace; }
+      .label { fill: #dedad4; }
+      .muted { fill: #9b9690; }
+      .dim { fill: #6f6a65; }
+      .ink { fill: #d8d4cf; }
+      .accent { fill: #d2643d; }
+      .line { stroke: #47433f; }
+    </style>
+    <clipPath id="windowClip"><rect x="60" y="50" width="1320" height="800" rx="18"/></clipPath>
+  </defs>
+
+  <rect width="1440" height="900" fill="#151412"/>
+  <rect x="60" y="50" width="1320" height="800" rx="18" fill="#252321" stroke="#d2643d" stroke-width="3"/>
+
+  <g clip-path="url(#windowClip)">
+    <!-- Header -->
+    <rect x="60" y="50" width="1320" height="48" fill="#292725"/>
+    <line x1="60" y1="98" x2="1380" y2="98" class="line"/>
+    <g transform="translate(80 65)">
+      <path d="M2 1.5h8l4 4v12H2z" fill="none" stroke="#aaa49e" stroke-width="1.4"/>
+      <path d="M10 1.5v4h4" fill="none" stroke="#aaa49e" stroke-width="1.4"/>
+    </g>
+    <text x="104" y="80" class="mono label" font-size="15" font-weight="600">README.md</text>
+    <text x="211" y="80" class="mono dim" font-size="12">— OnetimePad</text>
+    <text x="1180" y="80" class="mono muted" font-size="12">saved</text>
+    <g transform="translate(1330 62)" fill="none" stroke="#aaa49e" stroke-width="1.5">
+      <path d="M10 2v11M5 6h10M7 13l3 5 3-5"/>
+    </g>
+
+    <!-- File content -->
+    <rect x="60" y="98" width="1320" height="672" fill="#272522"/>
+    <g class="mono" font-size="17">
+      <text x="150" y="158" class="dim"># </text>
+      <text x="170" y="158" class="label" font-size="27" font-weight="650">OnetimePad</text>
+
+      <text x="150" y="210" class="ink">A quiet place for text that is useful now and gone on schedule.</text>
+
+      <text x="150" y="274" class="dim">## </text>
+      <text x="180" y="274" class="label" font-size="21" font-weight="600">Development</text>
+      <text x="150" y="316" class="ink">Build and run the macOS application:</text>
+
+      <rect x="138" y="342" width="1162" height="120" rx="7" fill="#201f1d"/>
+      <rect x="138" y="342" width="4" height="120" rx="2" fill="#56514b"/>
+      <text x="164" y="374" class="dim">```sh</text>
+      <text x="164" y="406" class="ink">scripts/dev.sh</text>
+      <text x="164" y="438" class="dim">```</text>
+
+      <text x="150" y="514" class="dim">## </text>
+      <text x="180" y="514" class="label" font-size="21" font-weight="600">Notes</text>
+      <text x="150" y="556" class="ink">- Markdown stays markup-preserving.</text>
+      <text x="150" y="590" class="ink">- This document has no countdown.</text>
+      <text x="150" y="624" class="ink">- Closing its tab leaves the file on disk.</text>
+    </g>
+
+    <!-- Quiet active-file status -->
+    <g transform="translate(1170 730)">
+      <path d="M0 6h12M6 0v12" stroke="#77716b" stroke-width="1.2" opacity="0"/>
+      <text x="0" y="0" class="mono dim" font-size="11">UTF-8 · Markdown</text>
+    </g>
+
+    <!-- Bottom navigation -->
+    <rect x="60" y="770" width="1320" height="80" fill="#211f1d"/>
+    <line x1="60" y1="770" x2="1380" y2="770" class="line"/>
+
+    <text x="82" y="791" class="mono dim" font-size="9" letter-spacing="1.3">FILES</text>
+    <g transform="translate(76 799)">
+      <rect width="174" height="42" rx="7" fill="#393633"/>
+      <path d="M14 10h8l4 4v15H14z" fill="none" stroke="#bdb7b0" stroke-width="1.2"/>
+      <path d="M22 10v4h4" fill="none" stroke="#bdb7b0" stroke-width="1.2"/>
+      <text x="36" y="26" class="mono label" font-size="13">README.md</text>
+    </g>
+    <g transform="translate(256 799)">
+      <rect width="142" height="42" rx="7" fill="#2a2826"/>
+      <path d="M14 10h8l4 4v15H14z" fill="none" stroke="#827d77" stroke-width="1.2"/>
+      <path d="M22 10v4h4" fill="none" stroke="#827d77" stroke-width="1.2"/>
+      <text x="36" y="26" class="mono muted" font-size="13">notes.txt</text>
+    </g>
+
+    <line x1="420" y1="790" x2="420" y2="838" stroke="#514c47"/>
+    <text x="440" y="791" class="mono dim" font-size="9" letter-spacing="1.3">PAD</text>
+
+    <g transform="translate(434 799)">
+      <rect width="158" height="42" rx="7" fill="#2a2826"/>
+      <text x="14" y="25" class="mono muted" font-size="13">deploy</text>
+      <rect x="10" y="37" width="138" height="3" rx="1.5" fill="#494640"/>
+      <rect x="10" y="37" width="104" height="3" rx="1.5" fill="#8b8680"/>
+    </g>
+    <g transform="translate(598 799)">
+      <rect width="158" height="42" rx="7" fill="#2a2826"/>
+      <text x="14" y="25" class="mono muted" font-size="13">errands</text>
+      <rect x="10" y="37" width="138" height="3" rx="1.5" fill="#494640"/>
+      <rect x="10" y="37" width="64" height="3" rx="1.5" fill="#8b8680"/>
+    </g>
+    <g transform="translate(762 799)">
+      <rect width="42" height="42" rx="7" fill="#2a2826"/>
+      <text x="21" y="27" text-anchor="middle" class="mono muted" font-size="21">+</text>
+    </g>
+
+    <text x="1170" y="824" class="mono dim" font-size="11">file tabs do not consume the 9-page cap</text>
+  </g>
+</svg>
