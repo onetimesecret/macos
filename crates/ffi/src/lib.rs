@@ -62,6 +62,7 @@
 
 mod conceal;
 mod diagnostics;
+mod files;
 // Public on purpose, unlike its siblings: the sync session layer that
 // will drive it is not built yet (issues #97–#99), and the GOP key
 // chain must meanwhile be reachable by the tests and callers that
@@ -91,8 +92,8 @@ use conceal::{ConcealOpts, Concealed, Connection, Wire, conceal};
 use ots_client::Transport as _;
 
 use companion_core::{
-    ChipId, ChipMeta, DestinationClass, EditOp, LedgerEvent, RestoreError, Segment, Sheet, SheetId,
-    SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, TabId, Ttl, local_day,
+    ChipId, ChipMeta, DestinationClass, EditOp, FileId, LedgerEvent, RestoreError, Segment, Sheet,
+    SheetId, SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, TabId, Ttl, local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -697,6 +698,9 @@ pub unsafe extern "C" fn companion_sheet_seal_from_pasteboard(
     if !cleared_out.is_null() {
         unsafe { cleared_out.write(false) };
     }
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -799,6 +803,9 @@ pub unsafe extern "C" fn companion_sheet_seal_text(
     at_utf16: u32,
     len_utf16: u32,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -840,6 +847,9 @@ pub unsafe extern "C" fn companion_sheet_seal_from_drag(
     at_utf16: u32,
     len_utf16: u32,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -917,6 +927,9 @@ pub unsafe extern "C" fn companion_sheet_sync_document(
     sheet: u64,
     json: *const c_char,
 ) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -956,6 +969,9 @@ pub unsafe extern "C" fn companion_sheet_apply_ops(
     sheet: u64,
     json: *const c_char,
 ) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -989,6 +1005,9 @@ pub unsafe extern "C" fn companion_sheet_apply_ops_as_new_step(
     sheet: u64,
     json: *const c_char,
 ) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -1030,6 +1049,9 @@ pub unsafe extern "C" fn companion_sheet_apply_ops_as_new_step(
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_sheet_undo(handle: *mut CompanionHandle, sheet: u64) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -1046,6 +1068,9 @@ pub unsafe extern "C" fn companion_sheet_undo(handle: *mut CompanionHandle, shee
 /// `handle` must be a valid handle.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_sheet_redo(handle: *mut CompanionHandle, sheet: u64) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -1065,6 +1090,9 @@ pub unsafe extern "C" fn companion_sheet_can_undo(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -1083,6 +1111,9 @@ pub unsafe extern "C" fn companion_sheet_can_redo(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> bool {
+    if is_file_id(sheet) {
+        return false;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return false;
     };
@@ -1107,6 +1138,9 @@ pub unsafe extern "C" fn companion_sheet_undo_caret_u16(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> i64 {
+    if is_file_id(sheet) {
+        return -1;
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return -1;
     };
@@ -1408,6 +1442,9 @@ pub unsafe extern "C" fn companion_sheet_document_json(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -1459,6 +1496,9 @@ pub unsafe extern "C" fn companion_sheet_meta_json(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -1500,6 +1540,9 @@ pub unsafe extern "C" fn companion_sheet_blocks_json(
     handle: *mut CompanionHandle,
     sheet: u64,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -2512,6 +2555,9 @@ pub unsafe extern "C" fn companion_sheet_conceal(
     sheet: u64,
     opts_json: *const c_char,
 ) -> *mut c_char {
+    if is_file_id(sheet) {
+        return ptr::null_mut();
+    }
     let Some(handle) = (unsafe { handle.as_ref() }) else {
         return ptr::null_mut();
     };
@@ -3366,6 +3412,20 @@ unsafe fn cstr<'a>(p: *const c_char) -> Option<&'a str> {
         return None;
     }
     unsafe { CStr::from_ptr(p) }.to_str().ok()
+}
+
+/// Whether a raw id off the wire addresses an open file rather than a
+/// page.
+///
+/// Two stores share one `u64` on this ABI, so every `companion_sheet_*`
+/// entry point that takes a sheet id asks this first and returns its
+/// own failure value when the answer is yes. A file id that fell
+/// through would address page zero and quietly edit somebody else's
+/// text; refusing is the only safe reading. The tag itself is
+/// `companion_core::FILE_ID_TAG`, defined once in
+/// `crates/core/src/files.rs` and mirrored once in Swift.
+fn is_file_id(sheet: u64) -> bool {
+    FileId::is_tagged(sheet)
 }
 
 /// Move a Rust `String` into an owned C string pointer (caller frees).
@@ -6885,7 +6945,6 @@ mod tests {
         }
     }
 
-
     fn sync_configured(handle: *mut CompanionHandle) {
         let config = cstring(
             r#"{"relay_url":"https://relay.example",
@@ -7142,5 +7201,68 @@ mod tests {
             spoken_remaining(Duration::from_secs(3 * 24 * 60 * 60)),
             "about 3 days remaining"
         );
+    }
+
+    /// A file id handed to a page route must fail loudly rather than
+    /// address page zero. The tag is the high bit, so a tagged id is
+    /// the live page's own id with that bit set: every route below
+    /// answers for the untagged form and refuses the tagged one, which
+    /// is what rules out a guard that merely fails on an unknown id.
+    #[test]
+    fn page_routes_refuse_a_file_id() {
+        unsafe {
+            let handle = handle();
+            let (_tab, page) = new_page(handle);
+            let tagged = page | companion_core::FILE_ID_TAG;
+            assert!(is_file_id(tagged));
+            assert!(!is_file_id(page));
+
+            let ops = cstring(r#"[{"ins": {"at": 0, "text": "hello"}}]"#);
+            assert!(companion_sheet_apply_ops(handle, page, ops.as_ptr()));
+            assert!(!companion_sheet_apply_ops(handle, tagged, ops.as_ptr()));
+            assert!(!companion_sheet_apply_ops_as_new_step(
+                handle,
+                tagged,
+                ops.as_ptr()
+            ));
+
+            let runs = take_json(companion_sheet_document_json(handle, page));
+            assert!(runs.contains("hello"));
+            assert!(companion_sheet_document_json(handle, tagged).is_null());
+            assert!(companion_sheet_meta_json(handle, tagged).is_null());
+            assert!(companion_sheet_blocks_json(handle, tagged).is_null());
+
+            assert!(companion_sheet_can_undo(handle, page));
+            assert!(!companion_sheet_can_undo(handle, tagged));
+            assert!(!companion_sheet_can_redo(handle, tagged));
+            assert!(!companion_sheet_undo(handle, tagged));
+            assert!(!companion_sheet_redo(handle, tagged));
+            assert_eq!(companion_sheet_undo_caret_u16(handle, tagged), -1);
+
+            let doc = cstring(r#"[{"ink": "hello"}]"#);
+            assert!(companion_sheet_sync_document(handle, page, doc.as_ptr()));
+            assert!(!companion_sheet_sync_document(handle, tagged, doc.as_ptr()));
+
+            seed(handle, "a secret");
+            let mut cleared = false;
+            assert!(
+                companion_sheet_seal_from_pasteboard(handle, tagged, 0, 0, &raw mut cleared)
+                    .is_null()
+            );
+            assert!(!cleared);
+            let text = cstring("a secret");
+            assert!(companion_sheet_seal_text(handle, tagged, text.as_ptr(), 0, 0).is_null());
+            assert!(companion_sheet_seal_from_drag(handle, tagged, 0, 0).is_null());
+
+            let opts = cstring("{}");
+            assert!(companion_sheet_conceal(handle, tagged, opts.as_ptr()).is_null());
+
+            // The page is exactly where it was: nothing a refusal did
+            // reached the store.
+            let after = take_json(companion_sheet_document_json(handle, page));
+            assert!(after.contains("hello"));
+
+            companion_free(handle);
+        }
     }
 }

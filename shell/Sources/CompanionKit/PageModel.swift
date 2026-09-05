@@ -258,6 +258,22 @@ public enum SurfaceTarget: Equatable, Sendable {
     /// Today, holding no page yet. Selecting it takes the shipped
     /// create path; nothing here is minted by being drawn (ADR-0017).
     case today
+    /// An open file, by its tagged file id. A file is the second
+    /// content class and not a Tab: it has no rung, no countdown and no
+    /// day, so it addresses nothing on the strip's page side and
+    /// carries its own id instead.
+    case file(UInt64)
+}
+
+/// What a person chose to do about a file that changed on disk while
+/// their own copy held unsaved edits.
+public enum FileConflictResolution: Equatable, Sendable {
+    /// Keep the buffer and overwrite the file on the next save.
+    case keepMine
+    /// Discard the buffer and reload the file.
+    case takeTheirs
+    /// Write the buffer somewhere else and leave the file alone.
+    case saveAs
 }
 
 /// Whether the page holding the keyboard has a step waiting in each
@@ -300,6 +316,13 @@ public final class PageModel: ObservableObject {
     /// or not the tab holds a page (ADR-0017). A tab whose page expired
     /// keeps its place here, named and empty.
     @Published public private(set) var tabs: [TabSummary] = []
+
+    /// Every open file, in open order. A parallel array beside `tabs`
+    /// rather than entries within it: files are never counted against
+    /// the nine page cap, never in the day roll and never synced, and
+    /// keeping them out of `tabs` is what makes those facts structural
+    /// rather than rules a reader has to remember.
+    @Published public private(set) var openFiles: [FileSummary] = []
 
     /// The visibly selected **tab**, the slot the editor shows a page
     /// from and the gestures act on. It is the tab's id and never the
@@ -1690,7 +1713,56 @@ public final class PageModel: ObservableObject {
             select(id)
         case .today:
             openToday()
+        case .file:
+            // files: seam stub. Selecting a file replaces the roll with
+            // that file alone; nothing routes yet, so the selection
+            // stays where it was.
+            break
         }
+    }
+
+    // MARK: Files — the second content class
+
+    /// Ask for a file and open it. The panel lives in the file
+    /// coordinator, never here.
+    public func openFile() {
+        // files: seam stub
+        flash("Opening a file is not wired up yet.")
+    }
+
+    /// Open the file at `url`, the path a panel or a drop produced.
+    public func openFile(at url: URL) {
+        // files: seam stub
+        _ = url
+        flash("Opening a file is not wired up yet.")
+    }
+
+    /// Write the selected file back to its own path. The second reading
+    /// of the save chord: on a page it flushes sealed state as it
+    /// always has.
+    public func saveActiveFile() {
+        // files: seam stub
+        flash("Saving a file is not wired up yet.")
+    }
+
+    /// Write the selected file somewhere else and adopt that path.
+    public func saveActiveFileAs() {
+        // files: seam stub
+        flash("Save As is not wired up yet.")
+    }
+
+    /// Close the selected file. A dirty one takes the Save, Discard,
+    /// Cancel review first, and the draft dies with the tab either way.
+    public func closeActiveFile() {
+        // files: seam stub
+        flash("Closing a file is not wired up yet.")
+    }
+
+    /// Settle a file that changed on disk under unsaved edits. Save
+    /// stays refused until one of the three is chosen.
+    public func resolveConflict(_ resolution: FileConflictResolution) {
+        // files: seam stub
+        _ = resolution
     }
 
     /// Where a ⌥⌘←/→ walk starts from.

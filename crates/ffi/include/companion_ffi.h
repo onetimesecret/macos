@@ -1077,6 +1077,155 @@ char *companion_sync_pairing_confirm(CompanionHandle *handle, bool matched);
  */
 bool companion_sync_pairing_cancel(CompanionHandle *handle);
 
+/* ------------------------------------------------------------------ */
+/* Files: the second content class                                     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A file on disk is the artifact. A file is not a page and not a tab:
+ * it has no TTL, no gauge, no rung, it is never in the day roll, it is
+ * never counted against the nine page cap, and it is never synced.
+ * Saving is explicit and nothing here autosaves in place.
+ *
+ * Ids. Every id below is tagged with the high bit (1 << 63), which no
+ * page id ever carries. The tag is defined once in
+ * crates/core/src/files.rs as FILE_ID_TAG and mirrored once in Swift as
+ * CompanionClient.fileIDTag. Every companion_sheet_* entry point that
+ * takes a sheet id refuses a tagged id by returning its own failure
+ * value, so a file id can never address page zero.
+ *
+ * Paths in, bytes never. The file IO is done in the core, so nothing
+ * here needs a byte buffer convention this ABI has never had.
+ *
+ * JSON shapes, fixed here as the contract:
+ *
+ *   FileSummary, the element type of companion_file_roster_json():
+ *     {
+ *       "id":                u64,      tagged, as above
+ *       "name":              string,   the file's display name
+ *       "path":              string,   the last known path
+ *       "isDirty":           bool,     the buffer holds unsaved edits
+ *       "conflict":          "none" | "changed" | "missing",
+ *       "lineEnding":        "lf" | "crlf",
+ *       "hasBOM":            bool,     a UTF-8 BOM, preserved on save
+ *       "lastEditedAt":      u64,      Unix seconds, 0 when never
+ *       "restoredFromDraft": bool      came back from drafts.sealed
+ *     }
+ *
+ *   companion_file_check():
+ *     {"state": "unchanged" | "changed" | "missing", "path": string}
+ *
+ *   companion_file_open_error_json():
+ *     {"error": "notUtf8" | "tooLarge" | "io",
+ *      "limit": u64,      present only for "tooLarge", in bytes
+ *      "detail": string}  present only for "io"
+ *
+ *   companion_file_undo() and companion_file_redo() return a
+ *   StepOutcome: {"applied": bool, "caretUTF16": i64}. The two fields
+ *   are the pair companion_sheet_undo() and
+ *   companion_sheet_undo_caret_u16() already answer for a page, in one
+ *   call rather than two, with -1 for a step that carried no position.
+ *
+ *   companion_file_runs_json() reuses the existing runs shape exactly:
+ *   the same array companion_sheet_document_json() returns. A file
+ *   holds no chips, so in practice its runs are ink only.
+ */
+
+/*
+ * Open the file at path. Returns its tagged id, or 0 when the open
+ * refused; ask companion_file_open_error_json() why. UTF-8 only:
+ * invalid UTF-8 is refused rather than opened read only or opened with
+ * replacement characters. Files above 4 MiB are refused.
+ */
+uint64_t companion_file_open(CompanionHandle *handle, const char *path);
+
+/*
+ * Why the last companion_file_open() on this handle refused. Null when
+ * nothing has refused. Free with companion_string_free().
+ */
+char *companion_file_open_error_json(CompanionHandle *handle);
+
+/*
+ * Close the file and drop its buffer. The draft goes with it: a draft
+ * never outlives its tab, so reopening the file later never brings back
+ * old edits. The Save, Discard, Cancel review for a dirty file is the
+ * shell's and happens before this call.
+ */
+bool companion_file_close(CompanionHandle *handle, uint64_t file);
+
+/*
+ * The file's body as document runs, the same shape
+ * companion_sheet_document_json() returns. Null for an unknown file.
+ * Free with companion_string_free().
+ */
+char *companion_file_runs_json(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Apply an ordered edit batch (JSON operations, UTF-16 offsets) to the
+ * file's body. False means the batch was rejected whole and nothing
+ * moved. The _as_new_step form is for a batch the app produced on the
+ * writer's behalf: it begins its own undo step.
+ */
+bool companion_file_apply_ops(CompanionHandle *handle, uint64_t file,
+                              const char *ops_json);
+bool companion_file_apply_ops_as_new_step(CompanionHandle *handle,
+                                          uint64_t file,
+                                          const char *ops_json);
+
+/*
+ * Take back the file's last local edit step, and put it back. Both
+ * return a StepOutcome as above, or null for an unknown file. Free with
+ * companion_string_free().
+ */
+char *companion_file_undo(CompanionHandle *handle, uint64_t file);
+char *companion_file_redo(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Write the buffer back to the file's own path. A UTF-8 BOM and the
+ * line ending style the file arrived with are preserved. False when the
+ * write refused, which includes a file standing in a conflict nobody
+ * has resolved yet.
+ */
+bool companion_file_save(CompanionHandle *handle, uint64_t file);
+
+/* Write the buffer to path and adopt it as the file's path. */
+bool companion_file_save_as(CompanionHandle *handle, uint64_t file,
+                            const char *path);
+
+/*
+ * Whether anything else has written the file since the core last read
+ * or wrote it. Returns {state, path} as above; null for an unknown
+ * file. Free with companion_string_free(). Ask on activate and before
+ * every save.
+ */
+char *companion_file_check(CompanionHandle *handle, uint64_t file);
+
+/* Re-read the file, discarding whatever the buffer held. */
+bool companion_file_reload(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Every open file, in open order, as an array of FileSummary. Null when
+ * the answer cannot be had. Free with companion_string_free().
+ */
+char *companion_file_roster_json(CompanionHandle *handle);
+
+/*
+ * The drafts file. A third sealed file beside the state file and the
+ * ledger, plaintext magic OTSDRFT1, its own envelope magic, sealed
+ * under the same content key as the state file. It carries the roster
+ * of open files and, for each dirty one, its unsaved edits, so a
+ * relaunch restores every open file tab and a dirty one comes back with
+ * its unsaved marker.
+ *
+ * Sharing the content key is deliberate: rotating the content halves is
+ * what discards drafts, so emptying the pad discards them too. Any
+ * rotation must rewrite this file in the same operation, or the drafts
+ * become unreadable without anyone asking for that.
+ */
+bool companion_drafts_save(CompanionHandle *handle, const char *path);
+bool companion_drafts_restore(CompanionHandle *handle, const char *path);
+bool companion_drafts_erase(CompanionHandle *handle, const char *path);
+
 /* Free a string returned by this library. Null is a no-op. */
 void companion_string_free(char *s);
 
