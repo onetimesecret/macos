@@ -44,9 +44,10 @@ setting the TTL rung (`SheetStore::cycle_rung`,
 ceremony those gestures mark due when peers are attached
 (issue #101). No timer compacts. A page whose TTL is never touched
 carries its full history to the grave already; a page whose owner
-fiddles with the rung sheds repeatedly. The security claim "what this
-device remembers is bounded by one rung" describes the schedule's
-intent, not its behavior.
+fiddles with the rung sheds repeatedly. ADR-0013 promises only that
+compaction bounds locally reconstructible deleted content. With rung
+gestures as the boundaries, the bound is whatever the owner's TTL
+habits happen to make it, which is no bound at all.
 
 Second, the memory is about to become visible. Once the stamp opens a
 revision surface, shedding history as a side effect of an unrelated
@@ -114,9 +115,9 @@ runs on:
   frame, so history still never crosses devices (the spec records
   cross-device history as the want that lost).
 
-The security claim rescopes from "bounded by one rung" to: **a
-block's history never outlives its page, never survives a shed, and
-never crosses a key frame to another device.** The honesty section
+ADR-0013's bound on locally reconstructible deleted content becomes:
+**a block's history never outlives its page, never survives a shed,
+and never crosses a key frame to another device.** The honesty section
 below is what that trades away.
 
 ### 3. Checkpoints and variants are deliberate content, not history
@@ -313,10 +314,10 @@ retention unit (amends ADR-0013)".** The decision to ratify or refuse:
 rung transitions and hold top-ups stop being compaction boundaries, so
 a block's history lives as long as its page and dies only at expiry,
 at deliberate page deletion, at a deliberate shed, over the size
-budget, or at the coordinated sync ceremony. Ratifying rescopes the
-security claim from "bounded by one rung" to "never outlives its page,
-never survives a shed, never crosses a key frame", and obliges an
-amendment note in ADR-0013's ceremony section.
+budget, or at the coordinated sync ceremony. Ratifying restates
+ADR-0013's bound on locally reconstructible deleted content as "never
+outlives its page, never survives a shed, never crosses a key frame",
+and obliges an amendment note in ADR-0013's Decision section.
 
 ## Eject triggers
 
