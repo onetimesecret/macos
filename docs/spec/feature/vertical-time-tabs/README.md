@@ -28,11 +28,14 @@ fixes".
 Refined by: #131 (the rail says the day in words, and its background
 became a faint minimap of the roll), milestone "Editing rhythm and the
 time rail".
-Side doc:
+Side docs:
 [`2026-0828-paradigms.md`](2026-0828-paradigms.md)
 (paradigms, the duration the UI optimizes for; concept only,
 unscheduled, though its TTL-ladder section graduated into ADR-0011,
-accepted 2026-09-01).
+accepted 2026-09-01), and
+[`2026-0904-capacity-and-today-proposal.md`](2026-0904-capacity-and-today-proposal.md)
+(the agreed proposal that the tab cap must not prevent writing Today's note;
+it does not yet amend an ADR).
 
 ## The shape #79 asks for
 
