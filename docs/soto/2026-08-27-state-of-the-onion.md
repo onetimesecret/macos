@@ -29,6 +29,6 @@ The last few days shifted from sync *doctrine and ADRs* to sync *code* (the sans
 
 - **Finish milestone 3:** #98 and #102, plus the relay server in the other repo. That completes multi-device sync end to end.
 - **TestFlight / distribution** (`docs/plans/from-here-to-testflight.md`): sandbox, entitlements, Distribution identity, provisioning profile, signed `.pkg`, App Store Connect. Not yet a milestone or issues. Keychain round-trip under sandbox is flagged as the single highest-risk integration point to verify on device.
-- **Block versioning** (added to docs/dogfood/DOGFOOD.md in `2e58158`, unscheduled): make the created→modified block stamp a clickable element revealing prior versions of the block. Interacts with the block-metadata display just shipped and the ADR-0013 provenance model. Same note asks for a blur/opacity (0–100) setting when the pad drops to backdrop UI.
+- **Block versioning** (added to docs/dogfood/DOGFOOD.md in `2e58158`, unscheduled): make the created→modified block stamp a clickable element revealing prior versions of the block. Interacts with the block-metadata display just shipped and the ADR-0013 document-history model. Same note asks for a blur/opacity (0–100) setting when the pad drops to backdrop UI.
 
 Net: sync is close to done (2 issues + external relay), then the two undecided-but-looming tracks are TestFlight distribution and block-version history.

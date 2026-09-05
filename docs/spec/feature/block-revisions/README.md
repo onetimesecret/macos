@@ -9,8 +9,8 @@ mechanism has to clear.
 Governs against:
 [`docs/tenets.md`](../../../tenets.md) (№1 losing work is
 unforgivable, №3 do not wag the dog),
-[ADR-0013](../../../adr/0013-document-provenance-and-block-metadata.md)
-(the editable-surface rule, the provenance model),
+[ADR-0013](../../../adr/0013-bounded-document-history-and-block-metadata.md)
+(the editable-surface rule and document-history model),
 [ADR-0009](../../../adr/0009-chip-deletion-deliberate-final.md)
 (deliberate creation and deletion as the shape of kept things), and
 [ADR-0021](../../../adr/0021-multi-device-sync-over-a-blind-relay.md)

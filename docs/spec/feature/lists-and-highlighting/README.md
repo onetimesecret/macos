@@ -16,7 +16,7 @@ Governs against:
 (§3 content plays second fiddle, §4 frugal, amendment B),
 [`../../design/04-interaction-model.md`](../../design/04-interaction-model.md)
 ("Markdown: styled, never rewritten"),
-[ADR-0013](../../../adr/0013-document-provenance-and-block-metadata.md)
+[ADR-0013](../../../adr/0013-bounded-document-history-and-block-metadata.md)
 (the editable-surface rule) and
 [ADR-0022](../../../adr/0022-fence-regions-coalesce-stamps-in-display.md)
 (a fence region is one display unit).

@@ -2,7 +2,7 @@
 documentation_status: needs-review # draft | needs-review | reviewed | stale
 ---
 
-# ADR-0013: Document provenance and per-block metadata
+# ADR-0013: Bounded document history and per-block metadata
 
 - **Status:** accepted
 - **Date:** 2026-08-05
@@ -14,15 +14,15 @@ modification, origin, and interaction metadata across edits. The previous
 full-document resync reduced ink to anonymous runs and could not preserve that
 identity.
 
-Provenance is also retained history. Any solution must keep that history inside
-the existing security boundary and bound it with the same retention model as the
-page. The editor must remain one contiguous text surface rather than become a
+The operation history needed to derive metadata is retained state. Any solution
+must keep that history inside the existing security boundary and bound it with
+the same retention model as the page. The editor must remain one contiguous text surface rather than become a
 collection of independently editable blocks.
 
 Three architectures were considered: a block-tree document, attributed ranges
 over a flat stream, and an operation log or conflict-free replicated data type
 (CRDT). The supporting analysis and later product-level choices are preserved in
-[the document-provenance design background](../spec/feature/document-provenance/decision-background.md).
+[the document-history design background](../spec/feature/document-history/decision-background.md).
 The three numbered architecture sections this record once carried now live in
 that design background rather than here.
 
@@ -51,7 +51,7 @@ change.
 
 ## Consequences
 
-- Stable identity and provenance move into the core and survive ordinary edits.
+- Stable identity and derived block metadata move into the core and survive ordinary edits.
 - The shell/core seam changes from snapshot replacement to operation delivery.
 - Undo and stable-position handling move to the authoritative document layer.
 - The operation log retains sensitive history until compaction; compaction is a
@@ -72,7 +72,7 @@ change.
   truncation without losing the metadata this decision requires.
 - Real page measurements show operation-log growth or compaction cost exceeding
   the product's storage or latency budget.
-- The threat model requires a provenance horizon shorter than the page's current
+- The threat model requires a history horizon shorter than the page's current
   compaction schedule.
 - A required feature needs an editable surface whose visual order differs from
   document order; that would cross the boundary into a block editor.
