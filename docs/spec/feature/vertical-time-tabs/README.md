@@ -38,8 +38,10 @@ accepted 2026-09-01).
 
 Turn the strip on its side and let each tab be a unit of time rather
 than a slot. Today at the top, yesterday under it, the days before that
-below, each labelled relative to now (Today, -1d, -3d), so the labels
-stay true without anyone rewriting them. One page per unit. The unit is
+below, each labelled relative to now (~~Today, -1d, -3d~~ Today,
+Yesterday, 2 days ago on the rail since issue #131; the short form stays
+in the roll's day gutter), so the labels stay true without anyone
+rewriting them. One page per unit. The unit is
 configurable and the first one is the day. Day 0 is always displayed,
 whether or not anything is on it. A unit gets a tab only if its page has
 content. The days read as one contiguous scroll, anchored on the current
@@ -94,7 +96,7 @@ Everything follows from that arithmetic and nothing else exists:
   issue's own rule restated: no page, no unit.
 - **The core answers, not the shell.** A shell-side `Foundation.TimeZone`
   would disagree with the core's offset at a DST change, so a page could
-  read "0824" on its tab and "-1d" on the rail. Hoisting the one line of
+  read "0824" on its tab and "Yesterday" on the rail. Hoisting the one line of
   arithmetic into a shared `local_day` and calling it from both places
   makes agreement structural. It also puts the whole model under
   `cargo test` on Linux, where the risk is meant to be retired, rather
@@ -207,8 +209,9 @@ never reveal that a tab the user named now holds today's page.
 
 It closes up, and the gap lives in the labels rather than in the layout.
 When Day -2's page expires the unit is simply absent: the rail reads
-Today, -1d, -3d, and one perforation joins -1d to -3d carrying the -3d
-label. Nothing marks the place where -2d was.
+Today, Yesterday, 3 days ago, and one perforation joins Yesterday to
+3 days ago, carrying that day's gutter label, "-3d". Nothing marks the
+place where "-2d" was.
 
 This is not tidiness; it is the only choice the model can make honestly.
 A day exists because a live page with content is keyed to it. When that
@@ -321,7 +324,9 @@ close a day would be exactly the misreading ADR-0017's eject trigger is
 about. `TabFramesKey` and its midX reorder test are never touched, so the
 two modes never contend over one preference key's semantics.
 
-**What shipped, as of branch 5.** The rail lives in
+**What shipped, as of branch 5.** The labels and the 56pt width recorded
+below are branch 5's; issue #131 superseded both, and "What #131 added to
+the rail" further down carries the current values. The rail lives in
 `shell/Sources/CompanionKit/TimeRailView.swift`: a `VStack(spacing: 2)`
 of `TimeUnitTab` over `model.timeUnits.units`, 56pt wide, with the
 strip's background and the strip's selected fill. Four decisions were kept out of the drawing and

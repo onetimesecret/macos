@@ -14,7 +14,7 @@ surface assumes. The current and default paradigm is **daily**
 
 - **Hourly**, for someone very busy taking lots of realtime notes.
   The rail markers become now, last hour, 2 hours ago, and so on,
-  the same relative-label scheme that keeps Today and -1d true
+  the same relative-label scheme that keeps Today and Yesterday true
   without anyone rewriting them.
 - **Weekly or monthly**, for a project on a slow roll, where a day
   is too fine a grain and most days would be empty rungs on the
@@ -120,8 +120,9 @@ named.
   to clock hours.
 - Whether the paradigm is one global setting or per-surface. The
   spec's existing toggle is global; start there.
-- What the marker vocabulary is per paradigm (now / -1h / -2h,
-  Today / -1d, this week / -1w), kept relative so labels stay true
+- What the marker vocabulary is per paradigm (now / last hour /
+  2 hours ago, Today / Yesterday, this week / last week), kept
+  relative so labels stay true
   by construction.
 - How a durable tab's stored rung moves between ladders: retain the
   originating ladder or map into the new one, including the first

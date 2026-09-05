@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-04
+
+The second tagged milestone, and the first since v0.1.0. It carries
+the app to 0.18.0, `companion-ffi` to 0.23.0 and `companion-core` to
+0.18.0. The headline work is the day rail's word labels and minimap,
+a link's time to live becoming the link's own seven days, and a
+deadline that lands where the clock does.
+
 ### Added
 
 - **A conceal can now be driven to the wire in the shell suite**
@@ -185,6 +193,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   survives losing the frame race; the chain position persists before
   anything publishes under it; and adopting the winning frame may
   never silently drop edits only the adopting device holds.
+
+- **The day rail says the days in words, and draws what is on
+  them** (issue #131). The rail's rows now read as words rather
+  than offsets, and beside them a minimap sketches the shape of
+  each day's writing from the roll's own geometry, so the column
+  says both where you are and how much is there.
 
 ### Changed
 

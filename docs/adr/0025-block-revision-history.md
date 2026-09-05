@@ -12,7 +12,14 @@ Serves the capability spec at
 mechanism behind the automatic memory, the retention class of the
 deliberate objects (checkpoints, variants), and, the load-bearing
 part, where history dies. That last decision amends accepted
-ADR-0013 and needs maintainer ratification before anything ships.
+ADR-0013 and waits on a measurement before anything ships.
+
+**Part 2, "The page is history's retention unit (amends ADR-0013)",
+stays open.** It cannot be decided until real pages show what
+per-page history costs: op-log growth and compaction cost measured on
+a page with a day of real typing, which is also ADR-0013's own eject
+trigger. Nothing in part 2 ships before that measurement exists and
+the decision is recorded here.
 
 ## Context
 
@@ -40,9 +47,10 @@ setting the TTL rung (`SheetStore::cycle_rung`,
 ceremony those gestures mark due when peers are attached
 (issue #101). No timer compacts. A page whose TTL is never touched
 carries its full history to the grave already; a page whose owner
-fiddles with the rung sheds repeatedly. The security claim "what this
-device remembers is bounded by one rung" describes the schedule's
-intent, not its behavior.
+fiddles with the rung sheds repeatedly. ADR-0013 promises only that
+compaction bounds locally reconstructible deleted content. With rung
+gestures as the boundaries, the bound is whatever the owner's TTL
+habits happen to make it, which is no bound at all.
 
 Second, the memory is about to become visible. Once the stamp opens a
 revision surface, shedding history as a side effect of an unrelated
@@ -55,7 +63,8 @@ incidental schedule. A visible one cannot.
 
 ## Decision
 
-Three parts.
+Three parts, plus the undo rules the same memory is edited through
+(part 4), which are recorded here rather than decided here.
 
 ### 1. Automatic history is a projection of the op log
 
@@ -109,10 +118,11 @@ runs on:
   frame, so history still never crosses devices (the spec records
   cross-device history as the want that lost).
 
-The security claim rescopes from "bounded by one rung" to: **a
-block's history never outlives its page, never survives a shed, and
-never crosses a key frame to another device.** The honesty section
-below is what that trades away.
+ADR-0013's bound on locally reconstructible deleted content becomes:
+**a block's history never outlives its page and never survives a
+shed.** A key frame is a shed, so nothing behind one exists anywhere
+afterwards; ADR-0021 owns what a joining peer receives. The honesty
+section below is what that trades away.
 
 ### 3. Checkpoints and variants are deliberate content, not history
 
@@ -129,6 +139,44 @@ way a chip already keeps sealed bytes. Their surface details (where a
 variant's non-showing text may appear, how flipping commits) belong
 to the spec's follow-on design, under the same rule as everything
 else: kept things are deliberate things.
+
+### 4. Undo is core owned, local only, and forgotten where a step would lie
+
+Recorded from the reconciliation note, which remains the source and
+the fuller argument:
+[`2026-0829-loro-reconciliation.md`](../spec/feature/block-revisions/2026-0829-loro-reconciliation.md#the-undomanager-switch-decided-direction-2026-08-29)
+and its delivered section
+[What the switch decided](../spec/feature/block-revisions/2026-0829-loro-reconciliation.md#what-the-switch-decided-delivered-2026-09-01-issue-132).
+These rules bind this ADR because they govern the same op log part 1
+projects, and because a step that stood a dead sentinel again would be
+the one document shape the restore path calls damage (ADR-0009).
+
+- **Undo lives in the core, bound to the document, and reverts only
+  this peer's operations.** A shell level stack could revert another
+  device's text once remote ops land in live pages; the core's cannot.
+- **The stack does not survive relaunch, deliberately.** It is bound
+  where the document is constructed, so a restore and the ceremony
+  both rebind, and both re-mint the peer id. A carried stack would
+  point at operations that no longer exist. The compaction path clears
+  explicitly as well.
+- **The step boundary is a two second merge interval**, the same
+  number part 1's idle gap threshold was seeded from, argued at
+  [`2026-0901-pause-boundaries.md`](../spec/feature/block-revisions/2026-0901-pause-boundaries.md).
+  It groups local operations only; ADR-0021 section 4's clock batching
+  is untouched.
+- **The stack is forgotten wherever a step would be a lie**: the two
+  ceremonies, a wholesale restate, a seal, a chip burned out of the
+  page, any settle that reaps a chip, and any batch standing a
+  sentinel through the operation path. Undo never un-seals and never
+  resurrects (ADR-0009). A peer's chip deletion therefore costs this
+  device its steps, which is the intended reading of the rule.
+- **Forgetting drops, it does not zeroize.** `forget_undo` is a
+  correctness valve standing between undo and a document shape that
+  must not exist. The memory guarantee stays where it always was, on
+  the ceremony (ADR-0007).
+- **The caret rides the step.** Push and pop hooks record and return a
+  Loro cursor rather than a bare offset, so a peer's operations
+  arriving while the step waits move it correctly.
 
 ## What this trades away, said plainly
 
@@ -162,8 +210,8 @@ seven-day page can be seven days. Mitigations, in order of weight:
 - Part 2 removes the `compact_or_defer` calls from the rung and
   top-up paths in `store.rs` and adds the shed entry point and the
   size trigger. The ceremony code, the deferred state machine, and
-  the graduation all survive as-is. ADR-0013's ceremony section needs
-  an amendment note pointing here once ratified.
+  the graduation all survive as-is. ADR-0013's Decision section needs
+  an amendment note pointing here if part 2 is accepted.
 - Part 3 is new design work (object model beside chips, panel
   treatment) and can land after parts 1 and 2; nothing in them
   forecloses it.
@@ -175,8 +223,10 @@ seven-day page can be seven days. Mitigations, in order of weight:
 
 ## What would settle this
 
-- Maintainer ratification of part 2, since it amends accepted
-  ADR-0013 and rescopes a security claim.
+- Part 2, once op-log growth and compaction cost have been measured on
+  real pages. It amends accepted ADR-0013 and restates its bound, and
+  the measurement is what decides whether per-page history is
+  affordable; there is nothing to ratify before it exists.
 - The two derivation thresholds (idle gap, destructive deletion
   size), tuned by dogfood feel; both read-time, no migration.
 - Measured cost of the fork-then-checkout walk on a page with a day
@@ -187,10 +237,97 @@ seven-day page can be seven days. Mitigations, in order of weight:
   forces a local discard, so a synced page's history keeps page
   lifetime too; if the mechanics disagree, the sync case falls back
   to ceremony-bounded history and the panel's footer says so for
-  synced pages.
+  synced pages. **Answered against the delivered mechanics, and the
+  answer is no** (see the delivery note below): every path that stages
+  a frame goes through `gop::ceremony_commit`, whose first half is the
+  local compaction. What is not settled is whether that costs anything
+  under part 2, since part 2 also removes the rung and top-up triggers
+  that make a ceremony due. **Unverified; no test exercises a key
+  frame emitted without a compaction**, because the delivered code has
+  no such path to exercise.
 - Whether shed is ever wanted at block grain rather than page grain.
   Per-block retention knobs were rejected once already (per-block TTL,
   ADR-0013); the default answer is no, one shed for the page.
+
+## Decision history
+
+- **2026-08-28:** Proposed in PR #134.
+- **2026-09-01:** The undo rules now recorded as part 4 were decided
+  and delivered for issue #132 in PR #142.
+- **2026-09-04:** Delivery note added below. Status stays `proposed`:
+  part 2 waits on op-log growth and compaction cost measured on real
+  pages.
+
+## Delivery note (2026-09-04)
+
+Issue #132, "Adopt Loro's UndoManager before remote ops land in live
+documents", delivered against this record in PR #142, "Move undo into
+the core before another device's ops can land in a page" (merged
+2026-09-02, milestone "Editing rhythm and the time rail"). It carried
+the undo decisions the reconciliation note held; they are summarized
+as part 4 above.
+
+Settle list, as of this date:
+
+- **Part 2.** Open, and not decidable yet: no measurement of op-log
+  growth or compaction cost on a real page exists. Nothing else here
+  changes that.
+- **The two derivation thresholds.** Open. Part 1 is not built: no
+  `block_revisions` seam exists in `crates/`. The two second figure
+  the idle gap would start from is at least settled and in the code
+  (`crates/core/src/document.rs:42`), argued at
+  [`2026-0901-pause-boundaries.md`](../spec/feature/block-revisions/2026-0901-pause-boundaries.md).
+- **Measured cost of the fork then checkout walk.** Open, and
+  unmeasured. Nothing in the tree performs the walk.
+- **Key-frame emission and local discard.** Determined, and against
+  the hoped-for answer. Emission and compaction are one event by
+  construction: both sites that stage a frame call
+  `gop::ceremony_commit` (`crates/ffi/src/sync_session.rs:981` for a
+  confirmed ballot and `crates/ffi/src/sync_session.rs:1088` for the
+  empty room case), and that function's first step is
+  `SheetStore::perform_ceremony`, which compacts
+  (`crates/ffi/src/gop.rs:179`, `crates/core/src/store.rs:1265`).
+  Held by `the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all`
+  (`crates/ffi/src/gop.rs:277`) and
+  `a_deferred_page_keeps_its_history_until_the_ceremony_performs`
+  (`crates/core/src/store.rs:4901`). The joining side discards too, by
+  a separate rule: a frame lands only on a pristine page
+  (`crates/core/src/store.rs:4577`), so a device carrying
+  pre-ceremony history drops it and rejoins empty
+  (`crates/core/src/store.rs:4513`). **Unverified; no test exercises
+  a key frame emitted without a local discard**, and no code path
+  offers one. Whether part 2's schedule change removes the occasion
+  rather than the coupling is the question left standing.
+- **Shed at block grain.** Open, default still no.
+
+Delivered by #132 and holding part 4:
+
+- Local only step, peer's operations left standing:
+  `crates/core/src/document.rs:1402`, `crates/core/src/store.rs:5268`.
+- Nothing to step back through after a restore or a ceremony:
+  `crates/core/src/document.rs:1363`, `crates/core/src/document.rs:1384`,
+  `crates/core/src/store.rs:5195`.
+- The stack forgotten where a step would lie: a seal
+  (`crates/core/src/store.rs:5032`), a deleted chip
+  (`crates/core/src/store.rs:5150`), a wholesale restate
+  (`crates/core/src/store.rs:5176`), a peer's chip deletion
+  (`crates/core/src/store.rs:5226`).
+- Two second merge interval and the automation's own step:
+  `crates/core/src/document.rs:1315`, `crates/core/src/document.rs:1347`.
+- The caret across the seam: `crates/core/src/document.rs:1298`,
+  `crates/ffi/src/lib.rs:4260`.
+
+**Part 2, "The page is history's retention unit (amends ADR-0013)",
+stays open.** The question it asks is whether rung transitions and
+hold top-ups stop being compaction boundaries, so a block's history
+lives as long as its page and dies only at expiry, at deliberate page
+deletion, at a deliberate shed, over the size budget, or at the
+coordinated sync ceremony. That cannot be answered until op-log growth
+and compaction cost are measured on real pages. If the measurement
+supports it, accepting part 2 restates ADR-0013's bound on locally
+reconstructible deleted content as "never outlives its page, never
+survives a shed" and obliges an amendment note in ADR-0013's Decision
+section.
 
 ## Eject triggers
 
