@@ -1679,10 +1679,17 @@ mod tests {
         // rather than a suite that hangs.
         let (handle, dir) = scratch("fifo");
         let fifo = dir.join("pipe");
-        let name = CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
-        // SAFETY: a path in this test's own fresh directory.
-        let made = unsafe { libc::mkfifo(name.as_ptr(), 0o600) };
-        assert_eq!(made, 0, "mkfifo: {}", io::Error::last_os_error());
+        // Planted through the command rather than `libc::mkfifo`, the
+        // same way persist.rs plants its FIFO: this crate takes `libc`
+        // on macOS only, and the Linux CI host compiles these tests.
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success(),
+            "the test could not plant a FIFO to check against"
+        );
 
         let (tx, rx) = std::sync::mpsc::channel();
         let carried = handle as usize;
