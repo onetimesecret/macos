@@ -72,9 +72,19 @@ The clauses that fix the boundary:
   own sealed file, with its own plaintext magic and its own envelope
   magic, sealed under the same content key as the page state. Whenever
   that key rotates, the drafts file is rewritten under the new key in
-  the same operation. Rotation predicates that ask whether any tab holds
-  a page are neither triggered nor blocked by drafts. The Clear or Empty
-  confirmation names by filename every file draft it would discard.
+  the same operation. That includes the automatic content erase which
+  fires when no tab holds a page: with any file open it reseals the
+  drafts rather than dropping them, so a page lifecycle event never
+  destroys a person's unsaved file edits. Only an empty roster lets the
+  drafts file go. Rotation predicates that ask whether any tab holds a
+  page are neither triggered nor blocked by drafts.
+- **Drafts are bounded, and the bound is a live path.** A draft is the
+  editing history rather than the file's text, so it can outgrow the
+  file. Above four times the file size limit, that file's record is
+  written as identity only and a notice names the file. The other open
+  files' drafts are unaffected. A refusal at open time could not make
+  this unreachable, because the bound depends on editing that has not
+  happened yet.
 - **The Rust core owns file IO.** Reading, encoding validation, size
   refusal, change detection, atomic writing and draft staging live in
   the core behind one trait, so sibling form factors get the same
@@ -105,6 +115,26 @@ The clauses that fix the boundary:
   sandbox arrives, the scope must be started and stopped in that one
   function around a write performed in the core, and a write attempted
   outside it must fail loudly rather than truncate a person's file.
+
+- **A restore reads the files, and settles each tab on its own.** The
+  drafts file records a clean file's identity and not its text, so
+  launch reads each file from disk and settles into one of six states:
+  clean and unchanged, clean and changed with a reload notice, clean and
+  missing which drops the tab with a notice, dirty and unchanged which
+  keeps the draft and learns the saved text so undo can reach clean
+  again, dirty and changed which opens in conflict, and dirty and
+  missing which also opens in conflict. One unreadable file costs its
+  own tab and no other.
+- **Only regular files are opened, and symlinks are followed once.**
+  A directory, a device node or a named pipe is refused rather than
+  read. A symlink is resolved at open, so a save lands on the real file
+  and the link stays a link, and two paths that resolve to one file are
+  one open file.
+- **Keep mine licenses exactly one save.** Choosing it takes a fresh
+  reading of the file being overwritten and sets a consent that the
+  before save check honours and that the save spends.
+- **Save As onto a path another open file holds is refused**, before
+  anything is written.
 
 Scope for the first release: plain text and Markdown, UTF-8 only, files
 up to 4 MiB, one file per tab.
@@ -203,6 +233,8 @@ and redundant.
   one.
 - A draft is observed reattaching to the wrong file, or surviving an
   operation that should have destroyed it.
+- The drafts bound fires in ordinary use rather than rarely, so people
+  lose editing history they expected to come back.
 - The sandbox arrives and the single shell function cannot hold the
   access scope around a write performed in the core. That reopens where
   file IO lives, not the class split.
@@ -221,3 +253,12 @@ and redundant.
 
 - **2026-09-04:** Proposed, alongside the
   [file backed documents specification](../spec/feature/file-editing/README.md).
+- **2026-09-05:** Implemented on `feature/regular-text-files`. The
+  record was corrected in two places against the code: the automatic
+  content erase reseals drafts rather than dropping them when any file
+  is open, and the app has no Clear or Empty confirmation that could
+  name discarded drafts. The drafts bound, the restore branches, the
+  regular file and symlink rules, the keep mine consent and the Save As
+  refusal were added. The decision remains proposed. Implementation
+  notes are in
+  [about file backed documents](../development/about-file-backed-documents.md).

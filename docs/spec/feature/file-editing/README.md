@@ -1,6 +1,7 @@
 # Feature: file backed documents on the pad
 
-Status: proposed · 2026-09-04
+Status: **landed** on `feature/regular-text-files`, decision still
+proposed · 2026-09-05
 Scope: a second content class beside pages. The pad can open a plain
 text or Markdown file from disk, edit it in the same editor a page
 uses, and save it back on an explicit request. Pages, their TTLs, the
@@ -30,8 +31,11 @@ Decision:
 **proposed**.
 Issue: not yet filed.
 
-Everything below is a proposal. Nothing here is accepted behaviour yet,
-and no statement in this document is a guarantee the project has made.
+This describes what the branch implements. ADR-0028 is still proposed,
+so the decision behind it is not accepted, and no statement here is a
+guarantee the project has made. How the pieces fit together in the code
+is
+[`../../../development/about-file-backed-documents.md`](../../../development/about-file-backed-documents.md).
 
 ## The problem
 
@@ -168,7 +172,9 @@ Saving is explicit. There is no autosave to the file.
   tags or other extended attributes, will lose them on the first save.
 - **Save As** raises a save panel, writes to the chosen location, and
   the tab follows the new file. A new bookmark is taken. The original
-  file is left exactly as it was.
+  file is left exactly as it was. Save As onto a path another open file
+  already holds is refused before anything is written, because two tabs
+  over one file would race each other's saves.
 - **State.** The header shows the filename and one of two words:
   saved, or unsaved. A small orange dot on the tab or shelf row means
   that file has unsaved changes. The dot appears on the first edit that
@@ -198,6 +204,40 @@ Saving is explicit. There is no autosave to the file.
   Reopening a file after a close never brings back edits from an
   earlier session.
 
+### What can drop a draft
+
+Three things drop a draft and nothing else does: a successful save,
+Discard in the close review, and an explicit erase of the drafts file.
+
+The one that needs saying out loud is what does not drop one. The pad
+erases its content key automatically when no tab holds a page, which is
+a page lifecycle event and can happen while a person is holding a dirty
+file tab. When any file is open, that erase rewrites the drafts under
+the key it just minted rather than dropping them. There is no Clear or
+Empty confirmation in the app today that could name the drafts it would
+discard, because that erase has no prompt in front of it. If such a
+prompt is ever added, naming the affected files by filename is what it
+owes.
+
+### The drafts bound
+
+A draft is not the file's text. It is the editing history behind the
+text, so a long session on a small file can produce a large draft. The
+drafts file therefore has its own bound, four times the file size
+limit, so 16 MiB.
+
+A draft above the bound is not written. That file's record is written
+as identity only, so the tab comes back at the next launch pointing at
+the file on disk, and a notice names the file whose draft was dropped.
+Every other open file's draft is written as normal: one oversized draft
+must not take the rest with it.
+
+Refusing at open time instead would not remove this path. The bound is
+about how much editing has happened, which no check at open can see,
+and refusing every file that might one day exceed it would refuse every
+file. So the bound is a live path with an honest notice rather than a
+guarantee that it never fires.
+
 Draft staging is the reason file support is not simply an
 `NSDocument` shaped feature. See the alternatives in ADR-0028.
 
@@ -220,7 +260,10 @@ looks changed, against what was read.
   the tab enters a conflict state. Editing is not blocked, but the
   header says the file changed on disk and offers three actions:
   - **Keep mine.** Write the buffer over the file, discarding the disk
-    version.
+    version. Choosing it takes a fresh reading of the file being
+    overwritten and licenses exactly one save. The check the pad makes
+    before every write does not undo the choice, and the save spends
+    it, so a second conflict later asks again.
   - **Take theirs.** Replace the buffer with the file, discarding the
     draft. This one asks for confirmation, because it is the only
     action here that destroys the person's typing.
@@ -235,6 +278,30 @@ looks changed, against what was read.
   at a path a person deleted.
 
 No merge, no diff view, no three way resolution in v1.
+
+The activation check runs when the application becomes active. The Dock
+icon click that reopens an already active app takes a different route
+and does not run it today, so a file changed during that gesture is
+noticed at the next real activation or at the next save.
+
+### Restoring open files at launch
+
+The drafts file records what was open. It does not record a clean
+file's text, only its identity, so the pad reads each file from disk at
+launch and settles each tab into one of six states.
+
+| the record | the file on disk | what happens |
+| --- | --- | --- |
+| clean | unchanged | filled from disk, clean, nothing said |
+| clean | changed | filled from disk, clean, reload notice |
+| clean | missing or unreadable | tab dropped, notice naming the file |
+| dirty | unchanged | draft kept, last edit time preserved, and the disk copy learned so that undoing back to it reads as saved again |
+| dirty | changed | draft kept, tab opens in conflict |
+| dirty | missing | draft kept, tab opens in conflict |
+
+One unreadable file never fails the whole restore. Each record is
+settled on its own, so a file on an unmounted volume costs its own tab
+and no other.
 
 ## Closing a tab
 
@@ -315,6 +382,13 @@ shown in the header when they are not LF. A file with mixed line
 endings is opened and changed only on the lines the person edits, under
 the caret only principle.
 
+**Only regular files are opened.** A directory, a device node or a
+named pipe at the path is refused rather than read. A pipe is the one
+worth naming: reading one blocks until a writer appears, and a pad that
+hangs on a drop is worse than one that refuses it. A symlink is not in
+this category. It is followed once, at open, and the tab holds the real
+file behind it.
+
 **Files larger than 4 MiB are refused**, with a notice naming the file
 and naming the limit. The limit is one constant in the core, so the
 shell and any sibling form factor refuse the same file. 4 MiB is far
@@ -344,10 +418,10 @@ document:
 
 Drafts are the one place a file's bytes enter the pad's own sealed
 state. They live in their own sealed drafts file, keyed by bookmark,
-outside the page snapshot entirely, under the same content key. Two
-consequences follow and both are intended. Clearing or emptying the pad
-rotates that key and so discards drafts, and the confirmation for that
-action names every file draft it would discard, by filename. And the
+outside the page snapshot entirely, under the same content key. The
+drafts file is rewritten under the new key whenever that key rotates,
+including the automatic erase that fires when no tab holds a page, so a
+page lifecycle event never destroys a file's unsaved edits. The
 rotation predicates that ask whether any tab holds a page are neither
 triggered nor blocked by the presence of drafts.
 

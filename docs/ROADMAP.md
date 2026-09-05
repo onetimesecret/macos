@@ -6,6 +6,7 @@ GitHub milestones and issues are the source of truth for delivery status. This d
 
 No milestone is open. Milestones 3 and 4 both closed out in the first days of September 2026 and are listed below, and no issue in the repository is currently open.
 
+- File backed documents are implemented on `feature/regular-text-files`: a second content class beside pages, with the file on disk as the artifact, explicit save, and drafts staged in their own sealed file. [ADR-0028](adr/0028-file-backed-documents-are-a-second-content-class.md) is proposed, not accepted, so the branch is not a commitment yet. The behaviour is written down in the [file backed documents specification](spec/feature/file-editing/README.md) and the code is mapped in [about file backed documents](development/about-file-backed-documents.md).
 - The [paradigms note](spec/feature/vertical-time-tabs/2026-0828-paradigms.md) carries the parked questions, including the durable tab mapping that ADR-0011 section 6 requires before a second paradigm may ship. They stay parked until a second paradigm is wanted.
 - [ADR-0025](adr/0025-block-revision-history.md) (block revision history) is still proposed. It anchors the undo work already landed and is the next decision to settle when block level history is picked up again.
 
