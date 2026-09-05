@@ -1,6 +1,5 @@
 # 2026-0904-inline-typographic-provenance-for-nerd-fonts.md
 
-
 # Inline Typographic Provenance for Nerd Fonts
 
 ## Status
@@ -435,10 +434,17 @@ Nerd Font glyph                      = presentation
 **References**
 
 [^1]: [UTR #28: Unicode 3.2](https://www.unicode.org/reports/tr28/tr28-3.html) (8%)
+
 [^2]: [cmap — Character to Glyph Index Mapping Table](https://learn.microsoft.com/en-us/typography/opentype/spec/cmap) (17%)
+
 [^3]: [Private-Use Characters, Noncharacters & Sentinels FAQ](https://www.unicode.org/faq/private_use.html) (5%)
+
 [^4]: [FAQ and Troubleshooting · ryanoasis/nerd-fonts Wiki · GitHub](https://github.com/ryanoasis/nerd-fonts/wiki/FAQ-and-Troubleshooting) (29%)
+
 [^5]: [Contributor Developer Setup · ryanoasis/nerd-fonts Wiki · GitHub](https://github.com/ryanoasis/nerd-fonts/wiki/Contributor-Developer-Setup) (6%)
+
 [^6]: [fontTools.ttLib.tables._c_m_a_p — fontTools Documentation](https://fonttools.readthedocs.io/en/latest/_modules/fontTools/ttLib/tables/_c_m_a_p.html) (13%)
+
 [^7]: [Codepoint Conflicts · ryanoasis/nerd-fonts Wiki · GitHub](https://github.com/ryanoasis/nerd-fonts/wiki/Codepoint-Conflicts) (9%)
+
 [^8]: [contributing.md](https://github.com/ryanoasis/nerd-fonts/blob/master/contributing.md#steps-for-updating-an-existing-font) (12%)
