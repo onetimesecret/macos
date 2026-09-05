@@ -28,6 +28,23 @@ public struct TabStripView: View {
 
     public var body: some View {
         HStack(spacing: 2) {
+            // The FILES group, before the PAD group and drawn only when
+            // there is one (ADR-0028). With no file open this whole
+            // branch is absent, so the strip is the strip it has always
+            // been: the same views in the same order with the same
+            // spacing, and `stripGroupsAreAbsentWithNoFileOpen` holds
+            // the model side of that.
+            if !model.openFiles.isEmpty {
+                GroupLabel(text: "FILES")
+                ForEach(model.openFiles) { file in
+                    FileTab(
+                        file: file,
+                        selected: model.selectedFile == file.id && !model.showingLedger,
+                        model: model
+                    )
+                }
+                GroupLabel(text: "PAD")
+            }
             ForEach(model.tabs) { sheet in
                 SheetTab(
                     sheet: sheet,
@@ -354,6 +371,109 @@ struct SheetTab: View {
             description += sheet.holdToppedUp ? ", clock held, topped up" : ", clock held"
         }
         return description
+    }
+}
+
+/// One open file on the strip: its filename after a document glyph,
+/// the ember dot while it holds unsaved edits, and a ✕ on hover.
+///
+/// A sibling of `SheetTab` and not a `SheetTab` bent to fit. The two
+/// share a shape and share nothing else: a file has no rung to cycle,
+/// no clock to hold, no name to rename, and nothing to sync, so a tab
+/// that reused the slot's context menu would offer five verbs the core
+/// refuses. What it does keep is the ✕'s reserved seat, so revealing
+/// the close mark never nudges the filename.
+///
+/// Where a slot draws its gauge, a file draws its unsaved marker or
+/// nothing at all. Never a gauge: a file has no countdown, and a bar at
+/// any value would say it had one (ADR-0028).
+///
+/// Internal rather than private so the pure label below can be tested
+/// without a strip, in the idiom `SheetTab.holdMenuTitle` set.
+struct FileTab: View {
+    let file: FileSummary
+    let selected: Bool
+    @ObservedObject var model: PageModel
+
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                Image(systemName: "doc")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true) // the tab says "file" in words
+                Text(file.name)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button {
+                    model.closeFile(file.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
+                .accessibilityLabel(Text("Close file"))
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 18)
+            // The gauge's seat, kept so a file tab and a page tab stand
+            // the same height beside each other. What sits in it is the
+            // unsaved dot or nothing, and never a bar.
+            ZStack {
+                if file.isDirty { UnsavedDot() }
+            }
+            .frame(height: 3)
+            .padding(.horizontal, 3)
+        }
+        .frame(maxWidth: 140)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(selected ? Color.cellBackground : .clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        // One tap, one meaning. The strip's second tap holds a page's
+        // clock, and a file has no clock to hold.
+        .onTapGesture { model.select(target: .file(file.id)) }
+        .help(FileRowLabel.help(for: file))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .contextMenu {
+            Button("Save") { model.select(target: .file(file.id)); model.saveActiveFile() }
+            Button("Save As…") { model.select(target: .file(file.id)); model.saveActiveFileAs() }
+            Button("Close file", role: .destructive) { model.closeFile(file.id) }
+        }
+    }
+}
+
+/// The strip's group headings, FILES and PAD (ADR-0028).
+///
+/// They exist because the two classes have to be visibly separated and
+/// a gap alone would not say why: a person seeing a document glyph
+/// beside a countdown deserves to be told these are two kinds of thing
+/// rather than left to infer it. Drawn only while both groups exist,
+/// so a pad with no file open shows neither heading and reads exactly
+/// as it did before files existed.
+///
+/// Exposed to VoiceOver as the group's name rather than hidden, which
+/// is what makes the two named groups the specification asks for.
+struct GroupLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9, weight: .medium, design: .monospaced))
+            .tracking(1.3)
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 4)
+            .accessibilityLabel(Text("\(text.lowercased()) group"))
     }
 }
 

@@ -39,6 +39,24 @@ public struct PageContentView: View {
     public var body: some View {
         if model.showingLedger {
             LedgerView(entries: model.ledgerEntries)
+        } else if let file = model.activeFile {
+            // A file replaces whatever the surface was showing, in
+            // either layout: the roll is a projection of pages and a
+            // file is not one, so there is nothing for a file to be a
+            // region inside of (ADR-0028).
+            //
+            // The same editor over the same kind of storage, addressed
+            // by the file's own tagged id. No `.id(file.id)` for
+            // ADR-0006's reason: one editor persists and its storage is
+            // swapped underneath it, and files join that rotation
+            // rather than standing up an editor of their own.
+            VStack(spacing: 0) {
+                if file.conflict != .none {
+                    FileConflictBanner(file: file) { model.resolveConflict($0) }
+                    Divider()
+                }
+                InkEditorView(model: model, sheetID: file.id, readOnly: readOnly)
+            }
         } else if model.showsTimeUnits {
             // The days, as one roll (issue #79). It answers for all
             // three of the cases below at once, the selected page is
@@ -211,8 +229,13 @@ public struct PageStatusStack: View {
             // the network boundary is the one confirming click.
             ConcealView(model: model, draft: draft)
         }
-        if let sheet = model.selectedTab, sheet.hasPage, !model.showingLedger {
-            // The page's bottom edge drains continuously.
+        if let sheet = model.selectedTab, sheet.hasPage, !model.showingLedger,
+            model.selectedFile == nil
+        {
+            // The page's bottom edge drains continuously. A file
+            // showing takes the gauge away with it: the clock belongs
+            // to the page in the slot behind, and drawing it under a
+            // file would read as that file's own countdown (ADR-0028).
             GaugeBar(
                 fraction: sheet.fractionRemaining,
                 paused: sheet.paused,

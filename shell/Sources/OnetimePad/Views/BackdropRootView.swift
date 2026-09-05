@@ -164,6 +164,17 @@ struct BackdropRootView: View {
                 .allowsHitTesting(false)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        // A file dropped on the card opens as a file, and anything else
+        // is refused in words (ADR-0028). It rides the whole card
+        // rather than the editor, so the gesture works over the tabs
+        // and the header too, and it is mounted whatever the stance:
+        // dropping a file onto a resting card is a deliberate act like
+        // any other summon.
+        //
+        // `dropDestination` rather than `onDrop`: it hands back URLs,
+        // which are values that cross an actor boundary safely, where
+        // the older call hands back item providers, which are not.
+        .dropDestination(for: URL.self) { urls, _ in openDropped(urls) }
         .overlay {
             // The resize affordances exist only while raised. The
             // resting glance keeps its chrome-free face, and by the
@@ -213,9 +224,17 @@ struct BackdropRootView: View {
             if HiddenUI.showsHeaderDot {
                 Circle().fill(Color.ember).frame(width: 6, height: 6)
             }
-            Text(pages.showingLedger ? "the ledger" : BackdropAppDelegate.productName)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+            if let file = pages.activeFile, !pages.showingLedger {
+                // A file showing puts its own identity where the
+                // product name stands, because on a file surface the
+                // question the header answers is which file this is and
+                // whether it is on disk (ADR-0028).
+                fileIdentity(FileHeaderState.derive(from: file))
+            } else {
+                Text(pages.showingLedger ? "the ledger" : BackdropAppDelegate.productName)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
             Spacer(minLength: 16)
             // Standing indicator while the capture opt-out is on.
             // Doubly load-bearing here: the backdrop is on screen for
@@ -249,7 +268,12 @@ struct BackdropRootView: View {
             // shows no label: there is nothing counting down, and the
             // rung it keeps for its next page is not a deadline
             // (ADR-0017).
-            if let tab = pages.selectedTab, tab.hasPage, !pages.showingLedger {
+            // A file has no countdown to show and no rung to cycle, so
+            // the control goes away with the page rather than standing
+            // there inert (ADR-0028).
+            if let tab = pages.selectedTab, tab.hasPage, !pages.showingLedger,
+                pages.selectedFile == nil
+            {
                 CountdownButton(sheet: tab) { pages.cycleRung(tab.id) }
             }
             pinToggle
@@ -270,6 +294,75 @@ struct BackdropRootView: View {
         )
     }
 
+    /// Open every dropped file the pad opens, and say so about each one
+    /// it does not.
+    ///
+    /// Each item is answered on its own, so a drop of a README beside
+    /// a screenshot opens the README and refuses the screenshot rather
+    /// than refusing both. The refusal names the item, because a person
+    /// who dropped several needs to know which one was not taken.
+    ///
+    /// It answers true whenever anything was dropped, refusals
+    /// included: a refusal the pad said out loud is a drop it handled,
+    /// and answering false would give the item back to whatever is
+    /// underneath the card.
+    private func openDropped(_ urls: [URL]) -> Bool {
+        guard !urls.isEmpty else { return false }
+        for url in urls {
+            if FileDropDecision.opens(url) {
+                pages.openFile(at: url)
+            } else {
+                pages.refuseUnsupportedDrop(name: url.lastPathComponent)
+            }
+        }
+        return true
+    }
+
+    /// The header while a file is showing: its name, then whether it is
+    /// on disk, then the two quiet facts beside them (ADR-0028).
+    ///
+    /// The words come from `FileHeaderState`, which decides them as a
+    /// pure function of the file, so what the header says is testable
+    /// without a card. What is here is only the drawing.
+    ///
+    /// The dot is drawn beside the word and never instead of it. A
+    /// person who cannot tell ember from grey reads "unsaved" either
+    /// way, which is the commitment in doc 05 held at the one place a
+    /// colour was tempting.
+    @ViewBuilder
+    private func fileIdentity(_ state: FileHeaderState) -> some View {
+        HStack(spacing: 6) {
+            Text(state.name)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            HStack(spacing: 3) {
+                if state.showsUnsavedDot {
+                    Circle().fill(Color.ember).frame(width: 5, height: 5)
+                }
+                Text(state.saveWord)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(state.showsUnsavedDot ? Color.ember : Color.secondary)
+            }
+            if let stamp = state.lastEditStamp {
+                // The draft's age, on a file whose buffer came back
+                // from the drafts file rather than from disk. It is the
+                // whole of what the app owes for quitting without a
+                // save sheet: a person can see how old the typing is
+                // before pressing the save chord.
+                Text(stamp)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+            }
+            Text(state.encodingAndFormat)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.tertiary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(state.spoken))
+    }
+
     /// The header's persistence word. Ember for the two states that
     /// need acting on, quiet secondary text for the two that do not,
     /// and absent entirely until a write is owed, matching the
@@ -277,7 +370,13 @@ struct BackdropRootView: View {
     /// to say.
     @ViewBuilder
     private var saveIndicator: some View {
-        if pages.contentRestoreRefused {
+        if pages.activeFile != nil, !pages.showingLedger {
+            // The file surface has its own saved word, about the file
+            // on disk. The sealed state's word is about the pages
+            // behind, and two words reading "saved" a few points apart
+            // would be one word too many for a person to tell apart.
+            EmptyView()
+        } else if pages.contentRestoreRefused {
             Text("not saving")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(Color.ember)

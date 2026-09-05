@@ -29,6 +29,14 @@ public enum CommandID: String, CaseIterable, Sendable {
     case pageSelect8 = "page::Select8"
     case pageSelect9 = "page::Select9"
 
+    // Files, the second content class (ADR-0028). Only the two verbs
+    // the app had no chord for at all are ids of their own. Saving a
+    // file and closing one are second readings of `state::SaveNow` and
+    // `page::Close`, because those raw values are published contract
+    // and a person's own keymap already names them.
+    case fileOpen = "file::Open"
+    case fileSaveAs = "file::SaveAs"
+
     // The ledger
     case ledgerShow = "ledger::Show"
 

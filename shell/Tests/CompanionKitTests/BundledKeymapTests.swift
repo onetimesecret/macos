@@ -41,6 +41,11 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-z": .editorUndo,
         "cmd-shift-z": .editorRedo,
         "alt-z": .editorToggleWrap,
+        // Files (ADR-0028). Saving a file and closing one are second
+        // readings of cmd-s and cmd-w rather than chords of their own,
+        // so only these two are new lines in the table.
+        "cmd-o": .fileOpen,
+        "cmd-shift-s": .fileSaveAs,
         "cmd-s": .stateSaveNow,
         "cmd-,": .appSettings,
         "escape": .surfaceHandBackKeys,

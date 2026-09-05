@@ -57,10 +57,31 @@ public struct TimeRailView: View {
         let projection = model.timeUnits
         let selected = Self.selectedBucket(projection: projection, selection: model.selection)
         VStack(spacing: 2) {
+            // The Files shelf: fixed, above the days, and drawn only
+            // when a file is open (ADR-0028). Files are navigation
+            // peers and not dated regions, so they sit outside the roll
+            // entirely rather than taking a day of their own, and
+            // nothing here reaches `TimeUnitProjection.project`, which
+            // is the ADR-0020 guarantee kept structurally: a file never
+            // enters `tabs`, so the projection cannot see one.
+            if !model.openFiles.isEmpty {
+                GroupLabel(text: "FILES")
+                ForEach(model.openFiles) { file in
+                    FileShelfRow(
+                        file: file,
+                        selected: model.selectedFile == file.id && !model.showingLedger,
+                        model: model
+                    )
+                }
+                GroupLabel(text: "PAD")
+            }
             ForEach(rows(of: projection)) { row in
                 TimeUnitTab(
                     unit: row.unit,
-                    selected: !model.showingLedger && row.unit.bucket == selected,
+                    // A file showing replaces the roll, so no day is
+                    // the day on screen while one is selected.
+                    selected: !model.showingLedger && model.selectedFile == nil
+                        && row.unit.bucket == selected,
                     chord: row.chord,
                     model: model
                 )
@@ -259,6 +280,56 @@ struct RailMinimapView: View {
         .background(Color.panelBackground)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// One open file on the rail's Files shelf: the filename over the
+/// unsaved marker, in the shape a day row already has so the column
+/// reads as one column.
+///
+/// It draws no gauge and no dashed rule where a day draws one. A day
+/// with no page draws the dash because a day is a place a page could
+/// stand; a file is never a place a page stands, and a mark that said
+/// otherwise would be the misreading the two classes exist to prevent.
+///
+/// Where a day says how long its soonest page has left, a file says
+/// saved or unsaved, in words. Same seat, different fact, and neither
+/// one is a countdown on the other.
+struct FileShelfRow: View {
+    let file: FileSummary
+    let selected: Bool
+    @ObservedObject var model: PageModel
+
+    var body: some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 3) {
+                Image(systemName: "doc")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(file.name)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            ZStack {
+                if file.isDirty { UnsavedDot() }
+            }
+            .frame(height: 3)
+            .padding(.horizontal, 3)
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(selected ? Color.cellBackground : .clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { model.select(target: .file(file.id)) }
+        .help(FileRowLabel.help(for: file))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(FileRowLabel.spoken(for: file)))
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 }
 

@@ -324,6 +324,38 @@ public final class PageModel: ObservableObject {
     /// rather than rules a reader has to remember.
     @Published public private(set) var openFiles: [FileSummary] = []
 
+    /// The open file the surface is showing, by its tagged id, or nil
+    /// while the surface is showing a page.
+    ///
+    /// A second selection rather than a value folded into `selection`,
+    /// because the two answer different questions and both have to
+    /// survive the other being moved: a person who reads a file and
+    /// goes back to the roll expects the slot they left to still be the
+    /// selected slot. Selecting any tab clears this, so the two are
+    /// never both live.
+    @Published public private(set) var selectedFile: UInt64?
+
+    /// What the surface is showing, as one value: the open file when
+    /// one is selected, otherwise the selected slot, otherwise today.
+    ///
+    /// The header, the menu enablement and the two second readings of
+    /// the save and close chords all ask this one question, so there is
+    /// one answer for them to disagree about rather than four.
+    public var activeTarget: SurfaceTarget {
+        if let selectedFile { return .file(selectedFile) }
+        if let selection { return .tab(selection) }
+        return .today
+    }
+
+    /// The selected file's own summary, or nil when a page is showing.
+    /// Nil also when the selection names a file the roster no longer
+    /// holds, which is what a close leaves behind for the instant
+    /// before the refresh lands.
+    public var activeFile: FileSummary? {
+        guard let selectedFile else { return nil }
+        return openFiles.first { $0.id == selectedFile }
+    }
+
     /// The visibly selected **tab**, the slot the editor shows a page
     /// from and the gestures act on. It is the tab's id and never the
     /// page's, because a slot the user is looking at may hold nothing.
@@ -1691,9 +1723,16 @@ public final class PageModel: ObservableObject {
     /// holding more than one page answers with the first of them in
     /// strip order, and only today can be a day with no page at all,
     /// which is the single `.today` entry.
+    ///
+    /// Open files come first, in open order, in both modes, which is
+    /// the order both layouts draw: the FILES group sits before the PAD
+    /// group on the strip and the Files shelf sits above the days on
+    /// the rail. With no file open the array is exactly what it has
+    /// always been, element for element, in both modes.
     public var visibleTargets: [SurfaceTarget] {
-        guard showsTimeUnits else { return tabs.map { .tab($0.id) } }
-        return timeUnits.units.map { unit -> SurfaceTarget in
+        let files = openFiles.map { SurfaceTarget.file($0.id) }
+        guard showsTimeUnits else { return files + tabs.map { .tab($0.id) } }
+        return files + timeUnits.units.map { unit -> SurfaceTarget in
             guard let tab = unit.tabIDs.first else { return .today }
             return .tab(tab)
         }
@@ -1713,11 +1752,36 @@ public final class PageModel: ObservableObject {
             select(id)
         case .today:
             openToday()
-        case .file:
-            // files: seam stub. Selecting a file replaces the roll with
-            // that file alone; nothing routes yet, so the selection
-            // stays where it was.
-            break
+        case .file(let id):
+            selectFile(id)
+        }
+    }
+
+    /// Show an open file. The roll gives way to that file alone, and
+    /// the slot the person left keeps its place, so selecting a day
+    /// afterwards puts them back where they were.
+    ///
+    /// It mints nothing and starts no clock, which is the whole of what
+    /// separates this from `select(_:)`: a file is not a slot, and
+    /// there is no empty file to conjure.
+    public func selectFile(_ id: UInt64) {
+        showingLedger = false
+        guard selectedFile != id else { return }
+        selectedFile = id
+        refocusEditorIfKeyed()
+    }
+
+    /// The roster the surface draws, restated.
+    ///
+    /// Internal because populating it is the model lane's work, not the
+    /// view's: the file store is what will call this, and the tests
+    /// call it to stand a roster up without a file on disk. It drops a
+    /// selection naming a file the roster no longer holds, so a closed
+    /// file cannot leave the surface pointing at nothing.
+    func standOpenFiles(_ files: [FileSummary]) {
+        openFiles = files
+        if let selectedFile, !files.contains(where: { $0.id == selectedFile }) {
+            self.selectedFile = nil
         }
     }
 
@@ -1758,6 +1822,35 @@ public final class PageModel: ObservableObject {
         flash("Closing a file is not wired up yet.")
     }
 
+    /// Close a named file, which is what the ✕ on a row asks for.
+    ///
+    /// It makes that file the active one first, so the review a dirty
+    /// file raises is about the file the person can see. Closing
+    /// through the one active path keeps the review, the draft's death
+    /// and the roster update in a single place rather than two that
+    /// would have to agree.
+    public func closeFile(_ id: UInt64) {
+        selectFile(id)
+        closeActiveFile()
+    }
+
+    /// What the pad says when something is dropped on it that it does
+    /// not open. Named rather than typed at the drop site so the drop
+    /// and the open panel refuse in the same words.
+    ///
+    /// It says the name and not the type, because the type identifier a
+    /// drop carries is not a phrase anybody recognises, and the person
+    /// dropping already knows which item they dragged.
+    public static func unsupportedDropNotice(name: String) -> String {
+        "\(name) is not a plain text or Markdown file, so it was not opened."
+    }
+
+    /// Refuse a drop the pad does not open, saying so rather than
+    /// pasting the item's bytes into whatever page is under the cursor.
+    public func refuseUnsupportedDrop(name: String) {
+        flash(Self.unsupportedDropNotice(name: name))
+    }
+
     /// Settle a file that changed on disk under unsaved edits. Save
     /// stays refused until one of the three is chosen.
     public func resolveConflict(_ resolution: FileConflictResolution) {
@@ -1775,11 +1868,14 @@ public final class PageModel: ObservableObject {
     /// page expired, in a mode that draws no such slot) starts the
     /// walk at the top, where today is.
     private func indexOfSelection(within targets: [SurfaceTarget]) -> Int {
+        if let selectedFile, let at = targets.firstIndex(of: .file(selectedFile)) { return at }
         guard let selection else { return 0 }
         if showsTimeUnits, let day = timeUnits.units.firstIndex(
             where: { $0.tabIDs.contains(selection) }
         ) {
-            return day
+            // The days start after the Files shelf, so the day's own
+            // place is its index past the files the rail drew above it.
+            return openFiles.count + day
         }
         return targets.firstIndex(of: .tab(selection)) ?? 0
     }
@@ -1798,6 +1894,11 @@ public final class PageModel: ObservableObject {
     /// leaves an empty tab rather than a fresh countdown on nothing.
     public func select(_ id: UInt64) {
         let leavingLedger = showingLedger
+        // A slot and a file are never both showing, so choosing a slot
+        // puts the file away. The file itself stays open and keeps its
+        // place in the FILES group; only the surface moved.
+        let leavingFile = selectedFile != nil
+        selectedFile = nil
         showingLedger = false
         selection = id
         let minted = openPageIfSlotIsEmpty(id)
@@ -1810,7 +1911,7 @@ public final class PageModel: ObservableObject {
         // when it unmounts. A plain switch between two pages takes
         // neither arm: it keeps its editor, keeps its focus, and asks
         // for nothing.
-        if leavingLedger || minted { refocusEditorIfKeyed() }
+        if leavingLedger || leavingFile || minted { refocusEditorIfKeyed() }
     }
 
     /// ⌘1 to ⌘9: jump by visible order. With the strip that is the
@@ -2126,6 +2227,9 @@ public final class PageModel: ObservableObject {
     /// says so.
     public func newPage() {
         notice = nil
+        // A page asked for now is a page to look at now, so the file
+        // that was showing gives way to it.
+        selectedFile = nil
         let created = newTab()
         if created == 0 {
             flash(Self.capRefusal(showsTimeUnits: showsTimeUnits))
