@@ -60,7 +60,6 @@
 
     <!-- Quiet active-file status -->
     <g transform="translate(1170 730)">
-      <path d="M0 6h12M6 0v12" stroke="#77716b" stroke-width="1.2" opacity="0"/>
       <text x="0" y="0" class="mono dim" font-size="11">UTF-8 · Markdown</text>
     </g>
 
@@ -102,6 +101,6 @@
       <text x="21" y="27" text-anchor="middle" class="mono muted" font-size="21">+</text>
     </g>
 
-    <text x="1170" y="824" class="mono dim" font-size="11">file tabs do not consume the 9-page cap</text>
+    <text x="1358" y="824" text-anchor="end" class="mono dim" font-size="11">file tabs do not consume the nine page cap</text>
   </g>
 </svg>

@@ -7071,9 +7071,12 @@ mod tests {
                 "the gesture takes effect at once, not when the browser gets round to it"
             );
 
-            // Sign-out drops the only listener. The finish sees its
-            // abandoned flag while waiting and exits; no later browser
-            // redirect can reach a ceremony the user ended.
+            // Sign-out raises this ceremony's abandon flag. The listener
+            // reads it inside its poll and gives up, so the finish returns
+            // abandoned rather than waiting out its patience. The redirect
+            // arriving after that buys nothing; the driver test
+            // a_give_up_during_the_exchange_stores_nothing holds that case
+            // without the race this test used to carry.
             let late: serde_json::Value = serde_json::from_str(&waiting.join().unwrap()).unwrap();
             assert_eq!(
                 late["reason"], "abandoned",

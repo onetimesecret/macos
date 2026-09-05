@@ -83,3 +83,9 @@ change.
   retention choices were developed in the linked design background.
 - **2026-09-02:** The record was split into this ADR and the linked design
   background, which now carries the three numbered architecture sections.
+- **2026-09-04:** The record was retitled from "Document provenance and
+  per-block metadata" to its present title, and its vocabulary narrowed from
+  "provenance" to bounded document history, to keep it apart from the
+  authorship status labels specified for Nerd Fonts. The code it governs
+  still uses the older word; references to the old filename resolve only
+  through this note.
