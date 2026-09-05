@@ -373,7 +373,14 @@ an API console.
 
 Connection (server URL, org `extid` + API token, share domain, test
 button), default TTL rung, summon hotkey, clipboard clear-after-copy
-timing, screen-capture exclusion toggle, launch at login. That's the
+timing, screen-capture exclusion toggle, deadline rounding toggle,
+launch at login. Rounding is on unless you turn it off: a rung names a
+duration, and with rounding on the deadline lands on the next clock
+boundary past that duration, a whole local hour under a day and a local
+midnight from a day up, never extended by more than the rung or a day,
+whichever is smaller. Off, a rung is exact. Either way the switch is
+read when a rung is applied, so pages already counting down keep the
+deadline they were given (ADR-0011 section 4). That's the
 whole list; growth here is a smell. (Rev C deleted "dock edge" — the
 window remembers its own position.)
 

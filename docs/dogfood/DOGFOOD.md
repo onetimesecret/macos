@@ -159,6 +159,26 @@ under `/Applications` can register, so a dev build never claims the
 login item by accident. A refused registration reverts the toggle to
 whatever the system actually granted.
 
+## Deadline rounding
+
+Settings has "Round a page's deadline up to the hour, or to midnight",
+on unless you turn it off, stored as `snapsToBoundaries` in the app's
+defaults domain. To exercise it, note the clock, make a new page, set
+it to a rung, and read the countdown.
+
+With the toggle on, a rung under a day lands on the next whole local
+hour and the 24h, 3d and 7d rungs land on the next local midnight, so
+the countdown reads longer than the rung by up to that gap. The
+extension is capped at the rung itself or a day, whichever is smaller,
+so a 1h rung set at 10:05 runs to 11:00 and a 24h rung set at 4pm runs
+to the midnight ending the next day. With it off, the same rung is
+exact: a 1h rung set at 10:05 runs to 11:05.
+
+Flipping the toggle changes nothing that already exists. Pages counting
+down keep the deadline they were given, and the new setting applies to
+the next rung you apply. The timezone read is the one in force when the
+rung was applied, so travelling does not move a live deadline either.
+
 ## Quitting
 
 Cmd+Q or the tray's Quit item. That flushes whatever write is still
