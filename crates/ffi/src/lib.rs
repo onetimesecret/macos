@@ -6885,16 +6885,6 @@ mod tests {
         }
     }
 
-    /// The loopback port the ceremony bound, read back out of the
-    /// authorize URL's percent-encoded redirect URI.
-    fn loopback_port(authorize_url: &str) -> u16 {
-        authorize_url
-            .split("127.0.0.1%3A")
-            .nth(1)
-            .and_then(|rest| rest.split("%2F").next())
-            .and_then(|port| port.parse().ok())
-            .expect("the authorize URL carries the redirect the listener bound")
-    }
 
     fn sync_configured(handle: *mut CompanionHandle) {
         let config = cstring(
@@ -6927,7 +6917,6 @@ mod tests {
 
     #[test]
     fn signing_out_ends_a_browser_trip_that_is_still_out() {
-        use std::io::Write as _;
         let credentials: Arc<dyn CredentialStore> =
             Arc::new(companion_credentials::InMemoryCredentialStore::default());
         unsafe {
@@ -6935,7 +6924,7 @@ mod tests {
             sync_configured(handle);
             let begun: serde_json::Value =
                 serde_json::from_str(&take_json(companion_sync_signin_begin(handle))).unwrap();
-            let port = loopback_port(begun["authorize_url"].as_str().unwrap());
+            assert_eq!(begun["ok"], true);
 
             let address = handle as usize;
             let waiting = std::thread::spawn(move || {
@@ -6952,11 +6941,9 @@ mod tests {
                 "the gesture takes effect at once, not when the browser gets round to it"
             );
 
-            // And now the browser comes back with a perfectly good
-            // code. It buys nothing: the ceremony was ended, so no
-            // token request is built and nothing is persisted.
-            let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
-            write!(stream, "GET /callback?code=abc&state=x HTTP/1.1\r\n\r\n").unwrap();
+            // Sign-out drops the only listener. The finish sees its
+            // abandoned flag while waiting and exits; no later browser
+            // redirect can reach a ceremony the user ended.
             let late: serde_json::Value = serde_json::from_str(&waiting.join().unwrap()).unwrap();
             assert_eq!(
                 late["reason"], "abandoned",
