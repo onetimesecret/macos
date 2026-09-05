@@ -779,3 +779,433 @@ final class FileDocumentTests: XCTestCase {
             "and again after a save, which is what moves the dot")
     }
 }
+
+/// The nine findings of the adversarial Swift review, each with the
+/// test that would have caught it. Kept in their own class so the
+/// scenarios read as the probes they are rather than as more coverage
+/// of the happy path.
+@MainActor
+final class FileReviewFixTests: XCTestCase {
+    private struct Fixture {
+        let state: URL
+        let workspace: URL
+        let defaults: UserDefaults
+        let tag: String
+    }
+
+    private func makeFixture() throws -> Fixture {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("companion-fix-\(UUID().uuidString)", isDirectory: true)
+        let state = root.appendingPathComponent("state", isDirectory: true)
+        let workspace = root.appendingPathComponent("workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let suiteName = "companion-fix-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock {
+            UserDefaults.standard.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        return Fixture(
+            state: state, workspace: workspace, defaults: defaults,
+            tag: "fix-\(UUID().uuidString)"
+        )
+    }
+
+    private func makeModel(_ fixture: Fixture, panels: ScriptedFilePanels) -> PageModel {
+        let model = PageModel(
+            formFactor: .panel,
+            defaults: fixture.defaults,
+            seams: .init(
+                stateDirectory: fixture.state,
+                client: .ephemeral(tag: fixture.tag),
+                saveDebounce: 0.05
+            )
+        )
+        model.fileCoordinator = FileCoordinator(panels: panels)
+        return model
+    }
+
+    private func write(_ text: String, named name: String, in fixture: Fixture) throws -> URL {
+        let url = fixture.workspace.appendingPathComponent(name)
+        try Data(text.utf8).write(to: url)
+        return url
+    }
+
+    private func type(_ text: String, at offset: Int, into id: UInt64, on model: PageModel) throws {
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: offset, text: text)]))
+        model.applyOps(sheet: id, opsJSON: ops)
+    }
+
+    // MARK: 1. The prune keeps files
+
+    /// The review's own probe. A refresh runs on every page gesture and
+    /// on every expiry, and it used to drop the open file's storage
+    /// while the one persistent text view was still laying it out.
+    /// Every restate then guarded on a missing entry and did nothing,
+    /// so Take theirs reported a reload the screen never got.
+    func testARefreshDoesNotEvictAnOpenFilesStorage() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let url = try write("hello\n", named: "notes.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        XCTAssertTrue(model.pagesWithStorage.contains(id))
+
+        // A page gesture, which is what a refresh rides in on.
+        model.newPage()
+
+        XCTAssertTrue(
+            model.pagesWithStorage.contains(id),
+            "a file is never in tabs, so the page prune must exempt it by tag")
+    }
+
+    func testTakeTheirsReachesTheScreenAfterARefresh() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        let url = try write("hello\n", named: "notes.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        // The object the one persistent text view is laying out. Held
+        // by reference on purpose: asking the model for the storage
+        // again after the fact would rebuild an evicted entry from the
+        // core and report a screen that had been fixed by the asking.
+        // What the person sees is this object.
+        let mounted = model.storage(for: id)
+        try type("mine ", at: 0, into: id, on: model)
+        // The refresh that used to throw the storage away.
+        model.newPage()
+        model.selectFile(id)
+
+        try Data("theirs\n".utf8).write(to: url)
+        model.checkOpenFilesOnActivate()
+        XCTAssertEqual(model.openFiles.first?.conflict, FileConflict.changed)
+
+        panels.confirmation = true
+        model.resolveConflict(.takeTheirs)
+
+        XCTAssertEqual(
+            mounted.string, "theirs\n",
+            "the notice says the file was read again, so the editor must show it")
+        XCTAssertTrue(
+            model.storage(for: id) === mounted,
+            "and it is still the same object, restated in place rather than replaced")
+    }
+
+    // MARK: 2. A reopen restates rather than orphans
+
+    func testReopeningTheShowingFileRestatesTheMountedStorage() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let url = try write("first\n", named: "notes.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        let mounted = model.storage(for: id)
+
+        // The same file dropped on the card again while it is showing.
+        model.openFile(at: url)
+
+        XCTAssertEqual(model.openFiles.count, 1, "one file, not two")
+        XCTAssertTrue(
+            model.storage(for: id) === mounted,
+            "the object the text view holds is the object the model still knows about")
+        XCTAssertTrue(model.pagesWithStorage.contains(id))
+    }
+
+    // MARK: 3. The rail's chords match the chords that reach the rows
+
+    func testTheDayChordLabelMatchesTheIndexThatSelectsIt() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        model.showsTimeUnits = true
+        model.openFile(at: try write("a\n", named: "a.txt", in: fixture))
+        let file = try XCTUnwrap(model.openFiles.first?.id)
+
+        let index = TimeRailView.targetIndex(forDay: 0, openFileCount: model.openFiles.count)
+        XCTAssertEqual(index, 1, "one file sits ahead of the first day")
+        let targets = model.visibleTargets
+        XCTAssertEqual(targets.first, SurfaceTarget.file(file), "files are drawn first")
+        XCTAssertNotEqual(
+            targets[index], SurfaceTarget.file(file),
+            "the chord the rail prints beside today must not select the file")
+        // And the label and the selection are one arithmetic: the row
+        // the rail numbers is the row select(index:) lands on.
+        model.select(index: index)
+        XCTAssertNil(model.selectedFile, "selecting today put the file away")
+    }
+
+    func testWithNoFileOpenTheDayChordsAreExactlyWhatTheyWere() throws {
+        XCTAssertEqual(TimeRailView.targetIndex(forDay: 0, openFileCount: 0), 0)
+        XCTAssertEqual(TimeRailView.targetIndex(forDay: 4, openFileCount: 0), 4)
+    }
+
+    // MARK: 4. One notice for an activation that reloaded several files
+
+    func testAnActivationThatReloadedThreeFilesPostsOneNoticeNamingAll() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        var urls: [URL] = []
+        for name in ["a.txt", "b.txt", "c.txt"] {
+            let url = try write("before\n", named: name, in: fixture)
+            urls.append(url)
+            model.openFile(at: url)
+        }
+        model.notice = nil
+
+        for url in urls { try Data("after\n".utf8).write(to: url) }
+        model.checkOpenFilesOnActivate()
+
+        let notice = try XCTUnwrap(model.notice)
+        for name in ["a.txt", "b.txt", "c.txt"] {
+            XCTAssertTrue(notice.contains(name), "\(name) is missing from: \(notice)")
+        }
+    }
+
+    func testOneReloadedFileKeepsTheSentenceItAlwaysHad() {
+        XCTAssertEqual(
+            PageModel.activationNotice([.reloaded("a.txt")]),
+            PageModel.reloadedNotice(name: "a.txt"))
+        XCTAssertEqual(
+            PageModel.activationNotice([.missing("a.txt")]),
+            PageModel.missingNotice(name: "a.txt"))
+        XCTAssertNil(PageModel.activationNotice([]))
+        let both = PageModel.activationNotice([.reloaded("a.txt"), .missing("b.txt")]) ?? ""
+        XCTAssertTrue(both.contains("a.txt"), both)
+        XCTAssertTrue(both.contains("b.txt"), both)
+    }
+
+    // MARK: 5. Save As onto the file's own path is a save
+
+    func testSaveAsOntoTheFilesOwnChangedPathRaisesTheConflict() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        let url = try write("before\n", named: "notes.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        try type("mine ", at: 0, into: id, on: model)
+
+        // Something else writes it, and the person picks its own name
+        // in the save panel, which is a save and takes a save's check.
+        try Data("theirs\n".utf8).write(to: url)
+        panels.destinationURL = url
+        model.saveActiveFileAs()
+
+        XCTAssertEqual(
+            model.openFiles.first?.conflict, FileConflict.changed,
+            "the panel is not a way around the before-save check")
+        XCTAssertEqual(try String(decoding: Data(contentsOf: url), as: UTF8.self), "theirs\n",
+                       "and nothing was written over the copy on disk")
+    }
+
+    // MARK: 6. A file keeps its caret and scroll
+
+    func testTheViewStatePruneKeepsAFilesEntry() {
+        let file = CompanionClient.fileIDTag | 7
+        let page: UInt64 = 3
+        let dead: UInt64 = 9
+        let pruned = InkEditorView.Coordinator.pruned(
+            [file: 11, page: 22, dead: 33], keeping: Set([page])
+        )
+        XCTAssertEqual(pruned[file], 11, "a file is never in the live page set and must survive")
+        XCTAssertEqual(pruned[page], 22)
+        XCTAssertNil(pruned[dead], "a dead page's caret still goes")
+    }
+
+    // MARK: 7. Cancel leaves the selection where it was
+
+    func testCancellingTheReviewOfAnotherFileRestoresTheSelection() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("a\n", named: "a.txt", in: fixture))
+        model.openFile(at: try write("b\n", named: "b.txt", in: fixture))
+        let dirty = try XCTUnwrap(model.openFiles.first?.id)
+        try type("x", at: 0, into: dirty, on: model)
+        let showing = try XCTUnwrap(model.openFiles.last?.id)
+        model.selectFile(showing)
+
+        // The close mark on the other row, cancelled.
+        panels.review = .cancel
+        model.closeFile(dirty)
+
+        XCTAssertEqual(panels.reviews, 1)
+        XCTAssertEqual(model.openFiles.count, 2, "cancel closed nothing")
+        XCTAssertEqual(
+            model.selectedFile, showing,
+            "and left the person looking at the file they were on")
+    }
+
+    func testCancellingTheReviewFromAPageReturnsToThePage() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("a\n", named: "a.txt", in: fixture))
+        let dirty = try XCTUnwrap(model.openFiles.first?.id)
+        try type("x", at: 0, into: dirty, on: model)
+        let page = try XCTUnwrap(model.selectedPageID)
+        model.select(page)
+        XCTAssertNil(model.selectedFile)
+
+        panels.review = .cancel
+        model.closeFile(dirty)
+
+        XCTAssertNil(model.selectedFile, "the pad was showing before and is showing after")
+    }
+
+    // MARK: 8. The Edit menu tells the truth about a file
+
+    func testUndoAndRedoGreyTruthfullyForAFile() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("body\n", named: "notes.txt", in: fixture))
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+
+        XCTAssertFalse(model.canUndoEdit(sheet: id), "a file just opened has nothing to take back")
+        XCTAssertFalse(model.canRedoEdit(sheet: id))
+
+        try type("the ", at: 0, into: id, on: model)
+        XCTAssertTrue(
+            model.canUndoEdit(sheet: id),
+            "the page route refuses a tagged id, so this has to be the file's own")
+        XCTAssertFalse(model.canRedoEdit(sheet: id))
+
+        XCTAssertTrue(model.undoEdit(sheet: id).applied)
+        XCTAssertFalse(model.canUndoEdit(sheet: id))
+        XCTAssertTrue(model.canRedoEdit(sheet: id), "a step taken back is a step to put back")
+    }
+
+    // MARK: 9. No em dashes in the new comments
+
+    func testTheFileSourcesCarryNoEmDashes() throws {
+        // The prose rule is about what this lane wrote, so this reads
+        // the two files the lane owns whole. The shared files carry
+        // house-style dashes that predate the rule.
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        for name in ["Sources/CompanionKit/FileCoordinator.swift", "Sources/CompanionKit/FileSurface.swift"] {
+            let text = try String(contentsOf: root.appendingPathComponent(name), encoding: .utf8)
+            XCTAssertFalse(text.contains("\u{2014}"), "\(name) holds an em dash")
+            XCTAssertFalse(text.contains("\u{2013}"), "\(name) holds an en dash")
+        }
+    }
+}
+
+/// The counterpart to the two tag exemptions: a file that leaves the
+/// roster leaves nothing behind in any of the three maps.
+///
+/// Its own class because it needs a real editor mounted over the file,
+/// which is what puts a caret and a scroll offset in the coordinator's
+/// maps in the first place. Nothing else in the file suites builds
+/// one.
+@MainActor
+final class FileCloseSweepTests: XCTestCase {
+    private func makeFixture() throws -> (state: URL, workspace: URL, defaults: UserDefaults) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("companion-sweep-\(UUID().uuidString)", isDirectory: true)
+        let state = root.appendingPathComponent("state", isDirectory: true)
+        let workspace = root.appendingPathComponent("workspace", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let suiteName = "companion-sweep-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock {
+            UserDefaults.standard.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        return (state, workspace, defaults)
+    }
+
+    func testAClosedFileLeavesNoStorageNoCaretAndNoScroll() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = PageModel(
+            formFactor: .panel,
+            defaults: fixture.defaults,
+            seams: .init(
+                stateDirectory: fixture.state,
+                client: .ephemeral(tag: "sweep-\(UUID().uuidString)"),
+                saveDebounce: 0.05
+            )
+        )
+        model.fileCoordinator = FileCoordinator(panels: panels)
+        model.loadStateIfNeeded()
+
+        let url = fixture.workspace.appendingPathComponent("notes.txt")
+        try Data("a file with some lines\nand another\n".utf8).write(to: url)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+
+        // A real editor over the file, built the way the factory tests
+        // build one, because a caret and a scroll offset only exist
+        // once something has actually been mounted and left.
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let textView = InkEditorView.makeInkTextView(
+            model: model, sheetID: id, coordinator: coordinator
+        )
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+        scroll.documentView = textView
+        textView.setSelectedRange(NSRange(location: 3, length: 0))
+        XCTAssertEqual(coordinator.currentSheet, id, "the editor is mounted over the file")
+        coordinator.saveViewState(textView: textView, scrollView: scroll)
+
+        XCTAssertTrue(model.pagesWithStorage.contains(id))
+        XCTAssertTrue(coordinator.viewStateKeys.carets.contains(id))
+        XCTAssertTrue(coordinator.viewStateKeys.scrolls.contains(id))
+
+        model.closeActiveFile()
+
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertFalse(
+            model.pagesWithStorage.contains(id), "the storage went with the file")
+        XCTAssertFalse(
+            coordinator.viewStateKeys.carets.contains(id), "and so did the caret")
+        XCTAssertFalse(
+            coordinator.viewStateKeys.scrolls.contains(id), "and the scroll offset")
+    }
+
+    /// The same sweep reached by the other door: a roster that simply
+    /// stops naming the file, which is what the restore's automatic
+    /// drop of a missing clean file looks like from up here.
+    func testAFileThatLeavesTheRosterIsSweptWithoutAClose() throws {
+        let fixture = try makeFixture()
+        let model = PageModel(
+            formFactor: .panel,
+            defaults: fixture.defaults,
+            seams: .init(
+                stateDirectory: fixture.state,
+                client: .ephemeral(tag: "sweep-\(UUID().uuidString)"),
+                saveDebounce: 0.05
+            )
+        )
+        model.fileCoordinator = FileCoordinator(panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let url = fixture.workspace.appendingPathComponent("notes.txt")
+        try Data("body\n".utf8).write(to: url)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.openFiles.first?.id)
+        _ = model.storage(for: id)
+        let page = try XCTUnwrap(model.selectedPageID)
+        _ = model.storage(for: page)
+
+        model.standOpenFiles([])
+
+        XCTAssertFalse(model.pagesWithStorage.contains(id))
+        XCTAssertTrue(
+            model.pagesWithStorage.contains(page),
+            "the sweep is keyed on the tag, so a page is never caught by it")
+    }
+}

@@ -101,8 +101,19 @@ public struct TimeRailView: View {
     /// identity, which is the pairing this walk exists to make.
     private func rows(of projection: TimeUnitProjection) -> [TimeRailRow] {
         var rows: [TimeRailRow] = []
+        // The days start after the open files, because `visibleTargets`
+        // draws files first in both modes and `select(index:)` indexes
+        // that array. Numbering the days from zero would print command
+        // 1 beside today while command 1 selected the first file, which
+        // is a label that lies about the chord it names. The Files
+        // shelf sits above the days on screen for the same reason, so
+        // the offset is what the rail already looks like.
+        let openFiles = model.openFiles.count
         for (index, unit) in projection.units.enumerated() {
-            let chord = Self.chord(forRowAt: index, keymap: model.keymap)
+            let chord = Self.chord(
+                forRowAt: Self.targetIndex(forDay: index, openFileCount: openFiles),
+                keymap: model.keymap
+            )
             rows.append(TimeRailRow(unit: unit, chord: chord))
         }
         return rows
@@ -169,6 +180,19 @@ public struct TimeRailView: View {
     /// who unbound it gets a tooltip that says only what the row does.
     /// Nothing is bound past the ninth row, and a tenth day (which
     /// takes ten live pages, one over the cap) simply has no chord.
+    /// Where the day at `day` sits in `PageModel.visibleTargets`,
+    /// which is the array `select(index:)` indexes.
+    ///
+    /// Pure, and the only expression of the offset, so the chord a row
+    /// prints and the chord that reaches that row are one arithmetic
+    /// rather than two that have to be kept in step. Files come first
+    /// in both layouts, which is the lead's decision, so the days
+    /// start after them; numbering the days from zero would print
+    /// command 1 beside today while command 1 selected the first file.
+    nonisolated static func targetIndex(forDay day: Int, openFileCount: Int) -> Int {
+        openFileCount + day
+    }
+
     static func chord(forRowAt index: Int, keymap: ResolvedKeymap) -> Keystroke? {
         let number = index + 1
         guard let command = CommandID.allCases.first(where: { $0.selectsPageNumber == number })

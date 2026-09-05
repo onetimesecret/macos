@@ -1496,7 +1496,7 @@ public final class PageModel: ObservableObject {
         return settled
     }
 
-    // MARK: Files — the third sealed file
+    // MARK: Files: the third sealed file
 
     /// The drafts leg of a write: the roster of open files and, for
     /// each dirty one, the edits nobody has saved yet.
@@ -1706,7 +1706,17 @@ public final class PageModel: ObservableObject {
         // page: keyed by the slot, a reused tab would inherit the dead
         // page's storage, and its attachment character for a zeroized
         // chip with it (ADR-0009, ADR-0017 item 9).
-        storages = storages.filter { livePages.contains($0.key) }
+        //
+        // A file id is exempt, and the exemption is not a courtesy: a
+        // file is never in `tabs`, so it is never in `livePages`, and
+        // without this line the first refresh after a file is opened
+        // drops the storage the one persistent text view is still
+        // laying out. Every restate path then guards on a map entry
+        // that is gone and silently does nothing, which is how a Take
+        // theirs can report the file was read again while the editor
+        // still shows the discarded draft. A file's storage is dropped
+        // by exactly one place, the close, which does it by name.
+        storages = storages.filter { $0.key.isFileID || livePages.contains($0.key) }
         // The roll's renderings of the days the editor is not standing
         // on go the same way and on the same set. They are plaintext of
         // a page, so an entry outliving its page would be exactly the
@@ -1981,9 +1991,43 @@ public final class PageModel: ObservableObject {
         if let selectedFile, !files.contains(where: { $0.id == selectedFile }) {
             self.selectedFile = nil
         }
+        forgetFilesOffTheRoster(files)
     }
 
-    // MARK: Files — the second content class
+    /// The counterpart to the tag exemption in the two prunes.
+    ///
+    /// A file's storage, caret and scroll are exempt from the page
+    /// prunes because a file is never in `tabs`, so nothing there can
+    /// ever drop them. This is what does, and it hangs off the roster
+    /// rather than off any one gesture: every way a file leaves,
+    /// whether a close after Save or Discard or the automatic drop of
+    /// a clean file that was gone at restore, ends in a roster that no
+    /// longer names it, and this runs on all of them. Keyed on the tag
+    /// so a page id can never be swept by it.
+    private func forgetFilesOffTheRoster(_ files: [FileSummary]) {
+        let live = Set(files.map(\.id))
+        let gone = storages.keys.filter { $0.isFileID && !live.contains($0) }
+        // The editor's own two maps are asked for as well, because
+        // the caret and the scroll are the editor's and it is the one
+        // object that can drop them.
+        let coordinator = (activeEditor as? InkTextView)?.coordinator
+        for id in gone {
+            storages[id] = nil
+            coordinator?.forgetViewState(for: id)
+        }
+        // A file can leave with no storage ever built, if it was never
+        // drawn, and the editor may still hold a caret for it from a
+        // mount that came and went. So the editor's maps are swept on
+        // their own terms too rather than only alongside a storage.
+        if let coordinator {
+            for id in coordinator.viewStateKeys.carets.union(coordinator.viewStateKeys.scrolls)
+            where id.isFileID && !live.contains(id) {
+                coordinator.forgetViewState(for: id)
+            }
+        }
+    }
+
+    // MARK: Files: the second content class
 
     /// Restate the roster from the core, which is the authority for
     /// every file's name, path, dirtiness and conflict.
@@ -2026,10 +2070,16 @@ public final class PageModel: ObservableObject {
             client.setFileBookmark(id, base64: data.base64EncodedString())
         }
         // A reopen of a file that is already open hands back the same
-        // id core-side. Drop any storage standing over it so the
-        // editor draws what the core holds now rather than what it
-        // held before.
-        storages[id] = nil
+        // id core-side, so the editor may be mounted over this exact
+        // storage right now. Restate it in place rather than dropping
+        // the entry: dropping it would leave the text view laying out
+        // an object the model no longer knows about, and nothing would
+        // rebuild it, because `selectFile` returns early on a
+        // selection that did not change and `updateNSView` returns
+        // early on a sheet that did not change.
+        if storages[id] != nil {
+            restateStorage(sheet: id)
+        }
         refreshOpenFiles()
         selectFile(id)
         markFilesDirty()
@@ -2059,7 +2109,12 @@ public final class PageModel: ObservableObject {
             flash(Self.unresolvedConflictNotice(name: before.name))
             return false
         }
-        applyCheck(for: id)
+        // The check can reload a clean file out from under the save,
+        // which the person is owed a word about, and it can put a
+        // dirty one into a conflict, which the banner says instead.
+        if let outcome = applyCheck(for: id), let sentence = Self.activationNotice([outcome]) {
+            flash(sentence)
+        }
         guard let file = openFiles.first(where: { $0.id == id }) else { return false }
         guard file.conflict == .none else { return false }
         guard client.saveFile(id) else {
@@ -2092,6 +2147,15 @@ public final class PageModel: ObservableObject {
         // comparison that missed that would let the core refuse with
         // nothing but a false to say why.
         let target = URL(fileURLWithPath: url.path).resolvingSymlinksInPath().path
+        // Picking the file's own name in the save panel is a save, not
+        // a save as, and every save is checked immediately before it
+        // writes (decisions.md item 5). Without this the one path that
+        // can overwrite a changed disk copy with no conflict raised is
+        // the panel, which is the last place a person would expect it.
+        if URL(fileURLWithPath: file.path).resolvingSymlinksInPath().path == target {
+            saveFile(file.id)
+            return
+        }
         if let held = openFiles.first(where: {
             $0.id != file.id
                 && URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path == target
@@ -2115,17 +2179,20 @@ public final class PageModel: ObservableObject {
 
     /// Close the selected file. A dirty one takes the Save, Discard,
     /// Cancel review first, and the draft dies with the tab either way.
-    public func closeActiveFile() {
-        guard let file = activeFile else { return }
+    /// Returns whether the file actually closed, so a caller that
+    /// moved the selection to raise the review can put it back.
+    @discardableResult
+    public func closeActiveFile() -> Bool {
+        guard let file = activeFile else { return false }
         if file.isDirty {
             switch fileCoordinator.reviewUnsavedFile(named: file.name) {
             case .cancel:
-                return
+                return false
             case .save:
                 // A save that refused leaves the file open. Closing
                 // anyway would discard the very edits the person just
                 // asked to keep.
-                guard saveFile(file.id) else { return }
+                guard saveFile(file.id) else { return false }
             case .discard:
                 break
             }
@@ -2137,6 +2204,7 @@ public final class PageModel: ObservableObject {
         // falls back to the pad on its own.
         refreshOpenFiles()
         markFilesDirty()
+        return true
     }
 
     /// Close a named file, which is what the ✕ on a row asks for.
@@ -2147,8 +2215,17 @@ public final class PageModel: ObservableObject {
     /// and the roster update in a single place rather than two that
     /// would have to agree.
     public func closeFile(_ id: UInt64) {
+        // Cancel means nothing happened, and the selection is part of
+        // nothing. Without this a Cancel leaves the person looking at
+        // a file they were not on, which is the one gesture that is
+        // supposed to change least.
+        let wasShowing = selectedFile
         selectFile(id)
-        closeActiveFile()
+        let closed = closeActiveFile()
+        if !closed, selectedFile == id, wasShowing != id {
+            selectedFile = wasShowing
+            refocusEditorIfKeyed()
+        }
     }
 
     /// What the pad says when something is dropped on it that it does
@@ -2199,7 +2276,7 @@ public final class PageModel: ObservableObject {
         markFilesDirty()
     }
 
-    // MARK: Files — what else wrote them
+    // MARK: Files: what else wrote them
 
     /// Ask of every open file whether anything else has written it.
     ///
@@ -2207,8 +2284,62 @@ public final class PageModel: ObservableObject {
     /// before a save, is inside `saveFile(_:)`, and both go through
     /// `applyCheck(for:)` so the two moments cannot come to different
     /// conclusions about the same file.
+    /// One notice, not one per file. A checkout that rewrote three
+    /// open files posts three flashes in the same turn of the run
+    /// loop, and `flash` overwrites, so the person would see only the
+    /// last of them and would be owed the other two. The outcomes are
+    /// collected and said together, the way the launch says its own.
     public func checkOpenFilesOnActivate() {
-        for file in openFiles { applyCheck(for: file.id) }
+        var outcomes: [CheckOutcome] = []
+        for file in openFiles {
+            if let outcome = applyCheck(for: file.id) { outcomes.append(outcome) }
+        }
+        if let sentence = Self.activationNotice(outcomes) { flash(sentence) }
+    }
+
+    /// What one file's check had to say, gathered rather than posted.
+    enum CheckOutcome: Equatable {
+        case reloaded(String)
+        case unreadable(String)
+        case missing(String)
+    }
+
+    /// The activation's single sentence, on the same shape as the
+    /// launch's.
+    static func activationNotice(_ outcomes: [CheckOutcome]) -> String? {
+        var reloaded: [String] = []
+        var unreadable: [String] = []
+        var missing: [String] = []
+        for outcome in outcomes {
+            switch outcome {
+            case .reloaded(let name): reloaded.append(name)
+            case .unreadable(let name): unreadable.append(name)
+            case .missing(let name): missing.append(name)
+            }
+        }
+        // One file keeps the wording it had, so the single file case,
+        // which is nearly every case, reads exactly as before.
+        if reloaded.count == 1, unreadable.isEmpty, missing.isEmpty {
+            return reloadedNotice(name: reloaded[0])
+        }
+        if missing.count == 1, unreadable.isEmpty, reloaded.isEmpty {
+            return missingNotice(name: missing[0])
+        }
+        if unreadable.count == 1, reloaded.isEmpty, missing.isEmpty {
+            return readRefusalNotice(name: unreadable[0])
+        }
+        var clauses: [String] = []
+        if !reloaded.isEmpty {
+            clauses.append("\(englishList(reloaded)) changed on disk and was read again")
+        }
+        if !unreadable.isEmpty {
+            clauses.append("\(englishList(unreadable)) could not be read")
+        }
+        if !missing.isEmpty {
+            clauses.append("\(englishList(missing)) is no longer at its path")
+        }
+        guard !clauses.isEmpty else { return nil }
+        return englishList(clauses) + "."
     }
 
     /// One file's check, and what follows from the answer.
@@ -2219,34 +2350,40 @@ public final class PageModel: ObservableObject {
     /// know why. A dirty file that changed enters a conflict, which
     /// the core sets from the same call, and the banner takes it from
     /// there. A file that is no longer at its path says so.
-    private func applyCheck(for id: UInt64) {
+    /// Returns what the caller owes the person, or nil when the file
+    /// is where it was. It says nothing itself, so a caller checking
+    /// several files can say one thing about all of them.
+    @discardableResult
+    private func applyCheck(for id: UInt64) -> CheckOutcome? {
         guard let file = openFiles.first(where: { $0.id == id }),
               let check = client.checkFile(id)
-        else { return }
+        else { return nil }
         switch check.state {
         case .unchanged:
-            return
+            return nil
         case .changed:
             if file.isDirty {
                 // The conflict is already set core-side by the check
                 // itself. Restating the roster is what puts the banner
-                // on screen.
+                // on screen, and the banner is the notice: a person
+                // looking at three buttons does not also need a line.
                 refreshOpenFiles()
-            } else if client.reloadFile(id) {
+                return nil
+            }
+            if client.reloadFile(id) {
                 restateStorage(sheet: id)
                 refreshOpenFiles()
-                flash(Self.reloadedNotice(name: file.name))
-            } else {
-                refreshOpenFiles()
-                flash(Self.readRefusalNotice(name: file.name))
+                return .reloaded(file.name)
             }
+            refreshOpenFiles()
+            return .unreadable(file.name)
         case .missing:
             refreshOpenFiles()
-            flash(Self.missingNotice(name: file.name))
+            return .missing(file.name)
         }
     }
 
-    // MARK: Files — the sentences
+    // MARK: Files: the sentences
 
     /// The core's open refusal, decoded and said in one sentence
     /// naming the file, and the limit when there is one.
@@ -3234,17 +3371,17 @@ public final class PageModel: ObservableObject {
     /// Whether the page has a step waiting in either direction: what a
     /// menu item or an affordance would grey out on.
     ///
-    /// The core refuses a tagged id on this route rather than
-    /// answering for page zero, so a file reads as no step available.
-    /// The file store keeps a real undo stack and the chord works on
-    /// it; only the greying out of the two menu items is missing, and
-    /// a menu item that is never greyed still performs.
+    /// Routed on the tag like every other document question. The
+    /// page's route refuses a tagged id and answers false, so without
+    /// the branch the menu would grey both items over a file whose
+    /// undo stack is full, and the menu would be saying something
+    /// untrue about a chord that works.
     public func canUndoEdit(sheet: UInt64) -> Bool {
-        client.canUndo(sheet: sheet)
+        sheet.isFileID ? client.canUndoFile(sheet) : client.canUndo(sheet: sheet)
     }
 
     public func canRedoEdit(sheet: UInt64) -> Bool {
-        client.canRedo(sheet: sheet)
+        sheet.isFileID ? client.canRedoFile(sheet) : client.canRedo(sheet: sheet)
     }
 
     /// Re-ask the core what the Edit menu should read as, and publish
@@ -3265,9 +3402,11 @@ public final class PageModel: ObservableObject {
             editSteps.stand(canUndo: false, canRedo: false)
             return
         }
+        // Through the routed pair, not the client's page route: the id
+        // under the editor is a file's whenever a file is showing.
         editSteps.stand(
-            canUndo: client.canUndo(sheet: sheet),
-            canRedo: client.canRedo(sheet: sheet)
+            canUndo: canUndoEdit(sheet: sheet),
+            canRedo: canRedoEdit(sheet: sheet)
         )
     }
 

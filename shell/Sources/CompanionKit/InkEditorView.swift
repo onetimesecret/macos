@@ -354,7 +354,10 @@ public struct InkEditorView: NSViewRepresentable {
         /// The live set the last prune saw. `pruneViewState` runs on
         /// every `updateNSView` pass, and the set rarely changes, so
         /// this gate lets the common pass skip the dictionary filters.
-        private var lastLiveSheets: Set<UInt64> = []
+        /// The last set `pruneViewState` was handed, so a pass that
+        /// changed nothing costs nothing. Nil means "ask again",
+        /// which is what a file leaving the roster sets it to.
+        private var lastLiveSheets: Set<UInt64>?
 
         init(model: PageModel) {
             self.model = model
@@ -532,12 +535,47 @@ public struct InkEditorView: NSViewRepresentable {
             savedScrolls = Self.pruned(savedScrolls, keeping: live)
         }
 
+        /// Forget one id's caret and scroll outright.
+        ///
+        /// The counterpart to the tag exemption in `pruned`. A file is
+        /// exempt from the page prune because it is never in the live
+        /// page set, so something has to drop its entries when it
+        /// actually goes, and this is that something. Called when a
+        /// file leaves the roster, never on a page: a page's entries
+        /// are the prune's business.
+        func forgetViewState(for sheet: UInt64) {
+            savedCarets[sheet] = nil
+            savedScrolls[sheet] = nil
+            // The prune's guard compares against the last live set and
+            // returns early when it has not changed. Clearing it means
+            // the next prune actually runs rather than skipping over a
+            // set that looks familiar.
+            lastLiveSheets = nil
+        }
+
+        /// Which ids hold a caret and which hold a scroll offset.
+        ///
+        /// A reading seam for the test that a closed file leaves
+        /// nothing behind in either map. Both are private, and asking
+        /// through the save or restore paths would write an entry
+        /// rather than read one.
+        var viewStateKeys: (carets: Set<UInt64>, scrolls: Set<UInt64>) {
+            (Set(savedCarets.keys), Set(savedScrolls.keys))
+        }
+
         /// The pure half of `pruneViewState`: keep only the entries
         /// whose keys are still live.
+        ///
+        /// A file id is always live here. The set is built from page
+        /// identities and a file is never among them, so without the
+        /// exemption a file's caret and scroll are thrown away on every
+        /// pass of `updateNSView`, and page to file to page returns the
+        /// file to the top with the caret at zero. A file's entries go
+        /// when the file closes, which drops the whole id.
         nonisolated static func pruned<Value>(
             _ table: [UInt64: Value], keeping live: Set<UInt64>
         ) -> [UInt64: Value] {
-            table.filter { live.contains($0.key) }
+            table.filter { $0.key.isFileID || live.contains($0.key) }
         }
 
         // MARK: Wrapping (⌥Z, Settings)

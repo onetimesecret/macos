@@ -121,9 +121,16 @@ Block metadata stamps are gated off for a tagged id in
 `InkEditorView.restyle`, so the page's block query is never called with
 a file id. A file has no block history and the pad is not inventing one.
 
-The activation check is `checkOpenFilesOnActivate()`, called from
-`applicationDidBecomeActive` in `BackdropApp.swift`, and the same check
-runs inside `saveFile(_:)` before every write.
+The activation check is `checkOpenFilesOnActivate()`, called from both
+activation routes in `BackdropApp.swift`, `applicationDidBecomeActive`
+and `applicationShouldHandleReopen`, so one gesture cannot mean two
+things depending on which it arrived at. The same check runs inside
+`saveFile(_:)` before every write.
+
+Undo and redo availability branches on the tag too:
+`PageModel.canUndoEdit` and `canRedoEdit` call the file route for a
+tagged id, so the Edit menu items grey themselves out correctly on a
+file.
 
 Drafts ride the same debounce and the same force save as the sealed
 state, and the drafts leg runs before the content leg, so whatever a
@@ -156,24 +163,27 @@ reading its chords from the keymap rather than spelling them.
 `BundledKeymapTests.swift` holds a literal chord to command table that a
 new binding must join.
 
-## Two known gaps
+## Two more places the tag decides something
 
-Both were left by the implementing lanes and neither is fixed as of
-838d3a8. Check the code before trusting this section.
+Neither is in the routing section above, and both are easy to break
+without noticing.
 
-1. **The Edit menu does not grey out undo and redo on a file.**
-   `PageModel.canUndoEdit` and `canRedoEdit` call the page route, which
-   refuses a tagged id, so a file always answers no step available. The
-   chord works and the file's undo stack is real; only the greying is
-   missing. Note that the core does have `companion_file_can_undo` and
-   `companion_file_can_redo`, declared in `companion_ffi.h`. What is
-   missing is a Swift wrapper and a branch on the tag in those two
-   methods, not a core symbol.
-2. **The activation check does not run on the reopen path.**
-   `applicationShouldHandleReopen` raises the card without calling
-   `checkOpenFilesOnActivate()`. A file changed on disk during that
-   gesture is noticed at the next real activation, or at the next save,
-   which does its own check.
+- **The day chord labels on the time rail.** `visibleTargets` draws
+  files first in both modes and `select(index:)` indexes that array, so
+  a day's chord is its own position offset by the number of open files.
+  One pure function computes that offset, in `TimeRailView.swift`, and
+  `indexOfSelection` applies the same offset in `PageModel.swift`.
+  Numbering the days from zero would print command 1 beside today while
+  command 1 selected the first file. If you change the draw order,
+  change both.
+- **A file is exempt from the storage prune.** The refresh drops the
+  storage of every id that is not a live page, and a file is not one.
+  The filter keeps a tagged id explicitly. Without that exemption the
+  first refresh after a file opens drops the storage the one persistent
+  text view is still laying out, every restate path then guards on a
+  map entry that is gone and does nothing, and a take theirs reports
+  the file was read again while the editor still shows the discarded
+  draft. A file's storage is dropped by exactly one place, the close.
 
 ## Other things worth knowing before you change something
 

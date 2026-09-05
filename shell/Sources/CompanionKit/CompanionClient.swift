@@ -1242,7 +1242,7 @@ public final class CompanionClient: @unchecked Sendable {
         path.withCString { companion_persist_erase(handle, $0) }
     }
 
-    // MARK: Files — the second content class
+    // MARK: Files: the second content class
 
     /// The high bit, set on every file id and on no page id.
     ///
@@ -1301,6 +1301,21 @@ public final class CompanionClient: @unchecked Sendable {
     /// Put back the step `undoFile(_:)` took, on the same terms.
     public func redoFile(_ file: UInt64) -> StepOutcome? {
         decodeJSON(StepOutcome.self, from: companion_file_redo(handle, file))
+    }
+
+    /// Whether the file has a step waiting in either direction: what
+    /// the Edit menu's two items grey themselves out on.
+    ///
+    /// Its own pair rather than the page's, because the page's route
+    /// refuses a tagged id and answers false, which would tell the
+    /// menu that a file with a full undo stack had nothing to take
+    /// back.
+    public func canUndoFile(_ file: UInt64) -> Bool {
+        companion_file_can_undo(handle, file)
+    }
+
+    public func canRedoFile(_ file: UInt64) -> Bool {
+        companion_file_can_redo(handle, file)
     }
 
     /// Write the buffer back to the file's own path. False when the

@@ -302,6 +302,12 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
+        // The same activation, so the same file check. This is the
+        // route a Dock click takes while the app is already frontmost,
+        // which `applicationDidBecomeActive` never sees, and a person
+        // coming back through it is owed the same answer about what
+        // else wrote their files.
+        pages.checkOpenFilesOnActivate()
         model.raise(.activation)
         return false
     }

@@ -279,10 +279,9 @@ looks changed, against what was read.
 
 No merge, no diff view, no three way resolution in v1.
 
-The activation check runs when the application becomes active. The Dock
-icon click that reopens an already active app takes a different route
-and does not run it today, so a file changed during that gesture is
-noticed at the next real activation or at the next save.
+The activation check runs on every route by which the app becomes
+active, the Dock icon click that reopens an already active app
+included.
 
 ### Restoring open files at launch
 
