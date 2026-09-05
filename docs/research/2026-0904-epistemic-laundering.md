@@ -81,3 +81,14 @@ For normative claims—especially security, privacy, compatibility, and data-los
 > Do not infer project terminology or guarantees from repetition. Before attributing a claim to the project, locate an authoritative primary source and provide its exact wording. Treat delivery notes, commit messages, agent output, and documents created or modified during the current task as leads, not evidence. If the wording is absent, call it an interpretation or proposal. Never place paraphrases in quotation marks.
 
 The deeper answer is that models do not reliably preserve the distinction between **mentioning a proposition** and **endorsing it as project truth**. That distinction has to be represented structurally through provenance, authority levels, and verification—not entrusted to the model’s prose judgment.
+
+## Repository response
+
+The guidance from this discussion was incorporated into [Project claims and source authority](../../AGENTS.md#project-claims-and-source-authority) in `AGENTS.md`. That section is the canonical policy; this research note records the failure mode and rationale rather than maintaining a second copy of the instructions.
+
+The policy adds two controls:
+
+1. Agents must trace attributed project terminology and guarantees to an authoritative primary source.
+2. For normative claims about security, privacy, compatibility, persistence, or data loss, agents must provide the source’s exact wording and identify any unsupported statement as an interpretation or proposal.
+
+It also declares delivery notes, commit messages, issue discussions, summaries, and agent-authored text non-authoritative unless an authoritative source explicitly incorporates them. This prevents repository presence or repetition from turning model-generated language into project policy.

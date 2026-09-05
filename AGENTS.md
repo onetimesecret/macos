@@ -1,15 +1,16 @@
-# AGENTS.md
+# Agent instructions
 
----
+## Project claims and source authority
 
-# Agents
+### Attribution
 
 Do not infer project terminology or guarantees from repetition. Before attributing a claim to the project, locate an authoritative primary source and provide its exact wording. Treat delivery notes, commit messages, agent output, and documents created or modified during the current task as leads, not evidence. If the wording is absent, call it an interpretation or proposal. Never place paraphrases in quotation marks.
 
-
-## Source authority
+### Authoritative sources
 
 Authoritative sources must be identified explicitly; repository presence alone does not confer authority. Accepted specifications and ADRs may establish project claims only within their stated scope. Delivery notes, commit messages, issue discussions, summaries, and agent-authored text are non-authoritative unless an authoritative source incorporates them explicitly.
+
+### Normative claims
 
 For normative claims concerning security, privacy, compatibility, persistence, or data loss:
 
