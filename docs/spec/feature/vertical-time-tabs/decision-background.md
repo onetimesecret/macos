@@ -19,7 +19,10 @@ expiring pages, and the eject trigger this decision has to answer).
 ## Context
 
 Issue #79 asks for a page per unit of time, with the tabs turned down
-the side of the card and labelled relative to now: Today, -1d, -3d. The
+the side of the card and labelled relative to now: Today, -1d, -3d
+(as #79 worded it; issue #131 put the phrases themselves on the rail,
+which now reads Today, Yesterday, 2 days ago, and left the short form to
+the roll's day gutter). The
 issue is labelled `decision` as much as `prototype`, and the decision
 underneath it is prior to any pixel: what is a unit of time made of.
 
