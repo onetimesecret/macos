@@ -253,7 +253,7 @@ struct Companion {
     /// all-off: a handle that never configures sync behaves
     /// bit-for-bit like one built before sync existed.
     sync: sync_driver::SyncState,
-    /// Open files, the second content class (ADR-0028). A separate
+    /// Open files, the peer content class to pages (ADR-0028). A separate
     /// store from `store` on purpose: nothing that turns state into
     /// relay payload can reach it, so sync exclusion is structural
     /// rather than a rule anybody has to remember.

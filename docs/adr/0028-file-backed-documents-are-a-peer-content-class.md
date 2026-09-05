@@ -2,7 +2,7 @@
 documentation_status: draft # needs-review | reviewed | stale
 ---
 
-# ADR-0028: File backed documents are a second content class
+# ADR-0028: File backed documents are a peer content class
 
 - **Status:** proposed
 - **Date:** 2026-09-04
@@ -41,9 +41,10 @@ in the
 
 ## Decision
 
-File backed documents are a second content class beside pages: the file
-on disk is the artifact, the pad is an editing interface over it, and no
-mechanism in the pad ever destroys or expires its contents.
+File backed documents are an additional content class, a peer to pages,
+and both are first class features of the pad: the file on disk is the
+artifact, the pad is an editing interface over it, and no mechanism in
+the pad ever destroys or expires its contents.
 
 The clauses that fix the boundary:
 
@@ -160,7 +161,7 @@ buckets a day or decides a rotation predicate would grow a case for
 content that never ages. It also makes the pad's forgetting a
 suggestion: a reader could no longer tell by looking whether what is on
 screen is on a clock. Rejected because it dilutes the one property the
-pad is built around in order to avoid naming a second class.
+pad is built around in order to avoid naming a peer class.
 
 **Autosave in place, as `NSDocument` does.** Familiar on macOS and wrong
 here. It means the pad writes to a person's file without being asked,

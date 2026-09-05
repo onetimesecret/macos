@@ -2,7 +2,8 @@
 
 Status: **landed** on `feature/regular-text-files`, decision still
 proposed · 2026-09-05
-Scope: a second content class beside pages. The pad can open a plain
+Scope: an additional content class, a peer to pages, with both first
+class features of the pad. The pad can open a plain
 text or Markdown file from disk, edit it in the same editor a page
 uses, and save it back on an explicit request. Pages, their TTLs, the
 nine tab cap, the day roll and the sealed page format are untouched.
@@ -27,7 +28,7 @@ day is a projection of live pages) and
 [ADR-0021](../../../adr/0021-multi-device-sync-over-a-blind-relay.md)
 (what the relay carries).
 Decision:
-[ADR-0028](../../../adr/0028-file-backed-documents-are-a-second-content-class.md),
+[ADR-0028](../../../adr/0028-file-backed-documents-are-a-peer-content-class.md),
 **proposed**.
 Issue: not yet filed.
 
@@ -52,7 +53,7 @@ person's text lives, only the place some of it visits. The friction is
 small and constant, and it is the kind of friction that decides whether
 a tool becomes a habit.
 
-### Why a second content class rather than a page with no TTL
+### Why a peer content class rather than a page with no TTL
 
 The obvious shortcut is to let a page hold a file and give that page an
 infinite TTL. It is the wrong shape for four reasons.

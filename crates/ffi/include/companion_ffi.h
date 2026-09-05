@@ -1078,7 +1078,7 @@ char *companion_sync_pairing_confirm(CompanionHandle *handle, bool matched);
 bool companion_sync_pairing_cancel(CompanionHandle *handle);
 
 /* ------------------------------------------------------------------ */
-/* Files: the second content class                                     */
+/* Files: the peer content class to pages                              */
 /* ------------------------------------------------------------------ */
 
 /*

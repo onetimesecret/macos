@@ -3,7 +3,7 @@
 **Applies to:** OnetimePad, installed release bundle, built from
 `feature/regular-text-files` or later.
 **Required by:**
-[ADR-0028](../../adr/0028-file-backed-documents-are-a-second-content-class.md),
+[ADR-0028](../../adr/0028-file-backed-documents-are-a-peer-content-class.md),
 the staged drafts clause and the resealing clause, and the
 [file backed documents specification](../../spec/feature/file-editing/README.md).
 Two claims in those records cannot be reached by any test in this

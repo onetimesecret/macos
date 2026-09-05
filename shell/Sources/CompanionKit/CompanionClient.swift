@@ -110,7 +110,7 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
 
 /// A non-secret snapshot of one open file, decoded from the core's
 /// JSON (see crates/ffi/include/companion_ffi.h for the field
-/// contract). A file is the second content class: the file on disk is
+/// contract). A file is a peer content class to a page: the file on disk is
 /// the artifact, saving is explicit, and none of a page's clock fields
 /// have a meaning here, which is why this is its own type beside
 /// `TabSummary` rather than more optionals on that one.
@@ -1242,7 +1242,7 @@ public final class CompanionClient: @unchecked Sendable {
         path.withCString { companion_persist_erase(handle, $0) }
     }
 
-    // MARK: Files: the second content class
+    // MARK: Files: the peer content class to pages
 
     /// The high bit, set on every file id and on no page id.
     ///

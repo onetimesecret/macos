@@ -1,10 +1,11 @@
 # docs/development/about-file-backed-documents.md
 ---
 
-A file backed document is a file on disk that the pad edits. It is not
-a page. It has no TTL, no gauge, no day, no place in the nine page cap
-and no path to the sync relay. The decision is
-[ADR-0028](../adr/0028-file-backed-documents-are-a-second-content-class.md),
+A file backed document is a file on disk that the pad edits. It is a
+peer to a page, not a page: both are first class content, and a file
+has no TTL, no gauge, no day, no place in the nine page cap and no path
+to the sync relay. The decision is
+[ADR-0028](../adr/0028-file-backed-documents-are-a-peer-content-class.md),
 still proposed; the behaviour is the
 [file backed documents specification](../spec/feature/file-editing/README.md).
 This note is the map for whoever next touches the code.

@@ -1,4 +1,4 @@
-//! Open files: the second content class.
+//! Open files: the content class that is a peer to pages.
 //!
 //! A file on disk is the artifact. A file is never a page, never a Tab,
 //! never counted against the nine page cap, never in the day roll and

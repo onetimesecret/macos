@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **The core can open, edit and save a file on disk** (ADR-0028;
-  `companion-ffi` 0.24.0). A file is a second content class beside a
-  page. It has no countdown, no gauge, it is never in the day roll,
+  `companion-ffi` 0.24.0). A file is a content class that is a peer to
+  a page, and both are first class. A file has no countdown, no gauge,
+  it is never in the day roll,
   it is never counted against the nine page cap, and it is never
   synced. That last one is structural rather than a rule: files live
   in their own store, and the one function that turns state into

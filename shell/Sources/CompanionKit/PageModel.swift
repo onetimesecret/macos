@@ -2027,7 +2027,7 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    // MARK: Files: the second content class
+    // MARK: Files: the peer content class to pages
 
     /// Restate the roster from the core, which is the authority for
     /// every file's name, path, dirtiness and conflict.
