@@ -274,6 +274,12 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   Desktop 1, the shape of any flicker on return, and the edge drag that
   ADR-0019 decides against rather than fixes (issue #74). Not an
   ADR-0016 case.
+- [`grace-snap-and-undo.md`](verification-procedures/grace-snap-and-undo.md).
+  Owner: delano. The deadline snap on the real zone database: a
+  timezone change, spring forward and fall back, each with the expected
+  countdown worked from the code; and undo walked across a relaunch and
+  across a compaction (issues #146 and #132, ADR-0011 section 4,
+  ADR-0025 section 4). Not an ADR-0016 case.
 
 - [`sync-enrolment.md`](verification-procedures/sync-enrolment.md).
   Owner: delano. Two Macs, a real browser trip and a real relay: that
