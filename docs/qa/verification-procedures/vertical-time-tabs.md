@@ -378,3 +378,5 @@ stay: a re-run adds a row rather than replacing one.
 | | | 10 minimap reads as texture, not as a chart | | Record the two inks and the appearance. |
 | | | 10 band tracks the scroll and clamps at both ends | | |
 | | | 10 nothing legible in the minimap at any size | | |
+| | | 10 rail width at the 360pt floor | | Do the day words fit without truncation. Does the roll's gutter still hold day, title and countdown on one line. |
+| | | 10 rail width on a wide card | | Does 96pt read as generous or as a wasted column. Decision: pin 96, narrow the rail, or raise the card's floor. |
