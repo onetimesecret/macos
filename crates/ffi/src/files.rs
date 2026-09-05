@@ -429,6 +429,44 @@ unsafe fn apply(
     }
 }
 
+/// Whether the file has a step waiting to be taken back. False for an
+/// unknown file, and false whenever the answer cannot be had, which is
+/// what `companion_sheet_can_undo` answers for a page.
+///
+/// The pair exists because the page route refuses a tagged id by
+/// design, so a shell asking it about a file is told no rather than
+/// told the truth, and the undo menu item stays grey over a file with a
+/// full stack.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_can_undo(handle: *mut CompanionHandle, file: u64) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.files.can_undo(FileId(file))
+}
+
+/// Whether the file has a step waiting to be restored. The counterpart
+/// of [`companion_file_can_undo`], on the same terms.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_can_redo(handle: *mut CompanionHandle, file: u64) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.files.can_redo(FileId(file))
+}
+
 /// Take back the file's last local edit step. Returns the `StepOutcome`
 /// JSON described in the header, or null for an unknown file. Free with
 /// `companion_string_free`.
@@ -1593,6 +1631,44 @@ mod tests {
     }
 
     #[test]
+    fn the_can_undo_pair_answers_for_a_file_and_refuses_a_page() {
+        let (handle, dir) = scratch("canundo");
+        let file = dir.join("u.txt");
+        std::fs::write(&file, b"hello").unwrap();
+        unsafe {
+            let id = open(handle, &file);
+            assert!(!companion_file_can_undo(handle, id));
+            assert!(!companion_file_can_redo(handle, id));
+
+            let ops = cstring(r#"[{"ins":{"at":5,"text":" there"}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            assert!(companion_file_can_undo(handle, id));
+            assert!(!companion_file_can_redo(handle, id));
+
+            let undo: serde_json::Value =
+                serde_json::from_str(&take_json(companion_file_undo(handle, id))).unwrap();
+            assert_eq!(undo["applied"], serde_json::json!(true));
+            assert!(
+                !companion_file_can_undo(handle, id),
+                "that was the only step"
+            );
+            assert!(companion_file_can_redo(handle, id));
+
+            // A live page's id, untagged, is refused here the way a
+            // file id is refused by the page pair.
+            let tab = crate::companion_tab_new(handle);
+            assert_ne!(tab, 0);
+            let page = tabs(handle)[0]["page_id"].as_u64().unwrap();
+            assert!(!companion_file_can_undo(handle, page));
+            assert!(!companion_file_can_redo(handle, page));
+
+            // And the file still answers, so no refusal touched it.
+            assert!(companion_file_can_redo(handle, id));
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
     fn a_fifo_is_refused_rather_than_blocked_on() {
         // A bare `std::fs::read` of a pipe with no writer parks in
         // `open(2)` forever with the handle mutex held, which stops the
@@ -2024,6 +2100,8 @@ mod tests {
             assert!(companion_file_runs_json(null, 1).is_null());
             assert!(!companion_file_apply_ops(null, 1, ptr::null()));
             assert!(!companion_file_apply_ops_as_new_step(null, 1, ptr::null()));
+            assert!(!companion_file_can_undo(null, 1));
+            assert!(!companion_file_can_redo(null, 1));
             assert!(companion_file_undo(null, 1).is_null());
             assert!(companion_file_redo(null, 1).is_null());
             assert!(!companion_file_save(null, 1));

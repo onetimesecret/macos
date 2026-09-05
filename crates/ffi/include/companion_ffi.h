@@ -1193,6 +1193,20 @@ bool companion_file_apply_ops_as_new_step(CompanionHandle *handle,
                                           const char *ops_json);
 
 /*
+ * Whether the file has a step waiting to be taken back, and one waiting
+ * to be restored. False for an unknown file, and false whenever the
+ * answer cannot be had, which is what companion_sheet_can_undo() and
+ * companion_sheet_can_redo() answer for a page.
+ *
+ * The pair exists because those page routes refuse a tagged id by
+ * design, so a shell that asked them about a file was told no rather
+ * than told the truth, and the undo menu item stayed grey over a file
+ * with a full stack. Route by id: a file id here, a page id there.
+ */
+bool companion_file_can_undo(CompanionHandle *handle, uint64_t file);
+bool companion_file_can_redo(CompanionHandle *handle, uint64_t file);
+
+/*
  * Take back the file's last local edit step, and put it back. Both
  * return a StepOutcome as above, or null for an unknown file. Free with
  * companion_string_free().

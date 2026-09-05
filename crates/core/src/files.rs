@@ -690,6 +690,22 @@ impl FileStore {
         clean
     }
 
+    /// Whether the file has a step waiting to be taken back. False for
+    /// an unknown file, the same answer
+    /// [`crate::store::SheetStore::can_undo`] gives for an unknown
+    /// page: this is what a menu item's enabled state reads, and a
+    /// question that cannot be answered is not a step that exists.
+    #[must_use]
+    pub fn can_undo(&self, id: FileId) -> bool {
+        self.file(id).is_some_and(|file| file.document.can_undo())
+    }
+
+    /// Whether the file has a step waiting to be restored.
+    #[must_use]
+    pub fn can_redo(&self, id: FileId) -> bool {
+        self.file(id).is_some_and(|file| file.document.can_redo())
+    }
+
     /// Take back the file's last local edit step.
     pub fn undo(&mut self, id: FileId) -> Option<StepOutcome> {
         self.step(id, true)
@@ -1588,6 +1604,35 @@ mod tests {
         assert!(outcome.applied);
         assert_eq!(store.text(id).unwrap(), "hello");
         assert!(!store.is_dirty(id), "back at the saved text is clean");
+    }
+
+    #[test]
+    fn the_stack_answers_for_a_file_the_way_it_does_for_a_page() {
+        let io = MemoryIo::with("/u.txt", b"hello");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/u.txt")).unwrap();
+        // The insert that filled the buffer is the file arriving, not a
+        // step anyone may take back.
+        assert!(!store.can_undo(id));
+        assert!(!store.can_redo(id));
+
+        assert!(store.apply_ops(id, &[ins(5, " there")], 1_000));
+        assert!(store.can_undo(id));
+        assert!(!store.can_redo(id));
+
+        assert!(store.undo(id).unwrap().applied);
+        assert!(!store.can_undo(id), "that was the only step");
+        assert!(store.can_redo(id));
+
+        assert!(store.redo(id).unwrap().applied);
+        assert!(store.can_undo(id));
+        assert!(!store.can_redo(id));
+
+        // An id nothing is open under answers no, not a panic.
+        assert!(!store.can_undo(FileId(FILE_ID_TAG | 404)));
+        assert!(!store.can_redo(FileId(FILE_ID_TAG | 404)));
+        assert!(!store.can_undo(FileId(1)));
+        assert!(!store.can_redo(FileId(1)));
     }
 
     #[test]
