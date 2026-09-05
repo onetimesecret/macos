@@ -15,6 +15,7 @@ The design should:
 - Preserve provenance during ordinary copy and paste.
 - Allow provenance to survive when only part of a document is copied.
 - Require no sidecar file, manifest, signature, or external service.
+- Let existing programs participate without modification.
 - Render pleasantly with a supporting Nerd Font.
 - Offer two fallback behaviors:
   - **Soft fallback:** unsupported fonts show ordinary text.
@@ -30,23 +31,26 @@ The design does not attempt to:
 - Authenticate the person, model, or application making the designation.
 - Prevent someone from removing or changing provenance.
 - Represent a complete editing history.
-- Infer provenance for unmarked legacy text.
+- Verify that text assumed human was in fact written by a human.
 
 This is a labeling convention, not a trust system.
 
 ## 3. Provenance model
 
-The initial profile defines three states:
+The initial profile defines four states:
 
-| State | Meaning |
-|---|---|
-| Unmarked | No provenance information is available |
-| Human | Explicitly designated as human-written |
-| AI | Explicitly designated as AI-written |
+| State          | Encoding                            | Meaning                                                                                          |
+| -------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Assumed human  | Plain Unicode, no selector          | The default. Nothing has marked this text, and readers already treat plain text as human-written |
+| Explicit human | `<base> + VS_HUMAN`                 | Positively designated as human-written by the producing tool                                     |
+| AI             | `<base> + VS_AI` or PUA counterpart | Explicitly designated as AI-written                                                              |
+| Unknown        | `<base> + VS_UNKNOWN`               | The producing tool could not determine the source and says so                                    |
 
-An optional future profile may add states such as `human-edited AI`, `mixed`, or `unknown source`.
+An optional future profile may add states such as `human-edited AI` or `mixed`.
 
-Ordinary Unicode must technically mean **unmarked**, not conclusively human. Existing text cannot be assumed to carry an intentional human designation.
+Plain Unicode is assumed human rather than treated as unmarked. This is a deliberate adoption choice. Every existing program already produces plain text, and readers already take plain text to be human-written. Naming that assumption lets existing programs participate without modification. Only tools that emit AI text need to change, which is where the marking obligation belongs.
+
+The assumption is a default, not a claim. Explicit human is the forward-compatibility path: a program that wants to opt in can assert authorship rather than inherit it, and text it produces stays distinguishable from the assumed-human pool if a later profile tightens the default. Unknown exists for tools that handle text of mixed or lost origin, such as an editor receiving a paste, and prefer to say so rather than let it fall into the default.
 
 ## 4. Dual encoding
 
@@ -63,20 +67,22 @@ A variation selector follows each marked base character:
 Conceptually:
 
 ```text
-A + VS_HUMAN → human A
-A + VS_AI    → AI A
+A + VS_HUMAN   → explicit human A
+A + VS_AI      → AI A
+A + VS_UNKNOWN → unknown A
 ```
 
 Variation sequences consist of a base character followed by a variation selector. Unsupported selectors are default-ignorable, giving the desired plain-text fallback.[^1] OpenType represents supported variation sequences with a format 14 `cmap` subtable.[^2]
 
 Example private convention:
 
-| Sequence | Meaning |
-|---|---|
-| `<base> + U+E0100` | Human |
-| `<base> + U+E0101` | AI |
-| `<base> + U+E0102` | Human-edited AI, reserved |
-| `<base> + U+E0103` | Mixed or other, reserved |
+| Sequence           | Meaning                   |
+| ------------------ | ------------------------- |
+| `<base> + U+E0100` | Explicit human            |
+| `<base> + U+E0101` | AI                        |
+| `<base> + U+E0102` | Unknown                   |
+| `<base> + U+E0103` | Human-edited AI, reserved |
+| `<base> + U+E0104` | Mixed or other, reserved  |
 
 These assignments are a private protocol between encoders, decoders, and supporting fonts. They are not standardized Unicode variation sequences.
 
@@ -133,12 +139,13 @@ PUA_AI_A ────┘
 
 A single font therefore supports:
 
-| Input | Supporting font | Unsupported font |
-|---|---|---|
-| Plain `A` | Ordinary `A` | Ordinary `A` |
-| `A + VS_HUMAN` | Human-designated `A` | Ordinary `A` |
-| `A + VS_AI` | AI-designated `A` | Ordinary `A` |
-| `PUA_AI_A` | AI-designated `A` | Tofu |
+| Input            | Supporting font             | Unsupported font |
+| ---------------- | --------------------------- | ---------------- |
+| Plain `A`        | Ordinary `A`, assumed human | Ordinary `A`     |
+| `A + VS_HUMAN`   | Explicit-human `A`          | Ordinary `A`     |
+| `A + VS_AI`      | AI-designated `A`           | Ordinary `A`     |
+| `A + VS_UNKNOWN` | Unknown-designated `A`      | Ordinary `A`     |
+| `PUA_AI_A`       | AI-designated `A`           | Tofu             |
 
 The author or application chooses whether AI text uses soft or hard fallback.
 
@@ -162,8 +169,9 @@ The project must publish a machine-readable mapping, for example:
   "variation_selectors": {
     "human": "U+E0100",
     "ai": "U+E0101",
-    "edited": "U+E0102",
-    "mixed": "U+E0103"
+    "unknown": "U+E0102",
+    "edited": "U+E0103",
+    "mixed": "U+E0104"
   },
   "pua": {
     "U+F0041": {
@@ -184,7 +192,7 @@ The mapping version must remain stable. Once a PUA code point has been published
 
 Provenance should normally be encoded per character or grapheme cluster.
 
-For simple characters:
+For simple characters carrying an explicit designation:
 
 ```text
 H + VS_HUMAN
@@ -296,16 +304,18 @@ Copying rendered text should ordinarily copy those code points. Copying a substr
 
 The two modes make different tradeoffs:
 
-| Property | Variation selector | PUA |
-|---|---|---|
-| Plain fallback | Yes | No |
-| Visible failure | No | Usually tofu |
-| Independent encoded character | No | Yes |
-| Likely sanitizer treatment | May be stripped as default-ignorable | May be retained or rejected |
-| Reversible | Yes | Yes, with mapping table |
-| Partial-copy provenance | Yes | Yes |
+| Property                      | Variation selector                   | PUA                         |
+| ----------------------------- | ------------------------------------ | --------------------------- |
+| Plain fallback                | Yes                                  | No                          |
+| Visible failure               | No                                   | Usually tofu                |
+| Independent encoded character | No                                   | Yes                         |
+| Likely sanitizer treatment    | May be stripped as default-ignorable | May be retained or rejected |
+| Reversible                    | Yes                                  | Yes, with mapping table     |
+| Partial-copy provenance       | Yes                                  | Yes                         |
 
-No Unicode mechanism can guarantee preservation through every clipboard, sanitizer, normalization pipeline, or plain-ASCII conversion. If provenance code points are removed, the remaining text becomes unmarked.
+No Unicode mechanism can guarantee preservation through every clipboard, sanitizer, normalization pipeline, or plain-ASCII conversion. If provenance code points are removed, the remaining text falls back to assumed human.
+
+That fallback favors whoever emitted the AI text. Stripping an AI selector promotes the text to the default rather than to unknown. This asymmetry is the strongest argument for PUA mode on AI text: an unsupported or rejected PUA character fails visibly instead of quietly joining the assumed-human pool.
 
 ## 11. Conversion and inspection
 
@@ -314,6 +324,7 @@ A small reference tool should support:
 ```bash
 nfprov inspect file.txt
 nfprov mark --human file.txt
+nfprov mark --unknown file.txt
 nfprov mark --ai --mode=vs file.txt
 nfprov mark --ai --mode=pua file.txt
 nfprov convert --from=vs --to=pua file.txt
@@ -326,14 +337,18 @@ Core transformations are straightforward:
 ```text
 Plain A → A + VS_HUMAN
 Plain A → A + VS_AI
+Plain A → A + VS_UNKNOWN
 Plain A → PUA_AI_A
 
 A + VS_AI ↔ PUA_AI_A
 
-A + VS_HUMAN → Plain A
-A + VS_AI    → Plain A
-PUA_AI_A     → Plain A
+A + VS_HUMAN   → Plain A
+A + VS_AI      → Plain A
+A + VS_UNKNOWN → Plain A
+PUA_AI_A       → Plain A
 ```
+
+Stripping returns text to the assumed-human default. It is a lossy operation and the tool should say so.
 
 Decoders must preserve unrecognized code points rather than guessing their intended base characters.
 
@@ -344,16 +359,18 @@ Editors that understand the profile should:
 - Preserve provenance when moving text.
 - Apply the current provenance mode to newly typed characters.
 - Preserve existing provenance when changing presentation.
-- Provide explicit conversion between human, AI, and unmarked states.
+- Provide explicit conversion among plain, explicit human, AI, and unknown states.
 - Treat deletion and replacement using ordinary character-editing semantics.
 - Avoid silently converting PUA characters into ordinary Unicode.
 
-A minimal integration only needs two insertion modes:
+A minimal integration needs one insertion mode, since human input can stay plain:
 
 ```text
-Human input → base + VS_HUMAN
+Human input → base, assumed human
 AI input    → base + VS_AI or PUA counterpart
 ```
+
+Explicit human and unknown are opt-in refinements. A program that adopts explicit human marks its human input with `VS_HUMAN` and keeps the AI mode unchanged.
 
 An application may use PUA mode for generated output and VS mode for human input, making unsupported AI text fail visibly while human text falls back normally.
 
@@ -395,22 +412,24 @@ Written by a human. Generated by AI.
 Soft encoding:
 
 ```text
-W<VS_H>r<VS_H>i<VS_H>... G<VS_AI>e<VS_AI>n<VS_AI>...
+Written by a human. G<VS_AI>e<VS_AI>n<VS_AI>...
 ```
 
 Hard AI encoding:
 
 ```text
-W<VS_H>r<VS_H>i<VS_H>... <PUA_G><PUA_e><PUA_n>...
+Written by a human. <PUA_G><PUA_e><PUA_n>...
 ```
+
+The human sentence stays plain and is assumed human. A program that has opted into explicit human writes it as `W<VS_H>r<VS_H>i<VS_H>...` instead, with the same rendering under every font.
 
 Presentation:
 
-| Environment | Result |
-|---|---|
-| Supporting font, identical style | Ordinary readable sentence |
-| Supporting font, subtle style | Readable sentence with subtle provenance distinctions |
-| Unsupported font, all-VS encoding | Entire sentence appears as ordinary text |
+| Environment                       | Result                                                |
+| --------------------------------- | ----------------------------------------------------- |
+| Supporting font, identical style  | Ordinary readable sentence                            |
+| Supporting font, subtle style     | Readable sentence with subtle provenance distinctions |
+| Unsupported font, VS AI encoding  | Entire sentence appears as ordinary text              |
 | Unsupported font, PUA AI encoding | Human portion is readable; AI portion appears as tofu |
 
 ## 15. Summary
