@@ -12,11 +12,14 @@ Serves the capability spec at
 mechanism behind the automatic memory, the retention class of the
 deliberate objects (checkpoints, variants), and, the load-bearing
 part, where history dies. That last decision amends accepted
-ADR-0013 and needs maintainer ratification before anything ships.
+ADR-0013 and waits on a measurement before anything ships.
 
-**Awaiting maintainer ratification: Part 2, "The page is history's
-retention unit (amends ADR-0013)".** Nothing in part 2 may ship until
-that ratification is recorded here.
+**Part 2, "The page is history's retention unit (amends ADR-0013)",
+stays open.** It cannot be decided until real pages show what
+per-page history costs: op-log growth and compaction cost measured on
+a page with a day of real typing, which is also ADR-0013's own eject
+trigger. Nothing in part 2 ships before that measurement exists and
+the decision is recorded here.
 
 ## Context
 
@@ -116,9 +119,10 @@ runs on:
   cross-device history as the want that lost).
 
 ADR-0013's bound on locally reconstructible deleted content becomes:
-**a block's history never outlives its page, never survives a shed,
-and never crosses a key frame to another device.** The honesty section
-below is what that trades away.
+**a block's history never outlives its page and never survives a
+shed.** A key frame is a shed, so nothing behind one exists anywhere
+afterwards; ADR-0021 owns what a joining peer receives. The honesty
+section below is what that trades away.
 
 ### 3. Checkpoints and variants are deliberate content, not history
 
@@ -206,8 +210,8 @@ seven-day page can be seven days. Mitigations, in order of weight:
 - Part 2 removes the `compact_or_defer` calls from the rung and
   top-up paths in `store.rs` and adds the shed entry point and the
   size trigger. The ceremony code, the deferred state machine, and
-  the graduation all survive as-is. ADR-0013's ceremony section needs
-  an amendment note pointing here once ratified.
+  the graduation all survive as-is. ADR-0013's Decision section needs
+  an amendment note pointing here if part 2 is accepted.
 - Part 3 is new design work (object model beside chips, panel
   treatment) and can land after parts 1 and 2; nothing in them
   forecloses it.
@@ -219,8 +223,10 @@ seven-day page can be seven days. Mitigations, in order of weight:
 
 ## What would settle this
 
-- Maintainer ratification of part 2, since it amends accepted
-  ADR-0013 and rescopes a security claim.
+- Part 2, once op-log growth and compaction cost have been measured on
+  real pages. It amends accepted ADR-0013 and restates its bound, and
+  the measurement is what decides whether per-page history is
+  affordable; there is nothing to ratify before it exists.
 - The two derivation thresholds (idle gap, destructive deletion
   size), tuned by dogfood feel; both read-time, no migration.
 - Measured cost of the fork-then-checkout walk on a page with a day
@@ -249,7 +255,8 @@ seven-day page can be seven days. Mitigations, in order of weight:
 - **2026-09-01:** The undo rules now recorded as part 4 were decided
   and delivered for issue #132 in PR #142.
 - **2026-09-04:** Delivery note added below. Status stays `proposed`:
-  part 2 still awaits maintainer ratification.
+  part 2 waits on op-log growth and compaction cost measured on real
+  pages.
 
 ## Delivery note (2026-09-04)
 
@@ -262,7 +269,8 @@ as part 4 above.
 
 Settle list, as of this date:
 
-- **Maintainer ratification of part 2.** Open. Nothing else here
+- **Part 2.** Open, and not decidable yet: no measurement of op-log
+  growth or compaction cost on a real page exists. Nothing else here
   changes that.
 - **The two derivation thresholds.** Open. Part 1 is not built: no
   `block_revisions` seam exists in `crates/`. The two second figure
@@ -309,15 +317,17 @@ Delivered by #132 and holding part 4:
 - The caret across the seam: `crates/core/src/document.rs:1298`,
   `crates/ffi/src/lib.rs:4260`.
 
-**Awaiting maintainer ratification: Part 2, "The page is history's
-retention unit (amends ADR-0013)".** The decision to ratify or refuse:
-rung transitions and hold top-ups stop being compaction boundaries, so
-a block's history lives as long as its page and dies only at expiry,
-at deliberate page deletion, at a deliberate shed, over the size
-budget, or at the coordinated sync ceremony. Ratifying restates
-ADR-0013's bound on locally reconstructible deleted content as "never
-outlives its page, never survives a shed, never crosses a key frame",
-and obliges an amendment note in ADR-0013's Decision section.
+**Part 2, "The page is history's retention unit (amends ADR-0013)",
+stays open.** The question it asks is whether rung transitions and
+hold top-ups stop being compaction boundaries, so a block's history
+lives as long as its page and dies only at expiry, at deliberate page
+deletion, at a deliberate shed, over the size budget, or at the
+coordinated sync ceremony. That cannot be answered until op-log growth
+and compaction cost are measured on real pages. If the measurement
+supports it, accepting part 2 restates ADR-0013's bound on locally
+reconstructible deleted content as "never outlives its page, never
+survives a shed" and obliges an amendment note in ADR-0013's Decision
+section.
 
 ## Eject triggers
 
