@@ -2333,6 +2333,8 @@ mod tests {
             credentials,
             wire: crate::conceal::Wire::real(),
             sync: SyncState::default(),
+            files: companion_core::FileStore::new(),
+            last_open_refusal: None,
         }
     }
 

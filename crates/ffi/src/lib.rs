@@ -253,6 +253,14 @@ struct Companion {
     /// all-off: a handle that never configures sync behaves
     /// bit-for-bit like one built before sync existed.
     sync: sync_driver::SyncState,
+    /// Open files, the second content class (ADR-0028). A separate
+    /// store from `store` on purpose: nothing that turns state into
+    /// relay payload can reach it, so sync exclusion is structural
+    /// rather than a rule anybody has to remember.
+    files: companion_core::FileStore,
+    /// Why the last `companion_file_open` on this handle refused, held
+    /// until the next open so the shell can ask in a second call.
+    last_open_refusal: Option<companion_core::OpenRefusal>,
 }
 
 /// The credential-store account holding the API token (scoped by the
@@ -475,6 +483,8 @@ fn new_handle(credentials: Arc<dyn CredentialStore>) -> *mut CompanionHandle {
         credentials,
         wire: Wire::real(),
         sync: sync_driver::SyncState::default(),
+        files: companion_core::FileStore::new(),
+        last_open_refusal: None,
     };
     Box::into_raw(Box::new(CompanionHandle {
         inner: Mutex::new(companion),
@@ -1777,7 +1787,16 @@ pub unsafe extern "C" fn companion_persist_rotate_and_save(
         }
         persist::Erasure::Gone => {}
     }
-    seal_state_to(&guard, path)
+    // Drafts before the strip. Both files rested under the halves this
+    // rotation just destroyed, so both have to be rewritten under the
+    // new ones, and there is no ordering that keeps either readable
+    // across the instant the old half dies: the new key does not exist
+    // until the old halves are gone. What the ordering decides is which
+    // file survives a crash inside the window, and a person's unsaved
+    // typing outranks the tab names, rungs and strip order this call's
+    // own residual already accepts. See `files::reseal_drafts_beside`.
+    let drafts = files::reseal_drafts_beside(&guard, path);
+    seal_state_to(&guard, path) && drafts
 }
 
 /// The milliseconds of wall-clock time between the stamp a file was
@@ -2055,6 +2074,18 @@ pub unsafe extern "C" fn companion_persist_erase(
              would forget nothing and would consume the retry."
         );
         return false;
+    }
+    // The gesture that drops the content file discards drafts with it:
+    // they rest under the same key and describe the same session. It
+    // runs after the rotation, which has already made them unreadable,
+    // so this is the tidy rather than the forgetting. Only a content
+    // drop takes them; a ledger clear arrives here too and must leave
+    // a person's unsaved file edits alone.
+    if persist::drop_takes_the_content_key(path) && !files::erase_drafts_beside(path) {
+        diag_fault!(
+            "companion-ffi: the drafts file could not be dropped. It is already unreadable, \
+             the rotation having taken its key, so what is left at the path is inert bytes."
+        );
     }
     persist::erase_state(path)
 }
@@ -3479,6 +3510,8 @@ mod tests {
             credentials,
             wire: Wire::real(),
             sync: sync_driver::SyncState::default(),
+            files: companion_core::FileStore::new(),
+            last_open_refusal: None,
         };
         Box::into_raw(Box::new(CompanionHandle {
             inner: Mutex::new(companion),

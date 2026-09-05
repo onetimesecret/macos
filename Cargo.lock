@@ -158,8 +158,9 @@ dependencies = [
 
 [[package]]
 name = "companion-ffi"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
+ "base64",
  "companion-core",
  "companion-credentials",
  "companion-pasteboard",

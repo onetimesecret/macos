@@ -1,6 +1,6 @@
 [package]
 name = "companion-ffi"
-version = "0.23.0"
+version = "0.24.0"
 description = "The C-ABI seam for the Onetime Secret macOS companion: the only crate a non-Rust shell may call. Hands out opaque handles and non-secret JSON — never plaintext."
 publish = false
 edition.workspace = true
@@ -26,6 +26,11 @@ workspace = true
 test-util = []
 
 [dependencies]
+# The one blob that has to cross the C ABI is the shell's file
+# bookmark, and it crosses as base64 in a C string because no byte
+# buffer has ever crossed this ABI (ADR-0028). Already in the workspace
+# lock by way of the transport stack: no new supply chain.
+base64 = "0.22"
 companion-core = { path = "../core" }
 companion-credentials = { path = "../credentials" }
 companion-pasteboard = { path = "../pasteboard" }

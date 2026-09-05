@@ -1210,6 +1210,35 @@ bool companion_file_reload(CompanionHandle *handle, uint64_t file);
 char *companion_file_roster_json(CompanionHandle *handle);
 
 /*
+ * Keep mine: the first of the three conflict resolutions, and the only
+ * one with no other entry point. Take theirs is companion_file_reload()
+ * and the third is companion_file_save_as(). Clears the conflict and
+ * lets the next save overwrite whatever is on disk; the shell calls it
+ * only after the person has chosen. Returns false for an unknown file.
+ */
+bool companion_file_resolve_keep_mine(CompanionHandle *handle,
+                                      uint64_t file);
+
+/*
+ * Attach the shell's bookmark for a file, as standard base64. The blob
+ * is opaque to the core: nothing here resolves it or inspects it, it is
+ * carried into the drafts file and handed back at the next launch.
+ * Base64 rather than a byte buffer because no byte buffer has ever
+ * crossed this ABI. An empty string clears the bookmark. Returns false
+ * for an unknown file or text that is not base64.
+ */
+bool companion_file_set_bookmark(CompanionHandle *handle, uint64_t file,
+                                 const char *bookmark_b64);
+
+/*
+ * The bookmark last attached to a file, as standard base64, or an empty
+ * string when none was. Null for an unknown file. Free with
+ * companion_string_free(). The shell reads this after a drafts restore
+ * to resolve the file it should reopen.
+ */
+char *companion_file_bookmark_b64(CompanionHandle *handle, uint64_t file);
+
+/*
  * The drafts file. A third sealed file beside the state file and the
  * ledger, plaintext magic OTSDRFT1, its own envelope magic, sealed
  * under the same content key as the state file. It carries the roster
@@ -1220,7 +1249,12 @@ char *companion_file_roster_json(CompanionHandle *handle);
  * Sharing the content key is deliberate: rotating the content halves is
  * what discards drafts, so emptying the pad discards them too. Any
  * rotation must rewrite this file in the same operation, or the drafts
- * become unreadable without anyone asking for that.
+ * become unreadable without anyone asking for that. That rewrite
+ * happens inside companion_persist_rotate_and_save(), which finds the
+ * drafts file as "drafts.sealed" beside the state file it was given.
+ * companion_persist_erase() erases it from the same place. The shell
+ * must therefore name the file "drafts.sealed" and keep it in the state
+ * directory, the same coupling the state file's own name already has.
  */
 bool companion_drafts_save(CompanionHandle *handle, const char *path);
 bool companion_drafts_restore(CompanionHandle *handle, const char *path);

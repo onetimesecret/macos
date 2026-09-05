@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The core can open, edit and save a file on disk** (ADR-0028;
+  `companion-ffi` 0.24.0). A file is a second content class beside a
+  page. It has no countdown, no gauge, it is never in the day roll,
+  it is never counted against the nine page cap, and it is never
+  synced. That last one is structural rather than a rule: files live
+  in their own store, and the one function that turns state into
+  relay payload cannot reach it. Files reuse the same operation
+  logged document a page uses, so undo, the edit vocabulary and the
+  UTF-16 discipline are the ones already in the tree. Ids carry the
+  high bit, which no page id does, and every page route refuses a
+  tagged id.
+
+  Opening reads the bytes, refuses anything that is not UTF-8, and
+  refuses anything above 4 MiB with the limit named so a notice can
+  state it. A byte order mark is remembered and put back. The first
+  line ending in the file decides the style the buffer is written
+  back in. Saving is explicit and nothing saves in place on its own;
+  a save preserves the mode the file already had and lands whole or
+  not at all. A file is dirty when its buffer differs from the text
+  last read or written, so typing a word and deleting it again
+  returns the file to clean. Checking stats the file and says
+  unchanged, changed or missing; a changed file under unsaved edits
+  enters a conflict, and a save stays refused until keep mine, take
+  theirs or save as is chosen.
+
+- **Unsaved file edits survive a relaunch** (ADR-0028;
+  `companion-ffi` 0.24.0). Open files and their drafts rest in a
+  third sealed file beside the state file and the ledger, with its
+  own plaintext magic and its own envelope magic, under the same
+  content key as the state file. A clean file records identity only,
+  so its tab comes back and its text is read from disk. A dirty file
+  records its buffer, so it comes back with the unsaved marker and
+  the time of its last edit. Rotating the content key halves rewrites
+  the drafts in the same operation, drafts first, so a crash in that
+  window costs the strip arrangement rather than a person's typing.
+  Dropping the content file discards the drafts with it; clearing the
+  ledger leaves them alone.
+
 ## [0.18.0] - 2026-09-04
 
 The second tagged milestone, and the first since v0.1.0. It carries
