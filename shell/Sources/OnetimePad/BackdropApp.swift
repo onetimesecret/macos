@@ -193,6 +193,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var aboutActivation = false
     private var settingsActivation = false
 
+    /// The observation of `ModalSession.didEndNotification`, held for
+    /// the life of the delegate, which is the life of the process.
+    private var modalEndObserver: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         launchedAt = Date()
         // A regular app, deliberately — the panel's accessory posture
@@ -233,6 +237,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // holds the combination); the menu-bar item still summons.
         summonKey = BackdropHotKey.controlOptionSpace { [weak self] in
             Task { @MainActor in self?.model.summon() }
+        }
+
+        // Every modal of ours reports back when it returns
+        // (`ModalSession`), and the surface answers by coming forward
+        // again. Queue nil: the bracket posts on the main thread, on the
+        // turn the panel returned, and the answer is deferred by hand
+        // below rather than by the centre.
+        modalEndObserver = NotificationCenter.default.addObserver(
+            forName: ModalSession.didEndNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.modalSessionEnded() }
         }
 
         // The backdrop exists by being there: it takes its place on
@@ -302,7 +317,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             alert.addButton(withTitle: "Quit Anyway")
             alert.addButton(withTitle: "Cancel")
             NSApp.activate(ignoringOtherApps: true)
-            return alert.runModal() == .alertFirstButtonReturn
+            // Bracketed like every modal of ours: a cancelled quit is a
+            // return to the surface, and the surface comes forward for
+            // it. A confirmed quit terminates before the deferred raise
+            // can run.
+            return ModalSession.run { alert.runModal() } == .alertFirstButtonReturn
         }
     }
 
@@ -339,6 +358,32 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             claimedByAnotherWindow: claimed
         ) else { return }
         model.raise(.activation)
+    }
+
+    /// A modal of ours has returned: the open or save panel, a file
+    /// review, the rename prompt, the quit notice, opened or cancelled
+    /// alike. The surface was raised when it went up, since every one of
+    /// them is reached from a keyed card or from a menu of an active
+    /// app, and it comes forward again now: the panel took the keyboard
+    /// on its way in, AppKit promises nothing about where the keyboard
+    /// goes on the way out, and a person who has just chosen a file is
+    /// owed the pad it opens into.
+    ///
+    /// Raised as an activation, not a summon: nobody named the surface,
+    /// and the roll stays where the person left it (`BackdropRaise`).
+    /// Only over a raised surface, because a rest that happened while
+    /// the panel was up was somebody's deliberate act, or the quit
+    /// notice reached from a resting card's tray menu, and neither is
+    /// ours to undo. Deferred a turn so the raise runs outside the
+    /// caller's own stack, which for the open panel is the model in the
+    /// middle of opening the file, and never at all on a confirmed
+    /// quit, which terminates first.
+    private func modalSessionEnded() {
+        guard model.stance == .raised else { return }
+        Task { @MainActor [weak self] in
+            guard let self, self.model.stance == .raised else { return }
+            self.model.raise(.activation)
+        }
     }
 
     /// The Dock icon's click while the app is already active reaches

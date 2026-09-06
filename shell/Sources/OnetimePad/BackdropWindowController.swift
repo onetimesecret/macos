@@ -531,9 +531,15 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     /// application. Those presses are not outside anything, and resting
     /// on them tore down the menu the user had just opened (issue #41),
     /// so they are excluded here by the intervals `MenuTracking` keeps.
-    /// Our ordinary windows, Settings and About, are outside by this
-    /// rule and rest the card, which is the older behaviour left
-    /// standing.
+    /// The open and save panels are the other kind: modern macOS draws
+    /// them in a separate service process, so a click on a folder, on
+    /// Cancel or on Open reaches this monitor the same way, and resting
+    /// on it took the pad away at the moment the person chose their
+    /// file. Those are excluded by the AppKit fact `ModalSession`
+    /// reads, and the two exclusions meet in `OutsidePress`, which is
+    /// where the rule is stated once. Our ordinary windows, Settings
+    /// and About, are outside by this rule and rest the card, which is
+    /// the older behaviour left standing.
     ///
     /// A *global* monitor deliberately: it observes the press and
     /// consumes nothing, so the click goes on to the window it was
@@ -569,11 +575,19 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
             // whole change exists to remove.
             Task { @MainActor in
                 guard let self else { return }
-                // A menu of ours had the press, so nothing to dismiss.
-                // Judged by the press's own timestamp rather than by
-                // whether a menu is up now, because this turn may well
-                // be the one the menu's nested loop finally released.
-                guard !self.menuTracking.claims(press: pressedAt) else { return }
+                // A menu of ours had the press, or a modal of ours is
+                // up, so nothing to dismiss. The menu is judged by the
+                // press's own timestamp rather than by whether a menu
+                // is up now, because this turn may well be the one the
+                // menu's nested loop finally released. The modal is
+                // judged now, because a modal session keeps draining
+                // this queue and the press that dismisses a panel is a
+                // mouse down while the panel returns on the mouse up
+                // after it, so the panel is still up when this runs.
+                guard OutsidePress.rests(
+                    claimedByMenu: self.menuTracking.claims(press: pressedAt),
+                    modalSessionRunning: ModalSession.isRunning
+                ) else { return }
                 self.model.rest()
             }
         }
@@ -614,6 +628,11 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         model.holdsKeys = true
     }
 
+    /// Losing the keyboard is never a rest, and that is load-bearing:
+    /// the open panel, an alert, or a ⌘Tab to work beside the card all
+    /// take key from a surface that stays raised, and a rest here would
+    /// pull the pad away under every one of them. The stance moves only
+    /// by the routes that name it.
     func windowDidResignKey(_ notification: Notification) {
         model.holdsKeys = false
     }

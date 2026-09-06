@@ -206,7 +206,9 @@ public struct SystemFilePanels: FilePanels {
         panel.allowsOtherFileTypes = true
         panel.prompt = "Open"
         panel.message = "Open a plain text or Markdown file."
-        return panel.runModal() == .OK ? panel.url : nil
+        // Bracketed, as every modal of ours is, so the surface learns
+        // when the panel has returned and comes forward again.
+        return ModalSession.run { panel.runModal() } == .OK ? panel.url : nil
     }
 
     public func chooseDestination(suggestedName: String) -> URL? {
@@ -216,7 +218,7 @@ public struct SystemFilePanels: FilePanels {
         panel.allowsOtherFileTypes = true
         panel.canCreateDirectories = true
         panel.prompt = "Save"
-        return panel.runModal() == .OK ? panel.url : nil
+        return ModalSession.run { panel.runModal() } == .OK ? panel.url : nil
     }
 
     public func reviewUnsavedFile(named name: String) -> FileCloseReview {
@@ -226,7 +228,7 @@ public struct SystemFilePanels: FilePanels {
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Discard")
-        switch alert.runModal() {
+        switch ModalSession.run({ alert.runModal() }) {
         case .alertFirstButtonReturn: return .save
         case .alertThirdButtonReturn: return .discard
         default: return .cancel
@@ -240,6 +242,6 @@ public struct SystemFilePanels: FilePanels {
             "Your unsaved changes go, and there is no undo. The file is read again from disk."
         alert.addButton(withTitle: "Take theirs")
         alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn
+        return ModalSession.run { alert.runModal() } == .alertFirstButtonReturn
     }
 }

@@ -523,7 +523,11 @@ enum TabRenamePrompt {
         // An accessory app's alert would otherwise open behind whatever
         // is frontmost.
         NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        // Bracketed like every modal of ours, so the surface comes
+        // forward again once the prompt has returned.
+        guard ModalSession.run({ alert.runModal() }) == .alertFirstButtonReturn else {
+            return nil
+        }
         return field.stringValue
     }
 }
