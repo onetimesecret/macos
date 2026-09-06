@@ -289,20 +289,29 @@ reduce.
 
 ## Case 9: the pad is full of blank old pages
 
-The honesty valve for the nine-slot cap.
+There is no cap any more (issue #158), so this case is the count and
+the tenth page, not a refusal.
 
-1. Make pages until the pad refuses a tenth, leaving several blank.
+1. With the mode off, make nine pages and leave several blank. Turn the
+   mode on.
 
 **Pass:** the foot of the rail shows a dimmed count ("3 blank") whose
 tooltip says how many live pages the days are not showing and names this
-Settings toggle as the way to reach them. The refusal notice names the
-toggle too, rather than telling you to wait for an expiry that would not
-free a slot anyway. Nothing was discarded to make room.
+Settings toggle as the way to reach them.
 
-**Fail:** a silent refusal; a page discarded automatically; a count that
-is wrong.
+**Fail:** a count that is wrong, or no count with blank pages standing.
 
-2. Write **down** whether the count was non-zero in ordinary use. A
+2. Press ⌘N.
+
+**Pass:** today's page opens as a tenth slot. No notice. Nothing was
+discarded to make room. Turn the mode off: ten tabs on the strip, the
+strip scrolls sideways to hold them, and the new one is in view.
+⌘9 selects the ninth; the tenth has no chord and is reached by a click.
+
+**Fail:** a refusal naming a wall; a blank page discarded automatically;
+a tenth tab off the edge of the strip with no way to scroll to it.
+
+3. Write **down** whether the count was non-zero in ordinary use. A
    count that is routinely above zero means the content bar is set wrong,
    which is ADR-0020's fifth eject trigger.
 
@@ -416,6 +425,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | 8 reduced motion | | |
 | | | 9 hidden blank pages counted and named | | Record whether the count is ever non-zero. |
 | | | 10 minimap reads as texture, not as a chart | | Record the two inks and the appearance. |
+| | | 9 tenth page opens, strip scrolls to it | | Note whether the new tab was in view without a scroll. |
 | | | 10 band tracks the scroll and clamps at both ends | | |
 | | | 10 nothing legible in the minimap at any size | | |
 | | | 10 rail width at the 360pt floor | | Do the day words fit without truncation. Does the roll's gutter still hold day, title and countdown on one line. |

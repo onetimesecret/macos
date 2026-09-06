@@ -1,9 +1,15 @@
 # Proposal: capacity must not prevent writing Today
 
-**Status:** proposal from product review on 2026-09-04. This note records an
-agreed direction; it does not amend the accepted tab-lifecycle decision
-([ADR-0017](../../../adr/0017-durable-tabs-expiring-pages.md)) or accept the
-proposed time-tabs decision ([ADR-0020](../../../adr/0020-a-day-is-a-projection-of-live-pages.md)).
+**Status:** proposal from product review on 2026-09-04, implemented
+2026-09-06 (issue #158). The tab cap was removed from the core, `⌘1` to `⌘9`
+stayed as shortcuts to the first nine visible targets, the strip scrolls to
+hold the rest, and ⌘N on today's page makes a second page. The change is
+recorded in the decision history of
+[ADR-0017](../../../adr/0017-durable-tabs-expiring-pages.md); the proposed
+time-tabs decision ([ADR-0020](../../../adr/0020-a-day-is-a-projection-of-live-pages.md))
+is still proposed. The open discussion below, whether empty tabs are ever
+removed automatically, stays open and was not needed: the cap's removal made
+the question moot for creation.
 
 ## Problem observed
 

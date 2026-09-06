@@ -6,7 +6,7 @@ Scope: an additional content class, a peer to pages, with both first
 class features of the pad. The pad can open a plain
 text or Markdown file from disk, edit it in the same editor a page
 uses, and save it back on an explicit request. Pages, their TTLs, the
-nine tab cap, the day roll and the sealed page format are untouched.
+strip, the day roll and the sealed page format are untouched.
 Governs against:
 [`../../design/03-design-principles.md`](../../design/03-design-principles.md)
 (§1 comfortable being temporary, §3 content plays second fiddle, §4
@@ -42,7 +42,7 @@ is
 
 Dogfooding puts two kinds of text in front of the same person in the
 same hour. One kind is the pad's own: a note that is useful now and
-gone on schedule, staged, sealed, counted against the nine tab cap,
+gone on schedule, staged, sealed, standing in a slot on the strip,
 carrying a countdown. The other kind is a file that already exists on
 disk and is expected to still exist next year: a README, a scratch
 `notes.txt`, a config snippet, a draft the person keeps in a git repo.
@@ -74,10 +74,12 @@ infinite TTL. It is the wrong shape for four reasons.
    of pages that never expires makes the countdown a suggestion rather
    than the rule, and a reader can no longer tell by looking whether
    what is on screen is on a clock.
-4. **The cap means something.** Nine tabs is a working set of
-   temporary notes. Files are not that. Counting an open README against
-   the cap would make the cap a limit on a person's editor rather than
-   a limit on staged content.
+4. **The strip means something.** Its slots are a working set of
+   temporary notes. Files are not that. Putting an open README on the
+   strip would make the strip a picture of a person's editor rather
+   than of their staged content. (When this was written the strip had
+   a cap of nine; issue #158 removed it, and the separation stands on
+   its own.)
 
 So: two classes, visibly grouped, sharing one editor and one window,
 sharing nothing else.
@@ -127,7 +129,7 @@ Three ways in, all of them explicit.
   locate the file and one to close the tab. It never silently
   disappears and never recreates the file.
 
-Opening a file does not create a page, does not touch the nine tab cap,
+Opening a file does not create a page, does not take a slot on the strip,
 and does not start any clock.
 
 ## Editing
@@ -349,8 +351,8 @@ the navigation surface and stay visibly grouped.
   themselves.
 - A file tab uses its filename and a document icon. It has no TTL
   gauge.
-- Pad tabs keep their existing names, gauges, `+` action, and nine page
-  cap. File tabs do not consume that cap.
+- Pad tabs keep their existing names, gauges and `+` action. File tabs
+  take no slot on the strip.
 - The active file's identity and save state appear in the header, with
   the encoding and format shown quietly beside them, for example
   `UTF-8 · Markdown`.
@@ -418,7 +420,7 @@ document:
 - shows no gauge, in either layout;
 - never appears in the day roll and is never bucketed into a day
   (ADR-0020 buckets live pages, and a file is not one);
-- is not counted against the nine page cap;
+- takes no slot on the strip;
 - is never sent over the sync relay, in any form, including its name,
   its path, its bookmark, its contents and its draft. ADR-0021's
   channel carries page key frames and page deltas. Files are not in its
@@ -502,8 +504,8 @@ active tab is a page rather than a file.
    acts on bytes, but it makes a file an ingress into staged content
    and needs its own argument.
 2. **How many files.** Is there a cap on open files at all, and if so
-   what is it and why? The nine page cap does not apply, and nothing
-   else does either today.
+   what is it and why? Pages have no cap since issue #158, and nothing
+   caps files either today.
 3. **Encoding, later.** If UTF-8 only proves too narrow, what is the
    smallest honest next step: detection with conversion on save, or an
    explicit reopen with encoding chooser?
