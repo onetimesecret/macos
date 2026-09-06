@@ -146,3 +146,63 @@ For OnetimePad:
 - `bindings` maps Zed-style keystrokes to stable internal command IDs.
 - Context matching can initially support only simple identifiers and `&&` / `!`, then expand only when a real need arises.
 - Commands without a current native implementation, such as `state::SaveNow`, should not appear until their action exists.
+
+---
+
+2026-09-05: the tab gauge reads as a scroll bar, and the header clock was a duplicate
+
+Dogfood phase 4, items 3 and 6. Two of the remaining-time indicators
+came out.
+
+The tab gauge. Each tab on the bottom strip drew a three point
+`GaugeBar` under its title (the page's remaining life as a draining
+bar, dashed while held, ember and hatched in the last hour), and an
+empty slot drew a dashed `EmptyRule` in the same seat. The design spec
+(docs/spec/design/04) asked for exactly that: Excel-anchored tabs,
+each carrying its own gauge, so cross-page urgency reads as geometry.
+What a developer or power user actually reads, though, is a thin
+horizontal bar at the bottom edge of a text surface, which is where
+every editor puts its horizontal scroll bar for long unwrapped lines.
+They reach for it to scroll and it does nothing. The misread is
+positional and does not go away with familiarity: the bar is the right
+shape in the right place to be the wrong thing.
+
+- The strip's tabs are one row now, all at the same height, page tabs,
+  empty slots and file tabs alike. The file tab's unsaved dot moved
+  into the row beside the filename.
+- `GaugeBar` and `EmptyRule` are not gone. The time rail still draws
+  them per day, and `PageStatusStack` still draws a four point gauge
+  along the page's own bottom edge, directly above the strip. That
+  second bar is the same shape in the same place and probably carries
+  the same misread; it was left alone this round because it is a
+  shared surface and its removal is a separate call.
+- Whatever replaces the tab gauge, if anything does, must not be a thin
+  horizontal bar along the bottom edge of the card. The follow up is
+  tracked as a GitHub issue (reimagine the per tab remaining time
+  indicator).
+- No accepted ADR asserts the per tab gauge. ADR-0017 splits tabs from
+  pages and says nothing about how the strip draws time; ADR-0011 names
+  a gauge denominator as an input to a future paradigm decision;
+  ADR-0028 says only that a file draws no gauge. So there is no ADR
+  amendment, only this note, the code comment on `SheetTab`, and the
+  issue. The design spec's tab sketch is now out of date on this one
+  point.
+
+The header countdown. The card header showed a `CountdownButton` for
+the selected page (remaining time, rung label, click to shorten). In
+the day mode the page prints the same countdown in its own day gutter,
+top right, so the header's copy was two clocks for one page, and two
+clocks confused more than they informed. The header yields it in the
+day mode.
+
+- It is kept in the strip mode, and this is a deliberate narrowing of
+  the item as written. The gutter belongs to `DayScrollView`, which is
+  mounted only while `showsTimeUnits` is on; that mode is off by
+  default and exclusive with the strip. With the tab gauge gone, the
+  header button is the only place the strip mode writes the page's
+  remaining time as a number. Removing it there would have left the
+  default mode with no worded countdown at all, only the bottom edge
+  bar. `BackdropRootView.showsHeaderCountdown` holds the rule and the
+  `HeaderCountdownTests` pin it.
+- The rung still cycles from the tab's context menu in both modes and
+  from the gutter's menu in the day mode.
