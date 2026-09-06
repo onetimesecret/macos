@@ -196,7 +196,10 @@ The General tab of Settings has a toggle backed by
 `SMAppService.mainApp`. Only a bundle under `/Applications` can
 register, so a dev build never claims the login item by accident. A
 refused registration reverts the toggle to whatever the system actually
-granted.
+granted. A login item launch comes up resting, behind every other
+window, because the system's launch never activates the app; a launch
+you perform from the Finder, the Dock, Spotlight or `open` comes up
+raised and keyed.
 
 ## Deadline rounding
 

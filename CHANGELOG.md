@@ -99,14 +99,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The pad is visible when first opened, and stays up while a panel
   of its own is showing** (dogfood phase 4). Launch used to rest the
   surface at desktop level behind everything, so the first thing a
-  new install did was disappear; it now raises, keyed and in front,
-  on the active Space. The open and save panels, the file review
+  new install did was disappear; a launch you perform, from the
+  Finder, the Dock, Spotlight or `open`, now comes up raised, keyed
+  and in front, on the active Space. A launch the system performs, as
+  a login item or in the background, still rests behind everything,
+  because it never activates the app and the activation is what the
+  raise waits for. The open and save panels, the file review
   alerts, the tab rename prompt and the quit alert used to look to
   the outside click monitor like a click somewhere else, and the card
   rested underneath them; a press while one of them is running no
   longer rests it, and when the panel returns the pad is brought back
-  to the front. One consequence to know about: a launch as a login
-  item raises the card too, where it used to rest.
+  to the front.
 
 ### Removed
 

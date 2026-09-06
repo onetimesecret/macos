@@ -1,6 +1,6 @@
 ---
 name: dogfood4-time-indicators
-description: Dogfood phase 4 items 3 and 6 (2026-09-05): only the full width page edge gauge in PageStatusStack is gone, the per tab gauge was removed for an evening and restored by maintainer decision; the header CountdownButton is gone in both modes and deleted from PageSurface; the login item launch posture and the post modal re-key are open decisions for the maintainer; parallel lanes share one scratchpad dir
+description: Dogfood phase 4 items 3 and 6 (2026-09-05): only the full width page edge gauge in PageStatusStack is gone, the per tab gauge was removed for an evening and restored by maintainer decision; the header CountdownButton is gone in both modes and deleted from PageSurface; the login item launch rests and a person's launch raises, told apart by the launch window activation; the post modal re-key is still an open decision for the maintainer; parallel lanes share one scratchpad dir
 metadata:
   type: project
 ---
@@ -32,10 +32,14 @@ argument; it has been made and rejected. Any future indicator must not be a
 thin full width bar along the bottom edge (constraint recorded in
 ABERRATIONS, the SheetTab comment, design spec 04's superseded note and issue
 #156). When a task says "X is already shown in the gutter", check which mode
-mounts the gutter first. Two
-phase 4 questions were left for the maintainer rather than fixed: whether a
-login item launch should still rest instead of raising, and whether the post
-modal re-raise in `modalSessionEnded` should be gated on `NSApp.isActive`.
+mounts the gutter first. Of the two phase 4 questions left for the
+maintainer, the login item one is decided (2026-09-05): a launch the system
+performs (login item, background) rests, a launch the person performs raises
+and keys. They are told apart only by whether an activation arrives inside
+the two second launch window, never by Apple Events or parent processes; the
+launch itself places the surface resting and `activationRaises` answers with
+the raise kind or nil. Still open: whether the post modal re-raise in
+`modalSessionEnded` should be gated on `NSApp.isActive`.
 
 Also learned on this run: parallel workflow lanes share one scratchpad
 directory. Another lane overwrote `commit1.txt` seconds after I committed
