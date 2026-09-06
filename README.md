@@ -96,14 +96,15 @@ Both rebuild the Rust core only when it is stale and package through
 The core builds in two shapes (ADR-0018): the release shape, whose
 export list is exactly the C interface the app calls, and the dev
 shape (`scripts/build-core.sh --test-util`), which adds the gated test
-seams the Swift suite links. **Running `swift test` requires the dev
-shape**; against a release build the suite fails at link with a
-missing `companion_new_ephemeral`, which is the intended loud failure
-rather than a silent fallback. `scripts/dev.sh` keeps `bindings/` in
-the dev shape, `scripts/install.sh` rebuilds the release shape, and
-each lane rebuilds the other's leftovers automatically; the release
-packaging path additionally refuses to ship a binary that exports a
-test seam.
+seams the Swift suite links. Run the Swift tests with
+`scripts/test-shell.sh`, which builds the dev shape first and forwards
+its arguments to `swift test`; a bare `swift test` against a release
+build fails at link with a missing `companion_new_ephemeral`, which is
+the intended loud failure rather than a silent fallback, but there is
+no reason to meet it. `scripts/dev.sh` keeps `bindings/` in the dev
+shape, `scripts/install.sh` rebuilds the release shape, and each lane
+rebuilds the other's leftovers automatically; the release packaging
+path additionally refuses to ship a binary that exports a test seam.
 
 Prefer a bundle over `swift run` whenever
 Keychain behavior or permission prompts matter:

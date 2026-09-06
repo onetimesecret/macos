@@ -77,15 +77,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # The dev shape, test seams included (ADR-0018): swift test links
       # companion_new_ephemeral, which only a --test-util build exports.
-      # The debug bundle assembled below inherits the same shape; only
-      # the release packaging path is required to be seam-free, and
-      # package-app.sh checks that.
-      - name: Build CompanionCore.xcframework
-        run: ./scripts/build-core.sh --test-util
+      # scripts/test-shell.sh builds that shape itself, so CI runs the
+      # tests through the same entry point a developer uses rather than
+      # restating the flag here. The debug bundle assembled below
+      # inherits the same shape; only the release packaging path is
+      # required to be seam-free, and package-app.sh checks that.
       - name: swift build
-        run: swift build --package-path shell
+        run: |
+          ./scripts/build-core.sh --if-stale --test-util
+          swift build --package-path shell
       - name: swift test
-        run: swift test --package-path shell
+        run: ./scripts/test-shell.sh
       # --debug reuses the build above; the step exists to keep the
       # bundle assembly (Info.plist, stamping, codesign) from rotting.
       - name: Assemble the app bundle

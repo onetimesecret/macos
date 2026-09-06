@@ -31,9 +31,13 @@ Two prior results stand and are not re-run here:
 1. **Full Xcode active:** `xcode-select -p` prints an
    `Xcode*.app/Contents/Developer` path; if not,
    `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
-2. `./scripts/build-core.sh` → `bindings/CompanionCore.xcframework`
-   (it takes no arguments; rev C has no dev-seed path).
-3. `cd shell && swift build && swift test && swift run CompanionApp`
+2. `./scripts/test-shell.sh` runs the Swift tests. It builds
+   `bindings/CompanionCore.xcframework` in the shape those tests need
+   (the gated seams of ADR-0018) before running them, so there is no
+   flag to remember and no order to get right.
+3. `./scripts/dev.sh` for a debug bundle, or `./scripts/install.sh` for
+   the release bundle in `/Applications`. Each rebuilds the core in its
+   own shape, so running one after the tests needs no cleanup step.
 4. The window summons with **⌥Space** or from the menu-bar item.
 
 ## §0 — The prototype walk
