@@ -1091,9 +1091,9 @@ final class DayHeaderView: NSView {
         path.lineWidth = 1
         switch mark {
         case .tear:
-            // The dashed language `EmptyRule` speaks on the time rail,
-            // which is what a reader of this app already reads as "a
-            // place where something is not".
+            // The dashed language `EmptyRule` speaks on the strip, which
+            // is what a reader of this app already reads as "a place
+            // where something is not".
             var pattern: [CGFloat] = [2, 3]
             path.setLineDash(&pattern, count: 2, phase: 0)
             NSColor.secondaryLabelColor.withAlphaComponent(0.5).setStroke()

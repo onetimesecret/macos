@@ -124,8 +124,8 @@ trigger**. VoiceOver on (⌘F5); keyboard only.
 
 **Owner:** delano.
 
-- [ ] **The pause:** double-click a tab (the tab itself; there is no
-      gauge under it since dogfood phase 4) and it holds 1h; again, and
+- [ ] **The pause:** double-click a tab (the tab or the gauge under
+      it) and it holds 1h; again, and
       it tops up to 24h; a third time releases, and the countdown
       resumes where it froze. Confirm an unreleased hold also lapses back into
       countdown. The tab's chip must track the tier (⏸1h → ⏸24h →

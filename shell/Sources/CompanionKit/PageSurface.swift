@@ -246,14 +246,14 @@ public struct PageStatusStack: View {
         }
         // The stack used to end in a four point `GaugeBar` spanning the
         // page's bottom edge, the page draining continuously as the
-        // design spec asked. It came out with the tab gauge, and for
-        // the same reason: a thin horizontal bar along the bottom edge
-        // of a text surface is where a horizontal scroll bar lives, and
-        // a full width one is the more convincing impostor of the two
-        // (docs/dogfood/ABERRATIONS.md, 2026-09-05). The remaining time
-        // is written in words instead: in the header while the strip is
-        // the navigation, and in the page's own day gutter while the
-        // days are.
+        // design spec asked. It came out in dogfood phase 4 because a
+        // thin horizontal bar along the bottom edge of a text surface
+        // is where a horizontal scroll bar lives, and a full width one
+        // is a convincing impostor (docs/dogfood/ABERRATIONS.md,
+        // 2026-09-05). The per tab gauge on the strip stays: a short
+        // bar framed by its tab is not mistaken for one. The page's
+        // remaining time is otherwise written in words, in its own day
+        // gutter while the days are the navigation.
     }
 }
 

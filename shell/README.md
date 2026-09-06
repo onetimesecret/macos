@@ -55,10 +55,11 @@ the seam.
 
 - **These are the rev C surfaces** (issue #12, docs/spec/04), shared
   through CompanionKit: one page of ink and sealed chips in an
-  `NSTextView`-backed editor; bottom-edge tabs (one row each since
-  dogfood phase 4; the per-tab gauge and the page's bottom-edge gauge
-  read as scroll bars and came out, docs/dogfood/ABERRATIONS.md),
-  pause on double-click, drag-to-reorder, ✕ to close; the keyboard map
+  `NSTextView`-backed editor; bottom-edge tabs with a gauge under each
+  title (the full width gauge along the page's bottom edge read as a
+  scroll bar and came out in dogfood phase 4, the per tab gauge stays,
+  docs/dogfood/ABERRATIONS.md), pause on double-click,
+  drag-to-reorder, ✕ to close; the keyboard map
   (⌃⌥Space, ⌘1 to 9, ⌘N or ⌘T, ⌥⌘←/→, ⇧⌘V, ⌘↩, Esc). Which chord does what is
   the keymap file's business and not this file's, so read
   `docs/development/about-the-keymap.md` for the list that is actually

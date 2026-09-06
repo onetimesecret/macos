@@ -2,18 +2,17 @@ import AppKit
 import SwiftUI
 
 /// The bottom-edge tab strip, Excel-anchored (docs/spec/04): one tab
-/// per durable slot, a + for a new tab, and the permanent dashed ◌
-/// ledger tab at the right end. Click selects; double-click holds the
-/// clock; drag reorders; ✕ on hover closes.
+/// per durable slot carrying its own gauge, a + for a new tab, and the
+/// permanent dashed ◌ ledger tab at the right end. Click selects;
+/// double-click holds the clock; drag reorders; ✕ on hover closes.
 ///
 /// The ledger tab and the ↗ page button are built here and not shown
 /// (issue #78, `HiddenUI`), so what a user sees today is the slots and
 /// the +.
 ///
-/// A slot whose page expired keeps its place, its name and its rung
-/// (ADR-0017). The strip is the slots, so it stops being nine
-/// deadlines. The tabs used to carry the page's gauge under the title;
-/// that bar is withdrawn, and `SheetTab` says why.
+/// A slot whose page expired keeps its place, its name and its rung,
+/// and draws the dashed empty treatment instead of a gauge (ADR-0017).
+/// The strip is the slots, so it stops being nine deadlines.
 public struct TabStripView: View {
     @ObservedObject var model: PageModel
 
@@ -109,7 +108,7 @@ public struct TabStripView: View {
         Button(action: model.newPage) {
             Image(systemName: "plus")
                 .font(.system(size: 10, weight: .medium))
-                .frame(width: 24, height: SheetTab.rowHeight)
+                .frame(width: 24, height: 22)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
@@ -189,24 +188,22 @@ public struct TabStripView: View {
     }
 }
 
-/// One tab: live title, ⏸ while held, ✕ on hover. A slot holding no
-/// page says so out loud, because there is no clock to speak of and
-/// the tab is still the user's to select, rename, re-rung or close.
+/// One tab: live title, its own gauge, ⏸ while held, ✕ on hover. A
+/// slot holding no page draws a dashed rule where the gauge goes and
+/// says so out loud, because there is no clock to render and the tab
+/// is still the user's to select, rename, re-rung or close.
 ///
-/// The tab is one row. It used to be two: the title over a three point
-/// `GaugeBar` (or, on an empty slot, an `EmptyRule`) that drew the
-/// page's remaining life as geometry. Dogfooding withdrew it: a thin
-/// horizontal bar along the bottom edge of a text surface reads as a
-/// horizontal scroll bar for long unwrapped lines, and people reached
-/// for it as one (docs/dogfood/ABERRATIONS.md, 2026-09-05). The full
-/// width gauge `PageStatusStack` drew along the page's bottom edge went
-/// with it, being the same shape in the same place. The page's
-/// remaining time still shows as words, in the header or in its day
-/// gutter, and as a gauge on the time rail, none of which sits on the
-/// bottom edge. Whatever replaces the bar, if anything does, must not
-/// be a thin horizontal bar down there. `FileTab` is one row for the
-/// same reason, so page tabs, empty slots and file tabs still stand
-/// level.
+/// The gauge under the title stays on purpose. Dogfood phase 4 took it
+/// out for an evening, together with the full width `GaugeBar` that
+/// `PageStatusStack` drew along the page's bottom edge, because a thin
+/// horizontal bar at the foot of a text surface reads as a horizontal
+/// scroll bar for long unwrapped lines. The maintainer's call was that
+/// the full width bar was the one wearing that costume, so it stays
+/// gone, while a short bar under a tab title, framed by the tab, does
+/// not read as a scroll bar and is the strip's one picture of how
+/// long each page has left (docs/dogfood/ABERRATIONS.md, 2026-09-05).
+/// Whatever else is ever added down here must not be a thin bar that
+/// runs the width of the page.
 ///
 /// Internal rather than private so the two menu labels below, which are
 /// pure functions of the slot's state, can be tested without a menu.
@@ -218,38 +215,51 @@ struct SheetTab: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 4) {
-            if sheet.paused {
-                HoldChip(toppedUp: sheet.holdToppedUp)
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                if sheet.paused {
+                    HoldChip(toppedUp: sheet.holdToppedUp)
+                }
+                Text(sheet.title)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                // The ✕ keeps its seat whether or not it is visible, since
+                // revealing it must never nudge the title (the browsers'
+                // convention: reserve, then fade in).
+                Button {
+                    model.close(sheet.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
+                .accessibilityLabel(Text("Close tab"))
             }
-            Text(sheet.title)
-                .font(.system(.caption, design: .monospaced))
-                .lineLimit(1)
-                .truncationMode(.tail)
-            // The ✕ keeps its seat whether or not it is visible, since
-            // revealing it must never nudge the title (the browsers'
-            // convention: reserve, then fade in).
-            Button {
-                model.close(sheet.id)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 7, weight: .bold))
+            .padding(.horizontal, 8)
+            .frame(height: 18)
+            if sheet.hasPage {
+                GaugeBar(
+                    fraction: sheet.fractionRemaining,
+                    paused: sheet.paused,
+                    toppedUp: sheet.holdToppedUp,
+                    lastHour: sheet.lastHour
+                )
+                .frame(height: 3)
+                .padding(.horizontal, 3)
+            } else {
+                // The dashed treatment the ledger tab already uses: a
+                // slot with no clock draws no gauge, because a gauge at
+                // zero reads as a page about to die rather than as a
+                // slot waiting to be used (ADR-0017).
+                EmptyRule()
+                    .frame(height: 3)
+                    .padding(.horizontal, 3)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .opacity(hovering ? 1 : 0)
-            .allowsHitTesting(hovering)
-            .accessibilityLabel(Text("Close tab"))
         }
-        .padding(.horizontal, 8)
-        // No second row. The gauge that drained under the title, and
-        // the dashed rule an empty slot drew in its place, are gone
-        // from the strip because a thin bar on the card's bottom edge
-        // is read as a scroll bar (see the type's comment). The one
-        // row stands the same 22 points as the + beside it, and
-        // `FileTab` matches, so nothing on the strip is taller than
-        // its neighbour.
-        .frame(height: Self.rowHeight)
         .frame(maxWidth: 140)
         .background(
             RoundedRectangle(cornerRadius: 5)
@@ -293,13 +303,6 @@ struct SheetTab: View {
         }
     }
 
-    /// The height of every tab on the strip, page or file, taken from
-    /// the + button so the whole row stands level. One constant rather
-    /// than a number in each view, because the day the two drift apart
-    /// is the day an empty slot or a file tab starts standing proud of
-    /// its neighbours again.
-    static let rowHeight: CGFloat = 22
-
     /// What the next double-click does, named plainly — the gesture is
     /// a cycle, so the menu has to say which turn of it is next. On an
     /// empty slot the item is disabled and this is the label it wears
@@ -334,8 +337,8 @@ struct SheetTab: View {
 
     /// The tooltip: the tier in words, since the chip carries it only
     /// as a number. `holdRemainingMs` is what is left of the hold, not
-    /// of the page; the page's own time is the countdown in its day
-    /// gutter.
+    /// of the page; the page's own time is the gauge under the title
+    /// and the countdown in its day gutter.
     private var holdDescription: String {
         guard sheet.hasPage else {
             return "This tab holds no page. Select it to open one at \(sheet.rungLabel)."
@@ -394,13 +397,9 @@ struct SheetTab: View {
 /// refuses. What it does keep is the ✕'s reserved seat, so revealing
 /// the close mark never nudges the filename.
 ///
-/// The unsaved marker sits in the row beside the filename, in a seat
-/// it keeps whether or not it is lit, so a save never nudges the name.
-/// It used to sit in a second row where a page tab drew its gauge;
-/// the strip's tabs are one row now (see `SheetTab`), and a file tab
-/// stands the same height as a page tab because they share
-/// `SheetTab.rowHeight`. Never a gauge, in any row: a file has no
-/// countdown, and a bar at any value would say it had one (ADR-0028).
+/// Where a slot draws its gauge, a file draws its unsaved marker or
+/// nothing at all. Never a gauge: a file has no countdown, and a bar at
+/// any value would say it had one (ADR-0028).
 ///
 /// Internal rather than private so the pure label below can be tested
 /// without a strip, in the idiom `SheetTab.holdMenuTitle` set.
@@ -412,34 +411,39 @@ struct FileTab: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "doc")
-                .font(.system(size: 9))
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                Image(systemName: "doc")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true) // the tab says "file" in words
+                Text(file.name)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button {
+                    model.closeFile(file.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                }
+                .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .accessibilityHidden(true) // the tab says "file" in words
-            Text(file.name)
-                .font(.system(.caption, design: .monospaced))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            // The dot's reserved seat, on the ✕'s own terms: it is
-            // always laid out and only sometimes lit, so saving a file
-            // never shifts its name or its close mark.
-            UnsavedDot()
-                .opacity(file.isDirty ? 1 : 0)
-            Button {
-                model.closeFile(file.id)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 7, weight: .bold))
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
+                .accessibilityLabel(Text("Close file"))
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .opacity(hovering ? 1 : 0)
-            .allowsHitTesting(hovering)
-            .accessibilityLabel(Text("Close file"))
+            .padding(.horizontal, 8)
+            .frame(height: 18)
+            // The gauge's seat, kept so a file tab and a page tab stand
+            // the same height beside each other. What sits in it is the
+            // unsaved dot or nothing, and never a bar.
+            ZStack {
+                if file.isDirty { UnsavedDot() }
+            }
+            .frame(height: 3)
+            .padding(.horizontal, 3)
         }
-        .padding(.horizontal, 8)
-        .frame(height: SheetTab.rowHeight)
         .frame(maxWidth: 140)
         .background(
             RoundedRectangle(cornerRadius: 5)
@@ -548,9 +552,8 @@ private struct TabFramesKey: PreferenceKey {
 /// The hold, as a chip on the tab: ⏸ and the span the last press
 /// bought. The gesture does three different things now, and the tab is
 /// where all three happen, so the tier is worth the ~20 points it costs
-/// the title. The ⏸ alone says *held* but never *which press comes
-/// next*, and with the tab's gauge withdrawn the chip is the only mark
-/// of the hold the strip has left.
+/// the title: the dashed gauge alone says *held* but never *which
+/// press comes next*.
 ///
 /// The ⏸ stays in front of the number, and not for decoration: "24h"
 /// is also a rung label, and without the pause mark a chip reading
@@ -582,14 +585,12 @@ struct HoldChip: View {
     }
 }
 
-/// What a day with no page draws on the time rail where its gauge
-/// would be: a dashed rule, the same language the ledger tab speaks.
-/// Not a gauge at zero, which would read as a page an instant from
-/// death rather than as a slot standing empty and ready, and not
-/// nothing at all, which would make the row jump a few points shorter
-/// than its neighbours every time a page expired. The strip's empty
-/// slots drew it too until the tab lost its second row; it stays here
-/// beside `GaugeBar` because the rail reads both from this file.
+/// What a slot with no page draws where its gauge would be: a dashed
+/// rule, the same language the ledger tab speaks. Not a gauge at zero,
+/// which would read as a page an instant from death rather than as a
+/// slot standing empty and ready, and not nothing at all, which would
+/// make the tab jump a few points taller than its neighbours every time
+/// a page expired.
 struct EmptyRule: View {
     var body: some View {
         GeometryReader { geometry in
@@ -602,16 +603,15 @@ struct EmptyRule: View {
                 style: StrokeStyle(lineWidth: geometry.size.height, dash: [2, 3])
             )
         }
-        .accessibilityHidden(true) // the row says it holds no page in words
+        .accessibilityHidden(true) // the tab says it holds no page in words
     }
 }
 
 /// A gauge: the page's remaining life as geometry. Ember with a
 /// hatched texture under one hour, since urgency is never colour-only,
 /// and a held clock draws dashed: state as geometry (docs/spec/04). Drawn
-/// on the time rail's rows, where it lies down the card's side; no
-/// longer under each tab of the strip nor along the page's own bottom
-/// edge, for the reason `SheetTab` gives.
+/// under each tab of the strip and on the time rail's rows; no longer
+/// along the page's own bottom edge, for the reason `SheetTab` gives.
 public struct GaugeBar: View {
     let fraction: Double
     let paused: Bool
@@ -621,10 +621,11 @@ public struct GaugeBar: View {
     /// The dash a held clock draws with. The longer hold draws the
     /// longer dash: the same language the gauge already speaks, since
     /// the tier is a fact about duration and the dash is the only mark
-    /// on the gauge that measures anything. A rail row is narrow and
-    /// already carries a label and a chord, so the tier gets no glyph
-    /// of its own here; the tab's `HoldChip`, the tooltip and the
-    /// context menu carry the number.
+    /// on the gauge that measures anything. A tab is 140 points wide
+    /// with a title, a ⏸ and a ✕ already in it, and a rail row is
+    /// narrower still, so the tier gets no glyph of its own on the
+    /// gauge; the tab's `HoldChip`, the tooltip and the context menu
+    /// carry the number.
     static let firstHoldDash: [CGFloat] = [3, 2]
     static let toppedUpDash: [CGFloat] = [7, 2]
 
@@ -672,6 +673,6 @@ public struct GaugeBar: View {
                 }
             }
         }
-        .accessibilityHidden(true) // the surface drawing it speaks the remaining time in words
+        .accessibilityHidden(true) // the tab speaks its remaining time in words
     }
 }

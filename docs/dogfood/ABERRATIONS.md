@@ -149,49 +149,49 @@ For OnetimePad:
 
 ---
 
-2026-09-05: the tab gauge reads as a scroll bar, and the header clock was a duplicate
+2026-09-05: the page edge gauge reads as a scroll bar, and the header clock was a duplicate
 
-Dogfood phase 4, items 3 and 6. Three of the remaining-time indicators
+Dogfood phase 4, items 3 and 6. Two of the remaining-time indicators
 came out.
 
-The tab gauge. Each tab on the bottom strip drew a three point
-`GaugeBar` under its title (the page's remaining life as a draining
-bar, dashed while held, ember and hatched in the last hour), and an
-empty slot drew a dashed `EmptyRule` in the same seat. The design spec
-(docs/spec/design/04) asked for exactly that: Excel-anchored tabs,
-each carrying its own gauge, so cross-page urgency reads as geometry.
-What a developer or power user actually reads, though, is a thin
-horizontal bar at the bottom edge of a text surface, which is where
-every editor puts its horizontal scroll bar for long unwrapped lines.
-They reach for it to scroll and it does nothing. The misread is
-positional and does not go away with familiarity: the bar is the right
-shape in the right place to be the wrong thing.
+The page edge gauge. `PageStatusStack` drew a four point `GaugeBar`
+across the full width of the page, directly above the strip, in both
+modes (the page's remaining life as a draining bar, dashed while held,
+ember and hatched in the last hour). The design spec
+(docs/spec/design/04) asked for exactly that: the page's bottom edge
+drains continuously. What a developer or power user actually reads,
+though, is a thin horizontal bar running the width of a text surface
+at its bottom edge, which is where every editor puts its horizontal
+scroll bar for long unwrapped lines. They reach for it to scroll and
+it does nothing. The misread is positional and does not go away with
+familiarity: the bar is the right shape in the right place to be the
+wrong thing.
 
-- The strip's tabs are one row now, all at the same height, page tabs,
-  empty slots and file tabs alike. The file tab's unsaved dot moved
-  into the row beside the filename.
-- The page's own bottom edge gauge went too. `PageStatusStack` drew a
-  four point `GaugeBar` across the full width of the page, directly
-  above the strip, in both modes. The first pass left it alone as a
-  shared surface whose removal was a separate call; review pointed out
-  that in the day mode the strip is not mounted at all, so the only
-  bar on the bottom edge anyone could have been looking at was this
-  one, and that a full width bar at the foot of a text area is the
-  more faithful picture of a scroll bar than a short one under a tab
-  title. Both bars carried the misread, so both are out.
-- `GaugeBar` and `EmptyRule` are not gone. The time rail still draws
-  them per day, down the card's side, where nothing scrolls sideways.
-- Whatever replaces the tab gauge, if anything does, must not be a thin
-  horizontal bar along the bottom edge of the card. The follow up is
-  tracked as a GitHub issue (reimagine the per tab remaining time
-  indicator).
-- No accepted ADR asserts the per tab gauge. ADR-0017 splits tabs from
-  pages and says nothing about how the strip draws time; ADR-0011 names
-  a gauge denominator as an input to a future paradigm decision;
-  ADR-0028 says only that a file draws no gauge. So there is no ADR
-  amendment, only this note, the code comment on `SheetTab`, and the
-  issue. The design spec's tab sketch is now out of date on this one
-  point.
+- The bar is out. Nothing is drawn along the page's bottom edge now,
+  in either mode.
+- The per tab gauge stays. Each tab on the bottom strip draws a three
+  point `GaugeBar` under its title and an empty slot draws a dashed
+  `EmptyRule` in the same seat, as the spec's tab sketch shows. The
+  first pass took that bar out as well, on the theory that both bars
+  carried the misread; the maintainer's call is that the short bar,
+  framed by its tab and repeated once per tab, is not what anyone
+  takes for a scroll bar, and that the strip would otherwise lose its
+  one picture of how long each page has left. It is back exactly as it
+  was: the tab is two rows, the file tab keeps the gauge's seat with
+  its unsaved dot in it, and `SheetTab.rowHeight` is gone with the one
+  row layout.
+- `GaugeBar` and `EmptyRule` also still draw on the time rail, per
+  day, down the card's side.
+- Whatever replaces the page edge gauge, if anything does, must not be
+  a thin horizontal bar running the full width of the bottom edge. The
+  follow up is tracked as a GitHub issue (#156).
+- No accepted ADR asserts the page edge gauge. ADR-0017 splits tabs
+  from pages and says nothing about how the surface draws time;
+  ADR-0011 names a gauge denominator as an input to a future paradigm
+  decision; ADR-0028 says only that a file draws no gauge. So there is
+  no ADR amendment, only this note, the code comments on `SheetTab`
+  and in `PageStatusStack`, and the issue. The design spec's gauge
+  bullet carries a dated superseded note on the page edge alone.
 
 The header countdown. The card header showed a `CountdownButton` for
 the selected page (remaining time, rung label, click to shorten). In

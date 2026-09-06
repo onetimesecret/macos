@@ -117,18 +117,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- **The remaining time gauges along the bottom edge** (dogfood phase
-  4). The three point bar under each tab and the four point bar
-  across the page's bottom edge both drew the page's remaining life
-  as geometry, and both read as a horizontal scroll bar for long
-  unwrapped lines: a thin horizontal bar at the foot of a text
-  surface is where every editor puts one, and people reached for it
-  to scroll. The tabs are one row now and nothing is drawn under the
-  page. The time rail keeps its per day gauge down the side, and the
-  remaining time is written in words in the header or the day gutter.
-  Whatever replaces them, if anything does, must not be a thin
-  horizontal bar down there (docs/dogfood/ABERRATIONS.md, 2026-09-05;
-  issue #156).
+- **The remaining time gauge along the page's bottom edge** (dogfood
+  phase 4). The four point bar across the full width of the page drew
+  the page's remaining life as geometry and read as a horizontal
+  scroll bar for long unwrapped lines: a thin full width bar at the
+  foot of a text surface is where every editor puts one, and people
+  reached for it to scroll. Nothing is drawn under the page now. The
+  three point gauge under each tab stays, as does the time rail's per
+  day gauge down the side. Whatever replaces the page edge bar, if
+  anything does, must not be a thin bar running the width of the
+  bottom edge (docs/dogfood/ABERRATIONS.md, 2026-09-05; issue #156).
 
 ## [0.18.0] - 2026-09-04
 
