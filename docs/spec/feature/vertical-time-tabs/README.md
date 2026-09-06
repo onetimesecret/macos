@@ -514,8 +514,10 @@ branch to get wrong.
 
 `showsTimeUnits` is a `@Published` boolean on `PageModel` whose `didSet`
 writes to the injected `UserDefaults` and is seeded in `init`, following the
-`wrapsLines` pattern (`shell/Sources/CompanionKit/PageModel.swift`), and defaults to false. Its row goes in `ConnectionSettingsView`
-(`shell/Sources/CompanionKit/SettingsSections.swift`), not in
+`wrapsLines` pattern (`shell/Sources/CompanionKit/PageModel.swift`), and defaults to false. Its row goes in `GeneralSettingsView`
+(`shell/Sources/CompanionKit/SettingsSections.swift`; it was
+`ConnectionSettingsView` until Settings grew its toolbar tabs in
+dogfood phase 4), not in
 `BackdropSettingsView`'s Surface form, whose hard-coded
 `.frame(height: 120)`
 (`shell/Sources/OnetimePad/BackdropSettingsWindow.swift`) clips new
@@ -606,7 +608,7 @@ the dogfood window ADR-0020 waits on.
    off-path view tree written out identically to today's rather than
    wrapped, so "pixel-identical when the toggle is off" is structural and
    not a hope. The strip row is simply absent while the mode is
-   on. The toggle is one row in `ConnectionSettingsView`
+   on. The toggle is one row in `GeneralSettingsView`
    (`shell/Sources/CompanionKit/SettingsSections.swift`) whose
    caption says all three things: prototype, moves no content, and which
    verbs it costs while it is on.
