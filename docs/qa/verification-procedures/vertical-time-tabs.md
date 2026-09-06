@@ -352,6 +352,47 @@ mounted (see case 4).
    faint to be worth having" is a legitimate answer that retires the
    band rather than darkening it.
 
+## Case 11: a second page on today
+
+Issue #158 part A. The keyboard reading has to be felt on hardware
+because the bar between jump and mint is whether the page has anything
+on it, and a test cannot see the pause a person takes between presses.
+
+1. With the mode on and today empty, press ⌘N. Today's page appears and
+   the caret is in it. Press ⌘N twice more without typing.
+
+**Pass:** still one page. The presses land on the blank page already
+there.
+
+**Fail:** two or three blank pages under Today.
+
+2. Type a word. Press ⌘N.
+
+**Pass:** a second, blank page appears under Today, below the first in
+the roll, and the caret is in it. The rail's Today row still reads
+Today, and its gauge follows whichever of the two pages dies soonest.
+Press ⌘N again: still two pages, the fresh one is blank.
+
+**Fail:** the press selected the first page instead of minting; the
+second page landed under another day; the caret stayed on the first page.
+
+3. Scroll to yesterday, or select a file if one is open, and press ⌘N.
+
+**Pass:** a jump back to today's page, no third page.
+
+4. Hover the + on the Today row. Click it once on a blank page, then
+   once on a page with a word on it.
+
+**Pass:** the tooltip reads "New page (⌘N)", or the chord the keymap
+bound. Both clicks mint: the plus is the strip's + button and takes no
+jump-first reading. Nothing else on the rail grows a plus.
+
+**Fail:** a plus beside yesterday; a tooltip that spells a chord the
+keymap does not bind; a click that only selects.
+
+5. Turn the mode off. Every page made above is a tab on the strip; turn
+   it back on and today lists them all.
+
 ## Results
 
 Not yet run. One row per check when a session runs it, and the rows
@@ -379,3 +420,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | 10 nothing legible in the minimap at any size | | |
 | | | 10 rail width at the 360pt floor | | Do the day words fit without truncation. Does the roll's gutter still hold day, title and countdown on one line. |
 | | | 10 rail width on a wide card | | Does 96pt read as generous or as a wasted column. Decision: pin 96, narrow the rail, or raise the card's floor. |
+| | | 11 ⌘N on a blank today stays put | | |
+| | | 11 ⌘N on a peopled today mints a second page | | Note where the caret landed. |
+| | | 11 ⌘N from elsewhere jumps, no third page | | |
+| | | 11 the Today row's + mints and names the chord | | |

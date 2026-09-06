@@ -197,14 +197,26 @@ the empty state the app already ships, with its Return grant intact
 
 Because every mint stamps `wall_ms()`, which is now, every page the
 user creates lands in Day 0 by construction. The gesture-only rule and
-the one-page-per-day shape turn out to want the same thing.
+the day shape turn out to want the same thing: a day may hold several
+pages, and the projection lists them under that day in strip order, but
+every one of them was minted on that day by a gesture.
 
-⌘N in this mode goes to today's page when one exists and creates it when
-none does. That is `openToday()`, and it is deliberately not a new mint
-policy: it either selects an occupied tab, which cannot mint, or it goes
-through the shipped create path unchanged. No mint-target heuristic, no
-reuse of an arbitrary named empty tab: flipping back to horizontal must
-never reveal that a tab the user named now holds today's page.
+⌘N in this mode has three readings, and all of them are `openToday()`
+(issue #158). When today holds a page and the selection is elsewhere,
+it goes there. When today holds none, it creates one. When the person
+is already on today's page and has written on it, it creates a second
+page beside the first: first press jumps, second press creates. On
+today's page with nothing on it a further press stays put, so a held ⌘N
+cannot stack blank pages; the bar is the ledger's own content predicate,
+the same one the projection uses to hide blank old pages. The rail's
+Today row carries the strip's + button for the same action, with the
+strip's tooltip, and it mints outright the way the strip's does.
+
+None of this is a new mint policy: every arm either selects an occupied
+tab, which cannot mint, or goes through the shipped create path
+unchanged. No mint-target heuristic, no reuse of an arbitrary named
+empty tab: flipping back to horizontal must never reveal that a tab the
+user named now holds today's page.
 
 ## The three answers
 

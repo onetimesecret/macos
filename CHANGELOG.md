@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A second page on today, with the time tabs down the side** (issue
+  #158, part A). ⌘N and ⌘T still go to today's page first, and still
+  start it when today has none. Pressed again while already on today's
+  page with writing on it, they mint a second page beside the first,
+  and the rail's Today row lists both in strip order. On a blank
+  today's page a further press stays put, so a held chord cannot stack
+  blank pages. The Today row also carries the strip's + button, with
+  the strip's tooltip naming the bound chord. The nine-tab cap is
+  unchanged; taking it out of the store is part B.
+
 - **The page's font is a setting: a family by name, and a size.** Two
   rows on the General tab, the way an editor names its buffer font: a
   family as the system spells it (Menlo, JetBrains Mono) and a point
