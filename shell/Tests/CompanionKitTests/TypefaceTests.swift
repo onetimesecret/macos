@@ -95,4 +95,96 @@ final class TypefaceTests: XCTestCase {
         XCTAssertEqual(InkStyle.baseFont.familyName, "Menlo")
         XCTAssertEqual(InkStyle.headingFont(level: 1).familyName, "Menlo")
     }
+
+    // MARK: The setting
+
+    func testAPageOpensInTheStandardTypefaceUntilToldOtherwise() throws {
+        let model = isolatedModel(defaults: try makeDefaults("default"))
+        XCTAssertEqual(model.fontFamily, "")
+        XCTAssertEqual(model.fontSize, 13)
+        XCTAssertEqual(model.typeface, .standard)
+        XCTAssertEqual(InkStyle.typeface, .standard)
+    }
+
+    func testTheSettingSticksAndReachesTheStyling() throws {
+        let defaults = try makeDefaults("persistence")
+        let model = isolatedModel(defaults: defaults)
+        model.fontFamily = "Menlo"
+        model.fontSize = 18
+        XCTAssertEqual(InkStyle.typeface, InkStyle.Typeface(family: "Menlo", size: 18))
+        XCTAssertEqual(InkStyle.baseFont.familyName, "Menlo")
+        XCTAssertEqual(InkStyle.baseFont.pointSize, 18)
+
+        InkStyle.typeface = .standard
+        let reopened = isolatedModel(defaults: defaults)
+        XCTAssertEqual(reopened.fontFamily, "Menlo")
+        XCTAssertEqual(reopened.fontSize, 18)
+        XCTAssertEqual(InkStyle.typeface, reopened.typeface, "a relaunch styles in what was saved")
+    }
+
+    func testTheModelClampsTheSizeAndTrimsTheFamily() throws {
+        let model = isolatedModel(defaults: try makeDefaults("clamp"))
+        model.fontSize = 3
+        XCTAssertEqual(model.fontSize, 8)
+        model.fontSize = 99
+        XCTAssertEqual(model.fontSize, 40)
+        model.fontFamily = "  Menlo  "
+        XCTAssertEqual(model.fontFamily, "Menlo")
+    }
+
+    /// A family typed before the font is installed is kept, and the
+    /// page wears the fallback in the meantime: the setting says what
+    /// the user wants, the styling says what the Mac can do.
+    func testAMissingFamilyIsKeptAsTypedAndDrawnAsTheSystemFace() throws {
+        let model = isolatedModel(defaults: try makeDefaults("missing"))
+        model.fontFamily = "No Such Family 9f3a"
+        XCTAssertEqual(model.fontFamily, "No Such Family 9f3a")
+        XCTAssertFalse(model.typeface.isInstalled)
+        XCTAssertEqual(InkStyle.baseFont, NSFont.monospacedSystemFont(ofSize: 13, weight: .regular))
+    }
+
+    // MARK: The page
+
+    /// The mounted page follows the setting on the next pass: every
+    /// line is laid down in the new base font, a heading in the ramp
+    /// derived from it, and the caret types in it too.
+    func testTheMountedPageIsRestyledInTheNewTypeface() throws {
+        let model = isolatedModel(defaults: try makeDefaults("restyle"))
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let textView = InkEditorView.makeInkTextView(model: model, sheetID: page, coordinator: coordinator)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 320),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        window.contentView?.addSubview(textView)
+        textView.insertText("# heading\nbody line\n", replacementRange: NSRange(location: 0, length: 0))
+        let storage = try XCTUnwrap(textView.textStorage)
+        XCTAssertEqual((storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize, 17)
+
+        model.fontSize = 20
+        coordinator.applyTypeface(model.typeface)
+
+        XCTAssertEqual((storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize, 26)
+        let bodyStart = ("# heading\n" as NSString).length
+        XCTAssertEqual((storage.attribute(.font, at: bodyStart, effectiveRange: nil) as? NSFont)?.pointSize, 20)
+        XCTAssertEqual((textView.typingAttributes[.font] as? NSFont)?.pointSize, 20)
+    }
+
+    /// A quiet day's rendering carries its font in its attributes, so
+    /// the model forgets every rendering when the typeface moves and
+    /// the roll re-reads them in the new face.
+    func testQuietRenderingsAreReadAgainInTheNewTypeface() throws {
+        let model = isolatedModel(defaults: try makeDefaults("quiet"))
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let before = model.quietRendering(for: page)
+        XCTAssertTrue(model.quietRendering(for: page) === before, "an unchanged day is the same object")
+
+        model.fontSize = 20
+
+        let after = model.quietRendering(for: page)
+        XCTAssertFalse(after === before)
+    }
 }

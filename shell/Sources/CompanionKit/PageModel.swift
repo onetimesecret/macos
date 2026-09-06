@@ -443,6 +443,58 @@ public final class PageModel: ObservableObject {
     }
     private static let wrapKey = "wrapsLines"
 
+    /// The family the page is set in, named the way the system names
+    /// it ("Menlo", "JetBrains Mono"), the way an editor's buffer font
+    /// is named. Empty means the system's monospaced face. Persisted;
+    /// a family that is not installed is kept as typed and the page
+    /// falls back to the system face until it is, so a font that
+    /// arrives later is honoured without the setting being retyped.
+    @Published public var fontFamily: String {
+        didSet {
+            let trimmed = fontFamily.trimmingCharacters(in: .whitespaces)
+            if trimmed != fontFamily {
+                fontFamily = trimmed
+                return
+            }
+            defaults.set(fontFamily, forKey: Self.fontFamilyKey)
+            applyTypeface()
+        }
+    }
+    private static let fontFamilyKey = "fontFamily"
+
+    /// The page's base size in points. Persisted, and clamped to
+    /// `InkStyle.Typeface.sizeRange` on the way in, so a slip in the
+    /// field cannot leave a page nobody can read.
+    @Published public var fontSize: Double {
+        didSet {
+            let clamped = Double(InkStyle.Typeface.clamp(CGFloat(fontSize)))
+            if clamped != fontSize {
+                fontSize = clamped
+                return
+            }
+            defaults.set(fontSize, forKey: Self.fontSizeKey)
+            applyTypeface()
+        }
+    }
+    private static let fontSizeKey = "fontSize"
+
+    /// The two settings as the one value the styling reads.
+    public var typeface: InkStyle.Typeface {
+        InkStyle.Typeface(family: fontFamily, size: CGFloat(fontSize))
+    }
+
+    /// Hand the typeface to the styling and forget every quiet day's
+    /// rendering, which carried the old font in its attributes. The
+    /// mounted page is restyled by the coordinator on the next pass
+    /// (`applyTypeface`), which the published change provokes. Nothing
+    /// is marked dirty: a font is how the page looks, not what it says,
+    /// and a sealed generation for a size change would be the same
+    /// mistake `showsTimeUnits` refuses.
+    private func applyTypeface() {
+        InkStyle.typeface = typeface
+        quietRenderings.removeAll()
+    }
+
     /// Whether a rung, when applied, rounds its deadline up to the next
     /// whole clock hour (rungs under a day) or local midnight (a day and
     /// up), by at most a day (ADR-0011 section 4). On unless turned
@@ -880,6 +932,17 @@ public final class PageModel: ObservableObject {
         // Unset → wrap, which is how every plain-text editor opens and
         // the only sane default for a card this narrow.
         wrapsLines = defaults.object(forKey: Self.wrapKey) as? Bool ?? true
+        // Unset → the system monospaced face at 13, which is what every
+        // page wore before the setting existed. Handed to the styling
+        // here because a property observer does not run during init.
+        let typeface = InkStyle.Typeface(
+            family: defaults.string(forKey: Self.fontFamilyKey) ?? InkStyle.Typeface.standard.family,
+            size: CGFloat(
+                defaults.object(forKey: Self.fontSizeKey) as? Double ?? Double(InkStyle.Typeface.standard.size)
+            )
+        )
+        fontFamily = typeface.family
+        fontSize = Double(typeface.size)
         // Unset → off. A prototype is something a user turns on, and an
         // upgrade must not rearrange the pad of somebody who never
         // asked for a second way of looking at it (issue #79).
@@ -889,6 +952,7 @@ public final class PageModel: ObservableObject {
         let snapsToBoundaries = defaults.object(forKey: Self.graceSnapKey) as? Bool ?? true
         self.snapsToBoundaries = snapsToBoundaries
         self.client.setGraceSnap(snapsToBoundaries)
+        InkStyle.typeface = typeface
         // No pages yet: the restore is the caller's to time
         // (`loadStateIfNeeded`). The panel defers it to the first
         // reveal, so launching at login never raises a Keychain prompt

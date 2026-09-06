@@ -164,6 +164,7 @@ public struct InkEditorView: NSViewRepresentable {
         textView.coordinator = coordinator
         coordinator.textView = textView
         coordinator.currentSheet = sheetID
+        coordinator.appliedTypeface = InkStyle.typeface
         coordinator.restyle()
         model.activeEditor = textView
         // The summon-time offer's button takes the same road as ⇧⌘V,
@@ -308,6 +309,10 @@ public struct InkEditorView: NSViewRepresentable {
         // has not moved, so the common update rebuilds no geometry.
         coordinator.observeClip(of: scroll)
         coordinator.applyWrap(model.wrapsLines)
+        // And for the typeface, which Settings can change while the
+        // page stays put; the same gate, so the common pass restyles
+        // nothing.
+        coordinator.applyTypeface(model.typeface)
         // Dead pages take their saved view state with them — the same
         // pruning `refresh()` applies to the storage cache, and keyed
         // the same way, by page identity: a tab outlives its pages
@@ -596,6 +601,26 @@ public struct InkEditorView: NSViewRepresentable {
             guard let textView, let scroll = scrollView, appliedWrap != wraps else { return }
             appliedWrap = wraps
             InkEditorView.setWrap(wraps, textView: textView, scroll: scroll)
+        }
+
+        /// The typeface the mounted page was last styled in, so the
+        /// pass that changed nothing restyles nothing. Set at the
+        /// building, where the first styling happens.
+        var appliedTypeface: InkStyle.Typeface?
+
+        /// Restyle the mounted page in the typeface Settings now names.
+        /// The model has already written it to `InkStyle`, so the
+        /// restyle pass lays every line back down in the new base font
+        /// and the heading ramp derived from it; what that pass does not
+        /// touch is what the caret types next, so the typing attributes
+        /// are moved here. Pages the editor is not standing on keep
+        /// their old fonts until the editor moves to them, and
+        /// `moveEditor` restyles on arrival.
+        func applyTypeface(_ typeface: InkStyle.Typeface) {
+            guard let textView, appliedTypeface != typeface else { return }
+            appliedTypeface = typeface
+            textView.typingAttributes[.font] = InkStyle.baseFont
+            restyle()
         }
 
         /// Watch the clip so the unwrapped page's width floor stays level

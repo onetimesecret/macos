@@ -360,6 +360,11 @@ final class DayStackView: NSView {
             selected: selectedPage,
             clipWidth: clipWidth
         )
+        // The typeface can change under a roll that is otherwise still:
+        // the editor's page is restyled here, and the quiet days follow
+        // through `refreshQuietRegions`, since the model dropped their
+        // renderings when the setting moved.
+        coordinator.applyTypeface(model.typeface)
         guard signature != rendered else {
             // The ordinary pass: a keystroke, or the cosmetic redraw.
             // The countdowns in the gutters move every second and the
