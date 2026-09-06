@@ -263,3 +263,9 @@ and redundant.
   refusal were added. The decision remains proposed. Implementation
   notes are in
   [about file backed documents](../development/about-file-backed-documents.md).
+- **2026-09-05:** The quit behaviour question is closed by the
+  maintainer: a quit with a dirty file open now says so and names the
+  files, rather than going silently. It is a notice and not a save or
+  discard sheet, with Quit Anyway and Cancel and no third button,
+  because the draft survives the quit and a Discard would create the
+  loss path the feature otherwise does not have (`QuitPrompt`).

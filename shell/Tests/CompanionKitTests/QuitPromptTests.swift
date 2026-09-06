@@ -12,9 +12,11 @@ import XCTest
 private final class FlushSpy: QuitFlushable {
     private let outcome: QuitSaveOutcome
     private(set) var flushes = 0
+    let dirtyFileNames: [String]
 
-    init(_ outcome: QuitSaveOutcome) {
+    init(_ outcome: QuitSaveOutcome, dirty: [String] = []) {
         self.outcome = outcome
+        dirtyFileNames = dirty
     }
 
     func saveStateForQuit() -> QuitSaveOutcome {
@@ -144,5 +146,63 @@ final class QuitPromptTests: XCTestCase {
         let model = FlushSpy(.unsavableWithContent)
         let reply = QuitPrompt.terminateReply(flushing: model) { _ in true }
         XCTAssertEqual(reply, .terminateNow)
+    }
+
+    // MARK: The unsaved file notice (the spec's quit behaviour question)
+
+    func testACleanQuitWithNoDirtyFileStaysSilent() {
+        // The notice is conditional on work being at stake. One that
+        // appeared on every ⌘Q would be the reflex sheet the spec
+        // rejects, and would train the user to dismiss the one case
+        // that matters.
+        XCTAssertEqual(QuitPrompt.forOutcome(.settled, dirtyFiles: []), .quitSilently)
+    }
+
+    func testADirtyFileNamesItselfInTheQuitNotice() {
+        guard case .warn(let warning) = QuitPrompt.forOutcome(.settled, dirtyFiles: ["notes.txt"])
+        else {
+            return XCTFail("an unsaved file must be said out loud at quit")
+        }
+        XCTAssertEqual(warning.messageText, "notes.txt has unsaved changes")
+        // Named, not counted: a warning about "unsaved work" is one
+        // nobody can act on.
+        XCTAssertTrue(warning.informativeText.contains("notes.txt"))
+        // The promise that makes Quit Anyway safe rather than a
+        // gamble, and the reason this notice has no Discard button.
+        XCTAssertTrue(warning.informativeText.contains("next launch"))
+        XCTAssertTrue(warning.informativeText.contains("Cmd S"))
+    }
+
+    func testSeveralDirtyFilesAreAllNamed() {
+        guard
+            case .warn(let warning) = QuitPrompt.forOutcome(
+                .settled, dirtyFiles: ["a.txt", "b.txt"])
+        else { return XCTFail("two unsaved files must warn") }
+        XCTAssertEqual(warning.messageText, "2 open files have unsaved changes")
+        XCTAssertTrue(warning.informativeText.contains("a.txt and b.txt"))
+    }
+
+    func testAFailedWriteDoesNotPromiseTheDraftComesBack() {
+        // The restoration promise rests on the seal having landed. On
+        // the branch where it did not, the notice says the weaker true
+        // thing: the typing is in memory only.
+        guard case .warn(let warning) = QuitPrompt.forOutcome(.refused, dirtyFiles: ["notes.txt"])
+        else { return XCTFail("a refused write must warn") }
+        XCTAssertTrue(warning.informativeText.contains("in memory"))
+        XCTAssertFalse(warning.informativeText.contains("next launch"))
+    }
+
+    func testTheDirtyRosterIsReadOffTheModelAtQuit() {
+        let model = FlushSpy(.settled, dirty: ["notes.txt"])
+        var seen: QuitPrompt.Warning?
+        let reply = QuitPrompt.terminateReply(flushing: model) { warning in
+            seen = warning
+            return false
+        }
+        // Cancel goes back to the file so ⌘S can write it, which is the
+        // whole point of interrupting.
+        XCTAssertEqual(reply, .terminateCancel)
+        XCTAssertEqual(seen?.messageText, "notes.txt has unsaved changes")
+        XCTAssertEqual(model.flushes, 1)
     }
 }

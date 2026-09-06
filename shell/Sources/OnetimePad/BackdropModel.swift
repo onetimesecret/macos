@@ -155,6 +155,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         pages.saveStateForQuit()
     }
 
+    /// The open files carrying unsaved edits, for the quit notice. The
+    /// roster lives with the pages, so this is a forward and nothing
+    /// more.
+    var dirtyFileNames: [String] { pages.dirtyFileNames }
+
     // MARK: Stance
 
     /// ⌃⌥Space and the menu-bar item: a summon first, a dismissal only
