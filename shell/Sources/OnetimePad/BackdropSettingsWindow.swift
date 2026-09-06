@@ -89,10 +89,17 @@ final class BackdropSettingsWindowController {
         if window == nil {
             let tabs = makeTabs()
             let window = NSWindow(contentViewController: tabs)
+            // The title stands only until a tab is selected; from then
+            // on the toolbar tab style takes it from the selected item
+            // (`makeTabs`).
             window.title = "Settings"
             // Titled and closable only. Each tab has the size it
             // needs and the window takes that size as the tab changes;
-            // a resize handle would only let the user break that.
+            // a resize handle would only let the user break that. The
+            // minimise button goes too, deliberately: a Settings window
+            // with three short tabs is closed and reopened, and a
+            // minimised one would only hide the tab a refused ledger
+            // sends the user to (`SettingsTab.landing`).
             window.styleMask = [.titled, .closable]
             // The preference style is what puts the tabs under the
             // title as icons with labels, the way System Settings and
