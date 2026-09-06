@@ -19,7 +19,9 @@ content erase fires when the last page tab goes, which a headless suite
 reaches only by calling the rotation directly rather than by the
 predicate that fires it in the app.
 **Owner:** delano.
-**Status:** open. Not yet run on hardware.
+**Status:** passed on hardware 2026-09-05, all three cases. Re-run when
+the drafts file's format changes, when the content erase predicate
+moves, or before a release that touches either.
 
 This is the file side of
 [`force-termination.md`](force-termination.md). That procedure asks what
@@ -148,9 +150,13 @@ write typing from a session the person had ended.
 
 ## Results
 
-Not yet run. This procedure has never been executed on hardware as of
-2026-09-05.
+First run 2026-09-05, on the dev bundle at `fb5e798`, all three cases
+pass. The two claims no test in this repository can reach are therefore
+checked: a draft survives a `kill -9`, and emptying the pad of pages
+reseals the drafts rather than taking them.
 
 | Date | Machine and macOS | Case | Pass or fail | What was lost | Notes |
 |---|---|---|---|---|---|
-| | | | | | |
+| 2026-09-05 | Apple M2 Max, macOS 27.0 (26A5421a) | 1 | pass | nothing | Draft, unsaved dot and last edit time all came back after the kill. `/tmp/qa-draft.txt` still two lines: the file on disk was never written. |
+| 2026-09-05 | Apple M2 Max, macOS 27.0 (26A5421a) | 2 | pass | the two scratch pages, as asked | `drafts.sealed` rewritten and not removed by the content erase. File tab and its draft returned after a normal quit and relaunch. |
+| 2026-09-05 | Apple M2 Max, macOS 27.0 (26A5421a) | 3 | pass | the draft, as asked | Discard in the close review ended it. The reopened file held the two lines on disk and nothing else. |

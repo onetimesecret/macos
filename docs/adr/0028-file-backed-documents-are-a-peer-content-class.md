@@ -269,3 +269,9 @@ and redundant.
   discard sheet, with Quit Anyway and Cancel and no third button,
   because the draft survives the quit and a Discard would create the
   loss path the feature otherwise does not have (`QuitPrompt`).
+- **2026-09-05:** The two clauses no test in this repository can reach,
+  the staged drafts clause across a `kill -9` and the resealing clause
+  across the automatic content erase, were verified on hardware. All
+  three cases of
+  [the draft lifecycle procedure](../qa/verification-procedures/file-draft-lifecycle.md)
+  pass.
