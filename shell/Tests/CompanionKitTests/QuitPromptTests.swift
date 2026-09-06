@@ -182,6 +182,27 @@ final class QuitPromptTests: XCTestCase {
         XCTAssertTrue(warning.informativeText.contains("a.txt and b.txt"))
     }
 
+    func testTheNoticeAgreesWithTheCountOfFilesItNames() {
+        // One file "has" changes and is reopened as "the file"; two
+        // "have" them and come back as "the files". A notice that said
+        // "a.txt and b.txt has unsaved changes" would read as a
+        // template with the wrong number filled in, at the moment it
+        // most needs to be believed.
+        guard case .warn(let one) = QuitPrompt.forOutcome(.settled, dirtyFiles: ["a.txt"])
+        else { return XCTFail("one unsaved file must warn") }
+        XCTAssertTrue(one.informativeText.hasPrefix("a.txt has unsaved changes"))
+        XCTAssertTrue(one.informativeText.contains("reopens the file with them"))
+        XCTAssertTrue(one.informativeText.hasSuffix("write them to the file instead."))
+
+        guard
+            case .warn(let two) = QuitPrompt.forOutcome(
+                .settled, dirtyFiles: ["a.txt", "b.txt"])
+        else { return XCTFail("two unsaved files must warn") }
+        XCTAssertTrue(two.informativeText.hasPrefix("a.txt and b.txt have unsaved changes"))
+        XCTAssertTrue(two.informativeText.contains("reopens the files with them"))
+        XCTAssertTrue(two.informativeText.hasSuffix("write them to the files instead."))
+    }
+
     func testAFailedWriteDoesNotPromiseTheDraftComesBack() {
         // The restoration promise rests on the seal having landed. On
         // the branch where it did not, the notice says the weaker true

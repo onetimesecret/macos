@@ -57,6 +57,10 @@ public enum QuitPrompt: Equatable, Sendable {
     ///
     /// It is a notice and not a save or discard sheet, and the
     /// difference is the whole point. The draft survives the quit: it
+    ///
+    /// Agreed with the count: one file "has" changes and is reopened
+    /// as "the file", several "have" them and come back as "the
+    /// files", so the notice reads as a sentence whichever it names.
     /// is sealed under the content key and restored at the next launch
     /// with its marker still showing, so a Discard button here would
     /// manufacture the one loss path this feature does not have, at
@@ -65,10 +69,14 @@ public enum QuitPrompt: Equatable, Sendable {
     /// the draft.
     static func draftsClause(_ names: [String]) -> String? {
         guard !names.isEmpty else { return nil }
-        return "\(PageModel.englishList(names)) has unsaved changes that are not on disk. "
+        let several = names.count > 1
+        let has = several ? "have" : "has"
+        let files = several ? "files" : "file"
+        let them = several ? "the files" : "the file"
+        return "\(PageModel.englishList(names)) \(has) unsaved changes that are not on disk. "
             + "The pad keeps them in its own sealed state and reopens the "
-            + "file with them at the next launch, still marked unsaved. "
-            + "Cancel and press Cmd S to write them to the file instead."
+            + "\(files) with them at the next launch, still marked unsaved. "
+            + "Cancel and press Cmd S to write them to \(them) instead."
     }
 
     /// The same names under a write that did not land. The promise the
