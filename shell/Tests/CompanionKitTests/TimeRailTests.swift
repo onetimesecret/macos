@@ -134,6 +134,24 @@ final class TimeRailTests: XCTestCase {
             "today read differently depending on which helper was asked")
     }
 
+    /// The + sits on today and on no other row (issue #158): a page is
+    /// minted with the clock's reading of now, so today is the one day
+    /// it can land on. Its tooltip is the strip's own, word for word,
+    /// so the two buttons that do one thing cannot describe it two ways
+    /// and a keymap that moved `page::New` moves both.
+    func testOnlyTodayOffersANewPageAndSaysSoInTheStripsWords() throws {
+        let model = try makeModel()
+        let projection = project([slot(tab: 1, page: 11, day: 0), slot(tab: 2, page: 12, day: -1)])
+        XCTAssertEqual(projection.units.map(TimeUnitTab.offersNewPage), [true, false])
+        XCTAssertTrue(TimeUnitTab.offersNewPage(try XCTUnwrap(project([]).units.first)))
+
+        let chord = model.keymap.hintKeystroke(for: .pageNew)
+        XCTAssertEqual(TimeUnitTab.newPageHelp(chord: chord), "New page (⌘N)")
+        XCTAssertEqual(
+            TimeUnitTab.newPageHelp(chord: chord), TabStripView.newPageHelp(chord: chord))
+        XCTAssertEqual(TimeUnitTab.newPageHelp(chord: nil), "New page")
+    }
+
     // MARK: What the tooltips say you can press
 
     /// The tooltip names the chord the keymap actually bound, the way
