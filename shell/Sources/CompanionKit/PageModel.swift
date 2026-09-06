@@ -2937,18 +2937,28 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// ⌘N while the days are down the side: go to today's page, and make
-    /// one when today has none (issue #79).
+    /// ⌘N while the days are down the side: go to today's page, make
+    /// one when today has none, and make another when the person is
+    /// already on today's page and has written on it (issues #79, #158).
     ///
-    /// Deliberately not a new mint policy. Two arms, both of them
-    /// shipped. When today already holds a live page this is a plain
-    /// `select(_:)`, which cannot mint into an occupied slot, so a
-    /// second ⌘N is a jump and never a second page. When today holds
-    /// none it is `newPage()`, the same path ⌘N takes with the strip
-    /// showing, which opens a fresh slot at this form factor's rung and
-    /// hands its editor the keys. Every mint stamps the clock's own
-    /// reading of now, so the page it makes lands on today by
-    /// construction rather than by being filed there.
+    /// Three arms, none of them a new mint policy. When today holds a
+    /// live page and the selection is elsewhere this is a plain
+    /// `select(_:)`, the jump, which cannot mint into an occupied slot.
+    /// When today holds none it is `newPage()`, the same path ⌘N takes
+    /// with the strip showing, which opens a fresh slot at this form
+    /// factor's rung and hands its editor the keys. And when the
+    /// selection already stands on one of today's pages, and that page
+    /// has something on it, it is `newPage()` again: first press jumps,
+    /// second press creates, and the projection files the new page
+    /// under today beside the first, in strip order. Every mint stamps
+    /// the clock's own reading of now, so the page it makes lands on
+    /// today by construction rather than by being filed there.
+    ///
+    /// The content bar is what keeps a held ⌘N from stacking blank
+    /// pages: on today's page with nothing on it a further press is a
+    /// jump onto the page already there, which is where a blank page
+    /// to type on already is. The bar is the ledger's own
+    /// (`TabSummary.pageHasContent`), not a second one invented here.
     ///
     /// What it will not do is reach for some arbitrary empty tab to put
     /// today's page in. That would be opinionated in exactly the place
@@ -2967,11 +2977,28 @@ public final class PageModel: ObservableObject {
         // than giving it a bucket of its own, so this cannot find an
         // empty Today standing above a peopled one and mint beside a
         // page already on screen (`TimeUnit.bucket(dayOffset:)`).
-        if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first {
-            select(tab)
+        guard let today = timeUnits.units.first(where: { $0.bucket == 0 }),
+            let first = today.tabIDs.first
+        else {
+            newPage()
             return
         }
-        newPage()
+        if let selection, today.tabIDs.contains(selection) {
+            // Already on today, and today's page is what is on screen:
+            // a file or the ledger standing in front of it makes this a
+            // jump back, not a second page. A page with writing on it
+            // earns a second page beside it; a blank one is the blank
+            // page to type on, so the press lands there and mints
+            // nothing.
+            let onScreen = selectedFile == nil && !showingLedger
+            if onScreen, selectedTab?.pageHasContent == true {
+                newPage()
+            } else {
+                select(selection)
+            }
+            return
+        }
+        select(first)
     }
 
     /// A summon: put the surface back on today (issue #79).
