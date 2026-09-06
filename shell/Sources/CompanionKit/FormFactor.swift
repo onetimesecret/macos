@@ -402,9 +402,21 @@ public enum BuildVersion {
     /// warning. Naming both is what stays honest: "build" answers which
     /// build am I on, "core" answers which seam it linked, and neither
     /// answer can be inferred from the other any more.
-    public static func trayTitle(core: String, bundleVersion: String?) -> String {
-        guard let bundleVersion else { return "core \(core)" }
-        return "build \(bundleVersion), core \(core)"
+    /// Whether the running bundle is the dev lane's, read off the
+    /// identifier the packaging gives it (`package-app.sh --debug`
+    /// appends `.debug`). The lane is a fact about the build exactly as
+    /// the two version numbers are, and the one a person most often
+    /// wants when two copies of the app are running at once.
+    public static func isDevLane(bundleIdentifier: String?) -> Bool {
+        bundleIdentifier?.hasSuffix(".debug") == true
+    }
+
+    public static func trayTitle(
+        core: String, bundleVersion: String?, devLane: Bool = false
+    ) -> String {
+        let lane = devLane ? ", dev" : ""
+        guard let bundleVersion else { return "core \(core)\(lane)" }
+        return "build \(bundleVersion), core \(core)\(lane)"
     }
 }
 

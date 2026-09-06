@@ -326,7 +326,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(
                 withTitle: BuildVersion.trayTitle(
                     core: CompanionClient.version,
-                    bundleVersion: Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+                    bundleVersion: Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
+                    devLane: BuildVersion.isDevLane(
+                        bundleIdentifier: Bundle.main.bundleIdentifier)
                 ),
                 action: nil,
                 keyEquivalent: ""
@@ -532,7 +534,19 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// bundled app takes the same name from CFBundleName /
     /// CFBundleDisplayName in shell/OnetimePad-Info.plist, and the two
     /// must agree. Neither is the bundle id, which never changes.
-    static let productName = "OnetimePad"
+    ///
+    /// Read from the bundle rather than hardcoded, because the dev lane
+    /// renames itself: `package-app.sh --debug` writes "OnetimePad Dev"
+    /// into both name keys, and everything that says the product's name
+    /// out loud has to follow it, or the About panel and the tray claim
+    /// to be the installed copy while the ⌘Tab switcher says otherwise.
+    static let productName: String = {
+        let info = Bundle.main.object(forInfoDictionaryKey:)
+        for key in ["CFBundleDisplayName", "CFBundleName"] {
+            if let name = info(key) as? String, !name.isEmpty { return name }
+        }
+        return "OnetimePad"
+    }()
 
     /// Loads the icon named by CFBundleIconFile, which package-app.sh
     /// changes when the rendered artwork changes. Assigning this image to

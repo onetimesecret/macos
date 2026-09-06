@@ -154,15 +154,28 @@ cp shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg "$APP/Contents/Re
 cp shell/Sources/CompanionKit/Resources/default-keymap.json "$APP/Contents/Resources/"
 cp shell/OnetimePad-Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
-# Use whatever OnetimePad icon is already sitting in dist/icons/ (the
-# most recently rendered one), so a custom scripts/build-icons.sh run
-# right before packaging survives instead of being overwritten by a
-# forced rebuild back to the standard shade. Only build the standard
-# icon when none exists yet.
-ICON="$(ls -t dist/icons/OnetimePad*.icns 2>/dev/null | head -n1 || true)"
-if [[ -z "$ICON" ]]; then
-  scripts/build-icons.sh
-  ICON="dist/icons/OnetimePad.icns"
+# A debug build always takes the black dev icon and never an ad-hoc
+# render: the dev instance and the installed copy sit in the Dock
+# together, and the shade is the only thing that separates them at a
+# glance, so it is not something a shade experiment gets to change.
+#
+# A release build uses whatever OnetimePad icon is already sitting in
+# dist/icons/ (the most recently rendered one), so a custom
+# scripts/build-icons.sh run right before packaging survives instead of
+# being overwritten by a forced rebuild back to the standard shade.
+# Only build the standard icon when none exists yet. The glob excludes
+# the dev icon by name, or a dev packaging run would leave it as the
+# most recent icns and the next release would ship it.
+if [[ "$CONFIG" == "debug" ]]; then
+  scripts/build-icons.sh --dev
+  ICON="dist/icons/OnetimePad-dev.icns"
+else
+  ICON="$(ls -t dist/icons/OnetimePad*.icns 2>/dev/null \
+    | grep -v '/OnetimePad-dev\.icns$' | head -n1 || true)"
+  if [[ -z "$ICON" ]]; then
+    scripts/build-icons.sh
+    ICON="dist/icons/OnetimePad.icns"
+  fi
 fi
 # Finder and the Dock cache icons by bundle metadata. Replacing the
 # contents of a fixed AppIcon.icns does not reliably invalidate that
@@ -196,6 +209,11 @@ if [[ "$CONFIG" == "debug" ]]; then
   plutil -replace CFBundleIdentifier -string "$BUNDLE_ID.debug" "$APP/Contents/Info.plist"
   BUNDLE_NAME="$(plutil -extract CFBundleName raw "$APP/Contents/Info.plist")"
   plutil -replace CFBundleName -string "$BUNDLE_NAME Dev" "$APP/Contents/Info.plist"
+  # Both name keys, or the rename reaches the File menu and nothing
+  # else: the ⌘Tab switcher, the Dock and the About panel read the
+  # display name first, and a bundle whose two names disagree is a
+  # bundle that calls itself two things in one session.
+  plutil -replace CFBundleDisplayName -string "$BUNDLE_NAME Dev" "$APP/Contents/Info.plist"
 fi
 
 # The published artifact is the bundle as assembled, before any

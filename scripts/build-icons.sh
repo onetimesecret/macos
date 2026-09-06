@@ -3,7 +3,10 @@
 # scripts/render-icon.swift and assembled by iconutil. The standard
 # icon is the onetimesecret.com logo mark on deep ember, which is the
 # same mark the menu bar item draws (CompanionKit's LogoMark) from the
-# same asset, so tray and Dock tile read as one app.
+# same asset, so tray and Dock tile read as one app. The dev lane's is
+# the same mark on black, and the shade is what tells a dev instance
+# from the installed copy in the Dock (--dev, and scripts/dev.sh takes
+# it automatically).
 #
 # With no arguments, builds the standard set below. Idempotent and
 # staleness-aware in that mode: an icon is rebuilt only when it is
@@ -13,6 +16,7 @@
 #
 # For trying out looks, an ad-hoc mode always rebuilds:
 #   scripts/build-icons.sh <name> <style> <rrggbb>
+#   scripts/build-icons.sh --dev              # the dev lane's black icon
 #   scripts/build-icons.sh --list             # available marks and styles
 #   scripts/build-icons.sh --rrggbb           # shades used so far
 #   scripts/build-icons.sh --sheet [rrggbb]   # contact sheet of every style
@@ -162,6 +166,18 @@ dc4a22  onetimesecret.com brand orange, the plate the logo mark sits on
 fefefe  the near white the logo mark itself is drawn in
 EOF
         ;;
+      --dev)
+        # The dev lane's icon, and only ever this one: the same logo
+        # mark on black. A dev instance and the installed copy sit in
+        # the Dock together all day, and the shade is the only thing
+        # that separates them at a glance. Its own name, so an ad-hoc
+        # render of the standard icon cannot be picked up as the dev
+        # one and a dev packaging run cannot overwrite the release
+        # icon.
+        MARK=logo
+        MARK_FLAG=(--mark logo)
+        build_icon_if_stale OnetimePad-dev flat 000000
+        ;;
       --sheet)
         build_sheet 0f766e
         ;;
@@ -172,7 +188,7 @@ EOF
         build_scout
         ;;
       *)
-        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -184,7 +200,7 @@ EOF
       --sweep) build_sweep "$2" ;;
       --scout) build_scout "$2" ;;
       *)
-        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+        echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --sheet [rrggbb] | --shadows [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
         exit 1
         ;;
     esac
@@ -202,12 +218,12 @@ EOF
     if [[ "$1" == "--sweep" ]]; then
       build_sweep "$2" "$3" "$4"
     else
-      echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+      echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
       exit 1
     fi
     ;;
   *)
-    echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
+    echo "usage: build-icons.sh [--mark <maruhi|logo>] [--list | --rrggbb | --dev | --sheet [rrggbb] | --sweep <zoom> [rrggbb] [grid] | --scout [rrggbb] [perUnit] | <name> <style> <rrggbb>]" >&2
     exit 1
     ;;
 esac
