@@ -84,6 +84,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state directories can be removed by hand once nothing in them is
   wanted.
 
+- **Settings is a standard macOS settings window with toolbar tabs**
+  (dogfood phase 4). Three tabs across the top, General, Connection
+  and Sync, group like with like, and General comes first: the
+  surface reset, line wrapping, deadline rounding, the day mode
+  toggle, start at login and the screenshot allowance, with the
+  ledger clear appearing there while a refused ledger needs it.
+  Connection keeps the server, share domain, organization, token and
+  the Test and Save buttons; Sync keeps its section. Every setting
+  from the single form survives. The window title follows the
+  selected tab and the window sizes itself to the tab, as the
+  system's own settings windows do.
+
+- **The pad is visible when first opened, and stays up while a panel
+  of its own is showing** (dogfood phase 4). Launch used to rest the
+  surface at desktop level behind everything, so the first thing a
+  new install did was disappear; it now raises, keyed and in front,
+  on the active Space. The open and save panels, the file review
+  alerts, the tab rename prompt and the quit alert used to look to
+  the outside click monitor like a click somewhere else, and the card
+  rested underneath them; a press while one of them is running no
+  longer rests it, and when the panel returns the pad is brought back
+  to the front. One consequence to know about: a launch as a login
+  item raises the card too, where it used to rest.
+
+- **The header countdown yields to the day gutter** (dogfood phase 4).
+  In the day mode the page prints its own countdown top right in the
+  gutter, so the header's copy was two clocks for one page, and the
+  header no longer shows it there. The strip mode keeps it, since
+  with the gauges gone it is the one place that mode writes the
+  remaining time at all.
+
+### Removed
+
+- **The remaining time gauges along the bottom edge** (dogfood phase
+  4). The three point bar under each tab and the four point bar
+  across the page's bottom edge both drew the page's remaining life
+  as geometry, and both read as a horizontal scroll bar for long
+  unwrapped lines: a thin horizontal bar at the foot of a text
+  surface is where every editor puts one, and people reached for it
+  to scroll. The tabs are one row now and nothing is drawn under the
+  page. The time rail keeps its per day gauge down the side, and the
+  remaining time is written in words in the header or the day gutter.
+  Whatever replaces them, if anything does, must not be a thin
+  horizontal bar down there (docs/dogfood/ABERRATIONS.md, 2026-09-05;
+  issue #156).
+
 ## [0.18.0] - 2026-09-04
 
 The second tagged milestone, and the first since v0.1.0. It carries
