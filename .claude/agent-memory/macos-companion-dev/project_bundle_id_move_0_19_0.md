@@ -18,12 +18,14 @@ its identifiers instead of counting dots (the old comment said a future
 change would need exactly that).
 
 **How to apply:**
-- Three places must agree on the dev id and none is derived from the
-  others: `FormFactor.devBundleIdentifier`, `DEV_BUNDLE_ID` in
+- Five places name the ids and none is derived from the others:
+  `shell/OnetimePad-Info.plist` (release id),
+  `FormFactor.devBundleIdentifier`, `DEV_BUNDLE_ID` in
   `scripts/package-app.sh`, and the two `case` gates in
-  `.github/workflows/ci.yml`. `BundleDeclarationTests` pins the first
-  two together; CI is only pinned by itself. Check all three when
-  touching any one.
+  `.github/workflows/ci.yml` (one per lane). `BundleDeclarationTests`
+  pins the plist, the constant and the script together; the two CI
+  strings are independent copies pinned only by themselves, and fail
+  loudly rather than quietly. Check all five when touching any one.
 - A log predicate that wants both lanes can no longer use BEGINSWITH;
   the docs use `subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}`.
 - `.debug` still appears in ADR-0012 and ADR-0014 decision text (each
