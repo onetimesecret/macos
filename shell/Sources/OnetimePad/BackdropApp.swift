@@ -180,10 +180,15 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var summonKey: BackdropHotKey?
     private lazy var settings = BackdropSettingsWindowController(model: model)
 
-    /// Not every activation is a summon. The launch's own arrives
-    /// within moments of `applicationDidFinishLaunching`, after the
-    /// launch has already raised the surface itself, and is read as
-    /// the same act rather than as a second raise (`activationRaises`).
+    /// Not every activation is the same raise, and one kind of launch
+    /// brings no activation at all. A launch the person performs, from
+    /// the Finder, the Dock, Spotlight or `open`, activates the app
+    /// within moments of `applicationDidFinishLaunching`, and that
+    /// activation is read as the launch itself and raises as a summon
+    /// (`activationRaises`). A login item, or any other launch the
+    /// system performs in the background, never activates, so nothing
+    /// arrives inside the window and the surface stays where the launch
+    /// placed it, resting.
     /// About's activation is flagged by `showAbout`, and Settings' by
     /// `openSettings`, because those windows need the activation for
     /// themselves without dragging the surface up with them. Every
@@ -251,52 +256,55 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // The backdrop exists by being there: it takes its place on
-        // screen at launch, opened onto whatever page the last quit
-        // sealed (`BackdropModel.start`), and then comes forward. It
-        // used to stop at the first half and rest, behind every other
-        // window, and a person who had just opened the app saw nothing
-        // and took the app for broken (dogfood phase 4). Launching is
-        // the plainest act of asking for the surface there is, so it is
-        // answered the way ⌃⌥Space is: raised, keyed, on the Space the
-        // user is looking at, and anchored on today. The raise is the
-        // launch's own rather than left to the activation that follows
-        // it, because a login item or a background launch may never
-        // activate at all, and the surface has to be visible either way.
+        // screen at launch, resting, opened onto whatever page the last
+        // quit sealed (`BackdropModel.start`). Whether it then comes
+        // forward is not decided here, because the launch cannot tell
+        // who asked for it. A person who opens the app is owed a raised
+        // and keyed card, since a surface that parks itself behind every
+        // other window on first open reads as a broken app (dogfood
+        // phase 4); a login item, or any other launch the system
+        // performs, is owed the resting stance, behind everything,
+        // exactly as before. AppKit already tells the two apart: a
+        // person's launch activates the app moments after this returns,
+        // and a background launch never does. So the raise waits for
+        // that activation (`applicationDidBecomeActive`), and a launch
+        // nobody activates stays resting.
         controller.show()
-        model.raise(Self.launchRaise)
     }
 
-    /// Why the launch raises: as a summon, because a person opening the
-    /// app is coming to the pad and not back to a sentence they left,
-    /// and a summon is the raise that anchors the roll on today
-    /// (`BackdropRaise`). Named so the test can pin the anchor without
-    /// launching anything.
+    /// How the launch's activation raises: as a summon, because a person
+    /// opening the app is coming to the pad and not back to a sentence
+    /// they left, and a summon is the raise that anchors the roll on
+    /// today (`BackdropRaise`). Named so the test can pin the anchor
+    /// without launching anything.
     nonisolated static let launchRaise: BackdropRaise = .summon
 
     /// How long after launch an activation is read as the launch's own.
     /// Recency rather than a skip-one counter, since a login item or a
-    /// background launch may never activate and a counter would swallow
-    /// the first real ⌘Tab hours later.
+    /// background launch never activates and a counter would read the
+    /// first real ⌘Tab hours later as the launch, anchoring the roll on
+    /// today under a sentence someone was coming back to.
     nonisolated static let launchWindow: TimeInterval = 2
 
-    /// Whether an activation raises the surface, given how long ago the
-    /// app launched and whether another window of ours asked for the
-    /// activation for itself.
+    /// Whether an activation raises the surface, and as which raise,
+    /// given how long ago the app launched and whether another window
+    /// of ours asked for the activation for itself. Nil is no raise.
     ///
-    /// The launch window survives the launch's own raise, with a changed
-    /// job. It used to keep the surface resting through the activation
-    /// LaunchServices sends moments after `applicationDidFinishLaunching`;
-    /// now that the launch raises by its own hand, that same activation
-    /// would run the raise a second time as an activation. The window
-    /// server would show nothing for it, since every write in the raise
-    /// path is guarded, but the second pass would still read the
-    /// pasteboard again and log a summon nobody made, and the launch
-    /// would be one act arriving as two raises. Reading the launch's
-    /// activation as part of the launch keeps it one.
+    /// The launch places the surface resting and leaves the raise to
+    /// this decision, because the activation is the one fact that
+    /// separates a launch a person performed from one the system did.
+    /// An activation inside the launch window is the person's launch
+    /// arriving, and it raises as the launch raise, a summon anchored on
+    /// today. One outside the window is a ⌘Tab or a Dock click and
+    /// raises as an activation, leaving the roll where it was. No
+    /// activation at all is the login item, and the absence of an answer
+    /// here is what keeps that launch resting. About and Settings keep
+    /// their claim ahead of both, whenever they arrive.
     nonisolated static func activationRaises(
         sinceLaunch: TimeInterval, claimedByAnotherWindow: Bool
-    ) -> Bool {
-        sinceLaunch >= launchWindow && !claimedByAnotherWindow
+    ) -> BackdropRaise? {
+        guard !claimedByAnotherWindow else { return nil }
+        return sinceLaunch < launchWindow ? launchRaise : .activation
     }
 
     /// Quit flushes whatever the debounce still holds; the debounced
@@ -328,17 +336,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// ⌘Tab (or the Dock icon) landing on this app raises the surface:
     /// the user came here, so bring it, pulled to their Space and keyed,
     /// unconditionally, never a rest, because activation only ever
-    /// means "bring it to me". The launch's own activation is exempt
-    /// because the launch has raised the surface already and this is
-    /// the same act arriving a second time; About's and Settings' are
-    /// exempt because those windows asked for the activation for
-    /// themselves.
+    /// means "bring it to me". The activation a person's launch sends
+    /// moments after `applicationDidFinishLaunching` is the raise the
+    /// launch itself withheld, and takes the launch raise; About's and
+    /// Settings' are exempt because those windows asked for the
+    /// activation for themselves.
     ///
-    /// Raised as an **activation** and not as a summon: the user named
-    /// the app, not this surface, and someone who ⌘Tabbed away from a
-    /// sentence in an older day is coming back to that sentence. What
-    /// hangs off the distinction is the roll's anchor, see
-    /// `BackdropRaise`.
+    /// Otherwise raised as an **activation** and not as a summon: the
+    /// user named the app, not this surface, and someone who ⌘Tabbed
+    /// away from a sentence in an older day is coming back to that
+    /// sentence. What hangs off the distinction is the roll's anchor,
+    /// see `BackdropRaise`.
     func applicationDidBecomeActive(_ notification: Notification) {
         // Ahead of the raise's own exemptions, and ahead of the launch
         // window: coming back to the app is exactly when a checkout, a
@@ -353,11 +361,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         let claimed = aboutActivation || settingsActivation
         aboutActivation = false
         settingsActivation = false
-        guard Self.activationRaises(
+        guard let raise = Self.activationRaises(
             sinceLaunch: Date().timeIntervalSince(launchedAt),
             claimedByAnotherWindow: claimed
         ) else { return }
-        model.raise(.activation)
+        model.raise(raise)
     }
 
     /// A modal of ours has returned: the open or save panel, a file

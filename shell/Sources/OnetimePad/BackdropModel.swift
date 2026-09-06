@@ -128,9 +128,9 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// The panel defers its restore to the first reveal so that
     /// launching at login never raises a Keychain prompt for a window
     /// nobody asked to see (ADR-0004). This surface has no such moment
-    /// to defer to: it is on screen from launch, raised and in front,
-    /// and a card showing an empty page it does not actually hold would
-    /// be a lie told at exactly the moment the form factor exists to
+    /// to defer to: it is on screen from launch, resting or raised, and
+    /// a card showing an empty page it does not actually hold would be
+    /// a lie told at exactly the glance the form factor exists to
     /// serve. Launch and reveal are one act here, so the restore rides
     /// it.
     func start() {

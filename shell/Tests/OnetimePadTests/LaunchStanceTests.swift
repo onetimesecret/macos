@@ -2,65 +2,83 @@ import XCTest
 
 @testable import OnetimePad
 
-/// The launch's stance and the activation that follows it, tested as
-/// the pure decisions they are (dogfood phase 4). Nothing here launches
+/// The launch's stance and the activation that decides it, tested as
+/// the pure decision it is (dogfood phase 4). Nothing here launches
 /// anything or builds a model: that the surface is on screen after a
-/// real launch is hardware knowledge and stays in the manual matrix.
-/// What can be pinned is which raise the launch asks for and which
-/// activations are read as the launch's own.
+/// real launch is hardware knowledge and stays in the manual matrix,
+/// and a `BackdropModel` reaches for the installed state directory, so
+/// the resting stance a login item is left in is pinned only by its
+/// negative, that no activation means no raise is ever asked for. What
+/// can be pinned is which raise each activation answers with.
 final class LaunchStanceTests: XCTestCase {
-    // MARK: The launch raises, as a summon
+    // MARK: The person's launch raises, as a summon
 
-    func testTheLaunchRaisesAsASummon() {
+    func testTheLaunchRaiseIsASummon() {
         // A person opening the app is coming to the pad, not back to a
-        // sentence they left in an older day, so the launch takes the
-        // raise that anchors the roll on today.
+        // sentence they left in an older day, so the launch's activation
+        // takes the raise that anchors the roll on today.
         XCTAssertEqual(BackdropAppDelegate.launchRaise, .summon)
         XCTAssertTrue(BackdropModel.anchorsOnToday(raise: BackdropAppDelegate.launchRaise))
     }
 
-    // MARK: The activation that arrives moments after
-
-    func testTheLaunchsOwnActivationDoesNotRaiseASecondTime() {
-        // LaunchServices activates the app within moments of
-        // `applicationDidFinishLaunching`. The launch has already
-        // raised by then, and one act must not arrive as two raises.
-        XCTAssertFalse(
-            BackdropAppDelegate.activationRaises(sinceLaunch: 0.3, claimedByAnotherWindow: false)
+    func testAnActivationInsideTheLaunchWindowRaisesAsTheLaunch() {
+        // A person's launch activates the app within moments of
+        // `applicationDidFinishLaunching`. The launch itself placed the
+        // surface resting and left the raise to this activation, which
+        // is read as the launch and raises the way the launch would.
+        XCTAssertEqual(
+            BackdropAppDelegate.activationRaises(sinceLaunch: 0, claimedByAnotherWindow: false),
+            BackdropAppDelegate.launchRaise
+        )
+        XCTAssertEqual(
+            BackdropAppDelegate.activationRaises(sinceLaunch: 0.3, claimedByAnotherWindow: false),
+            BackdropAppDelegate.launchRaise
         )
     }
 
-    func testAnActivationAfterTheLaunchWindowRaises() {
+    // MARK: Every later activation is the user choosing the app
+
+    func testAnActivationAfterTheLaunchWindowRaisesAsAnActivation() {
         // The first real ⌘Tab, hours later or two seconds later, is the
-        // user choosing this app and answers with a raise.
-        XCTAssertTrue(
+        // user naming the app and not this surface, and the roll stays
+        // where they left it.
+        XCTAssertEqual(
             BackdropAppDelegate.activationRaises(
                 sinceLaunch: BackdropAppDelegate.launchWindow, claimedByAnotherWindow: false
-            )
+            ),
+            .activation
         )
-        XCTAssertTrue(
-            BackdropAppDelegate.activationRaises(sinceLaunch: 3_600, claimedByAnotherWindow: false)
-        )
-    }
-
-    func testAnActivationAnotherWindowAskedForDoesNotRaise() {
-        // About and Settings activate the app for themselves; the
-        // surface must not ride up with them however long ago the app
-        // launched.
-        XCTAssertFalse(
-            BackdropAppDelegate.activationRaises(sinceLaunch: 3_600, claimedByAnotherWindow: true)
+        XCTAssertEqual(
+            BackdropAppDelegate.activationRaises(sinceLaunch: 3_600, claimedByAnotherWindow: false),
+            .activation
         )
     }
 
     func testTheLaunchWindowIsRecencyNotACounter() {
-        // A login item or a background launch may never activate at
-        // all. Had the exemption been a skip-one counter it would have
-        // swallowed the first real ⌘Tab hours later; as recency it has
-        // nothing left to swallow once the window has passed.
-        XCTAssertTrue(
+        // A login item or a background launch never activates at all.
+        // Had the launch's share been a skip-one counter it would have
+        // read the first real ⌘Tab hours later as the launch and moved
+        // the roll under the reader; as recency it has nothing left to
+        // claim once the window has passed.
+        XCTAssertEqual(
             BackdropAppDelegate.activationRaises(
                 sinceLaunch: BackdropAppDelegate.launchWindow + 0.01, claimedByAnotherWindow: false
-            )
+            ),
+            .activation
+        )
+    }
+
+    // MARK: About and Settings keep their claim
+
+    func testAnActivationAnotherWindowAskedForDoesNotRaise() {
+        // About and Settings activate the app for themselves; the
+        // surface must not ride up with them, inside the launch window
+        // or hours after it.
+        XCTAssertNil(
+            BackdropAppDelegate.activationRaises(sinceLaunch: 0.3, claimedByAnotherWindow: true)
+        )
+        XCTAssertNil(
+            BackdropAppDelegate.activationRaises(sinceLaunch: 3_600, claimedByAnotherWindow: true)
         )
     }
 }
