@@ -158,12 +158,14 @@ public enum FileRowLabel {
     }
 }
 
-/// The unsaved marker: a small ember dot, drawn where a page's gauge
-/// would be and never instead of the words beside it.
+/// The unsaved marker: a small ember dot, drawn beside a file's name on
+/// the strip and where a page's gauge would be on the rail, and never
+/// instead of the words beside it.
 ///
-/// It takes the seat `EmptyRule` takes on a slot holding no page, for
-/// the same reason: a file has no clock, and a gauge on a file would be
-/// a countdown on something that is never going to expire.
+/// On the rail it takes the seat `EmptyRule` takes on a day holding no
+/// page, for the same reason: a file has no clock, and a gauge on a
+/// file would be a countdown on something that is never going to
+/// expire.
 struct UnsavedDot: View {
     var body: some View {
         Circle()
