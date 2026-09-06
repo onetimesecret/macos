@@ -25,7 +25,7 @@ import Foundation
 /// One deliberate exception, at the site rather than here. A ledger
 /// that will not open puts a standing line on the surface telling the
 /// user to clear it in Settings, and that clear is the only way out;
-/// so `ConnectionSettingsView` shows its section while
+/// so `GeneralSettingsView` shows its section while
 /// `PageModel.ledgerRestoreRefused` stands, and it goes again the
 /// moment the clear lands. Hiding an affordance is a judgement about
 /// clutter, and it is not worth making it by ending a recovery route

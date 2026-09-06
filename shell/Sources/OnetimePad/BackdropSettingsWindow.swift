@@ -2,18 +2,84 @@ import AppKit
 import CompanionKit
 import SwiftUI
 
-/// Settings, backdrop edition: one small window holding the same
-/// Connection form the panel shows plus the surface's own section.
+/// The tabs of the Settings window, in toolbar order. General first,
+/// as every Apple app has it, then the two that reach outside the Mac:
+/// where a conceal goes, and how pages travel.
+///
+/// The symbol names are SF Symbols. A misspelt one draws nothing and
+/// complains nowhere, so `SettingsTabTests` resolves each of them.
+enum SettingsTab: Int, CaseIterable {
+    case general
+    case connection
+    case sync
+
+    var label: String {
+        switch self {
+        case .general: "General"
+        case .connection: "Connection"
+        case .sync: "Sync"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .general: "gearshape"
+        case .connection: "network"
+        case .sync: "arrow.triangle.2.circlepath"
+        }
+    }
+
+    /// The tab's place in the toolbar, which is also its index in the
+    /// tab view controller: the raw value, since the cases are declared
+    /// in toolbar order.
+    var index: Int { rawValue }
+
+    /// Which tab a `show()` lands on. The window keeps whichever tab
+    /// was open last, as Settings windows do, with one exception: the
+    /// surface's banner for a ledger that will not open sends the user
+    /// here to clear it, and the clear lives on General. Opening on
+    /// any other tab would turn that instruction into a search.
+    static func landing(current: SettingsTab, ledgerRestoreRefused: Bool) -> SettingsTab {
+        ledgerRestoreRefused ? .general : current
+    }
+}
+
+/// Settings, backdrop edition: a standard macOS Settings window, its
+/// tabs along the top as a toolbar, hosting the three shared forms.
 /// Unlike the backdrop itself this window activates normally: opening
 /// Settings is a deliberate act, and its fields need the keyboard.
 ///
-/// The form is shared, the stores are not: this window's model reaches
-/// the backdrop's own Keychain service, so a token saved here is the
-/// backdrop's and never the panel's (ADR-0010).
+/// The forms are shared, the stores are not: this window's model
+/// reaches the backdrop's own Keychain service, so a token saved here
+/// is the backdrop's and never the panel's (ADR-0010).
 @MainActor
 final class BackdropSettingsWindowController {
     private var window: NSWindow?
+    private var tabs: NSTabViewController?
     private let model: BackdropModel
+
+    /// One width for every tab: the forms are built for it, and a
+    /// Settings window that changed width between tabs would look like
+    /// three windows taking turns.
+    private static let width: CGFloat = 480
+
+    /// Each tab's height, fixed, so the window animates between them
+    /// rather than opening at whatever height the last form left. The
+    /// figures come from the forms as written: a grouped row is about
+    /// 44pt with its padding, a caption line about 15pt, and a section
+    /// adds roughly 16pt of air. General carries the long captions and
+    /// so the most height; Connection is two short sections and a
+    /// button row; Sync is sized for the switch, the sign-in line and
+    /// a small device roster. A form that grows past its figure, such
+    /// as General when the ledger clear or the capture switch appears,
+    /// scrolls rather than pushing the window around.
+    private static func height(of tab: SettingsTab) -> CGFloat {
+        switch tab {
+        case .general: 560
+        case .connection: 360
+        case .sync: 380
+        }
+    }
 
     init(model: BackdropModel) {
         self.model = model
@@ -21,19 +87,18 @@ final class BackdropSettingsWindowController {
 
     func show() {
         if window == nil {
-            let hosted = NSHostingController(rootView: BackdropSettingsView(model: model))
-            // The window owns its size; without this the hosting
-            // controller re-imposes the view's preferred height and
-            // fights the frame the window was given.
-            hosted.sizingOptions = []
-            let window = NSWindow(contentViewController: hosted)
+            let tabs = makeTabs()
+            let window = NSWindow(contentViewController: tabs)
             window.title = "Settings"
-            window.styleMask = [.titled, .closable, .resizable]
+            // Titled and closable only. Each tab has the size it
+            // needs and the window takes that size as the tab changes;
+            // a resize handle would only let the user break that.
+            window.styleMask = [.titled, .closable]
+            // The preference style is what puts the tabs under the
+            // title as icons with labels, the way System Settings and
+            // every Apple app's Settings window draws them.
+            window.toolbarStyle = .preference
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 420, height: 440))
-            // Vertical resize only: the form is built for one width.
-            window.contentMinSize = NSSize(width: 420, height: 320)
-            window.contentMaxSize = NSSize(width: 420, height: CGFloat.greatestFiniteMagnitude)
             // The window is built once and shown many times, so without
             // this it would keep the Space it was first opened on and
             // every later ⌘, would carry the user there instead of
@@ -45,6 +110,14 @@ final class BackdropSettingsWindowController {
             window.collectionBehavior.insert(.moveToActiveSpace)
             window.center()
             self.window = window
+            self.tabs = tabs
+        }
+        if let tabs {
+            let current = SettingsTab(rawValue: tabs.selectedTabViewItemIndex) ?? .general
+            tabs.selectedTabViewItemIndex = SettingsTab.landing(
+                current: current,
+                ledgerRestoreRefused: model.pages.ledgerRestoreRefused
+            ).index
         }
         // A raised card floats above normal windows, and so does a
         // pinned resting one; a .normal-level Settings window would
@@ -55,35 +128,54 @@ final class BackdropSettingsWindowController {
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
-}
 
-/// The backdrop's Settings: the shared Connection form, and above it
-/// the one setting only this form factor has: where the card sits.
-struct BackdropSettingsView: View {
-    @ObservedObject var model: BackdropModel
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                Section {
-                    Button("Reset to default position and size") {
-                        model.resetGeometry()
-                    }
-                } header: {
-                    Text("Surface")
-                } footer: {
-                    Text("Returns the card to its original place and size. Takes effect immediately.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .formStyle(.grouped)
-            .frame(height: 120)
-            ConnectionSettingsView(
-                model: model.pages,
-                loginPresence: "the surface"
-            )
+    /// The tab view controller in its toolbar style, which is the whole
+    /// of the standard Settings look: the tabs become toolbar items,
+    /// the selected tab's title becomes the window's, and the window
+    /// is resized to each tab's `preferredContentSize` as the selection
+    /// moves.
+    private func makeTabs() -> NSTabViewController {
+        let tabs = NSTabViewController()
+        tabs.tabStyle = .toolbar
+        for tab in SettingsTab.allCases {
+            tabs.addTabViewItem(makeItem(for: tab))
         }
-        .frame(width: 420)
+        return tabs
+    }
+
+    private func makeItem(for tab: SettingsTab) -> NSTabViewItem {
+        let hosted: NSViewController
+        switch tab {
+        case .general:
+            hosted = host(
+                GeneralSettingsView(
+                    model: model.pages,
+                    loginPresence: "the surface",
+                    resetSurface: { [model] in model.resetGeometry() }
+                ),
+                for: tab
+            )
+        case .connection:
+            hosted = host(ConnectionSettingsView(model: model.pages), for: tab)
+        case .sync:
+            hosted = host(SyncSettingsView(sync: model.pages.sync), for: tab)
+        }
+        hosted.title = tab.label
+        let item = NSTabViewItem(viewController: hosted)
+        item.label = tab.label
+        item.image = NSImage(systemSymbolName: tab.symbolName, accessibilityDescription: tab.label)
+        return item
+    }
+
+    /// One tab's hosting controller. The tab owns its size; without
+    /// clearing `sizingOptions` the hosting controller would re-impose
+    /// the form's own preferred height, which for a grouped form is
+    /// whatever its scroll view feels like, and fight the figure the
+    /// tab was given.
+    private func host<Content: View>(_ view: Content, for tab: SettingsTab) -> NSViewController {
+        let hosted = NSHostingController(rootView: view)
+        hosted.sizingOptions = []
+        hosted.preferredContentSize = NSSize(width: Self.width, height: Self.height(of: tab))
+        return hosted
     }
 }

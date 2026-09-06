@@ -42,17 +42,37 @@ public enum LaunchAtLogin {
     }
 }
 
-/// Connection settings. The token field is write-only by design: what
-/// is stored can never be read back out of the Keychain into this UI —
-/// the placeholder just says one is held.
+/// The caption a settings section carries above its rows. Every
+/// section in the three forms wears the same small secondary text, so
+/// the style lives once rather than beside each `Section`.
+private struct SettingsCaption: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+}
+
+/// The General tab: what this app and its surface do, as opposed to
+/// where a conceal goes (Connection) or how pages travel (Sync). The
+/// toggles here bind straight to the model, so the tab has no Save
+/// button; each flip is its own save.
 ///
-/// Shared by both form factors, which reach their own Keychain service
-/// through their own model: the same form, two stores.
-public struct ConnectionSettingsView: View {
+/// The surface's own setting, where the card sits, is the one row the
+/// shared code cannot draw itself: the geometry belongs to the form
+/// factor's model, so the window hands in a closure and the section
+/// appears only when one is given.
+public struct GeneralSettingsView: View {
     @ObservedObject var model: PageModel
 
     /// What the login toggle's caption promises to bring back. The
-    /// panel's presence is a menu-bar item; the backdrop's is the
+    /// panel's presence was a menu-bar item; the backdrop's is the
     /// surface itself.
     private let loginPresence: String
 
@@ -62,77 +82,57 @@ public struct ConnectionSettingsView: View {
     /// whether this process offers the switch to anyone.
     private let offersCaptureToggle: Bool
 
-    public init(model: PageModel, loginPresence: String, offersCaptureToggle: Bool = true) {
+    /// Returns the surface to its default place and size, when the
+    /// form factor has such a thing to return.
+    private let resetSurface: (() -> Void)?
+
+    public init(
+        model: PageModel,
+        loginPresence: String,
+        offersCaptureToggle: Bool = true,
+        resetSurface: (() -> Void)? = nil
+    ) {
         self.model = model
         self.loginPresence = loginPresence
         self.offersCaptureToggle = offersCaptureToggle
+        self.resetSurface = resetSurface
     }
 
-    @State private var serverUrl = ""
-    @State private var extid = ""
-    @State private var token = ""
-    @State private var shareDomain = ""
-    @State private var status: String?
-    @State private var statusIsError = false
-    @State private var testing = false
-    @State private var confirmingClear = false
     @State private var confirmingLedgerClear = false
     @State private var launchAtLogin = false
     @State private var loginStatus: String?
 
     public var body: some View {
         Form {
-            Section {
-                TextField("Server URL", text: $serverUrl, prompt: Text("https://eu.onetimesecret.com"))
-                TextField("Share domain", text: $shareDomain, prompt: Text("optional — defaults to the server's host"))
-            } header: {
-                Text("Where a conceal goes — https only.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Section {
-                TextField("Organization extid", text: $extid, prompt: Text("empty for guest conceals"))
-                SecureField("API token", text: $token, prompt: Text(tokenPrompt))
-                if model.connection?.hasToken == true {
-                    Button("Clear stored token", role: .destructive) { confirmingClear = true }
-                        .confirmationDialog(
-                            "Clear the stored API token?",
-                            isPresented: $confirmingClear,
-                            titleVisibility: .visible
-                        ) {
-                            Button("Clear token", role: .destructive) { clearToken() }
-                            Button("Cancel", role: .cancel) {}
-                        } message: {
-                            Text("Conceals fall back to guest links until you enter a new token.")
-                        }
+            if let resetSurface {
+                Section {
+                    Button("Reset to default position and size", action: resetSurface)
+                } header: {
+                    Text("Surface")
+                } footer: {
+                    SettingsCaption(
+                        "Returns the card to its original place and size. Takes effect immediately.")
                 }
-            } header: {
-                Text("The token goes straight to the Keychain and is never shown again.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             Section {
                 Toggle("Wrap long lines", isOn: $model.wrapsLines)
             } header: {
-                Text("What the page does with a line wider than the card. Off lets lines run on and the page scrolls sideways. ⌥Z flips it while you write, and whichever way you left it is how the page opens.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsCaption(
+                    "What the page does with a line wider than the card. Off lets lines run on and the page scrolls sideways. ⌥Z flips it while you write, and whichever way you left it is how the page opens."
+                )
             }
             Section {
                 Toggle("Round a page's deadline up to the hour, or to midnight", isOn: $model.snapsToBoundaries)
             } header: {
-                Text("A rung names a duration; this lets the deadline land where the clock does. Under a day it rounds up to the next whole hour, from a day up to the next midnight, and never by more than a day. Pages already counting down keep the deadline they have.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsCaption(
+                    "A rung names a duration; this lets the deadline land where the clock does. Under a day it rounds up to the next whole hour, from a day up to the next midnight, and never by more than a day. Pages already counting down keep the deadline they have."
+                )
             }
             Section {
                 Toggle("A page a day, with time tabs down the side", isOn: $model.showsTimeUnits)
             } header: {
-                Text(timeUnitsCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsCaption(timeUnitsCaption)
             }
-            SyncSettingsSection(sync: model.sync)
             Section {
                 Toggle("Start at login", isOn: loginBinding)
                     .disabled(!LaunchAtLogin.mayRegister)
@@ -142,9 +142,14 @@ public struct ConnectionSettingsView: View {
                         .foregroundStyle(Color.ember)
                 }
             } header: {
-                Text(loginCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsCaption(loginCaption)
+            }
+            if offersCaptureToggle, PageModel.captureOptOutOffered {
+                Section {
+                    Toggle("Allow screenshots of the surface", isOn: $model.allowCapture)
+                } header: {
+                    SettingsCaption(captureCaption)
+                }
             }
             // Hidden with the rest of the ledger's entry points (issue
             // #78), except while the surface is standing there telling
@@ -170,40 +175,14 @@ public struct ConnectionSettingsView: View {
                             Text("Every record goes, and there is no undo. Pages and sealed chips are untouched.")
                         }
                 } header: {
-                    Text("The ledger records what the app did with each item: never the content, but page names, and those are often the secret's label. It survives restarts and keeps 90 days.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    SettingsCaption(
+                        "The ledger records what the app did with each item: never the content, but page names, and those are often the secret's label. It survives restarts and keeps 90 days."
+                    )
                 }
-            }
-            if offersCaptureToggle, PageModel.captureOptOutOffered {
-                Section {
-                    Toggle("Allow screenshots of the surface", isOn: $model.allowCapture)
-                } header: {
-                    Text(captureCaption)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            HStack {
-                Button("Test") { test() }
-                    .disabled(testing)
-                if testing {
-                    ProgressView().controlSize(.small)
-                }
-                if let status {
-                    Text(status)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(statusIsError ? Color.ember : Color.secondary)
-                }
-                Spacer()
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420)
-        .frame(maxHeight: .infinity)
-        .onAppear(perform: load)
+        .onAppear { launchAtLogin = LaunchAtLogin.isEnabled }
     }
 
     /// The prototype's caption (issue #79). It has three jobs, and the
@@ -234,10 +213,6 @@ public struct ConnectionSettingsView: View {
         #endif
     }
 
-    private var tokenPrompt: String {
-        (model.connection?.hasToken ?? false) ? "•••• stored in the Keychain" : "paste your API token"
-    }
-
     /// The toggle speaks to `SMAppService` directly; a refused
     /// registration reverts the switch to the system's actual state
     /// rather than showing a wish as a fact.
@@ -265,8 +240,91 @@ public struct ConnectionSettingsView: View {
             : "Only the installed copy in /Applications can register at login, so a dev build never claims the login item."
     }
 
+    /// The clear is in memory core-side, so the model marks the store
+    /// dirty and the debounced write is what puts an empty ledger over
+    /// the file. Nothing is reported back: an empty ledger is the
+    /// receipt.
+    private func clearLedger() {
+        model.clearLedger()
+    }
+}
+
+/// The Connection tab: where a conceal goes and who it goes as. The
+/// token field is write-only by design: what is stored can never be
+/// read back out of the Keychain into this UI, and the placeholder
+/// just says one is held.
+///
+/// Unlike the General tab, this one holds its fields in draft until
+/// Save, because a half-typed server URL is not a setting anyone wants
+/// applied, and Test saves first so it tests what will be kept.
+public struct ConnectionSettingsView: View {
+    @ObservedObject var model: PageModel
+
+    public init(model: PageModel) {
+        self.model = model
+    }
+
+    @State private var serverUrl = ""
+    @State private var extid = ""
+    @State private var token = ""
+    @State private var shareDomain = ""
+    @State private var status: String?
+    @State private var statusIsError = false
+    @State private var testing = false
+    @State private var confirmingClear = false
+
+    public var body: some View {
+        Form {
+            Section {
+                TextField("Server URL", text: $serverUrl, prompt: Text("https://eu.onetimesecret.com"))
+                TextField("Share domain", text: $shareDomain, prompt: Text("optional; defaults to the server's host"))
+            } header: {
+                SettingsCaption("Where a conceal goes, over https only.")
+            }
+            Section {
+                TextField("Organization extid", text: $extid, prompt: Text("empty for guest conceals"))
+                SecureField("API token", text: $token, prompt: Text(tokenPrompt))
+                if model.connection?.hasToken == true {
+                    Button("Clear stored token", role: .destructive) { confirmingClear = true }
+                        .confirmationDialog(
+                            "Clear the stored API token?",
+                            isPresented: $confirmingClear,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Clear token", role: .destructive) { clearToken() }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("Conceals fall back to guest links until you enter a new token.")
+                        }
+                }
+            } header: {
+                SettingsCaption("The token goes straight to the Keychain and is never shown again.")
+            }
+            HStack {
+                Button("Test") { test() }
+                    .disabled(testing)
+                if testing {
+                    ProgressView().controlSize(.small)
+                }
+                if let status {
+                    Text(status)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(statusIsError ? Color.ember : Color.secondary)
+                }
+                Spacer()
+                Button("Save") { save() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear(perform: load)
+    }
+
+    private var tokenPrompt: String {
+        (model.connection?.hasToken ?? false) ? "•••• stored in the Keychain" : "paste your API token"
+    }
+
     private func load() {
-        launchAtLogin = LaunchAtLogin.isEnabled
         guard let connection = model.connection else { return }
         serverUrl = connection.serverUrl
         extid = connection.extid
@@ -285,7 +343,7 @@ public struct ConnectionSettingsView: View {
         )
         token = ""
         statusIsError = !accepted
-        status = accepted ? "saved" : "refused — the server URL must be https://…"
+        status = accepted ? "saved" : "refused: the server URL must be https://…"
     }
 
     private func clearToken() {
@@ -293,14 +351,6 @@ public struct ConnectionSettingsView: View {
         token = ""
         statusIsError = !cleared
         status = cleared ? "token cleared" : "could not clear the token"
-    }
-
-    /// The clear is in memory core-side, so the model marks the store
-    /// dirty and the debounced write is what puts an empty ledger over
-    /// the file. Nothing is reported back: an empty ledger is the
-    /// receipt.
-    private func clearLedger() {
-        model.clearLedger()
     }
 
     private func test() {
@@ -313,5 +363,24 @@ public struct ConnectionSettingsView: View {
             statusIsError = !outcome.ok
             status = outcome.ok ? "the server answers" : (outcome.error ?? "test failed")
         }
+    }
+}
+
+/// The Sync tab: `SyncSettingsSection` given a form of its own. The
+/// section already draws the switch, the sign-in and the device roster
+/// (issue #102); all this adds is the grouped frame the other two tabs
+/// wear, so the three read as one window.
+public struct SyncSettingsView: View {
+    private let sync: SyncController
+
+    public init(sync: SyncController) {
+        self.sync = sync
+    }
+
+    public var body: some View {
+        Form {
+            SyncSettingsSection(sync: sync)
+        }
+        .formStyle(.grouped)
     }
 }
