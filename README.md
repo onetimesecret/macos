@@ -147,7 +147,7 @@ keyboard does the gesture rest it. Esc or a click outside the card also
 rests it. The surface's mechanics log to the unified log:
 
 ```sh
-log stream --predicate 'subsystem == "com.onetimesecret.pad"'
+log stream --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}'
 ```
 
 It began as the second form factor (ADR-0010) beside a menu-bar panel,

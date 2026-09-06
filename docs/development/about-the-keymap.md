@@ -141,7 +141,7 @@ guessing at bindings the file did not give.
 To read the complaints:
 
 ```bash
-log show --predicate 'subsystem BEGINSWITH "com.onetimesecret"' --last 1h --style compact
+log show --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}' --last 1h --style compact
 ```
 
 ## How it is put together
