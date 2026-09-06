@@ -214,6 +214,21 @@ struct BackdropRootView: View {
             : "⌃⌥Space raises the surface"
     }
 
+    /// Whether the header prints the selected page's countdown. Only
+    /// while the strip is the navigation: the day mode's gutter prints
+    /// the same number on the page itself, and the header's copy was
+    /// withdrawn there as a duplicate (docs/dogfood/ABERRATIONS.md,
+    /// 2026-09-05). A slot with no page, the ledger and a file each
+    /// have nothing counting down, so none of them gets the control.
+    /// Pure, so the rule is tested rather than eyeballed, and
+    /// nonisolated because nothing about it needs the view's actor
+    /// and the tests call it from off it.
+    nonisolated static func showsHeaderCountdown(
+        showsTimeUnits: Bool, hasPage: Bool, showingLedger: Bool, fileShowing: Bool
+    ) -> Bool {
+        !showsTimeUnits && hasPage && !showingLedger && !fileShowing
+    }
+
     private var header: some View {
         HStack(spacing: 8) {
             // The ember dot is hidden (issue #78): the name alone says
@@ -264,15 +279,31 @@ struct BackdropRootView: View {
             // acting on. The gate the core reports chooses it; nothing
             // here infers a state of its own.
             syncIndicator
+            // The page's countdown, in words, while the strip is the
+            // navigation. In the day mode the page already prints it in
+            // its own day gutter, top right, and dogfooding found the
+            // header's second copy confused more than it informed, so
+            // the header yields it there and the gutter's copy is the
+            // one that stays. In the strip mode there is no gutter and
+            // this is the one place the remaining time is written as a
+            // number: the strip's tabs no longer carry a gauge, and the
+            // bar on the page's bottom edge is geometry without one.
+            // `showsHeaderCountdown` holds that rule where a test can
+            // reach it.
+            //
             // A countdown belongs to a page, so a slot holding none
             // shows no label: there is nothing counting down, and the
             // rung it keeps for its next page is not a deadline
-            // (ADR-0017).
-            // A file has no countdown to show and no rung to cycle, so
-            // the control goes away with the page rather than standing
-            // there inert (ADR-0028).
-            if let tab = pages.selectedTab, tab.hasPage, !pages.showingLedger,
-                pages.selectedFile == nil
+            // (ADR-0017). A file has no countdown to show and no rung
+            // to cycle, so the control goes away with the page rather
+            // than standing there inert (ADR-0028).
+            if let tab = pages.selectedTab,
+                Self.showsHeaderCountdown(
+                    showsTimeUnits: pages.showsTimeUnits,
+                    hasPage: tab.hasPage,
+                    showingLedger: pages.showingLedger,
+                    fileShowing: pages.selectedFile != nil
+                )
             {
                 CountdownButton(sheet: tab) { pages.cycleRung(tab.id) }
             }
