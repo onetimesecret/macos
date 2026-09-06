@@ -81,4 +81,35 @@ final class LaunchStanceTests: XCTestCase {
             BackdropAppDelegate.activationRaises(sinceLaunch: 3_600, claimedByAnotherWindow: true)
         )
     }
+
+    // MARK: The raise after a modal of ours
+
+    func testAModalsReturnRaisesOverAStillRaisedSurface() {
+        // The open panel, a file review, the rename prompt or a
+        // cancelled quit: the surface was raised when it went up and
+        // comes forward again once it is down.
+        XCTAssertTrue(
+            BackdropAppDelegate.raisesAfterModal(stance: .raised, modalSessionRunning: false)
+        )
+    }
+
+    func testAModalsReturnDoesNotRaiseARestedSurface() {
+        // A rest while the panel was up was somebody's deliberate act,
+        // or the quit notice reached from a resting card's tray menu,
+        // and neither is ours to undo.
+        XCTAssertFalse(
+            BackdropAppDelegate.raisesAfterModal(stance: .resting, modalSessionRunning: false)
+        )
+    }
+
+    func testAModalsReturnDoesNotRaiseUnderANextModal() {
+        // The deferred raise runs on the main queue, which drains
+        // inside a modal's run loop; a second modal opened on the
+        // first's return would otherwise take a `makeKeyAndOrderFront`
+        // under its own session. The same fact the outside press rule
+        // reads (`OutsidePress.rests`), read the same way.
+        XCTAssertFalse(
+            BackdropAppDelegate.raisesAfterModal(stance: .raised, modalSessionRunning: true)
+        )
+    }
 }

@@ -398,12 +398,35 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// caller's own stack, which for the open panel is the model in the
     /// middle of opening the file, and never at all on a confirmed
     /// quit, which terminates first.
+    ///
+    /// The deferred half asks `ModalSession.isRunning` again, for the
+    /// same reason the outside press rule asks it: the main queue
+    /// drains inside a modal's run loop, so a second modal opened on
+    /// the first one's return would run this turn under its own
+    /// session, and a `makeKeyAndOrderFront` under a live modal is
+    /// exactly what the bracket exists to prevent. No chain in the app
+    /// runs two modals back to back today; the guard is what keeps
+    /// that a fact about the app rather than a requirement on it.
     private func modalSessionEnded() {
         guard model.stance == .raised else { return }
         Task { @MainActor [weak self] in
-            guard let self, self.model.stance == .raised else { return }
+            guard let self,
+                Self.raisesAfterModal(
+                    stance: self.model.stance, modalSessionRunning: ModalSession.isRunning)
+            else { return }
             self.model.raise(.activation)
         }
+    }
+
+    /// Whether the deferred raise after a modal goes ahead: only over
+    /// a surface still raised, and only once no modal of ours is up.
+    /// The same two facts the outside press rule weighs, read the same
+    /// way, so that the two surface actions a modal touches cannot
+    /// disagree about what "a modal of ours is up" means.
+    nonisolated static func raisesAfterModal(
+        stance: BackdropStance, modalSessionRunning: Bool
+    ) -> Bool {
+        stance == .raised && !modalSessionRunning
     }
 
     /// The Dock icon's click while the app is already active reaches
