@@ -98,13 +98,34 @@ raises the surface, pulled to the user's Space and keyed;
 resting from a ⌘Tab summon hands the *activation* back
 (`NSApp.deactivate()`), not just key status, so the keyboard returns
 to the app the user came from. The launch's own activation is exempt —
-the backdrop starts resting, present but not summoned.
+the backdrop starts resting, present but not summoned (superseded by
+the launch amendment below: the launch now raises).
 
 This knowingly amends "present, not centre stage": docs/spec/03 §2
 settles "Dock icon?" with *No* — for the panel, whose whole posture is
 invisibility between uses. The backdrop's posture is presence, and
 presence that cannot be switched to is friction. Whether the fee is
 too high is open question №7.
+
+## The launch amendment
+
+The backdrop **raises at launch**: the surface comes up floating,
+keyed, on the Space the user is looking at, and anchored on today, the
+same posture ⌃⌥Space produces. The ⌘Tab amendment above had the launch
+rest, present but not summoned, and dogfood phase 4 found what that
+looks like from the chair: a person opens the app, the surface takes
+its place behind every other window, and they see nothing at all. An
+ambient surface earns its ambience after it has been seen once.
+Launching is the plainest request for the surface there is, so it is
+answered as a summon.
+
+The launch's own activation stays exempt from the activation raise,
+with a changed job. It used to be what kept the launch resting; now it
+keeps the launch to one raise, since the activation LaunchServices
+sends moments after launch would otherwise repeat the raise the launch
+just made. The raise is the launch's own rather than left to that
+activation because a login item or a background launch may never
+activate, and the surface has to be visible either way.
 
 ## The persistence amendment
 

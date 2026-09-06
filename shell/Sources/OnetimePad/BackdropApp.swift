@@ -181,11 +181,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var settings = BackdropSettingsWindowController(model: model)
 
     /// Not every activation is a summon. The launch's own arrives
-    /// within moments of `applicationDidFinishLaunching` — and a
-    /// login-item or background launch may never activate at all,
-    /// which is why this is recency rather than a skip-one counter
-    /// that would swallow the first real ⌘Tab hours later. About's
-    /// activation is flagged by `showAbout`, and Settings' by
+    /// within moments of `applicationDidFinishLaunching`, after the
+    /// launch has already raised the surface itself, and is read as
+    /// the same act rather than as a second raise (`activationRaises`).
+    /// About's activation is flagged by `showAbout`, and Settings' by
     /// `openSettings`, because those windows need the activation for
     /// themselves without dragging the surface up with them. Every
     /// other activation, whether by ⌘Tab or the Dock icon, is the user
@@ -236,10 +235,53 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self?.model.summon() }
         }
 
-        // The backdrop exists by being there: it takes its place at the
-        // desktop on launch, resting, opened onto whatever page the last
-        // quit sealed (`BackdropModel.start`).
+        // The backdrop exists by being there: it takes its place on
+        // screen at launch, opened onto whatever page the last quit
+        // sealed (`BackdropModel.start`), and then comes forward. It
+        // used to stop at the first half and rest, behind every other
+        // window, and a person who had just opened the app saw nothing
+        // and took the app for broken (dogfood phase 4). Launching is
+        // the plainest act of asking for the surface there is, so it is
+        // answered the way ⌃⌥Space is: raised, keyed, on the Space the
+        // user is looking at, and anchored on today. The raise is the
+        // launch's own rather than left to the activation that follows
+        // it, because a login item or a background launch may never
+        // activate at all, and the surface has to be visible either way.
         controller.show()
+        model.raise(Self.launchRaise)
+    }
+
+    /// Why the launch raises: as a summon, because a person opening the
+    /// app is coming to the pad and not back to a sentence they left,
+    /// and a summon is the raise that anchors the roll on today
+    /// (`BackdropRaise`). Named so the test can pin the anchor without
+    /// launching anything.
+    nonisolated static let launchRaise: BackdropRaise = .summon
+
+    /// How long after launch an activation is read as the launch's own.
+    /// Recency rather than a skip-one counter, since a login item or a
+    /// background launch may never activate and a counter would swallow
+    /// the first real ⌘Tab hours later.
+    nonisolated static let launchWindow: TimeInterval = 2
+
+    /// Whether an activation raises the surface, given how long ago the
+    /// app launched and whether another window of ours asked for the
+    /// activation for itself.
+    ///
+    /// The launch window survives the launch's own raise, with a changed
+    /// job. It used to keep the surface resting through the activation
+    /// LaunchServices sends moments after `applicationDidFinishLaunching`;
+    /// now that the launch raises by its own hand, that same activation
+    /// would run the raise a second time as an activation. The window
+    /// server would show nothing for it, since every write in the raise
+    /// path is guarded, but the second pass would still read the
+    /// pasteboard again and log a summon nobody made, and the launch
+    /// would be one act arriving as two raises. Reading the launch's
+    /// activation as part of the launch keeps it one.
+    nonisolated static func activationRaises(
+        sinceLaunch: TimeInterval, claimedByAnotherWindow: Bool
+    ) -> Bool {
+        sinceLaunch >= launchWindow && !claimedByAnotherWindow
     }
 
     /// Quit flushes whatever the debounce still holds; the debounced
@@ -267,9 +309,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// ⌘Tab (or the Dock icon) landing on this app raises the surface:
     /// the user came here, so bring it, pulled to their Space and keyed,
     /// unconditionally, never a rest, because activation only ever
-    /// means "bring it to me". The launch's own activation (and
-    /// `showAbout`'s) is exempt: the backdrop starts resting, present
-    /// but not summoned.
+    /// means "bring it to me". The launch's own activation is exempt
+    /// because the launch has raised the surface already and this is
+    /// the same act arriving a second time; About's and Settings' are
+    /// exempt because those windows asked for the activation for
+    /// themselves.
     ///
     /// Raised as an **activation** and not as a summon: the user named
     /// the app, not this surface, and someone who ⌘Tabbed away from a
@@ -283,15 +327,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // that is true whether or not this particular activation
         // raises the card (decisions.md item 5).
         pages.checkOpenFilesOnActivate()
-        if Date().timeIntervalSince(launchedAt) < 2 { return }
-        if aboutActivation {
-            aboutActivation = false
-            return
-        }
-        if settingsActivation {
-            settingsActivation = false
-            return
-        }
+        // Both flags are consumed by whichever activation arrives next,
+        // launch window or not: each was set only when an activation
+        // was certain to follow, so this is that activation, and a flag
+        // left standing here would swallow the next real ⌘Tab instead.
+        let claimed = aboutActivation || settingsActivation
+        aboutActivation = false
+        settingsActivation = false
+        guard Self.activationRaises(
+            sinceLaunch: Date().timeIntervalSince(launchedAt),
+            claimedByAnotherWindow: claimed
+        ) else { return }
         model.raise(.activation)
     }
 

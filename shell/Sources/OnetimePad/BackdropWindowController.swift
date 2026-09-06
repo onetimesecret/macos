@@ -186,8 +186,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Launch: the backdrop takes its place at the desktop immediately —
-    /// an ambient surface has no summon ceremony for merely existing.
+    /// Launch: the backdrop opens its pages, fits the screen, and takes
+    /// its place in whatever stance the model holds, which at launch is
+    /// the resting one. The delegate raises it the moment this returns,
+    /// so the surface is visible on first open rather than parked behind
+    /// every other window; what this does is the placing, and it is
+    /// kept apart from the raise so the pane is fitted and the state
+    /// restored before the card is framed as a floating editor.
     func show() {
         model.start()
         fitToScreen()
