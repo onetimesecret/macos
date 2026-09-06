@@ -198,12 +198,15 @@ public struct TabStripView: View {
 /// page's remaining life as geometry. Dogfooding withdrew it: a thin
 /// horizontal bar along the bottom edge of a text surface reads as a
 /// horizontal scroll bar for long unwrapped lines, and people reached
-/// for it as one (docs/dogfood/ABERRATIONS.md, 2026-09-05). The page's
-/// remaining time still shows as words in its day gutter and as a
-/// gauge on the time rail, neither of which sits on the bottom edge.
-/// Whatever replaces the bar, if anything does, must not be a thin
-/// horizontal bar down there. `FileTab` is one row for the same
-/// reason, so page tabs, empty slots and file tabs still stand level.
+/// for it as one (docs/dogfood/ABERRATIONS.md, 2026-09-05). The full
+/// width gauge `PageStatusStack` drew along the page's bottom edge went
+/// with it, being the same shape in the same place. The page's
+/// remaining time still shows as words, in the header or in its day
+/// gutter, and as a gauge on the time rail, none of which sits on the
+/// bottom edge. Whatever replaces the bar, if anything does, must not
+/// be a thin horizontal bar down there. `FileTab` is one row for the
+/// same reason, so page tabs, empty slots and file tabs still stand
+/// level.
 ///
 /// Internal rather than private so the two menu labels below, which are
 /// pure functions of the slot's state, can be tested without a menu.
@@ -606,9 +609,9 @@ struct EmptyRule: View {
 /// A gauge: the page's remaining life as geometry. Ember with a
 /// hatched texture under one hour, since urgency is never colour-only,
 /// and a held clock draws dashed: state as geometry (docs/spec/04). Drawn
-/// on the time rail's rows and along the page's own bottom edge; no
-/// longer under each tab of the strip, for the reason `SheetTab`
-/// gives.
+/// on the time rail's rows, where it lies down the card's side; no
+/// longer under each tab of the strip nor along the page's own bottom
+/// edge, for the reason `SheetTab` gives.
 public struct GaugeBar: View {
     let fraction: Double
     let paused: Bool

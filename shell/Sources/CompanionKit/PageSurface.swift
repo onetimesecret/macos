@@ -109,9 +109,9 @@ public struct PageContentView: View {
 // MARK: - The status lines
 
 /// Everything between the page and the tabs: the pasteboard offer, the
-/// notice line, the open conceal, and the page's draining gauge. Each
-/// appears only when it has something to say, so a quiet surface shows
-/// none of them and the layout does not reserve their room.
+/// notice line and the open conceal. Each appears only when it has
+/// something to say, so a quiet surface shows none of them and the
+/// layout does not reserve their room.
 public struct PageStatusStack: View {
     @ObservedObject var model: PageModel
     /// Observed directly: the controller is its own `ObservableObject`,
@@ -244,23 +244,16 @@ public struct PageStatusStack: View {
             // the network boundary is the one confirming click.
             ConcealView(model: model, draft: draft)
         }
-        if let sheet = model.selectedTab, sheet.hasPage, !model.showingLedger,
-            model.selectedFile == nil
-        {
-            // The page's bottom edge drains continuously. A file
-            // showing takes the gauge away with it: the clock belongs
-            // to the page in the slot behind, and drawing it under a
-            // file would read as that file's own countdown (ADR-0028).
-            GaugeBar(
-                fraction: sheet.fractionRemaining,
-                paused: sheet.paused,
-                toppedUp: sheet.holdToppedUp,
-                lastHour: sheet.lastHour
-            )
-            .frame(height: 4)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 2)
-        }
+        // The stack used to end in a four point `GaugeBar` spanning the
+        // page's bottom edge, the page draining continuously as the
+        // design spec asked. It came out with the tab gauge, and for
+        // the same reason: a thin horizontal bar along the bottom edge
+        // of a text surface is where a horizontal scroll bar lives, and
+        // a full width one is the more convincing impostor of the two
+        // (docs/dogfood/ABERRATIONS.md, 2026-09-05). The remaining time
+        // is written in words instead: in the header while the strip is
+        // the navigation, and in the page's own day gutter while the
+        // days are.
     }
 }
 

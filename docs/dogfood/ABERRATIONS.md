@@ -151,7 +151,7 @@ For OnetimePad:
 
 2026-09-05: the tab gauge reads as a scroll bar, and the header clock was a duplicate
 
-Dogfood phase 4, items 3 and 6. Two of the remaining-time indicators
+Dogfood phase 4, items 3 and 6. Three of the remaining-time indicators
 came out.
 
 The tab gauge. Each tab on the bottom strip drew a three point
@@ -170,12 +170,17 @@ shape in the right place to be the wrong thing.
 - The strip's tabs are one row now, all at the same height, page tabs,
   empty slots and file tabs alike. The file tab's unsaved dot moved
   into the row beside the filename.
+- The page's own bottom edge gauge went too. `PageStatusStack` drew a
+  four point `GaugeBar` across the full width of the page, directly
+  above the strip, in both modes. The first pass left it alone as a
+  shared surface whose removal was a separate call; review pointed out
+  that in the day mode the strip is not mounted at all, so the only
+  bar on the bottom edge anyone could have been looking at was this
+  one, and that a full width bar at the foot of a text area is the
+  more faithful picture of a scroll bar than a short one under a tab
+  title. Both bars carried the misread, so both are out.
 - `GaugeBar` and `EmptyRule` are not gone. The time rail still draws
-  them per day, and `PageStatusStack` still draws a four point gauge
-  along the page's own bottom edge, directly above the strip. That
-  second bar is the same shape in the same place and probably carries
-  the same misread; it was left alone this round because it is a
-  shared surface and its removal is a separate call.
+  them per day, down the card's side, where nothing scrolls sideways.
 - Whatever replaces the tab gauge, if anything does, must not be a thin
   horizontal bar along the bottom edge of the card. The follow up is
   tracked as a GitHub issue (reimagine the per tab remaining time
@@ -201,8 +206,8 @@ day mode.
   default and exclusive with the strip. With the tab gauge gone, the
   header button is the only place the strip mode writes the page's
   remaining time as a number. Removing it there would have left the
-  default mode with no worded countdown at all, only the bottom edge
-  bar. `BackdropRootView.showsHeaderCountdown` holds the rule and the
-  `HeaderCountdownTests` pin it.
+  default mode with no countdown at all, now that the bottom edge bar
+  is gone as well. `BackdropRootView.showsHeaderCountdown` holds the
+  rule and the `HeaderCountdownTests` pin it.
 - The rung still cycles from the tab's context menu in both modes and
   from the gutter's menu in the day mode.
