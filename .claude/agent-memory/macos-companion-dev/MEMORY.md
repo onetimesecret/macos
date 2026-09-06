@@ -25,3 +25,4 @@
 - [A cancel covers the whole ceremony](feedback_cancel_covers_whole_ceremony.md): read the abort flag at every wait and under the commit lock, and give every core token a Swift sentence
 - [Stacked version bumps go silent](project_stacked_version_bumps.md): two branches bumping one crate to the same number never conflict; bump again in a follow up commit
 - [Dogfood 4 time indicators](project_dogfood4_time_indicators.md): tab gauge withdrawn (#156), header countdown yields only in day mode since the gutter exists only there, PageStatusStack's bottom bar still open; lanes share one scratchpad
+- [Settings toolbar tabs](project_settings_toolbar_tabs.md): NSTabViewController toolbar tabs landed 2026-09-05; the per tab heights and resize on switch were reasoned, not seen on hardware
