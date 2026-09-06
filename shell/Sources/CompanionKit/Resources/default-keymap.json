@@ -16,7 +16,7 @@
 // You can override any of this without touching the app. Write your own
 // keymap at:
 //
-//     ~/Library/Application Support/com.onetimesecret.companion.backdrop/keymap.json
+//     ~/Library/Application Support/com.onetimesecret.pad/keymap.json
 //
 // Sections there are applied after these, so a chord you name wins, and
 // a chord you set to null is taken away. See docs/development/about-the-keymap.md.

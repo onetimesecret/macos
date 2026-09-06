@@ -613,9 +613,9 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
 
     /// The surface's mechanics in the unified log — stance, level,
     /// visibility, frame; never content. Watch with:
-    /// `log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'`
+    /// `log stream --predicate 'subsystem == "com.onetimesecret.pad"'`
     private static let logger = Logger(
-        subsystem: "com.onetimesecret.companion.backdrop", category: "surface"
+        subsystem: FormFactor.backdropBundleIdentifier, category: "surface"
     )
 
     // MARK: NSWindowDelegate

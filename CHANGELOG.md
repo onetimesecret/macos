@@ -63,6 +63,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app's own past, and this one is for hands trained by every other
   app.
 
+### Changed
+
+- **The bundle identifier is `com.onetimesecret.pad`**, and a dev
+  build runs as `dev.onetimesecret.pad`; the app is 0.19.0. The
+  release id was `com.onetimesecret.companion.backdrop`, a working
+  title's lineage carried for the sake of existing installs, and the
+  dev lane was that string with `.debug` appended. macOS keys the
+  state directory, the Keychain items, the keychain access group and
+  every TCC grant off the id, so nothing carries over: an existing
+  install's pages, drafts, ledger and Keychain items stay under the
+  old names, unread, and the new build starts with no pages, asks for
+  its Keychain access afresh, wants the API token pasted again, and
+  needs any screen recording or accessibility grant made again. There
+  is no migration, deliberately. The panel's archived id
+  (`com.onetimesecret.companion`) and the core's default credential
+  scope, which is that same string, are unchanged. The dev lane is
+  now recognised by its name rather than by a `.debug` suffix, in
+  `FormFactor` and in the tray's version line alike, and the old
+  state directories can be removed by hand once nothing in them is
+  wanted.
+
 ## [0.18.0] - 2026-09-04
 
 The second tagged milestone, and the first since v0.1.0. It carries

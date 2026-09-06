@@ -624,7 +624,8 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// label would otherwise fall back to the executable name. The
     /// bundled app takes the same name from CFBundleName /
     /// CFBundleDisplayName in shell/OnetimePad-Info.plist, and the two
-    /// must agree. Neither is the bundle id, which never changes.
+    /// must agree. Neither is the bundle id, which is infrastructure
+    /// rather than paint and does not move with the name.
     ///
     /// Read from the bundle rather than hardcoded, because the dev lane
     /// renames itself: `package-app.sh --debug` writes "OnetimePad Dev"
