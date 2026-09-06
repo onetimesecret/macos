@@ -57,7 +57,7 @@ the seam.
   through CompanionKit: one page of ink and sealed chips in an
   `NSTextView`-backed editor; bottom-edge tabs with per-tab gauges,
   pause on double-click, drag-to-reorder, ✕ to close; the keyboard map
-  (⌃⌥Space, ⌘1–9, ⌘N, ⌥⌘←/→, ⇧⌘V, ⌘↩, Esc). Which chord does what is
+  (⌃⌥Space, ⌘1–9, ⌘N or ⌘T, ⌥⌘←/→, ⇧⌘V, ⌘↩, Esc). Which chord does what is
   the keymap file's business and not this file's, so read
   `docs/development/about-the-keymap.md` for the list that is actually
   installed. Markdown headings render styled with their markup kept

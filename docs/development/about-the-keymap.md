@@ -48,6 +48,14 @@ array of sections:
   set the chord to `null` and bind it again in a later section.
 - **`bindings`** maps a keystroke to a command id, or to `null` to take
   the chord away.
+- Two chords may name one command. Each is its own line, so neither is
+  a duplicate of the other, nothing is reported, and both fire. The
+  bundled default does this once: `cmd-n` and `cmd-t` both open a new
+  tab, because a tab is what the pad opens and ⌘T is where every
+  tabbed app puts one. Where the app spells a chord out, in a tooltip
+  or beside a menu item, it names the first in canonical order, so ⌘N;
+  set that one to `null` in your own keymap and the other takes its
+  place.
 
 Keystrokes are `cmd`, `ctrl`, `alt` (`opt`, `option`) and `shift` in any
 order, then one key: a single character, or one of `escape`, `enter`,

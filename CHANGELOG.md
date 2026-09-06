@@ -51,6 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Dropping the content file discards the drafts with it; clearing the
   ledger leaves them alone.
 
+- **⌘T opens a new tab, beside ⌘N** (dogfood phase 4). A tab is what
+  the pad opens, and ⌘T is the key every tabbed app puts a new one on,
+  so hands arriving from a browser or a terminal already know it. One
+  line in the bundled keymap, `"cmd-t": "page::New"`, and no new
+  Swift: two chords on one command were always two lines in the map,
+  and both fire. The + button's tooltip goes on saying ⌘N, the first
+  of the two in canonical order; unbind `cmd-n` in your own keymap and
+  it names ⌘T instead. This is not the ⌥⌘N alias the issue #77 entry
+  below refused. That was a second chord for hands trained by this
+  app's own past, and this one is for hands trained by every other
+  app.
+
 ## [0.18.0] - 2026-09-04
 
 The second tagged milestone, and the first since v0.1.0. It carries

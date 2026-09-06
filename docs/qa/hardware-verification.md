@@ -59,7 +59,7 @@ both and note any divergence in feel, not just function:
       selection.
 - [ ] ⌫ on a chip removes it (and zeroizes core-side — no visible
       check here; the contract test covers it).
-- [ ] ⌘N new page; ⌥⌘←/→ walk pages; ⌘1–⌘9 jump in visible tab
+- [ ] ⌘N new page, and ⌘T the same; ⌥⌘←/→ walk pages; ⌘1–⌘9 jump in visible tab
       order; ⌘0 opens the ledger.
 - [ ] Drag a tab to reorder; confirm the ⌘-number map follows the new
       visible order.
