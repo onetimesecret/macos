@@ -52,7 +52,7 @@ other thing that can pull an activation across desktops and those two
 are the app's only ones. The surface's log is worth a second terminal:
 
 ```
-log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
+log stream --predicate 'subsystem == "com.onetimesecret.pad"'
 ```
 
 ## The checks

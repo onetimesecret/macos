@@ -125,7 +125,7 @@ The log predicate for the launches these cases make:
 
 ```sh
 log show --last 30m --style compact --predicate \
-  'subsystem == "com.onetimesecret.companion.backdrop" && (category == "core" || category == "persistence")'
+  'subsystem == "com.onetimesecret.pad" && (category == "core" || category == "persistence")'
 ```
 
 ## Case A: a zone change moves no deadline already set

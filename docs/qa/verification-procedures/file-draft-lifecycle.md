@@ -3,7 +3,7 @@
 **Applies to:** OnetimePad, the dev bundle from `scripts/dev.sh`, built
 from `feature/regular-text-files` or later. Case 2 empties the pad of
 pages, so it must not be run against the installed copy: the dev bundle
-takes a `.debug` bundle id, which gives it its own state directory and
+runs as `dev.onetimesecret.pad`, which gives it its own state directory and
 its own Keychain service (ADR-0012), and the pages it loses are the
 scratch pad's. Nothing here is release-specific, so a confirming run on
 the installed copy is worth doing once on a pad you are willing to
@@ -47,12 +47,12 @@ binary if a seam survived.
 ## Where to look
 
 ```sh
-STATE=~/Library/Application\ Support/com.onetimesecret.companion.backdrop.debug.noindex
+STATE=~/Library/Application\ Support/dev.onetimesecret.pad.noindex
 ls -la "$STATE"
 ```
 
-Drop the `.debug` from that path if you are taking the confirming run on
-the installed copy instead.
+Use `com.onetimesecret.pad.noindex` in that path instead if you are
+taking the confirming run on the installed copy.
 
 Beside `state.sealed` and `ledger.sealed` there is now `drafts.sealed`
 (`shell/Sources/CompanionKit/FormFactor.swift`, and its Rust counterpart
@@ -69,11 +69,11 @@ Log lines reach the unified log the same way as elsewhere:
 
 ```sh
 log show --last 30m --style compact --predicate \
-  'subsystem == "com.onetimesecret.companion.backdrop.debug" && (category == "core" || category == "persistence")'
+  'subsystem == "dev.onetimesecret.pad" && (category == "core" || category == "persistence")'
 ```
 
-The subsystem is the running bundle id, so it carries the same `.debug`
-the state directory does.
+The subsystem is the running bundle id, so it is the dev lane's exactly
+as the state directory is.
 
 ## Case 1: a kill with a dirty file open
 

@@ -87,7 +87,7 @@ visible tab order, and the rest name themselves.
 | | |
 | --- | --- |
 | bundled default | inside the app, `Contents/Resources/default-keymap.json` |
-| your override | `~/Library/Application Support/com.onetimesecret.companion.backdrop/keymap.json` |
+| your override | `~/Library/Application Support/com.onetimesecret.pad/keymap.json` (a dev build reads `dev.onetimesecret.pad/keymap.json`) |
 
 The override is optional and its absence is not an error. Note the
 directory: it is the plain bundle id, beside the `.noindex` state

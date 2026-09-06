@@ -29,16 +29,16 @@ install that was ad hoc signed to begin with has nothing to change from
 ## Where to look
 
 ```sh
-STATE=~/Library/Application\ Support/com.onetimesecret.companion.backdrop.noindex
-DEBUG_STATE=~/Library/Application\ Support/com.onetimesecret.companion.backdrop.debug.noindex
+STATE=~/Library/Application\ Support/com.onetimesecret.pad.noindex
+DEBUG_STATE=~/Library/Application\ Support/dev.onetimesecret.pad.noindex
 log stream --style compact --predicate \
-  'subsystem BEGINSWITH "com.onetimesecret.companion.backdrop" && (category == "core" || category == "persistence")'
+  'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"} && (category == "core" || category == "persistence")'
 ```
 
 The state directory name is the running build's bundle id plus
 `.noindex` and the Keychain service is that same id
 (`shell/Sources/CompanionKit/FormFactor.swift`), so
-a `.debug` suffix moves both. The content key is assembled from a
+the dev lane's own id moves both. The content key is assembled from a
 keychain half under account `state-key`
 (`crates/ffi/src/persist.rs`) and a file half named
 `ots-companion-key-half-<32 hex>` in the state directory.
@@ -125,15 +125,16 @@ failure was routed into the destructive path.
 by the elapsed wall clock. That is the whole point of refusing rather
 than erasing.
 
-## Case 2: `.debug` and release keep separate state
+## Case 2: dev and release keep separate state
 
-`package-app.sh --debug` appends `.debug` to the bundle id
-(`scripts/package-app.sh`), and `resolvedBundleIdentifier`
-accepts exactly one dot free configuration suffix
-(`shell/Sources/CompanionKit/FormFactor.swift`), so the debug
-copy resolves its own state directory, its own Keychain service and its
-own log subsystem. Two copies that shared them would clobber one
-another's `state.sealed` on one debounce.
+`package-app.sh --debug` writes the bundle id `dev.onetimesecret.pad`
+(`scripts/package-app.sh`), and `resolvedBundleIdentifier` accepts
+that one named identifier beside the release id and nothing else
+(`FormFactor.devBundleIdentifier` in
+`shell/Sources/CompanionKit/FormFactor.swift`), so the debug copy
+resolves its own state directory, its own Keychain service and its own
+log subsystem. Two copies that shared them would clobber one another's
+`state.sealed` on one debounce.
 
 1. Install and run the release copy. Create a page with recognizable
    text, for example `RELEASE ONE`. Quit.
@@ -143,15 +144,15 @@ another's `state.sealed` on one debounce.
    scripts/dev.sh
    ```
 
-   It packages the debug bundle under the `.debug` id and launches it
+   It packages the debug bundle as `dev.onetimesecret.pad` and launches it
    from `dist/` (`scripts/dev.sh`).
 3. In the debug copy, create a page reading `DEBUG ONE`. Quit it.
 4. Inspect both directories:
 
    ```sh
    ls -la "$STATE" "$DEBUG_STATE"
-   security find-generic-password -s com.onetimesecret.companion.backdrop -a state-key -g 2>&1 | head -3
-   security find-generic-password -s com.onetimesecret.companion.backdrop.debug -a state-key -g 2>&1 | head -3
+   security find-generic-password -s com.onetimesecret.pad -a state-key -g 2>&1 | head -3
+   security find-generic-password -s dev.onetimesecret.pad -a state-key -g 2>&1 | head -3
    ```
 
 **Pass:** two directories exist, each with its own `state.sealed`, its

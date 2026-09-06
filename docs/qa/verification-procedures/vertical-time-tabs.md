@@ -82,15 +82,15 @@ results that the days were fabricated.
 ## Where to look
 
 ```sh
-STATE=~/Library/Application\ Support/com.onetimesecret.companion.backdrop.noindex
+STATE=~/Library/Application\ Support/com.onetimesecret.pad.noindex
 ls -la "$STATE"
-log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
+log stream --predicate 'subsystem == "com.onetimesecret.pad"'
 ```
 
 The toggle writes one boolean to `UserDefaults`, and nothing else:
 
 ```sh
-defaults read com.onetimesecret.companion.backdrop showsTimeUnits
+defaults read com.onetimesecret.pad showsTimeUnits
 ```
 
 ## Case 1: local midnight arrives while the card rests

@@ -2,7 +2,7 @@
 
 Two current Apple requirements shape everything below: Mac TestFlight requires a provisioning profile, which macOS only issues when a restricted entitlement demands one, and without an Xcode project the upload path is a signed `.pkg` delivered via Transporter.
 
-The starting point is further along than it might appear: `package-app.sh` already produces `dist/OnetimePad.app` with the bundle id `com.onetimesecret.companion.backdrop` and version stamping, and the Rust core is a static `.a` linked into one Mach-O (no embedded dylib to sign separately, which simplifies everything). What's missing for TestFlight is the App Store distribution chain: sandbox, entitlements, a real Distribution identity, a provisioning profile, a signed `.pkg`, and an App Store Connect record.
+The starting point is further along than it might appear: `package-app.sh` already produces `dist/OnetimePad.app` with the bundle id `com.onetimesecret.pad` and version stamping, and the Rust core is a static `.a` linked into one Mach-O (no embedded dylib to sign separately, which simplifies everything). What's missing for TestFlight is the App Store distribution chain: sandbox, entitlements, a real Distribution identity, a provisioning profile, a signed `.pkg`, and an App Store Connect record.
 
 One decision up front, since it's the only real fork: keep the SwiftPM + scripts pipeline and manage the cert/profile/`.pkg` by hand, or add a thin Xcode target (or `xcodebuild -exportArchive`) and let automatic signing do it. I'd keep your scripts for the build and add the distribution signing to them, because the boundary-clean SwiftPM build is worth preserving. But be honest with yourself: cert creation, profile management, and the App-Store re-sign are exactly what Xcode automates, so if step 5 below starts eating your evening, wrapping it in Xcode is the escape hatch, not a failure.
 
@@ -10,14 +10,14 @@ The steps, in order:
 
 1. **Apple Developer Program.** Paid membership if you don't have one. Note your Team ID.
 
-2. **Register the App ID.** In Certificates, Identifiers & Profiles, create an explicit identifier matching `com.onetimesecret.companion.backdrop`, and enable Keychain Sharing on it.
+2. **Register the App ID.** In Certificates, Identifiers & Profiles, create an explicit identifier matching `com.onetimesecret.pad`, and enable Keychain Sharing on it. (The dev lane is `dev.onetimesecret.pad`, a separate prefix; it never ships through this chain.)
 
 3. **Create the App Store Connect record.** New macOS app, select that bundle id, set name, SKU, primary language. Decide the real product name here (see the naming note below).
 
 4. **Add App Sandbox and entitlements.** This is the actual work. `scripts/Companion.entitlements` already exists and already carries the keychain group; extend that file rather than creating a second one:
    - `com.apple.security.app-sandbox` = true (mandatory for anything shipped through App Store Connect)
    - `com.apple.security.network.client` = true (the conceal POST and the connection test)
-   - `keychain-access-groups`, already present as `$(AppIdentifierPrefix)@BUNDLE_IDENTIFIER@`. Do not hardcode a bundle id here: the build scripts substitute the signing certificate's Team ID and the id of the bundle being assembled, so the release bundle and its `.debug` variant each land in their own group. A single shared group would be a single shared keychain, which ADR-0012 forbids across the dev and release lanes. This entitlement also does double duty: it is the restricted one that forces macOS to issue a genuine provisioning profile, which is what makes Mac TestFlight work at all. Restricted cuts both ways, though, so see step 5: claim it without embedding a profile and the app will not launch (amfid -413).
+   - `keychain-access-groups`, already present as `$(AppIdentifierPrefix)@BUNDLE_IDENTIFIER@`. Do not hardcode a bundle id here: the build scripts substitute the signing certificate's Team ID and the id of the bundle being assembled, so the release bundle and the `dev.onetimesecret.pad` dev bundle each land in their own group. A single shared group would be a single shared keychain, which ADR-0012 forbids across the dev and release lanes. This entitlement also does double duty: it is the restricted one that forces macOS to issue a genuine provisioning profile, which is what makes Mac TestFlight work at all. Restricted cuts both ways, though, so see step 5: claim it without embedding a profile and the app will not launch (amfid -413).
 
 5. **Certificates and profile.** An "Apple Distribution" certificate signs the `.app`; a "Mac Installer Distribution" (a.k.a. "3rd Party Mac Developer Installer") certificate signs the `.pkg`. Create a Mac App Store distribution provisioning profile for the App ID and copy it to `Contents/embedded.provisionprofile` before signing. App Store re-signs your build on ingest, so the embedded profile is for upload validation, not the final identity.
 

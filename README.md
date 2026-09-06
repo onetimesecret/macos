@@ -83,9 +83,10 @@ docs/adr/            decisions
 Two entry points, both in `scripts/`:
 
 - `scripts/dev.sh` builds the debug bundle and launches it from
-  `dist/`. The debug build takes a `.debug` bundle id and a "Dev"
-  display name, so it runs beside the installed copy without sharing
-  its defaults, keychain items, or state.
+  `dist/`. The debug build takes its own bundle id
+  (`dev.onetimesecret.pad`) and a "Dev" display name, so it runs beside
+  the installed copy without sharing its defaults, keychain items, or
+  state.
 - `scripts/install.sh` builds the release bundle, signs it, and
   installs it to `/Applications`. This is the daily dogfood channel;
   see [docs/dogfood/DOGFOOD.md](docs/dogfood/DOGFOOD.md).
@@ -146,7 +147,7 @@ keyboard does the gesture rest it. Esc or a click outside the card also
 rests it. The surface's mechanics log to the unified log:
 
 ```sh
-log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
+log stream --predicate 'subsystem == "com.onetimesecret.pad"'
 ```
 
 It began as the second form factor (ADR-0010) beside a menu-bar panel,
@@ -158,11 +159,14 @@ future form factor would share.
 
 ## Naming note
 
-**OnetimePad** is the current working name. The bundle id
-(`com.onetimesecret.companion.backdrop`) keeps the older "Companion"
-working-title lineage on purpose: macOS keys state, Keychain items, and
-TCC grants off the id, so the id outlives the names painted over it.
-"Companion" itself replaced the earlier working title "Airlock", a
+**OnetimePad** is the current working name. The bundle id is
+`com.onetimesecret.pad`, with `dev.onetimesecret.pad` for the dev lane.
+Until 0.19.0 it was `com.onetimesecret.companion.backdrop`, the older
+"Companion" working-title lineage kept on purpose because macOS keys
+state, Keychain items, and TCC grants off the id; leaving it behind cost
+every existing install all three at once, which is why the id is not to
+move again with the name. "Companion" itself replaced the earlier
+working title "Airlock", a
 small chamber between two environments that things pass through but
 never live in, which collides with at least one existing security
 vendor (open question №8). The old name survives only in the

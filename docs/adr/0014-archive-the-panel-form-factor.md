@@ -55,6 +55,12 @@ for the same reason. Ids are infrastructure; names are paint.
 `scripts/install.sh` retires a legacy `CompanionBackdrop.app` left in
 the install destination, quitting it gracefully before removing it.
 
+*(Superseded in this one respect, 2026-09-05: the id moved to
+`com.onetimesecret.pad` in 0.19.0, with `dev.onetimesecret.pad` for the
+dev lane, accepting exactly the loss this paragraph names. Nothing
+migrated. The reasoning stands and is why the id is not to move again;
+the CHANGELOG entry for 0.19.0 records what an existing install lost.)*
+
 ## Consequences
 
 - `CompanionKit` remains the shared layer, and ADR-0010's sibling

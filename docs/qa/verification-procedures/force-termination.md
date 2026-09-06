@@ -31,7 +31,7 @@ scripts/install.sh
 ## Where to look
 
 ```sh
-STATE=~/Library/Application\ Support/com.onetimesecret.companion.backdrop.noindex
+STATE=~/Library/Application\ Support/com.onetimesecret.pad.noindex
 ls -la "$STATE"
 ```
 
@@ -64,7 +64,7 @@ persistence lines use category `persistence`:
 
 ```sh
 log show --last 30m --style compact --predicate \
-  'subsystem == "com.onetimesecret.companion.backdrop" && (category == "core" || category == "persistence")'
+  'subsystem == "com.onetimesecret.pad" && (category == "core" || category == "persistence")'
 ```
 
 ## Case 1: a kill inside the debounce window
@@ -145,7 +145,7 @@ route, and record the outcome for each:
    `swift build --package-path shell` from another terminal. The
    in-place re-sign SIGKILLs the running copy. This shape has its own
    state directory,
-   `com.onetimesecret.companion.backdrop.debug.noindex`
+   `dev.onetimesecret.pad.noindex`
    (`shell/Sources/CompanionKit/FormFactor.swift`), so check that
    one, and confirm the release copy's directory was not touched.
 

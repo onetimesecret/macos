@@ -144,9 +144,10 @@ not a smaller product than one that remembers; it is a worse one.
 What the amendment grants, and what it holds back:
 
 - **Its own storage, both halves.** A separate state file
-  (`~/Library/Application Support/CompanionBackdrop/state.sealed`) and
-  a separate Keychain service (`com.onetimesecret.companion.backdrop`,
-  reached through `companion_new_scoped`). Two form factors remain two
+  (`~/Library/Application Support/com.onetimesecret.pad.noindex/state.sealed`)
+  and a separate Keychain service (`com.onetimesecret.pad`, reached
+  through `companion_new_scoped`; both were
+  `com.onetimesecret.companion.backdrop` before 0.19.0). Two form factors remain two
   stores, per ADR-0010. Sharing the panel's key would put two signed
   binaries on one Keychain item, where each one's first read is a
   confirmation prompt for the other's key.
@@ -329,7 +330,7 @@ Added by the parity amendment:
    capsules with no affordance to reveal anything.
 9. Conceal: a link created from the backdrop reaches the server and
    lands on the clipboard, and a token saved in the backdrop's Settings
-   goes under `com.onetimesecret.companion.backdrop` in the Keychain.
+   goes under `com.onetimesecret.pad` in the Keychain.
    The panel's own token is untouched and neither app prompts for the
    other's item.
 10. Tabs: ⌘1 through ⌘9, ⌘N (including the refusal at nine), ⌥⌘←/→,
