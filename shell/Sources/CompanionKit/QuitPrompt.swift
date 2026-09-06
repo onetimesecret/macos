@@ -47,26 +47,20 @@ public enum QuitPrompt: Equatable, Sendable {
         }
     }
 
-    /// The flush's verdict, turned into the thing the user sees. A
-    /// refused write is the loudest: pages that were supposed to land
-    /// did not, and staying is a real retry. A session that never held
-    /// the licence has no write to retry, only the choice between
-    /// accepting the loss and going back to discard the unreadable
-    /// file, so its warning points at that door instead.
     /// The sentence a dirty file adds to whatever else the quit says.
     ///
     /// It is a notice and not a save or discard sheet, and the
     /// difference is the whole point. The draft survives the quit: it
-    ///
-    /// Agreed with the count: one file "has" changes and is reopened
-    /// as "the file", several "have" them and come back as "the
-    /// files", so the notice reads as a sentence whichever it names.
     /// is sealed under the content key and restored at the next launch
     /// with its marker still showing, so a Discard button here would
     /// manufacture the one loss path this feature does not have, at
     /// exactly the moment a person is dismissing things by reflex. The
     /// two answers are therefore go back and save, or quit and keep
     /// the draft.
+    ///
+    /// Agreed with the count: one file "has" changes and is reopened
+    /// as "the file", several "have" them and come back as "the
+    /// files", so the notice reads as a sentence whichever it names.
     static func draftsClause(_ names: [String]) -> String? {
         guard !names.isEmpty else { return nil }
         let several = names.count > 1
@@ -89,6 +83,12 @@ public enum QuitPrompt: Equatable, Sendable {
             + "only and go with the quit."
     }
 
+    /// The flush's verdict, turned into the thing the user sees. A
+    /// refused write is the loudest: pages that were supposed to land
+    /// did not, and staying is a real retry. A session that never held
+    /// the licence has no write to retry, only the choice between
+    /// accepting the loss and going back to discard the unreadable
+    /// file, so its warning points at that door instead.
     public static func forOutcome(
         _ outcome: QuitSaveOutcome, dirtyFiles: [String] = []
     ) -> QuitPrompt {

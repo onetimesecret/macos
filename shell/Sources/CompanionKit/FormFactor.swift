@@ -390,6 +390,17 @@ extension FormFactor {
 /// The tray menu's version line, shared by both form factors: "which
 /// build am I on" answered at a glance.
 public enum BuildVersion {
+    /// Whether the running bundle is the dev lane's, which is an exact
+    /// match against the one identifier the packaging gives it
+    /// (`package-app.sh --debug` writes `FormFactor.devBundleIdentifier`)
+    /// and never a prefix or suffix heuristic. The lane is a fact about
+    /// the build exactly as the two version numbers are, and the one a
+    /// person most often wants when two copies of the app are running
+    /// at once.
+    public static func isDevLane(bundleIdentifier: String?) -> Bool {
+        bundleIdentifier == FormFactor.devBundleIdentifier
+    }
+
     /// A bare `swift run` has no bundle version, so the core speaks for
     /// itself; a bundled build names both numbers, always.
     ///
@@ -404,17 +415,6 @@ public enum BuildVersion {
     /// warning. Naming both is what stays honest: "build" answers which
     /// build am I on, "core" answers which seam it linked, and neither
     /// answer can be inferred from the other any more.
-    /// Whether the running bundle is the dev lane's, which is an exact
-    /// match against the one identifier the packaging gives it
-    /// (`package-app.sh --debug` writes `FormFactor.devBundleIdentifier`)
-    /// and never a prefix or suffix heuristic. The lane is a fact about
-    /// the build exactly as the two version numbers are, and the one a
-    /// person most often wants when two copies of the app are running
-    /// at once.
-    public static func isDevLane(bundleIdentifier: String?) -> Bool {
-        bundleIdentifier == FormFactor.devBundleIdentifier
-    }
-
     public static func trayTitle(
         core: String, bundleVersion: String?, devLane: Bool = false
     ) -> String {
