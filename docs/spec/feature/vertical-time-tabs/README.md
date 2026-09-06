@@ -200,13 +200,18 @@ every one of them was minted on that day by a gesture.
 ⌘N in this mode has three readings, and all of them are `openToday()`
 (issue #158). When today holds a page and the selection is elsewhere,
 it goes there. When today holds none, it creates one. When the person
-is already on today's page and has written on it, it creates a second
-page beside the first: first press jumps, second press creates. On
-today's page with nothing on it a further press stays put, so a held ⌘N
-cannot stack blank pages; the bar is the ledger's own content predicate,
-the same one the projection uses to hide blank old pages. The rail's
-Today row carries the strip's + button for the same action, with the
-strip's tooltip, and it mints outright the way the strip's does.
+is already on today's page, it creates a second page beside the first:
+first press jumps, second press creates, blank or written on, exactly
+as on the strip. The rail's Today row carries the strip's + button for
+the same action, with the strip's tooltip, and it mints outright the
+way the strip's does.
+
+The gestures that name today as a place rather than ask for a page take
+`startToday()` instead: the roll's empty Today region and the `.today`
+target, which exists only while today holds no page. Those go to today's
+page when it exists and create it when it does not, and never a second
+one, because a grant can fire again after the page it made has appeared
+and a place that made a page a moment ago must find that page.
 
 None of this is a new mint policy: every arm either selects an occupied
 tab, which cannot mint, or goes through the shipped create path
@@ -948,7 +953,7 @@ the height that arrived, so nothing shifts under a sentence being read.
 
 1. **Does reinterpreting ⌘1 to ⌘9 and ⌘N confuse the hands?** In the mode
    the numbers address days rather than slots, and ⌘N goes to today
-   instead of making a tenth tab. *Leaning:* acceptable, because the
+   before it makes another page. *Leaning:* acceptable, because the
    modes are exclusive, the mode is off by default, and no user keymap
    changes meaning. If dogfood finds people pressing ⌘3 expecting their
    third tab, the answer is probably to stop mapping numbers at all in

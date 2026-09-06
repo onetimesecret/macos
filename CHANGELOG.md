@@ -10,14 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **A second page on today, with the time tabs down the side** (issue
-  #158, part A). ⌘N and ⌘T still go to today's page first, and still
-  start it when today has none. Pressed again while already on today's
-  page with writing on it, they mint a second page beside the first,
-  and the rail's Today row lists both in strip order. On a blank
-  today's page a further press stays put, so a held chord cannot stack
-  blank pages. The Today row also carries the strip's + button, with
-  the strip's tooltip naming the bound chord. The nine-tab cap is
-  unchanged; taking it out of the store is part B.
+  #158). ⌘N and ⌘T still go to today's page first, and still start it
+  when today has none. Pressed again while already on today's page,
+  they mint a second page beside the first, blank or not, exactly as
+  on the strip, and the rail's Today row lists both in strip order. The
+  Today row also carries the strip's + button, with the strip's tooltip
+  naming the bound chord. ⌘1 and the Today row itself name today as a
+  place: they make the first page and never a second.
 
 - **The page's font is a setting: a family by name, and a size.** Two
   rows on the General tab, the way an editor names its buffer font: a
@@ -134,6 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the front.
 
 ### Removed
+
 - **The nine-tab cap** (issue #158; `companion-core` 0.19.0,
   `companion-ffi` 0.25.0). The store no longer refuses a tenth tab, in
   either mode, and a saved strip wider than nine restores rather than
@@ -146,7 +146,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hidden-blank count on the rail stays as the instrument it was.
   ADR-0017's first eject trigger had fired, and its history records
   the answer.
-
 
 - **The header countdown** (dogfood phase 4). The card header printed
   the selected page's remaining time and rung as a clickable label. In

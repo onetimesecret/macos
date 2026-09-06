@@ -363,27 +363,28 @@ mounted (see case 4).
 
 ## Case 11: a second page on today
 
-Issue #158 part A. The keyboard reading has to be felt on hardware
-because the bar between jump and mint is whether the page has anything
-on it, and a test cannot see the pause a person takes between presses.
+Issue #158. The keyboard reading has to be felt on hardware because
+first press jumps and second press creates, and a test cannot see the
+pause a person takes between presses.
 
 1. With the mode on and today empty, press ⌘N. Today's page appears and
-   the caret is in it. Press ⌘N twice more without typing.
-
-**Pass:** still one page. The presses land on the blank page already
-there.
-
-**Fail:** two or three blank pages under Today.
-
-2. Type a word. Press ⌘N.
+   the caret is in it. Press ⌘N again.
 
 **Pass:** a second, blank page appears under Today, below the first in
 the roll, and the caret is in it. The rail's Today row still reads
 Today, and its gauge follows whichever of the two pages dies soonest.
-Press ⌘N again: still two pages, the fresh one is blank.
 
 **Fail:** the press selected the first page instead of minting; the
 second page landed under another day; the caret stayed on the first page.
+
+2. Close every page so today is empty again. Press ⌘1 twice, then click
+   the Today row twice.
+
+**Pass:** one page. ⌘1 and the row name today as a place: the first
+press makes the page, every later one goes to it. Only ⌘N and the +
+ask for another.
+
+**Fail:** a chord or a click on the place stacked a page.
 
 3. Scroll to yesterday, or select a file if one is open, and press ⌘N.
 
@@ -424,13 +425,13 @@ stay: a re-run adds a row rather than replacing one.
 | | | 7 VoiceOver at a perforation | | |
 | | | 8 reduced motion | | |
 | | | 9 hidden blank pages counted and named | | Record whether the count is ever non-zero. |
-| | | 10 minimap reads as texture, not as a chart | | Record the two inks and the appearance. |
 | | | 9 tenth page opens, strip scrolls to it | | Note whether the new tab was in view without a scroll. |
+| | | 10 minimap reads as texture, not as a chart | | Record the two inks and the appearance. |
 | | | 10 band tracks the scroll and clamps at both ends | | |
 | | | 10 nothing legible in the minimap at any size | | |
 | | | 10 rail width at the 360pt floor | | Do the day words fit without truncation. Does the roll's gutter still hold day, title and countdown on one line. |
 | | | 10 rail width on a wide card | | Does 96pt read as generous or as a wasted column. Decision: pin 96, narrow the rail, or raise the card's floor. |
-| | | 11 ⌘N on a blank today stays put | | |
-| | | 11 ⌘N on a peopled today mints a second page | | Note where the caret landed. |
+| | | 11 ⌘N on today's page mints a second page | | Note where the caret landed. |
+| | | 11 ⌘1 and the Today row make one page, not two | | |
 | | | 11 ⌘N from elsewhere jumps, no third page | | |
 | | | 11 the Today row's + mints and names the chord | | |
