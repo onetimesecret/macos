@@ -170,6 +170,15 @@ teaches ⌘↩.
   carries its own gauge, so cross-sheet urgency reads as geometry. Under
   one hour it turns ember with a hatched texture — urgency is never
   colour-only.
+  *(Superseded in part, 2026-09-05, dogfood phase 4 item 3: neither
+  the per tab gauge nor the page's bottom edge gauge is drawn any more,
+  and the tab sketch above is out of date on that point. A thin
+  horizontal bar along the bottom edge of a text surface reads as a
+  horizontal scroll bar, and any replacement must not be one;
+  docs/dogfood/ABERRATIONS.md and issue #156 hold the reasoning. The
+  gauge itself survives on the time rail, down the card's side, and the
+  remaining time is written in words in the header or the day gutter.
+  The pause below is unchanged.)*
 - **The pause.** Double-click a tab to hold that page's clock: the
   gesture is a three-state cycle. The first double-click holds it for
   **1 hour**; a second tops the hold up to **24 hours from now**; a

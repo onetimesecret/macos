@@ -88,8 +88,12 @@ carried to the core by `companion_set_grace_snap`
   is also what bounds a restored page's claimed life
   (`Ttl::longest_life`, `crates/core/src/ttl.rs:83`, used by restore
   at `crates/core/src/persist.rs:896`).
-- The surface shows **remaining time**, in words and as the tab gauge
-  (`shell/Sources/CompanionKit/TabStripView.swift:473`). There is no
+- The surface shows **remaining time** in words: the header's
+  `CountdownButton` while the strip is the navigation, the day gutter's
+  label while the days are (`shell/Sources/CompanionKit/PageSurface.swift`,
+  `DayScrollView.swift`). The tab gauge and the page's bottom edge
+  gauge are gone since dogfood phase 4 (docs/dogfood/ABERRATIONS.md,
+  2026-09-05); only the time rail still draws one. There is no
   absolute deadline label anywhere, so the effective deadline is
   observed as "the local wall clock now, plus the remaining time
   shown".

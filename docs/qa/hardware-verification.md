@@ -59,7 +59,7 @@ both and note any divergence in feel, not just function:
       selection.
 - [ ] ⌫ on a chip removes it (and zeroizes core-side — no visible
       check here; the contract test covers it).
-- [ ] ⌘N new page, and ⌘T the same; ⌥⌘←/→ walk pages; ⌘1–⌘9 jump in visible tab
+- [ ] ⌘N new page, and ⌘T the same; ⌥⌘←/→ walk pages; ⌘1 to ⌘9 jump in visible tab
       order; ⌘0 opens the ledger.
 - [ ] Drag a tab to reorder; confirm the ⌘-number map follows the new
       visible order.
@@ -124,9 +124,10 @@ trigger**. VoiceOver on (⌘F5); keyboard only.
 
 **Owner:** delano.
 
-- [ ] **The pause:** double-click a tab's gauge — holds 1h; again —
-      tops up to 24h; a third — releases, and the countdown resumes
-      where it froze. Confirm an unreleased hold also lapses back into
+- [ ] **The pause:** double-click a tab (the tab itself; there is no
+      gauge under it since dogfood phase 4) and it holds 1h; again, and
+      it tops up to 24h; a third time releases, and the countdown
+      resumes where it froze. Confirm an unreleased hold also lapses back into
       countdown. The tab's chip must track the tier (⏸1h → ⏸24h →
       gone) without shoving the title around, and the bounded top-up
       should still feel right (docs/spec/06 q8).
