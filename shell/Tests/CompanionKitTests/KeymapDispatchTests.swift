@@ -69,6 +69,25 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertEqual(model.tabs.count, 1)
     }
 
+    /// ⌘T is the second chord on `page::New`, the one every tabbed app
+    /// puts on a new tab. Through the map the model actually resolved
+    /// it has to arrive at the same arm ⌘N does, and the + button's
+    /// tooltip has to go on naming ⌘N rather than start listing both.
+    func testTheTabChordOpensAPageTheWayCmdNDoes() throws {
+        let model = try makeModel()
+        guard case .success(let tab) = Keystroke.parse("cmd-t") else {
+            return XCTFail("the chord under test does not parse")
+        }
+        let command = try XCTUnwrap(model.keymap.command(for: tab, in: .editor))
+        XCTAssertEqual(command, .pageNew)
+        XCTAssertTrue(model.tabs.isEmpty)
+        XCTAssertTrue(model.perform(command))
+        XCTAssertEqual(model.tabs.count, 1)
+        XCTAssertEqual(
+            TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)),
+            "New page (⌘N)")
+    }
+
     /// The surface installs the chords it carries and leaves the page's
     /// alone, whatever the file happens to say.
     func testTheSurfaceInstallsOnlyItsOwnHalfOfTheMap() throws {
@@ -92,17 +111,32 @@ final class KeymapDispatchTests: XCTestCase {
             "New page (⌘N)")
     }
 
+    /// Moving New means taking away both default chords, ⌘N and ⌘T. An
+    /// override that unbinds only ⌘N has not moved the command, it has
+    /// added a third chord, and the tooltip names the first of what is
+    /// left in canonical order, which is ⌘T and which is true.
     func testTheNewPageTooltipFollowsAnOverrideThatMovedTheChord() throws {
-        let override = FileManager.default.temporaryDirectory
+        let moved = FileManager.default.temporaryDirectory
             .appendingPathComponent("keymap-\(UUID().uuidString).json")
-        try #"[{ "context": "Editor", "bindings": { "cmd-n": null, "ctrl-alt-k": "page::New" } }]"#
-            .write(to: override, atomically: true, encoding: .utf8)
-        addTeardownBlock { try? FileManager.default.removeItem(at: override) }
+        try #"[{ "context": "Editor", "bindings": { "cmd-n": null, "cmd-t": null, "ctrl-alt-k": "page::New" } }]"#
+            .write(to: moved, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: moved) }
 
-        let model = try makeModel(keymapOverride: override)
+        let model = try makeModel(keymapOverride: moved)
         XCTAssertEqual(
             TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)),
             "New page (⌃⌥K)")
+
+        let halfMoved = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymap-\(UUID().uuidString).json")
+        try #"[{ "context": "Editor", "bindings": { "cmd-n": null, "ctrl-alt-k": "page::New" } }]"#
+            .write(to: halfMoved, atomically: true, encoding: .utf8)
+        addTeardownBlock { try? FileManager.default.removeItem(at: halfMoved) }
+
+        let stillTabbed = try makeModel(keymapOverride: halfMoved)
+        XCTAssertEqual(
+            TabStripView.newPageHelp(chord: stillTabbed.keymap.hintKeystroke(for: .pageNew)),
+            "New page (⌘T)")
     }
 
     /// A tooltip must not go on advertising a chord the file took away.

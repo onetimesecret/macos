@@ -276,6 +276,35 @@ final class KeymapValidationTests: XCTestCase {
         XCTAssertEqual(keymap.command(for: try parse("ctrl-n"), in: .editor), .pageNew)
     }
 
+    /// Two chords may point at one command and both stand. The table is
+    /// kept by chord, so a second chord is a second line and not a
+    /// duplicate of anything, and nothing is reported. What the menu
+    /// and the tooltips advertise is the first by canonical order,
+    /// which is a stable answer rather than whichever line the file
+    /// happened to write first, and unbinding that one hands the
+    /// advertisement to the other. The bundled default leans on all of
+    /// this for ⌘N and ⌘T.
+    func testTwoChordsOnOneCommandBothStand() throws {
+        let twoChords = """
+            [{ "context": "Editor", "use_key_equivalents": true,
+               "bindings": { "cmd-t": "page::New", "cmd-n": "page::New" } }]
+            """
+        let keymap = resolve(twoChords)
+        XCTAssertEqual(keymap.diagnostics, [])
+        XCTAssertEqual(keymap.command(for: try parse("cmd-n"), in: .editor), .pageNew)
+        XCTAssertEqual(keymap.command(for: try parse("cmd-t"), in: .editor), .pageNew)
+        XCTAssertEqual(keymap.menuKeystroke(for: .pageNew)?.canonical, "cmd-n")
+        XCTAssertEqual(keymap.hintKeystroke(for: .pageNew)?.canonical, "cmd-n")
+
+        let trimmed = Keymap.resolve(
+            defaultText: twoChords,
+            overrideText: #"[{ "context": "Editor", "bindings": { "cmd-n": null } }]"#)
+        XCTAssertEqual(trimmed.faults, [])
+        XCTAssertNil(trimmed.command(for: try parse("cmd-n"), in: .editor))
+        XCTAssertEqual(trimmed.command(for: try parse("cmd-t"), in: .editor), .pageNew)
+        XCTAssertEqual(trimmed.menuKeystroke(for: .pageNew)?.canonical, "cmd-t")
+    }
+
     /// A section may advertise its chords in a menu, and a later
     /// section that says the same thing about the same chord is not a
     /// withdrawal. Restating a default line to keep it in sight beside

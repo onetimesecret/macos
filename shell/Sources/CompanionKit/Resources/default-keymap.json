@@ -66,6 +66,15 @@
       //     [{ "context": "Editor", "bindings": { "cmd-alt-n": "page::New" } }]
       //
       "cmd-n": "page::New",
+      // And cmd-t, because a tab is what the pad opens and cmd-t is
+      // where every tabbed app puts a new one. Two chords on one
+      // command is what issue #77 declined for cmd-alt-n, and the
+      // difference is who the second chord is for: that one was for
+      // hands trained by this app's own past, this one is for hands
+      // trained by every other app. Each chord is its own line, so
+      // both fire; the + button's tooltip goes on naming cmd-n, the
+      // first of the two in canonical order.
+      "cmd-t": "page::New",
       "cmd-alt-left": "page::Previous",
       "cmd-alt-right": "page::Next",
       "cmd-w": "page::Close",
