@@ -141,8 +141,8 @@ What changes:
 - **Re-enter the API token where the Keychain no longer answers.** A
   debug build asks under a new service name, so its token is gone. An
   installed release build whose signing identity did not change keeps
-  its token; if Settings shows "paste your API token" instead of
-  "•••• stored in the Keychain", that is the answer.
+  its token; if the Connection tab of Settings shows "paste your API
+  token" instead of "•••• stored in the Keychain", that is the answer.
 
 ## Which build am I on
 
@@ -154,17 +154,18 @@ marker for an uncommitted tree.
 
 ## Launch at login
 
-Settings has a toggle backed by `SMAppService.mainApp`. Only a bundle
-under `/Applications` can register, so a dev build never claims the
-login item by accident. A refused registration reverts the toggle to
-whatever the system actually granted.
+The General tab of Settings has a toggle backed by
+`SMAppService.mainApp`. Only a bundle under `/Applications` can
+register, so a dev build never claims the login item by accident. A
+refused registration reverts the toggle to whatever the system actually
+granted.
 
 ## Deadline rounding
 
-Settings has "Round a page's deadline up to the hour, or to midnight",
-on unless you turn it off, stored as `snapsToBoundaries` in the app's
-defaults domain. To exercise it, note the clock, make a new page, set
-it to a rung, and read the countdown.
+The General tab of Settings has "Round a page's deadline up to the
+hour, or to midnight", on unless you turn it off, stored as
+`snapsToBoundaries` in the app's defaults domain. To exercise it, note
+the clock, make a new page, set it to a rung, and read the countdown.
 
 With the toggle on, a rung under a day lands on the next whole local
 hour and the 24h, 3d and 7d rungs land on the next local midnight, so
