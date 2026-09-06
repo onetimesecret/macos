@@ -88,11 +88,16 @@ carried to the core by `companion_set_grace_snap`
   is also what bounds a restored page's claimed life
   (`Ttl::longest_life`, `crates/core/src/ttl.rs:83`, used by restore
   at `crates/core/src/persist.rs:896`).
-- The surface shows **remaining time**, in words and as the tab gauge
-  (`shell/Sources/CompanionKit/TabStripView.swift:473`). There is no
-  absolute deadline label anywhere, so the effective deadline is
-  observed as "the local wall clock now, plus the remaining time
-  shown".
+- The surface shows **remaining time** as the gauge under each tab
+  while the strip is the navigation, and in words in the day gutter's
+  label while the days are (`shell/Sources/CompanionKit/TabStripView.swift`,
+  `DayScrollView.swift`). The full width gauge along the page's bottom
+  edge and the header's countdown label are gone since dogfood phase 4
+  (docs/dogfood/ABERRATIONS.md, 2026-09-05); the per tab gauge and the
+  time rail's still draw, and the tab's tooltip speaks the remaining
+  time in words. There is no absolute deadline label anywhere, so the
+  effective deadline is observed as "the local wall clock now, plus
+  the remaining time shown".
 - Undo is the core's stack, bound to the document's peer id
   (`crates/core/src/document.rs:130`), reached through
   `SheetStore::undo` (`crates/core/src/store.rs:923`),
@@ -125,7 +130,7 @@ The log predicate for the launches these cases make:
 
 ```sh
 log show --last 30m --style compact --predicate \
-  'subsystem == "com.onetimesecret.companion.backdrop" && (category == "core" || category == "persistence")'
+  'subsystem == "com.onetimesecret.pad" && (category == "core" || category == "persistence")'
 ```
 
 ## Case A: a zone change moves no deadline already set

@@ -182,17 +182,29 @@ Saving is explicit. There is no autosave to the file.
   changes the bytes and clears on a successful write. A write that
   fails leaves the dot, keeps the draft, and shows the failure with its
   reason, for example a read only volume or a permission denial.
-- **Quit with unsaved changes.** Quitting does not put a modal in the
-  way. The staged draft is sealed into the app's own state before the
-  app exits, the app quits, and the next launch reopens the file with
-  the draft restored and the unsaved dot still showing. The file on
-  disk is not written. This departs from the macOS convention of a save
-  or discard sheet at quit, and it does so on purpose: tenet 1 says
-  losing work is unforgivable, and a sheet at quit is a place where a
-  person discards work by reflex. What the pad owes in exchange is that
-  the unsaved state is unmistakable at the next launch. So a restored
-  dirty file shows the time of its last edit in the header beside the
-  dot, and a person can judge the draft's age before pressing Cmd S.
+- **Quit with unsaved changes.** Quitting with a dirty file open says
+  so, once, and names the files. The staged draft is sealed into the
+  app's own state before the app exits, and the next launch reopens the
+  file with the draft restored and the unsaved dot still showing. The
+  file on disk is not written.
+
+  The notice is not the macOS save or discard sheet, and the difference
+  is the point. It offers Quit Anyway and Cancel and no third button,
+  because the draft survives the quit either way: a Discard here would
+  manufacture the one loss path this feature does not have, at exactly
+  the moment a person is dismissing dialogues by reflex, and tenet 1
+  says losing work is unforgivable. Cancel exists so Cmd S is one
+  keystroke away. It appears only when a file is actually dirty, so a
+  quit with nothing at stake is still silent.
+
+  What the pad owes beyond the notice is that the unsaved state is
+  unmistakable at the next launch. So a restored dirty file shows the
+  time of its last edit in the header beside the dot, and a person can
+  judge the draft's age before pressing Cmd S.
+
+  When the pad's own state write fails at the same quit, the notice
+  drops the restoration promise and says the typing is in memory only,
+  because on that branch it is (`QuitPrompt`).
 - **An unsaved draft survives relaunch and crash.** The draft lives in
   the app's own sealed state, in a separate sealed drafts file under
   the same content key as the page snapshot, and it is never written to
@@ -485,18 +497,15 @@ active tab is a page rather than a file.
 
 ## Open questions
 
-1. **Quit behaviour.** Is a silent quit with a restored draft
-   reassuring or alarming? The last edit time in the header is the
-   mitigation. Dogfood it before accepting.
-2. **Conceal from a file.** Should selecting text inside a file and
+1. **Conceal from a file.** Should selecting text inside a file and
    concealing the selection be allowed? It is coherent, since conceal
    acts on bytes, but it makes a file an ingress into staged content
    and needs its own argument.
-3. **How many files.** Is there a cap on open files at all, and if so
+2. **How many files.** Is there a cap on open files at all, and if so
    what is it and why? The nine page cap does not apply, and nothing
    else does either today.
-4. **Encoding, later.** If UTF-8 only proves too narrow, what is the
+3. **Encoding, later.** If UTF-8 only proves too narrow, what is the
    smallest honest next step: detection with conversion on save, or an
    explicit reopen with encoding chooser?
-5. **Recent files.** A recents list is convenient and is also a durable
+4. **Recent files.** A recents list is convenient and is also a durable
    record of filenames the pad keeps. Worth it?

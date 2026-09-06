@@ -128,10 +128,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     /// The panel defers its restore to the first reveal so that
     /// launching at login never raises a Keychain prompt for a window
     /// nobody asked to see (ADR-0004). This surface has no such moment
-    /// to defer to: it is on screen from launch, and a resting card
-    /// showing an empty page it does not actually hold would be a lie
-    /// told at exactly the glance the form factor exists to serve.
-    /// Launch and reveal are one act here, so the restore rides it.
+    /// to defer to: it is on screen from launch, resting or raised, and
+    /// a card showing an empty page it does not actually hold would be
+    /// a lie told at exactly the glance the form factor exists to
+    /// serve. Launch and reveal are one act here, so the restore rides
+    /// it.
     func start() {
         guard !started else { return }
         started = true
@@ -154,6 +155,11 @@ final class BackdropModel: ObservableObject, QuitFlushable {
     func saveStateForQuit() -> QuitSaveOutcome {
         pages.saveStateForQuit()
     }
+
+    /// The open files carrying unsaved edits, for the quit notice. The
+    /// roster lives with the pages, so this is a forward and nothing
+    /// more.
+    var dirtyFileNames: [String] { pages.dirtyFileNames }
 
     // MARK: Stance
 

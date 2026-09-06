@@ -192,7 +192,7 @@ final class BackdropGeometryTests: XCTestCase {
     func testGeometrySurvivesADefaultsRoundTripInAThrowawaySuite() throws {
         // A throwaway domain, wiped on the way out: tests never touch
         // the app's real domain.
-        let suiteName = "com.onetimesecret.companion.backdrop.tests.\(UUID().uuidString)"
+        let suiteName = "com.onetimesecret.pad.tests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -208,7 +208,7 @@ final class BackdropGeometryTests: XCTestCase {
     }
 
     func testAnUnreadableStoredBlobFallsBackToTheDefault() throws {
-        let suiteName = "com.onetimesecret.companion.backdrop.tests.\(UUID().uuidString)"
+        let suiteName = "com.onetimesecret.pad.tests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 

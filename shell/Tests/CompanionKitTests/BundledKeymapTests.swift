@@ -30,6 +30,10 @@ final class BundledKeymapTests: XCTestCase {
         // command id is still legal and still dispatches, which is what
         // `testTheLedgerCommandStaysBindableByAnOverride` holds.
         "cmd-n": .pageNew,
+        // The one command with two default chords. A tab is what the
+        // pad opens, and cmd-t is where every tabbed app puts a new
+        // one; `testTheTabChordOpensANewPageBesideCmdN` holds the rest.
+        "cmd-t": .pageNew,
         "cmd-alt-left": .pagePrevious,
         "cmd-alt-right": .pageNext,
         "cmd-w": .pageClose,
@@ -110,6 +114,25 @@ final class BundledKeymapTests: XCTestCase {
         XCTAssertEqual(
             resolved.surfaceShortcuts().count,
             resolved.bindings(in: .editor, dispatch: .surface).count)
+    }
+
+    /// New is the one command the default file puts two chords on, and
+    /// on purpose: a tab is what the pad opens, and ⌘T is where every
+    /// tabbed app puts a new one. Both chords have to reach `page::New`,
+    /// both have to be installable by the surface, and the tooltip and
+    /// any menu item keep naming ⌘N, the first of the two in canonical
+    /// order and the chord the file has always advertised. This is not
+    /// the ⌥⌘N alias issue #77 refused: that was a second chord for
+    /// hands trained by this app's own past, and this one is for hands
+    /// trained by every other app.
+    func testTheTabChordOpensANewPageBesideCmdN() throws {
+        let resolved = try bundled()
+        XCTAssertEqual(resolved.command(for: try parse("cmd-n"), in: .editor), .pageNew)
+        XCTAssertEqual(resolved.command(for: try parse("cmd-t"), in: .editor), .pageNew)
+        let installed = resolved.surfaceShortcuts().filter { $0.command == .pageNew }
+        XCTAssertEqual(Set(installed.map(\.keystroke.canonical)), ["cmd-n", "cmd-t"])
+        XCTAssertEqual(resolved.hintKeystroke(for: .pageNew)?.canonical, "cmd-n")
+        XCTAssertEqual(resolved.menuKeystroke(for: .pageNew)?.canonical, "cmd-n")
     }
 
     /// The ledger is hidden, not withdrawn from the vocabulary (issue

@@ -34,7 +34,7 @@ The state directory is the form factor's bundle id plus `.noindex`
 under Application Support (`shell/Sources/CompanionKit/FormFactor.swift`; the release id is):
 
 ```sh
-STATE=~/Library/Application\ Support/com.onetimesecret.companion.backdrop.noindex
+STATE=~/Library/Application\ Support/com.onetimesecret.pad.noindex
 ls -la "$STATE"
 ```
 
@@ -53,7 +53,7 @@ Watch both:
 
 ```sh
 log stream --style compact --predicate \
-  'subsystem == "com.onetimesecret.companion.backdrop" && (category == "core" || category == "persistence")'
+  'subsystem == "com.onetimesecret.pad" && (category == "core" || category == "persistence")'
 ```
 
 After the fact, the same predicate under
@@ -98,7 +98,7 @@ erases (`crates/ffi/src/lib.rs`, `crates/ffi/src/persist.rs`,
 
    ```sh
    ls "$STATE"/ots-companion-key-half-*
-   security find-generic-password -s com.onetimesecret.companion.backdrop -a state-key -w
+   security find-generic-password -s com.onetimesecret.pad -a state-key -w
    ```
 
    The second command may prompt for keychain access. Allow it once;

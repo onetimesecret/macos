@@ -514,7 +514,7 @@ extension ResolvedKeymap {
     /// and it is where a support conversation can reach:
     ///
     /// ```bash
-    /// log show --predicate 'subsystem BEGINSWITH "com.onetimesecret"' --last 1h --style compact
+    /// log show --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}' --last 1h --style compact
     /// ```
     public func report(subsystem: String) {
         guard !faults.isEmpty else { return }

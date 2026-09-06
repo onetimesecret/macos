@@ -28,11 +28,11 @@ stick, and per-app screen-capture pickers can't list it. When the app
 needs to be a citizen of the permission system, use the entry points:
 
 ```sh
-../scripts/dev.sh       # debug bundle under a .debug id, launched from dist/
+../scripts/dev.sh       # debug bundle as dev.onetimesecret.pad, launched from dist/
 ../scripts/install.sh   # release bundle, signed, installed to /Applications
 ```
 
-The bundle id is `com.onetimesecret.companion.backdrop`; the version
+The bundle id is `com.onetimesecret.pad`; the version
 users see is `CFBundleShortVersionString` in `OnetimePad-Info.plist`,
 which is the product's own number, edited there by hand when work a
 user can touch lands. The packaging script reads it and stamps
@@ -55,9 +55,12 @@ the seam.
 
 - **These are the rev C surfaces** (issue #12, docs/spec/04), shared
   through CompanionKit: one page of ink and sealed chips in an
-  `NSTextView`-backed editor; bottom-edge tabs with per-tab gauges,
-  pause on double-click, drag-to-reorder, ✕ to close; the keyboard map
-  (⌃⌥Space, ⌘1–9, ⌘N, ⌥⌘←/→, ⇧⌘V, ⌘↩, Esc). Which chord does what is
+  `NSTextView`-backed editor; bottom-edge tabs with a gauge under each
+  title (the full width gauge along the page's bottom edge read as a
+  scroll bar and came out in dogfood phase 4, the per tab gauge stays,
+  docs/dogfood/ABERRATIONS.md), pause on double-click,
+  drag-to-reorder, ✕ to close; the keyboard map
+  (⌃⌥Space, ⌘1 to 9, ⌘N or ⌘T, ⌥⌘←/→, ⇧⌘V, ⌘↩, Esc). Which chord does what is
   the keymap file's business and not this file's, so read
   `docs/development/about-the-keymap.md` for the list that is actually
   installed. Markdown headings render styled with their markup kept

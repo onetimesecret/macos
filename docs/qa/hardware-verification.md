@@ -31,9 +31,13 @@ Two prior results stand and are not re-run here:
 1. **Full Xcode active:** `xcode-select -p` prints an
    `Xcode*.app/Contents/Developer` path; if not,
    `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
-2. `./scripts/build-core.sh` → `bindings/CompanionCore.xcframework`
-   (it takes no arguments; rev C has no dev-seed path).
-3. `cd shell && swift build && swift test && swift run CompanionApp`
+2. `./scripts/test-shell.sh` runs the Swift tests. It builds
+   `bindings/CompanionCore.xcframework` in the shape those tests need
+   (the gated seams of ADR-0018) before running them, so there is no
+   flag to remember and no order to get right.
+3. `./scripts/dev.sh` for a debug bundle, or `./scripts/install.sh` for
+   the release bundle in `/Applications`. Each rebuilds the core in its
+   own shape, so running one after the tests needs no cleanup step.
 4. The window summons with **⌥Space** or from the menu-bar item.
 
 ## §0 — The prototype walk
@@ -55,7 +59,7 @@ both and note any divergence in feel, not just function:
       selection.
 - [ ] ⌫ on a chip removes it (and zeroizes core-side — no visible
       check here; the contract test covers it).
-- [ ] ⌘N new page; ⌥⌘←/→ walk pages; ⌘1–⌘9 jump in visible tab
+- [ ] ⌘N new page, and ⌘T the same; ⌥⌘←/→ walk pages; ⌘1 to ⌘9 jump in visible tab
       order; ⌘0 opens the ledger.
 - [ ] Drag a tab to reorder; confirm the ⌘-number map follows the new
       visible order.
@@ -120,9 +124,10 @@ trigger**. VoiceOver on (⌘F5); keyboard only.
 
 **Owner:** delano.
 
-- [ ] **The pause:** double-click a tab's gauge — holds 1h; again —
-      tops up to 24h; a third — releases, and the countdown resumes
-      where it froze. Confirm an unreleased hold also lapses back into
+- [ ] **The pause:** double-click a tab (the tab or the gauge under
+      it) and it holds 1h; again, and
+      it tops up to 24h; a third time releases, and the countdown
+      resumes where it froze. Confirm an unreleased hold also lapses back into
       countdown. The tab's chip must track the tier (⏸1h → ⏸24h →
       gone) without shoving the title around, and the bounded top-up
       should still feel right (docs/spec/06 q8).
@@ -250,8 +255,8 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   them. ADR-0016 section 1 and section 10.
 - [`re-signed-bundle.md`](verification-procedures/re-signed-bundle.md).
   Owner: delano. Re-signing with a different identity refuses without
-  erasing, and the `.debug` bundle id keeps its state directory separate
-  from the release one. ADR-0016 section 10, case 4.
+  erasing, and the `dev.onetimesecret.pad` bundle id keeps its state
+  directory separate from the release one. ADR-0016 section 10, case 4.
 - [`locked-keychain.md`](verification-procedures/locked-keychain.md).
   Owner: delano. A locked keychain at load, and a denied ACL prompt,
   each refusing with no erase and no overwrite. ADR-0016 section 10,

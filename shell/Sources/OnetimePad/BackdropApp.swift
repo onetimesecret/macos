@@ -180,22 +180,42 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     private var summonKey: BackdropHotKey?
     private lazy var settings = BackdropSettingsWindowController(model: model)
 
-    /// Not every activation is a summon. The launch's own arrives
-    /// within moments of `applicationDidFinishLaunching` — and a
-    /// login-item or background launch may never activate at all,
-    /// which is why this is recency rather than a skip-one counter
-    /// that would swallow the first real ⌘Tab hours later. About's
-    /// activation is flagged by `showAbout`, and Settings' by
+    /// Not every activation is the same raise, and one kind of launch
+    /// brings no activation at all. A launch the person performs, from
+    /// the Finder, the Dock, Spotlight or `open`, activates the app
+    /// within moments of `applicationDidFinishLaunching`, and that
+    /// activation is read as the launch itself and raises as a summon
+    /// (`activationRaises`). A login item, or any other launch the
+    /// system performs in the background, never activates, so nothing
+    /// arrives inside the window and the surface stays where the launch
+    /// placed it, resting.
+    /// About's activation is flagged by `showAbout`, and Settings' by
     /// `openSettings`, because those windows need the activation for
     /// themselves without dragging the surface up with them. Every
     /// other activation, whether by ⌘Tab or the Dock icon, is the user
     /// choosing this app, and answers with a raise.
+    ///
+    /// The launch time is taken in `applicationWillFinishLaunching`,
+    /// the first thing AppKit tells the delegate, rather than in
+    /// `applicationDidFinishLaunching`, so that the recency rule does
+    /// not rest on which of the two launch notifications and the
+    /// activation is delivered first. Were the activation ever to
+    /// arrive between the two, a launch time taken in the later one
+    /// would still be `distantPast`, and the person's launch would be
+    /// read as a ⌘Tab hours later.
     private var launchedAt = Date.distantPast
     private var aboutActivation = false
     private var settingsActivation = false
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    /// The observation of `ModalSession.didEndNotification`, held for
+    /// the life of the delegate, which is the life of the process.
+    private var modalEndObserver: NSObjectProtocol?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
         launchedAt = Date()
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
         // A regular app, deliberately — the panel's accessory posture
         // (menu bar only, docs/spec/03 §2) is amended for this form
         // factor: living in ⌘Tab is what makes flipping between the
@@ -236,10 +256,67 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self?.model.summon() }
         }
 
-        // The backdrop exists by being there: it takes its place at the
-        // desktop on launch, resting, opened onto whatever page the last
-        // quit sealed (`BackdropModel.start`).
+        // Every modal of ours reports back when it returns
+        // (`ModalSession`), and the surface answers by coming forward
+        // again. Queue nil: the bracket posts on the main thread, on the
+        // turn the panel returned, and the answer is deferred by hand
+        // below rather than by the centre.
+        modalEndObserver = NotificationCenter.default.addObserver(
+            forName: ModalSession.didEndNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.modalSessionEnded() }
+        }
+
+        // The backdrop exists by being there: it takes its place on
+        // screen at launch, resting, opened onto whatever page the last
+        // quit sealed (`BackdropModel.start`). Whether it then comes
+        // forward is not decided here, because the launch cannot tell
+        // who asked for it. A person who opens the app is owed a raised
+        // and keyed card, since a surface that parks itself behind every
+        // other window on first open reads as a broken app (dogfood
+        // phase 4); a login item, or any other launch the system
+        // performs, is owed the resting stance, behind everything,
+        // exactly as before. AppKit already tells the two apart: a
+        // person's launch activates the app moments after this returns,
+        // and a background launch never does. So the raise waits for
+        // that activation (`applicationDidBecomeActive`), and a launch
+        // nobody activates stays resting.
         controller.show()
+    }
+
+    /// How the launch's activation raises: as a summon, because a person
+    /// opening the app is coming to the pad and not back to a sentence
+    /// they left, and a summon is the raise that anchors the roll on
+    /// today (`BackdropRaise`). Named so the test can pin the anchor
+    /// without launching anything.
+    nonisolated static let launchRaise: BackdropRaise = .summon
+
+    /// How long after launch an activation is read as the launch's own.
+    /// Recency rather than a skip-one counter, since a login item or a
+    /// background launch never activates and a counter would read the
+    /// first real ⌘Tab hours later as the launch, anchoring the roll on
+    /// today under a sentence someone was coming back to.
+    nonisolated static let launchWindow: TimeInterval = 2
+
+    /// Whether an activation raises the surface, and as which raise,
+    /// given how long ago the app launched and whether another window
+    /// of ours asked for the activation for itself. Nil is no raise.
+    ///
+    /// The launch places the surface resting and leaves the raise to
+    /// this decision, because the activation is the one fact that
+    /// separates a launch a person performed from one the system did.
+    /// An activation inside the launch window is the person's launch
+    /// arriving, and it raises as the launch raise, a summon anchored on
+    /// today. One outside the window is a ⌘Tab or a Dock click and
+    /// raises as an activation, leaving the roll where it was. No
+    /// activation at all is the login item, and the absence of an answer
+    /// here is what keeps that launch resting. About and Settings keep
+    /// their claim ahead of both, whenever they arrive.
+    nonisolated static func activationRaises(
+        sinceLaunch: TimeInterval, claimedByAnotherWindow: Bool
+    ) -> BackdropRaise? {
+        guard !claimedByAnotherWindow else { return nil }
+        return sinceLaunch < launchWindow ? launchRaise : .activation
     }
 
     /// Quit flushes whatever the debounce still holds; the debounced
@@ -260,22 +337,28 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             alert.addButton(withTitle: "Quit Anyway")
             alert.addButton(withTitle: "Cancel")
             NSApp.activate(ignoringOtherApps: true)
-            return alert.runModal() == .alertFirstButtonReturn
+            // Bracketed like every modal of ours: a cancelled quit is a
+            // return to the surface, and the surface comes forward for
+            // it. A confirmed quit terminates before the deferred raise
+            // can run.
+            return ModalSession.run { alert.runModal() } == .alertFirstButtonReturn
         }
     }
 
     /// ⌘Tab (or the Dock icon) landing on this app raises the surface:
     /// the user came here, so bring it, pulled to their Space and keyed,
     /// unconditionally, never a rest, because activation only ever
-    /// means "bring it to me". The launch's own activation (and
-    /// `showAbout`'s) is exempt: the backdrop starts resting, present
-    /// but not summoned.
+    /// means "bring it to me". The activation a person's launch sends
+    /// moments after `applicationDidFinishLaunching` is the raise the
+    /// launch itself withheld, and takes the launch raise; About's and
+    /// Settings' are exempt because those windows asked for the
+    /// activation for themselves.
     ///
-    /// Raised as an **activation** and not as a summon: the user named
-    /// the app, not this surface, and someone who ⌘Tabbed away from a
-    /// sentence in an older day is coming back to that sentence. What
-    /// hangs off the distinction is the roll's anchor, see
-    /// `BackdropRaise`.
+    /// Otherwise raised as an **activation** and not as a summon: the
+    /// user named the app, not this surface, and someone who ⌘Tabbed
+    /// away from a sentence in an older day is coming back to that
+    /// sentence. What hangs off the distinction is the roll's anchor,
+    /// see `BackdropRaise`.
     func applicationDidBecomeActive(_ notification: Notification) {
         // Ahead of the raise's own exemptions, and ahead of the launch
         // window: coming back to the app is exactly when a checkout, a
@@ -283,16 +366,67 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         // that is true whether or not this particular activation
         // raises the card (decisions.md item 5).
         pages.checkOpenFilesOnActivate()
-        if Date().timeIntervalSince(launchedAt) < 2 { return }
-        if aboutActivation {
-            aboutActivation = false
-            return
+        // Both flags are consumed by whichever activation arrives next,
+        // launch window or not: each was set only when an activation
+        // was certain to follow, so this is that activation, and a flag
+        // left standing here would swallow the next real ⌘Tab instead.
+        let claimed = aboutActivation || settingsActivation
+        aboutActivation = false
+        settingsActivation = false
+        guard let raise = Self.activationRaises(
+            sinceLaunch: Date().timeIntervalSince(launchedAt),
+            claimedByAnotherWindow: claimed
+        ) else { return }
+        model.raise(raise)
+    }
+
+    /// A modal of ours has returned: the open or save panel, a file
+    /// review, the rename prompt, the quit notice, opened or cancelled
+    /// alike. The surface was raised when it went up, since every one of
+    /// them is reached from a keyed card or from a menu of an active
+    /// app, and it comes forward again now: the panel took the keyboard
+    /// on its way in, AppKit promises nothing about where the keyboard
+    /// goes on the way out, and a person who has just chosen a file is
+    /// owed the pad it opens into.
+    ///
+    /// Raised as an activation, not a summon: nobody named the surface,
+    /// and the roll stays where the person left it (`BackdropRaise`).
+    /// Only over a raised surface, because a rest that happened while
+    /// the panel was up was somebody's deliberate act, or the quit
+    /// notice reached from a resting card's tray menu, and neither is
+    /// ours to undo. Deferred a turn so the raise runs outside the
+    /// caller's own stack, which for the open panel is the model in the
+    /// middle of opening the file, and never at all on a confirmed
+    /// quit, which terminates first.
+    ///
+    /// The deferred half asks `ModalSession.isRunning` again, for the
+    /// same reason the outside press rule asks it: the main queue
+    /// drains inside a modal's run loop, so a second modal opened on
+    /// the first one's return would run this turn under its own
+    /// session, and a `makeKeyAndOrderFront` under a live modal is
+    /// exactly what the bracket exists to prevent. No chain in the app
+    /// runs two modals back to back today; the guard is what keeps
+    /// that a fact about the app rather than a requirement on it.
+    private func modalSessionEnded() {
+        guard model.stance == .raised else { return }
+        Task { @MainActor [weak self] in
+            guard let self,
+                Self.raisesAfterModal(
+                    stance: self.model.stance, modalSessionRunning: ModalSession.isRunning)
+            else { return }
+            self.model.raise(.activation)
         }
-        if settingsActivation {
-            settingsActivation = false
-            return
-        }
-        model.raise(.activation)
+    }
+
+    /// Whether the deferred raise after a modal goes ahead: only over
+    /// a surface still raised, and only once no modal of ours is up.
+    /// The same two facts the outside press rule weighs, read the same
+    /// way, so that the two surface actions a modal touches cannot
+    /// disagree about what "a modal of ours is up" means.
+    nonisolated static func raisesAfterModal(
+        stance: BackdropStance, modalSessionRunning: Bool
+    ) -> Bool {
+        stance == .raised && !modalSessionRunning
     }
 
     /// The Dock icon's click while the app is already active reaches
@@ -326,7 +460,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(
                 withTitle: BuildVersion.trayTitle(
                     core: CompanionClient.version,
-                    bundleVersion: Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+                    bundleVersion: Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
+                    devLane: BuildVersion.isDevLane(
+                        bundleIdentifier: Bundle.main.bundleIdentifier)
                 ),
                 action: nil,
                 keyEquivalent: ""
@@ -531,8 +667,21 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// label would otherwise fall back to the executable name. The
     /// bundled app takes the same name from CFBundleName /
     /// CFBundleDisplayName in shell/OnetimePad-Info.plist, and the two
-    /// must agree. Neither is the bundle id, which never changes.
-    static let productName = "OnetimePad"
+    /// must agree. Neither is the bundle id, which is infrastructure
+    /// rather than paint and does not move with the name.
+    ///
+    /// Read from the bundle rather than hardcoded, because the dev lane
+    /// renames itself: `package-app.sh --debug` writes "OnetimePad Dev"
+    /// into both name keys, and everything that says the product's name
+    /// out loud has to follow it, or the About panel and the tray claim
+    /// to be the installed copy while the ⌘Tab switcher says otherwise.
+    static let productName: String = {
+        let info = Bundle.main.object(forInfoDictionaryKey:)
+        for key in ["CFBundleDisplayName", "CFBundleName"] {
+            if let name = info(key) as? String, !name.isEmpty { return name }
+        }
+        return "OnetimePad"
+    }()
 
     /// Loads the icon named by CFBundleIconFile, which package-app.sh
     /// changes when the rendered artwork changes. Assigning this image to

@@ -7,7 +7,8 @@
 # survive updates.
 #
 # The dev counterpart is scripts/dev.sh, which packages a debug bundle
-# under a .debug bundle id and launches it from dist/.
+# under its own bundle id, dev.onetimesecret.pad, and launches it from
+# dist/.
 #
 # --no-launch installs without opening the app afterwards.
 #
@@ -127,12 +128,14 @@ install_bundle() { # <app name>
   echo "Installed $name.app $version"
 }
 
-# One-time migration: this app used to install as CompanionBackdrop.app
-# (the bundle id, which never changes, still carries that legacy name).
-# Leaving the old bundle beside the new one would hand LaunchServices
-# two registered copies of one bundle id, so the old bundle goes, but
-# only after it has quit: quit_installed exits rather than return when
-# the app will not go, and we never remove a live app.
+# One-time migration: this app used to install as CompanionBackdrop.app,
+# under the legacy com.onetimesecret.companion.backdrop id. The id has
+# since moved to com.onetimesecret.pad (0.19.0), so to LaunchServices the
+# two bundles are two apps now rather than two copies of one, but the
+# old one still goes: a stale bundle under a retired id is a second
+# OnetimePad in Launchpad and Spotlight, over state the new id cannot
+# read. It goes only after it has quit: quit_installed exits rather
+# than return when the app will not go, and we never remove a live app.
 migrate_legacy_bundle() { # <legacy app name>
   local name="$1"
   local legacy="$APP_DEST/$name.app"

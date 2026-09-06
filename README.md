@@ -83,9 +83,10 @@ docs/adr/            decisions
 Two entry points, both in `scripts/`:
 
 - `scripts/dev.sh` builds the debug bundle and launches it from
-  `dist/`. The debug build takes a `.debug` bundle id and a "Dev"
-  display name, so it runs beside the installed copy without sharing
-  its defaults, keychain items, or state.
+  `dist/`. The debug build takes its own bundle id
+  (`dev.onetimesecret.pad`) and a "Dev" display name, so it runs beside
+  the installed copy without sharing its defaults, keychain items, or
+  state.
 - `scripts/install.sh` builds the release bundle, signs it, and
   installs it to `/Applications`. This is the daily dogfood channel;
   see [docs/dogfood/DOGFOOD.md](docs/dogfood/DOGFOOD.md).
@@ -96,14 +97,15 @@ Both rebuild the Rust core only when it is stale and package through
 The core builds in two shapes (ADR-0018): the release shape, whose
 export list is exactly the C interface the app calls, and the dev
 shape (`scripts/build-core.sh --test-util`), which adds the gated test
-seams the Swift suite links. **Running `swift test` requires the dev
-shape**; against a release build the suite fails at link with a
-missing `companion_new_ephemeral`, which is the intended loud failure
-rather than a silent fallback. `scripts/dev.sh` keeps `bindings/` in
-the dev shape, `scripts/install.sh` rebuilds the release shape, and
-each lane rebuilds the other's leftovers automatically; the release
-packaging path additionally refuses to ship a binary that exports a
-test seam.
+seams the Swift suite links. Run the Swift tests with
+`scripts/test-shell.sh`, which builds the dev shape first and forwards
+its arguments to `swift test`; a bare `swift test` against a release
+build fails at link with a missing `companion_new_ephemeral`, which is
+the intended loud failure rather than a silent fallback, but there is
+no reason to meet it. `scripts/dev.sh` keeps `bindings/` in the dev
+shape, `scripts/install.sh` rebuilds the release shape, and each lane
+rebuilds the other's leftovers automatically; the release packaging
+path additionally refuses to ship a binary that exports a test seam.
 
 Prefer a bundle over `swift run` whenever
 Keychain behavior or permission prompts matter:
@@ -145,7 +147,7 @@ keyboard does the gesture rest it. Esc or a click outside the card also
 rests it. The surface's mechanics log to the unified log:
 
 ```sh
-log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
+log stream --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}'
 ```
 
 It began as the second form factor (ADR-0010) beside a menu-bar panel,
@@ -157,11 +159,14 @@ future form factor would share.
 
 ## Naming note
 
-**OnetimePad** is the current working name. The bundle id
-(`com.onetimesecret.companion.backdrop`) keeps the older "Companion"
-working-title lineage on purpose: macOS keys state, Keychain items, and
-TCC grants off the id, so the id outlives the names painted over it.
-"Companion" itself replaced the earlier working title "Airlock", a
+**OnetimePad** is the current working name. The bundle id is
+`com.onetimesecret.pad`, with `dev.onetimesecret.pad` for the dev lane.
+Until 0.19.0 it was `com.onetimesecret.companion.backdrop`, the older
+"Companion" working-title lineage kept on purpose because macOS keys
+state, Keychain items, and TCC grants off the id; leaving it behind cost
+every existing install all three at once, which is why the id is not to
+move again with the name. "Companion" itself replaced the earlier
+working title "Airlock", a
 small chamber between two environments that things pass through but
 never live in, which collides with at least one existing security
 vendor (open question №8). The old name survives only in the

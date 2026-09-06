@@ -263,3 +263,15 @@ and redundant.
   refusal were added. The decision remains proposed. Implementation
   notes are in
   [about file backed documents](../development/about-file-backed-documents.md).
+- **2026-09-05:** The quit behaviour question is closed by the
+  maintainer: a quit with a dirty file open now says so and names the
+  files, rather than going silently. It is a notice and not a save or
+  discard sheet, with Quit Anyway and Cancel and no third button,
+  because the draft survives the quit and a Discard would create the
+  loss path the feature otherwise does not have (`QuitPrompt`).
+- **2026-09-05:** The two clauses no test in this repository can reach,
+  the staged drafts clause across a `kill -9` and the resealing clause
+  across the automatic content erase, were verified on hardware. All
+  three cases of
+  [the draft lifecycle procedure](../qa/verification-procedures/file-draft-lifecycle.md)
+  pass.

@@ -52,7 +52,7 @@ In a second terminal, watch the surface's own log, which now carries the
 gate:
 
 ```
-log stream --predicate 'subsystem == "com.onetimesecret.companion.backdrop"'
+log stream --predicate 'subsystem == "com.onetimesecret.pad"'
 ```
 
 The line to look for is `mouse gate=closed onActiveSpace=… unoccluded=…`

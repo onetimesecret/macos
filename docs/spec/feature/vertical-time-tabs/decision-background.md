@@ -327,8 +327,9 @@ decision's status waits on.
     card's content row branching as a whole expression
     (shell/Sources/OnetimePad/Views/BackdropRootView.swift, with
     the strip row absent while the mode is on); and the
-    toggle in `ConnectionSettingsView`
-    (shell/Sources/CompanionKit/SettingsSections.swift), not in
+    toggle in `GeneralSettingsView`
+    (shell/Sources/CompanionKit/SettingsSections.swift; the General
+    tab since dogfood phase 4), not in
     `BackdropSettingsView`'s Surface form, whose hard-coded
     `.frame(height: 120)`
     (shell/Sources/OnetimePad/BackdropSettingsWindow.swift) clips new

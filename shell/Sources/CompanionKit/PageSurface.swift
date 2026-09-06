@@ -3,8 +3,8 @@ import Carbon.HIToolbox
 import SwiftUI
 
 /// The parts of a surface that are the same wherever pages are shown:
-/// what fills the content area, the status lines under it, the countdown
-/// label, and the keyboard map. A form factor supplies its own chrome
+/// what fills the content area, the status lines under it, and the
+/// keyboard map. A form factor supplies its own chrome
 /// around these (the panel a window with a title bar, the backdrop a
 /// card on the desktop), and neither one re-describes what a page is.
 
@@ -109,9 +109,9 @@ public struct PageContentView: View {
 // MARK: - The status lines
 
 /// Everything between the page and the tabs: the pasteboard offer, the
-/// notice line, the open conceal, and the page's draining gauge. Each
-/// appears only when it has something to say, so a quiet surface shows
-/// none of them and the layout does not reserve their room.
+/// notice line and the open conceal. Each appears only when it has
+/// something to say, so a quiet surface shows none of them and the
+/// layout does not reserve their room.
 public struct PageStatusStack: View {
     @ObservedObject var model: PageModel
     /// Observed directly: the controller is its own `ObservableObject`,
@@ -244,62 +244,16 @@ public struct PageStatusStack: View {
             // the network boundary is the one confirming click.
             ConcealView(model: model, draft: draft)
         }
-        if let sheet = model.selectedTab, sheet.hasPage, !model.showingLedger,
-            model.selectedFile == nil
-        {
-            // The page's bottom edge drains continuously. A file
-            // showing takes the gauge away with it: the clock belongs
-            // to the page in the slot behind, and drawing it under a
-            // file would read as that file's own countdown (ADR-0028).
-            GaugeBar(
-                fraction: sheet.fractionRemaining,
-                paused: sheet.paused,
-                toppedUp: sheet.holdToppedUp,
-                lastHour: sheet.lastHour
-            )
-            .frame(height: 4)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 2)
-        }
-    }
-}
-
-// MARK: - The countdown
-
-/// The countdown label: remaining time on the current rung; click
-/// steps one rung shorter and resets the clock (docs/spec/04). The
-/// ladder tapers rather than falling off its top, so shortening a
-/// page to the precarious end is a deliberate five clicks.
-public struct CountdownButton: View {
-    let sheet: TabSummary
-    let cycle: () -> Void
-
-    public init(sheet: TabSummary, cycle: @escaping () -> Void) {
-        self.sheet = sheet
-        self.cycle = cycle
-    }
-
-    public var body: some View {
-        Button(action: cycle) {
-            HStack(spacing: 5) {
-                if sheet.paused {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 8))
-                        .accessibilityHidden(true)
-                }
-                Text(sheet.remainingLabel)
-                    .font(.system(.caption, design: .monospaced))
-                Text(sheet.rungLabel)
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-            }
-            .foregroundStyle(sheet.lastHour ? Color.ember : .secondary)
-        }
-        .buttonStyle(.plain)
-        .help("Click to shorten the countdown one rung and reset the clock")
-        .accessibilityLabel(Text("Countdown"))
-        .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityHint(Text("Activate to shorten the countdown one rung and reset the clock"))
+        // The stack used to end in a four point `GaugeBar` spanning the
+        // page's bottom edge, the page draining continuously as the
+        // design spec asked. It came out in dogfood phase 4 because a
+        // thin horizontal bar along the bottom edge of a text surface
+        // is where a horizontal scroll bar lives, and a full width one
+        // is a convincing impostor (docs/dogfood/ABERRATIONS.md,
+        // 2026-09-05). The per tab gauge on the strip stays: a short
+        // bar framed by its tab is not mistaken for one. The page's
+        // remaining time is otherwise written in words, in its own day
+        // gutter while the days are the navigation.
     }
 }
 

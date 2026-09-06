@@ -39,8 +39,8 @@ struct BackdropGeometry: Codable, Equatable {
 
     // MARK: Bounds
 
-    /// Narrower than this and the countdown header starts to wrap; a
-    /// glance surface must stay readable at a glance.
+    /// Narrower than this and the header's indicators start to wrap;
+    /// a glance surface must stay readable at a glance.
     static let minWidth: CGFloat = 360
 
     /// Shorter than this and the header, the page, and the tab strip

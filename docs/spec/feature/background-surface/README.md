@@ -97,14 +97,40 @@ exchange. So activation is a summon route: ⌘Tab or a Dock-icon click
 raises the surface, pulled to the user's Space and keyed;
 resting from a ⌘Tab summon hands the *activation* back
 (`NSApp.deactivate()`), not just key status, so the keyboard returns
-to the app the user came from. The launch's own activation is exempt —
-the backdrop starts resting, present but not summoned.
+to the app the user came from. The launch's own activation is the
+person's launch arriving, and raises as a summon rather than as an
+activation (the launch amendment below).
 
 This knowingly amends "present, not centre stage": docs/spec/03 §2
 settles "Dock icon?" with *No* — for the panel, whose whole posture is
 invisibility between uses. The backdrop's posture is presence, and
 presence that cannot be switched to is friction. Whether the fee is
 too high is open question №7.
+
+## The launch amendment
+
+The backdrop's stance at launch follows who launched it. A launch the
+person performs, from the Finder, the Dock, Spotlight or `open`, comes
+up **raised and keyed**, on the Space the user is looking at and
+anchored on today, the same posture ⌃⌥Space produces. A launch the
+system performs, as a login item or any other background launch, comes
+up **resting**, present behind every other window and not summoned,
+exactly as the ⌘Tab amendment above had every launch. Dogfood phase 4
+found what an always resting launch looks like from the chair: a
+person opens the app, the surface takes its place behind every other
+window, and they see nothing at all. An ambient surface earns its
+ambience after it has been seen once; a login item, by contrast, was
+opened by nobody and owes nobody a card in front of their work.
+
+The two launches are told apart by the one fact AppKit already
+supplies, not by guessing at the route from Apple Events or parent
+processes: a person's launch activates the app moments after
+`applicationDidFinishLaunching`, and a background launch never
+activates. So the launch itself only places the surface, resting. The
+first activation inside the two second launch window is read as the
+person's launch and raises as a summon; an activation after the window
+is a ⌘Tab or a Dock click and raises as an activation; no activation
+leaves the surface resting, which is the login item.
 
 ## The persistence amendment
 
@@ -123,9 +149,10 @@ not a smaller product than one that remembers; it is a worse one.
 What the amendment grants, and what it holds back:
 
 - **Its own storage, both halves.** A separate state file
-  (`~/Library/Application Support/CompanionBackdrop/state.sealed`) and
-  a separate Keychain service (`com.onetimesecret.companion.backdrop`,
-  reached through `companion_new_scoped`). Two form factors remain two
+  (`~/Library/Application Support/com.onetimesecret.pad.noindex/state.sealed`)
+  and a separate Keychain service (`com.onetimesecret.pad`, reached
+  through `companion_new_scoped`; both were
+  `com.onetimesecret.companion.backdrop` before 0.19.0). Two form factors remain two
   stores, per ADR-0010. Sharing the panel's key would put two signed
   binaries on one Keychain item, where each one's first read is a
   confirmation prompt for the other's key.
@@ -308,7 +335,7 @@ Added by the parity amendment:
    capsules with no affordance to reveal anything.
 9. Conceal: a link created from the backdrop reaches the server and
    lands on the clipboard, and a token saved in the backdrop's Settings
-   goes under `com.onetimesecret.companion.backdrop` in the Keychain.
+   goes under `com.onetimesecret.pad` in the Keychain.
    The panel's own token is untouched and neither app prompts for the
    other's item.
 10. Tabs: ⌘1 through ⌘9, ⌘N (including the refusal at nine), ⌥⌘←/→,

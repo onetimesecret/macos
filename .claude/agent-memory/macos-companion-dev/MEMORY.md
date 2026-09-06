@@ -6,7 +6,7 @@
 - [ADR-0018 gated seams](project_adr0018_gated_seams.md): SwiftPM never dead-strips, so gated-symbol refs live only in test targets; nm the linked binary, not the thin-LTO .a
 - [Test seams are mandatory](feedback_test_seams_are_mandatory.md): a default-seam PageModel in a test erased the installed app's real ledger.sealed
 - [ADR-0017 tab/page split](project_adr0017_tab_page_split.md): core in PR #59, seam and shell 2026-08-22; the two emptiness predicates must never be wired backwards
-- [Keymap #76/#77](project_keymap_76_77.md): TabStrip/Ledger contexts are declared but unconsulted, ⌥⌘N retired not aliased, override sits outside the .noindex dir
+- [Keymap #76/#77](project_keymap_76_77.md): TabStrip/Ledger contexts are declared but unconsulted, ⌥⌘N retired not aliased but ⌘T is a default beside ⌘N, override sits outside the .noindex dir
 - [Issue #78 hidden UI](project_issue78_hidden_ui.md): four elements parked behind HiddenUI flags, not deleted; ledger::Show stays bindable by an override
 - [Window behaviour stack 41/22/23/73/74](project_window_behaviour_stack.md): merge-only propagation in dogfood-a; the mouse gate must converge open
 - [Two version numbers](project_two_version_numbers.md): app version lives in the shell plist (#89), crate version in crates/ffi; bump the plist for user visible work
@@ -24,3 +24,8 @@
 - [Issue #102 sync surface](project_issue102_sync_surface.md): the delta stream has no author so own ops echo back as `applied`, and the signin cancel now really ends the browser trip
 - [A cancel covers the whole ceremony](feedback_cancel_covers_whole_ceremony.md): read the abort flag at every wait and under the commit lock, and give every core token a Swift sentence
 - [Stacked version bumps go silent](project_stacked_version_bumps.md): two branches bumping one crate to the same number never conflict; bump again in a follow up commit
+- [Dogfood 4 time indicators](project_dogfood4_time_indicators.md): page edge gauge gone, per tab gauge restored by maintainer call (#156); header CountdownButton deleted in both modes; login item launch rests, a person's launch raises via the window activation; lanes share one scratchpad
+- [Settings toolbar tabs](project_settings_toolbar_tabs.md): NSTabViewController toolbar tabs landed 2026-09-05; the per tab heights and resize on switch were reasoned, not seen on hardware
+- [NSApp is nil in a bare xctest](project_nsapp_nil_in_bare_xctest.md): a filtered run has no NSApplication, unwrapping NSApp traps and hangs silently; read `NSApp?.` and fail closed
+- [Bundle id move 0.19.0](project_bundle_id_move_0_19_0.md): com.onetimesecret.pad and dev.onetimesecret.pad since 2026-09-05; three unlinked places name the dev id, and the .debug leftovers in ADR text are historical on purpose
+- [Parallel lane integration](project_parallel_lane_integration.md): cherry-pick lanes in order; MEMORY.md conflicts once per lane and both lines are kept; one lane's plist bump covers the phase

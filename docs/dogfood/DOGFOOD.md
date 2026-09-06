@@ -30,6 +30,44 @@ Re-run `scripts/install.sh` to update. `--no-launch` installs without
 opening the app afterward. For a debug build that runs beside the
 installed copy, use `scripts/dev.sh`.
 
+## One-time reset when you update to the 0.19.0 build
+
+The bundle identifier changed. The installed app is
+`com.onetimesecret.pad` and the dev build is `dev.onetimesecret.pad`;
+before this they were `com.onetimesecret.companion.backdrop` and that
+string with `.debug` on the end. macOS keys the state directory, the
+Keychain items, the keychain access group, the defaults domain and
+every TCC grant off the id, so the new build starts from nothing.
+Nothing migrates, deliberately. Send or copy out anything you still
+need **before** you install.
+
+Where things are now, and where the old ones were left:
+
+- State: `~/Library/Application Support/com.onetimesecret.pad.noindex`
+  (dev: `dev.onetimesecret.pad.noindex`). The old
+  `com.onetimesecret.companion.backdrop.noindex` and
+  `...backdrop.debug.noindex` directories are neither read nor
+  deleted; remove them by hand once nothing in them is wanted.
+- Keychain: the `state-key`, `ledger-key` and `api-token` items live
+  under the service `com.onetimesecret.pad` (dev: `dev.onetimesecret.pad`).
+  The first launch creates fresh key items, and Settings shows "paste
+  your API token" until you paste it again. The old items under the old
+  service names stay in Keychain Access and can be deleted there.
+- The user keymap override, if you wrote one, moves with the id: it is
+  read from `~/Library/Application Support/com.onetimesecret.pad/keymap.json`
+  now (dev: `dev.onetimesecret.pad/keymap.json`). Move the file
+  yourself; the app never creates or copies it.
+- Defaults, the launch at login registration and any screen recording
+  or accessibility grant are under the new id and start unset. Re-grant
+  what you use.
+- The unified log subsystem is the new id too. Predicates below that
+  say `com.onetimesecret.pad` find the installed copy;
+  `subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}`
+  finds both lanes.
+
+The paths and ids in the two older reset sections below were right for
+their builds and are left as written; read them with this one in mind.
+
 ## One-time reset when you update to the ADR-0016 build
 
 The sealed envelope takes another version byte, `OTSSEAL2` to
@@ -141,8 +179,8 @@ What changes:
 - **Re-enter the API token where the Keychain no longer answers.** A
   debug build asks under a new service name, so its token is gone. An
   installed release build whose signing identity did not change keeps
-  its token; if Settings shows "paste your API token" instead of
-  "•••• stored in the Keychain", that is the answer.
+  its token; if the Connection tab of Settings shows "paste your API
+  token" instead of "•••• stored in the Keychain", that is the answer.
 
 ## Which build am I on
 
@@ -154,17 +192,21 @@ marker for an uncommitted tree.
 
 ## Launch at login
 
-Settings has a toggle backed by `SMAppService.mainApp`. Only a bundle
-under `/Applications` can register, so a dev build never claims the
-login item by accident. A refused registration reverts the toggle to
-whatever the system actually granted.
+The General tab of Settings has a toggle backed by
+`SMAppService.mainApp`. Only a bundle under `/Applications` can
+register, so a dev build never claims the login item by accident. A
+refused registration reverts the toggle to whatever the system actually
+granted. A login item launch comes up resting, behind every other
+window, because the system's launch never activates the app; a launch
+you perform from the Finder, the Dock, Spotlight or `open` comes up
+raised and keyed.
 
 ## Deadline rounding
 
-Settings has "Round a page's deadline up to the hour, or to midnight",
-on unless you turn it off, stored as `snapsToBoundaries` in the app's
-defaults domain. To exercise it, note the clock, make a new page, set
-it to a rung, and read the countdown.
+The General tab of Settings has "Round a page's deadline up to the
+hour, or to midnight", on unless you turn it off, stored as
+`snapsToBoundaries` in the app's defaults domain. To exercise it, note
+the clock, make a new page, set it to a rung, and read the countdown.
 
 With the toggle on, a rung under a day lands on the next whole local
 hour and the 24h, 3d and 7d rungs land on the next local midnight, so
@@ -219,7 +261,7 @@ When a page does not come back, the whole story is in the unified log,
 however the app was launched:
 
 ```bash
-log show --predicate 'subsystem BEGINSWITH "com.onetimesecret"' --last 1h --style compact
+log show --predicate 'subsystem IN {"com.onetimesecret.pad", "dev.onetimesecret.pad"}' --last 1h --style compact
 ```
 
 Two categories answer two different questions. `persistence` is the

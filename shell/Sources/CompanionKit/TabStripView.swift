@@ -193,6 +193,18 @@ public struct TabStripView: View {
 /// says so out loud, because there is no clock to render and the tab
 /// is still the user's to select, rename, re-rung or close.
 ///
+/// The gauge under the title stays on purpose. Dogfood phase 4 took it
+/// out for an evening, together with the full width `GaugeBar` that
+/// `PageStatusStack` drew along the page's bottom edge, because a thin
+/// horizontal bar at the foot of a text surface reads as a horizontal
+/// scroll bar for long unwrapped lines. The maintainer's call was that
+/// the full width bar was the one wearing that costume, so it stays
+/// gone, while a short bar under a tab title, framed by the tab, does
+/// not read as a scroll bar and is the strip's one picture of how
+/// long each page has left (docs/dogfood/ABERRATIONS.md, 2026-09-05).
+/// Whatever else is ever added down here must not be a thin bar that
+/// runs the width of the page.
+///
 /// Internal rather than private so the two menu labels below, which are
 /// pure functions of the slot's state, can be tested without a menu.
 struct SheetTab: View {
@@ -212,7 +224,7 @@ struct SheetTab: View {
                     .font(.system(.caption, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                // The ✕ keeps its seat whether or not it is visible —
+                // The ✕ keeps its seat whether or not it is visible, since
                 // revealing it must never nudge the title (the browsers'
                 // convention: reserve, then fade in).
                 Button {
@@ -323,9 +335,10 @@ struct SheetTab: View {
         enrolled ? "Stop syncing this page" : "Sync this page to your devices"
     }
 
-    /// The tooltip: the tier in words, since the dash carries it only
-    /// as a texture. `holdRemainingMs` is what is left of the hold, not
-    /// of the page — the page's own time is the gauge and the header.
+    /// The tooltip: the tier in words, since the chip carries it only
+    /// as a number. `holdRemainingMs` is what is left of the hold, not
+    /// of the page; the page's own time is the gauge under the title
+    /// and the countdown in its day gutter.
     private var holdDescription: String {
         guard sheet.hasPage else {
             return "This tab holds no page. Select it to open one at \(sheet.rungLabel)."
@@ -517,7 +530,11 @@ enum TabRenamePrompt {
         // An accessory app's alert would otherwise open behind whatever
         // is frontmost.
         NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        // Bracketed like every modal of ours, so the surface comes
+        // forward again once the prompt has returned.
+        guard ModalSession.run({ alert.runModal() }) == .alertFirstButtonReturn else {
+            return nil
+        }
         return field.stringValue
     }
 }
@@ -535,7 +552,7 @@ private struct TabFramesKey: PreferenceKey {
 /// The hold, as a chip on the tab: ⏸ and the span the last press
 /// bought. The gesture does three different things now, and the tab is
 /// where all three happen, so the tier is worth the ~20 points it costs
-/// the title — the dashed gauge alone says *held* but never *which
+/// the title: the dashed gauge alone says *held* but never *which
 /// press comes next*.
 ///
 /// The ⏸ stays in front of the number, and not for decoration: "24h"
@@ -590,9 +607,11 @@ struct EmptyRule: View {
     }
 }
 
-/// A tab's gauge: the page's remaining life as geometry. Ember with a
-/// hatched texture under one hour — urgency is never colour-only; a
-/// held clock draws dashed — state as geometry (docs/spec/04).
+/// A gauge: the page's remaining life as geometry. Ember with a
+/// hatched texture under one hour, since urgency is never colour-only,
+/// and a held clock draws dashed: state as geometry (docs/spec/04). Drawn
+/// under each tab of the strip and on the time rail's rows; no longer
+/// along the page's own bottom edge, for the reason `SheetTab` gives.
 public struct GaugeBar: View {
     let fraction: Double
     let paused: Bool
@@ -603,9 +622,10 @@ public struct GaugeBar: View {
     /// longer dash: the same language the gauge already speaks, since
     /// the tier is a fact about duration and the dash is the only mark
     /// on the gauge that measures anything. A tab is 140 points wide
-    /// with a title, a ⏸ and a ✕ already in it, so the tier gets no
-    /// glyph of its own — the tooltip and the context menu carry the
-    /// number.
+    /// with a title, a ⏸ and a ✕ already in it, and a rail row is
+    /// narrower still, so the tier gets no glyph of its own on the
+    /// gauge; the tab's `HoldChip`, the tooltip and the context menu
+    /// carry the number.
     static let firstHoldDash: [CGFloat] = [3, 2]
     static let toppedUpDash: [CGFloat] = [7, 2]
 

@@ -8,8 +8,8 @@ import SwiftUI
 /// visual law as the panel.
 ///
 /// What the card *contains* is the shared surface (`PageSurface.swift`
-/// in CompanionKit): the same content area, status lines, countdown and
-/// tab strip the panel window shows. What is here is the card itself:
+/// in CompanionKit): the same content area, status lines and tab strip
+/// the panel window shows. What is here is the card itself:
 /// where it sits, how it is sized, and how the two stances look.
 struct BackdropRootView: View {
     @ObservedObject var model: BackdropModel
@@ -190,8 +190,8 @@ struct BackdropRootView: View {
             // let clicks fall into whatever it covers), and this shield
             // gives the whole card a single meaning for them: a click
             // raises, the same deliberate act as any other summon. It
-            // sits above every control, so a resting countdown button
-            // or pin cannot be worked without raising first. On the
+            // sits above every control, so a resting card's pin cannot
+            // be worked without raising first. On the
             // unpinned rest it is mounted but unreachable; the window
             // itself ignores the mouse.
             if !raised {
@@ -264,25 +264,22 @@ struct BackdropRootView: View {
             // acting on. The gate the core reports chooses it; nothing
             // here infers a state of its own.
             syncIndicator
-            // A countdown belongs to a page, so a slot holding none
-            // shows no label: there is nothing counting down, and the
-            // rung it keeps for its next page is not a deadline
-            // (ADR-0017).
-            // A file has no countdown to show and no rung to cycle, so
-            // the control goes away with the page rather than standing
-            // there inert (ADR-0028).
-            if let tab = pages.selectedTab, tab.hasPage, !pages.showingLedger,
-                pages.selectedFile == nil
-            {
-                CountdownButton(sheet: tab) { pages.cycleRung(tab.id) }
-            }
+            // No countdown here. The header used to print the selected
+            // page's remaining time as a clickable label, and dogfooding
+            // found it was a second clock for a page that already has
+            // one: the gauge under its tab while the strip is the
+            // navigation, the label in its own day gutter while the
+            // days are (docs/dogfood/ABERRATIONS.md, 2026-09-05). The
+            // rung still steps from the tab's context menu and from the
+            // gutter's, which is where the page is, rather than up
+            // here beside the product name.
             pinToggle
         }
         // The header doubles as the card's handle while raised. The
         // gesture rides the header itself, above the pane's tap
         // catcher, so a drag can never fall through and read as a
-        // click-outside rest; the countdown button, being a child,
-        // still wins a plain click. While resting the mask yields the
+        // click-outside rest; the pin toggle, being a child, still
+        // wins a plain click. While resting the mask yields the
         // gesture to subviews, which leaves the handle inert (and any
         // resting click stops at the raise shield anyway).
         .contentShape(Rectangle())

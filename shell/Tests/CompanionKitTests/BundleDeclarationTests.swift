@@ -52,6 +52,26 @@ final class BundleDeclarationTests: XCTestCase {
             keys["CFBundleIdentifier"] as? String, FormFactor.backdropBundleIdentifier)
     }
 
+    /// The dev lane's identity is written by the packaging script and
+    /// recognised by the shell, two files with no compile time tie
+    /// between them. The script writes the id outright rather than
+    /// deriving it from the release one, so a drift here would not be
+    /// a suffix gone missing: it would be a dev build the tray calls a
+    /// release build, and one `resolvedBundleIdentifier` does not know,
+    /// so it takes the fallback and lands on the installed copy's
+    /// state directory and Keychain service. The script is read and
+    /// the one assignment looked for.
+    func testThePackagingScriptWritesTheDevIdentifierTheShellRecognises() throws {
+        let script = Self.shellDirectory
+            .deletingLastPathComponent()
+            .appendingPathComponent("scripts/package-app.sh")
+        let text = try String(contentsOf: script, encoding: .utf8)
+        XCTAssertTrue(
+            text.contains("DEV_BUNDLE_ID=\"\(FormFactor.devBundleIdentifier)\""),
+            "scripts/package-app.sh does not assign DEV_BUNDLE_ID the id FormFactor names as the dev lane"
+        )
+    }
+
     /// One bundle, one identity sheet. The panel target was archived
     /// (shell/Package.swift), and a second identity sheet reappearing
     /// beside this one would mean a second app shipping under whatever

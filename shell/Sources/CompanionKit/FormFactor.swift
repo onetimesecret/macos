@@ -17,14 +17,14 @@ import Foundation
 public struct FormFactor: Sendable {
     /// Scopes this form factor's Keychain items, always the running
     /// build's own identifier (ADR-0012: services derive from the bundle
-    /// id, and the debug lane's `.debug` suffix splits dev from release
+    /// id, and the dev lane's own identifier splits dev from release
     /// structurally). Keychain ACLs are granted to the code identity
     /// that created an item, so two signed binaries sharing one state
     /// key would each meet a confirmation prompt for the other's.
     ///
     /// Never nil now, so `companion_new_scoped` is the only constructor
-    /// path: the core's own unscoped default would put a `.debug` build
-    /// and an installed release build on one key again.
+    /// path: the core's own unscoped default would put a dev build and
+    /// an installed release build on one key again.
     public let credentialService: String
 
     /// The directory under Application Support holding the sealed state
@@ -160,17 +160,29 @@ public struct FormFactor: Sendable {
         try Self.prepareStateDirectory(holding: stateFileURL)
     }
 
-    /// The base identifier the panel shipped under before it was
-    /// archived (ADR-0014), kept because it is the prefix every
-    /// identifier this app answers to must carry, and because retiring
-    /// it would strand any panel install's Keychain items and state.
+    /// The identifier the panel shipped under before it was archived
+    /// (ADR-0014), kept because retiring it would strand any panel
+    /// install's Keychain items and state, and because the core's own
+    /// default credential scope is this same string.
     public static let panelBundleIdentifier = "com.onetimesecret.companion"
 
-    /// The base identifier the app ships under. The product is named
-    /// OnetimePad now, but the id keeps the legacy backdrop string:
-    /// macOS keys the state directory, Keychain items, the keychain
-    /// access group, and TCC grants off the id (ADR-0014).
-    public static let backdropBundleIdentifier = "com.onetimesecret.companion.backdrop"
+    /// The identifier the app ships under. It moved once, off the
+    /// legacy `com.onetimesecret.companion.backdrop`, and the move cost
+    /// every install its state directory, its Keychain items, its
+    /// keychain access group and its TCC grants, because macOS keys all
+    /// four off the id (ADR-0014). Names are paint and move freely;
+    /// this is infrastructure, and it does not move again casually.
+    public static let backdropBundleIdentifier = "com.onetimesecret.pad"
+
+    /// The identifier the dev lane runs under (`package-app.sh
+    /// --debug`). A different prefix rather than a suffix on the
+    /// shipping id, so nothing keyed off the id can mistake the two:
+    /// the dev copy and the installed copy are two apps to
+    /// LaunchServices, two defaults domains, two Keychain services and
+    /// two state directories (ADR-0012). The packaging script writes
+    /// this exact string, and `BundleDeclarationTests` holds the two
+    /// together.
+    public static let devBundleIdentifier = "dev.onetimesecret.pad"
 
     /// The identifier this build actually runs under, or `fallback` when
     /// the running process is not one of ours.
@@ -181,19 +193,11 @@ public struct FormFactor: Sendable {
     /// `Bundle.main.bundleIdentifier` would point the panel's state
     /// directory and Keychain items at another process's name.
     ///
-    /// Accepted: `fallback` itself, or `fallback` plus one dot-free
-    /// configuration suffix, which is exactly what the build lane
-    /// produces (`package-app.sh --debug` appends `.debug`). Counting
-    /// dots is all the second clause does, so it cannot tell a
-    /// configuration suffix from a sibling form factor's own id: asked
-    /// with the panel's fallback inside the backdrop process, it
-    /// answers with the backdrop's identifier, because `.backdrop` is
-    /// one dot-free suffix exactly as `.debug` is. Inert as things
-    /// stand, the panel having been archived (ADR-0014) and nothing
-    /// shipping asking for `FormFactor.panel`, and pinned as it stands
-    /// by `FormFactorTests`, but a second form factor returning would
-    /// need a rule that names its siblings rather than one that counts
-    /// dots.
+    /// Accepted: `fallback` itself, and for the backdrop the named dev
+    /// identifier, which is what `package-app.sh --debug` writes. The
+    /// rule names its identifiers rather than counting dots, so a
+    /// sibling form factor's id can never read as a configuration of
+    /// this one; a new lane is a new name here, and nowhere else.
     public static func resolvedBundleIdentifier(fallback: String) -> String {
         resolvedBundleIdentifier(running: Bundle.main.bundleIdentifier, fallback: fallback)
     }
@@ -203,25 +207,23 @@ public struct FormFactor: Sendable {
     /// suite that drives it and no wider: under xctest `Bundle.main` is
     /// the test runner, which takes the early return above, so every
     /// guard that follows it is unreachable through the shipping entry
-    /// point. Those guards are what keeps a `.debug` rebuild off the
+    /// point. Those guards are what keeps a dev rebuild off the
     /// installed release copy's `state.sealed` and Keychain items, so
     /// they are worth reaching (`FormFactorTests`).
     static func resolvedBundleIdentifier(running: String?, fallback: String) -> String {
-        guard let running, running.hasPrefix(panelBundleIdentifier) else { return fallback }
-
+        guard let running else { return fallback }
         if running == fallback { return running }
-
-        guard running.hasPrefix(fallback + ".") else { return fallback }
-        let suffix = running.dropFirst(fallback.count + 1)
-        guard !suffix.isEmpty, !suffix.contains(".") else { return fallback }
-        return running
+        if fallback == backdropBundleIdentifier, running == devBundleIdentifier {
+            return running
+        }
+        return fallback
     }
 
     /// The summoned panel (docs/spec/04): accessory posture.
     ///
     /// Computed rather than stored, because the identifier it derives
-    /// everything from is a property of the running build: a `.debug`
-    /// copy and an installed release copy are two apps to LaunchServices
+    /// everything from is a property of the running build: a dev copy
+    /// and an installed release copy are two apps to LaunchServices
     /// and must be two stores here, or two processes on one debounce
     /// clobber one another's `state.sealed`.
     public static var panel: FormFactor {
@@ -388,6 +390,17 @@ extension FormFactor {
 /// The tray menu's version line, shared by both form factors: "which
 /// build am I on" answered at a glance.
 public enum BuildVersion {
+    /// Whether the running bundle is the dev lane's, which is an exact
+    /// match against the one identifier the packaging gives it
+    /// (`package-app.sh --debug` writes `FormFactor.devBundleIdentifier`)
+    /// and never a prefix or suffix heuristic. The lane is a fact about
+    /// the build exactly as the two version numbers are, and the one a
+    /// person most often wants when two copies of the app are running
+    /// at once.
+    public static func isDevLane(bundleIdentifier: String?) -> Bool {
+        bundleIdentifier == FormFactor.devBundleIdentifier
+    }
+
     /// A bare `swift run` has no bundle version, so the core speaks for
     /// itself; a bundled build names both numbers, always.
     ///
@@ -402,9 +415,12 @@ public enum BuildVersion {
     /// warning. Naming both is what stays honest: "build" answers which
     /// build am I on, "core" answers which seam it linked, and neither
     /// answer can be inferred from the other any more.
-    public static func trayTitle(core: String, bundleVersion: String?) -> String {
-        guard let bundleVersion else { return "core \(core)" }
-        return "build \(bundleVersion), core \(core)"
+    public static func trayTitle(
+        core: String, bundleVersion: String?, devLane: Bool = false
+    ) -> String {
+        let lane = devLane ? ", dev" : ""
+        guard let bundleVersion else { return "core \(core)\(lane)" }
+        return "build \(bundleVersion), core \(core)\(lane)"
     }
 }
 

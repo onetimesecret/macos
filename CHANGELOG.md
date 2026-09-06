@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The page's font is a setting: a family by name, and a size.** Two
+  rows on the General tab, the way an editor names its buffer font: a
+  family as the system spells it (Menlo, JetBrains Mono) and a point
+  size from 8 to 40. An empty family is the system monospaced face,
+  which is what every page wore before. A family that is not
+  installed is kept as typed, the page uses the system face until it
+  is, and the tab says so. The heading ramp, the hanging indent a
+  list wraps under and the chip's label all follow the base size, and
+  the mounted page and the quiet days of the roll restyle in place.
+  Nothing is marked dirty: a font is how the page looks, not what it
+  says.
+
 - **The core can open, edit and save a file on disk** (ADR-0028;
   `companion-ffi` 0.24.0). A file is a content class that is a peer to
   a page, and both are first class. A file has no countdown, no gauge,
@@ -50,6 +62,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window costs the strip arrangement rather than a person's typing.
   Dropping the content file discards the drafts with it; clearing the
   ledger leaves them alone.
+
+- **⌘T opens a new tab, beside ⌘N** (dogfood phase 4). A tab is what
+  the pad opens, and ⌘T is the key every tabbed app puts a new one on,
+  so hands arriving from a browser or a terminal already know it. One
+  line in the bundled keymap, `"cmd-t": "page::New"`, and no new
+  Swift: two chords on one command were always two lines in the map,
+  and both fire. The + button's tooltip goes on saying ⌘N, the first
+  of the two in canonical order; unbind `cmd-n` in your own keymap and
+  it names ⌘T instead. This is not the ⌥⌘N alias the issue #77 entry
+  below refused. That was a second chord for hands trained by this
+  app's own past, and this one is for hands trained by every other
+  app.
+
+### Changed
+
+- **The bundle identifier is `com.onetimesecret.pad`**, and a dev
+  build runs as `dev.onetimesecret.pad`; the app is 0.19.0. The
+  release id was `com.onetimesecret.companion.backdrop`, a working
+  title's lineage carried for the sake of existing installs, and the
+  dev lane was that string with `.debug` appended. macOS keys the
+  state directory, the Keychain items, the keychain access group and
+  every TCC grant off the id, so nothing carries over: an existing
+  install's pages, drafts, ledger and Keychain items stay under the
+  old names, unread, and the new build starts with no pages, asks for
+  its Keychain access afresh, wants the API token pasted again, and
+  needs any screen recording or accessibility grant made again. There
+  is no migration, deliberately. The panel's archived id
+  (`com.onetimesecret.companion`) and the core's default credential
+  scope, which is that same string, are unchanged. The dev lane is
+  now recognised by its name rather than by a `.debug` suffix, in
+  `FormFactor` and in the tray's version line alike, and the old
+  state directories can be removed by hand once nothing in them is
+  wanted.
+
+- **Settings is a standard macOS settings window with toolbar tabs**
+  (dogfood phase 4). Three tabs across the top, General, Connection
+  and Sync, group like with like, and General comes first: the
+  surface reset, line wrapping, deadline rounding, the day mode
+  toggle, start at login and the screenshot allowance, with the
+  ledger clear appearing there while a refused ledger needs it.
+  Connection keeps the server, share domain, organization, token and
+  the Test and Save buttons; Sync keeps its section. Every setting
+  from the single form survives. The window title follows the
+  selected tab and the window sizes itself to the tab, as the
+  system's own settings windows do.
+
+- **The pad is visible when first opened, and stays up while a panel
+  of its own is showing** (dogfood phase 4). Launch used to rest the
+  surface at desktop level behind everything, so the first thing a
+  new install did was disappear; a launch you perform, from the
+  Finder, the Dock, Spotlight or `open`, now comes up raised, keyed
+  and in front, on the active Space. A launch the system performs, as
+  a login item or in the background, still rests behind everything,
+  because it never activates the app and the activation is what the
+  raise waits for. The open and save panels, the file review
+  alerts, the tab rename prompt and the quit alert used to look to
+  the outside click monitor like a click somewhere else, and the card
+  rested underneath them; a press while one of them is running no
+  longer rests it, and when the panel returns the pad is brought back
+  to the front.
+
+### Removed
+
+- **The header countdown** (dogfood phase 4). The card header printed
+  the selected page's remaining time and rung as a clickable label. In
+  the day mode the page prints the same countdown top right in its
+  gutter, and in the strip mode the gauge under its tab already draws
+  it, so the header's copy was a second clock for a page that had one.
+  It is gone in both modes. The rung still steps from the tab's
+  context menu and from the gutter's.
+
+- **The remaining time gauge along the page's bottom edge** (dogfood
+  phase 4). The four point bar across the full width of the page drew
+  the page's remaining life as geometry and read as a horizontal
+  scroll bar for long unwrapped lines: a thin full width bar at the
+  foot of a text surface is where every editor puts one, and people
+  reached for it to scroll. Nothing is drawn under the page now. The
+  three point gauge under each tab stays, as does the time rail's per
+  day gauge down the side. Whatever replaces the page edge bar, if
+  anything does, must not be a thin bar running the width of the
+  bottom edge (docs/dogfood/ABERRATIONS.md, 2026-09-05; issue #156).
 
 ## [0.18.0] - 2026-09-04
 

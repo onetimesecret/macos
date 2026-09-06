@@ -164,6 +164,7 @@ public struct InkEditorView: NSViewRepresentable {
         textView.coordinator = coordinator
         coordinator.textView = textView
         coordinator.currentSheet = sheetID
+        coordinator.appliedTypeface = InkStyle.typeface
         coordinator.restyle()
         model.activeEditor = textView
         // The summon-time offer's button takes the same road as ⇧⌘V,
@@ -308,6 +309,10 @@ public struct InkEditorView: NSViewRepresentable {
         // has not moved, so the common update rebuilds no geometry.
         coordinator.observeClip(of: scroll)
         coordinator.applyWrap(model.wrapsLines)
+        // And for the typeface, which Settings can change while the
+        // page stays put; the same gate, so the common pass restyles
+        // nothing.
+        coordinator.applyTypeface(model.typeface)
         // Dead pages take their saved view state with them — the same
         // pruning `refresh()` applies to the storage cache, and keyed
         // the same way, by page identity: a tab outlives its pages
@@ -596,6 +601,26 @@ public struct InkEditorView: NSViewRepresentable {
             guard let textView, let scroll = scrollView, appliedWrap != wraps else { return }
             appliedWrap = wraps
             InkEditorView.setWrap(wraps, textView: textView, scroll: scroll)
+        }
+
+        /// The typeface the mounted page was last styled in, so the
+        /// pass that changed nothing restyles nothing. Set at the
+        /// building, where the first styling happens.
+        var appliedTypeface: InkStyle.Typeface?
+
+        /// Restyle the mounted page in the typeface Settings now names.
+        /// The model has already written it to `InkStyle`, so the
+        /// restyle pass lays every line back down in the new base font
+        /// and the heading ramp derived from it; what that pass does not
+        /// touch is what the caret types next, so the typing attributes
+        /// are moved here. Pages the editor is not standing on keep
+        /// their old fonts until the editor moves to them, and
+        /// `moveEditor` restyles on arrival.
+        func applyTypeface(_ typeface: InkStyle.Typeface) {
+            guard let textView, appliedTypeface != typeface else { return }
+            appliedTypeface = typeface
+            textView.typingAttributes[.font] = InkStyle.baseFont
+            restyle()
         }
 
         /// Watch the clip so the unwrapped page's width floor stays level
@@ -2420,22 +2445,29 @@ final class ChipCell: NSTextAttachmentCell {
         fatalError("chips are never unarchived")
     }
 
-    private nonisolated var label: NSAttributedString {
+    /// Measured and drawn by the layout manager, which is main-thread
+    /// work by AppKit's own rule; the font is read live rather than
+    /// captured at init so a chip follows the page's typeface without
+    /// the storage being rebuilt around it.
+    @MainActor
+    private var label: NSAttributedString {
         NSAttributedString(
             string: "\(info.excerpt) · \(info.sizeLabel)",
             attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium),
+                .font: InkStyle.chipFont,
                 .foregroundColor: NSColor.secondaryLabelColor,
             ]
         )
     }
 
     override func cellSize() -> NSSize {
-        let text = label.size()
-        return NSSize(
-            width: text.width.rounded(.up) + Self.padding.width * 2,
-            height: text.height.rounded(.up) + Self.padding.height * 2
-        )
+        MainActor.assumeIsolated {
+            let text = label.size()
+            return NSSize(
+                width: text.width.rounded(.up) + Self.padding.width * 2,
+                height: text.height.rounded(.up) + Self.padding.height * 2
+            )
+        }
     }
 
     override func cellBaselineOffset() -> NSPoint {
@@ -2453,12 +2485,14 @@ final class ChipCell: NSTextAttachmentCell {
         NSColor.tertiaryLabelColor.withAlphaComponent(0.35).setStroke()
         capsule.lineWidth = 1
         capsule.stroke()
-        let text = label
-        let size = text.size()
-        text.draw(at: NSPoint(
-            x: cellFrame.minX + Self.padding.width,
-            y: cellFrame.midY - size.height / 2
-        ))
+        MainActor.assumeIsolated {
+            let text = label
+            let size = text.size()
+            text.draw(at: NSPoint(
+                x: cellFrame.minX + Self.padding.width,
+                y: cellFrame.midY - size.height / 2
+            ))
+        }
     }
 }
 
@@ -2466,17 +2500,111 @@ final class ChipCell: NSTextAttachmentCell {
 
 /// The page's type ramp: monospaced ink; headings by weight and size,
 /// their markup dimmed in place (docs/spec/04).
+///
+/// The face and the size are the user's (Settings, General), the way
+/// an editor's buffer font is: a family named the way the system names
+/// it, and a point size. Everything on the page is derived from that
+/// one `Typeface`: the base font, the heading ramp, the cell width the
+/// hanging indents are counted in, and the chip's own label.
 @MainActor
 public enum InkStyle {
-    public static let baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    /// A font as the user names it: a family, and a size in points. The
+    /// empty family is the system's monospaced font, which is what the
+    /// page wore before it could be told otherwise and what it falls
+    /// back to when the named family is not installed.
+    public struct Typeface: Equatable, Sendable {
+        public var family: String
+        public var size: CGFloat
 
-    public static func headingFont(level: Int) -> NSFont {
-        switch level {
-        case 1: NSFont.monospacedSystemFont(ofSize: 17, weight: .semibold)
-        case 2: NSFont.monospacedSystemFont(ofSize: 15, weight: .semibold)
-        case 3: NSFont.monospacedSystemFont(ofSize: 14, weight: .semibold)
-        default: NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
+        public init(family: String, size: CGFloat) {
+            self.family = family.trimmingCharacters(in: .whitespaces)
+            self.size = Self.clamp(size)
         }
+
+        /// What the page wore before it had a setting: the system's
+        /// monospaced face at 13 points.
+        public static let standard = Typeface(family: "", size: 13)
+
+        /// The sizes a page will take. Below the floor a page is
+        /// illegible and above the ceiling a card holds a word; either
+        /// end is a typo in the size field rather than a wish.
+        public static let sizeRange: ClosedRange<CGFloat> = 8...40
+
+        public static func clamp(_ size: CGFloat) -> CGFloat {
+            min(max(size.rounded(), sizeRange.lowerBound), sizeRange.upperBound)
+        }
+
+        /// Whether the family is the system's monospaced face, named by
+        /// leaving the field empty.
+        public var usesSystemFamily: Bool { family.isEmpty }
+
+        /// Whether the named family is one this Mac can draw. The system
+        /// family always is. Compared case-insensitively, since a user
+        /// types "menlo" and the system says "Menlo".
+        public var isInstalled: Bool {
+            usesSystemFamily || Self.installedName(for: family) != nil
+        }
+
+        /// The family as the system spells it, or nil when it has no
+        /// such family.
+        static func installedName(for family: String) -> String? {
+            NSFontManager.shared.availableFontFamilies.first {
+                $0.caseInsensitiveCompare(family) == .orderedSame
+            }
+        }
+
+        /// The font this typeface resolves to at one weight and one
+        /// size. A family that is not installed resolves to the system
+        /// monospaced face rather than to nothing, so a page whose font
+        /// was uninstalled is still a page.
+        func font(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+            if let name = Self.installedName(for: family), !usesSystemFamily {
+                let descriptor = NSFontDescriptor(fontAttributes: [
+                    .family: name,
+                    .traits: [NSFontDescriptor.TraitKey.weight: weight.rawValue],
+                ])
+                if let font = NSFont(descriptor: descriptor, size: size) {
+                    return font
+                }
+            }
+            return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        }
+    }
+
+    /// The typeface the page is set in. Written by the model, which
+    /// owns the setting; read by everything that styles ink. Setting it
+    /// re-derives the fonts below, and the coordinator restyles the
+    /// mounted page when it notices the change (`applyTypeface`).
+    public static var typeface = Typeface.standard {
+        didSet {
+            guard typeface != oldValue else { return }
+            baseFont = typeface.font(size: typeface.size, weight: .regular)
+            cellWidth = Self.measureCell(in: baseFont)
+        }
+    }
+
+    public private(set) static var baseFont = Typeface.standard.font(
+        size: Typeface.standard.size, weight: .regular
+    )
+
+    /// The heading ramp, as a proportion of the base size so the
+    /// steps keep their shape at any size: 17, 15 and 14 over 13 at the
+    /// standard size, whole points at every other.
+    public static func headingFont(level: Int) -> NSFont {
+        let base = typeface.size
+        let size: CGFloat = switch level {
+        case 1: (base * 17 / 13).rounded()
+        case 2: (base * 15 / 13).rounded()
+        case 3: (base * 14 / 13).rounded()
+        default: base
+        }
+        return typeface.font(size: size, weight: .semibold)
+    }
+
+    /// The chip's label, two points under the ink it sits in so a chip
+    /// reads as a token rather than a word, in the page's own face.
+    public static var chipFont: NSFont {
+        typeface.font(size: max(typeface.size - 2, Typeface.sizeRange.lowerBound), weight: .medium)
     }
 
     /// `### deploy friday` → (level 3, markerLength 4). Scope for rev C
@@ -2611,12 +2739,16 @@ public enum InkStyle {
         }
     }
 
-    /// One monospaced cell, measured once. The page is a single
-    /// fixed-pitch font, so the width of a marker is arithmetic rather
-    /// than a layout question.
-    public static let cellWidth: CGFloat = NSAttributedString(
-        string: "0", attributes: [.font: baseFont]
-    ).size().width
+    /// One cell of the base font, measured once per typeface. The page
+    /// is a single fixed-pitch font, so the width of a marker is
+    /// arithmetic rather than a layout question. A proportional family
+    /// named in Settings makes the hanging indent approximate, which is
+    /// the user's trade to make.
+    public private(set) static var cellWidth: CGFloat = measureCell(in: baseFont)
+
+    private static func measureCell(in font: NSFont) -> CGFloat {
+        NSAttributedString(string: "0", attributes: [.font: font]).size().width
+    }
 
     /// Where a list item's wrapped lines hang from: under the content,
     /// never under the marker, so a bullet that runs past the edge

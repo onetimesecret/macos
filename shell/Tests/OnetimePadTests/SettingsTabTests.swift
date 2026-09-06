@@ -1,0 +1,46 @@
+import AppKit
+import XCTest
+
+@testable import OnetimePad
+
+/// The Settings window's tabs, tested as the table they are. The window
+/// itself is AppKit and is checked by hand; what can be checked here is
+/// that the table would draw: General first, every label distinct, and
+/// every symbol name one this SDK actually has, since a misspelt SF
+/// Symbol renders as an empty toolbar item and reports nothing.
+final class SettingsTabTests: XCTestCase {
+    func testGeneralComesFirst() {
+        XCTAssertEqual(SettingsTab.allCases.first, .general)
+        XCTAssertEqual(SettingsTab.general.label, "General")
+    }
+
+    func testEachTabHasItsOwnLabelAndIndex() {
+        let labels = SettingsTab.allCases.map(\.label)
+        XCTAssertEqual(Set(labels).count, labels.count, "two tabs sharing a label would be one tab twice")
+        for (position, tab) in SettingsTab.allCases.enumerated() {
+            XCTAssertEqual(tab.index, position, "\(tab) is declared at \(position) but indexes itself elsewhere")
+        }
+    }
+
+    func testEverySymbolResolves() {
+        for tab in SettingsTab.allCases {
+            XCTAssertNotNil(
+                NSImage(systemSymbolName: tab.symbolName, accessibilityDescription: nil),
+                "\(tab.label) names the symbol \(tab.symbolName), which this SDK does not have")
+        }
+    }
+
+    /// The window keeps its last tab, except when the surface's banner
+    /// has sent the user to clear a ledger that will not open: that
+    /// button lives on General, so that is where the window lands.
+    func testARefusedLedgerLandsOnGeneral() {
+        XCTAssertEqual(SettingsTab.landing(current: .sync, ledgerRestoreRefused: true), .general)
+        XCTAssertEqual(SettingsTab.landing(current: .connection, ledgerRestoreRefused: true), .general)
+    }
+
+    func testAnOrdinaryShowKeepsTheLastTab() {
+        for tab in SettingsTab.allCases {
+            XCTAssertEqual(SettingsTab.landing(current: tab, ledgerRestoreRefused: false), tab)
+        }
+    }
+}

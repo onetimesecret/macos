@@ -27,6 +27,14 @@ first consumer.
     the changelog: one command with two default chords turns the file
     into a pile of accommodations. If the user asks for it back, the
     answer is their own override file, not a second default.
+    Dogfood phase 4 (2026-09-05) drew the line more finely: `cmd-t`
+    joined `cmd-n` on `page::New` as a bundled default. The test is
+    who the second chord is for. A chord for hands trained by this
+    app's own past is an accommodation and stays an override; a chord
+    the rest of the platform already taught (cmd-t on a new tab) is a
+    default. Two chords on one command are two lines in the validator's
+    table; the tooltip and menu name the first in canonical order, and
+    "moving" New in an override now means nulling both.
   - The user override is
     `Application Support/<bundle id>/keymap.json`, deliberately **beside
     and not inside** the `.noindex` state directory: no Spotlight and no

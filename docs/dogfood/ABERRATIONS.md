@@ -146,3 +146,70 @@ For OnetimePad:
 - `bindings` maps Zed-style keystrokes to stable internal command IDs.
 - Context matching can initially support only simple identifiers and `&&` / `!`, then expand only when a real need arises.
 - Commands without a current native implementation, such as `state::SaveNow`, should not appear until their action exists.
+
+---
+
+2026-09-05: the page edge gauge reads as a scroll bar, and the header clock was a duplicate
+
+Dogfood phase 4, items 3 and 6. Two of the remaining-time indicators
+came out.
+
+The page edge gauge. `PageStatusStack` drew a four point `GaugeBar`
+across the full width of the page, directly above the strip, in both
+modes (the page's remaining life as a draining bar, dashed while held,
+ember and hatched in the last hour). The design spec
+(docs/spec/design/04) asked for exactly that: the page's bottom edge
+drains continuously. What a developer or power user actually reads,
+though, is a thin horizontal bar running the width of a text surface
+at its bottom edge, which is where every editor puts its horizontal
+scroll bar for long unwrapped lines. They reach for it to scroll and
+it does nothing. The misread is positional and does not go away with
+familiarity: the bar is the right shape in the right place to be the
+wrong thing.
+
+- The bar is out. Nothing is drawn along the page's bottom edge now,
+  in either mode.
+- The per tab gauge stays. Each tab on the bottom strip draws a three
+  point `GaugeBar` under its title and an empty slot draws a dashed
+  `EmptyRule` in the same seat, as the spec's tab sketch shows. The
+  first pass took that bar out as well, on the theory that both bars
+  carried the misread; the maintainer's call is that the short bar,
+  framed by its tab and repeated once per tab, is not what anyone
+  takes for a scroll bar, and that the strip would otherwise lose its
+  one picture of how long each page has left. It is back exactly as it
+  was: the tab is two rows, the file tab keeps the gauge's seat with
+  its unsaved dot in it, and `SheetTab.rowHeight` is gone with the one
+  row layout.
+- `GaugeBar` and `EmptyRule` also still draw on the time rail, per
+  day, down the card's side.
+- Whatever replaces the page edge gauge, if anything does, must not be
+  a thin horizontal bar running the full width of the bottom edge. The
+  follow up is tracked as a GitHub issue (#156).
+- No accepted ADR asserts the page edge gauge. ADR-0017 splits tabs
+  from pages and says nothing about how the surface draws time;
+  ADR-0011 names a gauge denominator as an input to a future paradigm
+  decision; ADR-0028 says only that a file draws no gauge. So there is
+  no ADR amendment, only this note, the code comments on `SheetTab`
+  and in `PageStatusStack`, and the issue. The design spec's gauge
+  bullet carries a dated superseded note on the page edge alone.
+
+The header countdown. The card header showed a `CountdownButton` for
+the selected page (remaining time, rung label, click to shorten). In
+the day mode the page prints the same countdown in its own day gutter,
+top right, so the header's copy was two clocks for one page, and two
+clocks confused more than they informed. The header no longer shows
+it in either mode.
+
+- The first pass kept it in the strip mode, on the grounds that with
+  the tab gauge gone the header button was the only place that mode
+  wrote the page's remaining time at all (the gutter belongs to
+  `DayScrollView`, which is mounted only while `showsTimeUnits` is on,
+  off by default and exclusive with the strip). With the per tab gauge
+  restored that reason is gone, and the item is done as written: the
+  `showsHeaderCountdown` rule and its tests came out with the button,
+  and `CountdownButton` itself is gone from `PageSurface.swift`, since
+  nothing else drew it.
+- The strip mode's remaining time is the gauge under each tab; the day
+  mode's is the gutter label and the time rail.
+- The rung still cycles from the tab's context menu in both modes and
+  from the gutter's menu in the day mode.
