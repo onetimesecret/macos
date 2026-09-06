@@ -612,10 +612,13 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     private let menuTracking = MenuTrackingWatch()
 
     /// The surface's mechanics in the unified log — stance, level,
-    /// visibility, frame; never content. Watch with:
+    /// visibility, frame; never content. The subsystem is the resolved
+    /// bundle id rather than the release constant, so a dev copy running
+    /// beside the installed one writes under `dev.onetimesecret.pad`
+    /// and the two can be told apart. Watch with:
     /// `log stream --predicate 'subsystem == "com.onetimesecret.pad"'`
     private static let logger = Logger(
-        subsystem: FormFactor.backdropBundleIdentifier, category: "surface"
+        subsystem: FormFactor.backdrop.loggerSubsystem, category: "surface"
     )
 
     // MARK: NSWindowDelegate
