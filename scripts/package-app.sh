@@ -22,9 +22,9 @@
 # Both entry points take --allow-capture, which is the same launch
 # without the incantation: scripts/dev.sh --allow-capture and
 # scripts/install.sh --allow-capture.
-# Debug builds get a .debug bundle id so a dev instance and the
-# installed copy can coexist without contending for the menu bar,
-# defaults, keychain items, and state (ADR-0012).
+# Debug builds run under their own bundle id, dev.onetimesecret.pad,
+# so a dev instance and the installed copy coexist without contending
+# for the menu bar, defaults, keychain items, and state (ADR-0012).
 #
 # Signing: ad-hoc by default; set CODESIGN_IDENTITY to a real
 # certificate for an identity that survives rebuilds. (The Settings
@@ -54,6 +54,12 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 CONFIG=release
+# The dev lane's identity, a whole other name rather than a suffix on
+# the release id. The shell recognises the dev lane by this exact
+# string (FormFactor.devBundleIdentifier in CompanionKit), so the two
+# must agree, and BundleDeclarationTests reads this file to hold them
+# together.
+DEV_BUNDLE_ID="dev.onetimesecret.pad"
 if [[ $# -gt 1 ]]; then
   echo "too many arguments (the only flag is --debug)" >&2
   exit 1
@@ -204,9 +210,11 @@ fi
 
 if [[ "$CONFIG" == "debug" ]]; then
   # A distinct identity for the dev instance, so it and the installed
-  # copy read as separate apps to macOS and to the eye.
-  BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")"
-  plutil -replace CFBundleIdentifier -string "$BUNDLE_ID.debug" "$APP/Contents/Info.plist"
+  # copy read as separate apps to macOS and to the eye. Written
+  # outright rather than derived from the release id: the dev id
+  # shares no prefix with it, on purpose, so nothing keyed off the id
+  # can take one lane for a configuration of the other.
+  plutil -replace CFBundleIdentifier -string "$DEV_BUNDLE_ID" "$APP/Contents/Info.plist"
   BUNDLE_NAME="$(plutil -extract CFBundleName raw "$APP/Contents/Info.plist")"
   plutil -replace CFBundleName -string "$BUNDLE_NAME Dev" "$APP/Contents/Info.plist"
   # Both name keys, or the rename reaches the File menu and nothing
@@ -278,9 +286,10 @@ else
       cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
       echo "==> embedded provisioning profile: $PROVISIONING_PROFILE"
       # The group follows the bundle's own identifier, read back out of
-      # the assembled Info.plist so it already carries any .debug
-      # suffix. Hardcoding one id would drop the installed release copy
-      # and the .debug dev instance into a single group, and a shared
+      # the assembled Info.plist so it is already the dev lane's own id
+      # when this is a debug build. Hardcoding one id would drop the
+      # installed release copy and the dev instance into a single
+      # group, and a shared
       # group is a shared keychain: CompanionKit/FormFactor.swift scopes
       # credentialService to the running build's bundle id, and
       # ADR-0012 says the two lanes must not read one another's items.
