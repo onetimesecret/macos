@@ -8,8 +8,8 @@ import SwiftUI
 /// visual law as the panel.
 ///
 /// What the card *contains* is the shared surface (`PageSurface.swift`
-/// in CompanionKit): the same content area, status lines, countdown and
-/// tab strip the panel window shows. What is here is the card itself:
+/// in CompanionKit): the same content area, status lines and tab strip
+/// the panel window shows. What is here is the card itself:
 /// where it sits, how it is sized, and how the two stances look.
 struct BackdropRootView: View {
     @ObservedObject var model: BackdropModel
@@ -190,8 +190,8 @@ struct BackdropRootView: View {
             // let clicks fall into whatever it covers), and this shield
             // gives the whole card a single meaning for them: a click
             // raises, the same deliberate act as any other summon. It
-            // sits above every control, so a resting countdown button
-            // or pin cannot be worked without raising first. On the
+            // sits above every control, so a resting card's pin cannot
+            // be worked without raising first. On the
             // unpinned rest it is mounted but unreachable; the window
             // itself ignores the mouse.
             if !raised {
