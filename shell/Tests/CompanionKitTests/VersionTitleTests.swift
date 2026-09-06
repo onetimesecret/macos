@@ -59,14 +59,18 @@ final class VersionTitleTests: XCTestCase {
     }
 
     func testTheLaneIsReadOffTheBundleIdentifier() {
-        // The suffix package-app.sh --debug appends, and nothing else:
-        // the installed copy's identifier is the legacy one and must
-        // never be mistaken for a dev build.
-        XCTAssertTrue(
-            BuildVersion.isDevLane(
-                bundleIdentifier: "com.onetimesecret.companion.backdrop.debug"))
+        // The one identifier package-app.sh --debug writes, by name and
+        // nothing else: the installed copy must never be mistaken for a
+        // dev build, and neither may the retired legacy dev id or a
+        // .debug suffix on the shipping id, both of which the old
+        // suffix check would have waved through.
+        XCTAssertEqual(FormFactor.devBundleIdentifier, "dev.onetimesecret.pad")
+        XCTAssertTrue(BuildVersion.isDevLane(bundleIdentifier: FormFactor.devBundleIdentifier))
         XCTAssertFalse(
-            BuildVersion.isDevLane(bundleIdentifier: "com.onetimesecret.companion.backdrop"))
+            BuildVersion.isDevLane(bundleIdentifier: FormFactor.backdropBundleIdentifier))
+        XCTAssertFalse(
+            BuildVersion.isDevLane(bundleIdentifier: "com.onetimesecret.companion.backdrop.debug"))
+        XCTAssertFalse(BuildVersion.isDevLane(bundleIdentifier: "com.onetimesecret.pad.debug"))
         // A bare `swift run` has no bundle at all, which is not the dev
         // lane in this sense: it has no packaged identity to contradict.
         XCTAssertFalse(BuildVersion.isDevLane(bundleIdentifier: nil))
