@@ -95,11 +95,14 @@ jobs:
           ./scripts/package-app.sh --debug
           # ADR-0012: a debug build must land on its own bundle id, or
           # a dev instance shares defaults, keychain items, and state
-          # with the installed copy.
+          # with the installed copy. Checked by name, because the shell
+          # recognises the dev lane by this exact string
+          # (FormFactor.devBundleIdentifier) and any other id would
+          # resolve to the release fallback.
           id="$(plutil -extract CFBundleIdentifier raw dist/OnetimePad.app/Contents/Info.plist)"
           case "$id" in
-            *.debug) echo "bundle id: $id" ;;
-            *) echo "expected a .debug bundle id, got: $id" >&2; exit 1 ;;
+            dev.onetimesecret.pad) echo "bundle id: $id" ;;
+            *) echo "expected the dev bundle id dev.onetimesecret.pad, got: $id" >&2; exit 1 ;;
           esac
           # ADR-0016 case 2: the assembled plist must declare
           # NSSupportsSuddenTermination. Opting in is what makes
@@ -153,13 +156,14 @@ jobs:
       - name: Check the shipped bundle
         run: |
           # The mirror of the debug job's assertion: the release bundle
-          # keeps the plain identifier, so the two form factors cannot
-          # collide on defaults, keychain items, or the state directory
-          # they derive from it (ADR-0012, and ADR-0016 case 4).
+          # carries the shipping identifier and nothing else, so the two
+          # lanes cannot collide on defaults, keychain items, or the
+          # state directory they derive from it (ADR-0012, and ADR-0016
+          # case 4).
           id="$(plutil -extract CFBundleIdentifier raw dist/OnetimePad.app/Contents/Info.plist)"
           case "$id" in
-            *.debug) echo "release bundle carries a debug id: $id" >&2; exit 1 ;;
-            *) echo "bundle id: $id" ;;
+            com.onetimesecret.pad) echo "bundle id: $id" ;;
+            *) echo "expected the release bundle id com.onetimesecret.pad, got: $id" >&2; exit 1 ;;
           esac
           # ADR-0016 case 2, on the plist that actually ships. The
           # debug job carries the note on why the packaged bundle, and
