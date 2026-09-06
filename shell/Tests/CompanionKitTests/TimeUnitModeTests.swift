@@ -208,45 +208,22 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertEqual(model.selectedPageID, page, "today's page was replaced rather than reached")
     }
 
-    /// A second press while already on today's blank page is a jump
-    /// onto the page that is there, not a second blank page: the blank
-    /// page to type on already exists, and a held ⌘N must not stack
-    /// them (issue #158).
-    func testASecondOpenTodayOnABlankTodayPageMintsNothing() throws {
-        let (model, _) = try makeModel()
-        model.showsTimeUnits = true
-        model.openToday()
-        let page = try XCTUnwrap(model.selectedPageID)
-        let tab = try XCTUnwrap(model.selection)
-        XCTAssertEqual(try XCTUnwrap(model.selectedTab).pageHasContent, false)
-
-        model.openToday()
-        model.openToday()
-
-        XCTAssertEqual(model.tabs.count, 1, "⌘N on a blank today stacked blank pages")
-        XCTAssertEqual(model.selection, tab)
-        XCTAssertEqual(model.selectedPageID, page)
-        XCTAssertNil(model.notice, "nothing was refused")
-    }
-
     /// First press jumps, second press creates (issue #158). On today's
-    /// page with writing on it, ⌘N mints a second page, the projection
-    /// files it under today beside the first in strip order, and the
-    /// selection moves onto the new page so the next keystroke lands
-    /// there. The content bar is the ledger's own, `pageHasContent`,
-    /// which is what a typed character flips.
-    func testOpenTodayOnTodaysPeopledPageMintsASecondPageOnToday() throws {
+    /// page, ⌘N mints a second page, the projection files it under
+    /// today beside the first in strip order, and the selection moves
+    /// onto the new page so the next keystroke lands there. Blank or
+    /// written on makes no difference, exactly as on the strip.
+    func testOpenTodayOnTodaysPageMintsASecondPageOnToday() throws {
         let (model, _) = try makeModel()
         model.showsTimeUnits = true
         model.openToday()
         let first = try XCTUnwrap(model.selectedPageID)
         let firstTab = try XCTUnwrap(model.selection)
-        try type("morning", into: first, on: model)
-        XCTAssertEqual(try XCTUnwrap(model.selectedTab).pageHasContent, true)
+        XCTAssertEqual(try XCTUnwrap(model.selectedTab).pageHasContent, false)
 
         model.openToday()
 
-        XCTAssertEqual(model.tabs.count, 2, "⌘N on a peopled today did not mint")
+        XCTAssertEqual(model.tabs.count, 2, "⌘N on today's page did not mint")
         let second = try XCTUnwrap(model.selectedPageID)
         XCTAssertNotEqual(second, first, "the selection stayed on the first page")
         XCTAssertNotEqual(model.selection, firstTab)
@@ -256,26 +233,22 @@ final class TimeUnitModeTests: XCTestCase {
             "today does not list both pages in strip order")
         XCTAssertNil(model.notice, "nothing was refused")
 
-        // And the new page is blank, so a third press stays on it.
+        // Written on, the same: a third page beside the two.
+        try type("morning", into: second, on: model)
         model.openToday()
-        XCTAssertEqual(model.tabs.count, 2, "⌘N on the fresh blank page stacked another")
-        XCTAssertEqual(model.selectedPageID, second)
+        XCTAssertEqual(model.tabs.count, 3, "⌘N on a written page did not mint")
+        XCTAssertEqual(peopledDays(model.timeUnits).first?.pageIDs.count, 3)
     }
 
     /// The same reading under the chord itself, through the dispatch
     /// the keymap uses, and with the strip showing the chord still does
-    /// what it always did: a new slot every time, blank or not.
-    func testThePageNewCommandMintsASecondPageOnlyOnAPeopledToday() throws {
+    /// what it always did: a new slot every time.
+    func testThePageNewCommandMintsOnTodayAndOnTheStripAlike() throws {
         let (model, _) = try makeModel()
         model.showsTimeUnits = true
         model.perform(.pageNew)
-        let first = try XCTUnwrap(model.selectedPageID)
         model.perform(.pageNew)
-        XCTAssertEqual(model.tabs.count, 1, "the chord stacked a blank page on a blank today")
-
-        try type("noon", into: first, on: model)
-        model.perform(.pageNew)
-        XCTAssertEqual(model.tabs.count, 2, "the chord did not mint on a peopled today")
+        XCTAssertEqual(model.tabs.count, 2, "the chord did not mint on today's page")
         XCTAssertEqual(peopledDays(model.timeUnits).first?.pageIDs.count, 2)
 
         model.showsTimeUnits = false

@@ -2023,7 +2023,10 @@ public final class PageModel: ObservableObject {
         case .tab(let id):
             select(id)
         case .today:
-            openToday()
+            // A place, not an ask for another page: `.today` exists
+            // only while today holds no page, so this can only mint the
+            // first one (issue #158).
+            startToday()
         case .file(let id):
             selectFile(id)
         }
@@ -2932,18 +2935,18 @@ public final class PageModel: ObservableObject {
     /// When today holds none it is `newPage()`, the same path ⌘N takes
     /// with the strip showing, which opens a fresh slot at this form
     /// factor's rung and hands its editor the keys. And when the
-    /// selection already stands on one of today's pages, and that page
-    /// has something on it, it is `newPage()` again: first press jumps,
-    /// second press creates, and the projection files the new page
-    /// under today beside the first, in strip order. Every mint stamps
-    /// the clock's own reading of now, so the page it makes lands on
-    /// today by construction rather than by being filed there.
+    /// selection already stands on one of today's pages it is
+    /// `newPage()` again: first press jumps, second press creates, and
+    /// the projection files the new page under today beside the first,
+    /// in strip order. Every mint stamps the clock's own reading of
+    /// now, so the page it makes lands on today by construction rather
+    /// than by being filed there.
     ///
-    /// The content bar is what keeps a held ⌘N from stacking blank
-    /// pages: on today's page with nothing on it a further press is a
-    /// jump onto the page already there, which is where a blank page
-    /// to type on already is. The bar is the ledger's own
-    /// (`TabSummary.pageHasContent`), not a second one invented here.
+    /// Blank or not makes no difference, exactly as on the strip: ⌘N
+    /// there opens a slot whether or not the last one was written on,
+    /// and a person on today's page who asks for another gets another.
+    /// A bar on content would be a second mint policy dressed as a
+    /// courtesy, and it was tried and taken out (issue #158).
     ///
     /// What it will not do is reach for some arbitrary empty tab to put
     /// today's page in. That would be opinionated in exactly the place
@@ -2952,9 +2955,11 @@ public final class PageModel: ObservableObject {
     /// holding today's typing. Nothing here can be refused for room:
     /// the strip has no cap (issue #158).
     ///
-    /// Reached from gestures only, ⌘N, and the rail's Today row when it
-    /// lands. Nothing calls it from `refresh()`, from a mount or from
-    /// the toggle: what is displayed is not thereby minted (ADR-0017).
+    /// Reached from ⌘N and ⌘T only. The gestures that name today as a
+    /// place, the roll's empty region and the rail's Today row, take
+    /// `startToday()`, which never mints a second page. Nothing calls
+    /// either from `refresh()`, from a mount or from the toggle: what is
+    /// displayed is not thereby minted (ADR-0017).
     public func openToday() {
         // Bucket 0 is today and there is exactly one of it: the
         // projection folds a page stamped ahead of now into today rather
@@ -2970,12 +2975,9 @@ public final class PageModel: ObservableObject {
         if let selection, today.tabIDs.contains(selection) {
             // Already on today, and today's page is what is on screen:
             // a file or the ledger standing in front of it makes this a
-            // jump back, not a second page. A page with writing on it
-            // earns a second page beside it; a blank one is the blank
-            // page to type on, so the press lands there and mints
-            // nothing.
+            // jump back, not a second page.
             let onScreen = selectedFile == nil && !showingLedger
-            if onScreen, selectedTab?.pageHasContent == true {
+            if onScreen {
                 newPage()
             } else {
                 select(selection)
@@ -2983,6 +2985,26 @@ public final class PageModel: ObservableObject {
             return
         }
         select(first)
+    }
+
+    /// Today's place, clicked or chosen: go to today's page, and make
+    /// one only when today has none (issues #79, #158).
+    ///
+    /// The two arms `openToday()` had before it learned to mint a
+    /// second page, kept for the gestures that name today as a place
+    /// rather than ask for a page: the roll's empty Today region and a
+    /// `.today` target, which exists only while today holds no page.
+    /// Those grants can fire again after the page they made has
+    /// appeared, a double click on the region, a chord landing during
+    /// the relayout, and a place that made a page a moment ago must
+    /// find that page and select it rather than stack a blank one
+    /// beside it. ⌘N is the gesture that asks for another; this is not.
+    public func startToday() {
+        if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first {
+            select(tab)
+            return
+        }
+        newPage()
     }
 
     /// A summon: put the surface back on today (issue #79).
