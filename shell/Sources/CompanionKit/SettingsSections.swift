@@ -102,6 +102,13 @@ public struct GeneralSettingsView: View {
     @State private var launchAtLogin = false
     @State private var loginStatus: String?
 
+    /// The family field in draft, committed on ⏎ and when focus leaves.
+    /// Per-keystroke application would restyle the page through every
+    /// prefix of "JetBrains Mono", most of which name nothing, and flash
+    /// the fallback face while the user is still typing.
+    @State private var fontFamilyDraft = ""
+    @FocusState private var fontFamilyFocused: Bool
+
     public var body: some View {
         Form {
             if let resetSurface {
@@ -113,6 +120,33 @@ public struct GeneralSettingsView: View {
                     SettingsCaption(
                         "Returns the card to its original place and size. Takes effect immediately.")
                 }
+            }
+            Section {
+                TextField("Font", text: $fontFamilyDraft, prompt: Text("system monospaced"))
+                    .focused($fontFamilyFocused)
+                    .onSubmit(commitFontFamily)
+                    .onChange(of: fontFamilyFocused) { focused in
+                        if !focused { commitFontFamily() }
+                    }
+                HStack {
+                    TextField("Size", value: $model.fontSize, format: .number.precision(.fractionLength(0)))
+                        .frame(maxWidth: 80)
+                    Stepper(
+                        "Size",
+                        value: $model.fontSize,
+                        in: Double(InkStyle.Typeface.sizeRange.lowerBound)...Double(InkStyle.Typeface.sizeRange.upperBound),
+                        step: 1
+                    )
+                    .labelsHidden()
+                    Spacer()
+                }
+                if let fontStatus {
+                    Text(fontStatus)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Color.ember)
+                }
+            } header: {
+                SettingsCaption(typeCaption)
             }
             Section {
                 Toggle("Wrap long lines", isOn: $model.wrapsLines)
@@ -182,7 +216,35 @@ public struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { launchAtLogin = LaunchAtLogin.isEnabled }
+        .onAppear {
+            launchAtLogin = LaunchAtLogin.isEnabled
+            fontFamilyDraft = model.fontFamily
+        }
+    }
+
+    /// The face and size the page is set in, named the way an editor
+    /// names its buffer font: a family as the system spells it, and a
+    /// size in points. The caption says what an empty field means and
+    /// what an unknown name does, since both are silent otherwise.
+    private var typeCaption: String {
+        "The page's face and size. Name a family as the system does (Menlo, JetBrains Mono); "
+            + "leave it empty for the system monospaced font. A family that is not installed "
+            + "is kept as typed, and the page uses the system font until it is. Sizes run from "
+            + "\(Int(InkStyle.Typeface.sizeRange.lowerBound)) to \(Int(InkStyle.Typeface.sizeRange.upperBound)) points. "
+            + "Headings scale with the size."
+    }
+
+    /// The one thing the field cannot show on its own: that the family
+    /// it holds is not one this Mac can draw.
+    private var fontStatus: String? {
+        model.typeface.isInstalled ? nil : "\(model.fontFamily) is not installed; using the system monospaced font"
+    }
+
+    private func commitFontFamily() {
+        let family = fontFamilyDraft.trimmingCharacters(in: .whitespaces)
+        fontFamilyDraft = family
+        guard family != model.fontFamily else { return }
+        model.fontFamily = family
     }
 
     /// The prototype's caption (issue #79). It has three jobs, and the

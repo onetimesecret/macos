@@ -67,15 +67,15 @@ final class BackdropSettingsWindowController {
     /// rather than opening at whatever height the last form left. The
     /// figures come from the forms as written: a grouped row is about
     /// 44pt with its padding, a caption line about 15pt, and a section
-    /// adds roughly 16pt of air. General carries the long captions and
-    /// so the most height; Connection is two short sections and a
-    /// button row; Sync is sized for the switch, the sign-in line and
-    /// a small device roster. A form that grows past its figure, such
-    /// as General when the ledger clear or the capture switch appears,
-    /// scrolls rather than pushing the window around.
+    /// adds roughly 16pt of air. General carries the long captions, the
+    /// two type rows and so the most height; Connection is two short
+    /// sections and a button row; Sync is sized for the switch, the
+    /// sign-in line and a small device roster. A form that grows past
+    /// its figure, such as General when the ledger clear or the capture
+    /// switch appears, scrolls rather than pushing the window around.
     private static func height(of tab: SettingsTab) -> CGFloat {
         switch tab {
-        case .general: 560
+        case .general: 700
         case .connection: 360
         case .sync: 380
         }

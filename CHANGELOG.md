@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The page's font is a setting: a family by name, and a size.** Two
+  rows on the General tab, the way an editor names its buffer font: a
+  family as the system spells it (Menlo, JetBrains Mono) and a point
+  size from 8 to 40. An empty family is the system monospaced face,
+  which is what every page wore before. A family that is not
+  installed is kept as typed, the page uses the system face until it
+  is, and the tab says so. The heading ramp, the hanging indent a
+  list wraps under and the chip's label all follow the base size, and
+  the mounted page and the quiet days of the roll restyle in place.
+  Nothing is marked dirty: a font is how the page looks, not what it
+  says.
+
 - **The core can open, edit and save a file on disk** (ADR-0028;
   `companion-ffi` 0.24.0). A file is a content class that is a peer to
   a page, and both are first class. A file has no countdown, no gauge,
