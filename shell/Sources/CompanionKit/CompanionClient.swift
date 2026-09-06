@@ -589,9 +589,10 @@ public final class CompanionClient: @unchecked Sendable {
 
     // MARK: Tabs, the durable slots
 
-    /// A new tab at the end of the strip, holding a new page; 0 means
-    /// the store refused at the cap of 9 (refuse-don't-evict, say so).
-    /// The id is the TAB's: it is what the selection keeps afterwards.
+    /// A new tab at the end of the strip, holding a new page; 0 only
+    /// when the core could not answer, since the strip has no cap
+    /// (issue #158). The id is the TAB's: it is what the selection
+    /// keeps afterwards.
     @discardableResult
     public func newTab() -> UInt64 {
         companion_tab_new(handle)
@@ -625,8 +626,8 @@ public final class CompanionClient: @unchecked Sendable {
     /// Page addressed rather than tab addressed, which is the whole
     /// difference from `closeTab`: the burn offered after a conceal
     /// names the content that travelled, and spending the user's
-    /// arrangement on it would end a tab that only a close and the cap
-    /// may end (ADR-0017).
+    /// arrangement on it would end a tab that only a close may end
+    /// (ADR-0017).
     @discardableResult
     public func discardPage(id: UInt64) -> Bool {
         companion_page_discard(handle, id)

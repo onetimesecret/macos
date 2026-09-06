@@ -307,15 +307,14 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(client.tabs().first?.id, sheetID)
     }
 
-    func testTheCapRefusesTheTenthTab() {
+    func testATenthTabOpensLikeTheNinth() {
         let client = CompanionClient()
-        for _ in 1...9 {
-            XCTAssertNotEqual(client.newTab(), 0)
-        }
-        // Refuse-don't-evict: the wall is the keyboard map's, and under
-        // the split it is the tab's lifetime bound as well.
-        XCTAssertEqual(client.newTab(), 0)
-        XCTAssertEqual(client.tabs().count, 9)
+        // No keyboard wall at the seam (issue #158): the shortcuts count
+        // to nine, the strip does not, and every ask is a distinct slot.
+        let ids = (1...12).map { _ in client.newTab() }
+        XCTAssertFalse(ids.contains(0), "a slot was refused")
+        XCTAssertEqual(Set(ids).count, 12, "two asks answered with one slot")
+        XCTAssertEqual(client.tabs().map(\.id), ids, "the strip is not in ask order")
     }
 
     /// The connection half of the conceal contract — config only, no

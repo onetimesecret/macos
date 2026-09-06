@@ -122,16 +122,16 @@ public struct TimeRailView: View {
         return rows
     }
 
-    /// The honesty valve for the nine-slot wall, and the instrument for
-    /// the content predicate itself.
+    /// The count of what the mode is hiding, and the instrument for the
+    /// content predicate itself.
     ///
-    /// Nine slots can fill with old pages that have nothing on them.
-    /// The projection draws none of them, so today becomes unreachable
-    /// with no visible cause, and the refusal reads as a bug rather
-    /// than as a full pad. The count says so out loud, and its tooltip
-    /// names the toggle that brings those pages back. Nothing is
-    /// auto-discarded to make room: reaping blank pages is a lifetime
-    /// mechanism nobody asked for (ADR-0016).
+    /// Old pages with nothing on them draw no rows here, so without a
+    /// count a person would not know they exist, or that the strip
+    /// still holds them. The count says so out loud, and its tooltip
+    /// names the toggle that brings those pages back. They cost nothing
+    /// else, since the strip has no cap (issue #158), and nothing is
+    /// auto-discarded: reaping blank pages is a lifetime mechanism
+    /// nobody asked for (ADR-0016).
     ///
     /// A number that is routinely above zero in dogfood means the
     /// content bar is set wrong, which is ADR-0020's fifth eject
@@ -181,8 +181,9 @@ public struct TimeRailView: View {
     /// the keymap rather than spelled here, for `newPageHelp`'s reason:
     /// a user who moved the chord moves the tooltip with it, and a user
     /// who unbound it gets a tooltip that says only what the row does.
-    /// Nothing is bound past the ninth row, and a tenth day (which
-    /// takes ten live pages, one over the cap) simply has no chord.
+    /// Nothing is bound past the ninth row, and a tenth day simply has
+    /// no chord: the shortcuts count to nine, the strip does not
+    /// (issue #158).
     /// Where the day at `day` sits in `PageModel.visibleTargets`,
     /// which is the array `select(index:)` indexes.
     ///

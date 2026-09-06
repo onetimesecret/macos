@@ -172,8 +172,8 @@ final class TimeRailTests: XCTestCase {
     /// And says only what the row does when nothing is bound to it, a
     /// tooltip advertising a chord the keymap took away is how the
     /// ledger tab came to offer ⌘0 after ⌘0 was withdrawn (issue #78).
-    /// A tenth row has no chord either, and cannot: it would take ten
-    /// live pages, one over the cap.
+    /// A tenth row has no chord either: the shortcuts count to nine and
+    /// the strip does not (issue #158), so the row is reached by a click.
     func testTheTooltipDegradesToThePlainDescription() throws {
         let model = try makeModel()
         XCTAssertNil(TimeRailView.chord(forRowAt: 9, keymap: model.keymap))

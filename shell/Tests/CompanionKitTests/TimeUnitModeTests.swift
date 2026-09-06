@@ -310,12 +310,13 @@ final class TimeUnitModeTests: XCTestCase {
         model.applyOps(sheet: page, opsJSON: ops)
     }
 
-    /// The cap trap, and the honest answer to it. Nine slots holding old
-    /// pages with nothing on them draw no rows at all, so the strip a tab
-    /// would be closed from is not on screen; the refusal names the
-    /// toggle that brings it back rather than telling the user to wait
-    /// for an expiry that frees no slot. Nothing is auto-discarded.
-    func testAtTheCapOpenTodayRefusesAndNamesTheToggle() throws {
+    /// The trap the cap used to set, sprung (issue #158). Nine slots
+    /// holding old pages with nothing on them draw no rows at all, so
+    /// the strip a tab would have been closed from is not on screen;
+    /// today's page opens anyway, as a tenth slot, and no notice names
+    /// a wall. Nothing is auto-discarded to make room, because nothing
+    /// needs making room for: the nine are still standing afterwards.
+    func testNineHiddenSlotsDoNotStandBetweenAPersonAndToday() throws {
         let (model, _) = try makeModel()
         model.loadStateIfNeeded()
         for _ in 1..<9 { model.newPage() }
@@ -327,16 +328,20 @@ final class TimeUnitModeTests: XCTestCase {
 
         model.openToday()
 
-        XCTAssertEqual(model.tabs.count, 9, "the cap gave way")
-        XCTAssertNil(model.selectedPageID, "the refusal minted a page anyway")
-        XCTAssertEqual(model.notice, PageModel.capRefusal(showsTimeUnits: true))
-        XCTAssertTrue(
-            try XCTUnwrap(model.notice).contains("Settings"),
-            "the refusal did not say where the hidden pages are")
+        XCTAssertEqual(model.tabs.count, 10, "a tenth slot was refused")
+        let page = try XCTUnwrap(model.selectedPageID, "today's page was not minted")
+        XCTAssertEqual(peopledDays(model.timeUnits).first?.pageIDs, [page])
+        XCTAssertNil(model.notice, "a wall was named")
         XCTAssertEqual(
-            PageModel.capRefusal(showsTimeUnits: false),
-            "the window holds 9 tabs, close one to make room",
-            "the sentence the strip has always shown moved")
+            model.tabs.filter { !$0.hasPage }.count, 9,
+            "an empty slot was discarded to make room")
+
+        // ⌘1 to ⌘9 still count the first nine visible targets, and the
+        // strip's reading is a slot per chord whatever the strip's width.
+        model.showsTimeUnits = false
+        XCTAssertEqual(model.visibleTargets.count, 10)
+        model.perform(.pageSelect9)
+        XCTAssertEqual(model.selection, model.tabs[8].id, "⌘9 stopped reaching the ninth slot")
     }
 
     // MARK: The jump chords, in both readings

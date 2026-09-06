@@ -12,7 +12,18 @@ import SwiftUI
 ///
 /// A slot whose page expired keeps its place, its name and its rung,
 /// and draws the dashed empty treatment instead of a gauge (ADR-0017).
-/// The strip is the slots, so it stops being nine deadlines.
+/// The strip is the slots, so it stops being a row of deadlines.
+///
+/// The strip has no cap (issue #158). ⌘1 to ⌘9 reach the first nine
+/// slots and the tenth onward have no chord, so the strip has to hold
+/// more slots than fit across the card. It scrolls sideways, without a
+/// bar, and follows the selection: a slot selected by chord, click or
+/// mint is brought into view, so a new page minted past the edge is on
+/// screen the moment it exists. Scrolling rather than clipping with a
+/// marker, because a clipped tab is a slot a person cannot reach with
+/// the mouse, and a marker is chrome that says "there is more" without
+/// getting them there. The FILES group stays pinned ahead of the
+/// scroll: files are few and are navigation peers, not slots.
 public struct TabStripView: View {
     @ObservedObject var model: PageModel
 
@@ -45,29 +56,52 @@ public struct TabStripView: View {
                 }
                 GroupLabel(text: "PAD")
             }
-            ForEach(model.tabs) { sheet in
-                SheetTab(
-                    sheet: sheet,
-                    selected: model.selection == sheet.id && !model.showingLedger,
-                    model: model
-                )
-                .opacity(model.draggingTab == sheet.id ? 0.6 : 1)
-                .background(GeometryReader { geometry in
-                    Color.clear.preference(
-                        key: TabFramesKey.self,
-                        value: [sheet.id: geometry.frame(in: .named(Self.stripSpace))]
-                    )
-                })
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.stripSpace))
-                        .onChanged { value in
-                            model.draggingTab = sheet.id
-                            reorder(dragged: sheet.id, pointerX: value.location.x)
+            // The slots scroll as one run with the + at their end, so
+            // the + always sits after the last slot the way it always
+            // has, and a strip wider than the card is reached by
+            // scrolling rather than lost past the edge (issue #158).
+            // The frames the reorder reads are taken in the strip's own
+            // space, which the scroll offset is part of, so a drag over
+            // a scrolled strip still lands on the slot under the pointer.
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 2) {
+                        ForEach(model.tabs) { sheet in
+                            SheetTab(
+                                sheet: sheet,
+                                selected: model.selection == sheet.id && !model.showingLedger,
+                                model: model
+                            )
+                            .id(sheet.id)
+                            .opacity(model.draggingTab == sheet.id ? 0.6 : 1)
+                            .background(GeometryReader { geometry in
+                                Color.clear.preference(
+                                    key: TabFramesKey.self,
+                                    value: [sheet.id: geometry.frame(in: .named(Self.stripSpace))]
+                                )
+                            })
+                            .simultaneousGesture(
+                                DragGesture(
+                                    minimumDistance: 4, coordinateSpace: .named(Self.stripSpace)
+                                )
+                                .onChanged { value in
+                                    model.draggingTab = sheet.id
+                                    reorder(dragged: sheet.id, pointerX: value.location.x)
+                                }
+                                .onEnded { _ in model.draggingTab = nil }
+                            )
                         }
-                        .onEnded { _ in model.draggingTab = nil }
-                )
+                        newPageTab
+                    }
+                }
+                .onChange(of: model.selection) { selection in
+                    // Follow the selection, unanimated: a chord or a
+                    // mint that lands past the edge is on screen at
+                    // once, and a slot already in view is left alone.
+                    guard let selection else { return }
+                    proxy.scrollTo(selection)
+                }
             }
-            newPageTab
             Spacer(minLength: 8)
             // Also built and not drawn (issue #78): the conceal action
             // still works everywhere else it worked, and the strip stops
