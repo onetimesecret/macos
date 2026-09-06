@@ -27,3 +27,4 @@
 - [Dogfood 4 time indicators](project_dogfood4_time_indicators.md): tab gauge withdrawn (#156), header countdown yields only in day mode since the gutter exists only there, PageStatusStack's bottom bar still open; lanes share one scratchpad
 - [Settings toolbar tabs](project_settings_toolbar_tabs.md): NSTabViewController toolbar tabs landed 2026-09-05; the per tab heights and resize on switch were reasoned, not seen on hardware
 - [NSApp is nil in a bare xctest](project_nsapp_nil_in_bare_xctest.md): a filtered run has no NSApplication, unwrapping NSApp traps and hangs silently; read `NSApp?.` and fail closed
+- [Bundle id move 0.19.0](project_bundle_id_move_0_19_0.md): com.onetimesecret.pad and dev.onetimesecret.pad since 2026-09-05; three unlinked places name the dev id, and the .debug leftovers in ADR text are historical on purpose
