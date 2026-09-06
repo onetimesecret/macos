@@ -194,6 +194,15 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// themselves without dragging the surface up with them. Every
     /// other activation, whether by ⌘Tab or the Dock icon, is the user
     /// choosing this app, and answers with a raise.
+    ///
+    /// The launch time is taken in `applicationWillFinishLaunching`,
+    /// the first thing AppKit tells the delegate, rather than in
+    /// `applicationDidFinishLaunching`, so that the recency rule does
+    /// not rest on which of the two launch notifications and the
+    /// activation is delivered first. Were the activation ever to
+    /// arrive between the two, a launch time taken in the later one
+    /// would still be `distantPast`, and the person's launch would be
+    /// read as a ⌘Tab hours later.
     private var launchedAt = Date.distantPast
     private var aboutActivation = false
     private var settingsActivation = false
@@ -202,8 +211,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// the life of the delegate, which is the life of the process.
     private var modalEndObserver: NSObjectProtocol?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationWillFinishLaunching(_ notification: Notification) {
         launchedAt = Date()
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
         // A regular app, deliberately — the panel's accessory posture
         // (menu bar only, docs/spec/03 §2) is amended for this form
         // factor: living in ⌘Tab is what makes flipping between the
