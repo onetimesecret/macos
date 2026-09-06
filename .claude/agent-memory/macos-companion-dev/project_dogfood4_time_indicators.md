@@ -1,6 +1,6 @@
 ---
 name: dogfood4-time-indicators
-description: Dogfood phase 4 items 3 and 6 (2026-09-05): only the full width page edge gauge in PageStatusStack is gone, the per tab gauge was removed for an evening and restored by maintainer decision; the header countdown yields only in day mode because the day gutter exists only there; the login item launch posture and the post modal re-key are open decisions for the maintainer; parallel lanes share one scratchpad dir
+description: Dogfood phase 4 items 3 and 6 (2026-09-05): only the full width page edge gauge in PageStatusStack is gone, the per tab gauge was removed for an evening and restored by maintainer decision; the header CountdownButton is gone in both modes and deleted from PageSurface; the login item launch posture and the post modal re-key are open decisions for the maintainer; parallel lanes share one scratchpad dir
 metadata:
   type: project
 ---
@@ -13,15 +13,19 @@ gauge was restored exactly as it had been (two row SheetTab, EmptyRule on an
 empty slot, FileTab's gauge seat holding the UnsavedDot) and the page edge
 gauge stayed removed. GaugeBar draws under each tab and on TimeRailView; the
 prose everywhere says "page edge gauge removed, per tab gauge kept". The
-header CountdownButton was kept in strip mode and removed only in day mode
-(item 6), narrowing the item as written.
+header CountdownButton (item 6) was first kept in strip mode and removed
+only in day mode; once the tab gauge was back that narrowing lost its reason
+and the button went in both modes, together with the `showsHeaderCountdown`
+rule, `HeaderCountdownTests`, and the `CountdownButton` type itself (nothing
+else drew it). The rung now steps only from the tab and gutter context menus.
 
 **Why:** a short bar framed by its tab is not what anyone takes for a
 horizontal scroll bar; a thin bar running the width of the text surface's
 bottom edge is. The "duplicate" countdown item 6 cited lives in
 DayScrollView's day gutter, and PageContentView mounts DayScrollView only
 while `showsTimeUnits` is on, which is off by default and exclusive with the
-strip. `BackdropRootView.showsHeaderCountdown` holds the rule.
+strip; the narrowing was right while the strip had no gauge and wrong once
+it did.
 
 **How to apply:** do not remove the per tab gauge again on the scroll bar
 argument; it has been made and rejected. Any future indicator must not be a

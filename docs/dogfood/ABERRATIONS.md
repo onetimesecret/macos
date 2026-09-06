@@ -197,17 +197,19 @@ The header countdown. The card header showed a `CountdownButton` for
 the selected page (remaining time, rung label, click to shorten). In
 the day mode the page prints the same countdown in its own day gutter,
 top right, so the header's copy was two clocks for one page, and two
-clocks confused more than they informed. The header yields it in the
-day mode.
+clocks confused more than they informed. The header no longer shows
+it in either mode.
 
-- It is kept in the strip mode, and this is a deliberate narrowing of
-  the item as written. The gutter belongs to `DayScrollView`, which is
-  mounted only while `showsTimeUnits` is on; that mode is off by
-  default and exclusive with the strip. With the tab gauge gone, the
-  header button is the only place the strip mode writes the page's
-  remaining time as a number. Removing it there would have left the
-  default mode with no countdown at all, now that the bottom edge bar
-  is gone as well. `BackdropRootView.showsHeaderCountdown` holds the
-  rule and the `HeaderCountdownTests` pin it.
+- The first pass kept it in the strip mode, on the grounds that with
+  the tab gauge gone the header button was the only place that mode
+  wrote the page's remaining time at all (the gutter belongs to
+  `DayScrollView`, which is mounted only while `showsTimeUnits` is on,
+  off by default and exclusive with the strip). With the per tab gauge
+  restored that reason is gone, and the item is done as written: the
+  `showsHeaderCountdown` rule and its tests came out with the button,
+  and `CountdownButton` itself is gone from `PageSurface.swift`, since
+  nothing else drew it.
+- The strip mode's remaining time is the gauge under each tab; the day
+  mode's is the gutter label and the time rail.
 - The rung still cycles from the tab's context menu in both modes and
   from the gutter's menu in the day mode.

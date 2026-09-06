@@ -108,14 +108,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the front. One consequence to know about: a launch as a login
   item raises the card too, where it used to rest.
 
-- **The header countdown yields to the day gutter** (dogfood phase 4).
-  In the day mode the page prints its own countdown top right in the
-  gutter, so the header's copy was two clocks for one page, and the
-  header no longer shows it there. The strip mode keeps it, since
-  with the gauges gone it is the one place that mode writes the
-  remaining time at all.
-
 ### Removed
+
+- **The header countdown** (dogfood phase 4). The card header printed
+  the selected page's remaining time and rung as a clickable label. In
+  the day mode the page prints the same countdown top right in its
+  gutter, and in the strip mode the gauge under its tab already draws
+  it, so the header's copy was a second clock for a page that had one.
+  It is gone in both modes. The rung still steps from the tab's
+  context menu and from the gutter's.
 
 - **The remaining time gauge along the page's bottom edge** (dogfood
   phase 4). The four point bar across the full width of the page drew

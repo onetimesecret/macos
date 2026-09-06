@@ -88,16 +88,16 @@ carried to the core by `companion_set_grace_snap`
   is also what bounds a restored page's claimed life
   (`Ttl::longest_life`, `crates/core/src/ttl.rs:83`, used by restore
   at `crates/core/src/persist.rs:896`).
-- The surface shows **remaining time** as the gauge under each tab and
-  the header's `CountdownButton` while the strip is the navigation, and
-  in words in the day gutter's label while the days are
-  (`shell/Sources/CompanionKit/TabStripView.swift`, `PageSurface.swift`,
+- The surface shows **remaining time** as the gauge under each tab
+  while the strip is the navigation, and in words in the day gutter's
+  label while the days are (`shell/Sources/CompanionKit/TabStripView.swift`,
   `DayScrollView.swift`). The full width gauge along the page's bottom
-  edge is gone since dogfood phase 4 (docs/dogfood/ABERRATIONS.md,
-  2026-09-05); the per tab gauge and the time rail's still draw. There
-  is no absolute deadline label anywhere, so the effective deadline is
-  observed as "the local wall clock now, plus the remaining time
-  shown".
+  edge and the header's countdown label are gone since dogfood phase 4
+  (docs/dogfood/ABERRATIONS.md, 2026-09-05); the per tab gauge and the
+  time rail's still draw, and the tab's tooltip speaks the remaining
+  time in words. There is no absolute deadline label anywhere, so the
+  effective deadline is observed as "the local wall clock now, plus
+  the remaining time shown".
 - Undo is the core's stack, bound to the document's peer id
   (`crates/core/src/document.rs:130`), reached through
   `SheetStore::undo` (`crates/core/src/store.rs:923`),

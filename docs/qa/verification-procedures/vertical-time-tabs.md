@@ -135,10 +135,9 @@ the labels. No ghost row, no placeholder, no renumbering.
 1. Stage three days, and give the middle day's page a short rung:
    right-click that day's gutter and use its **Shorten the countdown**
    item, which steps the ladder down one press at a time. The countdown
-   printed in the gutter is a label and not a button: the clickable
-   countdown is the card header's, and it steps the *selected* page's
-   rung, so click into the middle day first if you would rather use that
-   one.
+   printed in the gutter is a label and not a button; the menu is the
+   only way to step the rung in this mode, since the card header no
+   longer carries a countdown (dogfood phase 4, item 6).
 2. Wait for it to expire, or leave the card and come back after the
    rung has run out.
 

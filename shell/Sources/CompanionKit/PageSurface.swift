@@ -257,45 +257,6 @@ public struct PageStatusStack: View {
     }
 }
 
-// MARK: - The countdown
-
-/// The countdown label: remaining time on the current rung; click
-/// steps one rung shorter and resets the clock (docs/spec/04). The
-/// ladder tapers rather than falling off its top, so shortening a
-/// page to the precarious end is a deliberate five clicks.
-public struct CountdownButton: View {
-    let sheet: TabSummary
-    let cycle: () -> Void
-
-    public init(sheet: TabSummary, cycle: @escaping () -> Void) {
-        self.sheet = sheet
-        self.cycle = cycle
-    }
-
-    public var body: some View {
-        Button(action: cycle) {
-            HStack(spacing: 5) {
-                if sheet.paused {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 8))
-                        .accessibilityHidden(true)
-                }
-                Text(sheet.remainingLabel)
-                    .font(.system(.caption, design: .monospaced))
-                Text(sheet.rungLabel)
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-            }
-            .foregroundStyle(sheet.lastHour ? Color.ember : .secondary)
-        }
-        .buttonStyle(.plain)
-        .help("Click to shorten the countdown one rung and reset the clock")
-        .accessibilityLabel(Text("Countdown"))
-        .accessibilityValue(Text(sheet.spokenRemaining))
-        .accessibilityHint(Text("Activate to shorten the countdown one rung and reset the clock"))
-    }
-}
-
 // MARK: - The keyboard map
 
 /// The surface-level keyboard map (docs/spec/04), carried by zero-size
