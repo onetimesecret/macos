@@ -518,9 +518,9 @@ pub unsafe extern "C" fn companion_free(handle: *mut CompanionHandle) {
 
 /// A new tab at the end of the strip, holding a new page on the
 /// default rung with its countdown started. Returns the **tab** id, or
-/// `0` when the store refused, the cap is 9, the keyboard wall, and at
-/// the wall the app declines the tenth and says so (refuse-don't-evict,
-/// doc 04). `0` is never a valid id.
+/// `0` only for a null handle or a poisoned lock: the strip has no
+/// cap, so the store never refuses a slot (issue #158). `0` is never a
+/// valid id.
 ///
 /// The tab is what comes back because the tab is what the shell
 /// selects and addresses afterwards (ADR-0017); the page inside it is
@@ -537,10 +537,7 @@ pub unsafe extern "C" fn companion_tab_new(handle: *mut CompanionHandle) -> u64 
     let Ok(mut guard) = handle.inner.lock() else {
         return 0;
     };
-    match guard.store.new_tab() {
-        Ok((tab, _)) => tab.raw(),
-        Err(_) => 0,
-    }
+    guard.store.new_tab().0.raw()
 }
 
 /// Mint a page into a tab that holds none, at **that tab's** rung.
@@ -595,8 +592,7 @@ pub unsafe extern "C" fn companion_tab_close(handle: *mut CompanionHandle, tab: 
 /// Page addressed on purpose. The burn offered after a conceal names
 /// the content that travelled, not the slot it travelled from, and
 /// closing the tab there would spend an arrangement the gesture never
-/// asked about: only an explicit close and the cap end a tab
-/// (ADR-0017).
+/// asked about: only an explicit close ends a tab (ADR-0017).
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -645,7 +641,7 @@ pub unsafe extern "C" fn companion_tab_move(
 /// ledger, so a user who types a secret into the rename field has put
 /// it into the audit record, and under a durable tab it stays on the
 /// strip until the tab is closed. That is the documented exception, not
-/// an accident; the cap bounds it and the app never derives one.
+/// an accident; the app never derives one.
 ///
 /// Returns whether the tab existed.
 ///
@@ -4679,13 +4675,16 @@ mod tests {
     }
 
     #[test]
-    fn the_cap_refuses_the_tenth_page() {
+    fn a_tenth_tab_opens_like_the_ninth() {
+        // No keyboard wall at the seam (issue #158): twelve asks are
+        // twelve distinct, non-zero tab ids, and the tenth is nothing
+        // special.
         let handle = handle();
         unsafe {
-            for _ in 0..9 {
-                assert_ne!(companion_tab_new(handle), 0);
-            }
-            assert_eq!(companion_tab_new(handle), 0, "the keyboard wall");
+            let ids: Vec<u64> = (0..12).map(|_| companion_tab_new(handle)).collect();
+            assert!(ids.iter().all(|&id| id != 0), "a slot was refused");
+            let distinct: std::collections::HashSet<u64> = ids.iter().copied().collect();
+            assert_eq!(distinct.len(), 12, "two asks answered with one slot");
             companion_free(handle);
         }
     }
@@ -6071,7 +6070,7 @@ mod tests {
         // base), which is far outside the window by any real "now".
         let stale = {
             let mut aged = SheetStore::new(companion_core::ManualClock::new());
-            aged.new_tab().unwrap();
+            aged.new_tab();
             aged.ledger_snapshot()
         };
         let stale_wall_ms = 1_700_000_000_000;

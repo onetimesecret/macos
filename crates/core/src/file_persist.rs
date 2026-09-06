@@ -6,8 +6,8 @@
 //! new section inside `OTSSNAP4`: that is a format break, and it would
 //! take every user's pages once. Not a trailing field on the tab record
 //! either, cheap as that is: it would make a file's draft a property of
-//! a Tab, and a Tab is the object the nine page cap counts. One file
-//! keeps the two content classes structurally apart.
+//! a Tab, and a Tab is the strip's own object with the strip's own
+//! lifetime. One file keeps the two content classes structurally apart.
 //!
 //! Layout follows the content snapshot exactly: magic, wall stamp,
 //! count, then one framed record per open file. Records are positional
