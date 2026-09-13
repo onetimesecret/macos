@@ -443,6 +443,24 @@ public final class PageModel: ObservableObject {
     }
     private static let wrapKey = "wrapsLines"
 
+    /// Whether future eligible pastes are wrapped in Markdown fences when
+    /// source detection returns a language. The accepted release gates in
+    /// ADR-0029 are not complete, so visible detection remains development-only.
+    public static var languageDetectionFeaturesAvailable: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
+
+    /// This is a default-off editing preference in this form factor's defaults.
+    /// Changing it does not inspect or rewrite existing text.
+    @Published public var automaticallyFencePastes: Bool {
+        didSet { defaults.set(automaticallyFencePastes, forKey: Self.automaticPasteFencingKey) }
+    }
+    private static let automaticPasteFencingKey = "automaticallyFencePastes"
+
     /// The family the page is set in, named the way the system names
     /// it ("Menlo", "JetBrains Mono"), the way an editor's buffer font
     /// is named. Empty means the system's monospaced face. Persisted;
@@ -932,6 +950,10 @@ public final class PageModel: ObservableObject {
         // Unset → wrap, which is how every plain-text editor opens and
         // the only sane default for a card this narrow.
         wrapsLines = defaults.object(forKey: Self.wrapKey) as? Bool ?? true
+        // Unset → off. This opt-in affects future pastes only; loading the
+        // preference performs no edit and writes no default implicitly.
+        automaticallyFencePastes =
+            defaults.object(forKey: Self.automaticPasteFencingKey) as? Bool ?? false
         // Unset → the system monospaced face at 13, which is what every
         // page wore before the setting existed. Handed to the styling
         // here because a property observer does not run during init.

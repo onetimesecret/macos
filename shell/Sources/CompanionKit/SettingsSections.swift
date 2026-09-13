@@ -155,6 +155,21 @@ public struct GeneralSettingsView: View {
                     "What the page does with a line wider than the card. Off lets lines run on and the page scrolls sideways. ⌥Z flips it while you write, and whichever way you left it is how the page opens."
                 )
             }
+            if PageModel.languageDetectionFeaturesAvailable {
+                Section {
+                    Toggle(
+                        "Automatically fence pastes with a detected language",
+                        isOn: $model.automaticallyFencePastes
+                    )
+                    .accessibilityHint(
+                        "Applies to future pastes only. Hold Option while pasting to bypass once."
+                    )
+                } header: {
+                    SettingsCaption(
+                        "When detection returns a language for an eligible whole-line paste, wraps that paste in a Markdown fence. Existing text is unchanged. Hold Option while pasting to bypass once."
+                    )
+                }
+            }
             Section {
                 Toggle("Round a page's deadline up to the hour, or to midnight", isOn: $model.snapsToBoundaries)
             } header: {
