@@ -1437,10 +1437,19 @@ public final class CompanionClient: @unchecked Sendable {
         return String(cString: detected)
     }
 
-    /// The core's version string.
-    public static var version: String {
-        String(cString: companion_version())
+    /// The C-ABI seam crate linked into this process.
+    public static var ffiVersion: String {
+        String(cString: companion_ffi_version())
     }
+
+    /// The Rust domain crate linked behind the FFI seam.
+    public static var coreVersion: String {
+        String(cString: companion_core_version())
+    }
+
+    /// Compatibility spelling retained for clients of CompanionKit.
+    @available(*, deprecated, renamed: "ffiVersion")
+    public static var version: String { ffiVersion }
 
     // MARK: Plumbing
 

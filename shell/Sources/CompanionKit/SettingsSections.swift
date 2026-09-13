@@ -193,6 +193,13 @@ public struct GeneralSettingsView: View {
             } header: {
                 SettingsCaption(loginCaption)
             }
+            Section {
+                Toggle("Show versions in menu", isOn: $model.showsVersionsInMenu)
+            } header: {
+                SettingsCaption(
+                    "Adds the app build and linked Rust component versions to the menu-bar menu. Technical versions remain available in About."
+                )
+            }
             if offersCaptureToggle, PageModel.captureOptOutOffered {
                 Section {
                     Toggle("Allow screenshots of the surface", isOn: $model.allowCapture)

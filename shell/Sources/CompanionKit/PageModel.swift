@@ -443,6 +443,13 @@ public final class PageModel: ObservableObject {
     }
     private static let wrapKey = "wrapsLines"
 
+    /// Whether the menu-bar menu includes the app build and linked Rust
+    /// component versions. Persisted presentation preference; off by default.
+    @Published public var showsVersionsInMenu: Bool {
+        didSet { defaults.set(showsVersionsInMenu, forKey: Self.showsVersionsInMenuKey) }
+    }
+    private static let showsVersionsInMenuKey = "showsVersionsInMenu"
+
     /// Whether future eligible pastes are wrapped in Markdown fences when
     /// source detection returns a language. The accepted release gates in
     /// ADR-0029 are not complete, so visible detection remains development-only.
@@ -950,6 +957,10 @@ public final class PageModel: ObservableObject {
         // Unset → wrap, which is how every plain-text editor opens and
         // the only sane default for a card this narrow.
         wrapsLines = defaults.object(forKey: Self.wrapKey) as? Bool ?? true
+        // Unset → off. Technical build details stay in About until explicitly
+        // requested in the menu-bar menu.
+        showsVersionsInMenu =
+            defaults.object(forKey: Self.showsVersionsInMenuKey) as? Bool ?? false
         // Unset → off. This opt-in affects future pastes only; loading the
         // preference performs no edit and writes no default implicitly.
         automaticallyFencePastes =

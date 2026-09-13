@@ -385,82 +385,64 @@ extension FormFactor {
     }
 }
 
-// MARK: - Which build am I on
+// MARK: - Version presentation
 
-/// The tray menu's version line, shared by both form factors: "which
-/// build am I on" answered at a glance.
+/// Formatting for the optional diagnostic line in the menu-bar menu.
 public enum BuildVersion {
-    /// Whether the running bundle is the dev lane's, which is an exact
-    /// match against the one identifier the packaging gives it
-    /// (`package-app.sh --debug` writes `FormFactor.devBundleIdentifier`)
-    /// and never a prefix or suffix heuristic. The lane is a fact about
-    /// the build exactly as the two version numbers are, and the one a
-    /// person most often wants when two copies of the app are running
-    /// at once.
+    /// Whether the running bundle is the dev lane's, matched against the
+    /// exact identifier written by `package-app.sh --debug`.
     public static func isDevLane(bundleIdentifier: String?) -> Bool {
         bundleIdentifier == FormFactor.devBundleIdentifier
     }
 
-    /// A bare `swift run` has no bundle version, so the core speaks for
-    /// itself; a bundled build names both numbers, always.
-    ///
-    /// The line used to drop the core whenever the bundle version began
-    /// with it, and to name both only when it did not. That rule made
-    /// sense while the two strings came from one source: an extension of
-    /// the core's version was the build script's own stamp, and anything
-    /// else could only mean the binary had linked a stale xcframework,
-    /// which was worth saying out loud. Issue #89 gave the app its own
-    /// marketing version, so the numbers now move for their own reasons
-    /// and a difference between them is the ordinary case rather than a
-    /// warning. Naming both is what stays honest: "build" answers which
-    /// build am I on, "core" answers which seam it linked, and neither
-    /// answer can be inferred from the other any more.
-    public static func trayTitle(
-        core: String, bundleVersion: String?, devLane: Bool = false
+    /// Names each independently versioned artifact rather than calling the
+    /// FFI package "core". A bare `swift run` has no bundle build to name.
+    public static func menuTitle(
+        ffiVersion: String,
+        coreVersion: String,
+        bundleVersion: String?,
+        devLane: Bool = false
     ) -> String {
-        let lane = devLane ? ", dev" : ""
-        guard let bundleVersion else { return "core \(core)\(lane)" }
-        return "build \(bundleVersion), core \(core)\(lane)"
+        var parts: [String] = []
+        if let bundleVersion, !bundleVersion.isEmpty {
+            parts.append("Build \(bundleVersion)")
+        }
+        parts.append("FFI \(ffiVersion)")
+        parts.append("Core \(coreVersion)")
+        if devLane { parts.append("Dev") }
+        return parts.joined(separator: " · ")
     }
 }
 
-/// What the standard About panel shows for a version, which is two
-/// questions AppKit gives two keys for: `.applicationVersion` is the
-/// product's own number and `.version` is the build behind it, rendered
-/// as "Version 0.13.0 (0.13.0+ab12cd3)".
-///
-/// Pure so the resolution can be tested without an AppKit panel or a
-/// bundle to read; `showAbout` does the reading and hands the strings
-/// here.
+/// Values shown by the standard About panel: conventional app/build fields
+/// plus an explicit technical-components block.
 public enum AboutVersion {
-    /// The two strings the panel wants, with `build` absent when there
-    /// is nothing to put in the parentheses.
     public struct Fields: Equatable {
         public let applicationVersion: String
         public let build: String?
+        public let technicalVersions: String
 
-        public init(applicationVersion: String, build: String?) {
+        public init(applicationVersion: String, build: String?, technicalVersions: String) {
             self.applicationVersion = applicationVersion
             self.build = build
+            self.technicalVersions = technicalVersions
         }
     }
 
-    /// A bundled app shows its own marketing version with the stamped
-    /// bundle version beside it; a bare `swift run` has no Info.plist to
-    /// read either from, and there the core is the only version the
-    /// process can honestly claim, so it stands alone as it always has.
+    /// A bundled app leads with its product version. An unbundled run falls
+    /// back to the FFI version because no app version exists in that process.
     public static func fields(
-        core: String, shortVersion: String?, bundleVersion: String?
+        ffiVersion: String,
+        coreVersion: String,
+        shortVersion: String?,
+        bundleVersion: String?
     ) -> Fields {
-        guard let shortVersion, !shortVersion.isEmpty else {
-            return Fields(applicationVersion: core, build: nil)
-        }
-        // A bundle without CFBundleVersion is not a shape the build
-        // scripts produce, but the key is read rather than guaranteed,
-        // so an absent one costs the parentheses and nothing else.
-        guard let bundleVersion, !bundleVersion.isEmpty else {
-            return Fields(applicationVersion: shortVersion, build: nil)
-        }
-        return Fields(applicationVersion: shortVersion, build: bundleVersion)
+        let applicationVersion = shortVersion.flatMap { $0.isEmpty ? nil : $0 } ?? ffiVersion
+        let build = bundleVersion.flatMap { $0.isEmpty ? nil : $0 }
+        return Fields(
+            applicationVersion: applicationVersion,
+            build: build,
+            technicalVersions: "FFI \(ffiVersion)\nCore \(coreVersion)"
+        )
     }
 }
