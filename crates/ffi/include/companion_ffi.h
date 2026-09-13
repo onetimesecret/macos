@@ -21,7 +21,8 @@
  *     *_json(), and *_seal_*(), are freed with companion_string_free().
  *   - The CompanionHandle* from companion_new() is freed with
  *     companion_free().
- *   - companion_version() returns a static string; do NOT free it.
+ *   - companion_ffi_version(), companion_core_version(), and the compatibility
+ *     alias companion_version() return static strings; do NOT free them.
  *
  * Scheduling rule (no polling): arm ONE timer from
  * companion_next_event_ms() — it folds page expiries AND pause-hold
@@ -60,7 +61,11 @@ typedef enum {
 /* Process hardening (disable core dumps). Idempotent. */
 void companion_init(void);
 
-/* Static version string; do not free. */
+/* Static crate version strings; do not free. */
+const char *companion_ffi_version(void);
+const char *companion_core_version(void);
+
+/* Compatibility alias for companion_ffi_version(). */
 const char *companion_version(void);
 
 /*

@@ -47,6 +47,9 @@ pub mod store;
 pub mod sync;
 pub mod ttl;
 
+/// This crate's semantic version, independent of the FFI crate that links it.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub use blocks::BlockMeta;
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use files::{

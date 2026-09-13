@@ -87,7 +87,7 @@ use std::ffi::{CString, c_char, c_int};
 use std::path::Path;
 use std::ptr;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use companion_credentials::{CredentialStore, credential_store_for, default_credential_store};
@@ -292,11 +292,25 @@ pub extern "C" fn companion_init() {
     companion_core::harden_process();
 }
 
-/// Library version string (static; do **not** free).
+/// FFI crate version string (static; do **not** free).
+#[unsafe(no_mangle)]
+pub extern "C" fn companion_ffi_version() -> *const c_char {
+    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr().cast()
+}
+
+/// Compatibility alias for callers built against the original ambiguous name.
 #[unsafe(no_mangle)]
 pub extern "C" fn companion_version() -> *const c_char {
-    // A NUL-terminated static byte string.
-    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr().cast()
+    companion_ffi_version()
+}
+
+/// Core crate version string (static; do **not** free).
+#[unsafe(no_mangle)]
+pub extern "C" fn companion_core_version() -> *const c_char {
+    static VERSION: OnceLock<CString> = OnceLock::new();
+    VERSION
+        .get_or_init(|| CString::new(companion_core::VERSION).expect("crate version contains NUL"))
+        .as_ptr()
 }
 
 /// Detect a canonical source-language slug without creating or locking a
@@ -3573,6 +3587,17 @@ fn ttl_to_code(ttl: Ttl) -> c_int {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_exports_name_the_crates_they_report() {
+        let ffi = unsafe { CStr::from_ptr(companion_ffi_version()) };
+        let compatibility = unsafe { CStr::from_ptr(companion_version()) };
+        let core = unsafe { CStr::from_ptr(companion_core_version()) };
+
+        assert_eq!(ffi.to_str().unwrap(), env!("CARGO_PKG_VERSION"));
+        assert_eq!(compatibility, ffi);
+        assert_eq!(core.to_str().unwrap(), companion_core::VERSION);
+    }
 
     /// A handle over the in-process board — never `companion_new`, so
     /// the tests stay deterministic and never read or clobber a real
