@@ -8,10 +8,28 @@ milestones have been created. Paths below are relative to the repository root.
 Source observations include the working tree as inspected on this date; they
 are not evidence of accepted policy.
 
+## Immediate execution step
+
+Measurement can begin before the production adapter or any user-visible surface
+is approved. ADR-0029 says: “Keep ranked scores internal for evaluation. Choose
+minimum evidence, top-score, and top-two-margin thresholds from the local corpus
+before freezing the adapter.” This plan interprets that ordering to require an
+executable evaluation first, not prior agreement on the thresholds it will
+measure.
+
+The non-shipping `tools/language-eval` harness calls the recorded registry
+artifact directly, retains ranked results, and keeps thresholds configurable.
+Its synthetic tuning and hold-out data must not include clipboard history,
+private documents, or real secrets. Running and extending this harness is the
+next step. Production dependency placement, C/Swift adapters, clipboard access,
+automatic edits, and user-visible surfaces remain out of scope until the results
+support a reviewed shipping choice.
+
 ## Integration map
 
 | Area | Existing source and hook | Planned work |
 |---|---|---|
+| Non-shipping evaluation | `tools/language-eval` | Run the exact registry artifact over synthetic/public tuning and hold-out data; retain rankings and report quality and local costs. |
 | Rust inference | `crates/core/Cargo.toml`, `crates/core/src/lib.rs` | Add exact dependency and a new `language_detection` module; safe label API and evaluated abstention policy. |
 | C ABI | `crates/ffi/src/lib.rs`, `crates/ffi/include/companion_ffi.h` | Add stateless pointer/length export, error containment, ownership docs, and boundary tests. |
 | Framework | `scripts/build-core.sh`, `bindings/include/companion_ffi.h` | Regenerate copied header/framework through the existing build route. |
@@ -33,7 +51,11 @@ presentation unless a separately tested renderer mapping is introduced. Include
 an exhaustive 48-label mapping test so new upstream labels cannot silently
 select the wrong scanner.
 
-## Phase 0 — policy and dependency qualification
+## Phase 0 — executable evaluation and dependency qualification
+
+This phase has two distinct outcomes: evidence collection may proceed now;
+shipping remains gated on review of the resulting quality, resource, license,
+retention, and supported-target evidence.
 
 Deliverables:
 
@@ -54,12 +76,19 @@ Deliverables:
 - [ ] Review source-derived scratch retention, panic handling, and concurrency.
   Do not promise erasure merely because inference is local. Decide whether
   upstream changes or a reviewed patch are needed before processing user text.
-- [ ] Build a synthetic/public, redistributable evaluation corpus. Include every
-  label, very short snippets, multilingual prose, lists, Markdown, chat messages,
-  URLs, credentials-shaped synthetic strings, logs, stack traces, JSON/YAML/TOML,
-  mixed prose/code, unsupported languages, malformed text, and binary samples.
-  Never use real clipboard history or secrets.
-- [ ] Separate tuning and hold-out sets. Report precision, abstention/coverage,
+- [x] Build a non-shipping evaluation harness against exact `betlang = "=0.1.1"`
+  with configurable evidence, top-score, and top-two-margin thresholds. Keep all
+  ranked scores in generated measurement output. Do not route it through the
+  production core, C ABI, Swift shell, clipboard, or document model.
+- [ ] Complete the synthetic/public, redistributable evaluation corpus. A tracked
+  synthetic starter corpus and deterministic 1,200-case paste-negative family
+  now exercise the harness; extend it to every label, very short snippets,
+  multilingual prose, lists, Markdown, chat messages, URLs, credentials-shaped
+  synthetic strings, logs, stack traces, JSON/YAML/TOML, mixed prose/code,
+  unsupported languages, malformed text, and binary samples. Never use real
+  clipboard history or secrets.
+- [ ] Run tuning and hold-out sets and publish the generated report. The harness
+  keeps the splits separate and reports precision, abstention/coverage,
   false-positive fencing, and confusion pairs by surface and length. Evaluate
   `c/cpp`, `javascript/typescript`, `markdown/yaml`, and `ini/toml` explicitly.
 - [ ] Select and document top-score, top-two-margin, minimum evidence, and paste
@@ -76,9 +105,12 @@ Deliverables:
   warm p95 request overhead below 10 ms and cold completion below 100 ms on the
   named baseline machine. Agree on a memory/binary budget from measured results.
 
-Exit: exact artifact qualified, thresholds recorded, license/retention questions
-resolved, and policy accepted. If paste quality fails, reduce scope to explicit
-suggestions; do not label Betlang a reliable code-versus-prose detector.
+Exit: the experiment has been run, the exact artifact is qualified, thresholds
+and measured trade-offs are recorded, license/retention questions are resolved,
+and the production adapter and initial surfaces are selected. Starting the
+experiment does not require this exit to be satisfied. If paste quality fails,
+reduce scope to explicit suggestions; do not label Betlang a reliable
+code-versus-prose detector.
 
 ## Phase 1 — core, C ABI, and Swift service
 
