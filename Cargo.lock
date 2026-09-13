@@ -143,6 +143,7 @@ dependencies = [
 name = "companion-core"
 version = "0.19.0"
 dependencies = [
+ "betlang",
  "companion-credentials",
  "companion-pasteboard",
  "companion-transport",
