@@ -362,9 +362,44 @@ public struct InkEditorView: NSViewRepresentable {
         #endif
 
         private let ordinaryPasteShadowEnabled: Bool
-        private let languageDetectionService: LanguageDetectionService?
+        private let languageDetectionService: LanguageDetectionService
         private let ordinaryPastePayload: () -> Data?
         private var pendingOrdinaryPasteRequestID: UUID?
+        private var pendingAutomaticPaste: AutomaticPaste?
+        private var pendingManualRequestID: UUID?
+        private var languageSuggestion: LanguageSuggestion?
+        private var fenceRenderingLanguages: [UInt64: [Int: String]] = [:]
+
+        private struct AutomaticPaste {
+            let requestID: UUID
+            let documentID: UInt64
+            let revision: UInt64
+            let payload: String
+            let destination: PasteDestinationContext
+        }
+
+        private struct ManualLanguageTarget: Equatable {
+            enum Kind: Equatable {
+                case selection
+                case bareFence(opening: NSRange, body: NSRange, labelInsertionLocation: Int)
+            }
+
+            let documentID: UInt64
+            let revision: UInt64
+            let detectionRange: NSRange
+            let selectionSnapshot: NSRange
+            let kind: Kind
+        }
+
+        private struct LanguageSuggestion {
+            let target: ManualLanguageTarget
+            let language: String
+        }
+
+        static let manualLanguages = [
+            "swift", "rust", "python", "ruby", "javascript", "typescript",
+            "go", "shell", "sql", "json", "yaml", "toml",
+        ]
 
         /// In-memory development/test observation only. The source payload is
         /// deliberately absent from the reported value.
@@ -397,11 +432,7 @@ public struct InkEditorView: NSViewRepresentable {
             self.model = model
             self.ordinaryPasteShadowEnabled =
                 ordinaryPasteShadowEnabled ?? Self.defaultOrdinaryPasteShadowEnabled
-            self.languageDetectionService = if self.ordinaryPasteShadowEnabled {
-                languageDetectionService ?? LanguageDetectionService()
-            } else {
-                nil
-            }
+            self.languageDetectionService = languageDetectionService ?? LanguageDetectionService()
             self.ordinaryPastePayload = ordinaryPastePayload
         }
 
@@ -412,6 +443,17 @@ public struct InkEditorView: NSViewRepresentable {
         /// while the shadow gate is off.
         func ordinaryPasteMeasurementPayload() -> Data? {
             guard ordinaryPasteShadowEnabled else { return nil }
+            return ordinaryPastePayload()
+        }
+
+        var measuresOrdinaryPastes: Bool { ordinaryPasteShadowEnabled }
+
+        func ordinaryPastePayloadIfNeeded(bypassingAutomaticFencing: Bool) -> Data? {
+            guard ordinaryPasteShadowEnabled
+                    || (PageModel.languageDetectionFeaturesAvailable
+                        && model.automaticallyFencePastes
+                        && !bypassingAutomaticFencing)
+            else { return nil }
             return ordinaryPastePayload()
         }
 
@@ -432,7 +474,7 @@ public struct InkEditorView: NSViewRepresentable {
                 data: data
             )
             pendingOrdinaryPasteRequestID = request.requestID
-            languageDetectionService?.submit(
+            languageDetectionService.submit(
                 request,
                 validating: { [weak self] context in
                     guard Thread.isMainThread else { return false }
@@ -455,9 +497,15 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         func invalidateOrdinaryPasteMeasurement() {
-            guard ordinaryPasteShadowEnabled else { return }
+            let canceledAutomaticPaste = pendingAutomaticPaste != nil
             pendingOrdinaryPasteRequestID = nil
-            languageDetectionService?.invalidate()
+            pendingAutomaticPaste = nil
+            pendingManualRequestID = nil
+            languageSuggestion = nil
+            languageDetectionService.invalidate()
+            if canceledAutomaticPaste {
+                model.flash("Paste canceled because the editor changed before detection finished.")
+            }
         }
 
         func updateEditability(of textView: InkTextView, to editable: Bool) {
@@ -486,6 +534,539 @@ public struct InkEditorView: NSViewRepresentable {
             else { return false }
             let selection = textView.selectedRange()
             return selection == context.selectionSnapshot && selection == context.targetRange
+        }
+
+        /// Captures and holds one paste while source detection runs. A result is
+        /// applied only if the exact document, revision, selection, and editing
+        /// state still stand; otherwise the held paste is discarded rather than
+        /// inserted into a destination the user did not choose.
+        func beginAutomaticPaste(payload data: Data) -> Bool {
+            guard PageModel.languageDetectionFeaturesAvailable,
+                  model.automaticallyFencePastes,
+                  let payload = String(data: data, encoding: .utf8),
+                  let destination = automaticPasteDestination(payload: payload)
+            else { return false }
+
+            invalidateOrdinaryPasteMeasurement()
+            guard let documentID = currentSheet else { return false }
+            let selection = destination.replacementRange
+            let request = LanguageDetectionRequest(
+                documentID: documentID,
+                revision: UInt64(generation),
+                targetRange: selection,
+                trigger: .ordinaryPaste,
+                selectionSnapshot: selection,
+                data: data
+            )
+            pendingAutomaticPaste = AutomaticPaste(
+                requestID: request.requestID,
+                documentID: documentID,
+                revision: request.revision,
+                payload: payload,
+                destination: destination
+            )
+            languageDetectionService.submit(
+                request,
+                validating: { [weak self] context in
+                    guard Thread.isMainThread else { return false }
+                    return MainActor.assumeIsolated {
+                        self?.isCurrentAutomaticPaste(context) ?? false
+                    }
+                },
+                completion: { [weak self] result in
+                    guard Thread.isMainThread else { return }
+                    MainActor.assumeIsolated {
+                        self?.finishAutomaticPaste(result)
+                    }
+                }
+            )
+            return true
+        }
+
+        private func automaticPasteDestination(payload: String) -> PasteDestinationContext? {
+            guard let textView, let storage = textView.textStorage,
+                  textView.isEditable, !textView.hasMarkedText(),
+                  let sheet = currentSheet
+            else { return nil }
+            let selection = textView.selectedRange()
+            guard selection.location != NSNotFound,
+                  NSMaxRange(selection) <= storage.length
+            else { return nil }
+
+            let intersectsFence = rangeIntersectsFence(selection)
+            let inContainer = rangeIntersectsContainer(selection, in: storage.string)
+            let intersectsAttachment = rangeIntersectsAttachment(selection, in: storage)
+            let markdownCapable = isMarkdownCapable(sheet: sheet)
+            let destination = PasteDestinationContext(
+                documentText: storage.string,
+                replacementRange: selection,
+                isMarkdownCapable: markdownCapable,
+                intersectsCodeFence: intersectsFence,
+                isInListOrQuoteContainer: inContainer,
+                intersectsAttachment: intersectsAttachment,
+                hasMarkedText: textView.hasMarkedText()
+            )
+            // A harmless label checks all destination and payload-independent
+            // planner gates before inference is scheduled.
+            guard PasteReplacementPlanner.plan(
+                payload: payload, destination: destination, acceptedLanguageLabel: "text"
+            ) != nil else { return nil }
+            return destination
+        }
+
+        private func rangeIntersectsFence(_ range: NSRange) -> Bool {
+            fenceRegions.contains { region in
+                if range.length == 0 {
+                    return range.location >= region.location && range.location < NSMaxRange(region)
+                }
+                return NSIntersectionRange(region, range).length > 0
+            }
+        }
+
+        private func rangeIntersectsAttachment(
+            _ range: NSRange, in storage: NSTextStorage
+        ) -> Bool {
+            guard range.length > 0 else { return false }
+            var found = false
+            storage.enumerateAttribute(.attachment, in: range) { value, _, stop in
+                if value != nil {
+                    found = true
+                    stop.pointee = true
+                }
+            }
+            return found
+        }
+
+        private func rangeIntersectsContainer(_ range: NSRange, in document: String) -> Bool {
+            let text = document as NSString
+            guard text.length > 0 else { return false }
+            let lastCovered = range.length > 0 ? NSMaxRange(range) - 1 : range.location
+            var location = text.paragraphRange(
+                for: NSRange(location: min(range.location, text.length), length: 0)
+            ).location
+            while location <= min(lastCovered, text.length - 1) {
+                let paragraph = text.paragraphRange(for: NSRange(location: location, length: 0))
+                let line = text.substring(with: paragraph)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if line.hasPrefix(">") { return true }
+                if let kind = classifiedKind(ofParagraphAt: paragraph.location), case .list = kind {
+                    return true
+                }
+                let next = NSMaxRange(paragraph)
+                if next <= location { break }
+                location = next
+            }
+            return false
+        }
+
+        private func isMarkdownCapable(sheet: UInt64) -> Bool {
+            guard sheet.isFileID else { return true }
+            let name = model.openFiles.first(where: { $0.id == sheet })?.name ?? ""
+            return FileDropDecision.markdownExtensions.contains(
+                (name as NSString).pathExtension.lowercased()
+            )
+        }
+
+        private func isCurrentAutomaticPaste(_ context: LanguageDetectionContext) -> Bool {
+            guard let pendingAutomaticPaste,
+                  pendingAutomaticPaste.requestID == context.requestID,
+                  pendingAutomaticPaste.documentID == context.documentID,
+                  pendingAutomaticPaste.revision == context.revision,
+                  currentSheet == context.documentID,
+                  UInt64(generation) == context.revision,
+                  let textView, textView.isEditable, !textView.hasMarkedText()
+            else { return false }
+            return textView.selectedRange() == context.selectionSnapshot
+                && context.targetRange == pendingAutomaticPaste.destination.replacementRange
+        }
+
+        private func finishAutomaticPaste(_ result: LanguageDetectionResult) {
+            guard isCurrentAutomaticPaste(result.context), let pending = pendingAutomaticPaste else {
+                return
+            }
+            pendingAutomaticPaste = nil
+            let plan = result.language.flatMap {
+                PasteReplacementPlanner.plan(
+                    payload: pending.payload,
+                    destination: pending.destination,
+                    acceptedLanguageLabel: $0
+                )
+            }
+            if let plan {
+                applyReplacement(
+                    plan.replacementText,
+                    range: plan.replacementRange,
+                    caret: plan.finalCaretRange,
+                    startsNewUndoStep: true
+                )
+            } else {
+                let caret = NSRange(
+                    location: pending.destination.replacementRange.location + pending.payload.utf16.count,
+                    length: 0
+                )
+                applyReplacement(
+                    pending.payload,
+                    range: pending.destination.replacementRange,
+                    caret: caret,
+                    startsNewUndoStep: true
+                )
+            }
+        }
+
+        private func applyReplacement(
+            _ replacement: String, range: NSRange, caret: NSRange, startsNewUndoStep: Bool
+        ) {
+            guard let textView, let storage = textView.textStorage,
+                  textView.isEditable, !textView.hasMarkedText(),
+                  NSMaxRange(range) <= storage.length,
+                  textView.shouldChangeText(in: range, replacementString: replacement)
+            else { return }
+            nextEditIsAutomation = startsNewUndoStep
+            storage.replaceCharacters(in: range, with: replacement)
+            textView.didChangeText()
+            textView.setSelectedRange(Self.clamped(caret, to: storage.length))
+            textView.scrollRangeToVisible(textView.selectedRange())
+        }
+
+        func detectCodeLanguage() {
+            guard PageModel.languageDetectionFeaturesAvailable else { return }
+            guard let target = manualLanguageTarget(), let storage = textView?.textStorage else {
+                model.flash("Select whole lines or place the caret inside a bare code fence.")
+                return
+            }
+            invalidateOrdinaryPasteMeasurement()
+            let data = Data((storage.string as NSString).substring(with: target.detectionRange).utf8)
+            let request = LanguageDetectionRequest(
+                documentID: target.documentID,
+                revision: target.revision,
+                targetRange: target.detectionRange,
+                trigger: .manual,
+                selectionSnapshot: target.selectionSnapshot,
+                data: data
+            )
+            pendingManualRequestID = request.requestID
+            languageDetectionService.submit(
+                request,
+                validating: { [weak self] context in
+                    guard Thread.isMainThread else { return false }
+                    return MainActor.assumeIsolated {
+                        self?.isCurrentManualRequest(context, target: target) ?? false
+                    }
+                },
+                completion: { [weak self] result in
+                    guard Thread.isMainThread else { return }
+                    MainActor.assumeIsolated {
+                        guard let self, self.isCurrentManualRequest(result.context, target: target)
+                        else { return }
+                        self.pendingManualRequestID = nil
+                        guard let language = result.language else {
+                            self.model.flash("No code language suggestion.")
+                            return
+                        }
+                        self.languageSuggestion = LanguageSuggestion(
+                            target: target, language: language
+                        )
+                        self.textView?.showFindIndicator(for: target.detectionRange)
+                        self.model.flash("Suggested language: \(language). Open the editor menu to apply it.")
+                    }
+                }
+            )
+        }
+
+        private func isCurrentManualRequest(
+            _ context: LanguageDetectionContext, target: ManualLanguageTarget
+        ) -> Bool {
+            guard pendingManualRequestID == context.requestID,
+                  context.documentID == target.documentID,
+                  context.revision == target.revision,
+                  context.targetRange == target.detectionRange,
+                  currentSheet == target.documentID,
+                  UInt64(generation) == target.revision,
+                  let textView, textView.isEditable, !textView.hasMarkedText(),
+                  textView.selectedRange() == target.selectionSnapshot
+            else { return false }
+            return manualLanguageTarget() == target
+        }
+
+        private func manualLanguageTarget() -> ManualLanguageTarget? {
+            guard let textView, let storage = textView.textStorage,
+                  let documentID = currentSheet, textView.isEditable,
+                  !textView.hasMarkedText()
+            else { return nil }
+            let selection = textView.selectedRange()
+            if selection.length > 0 {
+                let destination = PasteDestinationContext(
+                    documentText: storage.string,
+                    replacementRange: selection,
+                    isMarkdownCapable: isMarkdownCapable(sheet: documentID),
+                    intersectsCodeFence: rangeIntersectsFence(selection),
+                    isInListOrQuoteContainer: rangeIntersectsContainer(
+                        selection, in: storage.string
+                    ),
+                    intersectsAttachment: rangeIntersectsAttachment(selection, in: storage)
+                )
+                guard PasteReplacementPlanner.plan(
+                    payload: (storage.string as NSString).substring(with: selection),
+                    destination: destination,
+                    acceptedLanguageLabel: "text"
+                ) != nil else { return nil }
+                return ManualLanguageTarget(
+                    documentID: documentID,
+                    revision: UInt64(generation),
+                    detectionRange: selection,
+                    selectionSnapshot: selection,
+                    kind: .selection
+                )
+            }
+            guard let fence = bareFenceTarget(at: selection.location, in: storage.string) else {
+                return nil
+            }
+            return ManualLanguageTarget(
+                documentID: documentID,
+                revision: UInt64(generation),
+                detectionRange: fence.body,
+                selectionSnapshot: selection,
+                kind: .bareFence(
+                    opening: fence.opening,
+                    body: fence.body,
+                    labelInsertionLocation: fence.labelInsertionLocation
+                )
+            )
+        }
+
+        private func bareFenceTarget(
+            at location: Int, in document: String
+        ) -> (opening: NSRange, body: NSRange, labelInsertionLocation: Int)? {
+            let text = document as NSString
+            var scanner = InkStyle.FenceScanner()
+            var paragraphStart = 0
+            var opening: (range: NSRange, bodyStart: Int, insertion: Int)?
+            while paragraphStart < text.length {
+                let paragraph = text.paragraphRange(
+                    for: NSRange(location: paragraphStart, length: 0)
+                )
+                let line = text.substring(with: paragraph)
+                let wasInside = scanner.insideFence
+                let kind = scanner.classify(line)
+                if case .fenceRule = kind {
+                    if !wasInside {
+                        let trimmedHead = line.prefix { $0 == " " || $0 == "\t" }
+                        let afterIndent = line.dropFirst(trimmedHead.utf16.count)
+                        guard let run = InkStyle.FenceScanner.fenceRun(
+                            of: afterIndent.trimmingCharacters(in: .newlines)
+                        ) else { return nil }
+                        opening = run.info.isEmpty
+                            ? (paragraph, NSMaxRange(paragraph), paragraph.location
+                                + trimmedHead.utf16.count + run.length)
+                            : nil
+                    } else if let candidate = opening {
+                        let body = NSRange(
+                            location: candidate.bodyStart,
+                            length: paragraph.location - candidate.bodyStart
+                        )
+                        let region = NSUnionRange(candidate.range, paragraph)
+                        if location >= region.location, location < NSMaxRange(region) {
+                            return (candidate.range, body, candidate.insertion)
+                        }
+                        // Closing this fence retires the current candidate.
+                        opening = nil
+                    }
+                }
+                paragraphStart = NSMaxRange(paragraph)
+            }
+            if let opening {
+                let body = NSRange(location: opening.bodyStart, length: text.length - opening.bodyStart)
+                let region = NSRange(
+                    location: opening.range.location,
+                    length: text.length - opening.range.location
+                )
+                if location >= region.location, location <= NSMaxRange(region) {
+                    return (opening.range, body, opening.insertion)
+                }
+            }
+            return nil
+        }
+
+        func applySuggestedLanguage(displayOnly: Bool) {
+            guard let suggestion = languageSuggestion,
+                  manualLanguageTarget() == suggestion.target
+            else { return }
+            switch suggestion.target.kind {
+            case .selection:
+                let text = textView?.textStorage?.string ?? ""
+                let destination = PasteDestinationContext(
+                    documentText: text,
+                    replacementRange: suggestion.target.detectionRange,
+                    isMarkdownCapable: isMarkdownCapable(sheet: suggestion.target.documentID),
+                    intersectsCodeFence: rangeIntersectsFence(
+                        suggestion.target.detectionRange
+                    ),
+                    isInListOrQuoteContainer: rangeIntersectsContainer(
+                        suggestion.target.detectionRange, in: text
+                    ),
+                    intersectsAttachment: textView?.textStorage.map {
+                        rangeIntersectsAttachment(suggestion.target.detectionRange, in: $0)
+                    } ?? true
+                )
+                let payload = (text as NSString).substring(with: suggestion.target.detectionRange)
+                guard let plan = PasteReplacementPlanner.plan(
+                    payload: payload,
+                    destination: destination,
+                    acceptedLanguageLabel: suggestion.language
+                ) else { return }
+                languageSuggestion = nil
+                applyReplacement(
+                    plan.replacementText,
+                    range: plan.replacementRange,
+                    caret: plan.finalCaretRange,
+                    startsNewUndoStep: true
+                )
+            case .bareFence(let opening, _, let insertion):
+                if displayOnly {
+                    fenceRenderingLanguages[suggestion.target.documentID, default: [:]][opening.location]
+                        = suggestion.language
+                    restyle()
+                } else {
+                    languageSuggestion = nil
+                    applyReplacement(
+                        suggestion.language,
+                        range: NSRange(location: insertion, length: 0),
+                        caret: NSRange(location: insertion + suggestion.language.utf16.count, length: 0),
+                        startsNewUndoStep: true
+                    )
+                }
+            }
+        }
+
+        func dismissLanguageSuggestion() {
+            pendingManualRequestID = nil
+            languageSuggestion = nil
+            languageDetectionService.invalidate()
+        }
+
+        func applyManualLanguage(_ language: String) {
+            guard PageModel.languageDetectionFeaturesAvailable,
+                  Self.manualLanguages.contains(language),
+                  let target = manualLanguageTarget()
+            else {
+                return
+            }
+            languageSuggestion = LanguageSuggestion(target: target, language: language)
+            applySuggestedLanguage(displayOnly: {
+                if case .bareFence = target.kind { return true }
+                return false
+            }())
+        }
+
+        func appendLanguageItems(to menu: NSMenu) {
+            guard PageModel.languageDetectionFeaturesAvailable, let textView else { return }
+            menu.addItem(.separator())
+
+            let detect = NSMenuItem(
+                title: "Detect Code Language…",
+                action: #selector(detectCodeLanguageFromMenu(_:)),
+                keyEquivalent: ""
+            )
+            detect.target = self
+            detect.isEnabled = manualLanguageTarget() != nil
+            menu.addItem(detect)
+
+            if let suggestion = languageSuggestion,
+               manualLanguageTarget() == suggestion.target
+            {
+                let heading = NSMenuItem(
+                    title: "Suggested: \(suggestion.language.capitalized)",
+                    action: nil,
+                    keyEquivalent: ""
+                )
+                heading.isEnabled = false
+                menu.addItem(heading)
+                let dismiss = NSMenuItem(
+                    title: "Dismiss Suggestion",
+                    action: #selector(dismissLanguageSuggestionFromMenu(_:)),
+                    keyEquivalent: ""
+                )
+                dismiss.target = self
+                menu.addItem(dismiss)
+                switch suggestion.target.kind {
+                case .selection:
+                    let wrap = NSMenuItem(
+                        title: "Wrap as \(suggestion.language.capitalized) Code",
+                        action: #selector(applySuggestedWrap(_:)),
+                        keyEquivalent: ""
+                    )
+                    wrap.target = self
+                    menu.addItem(wrap)
+                case .bareFence:
+                    let highlight = NSMenuItem(
+                        title: "Use \(suggestion.language.capitalized) for Highlighting",
+                        action: #selector(applySuggestedHighlighting(_:)),
+                        keyEquivalent: ""
+                    )
+                    highlight.target = self
+                    menu.addItem(highlight)
+                    let insert = NSMenuItem(
+                        title: "Insert \(suggestion.language) in Fence",
+                        action: #selector(insertSuggestedFenceLabel(_:)),
+                        keyEquivalent: ""
+                    )
+                    insert.target = self
+                    menu.addItem(insert)
+                }
+            }
+
+            if manualLanguageTarget() != nil {
+                let choose = NSMenuItem(title: "Choose Language", action: nil, keyEquivalent: "")
+                let submenu = NSMenu(title: "Choose Language")
+                for language in Self.manualLanguages {
+                    let item = NSMenuItem(
+                        title: language.capitalized,
+                        action: #selector(chooseLanguageFromMenu(_:)),
+                        keyEquivalent: ""
+                    )
+                    item.target = self
+                    item.representedObject = language
+                    submenu.addItem(item)
+                }
+                choose.submenu = submenu
+                menu.addItem(choose)
+            }
+
+            if PageModel.languageDetectionFeaturesAvailable && model.automaticallyFencePastes {
+                let bypass = NSMenuItem(
+                    title: "Paste Without Automatic Fencing",
+                    action: #selector(InkTextView.pasteWithoutAutomaticFencing(_:)),
+                    keyEquivalent: ""
+                )
+                bypass.target = textView
+                bypass.isEnabled = textView.isEditable
+                menu.addItem(bypass)
+            }
+        }
+
+        @objc private func detectCodeLanguageFromMenu(_ sender: Any?) {
+            detectCodeLanguage()
+        }
+
+        @objc private func dismissLanguageSuggestionFromMenu(_ sender: Any?) {
+            dismissLanguageSuggestion()
+        }
+
+        @objc private func applySuggestedWrap(_ sender: Any?) {
+            applySuggestedLanguage(displayOnly: false)
+        }
+
+        @objc private func applySuggestedHighlighting(_ sender: Any?) {
+            applySuggestedLanguage(displayOnly: true)
+        }
+
+        @objc private func insertSuggestedFenceLabel(_ sender: Any?) {
+            applySuggestedLanguage(displayOnly: false)
+        }
+
+        @objc private func chooseLanguageFromMenu(_ sender: NSMenuItem) {
+            guard let language = sender.representedObject as? String else { return }
+            applyManualLanguage(language)
         }
 
         // MARK: The page swap (ADR-0006)
@@ -923,6 +1504,7 @@ public struct InkEditorView: NSViewRepresentable {
             invalidateOrdinaryPasteMeasurement()
             guard !model.isApplyingProjection else { return }
             guard let sheet = currentSheet else { return }
+            fenceRenderingLanguages[sheet] = nil
             if markedTextInFlight || (textView?.hasMarkedText() ?? false) {
                 // Composition in flight: the span grows and shrinks
                 // with each marked replacement, and nothing crosses the
@@ -1371,7 +1953,12 @@ public struct InkEditorView: NSViewRepresentable {
                         // nothing the block above left open, which is
                         // the boundary the spec asks tokenizer state
                         // never to cross.
-                        tokenizer = CodeInk.Tokenizer(language: scanner.fenceLanguage)
+                        let sessionLanguage = scanner.fenceInfoString?.isEmpty == true
+                            ? fenceRenderingLanguages[sheet]?[paragraph.location]
+                            : nil
+                        tokenizer = CodeInk.Tokenizer(
+                            language: scanner.fenceLanguage ?? sessionLanguage
+                        )
                     case .code:
                         // The line without its separator, taken off the
                         // tail alone. Trimming both ends would move
@@ -1568,6 +2155,7 @@ public struct InkEditorView: NSViewRepresentable {
                     range: NSRange(location: range.location, length: markerLength)
                 )
             case .fenceRule:
+                storage.addAttribute(.font, value: InkStyle.codeFont, range: range)
                 // The fence's own line is markup, dimmed the way a
                 // heading's hashes are. The wash it shares with the
                 // lines it brackets is not an attribute: painting the
@@ -1580,6 +2168,7 @@ public struct InkEditorView: NSViewRepresentable {
                     range: range
                 )
             case .code:
+                storage.addAttribute(.font, value: InkStyle.codeFont, range: range)
                 // Literally what was typed: the markup a code line
                 // carries is part of the code, so nothing here is read
                 // as a heading and nothing is dimmed. The wash behind
@@ -2007,6 +2596,12 @@ final class InkLayoutManager: NSLayoutManager {
 final class InkTextView: NSTextView, EditStepResponder {
     weak var coordinator: InkEditorView.Coordinator?
 
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        coordinator?.appendLanguageItems(to: menu)
+        return menu
+    }
+
     /// A resize rewraps paragraphs without touching their content, so
     /// the block labels (ADR-0013) need only be moved, not recomputed
     /// from the core, cheap enough to run on every layout pass.
@@ -2126,6 +2721,9 @@ final class InkTextView: NSTextView, EditStepResponder {
             coordinator.sealedPaste()
         case .clipboardSealSelection:
             coordinator.sealSelectionOrLine()
+        case .editorDetectCodeLanguage:
+            guard PageModel.languageDetectionFeaturesAvailable, isEditable else { return false }
+            coordinator.detectCodeLanguage()
         case .editorUndo, .editorRedo:
             // A resting card and a page shown read-only both arrive
             // here with editing off, and a chord that rewrote the
@@ -2142,23 +2740,40 @@ final class InkTextView: NSTextView, EditStepResponder {
         return true
     }
 
-    /// ⌘V behaves like every text editor on the machine — plain text,
-    /// no surprises (docs/spec/04).
+    /// Ordinary paste remains plain when the preference is off. When it is on,
+    /// Option bypasses automatic fencing for this paste only.
     override func paste(_ sender: Any?) {
-        performOrdinaryPaste(sender) { [unowned self] sender in
+        let bypass = NSApp.currentEvent?.modifierFlags.contains(.option) == true
+        performOrdinaryPaste(sender, bypassingAutomaticFencing: bypass) { [unowned self] sender in
             pasteAsPlainText(sender)
         }
     }
 
-    /// A narrow test seam around the unchanged AppKit paste operation. The
-    /// optional measurement payload is captured once before AppKit performs its
-    /// own synchronous board read, while inference starts only after the plain
-    /// paste has completed.
-    func performOrdinaryPaste(_ sender: Any?, pasteAsPlainText: (Any?) -> Void) {
-        let measurementPayload = coordinator?.ordinaryPasteMeasurementPayload()
+    @objc func pasteWithoutAutomaticFencing(_ sender: Any?) {
+        performOrdinaryPaste(sender, bypassingAutomaticFencing: true) { [unowned self] sender in
+            pasteAsPlainText(sender)
+        }
+    }
+
+    /// Captures the board once when either shipping transformation or DEBUG
+    /// measurement needs it. An eligible automatic paste is held until detection
+    /// completes; every other path invokes AppKit's plain paste exactly once.
+    func performOrdinaryPaste(
+        _ sender: Any?,
+        bypassingAutomaticFencing: Bool = false,
+        pasteAsPlainText: (Any?) -> Void
+    ) {
+        let payload = coordinator?.ordinaryPastePayloadIfNeeded(
+            bypassingAutomaticFencing: bypassingAutomaticFencing
+        )
+        if !bypassingAutomaticFencing, let payload,
+           coordinator?.beginAutomaticPaste(payload: payload) == true
+        {
+            return
+        }
         pasteAsPlainText(sender)
-        if let measurementPayload {
-            coordinator?.observeOrdinaryPaste(payload: measurementPayload)
+        if let payload, coordinator?.measuresOrdinaryPastes == true {
+            coordinator?.observeOrdinaryPaste(payload: payload)
         }
     }
 
@@ -2717,12 +3332,17 @@ public enum InkStyle {
         didSet {
             guard typeface != oldValue else { return }
             baseFont = typeface.font(size: typeface.size, weight: .regular)
+            codeFont = NSFont.monospacedSystemFont(ofSize: typeface.size, weight: .regular)
             cellWidth = Self.measureCell(in: baseFont)
         }
     }
 
     public private(set) static var baseFont = Typeface.standard.font(
         size: Typeface.standard.size, weight: .regular
+    )
+
+    public private(set) static var codeFont = NSFont.monospacedSystemFont(
+        ofSize: Typeface.standard.size, weight: .regular
     )
 
     /// The heading ramp, as a proportion of the base size so the
@@ -3064,7 +3684,9 @@ public enum InkStyle {
         /// info string named. The info string was always parsed; until
         /// highlighting arrived only its emptiness was consulted, and
         /// the language it carried was read and dropped.
-        private var open: (marker: Character, length: Int, language: String?)?
+        private var open: (
+            marker: Character, length: Int, language: String?, info: String
+        )?
 
         public init() {}
 
@@ -3080,13 +3702,18 @@ public enum InkStyle {
         /// place a tokenizer for the lines below can be made.
         public var fenceLanguage: String? { open?.language }
 
+        /// The exact trimmed info string on the current opening rule.
+        /// Empty and unsupported are different states even though neither
+        /// resolves to a tokenizer.
+        public var fenceInfoString: String? { open?.info }
+
         public mutating func classify(_ line: String) -> LineKind {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if let run = Self.fenceRun(of: trimmed) {
                 guard let open else {
                     self.open = (
                         run.marker, run.length,
-                        CodeInk.canonicalLanguage(ofInfoString: run.info)
+                        CodeInk.canonicalLanguage(ofInfoString: run.info), run.info
                     )
                     return .fenceRule
                 }

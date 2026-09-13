@@ -43,12 +43,15 @@ final class KeymapDispatchTests: XCTestCase {
         }
     }
 
-    /// The seal gestures are refused by the model on purpose: the caret
-    /// and the selection they act on belong to the page's text view.
-    func testTheSealGesturesAreNotTheModelsToRun() throws {
+    /// These commands are refused by the model on purpose: the selection,
+    /// caret, and editor state they act on belong to the page's text view.
+    func testTextViewCommandsAreNotTheModelsToRun() throws {
         let model = try makeModel()
         XCTAssertFalse(model.perform(.clipboardSeal))
         XCTAssertFalse(model.perform(.clipboardSealSelection))
+        XCTAssertFalse(model.perform(.editorDetectCodeLanguage))
+        XCTAssertFalse(model.perform(.editorUndo))
+        XCTAssertFalse(model.perform(.editorRedo))
     }
 
     func testAJumpCommandSelectsThatPlaceInTheTabOrder() throws {
@@ -96,6 +99,7 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertFalse(installed.contains(.clipboardSeal))
         XCTAssertFalse(installed.contains(.clipboardSealSelection))
         XCTAssertFalse(installed.contains(.editorToggleWrap))
+        XCTAssertFalse(installed.contains(.editorDetectCodeLanguage))
         XCTAssertTrue(installed.contains(.pageNew))
     }
 

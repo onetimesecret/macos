@@ -46,6 +46,7 @@ public enum CommandID: String, CaseIterable, Sendable {
 
     // The page's own presentation
     case editorToggleWrap = "editor::ToggleWrap"
+    case editorDetectCodeLanguage = "editor::DetectCodeLanguage"
 
     // Undo, which is the core's stack now (issue #132)
     case editorUndo = "editor::Undo"
@@ -77,7 +78,7 @@ public enum CommandID: String, CaseIterable, Sendable {
     public var dispatch: Dispatch {
         switch self {
         case .clipboardSeal, .clipboardSealSelection, .editorToggleWrap,
-            .editorUndo, .editorRedo:
+            .editorDetectCodeLanguage, .editorUndo, .editorRedo:
             return .editor
         default:
             return .surface

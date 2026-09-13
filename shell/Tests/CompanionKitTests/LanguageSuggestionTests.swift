@@ -1,0 +1,125 @@
+import AppKit
+import XCTest
+
+@testable import CompanionKit
+
+@MainActor
+final class LanguageSuggestionTests: XCTestCase {
+    private func makeModel() throws -> PageModel {
+        let suiteName = "companion-language-suggestion-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        return isolatedModel(defaults: defaults)
+    }
+
+    private func makeEditor(
+        detector: @escaping LanguageDetectionService.Detector = { _ in nil }
+    ) throws -> (PageModel, InkEditorView.Coordinator, InkTextView) {
+        let model = try makeModel()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let coordinator = InkEditorView.Coordinator(
+            model: model,
+            ordinaryPasteShadowEnabled: false,
+            languageDetectionService: LanguageDetectionService(detector: detector)
+        )
+        let textView = InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator
+        )
+        textView.isEditable = true
+        return (model, coordinator, textView)
+    }
+
+    private func insert(_ text: String, into textView: InkTextView) {
+        textView.insertText(text, replacementRange: NSRange(location: 0, length: 0))
+        textView.setSelectedRange(NSRange(location: text.utf16.count, length: 0))
+    }
+
+    private func settleMainQueue() {
+        let settled = expectation(description: "main queue settled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { settled.fulfill() }
+        wait(for: [settled], timeout: 1)
+    }
+
+    func testManualSelectionWrapIsOneExplicitEdit() throws {
+        let (_, coordinator, textView) = try makeEditor()
+        let source = "let value = 1"
+        insert(source, into: textView)
+        textView.setSelectedRange(NSRange(location: 0, length: source.utf16.count))
+        var emitted: [[DocumentEditOp]] = []
+        coordinator.onEmit = { emitted.append($0) }
+
+        coordinator.applyManualLanguage("swift")
+
+        XCTAssertEqual(textView.string, "```swift\n\(source)\n```")
+        XCTAssertEqual(emitted.count, 1)
+        XCTAssertEqual(
+            emitted.first,
+            [.del(at: 0, len: source.utf16.count), .ins(at: 0, text: textView.string)]
+        )
+    }
+
+    func testBareFenceManualLanguageIsDisplayOnlyAndUsesCodeFont() throws {
+        let (_, coordinator, textView) = try makeEditor()
+        let source = "```\nlet value = 1\n```"
+        insert(source, into: textView)
+        textView.setSelectedRange(NSRange(location: 5, length: 0))
+        var emitted: [[DocumentEditOp]] = []
+        coordinator.onEmit = { emitted.append($0) }
+
+        coordinator.applyManualLanguage("swift")
+
+        XCTAssertEqual(textView.string, source)
+        XCTAssertTrue(emitted.isEmpty)
+        let font = try XCTUnwrap(textView.textStorage?.attribute(.font, at: 4, effectiveRange: nil) as? NSFont)
+        XCTAssertEqual(font, InkStyle.codeFont)
+        let color = try XCTUnwrap(
+            textView.textStorage?.attribute(.foregroundColor, at: 4, effectiveRange: nil) as? NSColor
+        )
+        XCTAssertEqual(color, InkStyle.tokenColor(.keyword))
+    }
+
+    func testDetectedBareFenceSuggestionIsVisibleAndCanInsertLabel() throws {
+        let detectorCalled = expectation(description: "detector called")
+        let (_, coordinator, textView) = try makeEditor(detector: { data in
+            XCTAssertEqual(String(decoding: data, as: UTF8.self), "let value = 1\n")
+            detectorCalled.fulfill()
+            return "swift"
+        })
+        insert("```\nlet value = 1\n```", into: textView)
+        textView.setSelectedRange(NSRange(location: 5, length: 0))
+
+        coordinator.detectCodeLanguage()
+        wait(for: [detectorCalled], timeout: 1)
+        settleMainQueue()
+
+        let menu = NSMenu()
+        coordinator.appendLanguageItems(to: menu)
+        XCTAssertTrue(menu.items.contains { $0.title == "Suggested: Swift" })
+        XCTAssertTrue(menu.items.contains { $0.title == "Dismiss Suggestion" })
+        let insert = try XCTUnwrap(menu.items.first { $0.title == "Insert swift in Fence" })
+        var emitted: [[DocumentEditOp]] = []
+        coordinator.onEmit = { emitted.append($0) }
+
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(insert.action), to: insert.target, from: insert))
+
+        XCTAssertEqual(textView.string, "```swift\nlet value = 1\n```")
+        XCTAssertEqual(emitted, [[.ins(at: 3, text: "swift")]])
+    }
+
+    func testExplicitUnknownFenceAndCaretAfterClosedFenceAreNotTargets() throws {
+        let (_, coordinator, textView) = try makeEditor()
+        let source = "```unknown\n++\n```\nafter"
+        insert(source, into: textView)
+
+        textView.setSelectedRange(NSRange(location: 12, length: 0))
+        var menu = NSMenu()
+        coordinator.appendLanguageItems(to: menu)
+        XCTAssertEqual(menu.items.first { $0.title == "Detect Code Language…" }?.isEnabled, false)
+
+        textView.setSelectedRange(NSRange(location: 20, length: 0))
+        menu = NSMenu()
+        coordinator.appendLanguageItems(to: menu)
+        XCTAssertEqual(menu.items.first { $0.title == "Detect Code Language…" }?.isEnabled, false)
+    }
+}
