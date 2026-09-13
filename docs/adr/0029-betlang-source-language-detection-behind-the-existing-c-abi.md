@@ -4,9 +4,10 @@ documentation_status: needs-review # draft | reviewed | stale
 
 # ADR-0029: Betlang source-language detection behind the existing C ABI
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-09-12
 - **Depends on:** [ADR-0024](0024-caret-only-automation-and-display-only-color.md)
+- **Supersedes in part:** [ADR-0024](0024-caret-only-automation-and-display-only-color.md), specifically its prohibition on inferred bare-fence highlighting and its caret-line restriction for the explicit actions named below. Its remaining decision stands.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 
@@ -171,6 +172,40 @@ Ask reviewers to approve these specific extensions to ADR-0024:
 Until this ADR is accepted, ADR-0024 remains unchanged. On acceptance, record
 the reciprocal partial-supersession relationship in both ADRs. Do not mark
 ADR-0024 superseded wholesale.
+
+## Decision history
+
+- 2026-09-12: Accepted. This record supersedes the named portions of
+  [ADR-0024](0024-caret-only-automation-and-display-only-color.md); its
+  remaining caret-only and display-only rules stand.
+
+## Erratum — 2026-09-12
+
+The original artifact record identified snapshot
+`514a4cd95c26447ac3649826f266ef2d02448888` as the source to compare with the
+published package. The verified crates.io `betlang 0.1.1` archive instead has
+package checksum
+`5f89b0929539eaee70109704ae4e345df438be6ab02e4dc8ac060e05098ad1b7` and
+`.cargo_vcs_info.json` revision `13b5cbf7b934fdbd4be0bb7437faeb03124700de`.
+Its embedded `assets/magika/source-student-q4.bin` is 47,840 bytes with SHA-256
+`8493d2d3757572c8661141e414b1c0755aa08d4c4e5382dfbbc6b73b02d89083`, matching
+the model value recorded above. The package API is
+`betlang::detect(source) -> Detection`; `Detection::top_languages()` yields
+ranked `(f32, Language)` candidates and `Language::slug()` yields a canonical
+slug.
+
+The snapshot and packaged inference source differ. This erratum records the
+published registry artifact as the dependency review target; it does not claim
+that the original snapshot describes the package implementation. The required
+license, retention, supported-target, performance, and local quality reviews
+remain release gates.
+
+[Zed PR #61412](https://github.com/zed-industries/zed/pull/61412) records the
+same registry checksum in its lockfile and is a primary source for Zed's
+implementation choices. Its 20-byte eligibility rule, 4 KiB start/end sample,
+0.20 minimum score, 0.20 candidate-group gap, 0.50 language-switch gap, and
+200 ms debounce are an external evaluation baseline only. They do not freeze
+Companion thresholds or satisfy this ADR's required local corpus evaluation.
 
 ## Consequences
 

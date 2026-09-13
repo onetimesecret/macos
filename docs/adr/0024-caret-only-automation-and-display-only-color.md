@@ -6,6 +6,7 @@ documentation_status: reviewed # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-08-27
+- **Superseded in part by:** [ADR-0029](0029-betlang-source-language-detection-behind-the-existing-c-abi.md), specifically its inferred bare-fence, explicit wrap/insert-label, opt-in paste-replacement, and whole-file Source-mode extensions. The remaining decision stands.
 
 ## Context
 
@@ -53,6 +54,14 @@ since amendment B and it shows this color too. Nothing is revealed by
 that, because the ink at rest is already legible in full; if a glance
 should show less, the answer is to show less of the page, not to
 selectively uncolor it.
+
+## Decision history
+
+- 2026-09-12: Superseded in part by
+  [ADR-0029](0029-betlang-source-language-detection-behind-the-existing-c-abi.md).
+  The replacement is limited to the inferred bare-fence, explicit wrap/insert-label,
+  opt-in paste-replacement, and whole-file Source-mode extensions named there.
+  The remaining caret-only automation and display-only color decision stands.
 
 ## Consequences
 
