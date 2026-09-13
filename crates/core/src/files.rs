@@ -1,8 +1,8 @@
 //! Open files: the content class that is a peer to pages.
 //!
 //! A file on disk is the artifact. A file is never a page, never a Tab,
-//! never counted against the nine page cap, never in the day roll and
-//! never synced. Sync exclusion is structural rather than a rule:
+//! never on the strip, never in the day roll and never synced. Sync
+//! exclusion is structural rather than a rule:
 //! [`crate::store::SheetStore::export_document_updates`] is the only
 //! function that turns store state into relay payload, and nothing in
 //! this module is reachable from it.
@@ -515,9 +515,8 @@ impl OpenFile {
     }
 }
 
-/// Every open file. No cap, no clock, no TTL: none of the three means
-/// anything to a file, and the store that holds pages is the one that
-/// counts to nine.
+/// Every open file. No clock, no TTL, no place on the strip: none of
+/// the three means anything to a file.
 #[derive(Default)]
 pub struct FileStore {
     files: Vec<OpenFile>,

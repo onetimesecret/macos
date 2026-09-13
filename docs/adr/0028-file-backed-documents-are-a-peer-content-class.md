@@ -275,3 +275,7 @@ and redundant.
   three cases of
   [the draft lifecycle procedure](../qa/verification-procedures/file-draft-lifecycle.md)
   pass.
+- **2026-09-06:** The nine page cap this record exempts files from was
+  removed (issue #158, ADR-0017's history). The exemption stands on its
+  own terms: a file takes no slot on the strip, whatever the strip
+  holds. The body above keeps its original wording.

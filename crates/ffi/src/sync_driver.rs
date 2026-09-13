@@ -2176,7 +2176,7 @@ mod tests {
     #[test]
     fn an_event_names_the_page_in_both_the_languages_the_seam_speaks() {
         let mut store = companion_core::SheetStore::new(companion_core::SystemClock);
-        let sheet = store.new_tab().unwrap().1;
+        let sheet = store.new_tab().1;
         let page = store.sheet(sheet).unwrap().uuid();
 
         let applied = event_json(&SyncEvent::Applied(page), &store);
@@ -2360,7 +2360,7 @@ mod tests {
     }
 
     fn inked_page(companion: &mut Companion, text: &str) -> SheetId {
-        let page = companion.store.new_tab().unwrap().1;
+        let page = companion.store.new_tab().1;
         assert!(companion.store.apply_ops(
             page,
             &[companion_core::EditOp::Insert {
@@ -2512,7 +2512,7 @@ mod tests {
                 text: "still typing ".into(),
             }],
         ));
-        assert!(companion.store.new_tab().is_ok());
+        companion.store.new_tab();
         assert_eq!(*credentials.load("api-token").unwrap(), b"conceal-token");
         assert_eq!(
             *crate::persist::load_ledger_key(&*credentials).unwrap(),
@@ -2864,8 +2864,8 @@ mod tests {
     fn the_rotation_targets_the_page_whose_ceremony_is_due() {
         let credentials: Arc<dyn CredentialStore> = Arc::new(InMemoryCredentialStore::default());
         let mut companion = store_companion(Arc::clone(&credentials));
-        let (tab_a, page_a) = companion.store.new_tab().unwrap();
-        let (tab_b, page_b) = companion.store.new_tab().unwrap();
+        let (tab_a, page_a) = companion.store.new_tab();
+        let (tab_b, page_b) = companion.store.new_tab();
         for page in [page_a, page_b] {
             assert!(companion.store.apply_ops(
                 page,

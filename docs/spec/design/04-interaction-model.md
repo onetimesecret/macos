@@ -214,11 +214,14 @@ bar's way, exactly where a spreadsheet hand already knows to look.
 - **Names are live.** A tab is named by its sheet's first typed line,
   with markdown markup stripped for the title only (`### deploy friday`
   → "deploy friday"); a page with no typed line is "untitled".
-- **Cap: 9 sheets, refuse-don't-evict.** The natural limit of the
-  keyboard map, since ⌘0 belongs to the ledger. At the wall the app
-  declines the tenth and says so. Silent eviction of deliberately placed
-  content would break trust (doc 03 §5) — eviction is by the TTL the
-  user chose, never LRU surprise.
+- **No cap; never evict.** Rev C set a cap of 9 sheets as the natural
+  limit of the keyboard map, with the app declining the tenth and saying
+  so. The cap was removed on 2026-09-06 (issue #158, ADR-0017's history):
+  ⌘1 to ⌘9 stay shortcuts to the first nine slots, the strip scrolls to
+  hold the rest, and a tenth slot simply has no chord. What survives is
+  the half that mattered: silent eviction of deliberately placed content
+  would break trust (doc 03 §5). Eviction is by the TTL the user chose,
+  never LRU surprise.
 - **Drag to reorder**, live; the ⌘-number map follows the visible order.
 - **Close** is an ✕ on tab hover; a closed page rests in the ledger like
   an expired one. New page: the + affordance, or ⌘N.
@@ -400,7 +403,7 @@ window remembers its own position.)
 | Time | per-cell TTL | one countdown per sheet; pausable (double-click tab: 1h → 24h → release) |
 | Masking | detection (`ConcealedType`, key/token regex), reveal-on-hold | gesture only (⇧⌘V, drop, ⌘↩); chips never revealable; detection deleted |
 | The container | fixed edge-docked panel | a real window — move, resize, double-click-stretch; still non-activating |
-| Capacity | soft cap ~12 cells | 9 sheets — the keyboard wall; refuse-don't-evict unchanged |
+| Capacity | soft cap ~12 cells | 9 sheets at rev C, the keyboard wall; no cap since 2026-09-06 (issue #158); never evict unchanged |
 | Keyboard nav | per-cell bindings, no global map | full map: ⌘1–9, ⌘0, ⌥⌘←/→, ⌥⌘N, ⇧⌘V, ⌘↩ |
 | After death | nothing — no retention of any kind | the ledger (⌘0): dimmed ink, session-only; sealed bytes still zeroized |
 | Rendering | plain snippet + kind glyph | markdown headings styled, markup kept visible; tab titles strip markup |

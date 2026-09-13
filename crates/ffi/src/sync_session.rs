@@ -1415,7 +1415,7 @@ mod tests {
     fn deltas_round_trip_and_the_terminal_gate_needs_a_current_view() {
         let clock = ManualClock::new();
         let mut store_a = SheetStore::new(clock.clone());
-        let page_a = store_a.new_tab().unwrap().1;
+        let page_a = store_a.new_tab().1;
         assert!(store_a.apply_ops(
             page_a,
             &[EditOp::Insert {
@@ -1426,7 +1426,7 @@ mod tests {
         let uuid = store_a.sheet(page_a).unwrap().uuid();
 
         let mut store_b = SheetStore::new(clock.clone());
-        let page_b = store_b.new_tab().unwrap().1;
+        let page_b = store_b.new_tab().1;
         let pristine = store_b.document_version(page_b).unwrap();
         let full = store_a.export_document_updates(page_a, &pristine).unwrap();
         store_b.adopt_key_frame(page_b, uuid, &full).unwrap();
@@ -1552,7 +1552,7 @@ mod tests {
         // is writing on it appears for a peer erasing a line too.
         let clock = ManualClock::new();
         let mut store_a = SheetStore::new(clock.clone());
-        let page_a = store_a.new_tab().unwrap().1;
+        let page_a = store_a.new_tab().1;
         assert!(store_a.apply_ops(
             page_a,
             &[EditOp::Insert {
@@ -1563,7 +1563,7 @@ mod tests {
         let uuid = store_a.sheet(page_a).unwrap().uuid();
 
         let mut store_b = SheetStore::new(clock.clone());
-        let page_b = store_b.new_tab().unwrap().1;
+        let page_b = store_b.new_tab().1;
         let pristine = store_b.document_version(page_b).unwrap();
         let full = store_a.export_document_updates(page_a, &pristine).unwrap();
         store_b.adopt_key_frame(page_b, uuid, &full).unwrap();
@@ -1641,7 +1641,7 @@ mod tests {
     fn two_devices_confirm_a_ceremony_at_the_same_stream_position() {
         let clock = ManualClock::new();
         let mut store_a = SheetStore::new(clock.clone());
-        let page_a = store_a.new_tab().unwrap().1;
+        let page_a = store_a.new_tab().1;
         assert!(store_a.apply_ops(
             page_a,
             &[EditOp::Insert {
@@ -1659,7 +1659,7 @@ mod tests {
         let uuid = store_a.sheet(page_a).unwrap().uuid();
 
         let mut store_b = SheetStore::new(clock.clone());
-        let page_b = store_b.new_tab().unwrap().1;
+        let page_b = store_b.new_tab().1;
         let pristine = store_b.document_version(page_b).unwrap();
         let full = store_a.export_document_updates(page_a, &pristine).unwrap();
         store_b.adopt_key_frame(page_b, uuid, &full).unwrap();
@@ -1808,11 +1808,11 @@ mod tests {
     fn a_proposal_for_a_page_this_device_does_not_hold_spends_nothing() {
         let clock = ManualClock::new();
         let mut store_a = SheetStore::new(clock.clone());
-        let page_a = store_a.new_tab().unwrap().1;
+        let page_a = store_a.new_tab().1;
         let uuid = store_a.sheet(page_a).unwrap().uuid();
         // B never adopted A's page; its store holds only its own.
         let mut store_b = SheetStore::new(clock.clone());
-        let _ = store_b.new_tab().unwrap();
+        let _ = store_b.new_tab();
 
         let chain_a = GopKeyChain::root(CHANNEL_SECRET).unwrap();
         let mut chain_b = GopKeyChain::root(CHANNEL_SECRET).unwrap();

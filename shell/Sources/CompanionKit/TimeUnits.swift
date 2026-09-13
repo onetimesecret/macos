@@ -196,14 +196,14 @@ public struct TimeUnitProjection: Equatable, Sendable {
     ///
     /// Every page this counts is blank, because a page with something
     /// on it would have made its own day appear. The rail's footer says
-    /// the number out loud, and the cap refusal names the toggle that
-    /// brings those pages back, because nine slots full of blank old
-    /// pages would otherwise make today unreachable with no visible
-    /// cause. Nothing is auto-discarded to make room: reaping blank
-    /// pages is a lifetime mechanism nobody asked for. The number is
-    /// also the instrument for the content predicate itself, if it is
-    /// routinely above zero in dogfood, the bar is set wrong
-    /// (ADR-0020's eject triggers).
+    /// the number out loud and its tooltip names the toggle that brings
+    /// those pages back, so nothing the mode hides is unreachable. They
+    /// cost nothing else: the strip has no cap, so blank old pages
+    /// cannot stand between a person and today (issue #158). Nothing is
+    /// auto-discarded: reaping blank pages is a lifetime mechanism
+    /// nobody asked for. The number is also the instrument for the
+    /// content predicate itself, if it is routinely above zero in
+    /// dogfood, the bar is set wrong (ADR-0020's eject triggers).
     public let hiddenBlankPages: Int
 
     /// Group the live pages into days. The single entry point, and the

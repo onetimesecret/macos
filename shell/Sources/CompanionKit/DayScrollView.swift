@@ -1336,7 +1336,7 @@ final class EmptyTodayView: NSView {
         grant.selectedTabHoldsNoPage = { [weak model] in
             model?.selectedTabHoldsNoPage ?? true
         }
-        // `openToday()` rather than `createPageAndFocus(in:)`, which is
+        // `startToday()` rather than `createPageAndFocus(in:)`, which is
         // what the strip's own empty state calls. The two agree on the
         // cases the strip can be in (no tabs at all, or a selected slot
         // holding nothing) and disagree on the one only the roll has:
@@ -1345,9 +1345,11 @@ final class EmptyTodayView: NSView {
         // selected slot peopled and quietly do nothing at all. Today's
         // place has to make today's page. It is still the shipped
         // gesture and it still cannot mint twice: a second click finds
-        // today holding a page and selects it (ADR-0017).
+        // today holding a page and selects it (ADR-0017). Not
+        // `openToday()`, which is ⌘N's and mints another page on
+        // today's when asked again (issue #158): a place is not an ask.
         grant.onCreate = { [weak model] window in
-            model?.openToday()
+            model?.startToday()
             model?.focusEditorWhenMounted(in: window)
         }
         grant.onEscape = { [weak model] in model?.escape() }

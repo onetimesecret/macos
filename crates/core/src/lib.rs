@@ -17,8 +17,8 @@
 //!   detection outright. A chip's excerpt is a fixed-budget substring;
 //!   counts are counts.
 //! - **Evicts by policy, never by surprise.** Every page expires on the
-//!   countdown the user chose; at the cap (9 — the keyboard wall) the
-//!   store *refuses* a tenth page rather than silently evicting.
+//!   countdown the user chose, and nothing else ends one: the strip
+//!   has no cap, so there is no wall to evict at (issue #158).
 //! - **No polling.** Expiry — and hold lapses — are scheduled: the
 //!   shell asks [`SheetStore::next_event`] and arms exactly one timer;
 //!   on firing it calls [`SheetStore::expire_due`]. Idle CPU stays
@@ -59,7 +59,7 @@ pub use secret::SecretBuffer;
 pub use sheet::{
     ChipId, ChipMeta, Conceal, ItemId, SealedChip, Segment, Sheet, SheetId, Tab, TabId, local_day,
 };
-pub use store::{DEFAULT_SHEET_CAP, EditOp, PayloadError, Refusal, RemoteRefusal, SheetStore};
+pub use store::{EditOp, PayloadError, Refusal, RemoteRefusal, SheetStore};
 pub use sync::{
     CeremonyBallot, DeltaAdmission, ExpiryPolicy, HoldRegister, PageChannel, TerminalMarker,
 };

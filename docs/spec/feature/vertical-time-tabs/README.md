@@ -35,7 +35,7 @@ unscheduled, though its TTL-ladder section graduated into ADR-0011,
 accepted 2026-09-01), and
 [`2026-0904-capacity-and-today-proposal.md`](2026-0904-capacity-and-today-proposal.md)
 (the agreed proposal that the tab cap must not prevent writing Today's note;
-it does not yet amend an ADR).
+implemented 2026-09-06 by removing the cap, recorded in ADR-0017's history).
 
 ## The shape #79 asks for
 
@@ -143,43 +143,39 @@ read. It calls no core mutator, and the mode flag lives in `UserDefaults`
 beside `wrapsLines` rather than in the sealed file. Flipping it moves no
 core state, so there is nothing to lose and nothing to migrate.
 
-## Why the cap does not move
+## Why there is no cap
 
-`DEFAULT_SHEET_CAP` is nine and stays nine
-(`crates/core/src/store.rs`). Refuse-don't-evict stays too: doc 04 is
-explicit that silent eviction of deliberately placed content would break
-trust, and eviction is by the TTL the user chose.
+Until 2026-09-06 the store refused a tenth tab, on the reasoning that
+nine was the keyboard map's natural limit and that a seven-day ceiling
+could fill at most eight days. The arithmetic held; the refusal did not
+survive this mode (issue #158). Nine slots full of blank old pages are
+hidden by the content predicate, so a person was refused today's page
+with no visible cause, and the only remedy was to leave the mode, find a
+tab in the strip, close it and come back. A cap that a mode can make
+invisible is not a cap a person can manage.
 
-The arithmetic that says nine is enough. A page's countdown runs at most
-seven days, the ladder's ceiling, with no forever rung
-(`crates/core/src/ttl.rs`). A seven-day span, wherever
-inside a day it begins, touches at most eight distinct local days: the
-day it starts on, six whole days, and the day it ends on. So the pages
-alive at any one moment were born on at most eight local days, and eight
-rows sit under nine slots with one to spare. In ordinary use the mode
-never asks the cap for a tenth tab.
+So the cap is gone, in the core and not only here
+(`crates/core/src/store.rs`). `new_tab` cannot refuse, the restore path
+no longer treats a wider strip as malformed, and nothing at the seam
+answers a new page with a wall. Refuse-don't-evict stays in the only
+form that still means anything: eviction is by the TTL the user chose,
+and nothing is auto-discarded to make room, because nothing needs making
+room for. Auto-reaping blank pages is precisely the second lifetime
+mechanism the ADRs forbid, and removing the cap is what lets the
+retention decision in ADR-0017 stand untouched.
 
-One case escapes that arithmetic, and it is better stated than hidden. A
-held page outlives its rung: every further pause press tops the hold up
-to twenty-four hours from now, and the store says so in as many words:
-repeated pauses are how a page outlives its rung
-(`crates/core/src/store.rs`). A page held across a week can be
-born nine or ten days back and still be alive, and the rail will show its
-day. This costs nothing structurally. The rail's length is bounded by the
-number of live pages, which the cap already bounds at nine, plus the
-Today place when today holds none. The mode cannot manufacture a slot, so
-it cannot manufacture a refusal.
+⌘1 to ⌘9 keep their meaning as shortcuts to the first nine visible
+targets in either mode. They set no maximum: a tenth day, or a tenth
+slot on the strip, simply has no chord and is reached by a click. The
+strip scrolls sideways to hold the slots that no longer fit across the
+card, and follows the selection so a page minted past the edge is on
+screen the moment it exists.
 
-What the mode can do is make an existing refusal harder to read. Nine
-slots full of blank old pages are hidden by the content predicate, so a
-user could be refused a new page with no visible cause. The answer is
-honesty rather than a new mechanism: the rail's footer shows a dimmed
-count of the live pages the projection is not showing, its tooltip names
-the Settings toggle as the way to reach them, and the refusal message in
-this mode names the toggle too. Nothing is auto-discarded: auto-reaping
-blank pages to make room is precisely the second lifetime mechanism the
-ADRs forbid. The count doubles as an instrument: if it is routinely
-non-zero in dogfood, the content predicate is wrong.
+The rail's footer still shows a dimmed count of the live pages the
+projection is not showing, with the Settings toggle named in its
+tooltip, so nothing the mode hides is unreachable. The count is now
+purely an instrument: if it is routinely non-zero in dogfood, the
+content predicate is wrong.
 
 ## Day 0 is a place, not a page
 
@@ -197,14 +193,31 @@ the empty state the app already ships, with its Return grant intact
 
 Because every mint stamps `wall_ms()`, which is now, every page the
 user creates lands in Day 0 by construction. The gesture-only rule and
-the one-page-per-day shape turn out to want the same thing.
+the day shape turn out to want the same thing: a day may hold several
+pages, and the projection lists them under that day in strip order, but
+every one of them was minted on that day by a gesture.
 
-⌘N in this mode goes to today's page when one exists and creates it when
-none does. That is `openToday()`, and it is deliberately not a new mint
-policy: it either selects an occupied tab, which cannot mint, or it goes
-through the shipped create path unchanged. No mint-target heuristic, no
-reuse of an arbitrary named empty tab: flipping back to horizontal must
-never reveal that a tab the user named now holds today's page.
+⌘N in this mode has three readings, and all of them are `openToday()`
+(issue #158). When today holds a page and the selection is elsewhere,
+it goes there. When today holds none, it creates one. When the person
+is already on today's page, it creates a second page beside the first:
+first press jumps, second press creates, blank or written on, exactly
+as on the strip. The rail's Today row carries the strip's + button for
+the same action, with the strip's tooltip, and it mints outright the
+way the strip's does.
+
+The gestures that name today as a place rather than ask for a page take
+`startToday()` instead: the roll's empty Today region and the `.today`
+target, which exists only while today holds no page. Those go to today's
+page when it exists and create it when it does not, and never a second
+one, because a grant can fire again after the page it made has appeared
+and a place that made a page a moment ago must find that page.
+
+None of this is a new mint policy: every arm either selects an occupied
+tab, which cannot mint, or goes through the shipped create path
+unchanged. No mint-target heuristic, no reuse of an arbitrary named
+empty tab: flipping back to horizontal must never reveal that a tab the
+user named now holds today's page.
 
 ## The three answers
 
@@ -355,8 +368,8 @@ are pure functions with tests of their own, in the idiom
   tooltip may name, asked of the keymap rather than spelled into the
   view, so a user who moved ⌘2 moves the tooltip with it and a user who
   unbound it gets a tooltip that says only what the row does. A tenth
-  row has no chord and cannot: ten live days would take ten live pages,
-  one over the cap.
+  row has no chord: the shortcuts count to nine and the strip does not,
+  so the row is reached by a click.
 - `TimeRailView.hiddenPagesLine(count:)` and `hiddenPagesHelp(count:)`, the footer. The short form fits the 56pt column and
   the sentence behind it names the toggle, which is what doc 05's
   no-abbreviation-only rule asks for. It is absent entirely at zero: a
@@ -774,9 +787,10 @@ decision that is Rust, the more of it is validated before a PR exists.
 - **No runtime setting inside the core.** `SheetStore` learns nothing
   about modes, which is what keeps the toggle from moving core state in
   either direction.
-- **No change to the cap, the ladder, the 7d ceiling, the refusal message
-  or any default rung**, including a mode-specific default rung, which
-  would be the mode reaching into core state.
+- **No change to the ladder, the 7d ceiling or any default rung**,
+  including a mode-specific default rung, which would be the mode
+  reaching into core state. The cap's removal (issue #158) is not the
+  mode reaching in: it took the cap out of the core for both modes.
 - **No change to horizontal mode's behaviour or pixels.** `GaugeBar` is
   public and `EmptyRule` and `HoldChip` are module-internal, so the rail
   reuses them where they stand rather than moving them. ~~`TabStripView.swift`
@@ -939,7 +953,7 @@ the height that arrived, so nothing shifts under a sentence being read.
 
 1. **Does reinterpreting ⌘1 to ⌘9 and ⌘N confuse the hands?** In the mode
    the numbers address days rather than slots, and ⌘N goes to today
-   instead of making a tenth tab. *Leaning:* acceptable, because the
+   before it makes another page. *Leaning:* acceptable, because the
    modes are exclusive, the mode is off by default, and no user keymap
    changes meaning. If dogfood finds people pressing ⌘3 expecting their
    third tab, the answer is probably to stop mapping numbers at all in
@@ -1033,7 +1047,7 @@ extra clip.
 - Issue #79, and [ADR-0020](../../../adr/0020-a-day-is-a-projection-of-live-pages.md),
   the decision this spec argues for.
 - [ADR-0017](../../../adr/0017-durable-tabs-expiring-pages.md) for the
-  tab/page split, the cap argument and the minting rule.
+  tab/page split, the minting rule, and the cap's removal in its history.
 - [ADR-0016](../../../adr/0016-content-persists-across-restart.md) for
   the TTL as the only lifetime mechanism the user did not ask for.
 - [ADR-0006](../../../adr/0006-persistent-editor-storage-swap.md) for the

@@ -30,11 +30,12 @@ Two answers are available and they lead to different applications.
 
 The durable answer makes a day an object the app creates, names, orders
 and reaps. Every version of it trips something already settled. A
-tab-per-day meets `DEFAULT_SHEET_CAP = 9`
-(crates/core/src/store.rs), which is refuse-don't-evict by design and
-which `restore` enforces on the way in as well, refusing a file that
-claims more tabs than the cap as `Malformed`
-(crates/core/src/persist.rs), and it makes the calendar a second
+tab-per-day met `DEFAULT_SHEET_CAP = 9` as it then stood
+(crates/core/src/store.rs), which was refuse-don't-evict by design and
+which `restore` enforced on the way in as well, refusing a file that
+claimed more tabs than the cap as `Malformed`
+(crates/core/src/persist.rs; the cap was removed on 2026-09-06, issue
+#158, which does not revive this option), and it makes the calendar a second
 lifetime mechanism for a durable slot, the condition
 ADR-0017 names in as many words as its own eject trigger, which reopens
 that ADR and ADR-0016 or does not ship. A persisted day object needs a
@@ -277,18 +278,17 @@ decision's status waits on.
    lives in one place; the existing focus-law suite, which pins that a
    walk leaving the ledger and minting asks for the keys exactly once,
    passes unedited.
-10. `openToday()`: select today's tab when a live page is there, else go
-    through the shipped create path (`newPage()`,
-    shell/Sources/CompanionKit/PageModel.swift, and
-    `createPageAndFocus(in:)`) unchanged, with the cap refusal
-    naming the Settings toggle in this mode. The `.pageNew` arm
-    (shell/Sources/CompanionKit/Keymap/KeymapRegistry.swift)
-    branches on the mode. No new `CommandID`, no keymap row.
+10. `openToday()`: select today's tab when a live page is there, create
+    through `newPage()` when today is empty, and create another only when
+    today's page is already on screen. The place gestures use
+    `startToday()`, which never creates a second page
+    (shell/Sources/CompanionKit/PageModel.swift). The `.pageNew` arm
+    (shell/Sources/CompanionKit/Keymap/KeymapRegistry.swift) branches on
+    the mode. No new `CommandID`, no keymap row.
 
-    **Landed**, through `newPage()`. The refusal is the shipped one with
-    its sentence widened in this mode (`PageModel.capRefusal`), so the
-    words the strip has always shown are unchanged and a test holds both
-    of them still.
+    **Landed**, through `newPage()`. The capacity refusal was removed on
+    2026-09-06 (issue #158); neither mode can now refuse a new page for
+    lack of room.
 11. The editor factoring: building the one persistent `InkTextView`
     separates from wrapping it in a scroll view
     (shell/Sources/CompanionKit/InkEditorView.swift, and
@@ -520,7 +520,8 @@ the toggle alone.
 - The nine cap is hit in this mode while live pages sit on fewer than
   eight distinct days. Then the cap is counting something the mode made
   invisible, and either the predicate or the cap gets revisited, not the
-  projection.
+  projection. Fired 2026-09-06 (issue #158): the cap was revisited and
+  removed, the predicate and the projection stand.
 - The TTL ceiling rises above 7d. That reprices the eight-day arithmetic
   in the spec's cap section, and the claim that eight rows fit under nine
   slots has to be recomputed before it is repeated.

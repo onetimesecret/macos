@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A second page on today, with the time tabs down the side** (issue
+  #158). ⌘N and ⌘T still go to today's page first, and still start it
+  when today has none. Pressed again while already on today's page,
+  they mint a second page beside the first, blank or not, exactly as
+  on the strip, and the rail's Today row lists both in strip order. The
+  Today row also carries the strip's + button, with the strip's tooltip
+  naming the bound chord. ⌘1 and the Today row itself name today as a
+  place: they make the first page and never a second.
+
 - **The page's font is a setting: a family by name, and a size.** Two
   rows on the General tab, the way an editor names its buffer font: a
   family as the system spells it (Menlo, JetBrains Mono) and a point
@@ -25,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `companion-ffi` 0.24.0). A file is a content class that is a peer to
   a page, and both are first class. A file has no countdown, no gauge,
   it is never in the day roll,
-  it is never counted against the nine page cap, and it is never
+  it takes no slot on the strip, and it is never
   synced. That last one is structural rather than a rule: files live
   in their own store, and the one function that turns state into
   relay payload cannot reach it. Files reuse the same operation
@@ -124,6 +133,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the front.
 
 ### Removed
+
+- **The nine-tab cap** (issue #158; `companion-core` 0.19.0,
+  `companion-ffi` 0.25.0). The store no longer refuses a tenth tab, in
+  either mode, and a saved strip wider than nine restores rather than
+  reading as damage. ⌘1 to ⌘9 keep their meaning as shortcuts to the
+  first nine visible targets; the tenth onward has no chord and is
+  reached by a click. The strip scrolls sideways to hold the slots that
+  no longer fit across the card, and follows the selection so a page
+  minted past the edge is on screen the moment it exists. Nothing is
+  discarded to make room, because nothing needs making room for: the
+  hidden-blank count on the rail stays as the instrument it was.
+  ADR-0017's first eject trigger had fired, and its history records
+  the answer.
 
 - **The header countdown** (dogfood phase 4). The card header printed
   the selected page's remaining time and rung as a clickable label. In

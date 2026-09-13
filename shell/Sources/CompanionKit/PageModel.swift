@@ -318,8 +318,8 @@ public final class PageModel: ObservableObject {
     @Published public private(set) var tabs: [TabSummary] = []
 
     /// Every open file, in open order. A parallel array beside `tabs`
-    /// rather than entries within it: files are never counted against
-    /// the nine page cap, never in the day roll and never synced, and
+    /// rather than entries within it: files are never on the strip,
+    /// never in the day roll and never synced, and
     /// keeping them out of `tabs` is what makes those facts structural
     /// rather than rules a reader has to remember.
     @Published public private(set) var openFiles: [FileSummary] = []
@@ -369,8 +369,8 @@ public final class PageModel: ObservableObject {
     /// whenever the ledger is shown. Metadata only, never content.
     @Published public private(set) var ledgerEntries: [LedgerEntry] = []
 
-    /// A refusal or status line the surface shows briefly ("the window
-    /// holds 9 tabs…"). Refuse-don't-evict means the app says so.
+    /// A refusal or status line the surface shows briefly ("nothing to
+    /// seal"). When the app declines something it says so.
     @Published public var notice: String?
 
     /// Notices are transient by contract: each `flash` restarts the
@@ -1750,8 +1750,8 @@ public final class PageModel: ObservableObject {
     /// would freeze the day reading the core recomputes on each read,
     /// so the labels would stop rolling over at local midnight and the
     /// mode would need the timer this whole design exists to avoid.
-    /// What it costs instead is a walk over at most nine summaries the
-    /// model has already decoded, with no call into the core at all.
+    /// What it costs instead is a walk over the summaries the model has
+    /// already decoded, with no call into the core at all.
     public var timeUnits: TimeUnitProjection {
         TimeUnitProjection.project(tabs: tabs, selectedPageID: selectedPageID, unit: .day)
     }
@@ -2014,7 +2014,7 @@ public final class PageModel: ObservableObject {
     ///
     /// Both arms are gestures the app already ships: a slot goes
     /// through `select(_:)`, which mints into it when it holds nothing,
-    /// and today goes through `openToday()`, which selects today's page
+    /// and today goes through `startToday()`, which selects today's page
     /// when there is one and otherwise takes the shipped create path.
     /// Nothing new mints here, and nothing mints at all without a
     /// gesture asking for it (ADR-0017).
@@ -2023,7 +2023,10 @@ public final class PageModel: ObservableObject {
         case .tab(let id):
             select(id)
         case .today:
-            openToday()
+            // A place, not an ask for another page: `.today` exists
+            // only while today holds no page, so this can only mint the
+            // first one (issue #158).
+            startToday()
         case .file(let id):
             selectFile(id)
         }
@@ -2868,43 +2871,27 @@ public final class PageModel: ObservableObject {
 
     // MARK: Pages
 
-    /// What the pad says when the cap declines a tenth tab.
-    ///
-    /// Not "let one expire" any more: an expiry empties a slot and never
-    /// frees it, so closing is the only thing that moves the wall
-    /// (ADR-0017). Saying otherwise would send the user off to wait for
-    /// something that cannot happen.
-    ///
-    /// With the days down the side the same wall can be hit with no
-    /// visible cause (issue #79). Nine slots may be full of old pages
-    /// with nothing on them, which the projection does not draw, so the
-    /// strip a tab would be closed from is not on screen and the
-    /// refusal reads as a bug. The sentence names the toggle that brings
-    /// those pages back rather than leaving the user to guess, and
-    /// nothing is auto-discarded to make room: reaping blank pages is a
-    /// lifetime mechanism nobody asked for. Pure, so both sentences are
-    /// testable without a window.
-    public nonisolated static func capRefusal(showsTimeUnits: Bool) -> String {
-        let wall = "the window holds 9 tabs, close one to make room"
-        guard showsTimeUnits else { return wall }
-        return "\(wall), the pages with nothing on them are behind the time tabs "
-            + "toggle in Settings"
-    }
+    /// What the pad says on the one failure a new page has left: the
+    /// core answered with no slot at all, which is a broken handle and
+    /// not a full strip. There is no cap to hit (issue #158); ⌘1 to ⌘9
+    /// reach the first nine tabs and the rest simply have no chord.
+    static let newPageFailed = "the pad could not open a page"
 
     /// A new tab at the ladder's top rung (ADR-0011 section 3, the
-    /// core's own default), holding a new page. 0 means the store
-    /// refused at the cap of 9. Returns the TAB's id, which is what the
-    /// selection keeps.
+    /// core's own default), holding a new page. 0 only when the core
+    /// could not answer, never for want of room. Returns the TAB's id,
+    /// which is what the selection keeps.
     @discardableResult
     private func newTab() -> UInt64 {
         let id = client.newTab()
-        // A refusal at the cap changed nothing; only a real tab is dirt.
+        // A failed ask changed nothing; only a real tab is dirt.
         if id != 0 { markDirty() }
         return id
     }
 
-    /// A new page (⌘N or the + tab). At the cap the app declines and
-    /// says so.
+    /// A new page (⌘N or the + tab). It cannot be refused for room:
+    /// the strip has no cap, and a tenth tab opens like the ninth
+    /// (issue #158).
     public func newPage() {
         notice = nil
         // A page asked for now is a page to look at now, so the file
@@ -2912,7 +2899,8 @@ public final class PageModel: ObservableObject {
         selectedFile = nil
         let created = newTab()
         if created == 0 {
-            flash(Self.capRefusal(showsTimeUnits: showsTimeUnits))
+            logger.error("the core answered a new page with no tab")
+            flash(Self.newPageFailed)
         }
         refresh()
         if created != 0 {
@@ -2937,36 +2925,81 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// ⌘N while the days are down the side: go to today's page, and make
-    /// one when today has none (issue #79).
+    /// ⌘N while the days are down the side: go to today's page, make
+    /// one when today has none, and make another when the person is
+    /// already on today's page (issues #79, #158).
     ///
-    /// Deliberately not a new mint policy. Two arms, both of them
-    /// shipped. When today already holds a live page this is a plain
-    /// `select(_:)`, which cannot mint into an occupied slot, so a
-    /// second ⌘N is a jump and never a second page. When today holds
-    /// none it is `newPage()`, the same path ⌘N takes with the strip
-    /// showing, which opens a fresh slot at this form factor's rung and
-    /// hands its editor the keys. Every mint stamps the clock's own
-    /// reading of now, so the page it makes lands on today by
-    /// construction rather than by being filed there.
+    /// Three arms, none of them a new mint policy. When today holds a
+    /// live page and the selection is elsewhere this is a plain
+    /// `select(_:)`, the jump, which cannot mint into an occupied slot.
+    /// When today holds none it is `newPage()`, the same path ⌘N takes
+    /// with the strip showing, which opens a fresh slot at this form
+    /// factor's rung and hands its editor the keys. And when the
+    /// selection already stands on one of today's pages it is
+    /// `newPage()` again: first press jumps, second press creates, and
+    /// the projection files the new page under today beside the first,
+    /// in strip order. Every mint stamps the clock's own reading of
+    /// now, so the page it makes lands on today by construction rather
+    /// than by being filed there.
+    ///
+    /// Blank or not makes no difference, exactly as on the strip: ⌘N
+    /// there opens a slot whether or not the last one was written on,
+    /// and a person on today's page who asks for another gets another.
+    /// A bar on content would be a second mint policy dressed as a
+    /// courtesy, and it was tried and taken out (issue #158).
     ///
     /// What it will not do is reach for some arbitrary empty tab to put
     /// today's page in. That would be opinionated in exactly the place
     /// the issue asked for unopinionated, and it has a real cost:
     /// flipping back to the strip would show a tab the user named
-    /// holding today's typing. At the cap it refuses through
-    /// `newPage()`'s own refusal, widened in this mode to name the
-    /// toggle (`capRefusal`).
+    /// holding today's typing. Nothing here can be refused for room:
+    /// the strip has no cap (issue #158).
     ///
-    /// Reached from gestures only, ⌘N, and the rail's Today row when it
-    /// lands. Nothing calls it from `refresh()`, from a mount or from
-    /// the toggle: what is displayed is not thereby minted (ADR-0017).
+    /// Reached from ⌘N and ⌘T only. The gestures that name today as a
+    /// place, the roll's empty region and the rail's Today row, take
+    /// `startToday()`, which never mints a second page. Nothing calls
+    /// either from `refresh()`, from a mount or from the toggle: what is
+    /// displayed is not thereby minted (ADR-0017).
     public func openToday() {
         // Bucket 0 is today and there is exactly one of it: the
         // projection folds a page stamped ahead of now into today rather
         // than giving it a bucket of its own, so this cannot find an
         // empty Today standing above a peopled one and mint beside a
         // page already on screen (`TimeUnit.bucket(dayOffset:)`).
+        guard let today = timeUnits.units.first(where: { $0.bucket == 0 }),
+            let first = today.tabIDs.first
+        else {
+            newPage()
+            return
+        }
+        if let selection, today.tabIDs.contains(selection) {
+            // Already on today, and today's page is what is on screen:
+            // a file or the ledger standing in front of it makes this a
+            // jump back, not a second page.
+            let onScreen = selectedFile == nil && !showingLedger
+            if onScreen {
+                newPage()
+            } else {
+                select(selection)
+            }
+            return
+        }
+        select(first)
+    }
+
+    /// Today's place, clicked or chosen: go to today's page, and make
+    /// one only when today has none (issues #79, #158).
+    ///
+    /// The two arms `openToday()` had before it learned to mint a
+    /// second page, kept for the gestures that name today as a place
+    /// rather than ask for a page: the roll's empty Today region and a
+    /// `.today` target, which exists only while today holds no page.
+    /// Those grants can fire again after the page they made has
+    /// appeared, a double click on the region, a chord landing during
+    /// the relayout, and a place that made a page a moment ago must
+    /// find that page and select it rather than stack a blank one
+    /// beside it. ⌘N is the gesture that asks for another; this is not.
+    public func startToday() {
         if let tab = timeUnits.units.first(where: { $0.bucket == 0 })?.tabIDs.first {
             select(tab)
             return
@@ -3061,9 +3094,9 @@ public final class PageModel: ObservableObject {
     }
 
     /// Close the tab; whatever page it held rests in the ledger.
-    /// Closing also clears any standing refusal, the cap condition it
-    /// named may be resolved. Explicit close is one of the two things
-    /// that end a tab (ADR-0017), and it takes the slot with the page.
+    /// Closing also clears any standing refusal, since what it named
+    /// may no longer hold. Explicit close is the one thing that ends a
+    /// tab (ADR-0017), and it takes the slot with the page.
     public func close(_ id: UInt64) {
         notice = nil
         // A draft aimed at this page — or at a chip riding on it —
@@ -3701,7 +3734,7 @@ public final class PageModel: ObservableObject {
             // leaves one: what the user asked to be rid of is the copy
             // that travelled, and the name, the rung, the position and
             // the number key are the arrangement they built, which only
-            // a close and the cap may end (ADR-0017).
+            // a close may end (ADR-0017).
             _ = client.discardPage(id: id)
             markDirty()
             refresh()

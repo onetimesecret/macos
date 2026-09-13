@@ -3,8 +3,8 @@
 
 A file backed document is a file on disk that the pad edits. It is a
 peer to a page, not a page: both are first class content, and a file
-has no TTL, no gauge, no day, no place in the nine page cap and no path
-to the sync relay. The decision is
+has no TTL, no gauge, no day, no slot on the strip and no path to the
+sync relay. The decision is
 [ADR-0028](../adr/0028-file-backed-documents-are-a-peer-content-class.md),
 still proposed; the behaviour is the
 [file backed documents specification](../spec/feature/file-editing/README.md).
@@ -198,9 +198,9 @@ without noticing.
   endings makes it uniform. This is a real change the person did not
   ask for, and it is documented on the line ending type.
 - `FileStore` holds a second copy of every open file's text, bounded per
-  file by `FILE_SIZE_LIMIT` and unbounded in the number of open files,
-  because a file is deliberately not counted against the nine page cap.
-  Nothing caps how many files may be open.
+  file by `FILE_SIZE_LIMIT` and unbounded in the number of open files.
+  Nothing caps how many files may be open, and since issue #158 nothing
+  caps how many pages may be either.
 - Tests derive every path from the seamed state directory and never
   spell it. Do not write a test that touches the installed state
   directory.

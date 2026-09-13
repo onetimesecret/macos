@@ -56,8 +56,11 @@ removes the state file.
   as one unit; no content tombstone is introduced.
 - Shell editor storage and undo state must be keyed by Page identity, not Tab
   identity, so a replacement Page cannot resurrect content from its predecessor.
-- Empty Tabs remain visible and count toward the nine-Tab cap. Users may need to
-  close empty Tabs before creating more.
+- Empty Tabs remain visible on the strip and are never removed by anything but
+  a close. Since 2026-09-06 there is no Tab cap, so they cost nothing but their
+  place: ⌘1 to ⌘9 are shortcuts to the first nine slots and the rest have no
+  chord (issue #158). Until then empty Tabs counted toward a nine-Tab cap and
+  users had to close one before creating more.
 - A user-entered Tab name can outlive all Pages in that Tab and can remain in the
   ledger for its retention window. The app must not derive such durable text
   without the user's action.
@@ -68,7 +71,10 @@ removes the state file.
 
 ## Eject triggers
 
-- Users routinely hit the nine-Tab cap while several Tabs are empty.
+- Users routinely hit the nine-Tab cap while several Tabs are empty. Fired
+  2026-09-06 in time-tabs mode, where the projection hides empty Tabs (issue
+  #158). Answered by removing the cap rather than by removing Tabs, so the
+  retention decision above stands.
 - Durable Tab names are repeatedly used for secrets, making the accepted label
   exposure unsafe in practice.
 - Tab rename usage is near zero and placeholder labels fail to preserve useful
@@ -85,3 +91,9 @@ removes the state file.
 - **2026-09-02:** The record was split into this ADR and the linked durable-tabs
   decision background, which now carries the field-level inventory and the
   required-work list.
+- **2026-09-06:** The nine-Tab cap was removed (issue #158). The first eject
+  trigger had fired in time-tabs mode, where empty Tabs are hidden and a
+  refusal had no visible cause. The store no longer refuses a new Tab, the
+  restore path no longer treats a wider strip as malformed, and ⌘1 to ⌘9
+  remain shortcuts to the first nine slots. Everything else in this decision,
+  including Tab retention, stands.

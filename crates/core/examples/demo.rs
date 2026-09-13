@@ -67,13 +67,11 @@ fn main() {
         match cmd {
             "" => {}
             "help" | "?" => help(),
-            "new" | "n" => match store.new_tab() {
-                Ok((_, id)) => {
-                    current = Some(id);
-                    println!("a new page, default rung. the countdown is running.");
-                }
-                Err(e) => println!("refused: {e}"),
-            },
+            "new" | "n" => {
+                let (_, id) = store.new_tab();
+                current = Some(id);
+                println!("a new page, default rung. the countdown is running.");
+            }
             "go" | "g" => match nth_sheet(&store, rest) {
                 Some(id) => current = Some(id),
                 None => println!("no such page"),

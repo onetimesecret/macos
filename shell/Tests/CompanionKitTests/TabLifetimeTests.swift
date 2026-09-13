@@ -99,8 +99,8 @@ final class TabLifetimeTests: XCTestCase {
 
     /// Burning the local copy after a conceal names the page and
     /// nothing else. The slot it travelled from is the arrangement the
-    /// user built, and only a close and the cap end a tab (ADR-0017),
-    /// so the burn leaves the same empty named slot an expiry leaves.
+    /// user built, and only a close ends a tab (ADR-0017), so the burn
+    /// leaves the same empty named slot an expiry leaves.
     func testBurningAConcealedPageLeavesItsTabNamedAndEmpty() throws {
         let model = try makeModel()
         model.loadStateIfNeeded()

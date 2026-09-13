@@ -3,23 +3,26 @@ import SwiftUI
 /// The days down the leading edge of the card: one row per unit of time
 /// the projection is showing, newest at the top (issue #79).
 ///
-/// Navigation, and deliberately nothing else. A row says which day it
-/// is, shows how long the page on it that dies soonest has left, and
-/// takes you there when it is clicked. It offers no rename, no close,
-/// no rung, no hold and no drag-reorder: days have an order the user
-/// does not shuffle and a label the user does not type, and a rail that
-/// could close a day would be exactly the misreading ADR-0017's eject
-/// trigger is about. Those four verbs are not lost: they sit on each
-/// page's own gutter inside the roll, where a day holding two pages can
-/// still say which of them is being renamed or closed.
+/// Navigation, and one plus. A row says which day it is, shows how
+/// long the page on it that dies soonest has left, and takes you there
+/// when it is clicked. It offers no rename, no close, no rung, no hold
+/// and no drag-reorder: days have an order the user does not shuffle
+/// and a label the user does not type, and a rail that could close a
+/// day would be exactly the misreading ADR-0017's eject trigger is
+/// about. Those four verbs are not lost: they sit on each page's own
+/// gutter inside the roll, where a day holding two pages can still say
+/// which of them is being renamed or closed. The one thing the rail
+/// does make is a new page, from the + on the Today row, which is the
+/// strip's own + button on the one day a page can land on (issue
+/// #158).
 ///
 /// A slot holding no page draws no row here, because a slot holding no
 /// page is on no day. The tab is still standing underneath, named and
 /// empty exactly as `expire_due` left it, and the strip shows it again
-/// the moment the mode goes off. Nothing on this rail mints: today has
-/// a row whether or not anything stands in it, and the row a click on
-/// it lands on is the shipped create path, not a mint of its own
-/// (ADR-0017).
+/// the moment the mode goes off. No row on this rail mints by being
+/// selected: today has a row whether or not anything stands in it, and
+/// the row a click on it lands on is the shipped create path, not a
+/// mint of its own (ADR-0017).
 ///
 /// Behind the rows, a faint minimap of the roll: a bar per day as tall a
 /// share of the rail as that day is of the document, and a band over the
@@ -119,16 +122,16 @@ public struct TimeRailView: View {
         return rows
     }
 
-    /// The honesty valve for the nine-slot wall, and the instrument for
-    /// the content predicate itself.
+    /// The count of what the mode is hiding, and the instrument for the
+    /// content predicate itself.
     ///
-    /// Nine slots can fill with old pages that have nothing on them.
-    /// The projection draws none of them, so today becomes unreachable
-    /// with no visible cause, and the refusal reads as a bug rather
-    /// than as a full pad. The count says so out loud, and its tooltip
-    /// names the toggle that brings those pages back. Nothing is
-    /// auto-discarded to make room: reaping blank pages is a lifetime
-    /// mechanism nobody asked for (ADR-0016).
+    /// Old pages with nothing on them draw no rows here, so without a
+    /// count a person would not know they exist, or that the strip
+    /// still holds them. The count says so out loud, and its tooltip
+    /// names the toggle that brings those pages back. They cost nothing
+    /// else, since the strip has no cap (issue #158), and nothing is
+    /// auto-discarded: reaping blank pages is a lifetime mechanism
+    /// nobody asked for (ADR-0016).
     ///
     /// A number that is routinely above zero in dogfood means the
     /// content bar is set wrong, which is ADR-0020's fifth eject
@@ -171,28 +174,24 @@ public struct TimeRailView: View {
         return projection.units.first { $0.bucket == 0 }?.bucket
     }
 
-    /// The ⌘-number that lands on the row at this place on the rail.
-    ///
-    /// ⌘1 to ⌘9 count the rail's rows while the mode is on, so the row at
-    /// index 1 is what ⌘2 selects and its tooltip can say so. Asked of
-    /// the keymap rather than spelled here, for `newPageHelp`'s reason:
-    /// a user who moved the chord moves the tooltip with it, and a user
-    /// who unbound it gets a tooltip that says only what the row does.
-    /// Nothing is bound past the ninth row, and a tenth day (which
-    /// takes ten live pages, one over the cap) simply has no chord.
-    /// Where the day at `day` sits in `PageModel.visibleTargets`,
-    /// which is the array `select(index:)` indexes.
+    /// Where the day at `day` sits in `PageModel.visibleTargets`, which
+    /// is the array `select(index:)` indexes.
     ///
     /// Pure, and the only expression of the offset, so the chord a row
     /// prints and the chord that reaches that row are one arithmetic
     /// rather than two that have to be kept in step. Files come first
-    /// in both layouts, which is the lead's decision, so the days
-    /// start after them; numbering the days from zero would print
-    /// command 1 beside today while command 1 selected the first file.
+    /// in both layouts, which is the lead's decision, so the days start
+    /// after them; numbering the days from zero would print command 1
+    /// beside today while command 1 selected the first file.
     nonisolated static func targetIndex(forDay day: Int, openFileCount: Int) -> Int {
         openFileCount + day
     }
 
+    /// The ⌘-number that lands on the rail row at this index.
+    ///
+    /// ⌘1 to ⌘9 count the rail's rows while the mode is on. Asked of the
+    /// keymap rather than spelled here, so moving or removing a binding
+    /// changes the tooltip with it. A tenth row simply has no chord.
     static func chord(forRowAt index: Int, keymap: ResolvedKeymap) -> Keystroke? {
         let number = index + 1
         guard let command = CommandID.allCases.first(where: { $0.selectsPageNumber == number })
@@ -391,10 +390,15 @@ struct TimeUnitTab: View {
 
     var body: some View {
         VStack(spacing: 3) {
-            Text(unit.railLabel)
-                .font(.system(.caption, design: .monospaced))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            HStack(spacing: 2) {
+                Text(unit.railLabel)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if Self.offersNewPage(unit) {
+                    newPageButton
+                }
+            }
             if unit.pageIDs.isEmpty {
                 // The strip's own treatment for a place with no clock
                 // in it: a gauge at zero would read as a page an
@@ -430,6 +434,43 @@ struct TimeUnitTab: View {
         .accessibilityLabel(Text(unit.spokenLabel))
         .accessibilityValue(Text(unit.spokenRemaining))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityNewPageAction(when: Self.offersNewPage(unit)) {
+            model.newPage()
+        }
+    }
+
+    /// The strip's + button, on the one row where a new page lands
+    /// (issue #158). It mints outright, the way the strip's does: a
+    /// click on a plus is the deliberate ask, so it takes none of
+    /// `openToday()`'s jump-first reading. The tooltip names the chord
+    /// the keymap bound to `page::New`, in the strip's words, so the
+    /// two buttons that do one thing cannot describe it two ways.
+    private var newPageButton: some View {
+        Button(action: model.newPage) {
+            Image(systemName: "plus")
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(Self.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
+        .accessibilityLabel(Text("New page"))
+    }
+
+    /// Which row carries the + button: today, and only today. A page is
+    /// minted with the clock's own reading of now, so today is the one
+    /// day a new page can land on; a plus beside yesterday would
+    /// promise a page in the past. Pure, so the rail's tests can pin
+    /// the placement without a window.
+    nonisolated static func offersNewPage(_ unit: TimeUnitProjection.Unit) -> Bool {
+        unit.bucket == 0
+    }
+
+    /// The + button's tooltip, which is the strip's tooltip: one
+    /// sentence for one action, so a keymap that moved `page::New`
+    /// moves both, and a keymap that unbound it leaves both saying only
+    /// what the button does.
+    static func newPageHelp(chord: Keystroke?) -> String {
+        TabStripView.newPageHelp(chord: chord)
     }
 
     /// Where a tap on this row lands.
@@ -482,5 +523,16 @@ struct TimeUnitTab: View {
     private static func chorded(_ what: String, chord: Keystroke?) -> String {
         guard let chord else { return what }
         return "\(what) (\(chord.displaySymbol))"
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func accessibilityNewPageAction(when offered: Bool, action: @escaping () -> Void) -> some View {
+        if offered {
+            accessibilityAction(named: Text("New page"), action)
+        } else {
+            self
+        }
     }
 }

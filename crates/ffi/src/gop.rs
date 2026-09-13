@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn the_ceremony_rotates_and_rebuilds_as_one_event_or_not_at_all() {
         let mut store = SheetStore::new(ManualClock::new());
-        let page = store.new_tab().unwrap().1;
+        let page = store.new_tab().1;
         assert!(store.apply_ops(
             page,
             &[EditOp::Insert {
@@ -312,7 +312,7 @@ mod tests {
 
         // The frame is the joinable state: a fresh store adopts it.
         let mut joiner = SheetStore::new(ManualClock::new());
-        let j = joiner.new_tab().unwrap().1;
+        let j = joiner.new_tab().1;
         let uuid = store.sheet(page).unwrap().uuid();
         joiner.adopt_key_frame(j, uuid, &frame).unwrap();
         assert_eq!(

@@ -189,10 +189,10 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertNil(model.notice, "nothing was refused")
     }
 
-    /// And again, which must be a jump. `select(_:)` cannot mint into an
-    /// occupied slot, so today's page stays the one page today has: no
-    /// mint-target heuristic, and nothing that would surprise the user
-    /// who flips back to the strip.
+    /// And again from elsewhere, which must be a jump. `select(_:)`
+    /// cannot mint into an occupied slot, so today's page stays the one
+    /// page today has: no mint-target heuristic, and nothing that would
+    /// surprise the user who flips back to the strip.
     func testASecondOpenTodayMintsNothingAndSelectsTheSamePage() throws {
         let (model, _) = try makeModel()
         model.showsTimeUnits = true
@@ -208,12 +208,87 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertEqual(model.selectedPageID, page, "today's page was replaced rather than reached")
     }
 
-    /// The cap trap, and the honest answer to it. Nine slots holding old
-    /// pages with nothing on them draw no rows at all, so the strip a tab
-    /// would be closed from is not on screen; the refusal names the
-    /// toggle that brings it back rather than telling the user to wait
-    /// for an expiry that frees no slot. Nothing is auto-discarded.
-    func testAtTheCapOpenTodayRefusesAndNamesTheToggle() throws {
+    /// First press jumps, second press creates (issue #158). On today's
+    /// page, ⌘N mints a second page, the projection files it under
+    /// today beside the first in strip order, and the selection moves
+    /// onto the new page so the next keystroke lands there. Blank or
+    /// written on makes no difference, exactly as on the strip.
+    func testOpenTodayOnTodaysPageMintsASecondPageOnToday() throws {
+        let (model, _) = try makeModel()
+        model.showsTimeUnits = true
+        model.openToday()
+        let first = try XCTUnwrap(model.selectedPageID)
+        let firstTab = try XCTUnwrap(model.selection)
+        XCTAssertEqual(try XCTUnwrap(model.selectedTab).pageHasContent, false)
+
+        model.openToday()
+
+        XCTAssertEqual(model.tabs.count, 2, "⌘N on today's page did not mint")
+        let second = try XCTUnwrap(model.selectedPageID)
+        XCTAssertNotEqual(second, first, "the selection stayed on the first page")
+        XCTAssertNotEqual(model.selection, firstTab)
+        XCTAssertEqual(peopledDays(model.timeUnits).count, 1, "the second page landed on another day")
+        XCTAssertEqual(
+            peopledDays(model.timeUnits).first?.pageIDs, [first, second],
+            "today does not list both pages in strip order")
+        XCTAssertNil(model.notice, "nothing was refused")
+
+        // Written on, the same: a third page beside the two.
+        try type("morning", into: second, on: model)
+        model.openToday()
+        XCTAssertEqual(model.tabs.count, 3, "⌘N on a written page did not mint")
+        XCTAssertEqual(peopledDays(model.timeUnits).first?.pageIDs.count, 3)
+    }
+
+    /// The same reading under the chord itself, through the dispatch
+    /// the keymap uses, and with the strip showing the chord still does
+    /// what it always did: a new slot every time.
+    func testThePageNewCommandMintsOnTodayAndOnTheStripAlike() throws {
+        let (model, _) = try makeModel()
+        model.showsTimeUnits = true
+        model.perform(.pageNew)
+        model.perform(.pageNew)
+        XCTAssertEqual(model.tabs.count, 2, "the chord did not mint on today's page")
+        XCTAssertEqual(peopledDays(model.timeUnits).first?.pageIDs.count, 2)
+
+        model.showsTimeUnits = false
+        model.perform(.pageNew)
+        model.perform(.pageNew)
+        XCTAssertEqual(model.tabs.count, 4, "the strip's reading of ⌘N changed")
+    }
+
+    /// A file or the ledger in front of today's page makes ⌘N a jump
+    /// back onto that page, not a second page: the person is not on
+    /// today's page when something else is on screen, however the
+    /// selection reads underneath.
+    func testOpenTodayFromTheLedgerReturnsToTodaysPageWithoutMinting() throws {
+        let (model, _) = try makeModel()
+        model.showsTimeUnits = true
+        model.openToday()
+        let page = try XCTUnwrap(model.selectedPageID)
+        try type("evening", into: page, on: model)
+        model.showingLedger = true
+
+        model.openToday()
+
+        XCTAssertFalse(model.showingLedger, "⌘N left the ledger up")
+        XCTAssertEqual(model.tabs.count, 1, "⌘N from the ledger minted a page")
+        XCTAssertEqual(model.selectedPageID, page)
+    }
+
+    /// One typed insertion through the seam the editor uses, so the
+    /// ledger's content bar is what flips and not a fixture.
+    private func type(_ text: String, into page: UInt64, on model: PageModel) throws {
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: text)]))
+        model.applyOps(sheet: page, opsJSON: ops)
+    }
+
+    /// The trap the cap used to set, sprung (issue #158). Nine empty
+    /// slots draw no rows at all, so the strip a tab would have been
+    /// closed from is not on screen; today's page opens anyway, as a
+    /// tenth slot, and no notice names a wall. Nothing is auto-discarded
+    /// to make room, because the nine are still standing afterwards.
+    func testNineEmptySlotsDoNotStandBetweenAPersonAndToday() throws {
         let (model, _) = try makeModel()
         model.loadStateIfNeeded()
         for _ in 1..<9 { model.newPage() }
@@ -225,16 +300,20 @@ final class TimeUnitModeTests: XCTestCase {
 
         model.openToday()
 
-        XCTAssertEqual(model.tabs.count, 9, "the cap gave way")
-        XCTAssertNil(model.selectedPageID, "the refusal minted a page anyway")
-        XCTAssertEqual(model.notice, PageModel.capRefusal(showsTimeUnits: true))
-        XCTAssertTrue(
-            try XCTUnwrap(model.notice).contains("Settings"),
-            "the refusal did not say where the hidden pages are")
+        XCTAssertEqual(model.tabs.count, 10, "a tenth slot was refused")
+        let page = try XCTUnwrap(model.selectedPageID, "today's page was not minted")
+        XCTAssertEqual(peopledDays(model.timeUnits).first?.pageIDs, [page])
+        XCTAssertNil(model.notice, "a wall was named")
         XCTAssertEqual(
-            PageModel.capRefusal(showsTimeUnits: false),
-            "the window holds 9 tabs, close one to make room",
-            "the sentence the strip has always shown moved")
+            model.tabs.filter { !$0.hasPage }.count, 9,
+            "an empty slot was discarded to make room")
+
+        // ⌘1 to ⌘9 still count the first nine visible targets, and the
+        // strip's reading is a slot per chord whatever the strip's width.
+        model.showsTimeUnits = false
+        XCTAssertEqual(model.visibleTargets.count, 10)
+        model.perform(.pageSelect9)
+        XCTAssertEqual(model.selection, model.tabs[8].id, "⌘9 stopped reaching the ninth slot")
     }
 
     // MARK: The jump chords, in both readings

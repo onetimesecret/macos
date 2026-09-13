@@ -174,9 +174,9 @@ void companion_free(CompanionHandle *handle);
 
 /*
  * A new tab at the end of the strip, holding a new page on the default
- * rung with its countdown running. Returns the TAB's id, or 0 when the
- * store refused at the cap of 9, the keyboard wall; the app declines
- * the tenth and says so (0 is never a valid id).
+ * rung with its countdown running. Returns the TAB's id, or 0 only for
+ * a null handle or a poisoned lock: the strip has no cap, so the store
+ * never refuses a slot (issue #158). 0 is never a valid id.
  */
 uint64_t companion_tab_new(CompanionHandle *handle);
 
@@ -1083,8 +1083,8 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
 
 /*
  * A file on disk is the artifact. A file is not a page and not a tab:
- * it has no TTL, no gauge, no rung, it is never in the day roll, it is
- * never counted against the nine page cap, and it is never synced.
+ * it has no TTL, no gauge, no rung, it is never in the day roll, it
+ * takes no slot on the strip, and it is never synced.
  * Saving is explicit and nothing here autosaves in place.
  *
  * Ids. Every id below is tagged with the high bit (1 << 63), which no

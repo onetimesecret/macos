@@ -197,8 +197,9 @@ amendment leaves alone.
 
 Each absence, and why it falls:
 
-- **More than one page.** The cap is the core's nine, refused rather
-  than evicted, as everywhere. One page was a floor set for an
+- **More than one page.** As many as the person opens: the core has no
+  cap since issue #158, and nothing is evicted but by the countdown the
+  person chose, as everywhere. One page was a floor set for an
   exploration, and an always-present surface accumulates more than one
   thing by the same logic that a desk does.
 - **Chips and the sealing gestures.** The original argument was that a

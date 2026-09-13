@@ -12,7 +12,21 @@ import SwiftUI
 ///
 /// A slot whose page expired keeps its place, its name and its rung,
 /// and draws the dashed empty treatment instead of a gauge (ADR-0017).
-/// The strip is the slots, so it stops being nine deadlines.
+/// The strip is the slots, so it stops being a row of deadlines.
+///
+/// The strip has no cap (issue #158). ⌘1 to ⌘9 reach the first nine
+/// slots and the tenth onward have no chord, so the strip has to hold
+/// more slots than fit across the card. It scrolls sideways, without a
+/// bar, and follows the selection: a slot selected by chord, click or
+/// mint is brought into view, so a new page minted past the edge is on
+/// screen the moment it exists. Scrolling rather than clipping with a
+/// marker, because a clipped tab is a slot a person cannot reach with
+/// the mouse, and a marker is chrome that says "there is more" without
+/// getting them there. The FILES group stays pinned ahead of the
+/// scroll: files are few and are navigation peers, not slots. The + stays
+/// pinned after the scroll, so minting remains mouse-reachable at every
+/// offset. Reordering starts only from a tab's drag handle, leaving an
+/// ordinary horizontal drag to scroll the strip.
 public struct TabStripView: View {
     @ObservedObject var model: PageModel
 
@@ -45,27 +59,37 @@ public struct TabStripView: View {
                 }
                 GroupLabel(text: "PAD")
             }
-            ForEach(model.tabs) { sheet in
-                SheetTab(
-                    sheet: sheet,
-                    selected: model.selection == sheet.id && !model.showingLedger,
-                    model: model
-                )
-                .opacity(model.draggingTab == sheet.id ? 0.6 : 1)
-                .background(GeometryReader { geometry in
-                    Color.clear.preference(
-                        key: TabFramesKey.self,
-                        value: [sheet.id: geometry.frame(in: .named(Self.stripSpace))]
-                    )
-                })
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.stripSpace))
-                        .onChanged { value in
-                            model.draggingTab = sheet.id
-                            reorder(dragged: sheet.id, pointerX: value.location.x)
+            // The slots scroll as one run. The frames the reorder reads
+            // are taken in the strip's own space, which the scroll offset
+            // is part of, so a drag over a scrolled strip still lands on
+            // the slot under the pointer.
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 2) {
+                        ForEach(model.tabs) { sheet in
+                            SheetTab(
+                                sheet: sheet,
+                                selected: model.selection == sheet.id && !model.showingLedger,
+                                model: model,
+                                beginReorder: { model.draggingTab = sheet.id },
+                                reorder: { pointerX in
+                                    reorder(dragged: sheet.id, pointerX: pointerX)
+                                },
+                                endReorder: { model.draggingTab = nil }
+                            )
+                            .id(sheet.id)
+                            .opacity(model.draggingTab == sheet.id ? 0.6 : 1)
+                            .background(GeometryReader { geometry in
+                                Color.clear.preference(
+                                    key: TabFramesKey.self,
+                                    value: [sheet.id: geometry.frame(in: .named(Self.stripSpace))]
+                                )
+                            })
                         }
-                        .onEnded { _ in model.draggingTab = nil }
-                )
+                    }
+                }
+                .onAppear { scrollToSelection(using: proxy) }
+                .onChange(of: model.selection) { _ in scrollToSelection(using: proxy) }
             }
             newPageTab
             Spacer(minLength: 8)
@@ -89,7 +113,15 @@ public struct TabStripView: View {
         .onPreferenceChange(TabFramesKey.self) { tabFrames = $0 }
     }
 
-    private static let stripSpace = "tabStrip"
+    static let stripSpace = "tabStrip"
+
+    /// Follow the selection both when it changes and when this view is
+    /// mounted after leaving time-tabs mode. The latter may already point
+    /// past the visible edge, so `onChange` alone is not enough.
+    private func scrollToSelection(using proxy: ScrollViewProxy) {
+        guard let selection = model.selection else { return }
+        proxy.scrollTo(selection)
+    }
 
     /// Excel-style live reorder: the dragged tab lands after every tab
     /// whose midpoint the pointer has passed. Midpoints, not edges, keep
@@ -211,6 +243,9 @@ struct SheetTab: View {
     let sheet: TabSummary
     let selected: Bool
     @ObservedObject var model: PageModel
+    let beginReorder: () -> Void
+    let reorder: (CGFloat) -> Void
+    let endReorder: () -> Void
 
     @State private var hovering = false
 
@@ -224,6 +259,7 @@ struct SheetTab: View {
                     .font(.system(.caption, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                reorderHandle
                 // The ✕ keeps its seat whether or not it is visible, since
                 // revealing it must never nudge the title (the browsers'
                 // convention: reserve, then fade in).
@@ -301,6 +337,27 @@ struct SheetTab: View {
             }
             Button("Close tab", role: .destructive) { model.close(sheet.id) }
         }
+    }
+
+    /// The only reorder recognizer. Keeping it on this small, visible
+    /// handle lets horizontal drags on the rest of the tab scroll an
+    /// overflow strip without mutating the tab order.
+    private var reorderHandle: some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.system(size: 8, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 12, height: 18)
+            .contentShape(Rectangle())
+            .help("Drag to reorder tab")
+            .accessibilityLabel(Text("Reorder tab"))
+            .gesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .named(TabStripView.stripSpace))
+                    .onChanged { value in
+                        beginReorder()
+                        reorder(value.location.x)
+                    }
+                    .onEnded { _ in endReorder() }
+            )
     }
 
     /// What the next double-click does, named plainly — the gesture is

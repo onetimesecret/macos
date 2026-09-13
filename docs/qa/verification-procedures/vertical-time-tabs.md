@@ -262,7 +262,9 @@ renamed or re-ordered; a new sealed generation written for a flip.
 
 **Pass:** each rail row announces its day in full words ("today",
 "yesterday", "3 days ago") followed by how long the page on it that
-dies soonest has left, and the selected row announces as selected. Since
+dies soonest has left, and the selected row announces as selected. On
+Today, VoiceOver also offers a **New page** action that mints another
+page. Since
 issue #131 the row says the same words on screen, so what is heard and
 what is read agree apart from the capital. The short form (`-3d`) is
 left only in the roll's gutter, whose header announces the phrase, so
@@ -272,9 +274,9 @@ the foot of the rail, when it is there, announces the whole sentence and
 not just the number.
 
 **Fail:** a row that announces only "-3d"; a row that shows different
-words from the ones it speaks; a row with no value; a perforation that
-announces nothing; a decorative gauge or a minimap bar that VoiceOver
-reads.
+words from the ones it speaks; a row with no value; Today with no
+**New page** action; a perforation that announces nothing; a decorative
+gauge or a minimap bar that VoiceOver reads.
 
 ## Case 8: reduced motion
 
@@ -289,20 +291,32 @@ reduce.
 
 ## Case 9: the pad is full of blank old pages
 
-The honesty valve for the nine-slot cap.
+There is no cap any more (issue #158), so this case is the count and
+the tenth page, not a refusal.
 
-1. Make pages until the pad refuses a tenth, leaving several blank.
+1. With the mode off, make nine pages over several days and leave at
+   least three of the older pages blank. Follow the staging procedure
+   above, or use the documented clock-step-back procedure between pages.
+   Turn the mode on.
 
 **Pass:** the foot of the rail shows a dimmed count ("3 blank") whose
 tooltip says how many live pages the days are not showing and names this
-Settings toggle as the way to reach them. The refusal notice names the
-toggle too, rather than telling you to wait for an expiry that would not
-free a slot anyway. Nothing was discarded to make room.
+Settings toggle as the way to reach them. Today's blank pages stay on the
+Today row and do not contribute to the count.
 
-**Fail:** a silent refusal; a page discarded automatically; a count that
-is wrong.
+**Fail:** a count that is wrong, or no count with blank pages standing.
 
-2. Write **down** whether the count was non-zero in ordinary use. A
+2. Press ⌘N.
+
+**Pass:** today's page opens as a tenth slot. No notice. Nothing was
+discarded to make room. Turn the mode off: ten tabs on the strip, the
+strip scrolls sideways to hold them, and the new one is in view.
+⌘9 selects the ninth; the tenth has no chord and is reached by a click.
+
+**Fail:** a refusal naming a wall; a blank page discarded automatically;
+a tenth tab off the edge of the strip with no way to scroll to it.
+
+3. Write **down** whether the count was non-zero in ordinary use. A
    count that is routinely above zero means the content bar is set wrong,
    which is ADR-0020's fifth eject trigger.
 
@@ -352,6 +366,48 @@ mounted (see case 4).
    faint to be worth having" is a legitimate answer that retires the
    band rather than darkening it.
 
+## Case 11: a second page on today
+
+Issue #158. The keyboard reading has to be felt on hardware because
+first press jumps and second press creates, and a test cannot see the
+pause a person takes between presses.
+
+1. With the mode on and today empty, press ⌘N. Today's page appears and
+   the caret is in it. Press ⌘N again.
+
+**Pass:** a second, blank page appears under Today, below the first in
+the roll, and the caret is in it. The rail's Today row still reads
+Today, and its gauge follows whichever of the two pages dies soonest.
+
+**Fail:** the press selected the first page instead of minting; the
+second page landed under another day; the caret stayed on the first page.
+
+2. Close every page so today is empty again. Press ⌘1 twice, then click
+   the Today row twice.
+
+**Pass:** one page. ⌘1 and the row name today as a place: the first
+press makes the page, every later one goes to it. Only ⌘N and the +
+ask for another.
+
+**Fail:** a chord or a click on the place stacked a page.
+
+3. Scroll to yesterday, or select a file if one is open, and press ⌘N.
+
+**Pass:** a jump back to today's page, no third page.
+
+4. Hover the + on the Today row. Click it once on a blank page, then
+   once on a page with a word on it.
+
+**Pass:** the tooltip reads "New page (⌘N)", or the chord the keymap
+bound. Both clicks mint: the plus is the strip's + button and takes no
+jump-first reading. Nothing else on the rail grows a plus.
+
+**Fail:** a plus beside yesterday; a tooltip that spells a chord the
+keymap does not bind; a click that only selects.
+
+5. Turn the mode off. Every page made above is a tab on the strip; turn
+   it back on and today lists them all.
+
 ## Results
 
 Not yet run. One row per check when a session runs it, and the rows
@@ -374,8 +430,13 @@ stay: a re-run adds a row rather than replacing one.
 | | | 7 VoiceOver at a perforation | | |
 | | | 8 reduced motion | | |
 | | | 9 hidden blank pages counted and named | | Record whether the count is ever non-zero. |
+| | | 9 tenth page opens, strip scrolls to it | | Note whether the new tab was in view without a scroll. |
 | | | 10 minimap reads as texture, not as a chart | | Record the two inks and the appearance. |
 | | | 10 band tracks the scroll and clamps at both ends | | |
 | | | 10 nothing legible in the minimap at any size | | |
-| | | 10 rail width at the 360pt floor | | Do the day words fit without truncation. Does the roll's gutter still hold day, title and countdown on one line. |
+| | | 10 rail width at the 360pt floor | | Do the day words and Today's + fit without truncation. Does the roll's gutter still hold day, title and countdown on one line. |
 | | | 10 rail width on a wide card | | Does 96pt read as generous or as a wasted column. Decision: pin 96, narrow the rail, or raise the card's floor. |
+| | | 11 ⌘N on today's page mints a second page | | Note where the caret landed. |
+| | | 11 ⌘1 and the Today row make one page, not two | | |
+| | | 11 ⌘N from elsewhere jumps, no third page | | |
+| | | 11 the Today row's + mints and names the chord | | |

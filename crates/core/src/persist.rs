@@ -257,13 +257,10 @@ impl<C: Clock> SheetStore<C> {
         let now = self.clock.now();
 
         let tab_count = count(&mut reader)?;
-        // The cap is the tab's lifetime bound now, not only the
-        // anti-eviction bound, so a file claiming a wider strip than
-        // this store would ever write is damage or a hand edit and
-        // refuses like any other.
-        if tab_count > self.cap {
-            return Err(RestoreError::Malformed);
-        }
+        // No width check: the strip has no cap (issue #158), so a file
+        // is as wide as the writer left it. `count()` rejects a claimed
+        // count larger than the bytes remaining, and a missing frame
+        // below is malformed; together they bound the walk by the file.
         let mut tabs = Vec::new();
         let mut next_tab_id = 1;
         let mut next_sheet_id = 1;
@@ -1274,7 +1271,7 @@ mod tests {
     /// the file wrote the derived title down.
     fn populated() -> (SheetStore<ManualClock>, ManualClock, SheetId, SheetId) {
         let (mut store, clock) = store();
-        let first = store.new_tab().unwrap().1;
+        let first = store.new_tab().1;
         let token = store.seal_text(first, "ghp_expected-to-survive").unwrap();
         let image = store
             .seal_image(first, vec![0x89, b'P', b'N', b'G', 0, 1, 2, 3])
@@ -1289,9 +1286,9 @@ mod tests {
                 Segment::Chip(image),
             ],
         ));
-        let second = store.new_tab().unwrap().1;
+        let second = store.new_tab().1;
         assert!(store.sync_document(second, vec![Segment::Ink("errands".into())]));
-        let doomed = store.new_tab().unwrap().1;
+        let doomed = store.new_tab().1;
         assert!(store.sync_document(doomed, vec![Segment::Ink("old thoughts".into())]));
         assert!(store.close_tab(slot(&store, doomed)));
         (store, clock, first, second)
@@ -1373,7 +1370,7 @@ mod tests {
     #[test]
     fn the_origin_message_survives_the_round_trip() {
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         // A URL-bearing paste, sealed at the caret: the origin persists
         // as the seal commit's message and nowhere else.
         let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
@@ -1425,7 +1422,7 @@ mod tests {
     /// the page comes back holding.
     fn page_cut_after_it_was_written() -> (SheetStore<ManualClock>, ManualClock, SheetId) {
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         let sheet = store.tabs[0].page.as_mut().expect("the tab holds a page");
         sheet.document.insert(0, "hello\n").unwrap();
         sheet.blocks.note_insert(0, "hello\n");
@@ -1519,7 +1516,7 @@ mod tests {
     fn a_compacted_store_round_trips_materialized_metadata_and_origin() {
         use crate::store::EditOp;
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         let origin = r#"{"origin":"https://origin.example.test/reset?tk=Vq9Zx"}"#;
         store
             .seal_text_at_with_origin(id, "the pasted secret", 0, 0, Some(origin))
@@ -1587,7 +1584,7 @@ mod tests {
     fn a_pasted_block_comes_back_from_the_file_as_one_block() {
         use crate::store::EditOp;
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         assert!(store.apply_ops(
             id,
             &[EditOp::Insert {
@@ -1615,7 +1612,7 @@ mod tests {
     fn hostile_materialized_stamps_are_clamped_and_dead_anchors_dropped() {
         use crate::store::EditOp;
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         assert!(store.apply_ops(
             id,
             &[
@@ -1671,7 +1668,7 @@ mod tests {
         // user's and is durable; the other is the app's and dies with
         // the page it was made from.
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         assert!(store.set_title(slot(&store, id), "quarterly numbers"));
         assert!(store.sync_document(id, vec![Segment::Ink("# some**thing** else".into())]));
         let snapshot = store.snapshot(0);
@@ -1713,7 +1710,7 @@ mod tests {
             .with_wall_ms(1_781_108_400_000)
             .with_local_offset_seconds(-7 * 3600);
         let mut store = SheetStore::new(clock.clone());
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         let snapped = 7 * 24 * HOUR + 14 * HOUR + Duration::from_secs(40 * 60);
         assert_eq!(store.sheet(id).unwrap().remaining(store.now()), snapped);
         let snapshot = store.snapshot(0);
@@ -1730,8 +1727,8 @@ mod tests {
     #[test]
     fn a_two_tab_strip_round_trips_with_its_names_rungs_and_order() {
         let (mut store, clock) = store();
-        let named = store.new_tab().unwrap().1;
-        let unnamed = store.new_tab().unwrap().1;
+        let named = store.new_tab().1;
+        let unnamed = store.new_tab().1;
         assert!(store.set_title(slot(&store, named), "quarterly numbers"));
         store.set_rung(slot(&store, named), Ttl::MIN).unwrap();
         assert!(store.sync_document(unnamed, vec![Segment::Ink("errands".into())]));
@@ -1760,8 +1757,8 @@ mod tests {
         // the pad writes a file rather than removing one, and what it
         // writes is the strip and nothing else.
         let (mut store, clock) = store();
-        let first = store.new_tab().unwrap().1;
-        let second = store.new_tab().unwrap().1;
+        let first = store.new_tab().1;
+        let second = store.new_tab().1;
         assert!(store.set_title(slot(&store, second), "payroll"));
         store.set_rung(slot(&store, first), Ttl::MIN).unwrap();
         store.set_rung(slot(&store, second), Ttl::MIN).unwrap();
@@ -1868,34 +1865,32 @@ mod tests {
     }
 
     #[test]
-    fn a_strip_wider_than_the_cap_is_malformed() {
-        // The writer never produces more than the cap, and the cap is
-        // the tab's lifetime bound now, so a file that claims a wider
-        // strip is damage or a hand edit.
+    fn a_strip_of_any_width_restores_and_a_short_one_is_malformed() {
+        // The strip has no cap (issue #158), so a file is as wide as
+        // the writer left it: twelve tabs come back as twelve. What
+        // still refuses is a count the bytes cannot honour, which fails
+        // at the first missing frame and leaves the store untouched.
         let (mut store, survivor) = occupied();
-        let cap = store.cap();
-        let mut hostile = Vec::new();
-        hostile.extend_from_slice(MAGIC);
-        hostile.extend_from_slice(&0u64.to_le_bytes());
-        hostile.extend_from_slice(&((cap + 1) as u64).to_le_bytes());
-        for _ in 0..=cap {
-            hostile.extend_from_slice(&frame(&tab_record(None, None)));
+        let mut short = Vec::new();
+        short.extend_from_slice(MAGIC);
+        short.extend_from_slice(&0u64.to_le_bytes());
+        short.extend_from_slice(&13u64.to_le_bytes());
+        for _ in 0..12 {
+            short.extend_from_slice(&frame(&tab_record(None, None)));
         }
-        assert_eq!(store.restore(&hostile, 0), Err(RestoreError::Malformed));
+        assert_eq!(store.restore(&short, 0), Err(RestoreError::Malformed));
         let ids: Vec<SheetId> = store.sheets().map(Sheet::id).collect();
         assert_eq!(ids, vec![survivor], "the failed restore touched the store");
 
-        // Exactly the cap is not damage: the boundary belongs to the
-        // side that the writer can actually reach.
-        let mut full = Vec::new();
-        full.extend_from_slice(MAGIC);
-        full.extend_from_slice(&0u64.to_le_bytes());
-        full.extend_from_slice(&(cap as u64).to_le_bytes());
-        for _ in 0..cap {
-            full.extend_from_slice(&frame(&tab_record(None, None)));
+        let mut wide = Vec::new();
+        wide.extend_from_slice(MAGIC);
+        wide.extend_from_slice(&0u64.to_le_bytes());
+        wide.extend_from_slice(&12u64.to_le_bytes());
+        for _ in 0..12 {
+            wide.extend_from_slice(&frame(&tab_record(None, None)));
         }
-        assert_eq!(store.restore(&full, 0).unwrap(), 0);
-        assert_eq!(store.tabs().count(), cap);
+        assert_eq!(store.restore(&wide, 0).unwrap(), 0);
+        assert_eq!(store.tabs().count(), 12);
     }
 
     #[test]
@@ -1939,7 +1934,7 @@ mod tests {
         // A death recorded before the file lands, which is the shape of
         // what `expire_due` leaves behind on the way in.
         let mut revived = store_on(clock.clone());
-        let doomed = revived.new_tab().unwrap().1;
+        let doomed = revived.new_tab().1;
         assert!(revived.sync_document(doomed, vec![Segment::Ink("overnight".into())]));
         assert!(revived.close_tab(slot(&revived, doomed)));
         let overnight: Vec<LedgerRecord> = revived.ledger().cloned().collect();
@@ -2032,7 +2027,7 @@ mod tests {
         // long-lived key forever.
         const TITLE: &str = "prod DB credentials";
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         assert!(store.sync_document(id, vec![Segment::Ink(format!("# {TITLE}\n"))]));
         let chip = store.seal_text(id, "hunter2-rotate-me").unwrap();
         assert!(store.sync_document(
@@ -2074,9 +2069,9 @@ mod tests {
     #[test]
     fn the_write_path_sweep_keeps_records_inside_the_window() {
         let (mut store, clock) = store();
-        store.new_tab().unwrap();
+        store.new_tab();
         clock.advance(Duration::from_millis(crate::LEDGER_RETENTION_MS));
-        store.new_tab().unwrap();
+        store.new_tab();
         // Exactly 90 days old is inside the window, as on load.
         assert_eq!(store.evict_ledger(clock.wall_ms()), 0);
         assert_eq!(store.ledger().count(), 2);
@@ -2097,10 +2092,10 @@ mod tests {
         store.next_tab_id = 7_700;
         store.next_sheet_id = 4_242;
         store.next_chip_id = 9_100;
-        let first = store.new_tab().unwrap().1;
+        let first = store.new_tab().1;
         store.seal_text_at(first, "one", 0, 0).unwrap();
         store.seal_text_at(first, "two", 1, 0).unwrap();
-        let second = store.new_tab().unwrap().1;
+        let second = store.new_tab().1;
         store.seal_text_at(second, "three", 0, 0).unwrap();
         assert!(first.raw() > 1000);
 
@@ -2138,7 +2133,7 @@ mod tests {
         );
 
         // And the next id issued does not collide with a restored one.
-        let fresh = revived.new_tab().unwrap().1;
+        let fresh = revived.new_tab().1;
         assert_eq!(fresh.raw(), 3);
         assert_eq!(revived.tabs().last().unwrap().id().raw(), 3);
         let fresh_chip = revived.seal_text(fresh, "four").unwrap();
@@ -2376,7 +2371,7 @@ mod tests {
     /// every rejection test asserts survived the failed restore.
     fn occupied() -> (SheetStore<ManualClock>, SheetId) {
         let (mut store, _clock) = store();
-        let survivor = store.new_tab().unwrap().1;
+        let survivor = store.new_tab().1;
         (store, survivor)
     }
 
@@ -2457,7 +2452,7 @@ mod tests {
     fn a_trailing_field_on_a_materialized_record_is_skipped_not_refused() {
         use crate::store::EditOp;
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         assert!(store.apply_ops(
             id,
             &[
@@ -2595,7 +2590,7 @@ mod tests {
         store.next_tab_id = TAB_RAW;
         store.next_sheet_id = SHEET_RAW;
         store.next_chip_id = CHIP_RAW;
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         let chip = store.seal_text(id, "counted").unwrap();
         assert!(store.sync_document(id, vec![Segment::Chip(chip)]));
         assert_eq!(id.raw(), SHEET_RAW);
@@ -2650,7 +2645,7 @@ mod tests {
         const TOKEN: &str = "ghp_never-in-the-ledger";
         const DELETED: &str = "ghp_typed-then-deleted";
         let (mut store, _clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         let chip = store.seal_text(id, TOKEN).unwrap();
         assert!(store.sync_document(
             id,
@@ -2701,7 +2696,7 @@ mod tests {
     #[test]
     fn time_away_drains_the_countdown() {
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1; // 8h default rung
+        let id = store.new_tab().1; // 8h default rung
         let snapshot = store.snapshot(0);
 
         // Two hours pass while the app is closed (wall time only — the
@@ -2717,7 +2712,7 @@ mod tests {
     #[test]
     fn pages_due_while_away_expire_into_the_ledger_on_restore() {
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         assert!(store.sync_document(id, vec![Segment::Ink("perishable".into())]));
         let snapshot = store.snapshot(0);
 
@@ -2738,7 +2733,7 @@ mod tests {
     #[test]
     fn a_hold_absorbs_time_away_before_the_countdown_drains() {
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         assert!(store.pause_press(slot(&store, id))); // 1h hold, 8h frozen
         let snapshot = store.snapshot(0);
 
@@ -2772,7 +2767,7 @@ mod tests {
     #[test]
     fn a_snapshot_of_a_lapsed_hold_keeps_the_life_it_already_drained() {
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         clock.advance(2 * HOUR); // 6h left on the 8h rung
         assert!(store.pause_press(slot(&store, id))); // a 1h hold over 6h
         clock.advance(4 * HOUR); // the hold lapsed 3h ago, and 3h drained
@@ -2814,8 +2809,8 @@ mod tests {
         // the next double-click with another 24 hours instead of the
         // release the user asked for.
         let (mut store, clock) = store();
-        let first = store.new_tab().unwrap().1;
-        let topped = store.new_tab().unwrap().1;
+        let first = store.new_tab().1;
+        let topped = store.new_tab().1;
         assert!(store.pause_press(slot(&store, first))); // 1h hold
         assert!(store.pause_press(slot(&store, topped))); // 1h hold
         assert!(store.pause_press(slot(&store, topped))); // topped up to 24h
@@ -2841,7 +2836,7 @@ mod tests {
     #[test]
     fn a_backwards_wall_clock_grants_no_extra_life() {
         let (mut store, clock) = store();
-        let id = store.new_tab().unwrap().1;
+        let id = store.new_tab().1;
         clock.advance(2 * HOUR); // 6h left on the 8h rung
         let snapshot = store.snapshot(1_000_000_000);
 
