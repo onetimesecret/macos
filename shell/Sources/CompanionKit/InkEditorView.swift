@@ -366,9 +366,11 @@ public struct InkEditorView: NSViewRepresentable {
         private let ordinaryPastePayload: () -> Data?
         private var pendingOrdinaryPasteRequestID: UUID?
         private var pendingAutomaticPaste: AutomaticPaste?
+        private var deferredPlainAutomaticPaste: AutomaticPaste?
         private var pendingManualRequestID: UUID?
         private var languageSuggestion: LanguageSuggestion?
         private var fenceRenderingLanguages: [UInt64: [Int: String]] = [:]
+        private var structuralStyleNeedsRebuild = false
 
         private struct AutomaticPaste {
             let requestID: UUID
@@ -449,10 +451,10 @@ public struct InkEditorView: NSViewRepresentable {
         var measuresOrdinaryPastes: Bool { ordinaryPasteShadowEnabled }
 
         func ordinaryPastePayloadIfNeeded(bypassingAutomaticFencing: Bool) -> Data? {
+            guard !bypassingAutomaticFencing else { return nil }
             guard ordinaryPasteShadowEnabled
                     || (PageModel.languageDetectionFeaturesAvailable
-                        && model.automaticallyFencePastes
-                        && !bypassingAutomaticFencing)
+                        && model.automaticallyFencePastes)
             else { return nil }
             return ordinaryPastePayload()
         }
@@ -498,14 +500,69 @@ public struct InkEditorView: NSViewRepresentable {
 
         func invalidateOrdinaryPasteMeasurement() {
             let canceledAutomaticPaste = pendingAutomaticPaste != nil
+                || deferredPlainAutomaticPaste != nil
             pendingOrdinaryPasteRequestID = nil
             pendingAutomaticPaste = nil
+            deferredPlainAutomaticPaste = nil
             pendingManualRequestID = nil
             languageSuggestion = nil
             languageDetectionService.invalidate()
             if canceledAutomaticPaste {
                 model.flash("Paste canceled because the editor changed before detection finished.")
             }
+        }
+
+        /// A text or selection change retires automatic conversion, but does not
+        /// discard the captured paste. The storage delegate can call this while
+        /// TextKit is processing an edit, so the ordinary replacement waits for
+        /// the next main-queue turn and validates the live editor again there.
+        private func abandonAutomaticConversionForEditorChange() {
+            pendingOrdinaryPasteRequestID = nil
+            pendingManualRequestID = nil
+            languageSuggestion = nil
+            languageDetectionService.invalidate()
+            guard let pending = pendingAutomaticPaste else { return }
+            pendingAutomaticPaste = nil
+            deferredPlainAutomaticPaste = pending
+            DispatchQueue.main.async { [weak self] in
+                self?.finishDeferredPlainAutomaticPaste(requestID: pending.requestID)
+            }
+        }
+
+        private func finishDeferredPlainAutomaticPaste(requestID: UUID) {
+            guard deferredPlainAutomaticPaste?.requestID == requestID else { return }
+            settleAutomaticPasteAsPlainIfPossible()
+        }
+
+        /// Settles either an actively classified paste or one already deferred by
+        /// an editor change. This also runs before a second automatic paste so the
+        /// first captured payload cannot be silently replaced in the detector's
+        /// bounded queue.
+        private func settleAutomaticPasteAsPlainIfPossible() {
+            guard let pending = deferredPlainAutomaticPaste ?? pendingAutomaticPaste else { return }
+            pendingAutomaticPaste = nil
+            deferredPlainAutomaticPaste = nil
+            languageDetectionService.invalidate()
+            guard currentSheet == pending.documentID,
+                  let textView, model.activeEditor === textView,
+                  textView.isEditable, !textView.hasMarkedText(),
+                  let storage = textView.textStorage
+            else {
+                model.flash("Paste canceled because the editor changed before detection finished.")
+                return
+            }
+            let selection = textView.selectedRange()
+            guard selection.location != NSNotFound, NSMaxRange(selection) <= storage.length else {
+                model.flash("Paste canceled because the editor changed before detection finished.")
+                return
+            }
+            let caret = NSRange(
+                location: selection.location + pending.payload.utf16.count,
+                length: 0
+            )
+            applyReplacement(
+                pending.payload, range: selection, caret: caret, startsNewUndoStep: true
+            )
         }
 
         func updateEditability(of textView: InkTextView, to editable: Bool) {
@@ -521,7 +578,7 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         public func textViewDidChangeSelection(_ notification: Notification) {
-            invalidateOrdinaryPasteMeasurement()
+            abandonAutomaticConversionForEditorChange()
         }
 
         private func isCurrentOrdinaryPaste(_ context: LanguageDetectionContext) -> Bool {
@@ -537,17 +594,24 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         /// Captures and holds one paste while source detection runs. A result is
-        /// applied only if the exact document, revision, selection, and editing
-        /// state still stand; otherwise the held paste is discarded rather than
-        /// inserted into a destination the user did not choose.
+        /// applied only while the exact document, revision, selection, and editing
+        /// state still stand. An editor change instead settles the captured bytes
+        /// as one ordinary replacement at the current, revalidated selection.
         func beginAutomaticPaste(payload data: Data) -> Bool {
             guard PageModel.languageDetectionFeaturesAvailable,
                   model.automaticallyFencePastes,
-                  let payload = String(data: data, encoding: .utf8),
-                  let destination = automaticPasteDestination(payload: payload)
+                  let payload = String(data: data, encoding: .utf8)
             else { return false }
 
-            invalidateOrdinaryPasteMeasurement()
+            // The service intentionally has a one-element pending queue. Settle
+            // the older captured paste before submitting another so replacement
+            // in that queue cannot silently lose the first user gesture.
+            settleAutomaticPasteAsPlainIfPossible()
+            guard let destination = automaticPasteDestination(payload: payload) else { return false }
+            pendingOrdinaryPasteRequestID = nil
+            pendingManualRequestID = nil
+            languageSuggestion = nil
+            languageDetectionService.invalidate()
             guard let documentID = currentSheet else { return false }
             let selection = destination.replacementRange
             let request = LanguageDetectionRequest(
@@ -584,7 +648,11 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         private func automaticPasteDestination(payload: String) -> PasteDestinationContext? {
-            guard let textView, let storage = textView.textStorage,
+            if structuralStyleNeedsRebuild {
+                restyle()
+            }
+            guard !structuralStyleNeedsRebuild,
+                  let textView, let storage = textView.textStorage,
                   textView.isEditable, !textView.hasMarkedText(),
                   let sheet = currentSheet
             else { return nil }
@@ -724,8 +792,18 @@ public struct InkEditorView: NSViewRepresentable {
             nextEditIsAutomation = startsNewUndoStep
             storage.replaceCharacters(in: range, with: replacement)
             textView.didChangeText()
+            // The core's explicit boundary is in front of one commit. Leave
+            // another boundary armed so subsequent typing cannot merge into this
+            // complete paste/wrap action and come off in the same undo.
+            if startsNewUndoStep {
+                nextEditIsAutomation = true
+            }
             textView.setSelectedRange(Self.clamped(caret, to: storage.length))
             textView.scrollRangeToVisible(textView.selectedRange())
+        }
+
+        var canDetectCodeLanguage: Bool {
+            PageModel.languageDetectionFeaturesAvailable && manualLanguageTarget() != nil
         }
 
         func detectCodeLanguage() {
@@ -1032,16 +1110,14 @@ public struct InkEditorView: NSViewRepresentable {
                 menu.addItem(choose)
             }
 
-            if PageModel.languageDetectionFeaturesAvailable && model.automaticallyFencePastes {
-                let bypass = NSMenuItem(
-                    title: "Paste Without Automatic Fencing",
-                    action: #selector(InkTextView.pasteWithoutAutomaticFencing(_:)),
-                    keyEquivalent: ""
-                )
-                bypass.target = textView
-                bypass.isEnabled = textView.isEditable
-                menu.addItem(bypass)
-            }
+            let bypass = NSMenuItem(
+                title: "Paste Without Detection",
+                action: #selector(LanguageDetectionResponder.pasteWithoutDetection(_:)),
+                keyEquivalent: ""
+            )
+            bypass.target = textView
+            bypass.isEnabled = textView.isEditable
+            menu.addItem(bypass)
         }
 
         @objc private func detectCodeLanguageFromMenu(_ sender: Any?) {
@@ -1501,10 +1577,28 @@ public struct InkEditorView: NSViewRepresentable {
             // that filled the classification cache. An edit this method
             // declines to emit still moves the page under that reading.
             generation &+= 1
-            invalidateOrdinaryPasteMeasurement()
-            guard !model.isApplyingProjection else { return }
+            structuralStyleNeedsRebuild = true
+            if let sheet = currentSheet {
+                // Display-only inferred labels belong to the old character
+                // projection and cannot survive a projection rewrite.
+                fenceRenderingLanguages[sheet] = nil
+            }
+            abandonAutomaticConversionForEditorChange()
+            if model.isApplyingProjection {
+                let changedGeneration = generation
+                let changedSheet = currentSheet
+                DispatchQueue.main.async { [weak self, weak storage] in
+                    guard let self, let storage,
+                          self.structuralStyleNeedsRebuild,
+                          self.generation == changedGeneration,
+                          self.currentSheet == changedSheet,
+                          self.textView?.textStorage === storage
+                    else { return }
+                    self.restyle()
+                }
+                return
+            }
             guard let sheet = currentSheet else { return }
-            fenceRenderingLanguages[sheet] = nil
             if markedTextInFlight || (textView?.hasMarkedText() ?? false) {
                 // Composition in flight: the span grows and shrinks
                 // with each marked replacement, and nothing crosses the
@@ -2049,6 +2143,7 @@ public struct InkEditorView: NSViewRepresentable {
             lineKinds = paragraphs
             lineKindsStamp = generation
             lineKindsSheet = sheet
+            structuralStyleNeedsRebuild = false
             if let layoutManager = textView?.layoutManager as? InkLayoutManager {
                 layoutManager.fenceRegions = fenceRegions
                 textView?.needsDisplay = true
@@ -2588,12 +2683,22 @@ final class InkLayoutManager: NSLayoutManager {
     func redo(_ sender: Any?)
 }
 
+/// Language actions posted by the ordinary Edit menu down the responder chain.
+/// The app target can name this protocol without depending on the package-private
+/// text-view implementation that owns the selection and paste destination.
+@MainActor
+@objc public protocol LanguageDetectionResponder {
+    var canDetectCodeLanguage: Bool { get }
+    func detectCodeLanguage(_ sender: Any?)
+    func pasteWithoutDetection(_ sender: Any?)
+}
+
 /// The page's text view: routes the seal gestures, keeps ⌘V plain,
 /// hands Esc back, and seals external drops through the core's drag
 /// route. Chips are atomic under the caret by construction — an
 /// attachment is one character: arrows step over it, one ⌫ removes it
 /// whole, selection cannot reach inside it.
-final class InkTextView: NSTextView, EditStepResponder {
+final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder {
     weak var coordinator: InkEditorView.Coordinator?
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -2675,6 +2780,10 @@ final class InkTextView: NSTextView, EditStepResponder {
             return isEditable && model.canUndoEdit(sheet: sheet)
         case #selector(redo(_:)):
             return isEditable && model.canRedoEdit(sheet: sheet)
+        case #selector(detectCodeLanguage(_:)):
+            return canDetectCodeLanguage
+        case #selector(pasteWithoutDetection(_:)):
+            return PageModel.languageDetectionFeaturesAvailable && isEditable
         default:
             return super.validateMenuItem(item)
         }
@@ -2749,7 +2858,19 @@ final class InkTextView: NSTextView, EditStepResponder {
         }
     }
 
-    @objc func pasteWithoutAutomaticFencing(_ sender: Any?) {
+    var canDetectCodeLanguage: Bool {
+        PageModel.languageDetectionFeaturesAvailable
+            && isEditable
+            && coordinator?.canDetectCodeLanguage == true
+    }
+
+    @objc func detectCodeLanguage(_ sender: Any?) {
+        guard canDetectCodeLanguage else { return }
+        coordinator?.detectCodeLanguage()
+    }
+
+    @objc func pasteWithoutDetection(_ sender: Any?) {
+        guard PageModel.languageDetectionFeaturesAvailable, isEditable else { return }
         performOrdinaryPaste(sender, bypassingAutomaticFencing: true) { [unowned self] sender in
             pasteAsPlainText(sender)
         }

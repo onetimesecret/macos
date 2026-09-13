@@ -89,7 +89,8 @@ final class LanguageSuggestionTests: XCTestCase {
         insert("```\nlet value = 1\n```", into: textView)
         textView.setSelectedRange(NSRange(location: 5, length: 0))
 
-        coordinator.detectCodeLanguage()
+        XCTAssertTrue(textView.canDetectCodeLanguage)
+        textView.detectCodeLanguage(nil)
         wait(for: [detectorCalled], timeout: 1)
         settleMainQueue()
 
@@ -97,6 +98,7 @@ final class LanguageSuggestionTests: XCTestCase {
         coordinator.appendLanguageItems(to: menu)
         XCTAssertTrue(menu.items.contains { $0.title == "Suggested: Swift" })
         XCTAssertTrue(menu.items.contains { $0.title == "Dismiss Suggestion" })
+        XCTAssertTrue(menu.items.contains { $0.title == "Paste Without Detection" })
         let insert = try XCTUnwrap(menu.items.first { $0.title == "Insert swift in Fence" })
         var emitted: [[DocumentEditOp]] = []
         coordinator.onEmit = { emitted.append($0) }

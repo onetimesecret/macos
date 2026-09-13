@@ -27,6 +27,14 @@ struct BackdropApp: App {
                 // is the Settings placeholder, so the standard Edit menu
                 // is asked for by name rather than assumed.
                 TextEditingCommands()
+                if PageModel.languageDetectionFeaturesAvailable {
+                    CommandGroup(after: .pasteboard) {
+                        LanguageDetectionMenuItems(
+                            pages: appDelegate.pages,
+                            send: appDelegate.sendToResponder
+                        )
+                    }
+                }
                 // The app's first File menu (ADR-0028). Every item
                 // dispatches the same command id the chord does, so
                 // there is one implementation of each verb and the menu
@@ -155,6 +163,28 @@ private struct FileMenuItems: View {
 /// own: the click posts an action nobody answers when no page holds the
 /// keyboard, and the page refuses the step outright when it is shown
 /// read-only.
+@MainActor
+private struct LanguageDetectionMenuItems: View {
+    @ObservedObject var pages: PageModel
+    let send: (Selector) -> Void
+
+    private var responder: LanguageDetectionResponder? {
+        pages.activeEditor as? LanguageDetectionResponder
+    }
+
+    var body: some View {
+        Button("Detect Code Language…") {
+            send(#selector(LanguageDetectionResponder.detectCodeLanguage(_:)))
+        }
+        .disabled(responder?.canDetectCodeLanguage != true)
+
+        Button("Paste Without Detection") {
+            send(#selector(LanguageDetectionResponder.pasteWithoutDetection(_:)))
+        }
+        .disabled(pages.activeEditor?.isEditable != true)
+    }
+}
+
 @MainActor
 private struct UndoRedoItems: View {
     @ObservedObject var steps: EditStepAvailability

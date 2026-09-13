@@ -301,6 +301,37 @@ final class LanguageDetectionPasteIntegrationTests: XCTestCase {
         )
     }
 
+    func testTypingAfterAutomaticPasteUsesASeparateUndoStep() throws {
+        let fenced = expectation(description: "automatic paste applied")
+        let payload = "func greet() {}"
+        let service = LanguageDetectionService(detector: { _ in "swift" })
+        let model = try makeModel()
+        model.automaticallyFencePastes = true
+        let page = try mintPage(in: model)
+        let (coordinator, textView) = makeEditor(
+            model: model,
+            page: page,
+            enabled: false,
+            service: service,
+            payload: { Data(payload.utf8) }
+        )
+        coordinator.onEmit = { _ in fenced.fulfill() }
+
+        textView.performOrdinaryPaste(nil) { _ in XCTFail("eligible paste must be held") }
+        wait(for: [fenced], timeout: 1)
+        coordinator.onEmit = nil
+        let block = "```swift\n\(payload)\n```"
+        XCTAssertEqual(textView.string, block)
+
+        textView.insertText("x", replacementRange: textView.selectedRange())
+        XCTAssertEqual(textView.string, block + "x")
+
+        coordinator.step(back: true)
+        XCTAssertEqual(textView.string, block)
+        coordinator.step(back: true)
+        XCTAssertEqual(textView.string, "")
+    }
+
     func testAutomaticPasteAbstentionFallsBackToOnePlainReplacement() throws {
         let edited = expectation(description: "plain fallback emitted")
         let payload = "ordinary prose"
@@ -369,12 +400,16 @@ final class LanguageDetectionPasteIntegrationTests: XCTestCase {
         let model = try makeModel()
         model.automaticallyFencePastes = true
         let page = try mintPage(in: model)
+        var payloadReads = 0
         let (_, textView) = makeEditor(
             model: model,
             page: page,
-            enabled: false,
+            enabled: true,
             service: service,
-            payload: { Data(payload.utf8) }
+            payload: {
+                payloadReads += 1
+                return Data(payload.utf8)
+            }
         )
         var plainPasteCalls = 0
 
@@ -384,11 +419,12 @@ final class LanguageDetectionPasteIntegrationTests: XCTestCase {
         }
 
         XCTAssertEqual(plainPasteCalls, 1)
+        XCTAssertEqual(payloadReads, 0)
         XCTAssertEqual(textView.string, payload)
         wait(for: [detectorCalled], timeout: 0.1)
     }
 
-    func testEditDuringAutomaticDetectionDropsHeldPaste() throws {
+    func testEditDuringAutomaticDetectionFallsBackAtCurrentSelection() throws {
         let detectorStarted = DispatchSemaphore(value: 0)
         let releaseDetector = DispatchSemaphore(value: 0)
         let payload = "fn main() {}"
@@ -400,13 +436,14 @@ final class LanguageDetectionPasteIntegrationTests: XCTestCase {
         let model = try makeModel()
         model.automaticallyFencePastes = true
         let page = try mintPage(in: model)
-        let (_, textView) = makeEditor(
+        let (coordinator, textView) = makeEditor(
             model: model,
             page: page,
             enabled: false,
             service: service,
             payload: { Data(payload.utf8) }
         )
+        _ = coordinator
 
         textView.performOrdinaryPaste(nil) { _ in XCTFail("paste should be held") }
         XCTAssertEqual(detectorStarted.wait(timeout: .now() + 1), .success)
@@ -416,12 +453,135 @@ final class LanguageDetectionPasteIntegrationTests: XCTestCase {
         let settled = expectation(description: "stale detector settled")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { settled.fulfill() }
         wait(for: [settled], timeout: 1)
-        XCTAssertEqual(textView.string, "x")
+        XCTAssertEqual(textView.string, "x\(payload)")
+        XCTAssertNotEqual(
+            model.notice,
+            "Paste canceled because the editor changed before detection finished."
+        )
+        XCTAssertNil(service.currentResult)
+        XCTAssertTrue(textView.coordinator === coordinator)
+    }
+
+    func testSelectionChangeDuringAutomaticDetectionFallsBackAtCurrentSelection() throws {
+        let detectorStarted = DispatchSemaphore(value: 0)
+        let releaseDetector = DispatchSemaphore(value: 0)
+        let fallbackApplied = expectation(description: "plain fallback applied")
+        let payload = "let value = 1"
+        let service = LanguageDetectionService(detector: { _ in
+            detectorStarted.signal()
+            _ = releaseDetector.wait(timeout: .now() + 2)
+            return "swift"
+        })
+        let model = try makeModel()
+        model.automaticallyFencePastes = true
+        let page = try mintPage(in: model)
+        let (coordinator, textView) = makeEditor(
+            model: model,
+            page: page,
+            enabled: false,
+            service: service,
+            payload: { Data(payload.utf8) }
+        )
+        textView.string = "abc"
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        textView.performOrdinaryPaste(nil) { _ in XCTFail("paste should be held") }
+        XCTAssertEqual(detectorStarted.wait(timeout: .now() + 1), .success)
+        textView.setSelectedRange(NSRange(location: 1, length: 1))
+        coordinator.onEmit = { _ in
+            if textView.string == "a\(payload)c" {
+                fallbackApplied.fulfill()
+            }
+        }
+
+        wait(for: [fallbackApplied], timeout: 1)
+        releaseDetector.signal()
+        XCTAssertEqual(textView.string, "a\(payload)c")
+        XCTAssertEqual(
+            textView.selectedRange(),
+            NSRange(location: 1 + payload.utf16.count, length: 0)
+        )
+        XCTAssertTrue(textView.coordinator === coordinator)
+    }
+
+    func testSecondAutomaticPasteSettlesFirstAsPlainBeforeDetection() throws {
+        let detectorStarted = DispatchSemaphore(value: 0)
+        let releaseDetector = DispatchSemaphore(value: 0)
+        let secondPasteApplied = expectation(description: "second paste applied")
+        var payloads = ["first\n", "func second() {}"]
+        let service = LanguageDetectionService(detector: { data in
+            let payload = String(decoding: data, as: UTF8.self)
+            if payload == "first\n" {
+                detectorStarted.signal()
+                _ = releaseDetector.wait(timeout: .now() + 2)
+            }
+            return "swift"
+        })
+        let model = try makeModel()
+        model.automaticallyFencePastes = true
+        let page = try mintPage(in: model)
+        let (coordinator, textView) = makeEditor(
+            model: model,
+            page: page,
+            enabled: false,
+            service: service,
+            payload: { Data(payloads.removeFirst().utf8) }
+        )
+        coordinator.onEmit = { _ in
+            if textView.string == "first\n```swift\nfunc second() {}\n```" {
+                secondPasteApplied.fulfill()
+            }
+        }
+
+        textView.performOrdinaryPaste(nil) { _ in XCTFail("first paste should be held") }
+        XCTAssertEqual(detectorStarted.wait(timeout: .now() + 1), .success)
+        textView.performOrdinaryPaste(nil) { _ in XCTFail("second paste should be held") }
+        XCTAssertEqual(textView.string, "first\n")
+        releaseDetector.signal()
+
+        wait(for: [secondPasteApplied], timeout: 1)
+        XCTAssertEqual(textView.string, "first\n```swift\nfunc second() {}\n```")
+        XCTAssertTrue(textView.coordinator === coordinator)
+    }
+
+    func testDocumentSwitchCancelsPendingAutomaticPasteWithoutInsertion() throws {
+        let detectorStarted = DispatchSemaphore(value: 0)
+        let releaseDetector = DispatchSemaphore(value: 0)
+        let payload = "fn main() {}"
+        let service = LanguageDetectionService(detector: { _ in
+            detectorStarted.signal()
+            _ = releaseDetector.wait(timeout: .now() + 2)
+            return "rust"
+        })
+        let model = try makeModel()
+        model.automaticallyFencePastes = true
+        let first = try mintPage(in: model)
+        let second = try mintPage(in: model)
+        let (coordinator, textView) = makeEditor(
+            model: model,
+            page: first,
+            enabled: false,
+            service: service,
+            payload: { Data(payload.utf8) }
+        )
+
+        textView.performOrdinaryPaste(nil) { _ in XCTFail("paste should be held") }
+        XCTAssertEqual(detectorStarted.wait(timeout: .now() + 1), .success)
+        coordinator.moveEditor(
+            textView, to: second, storage: model.storage(for: second), restoringScrollIn: nil
+        )
+        releaseDetector.signal()
+
+        let settled = expectation(description: "stale detector settled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { settled.fulfill() }
+        wait(for: [settled], timeout: 1)
+        XCTAssertEqual(model.storage(for: first).string, "")
+        XCTAssertEqual(model.storage(for: second).string, "")
         XCTAssertEqual(
             model.notice,
             "Paste canceled because the editor changed before detection finished."
         )
         XCTAssertNil(service.currentResult)
+        XCTAssertTrue(textView.coordinator === coordinator)
     }
 
     func testOrdinaryPasteRemainsImmediatePlainAndRunsExactlyOnce() throws {
