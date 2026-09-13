@@ -1750,8 +1750,8 @@ public final class PageModel: ObservableObject {
     /// would freeze the day reading the core recomputes on each read,
     /// so the labels would stop rolling over at local midnight and the
     /// mode would need the timer this whole design exists to avoid.
-    /// What it costs instead is a walk over at most nine summaries the
-    /// model has already decoded, with no call into the core at all.
+    /// What it costs instead is a walk over the summaries the model has
+    /// already decoded, with no call into the core at all.
     public var timeUnits: TimeUnitProjection {
         TimeUnitProjection.project(tabs: tabs, selectedPageID: selectedPageID, unit: .day)
     }
@@ -2014,7 +2014,7 @@ public final class PageModel: ObservableObject {
     ///
     /// Both arms are gestures the app already ships: a slot goes
     /// through `select(_:)`, which mints into it when it holds nothing,
-    /// and today goes through `openToday()`, which selects today's page
+    /// and today goes through `startToday()`, which selects today's page
     /// when there is one and otherwise takes the shipped create path.
     /// Nothing new mints here, and nothing mints at all without a
     /// gesture asking for it (ADR-0017).
@@ -2927,7 +2927,7 @@ public final class PageModel: ObservableObject {
 
     /// ⌘N while the days are down the side: go to today's page, make
     /// one when today has none, and make another when the person is
-    /// already on today's page and has written on it (issues #79, #158).
+    /// already on today's page (issues #79, #158).
     ///
     /// Three arms, none of them a new mint policy. When today holds a
     /// live page and the selection is elsewhere this is a plain

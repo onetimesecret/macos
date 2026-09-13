@@ -3,9 +3,9 @@
 //! Rev C (doc 04): the unit is the sheet — ink plus sealed chips, one
 //! pausable countdown per page. What a page did is recorded in the
 //! [`ledger`] as metadata; the page itself, ink and sealed bytes alike,
-//! is gone. There is no cap on the strip: the working set is bounded by
-//! the countdowns the user chose, and ⌘1 to ⌘9 are shortcuts to the
-//! first nine slots rather than a wall (issue #158).
+//! is gone. There is no cap on the strip: countdowns bound the lifetime
+//! of pages, while empty tabs remain until explicitly closed. ⌘1 to ⌘9
+//! are shortcuts to the first nine slots rather than a wall (issue #158).
 //!
 //! [`ledger`]: crate::ledger
 

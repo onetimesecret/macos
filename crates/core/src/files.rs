@@ -1,7 +1,8 @@
 //! Open files: the content class that is a peer to pages.
 //!
 //! A file on disk is the artifact. A file is never a page, never a Tab,
-//! never on the strip, never in the day roll and never synced. Sync exclusion is structural rather than a rule:
+//! never on the strip, never in the day roll and never synced. Sync
+//! exclusion is structural rather than a rule:
 //! [`crate::store::SheetStore::export_document_updates`] is the only
 //! function that turns store state into relay payload, and nothing in
 //! this module is reachable from it.

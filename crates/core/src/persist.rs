@@ -258,9 +258,9 @@ impl<C: Clock> SheetStore<C> {
 
         let tab_count = count(&mut reader)?;
         // No width check: the strip has no cap (issue #158), so a file
-        // is as wide as the writer left it. A count the bytes cannot
-        // honour fails at the first missing frame below, which bounds
-        // the walk by the file rather than by a number.
+        // is as wide as the writer left it. `count()` rejects a claimed
+        // count larger than the bytes remaining, and a missing frame
+        // below is malformed; together they bound the walk by the file.
         let mut tabs = Vec::new();
         let mut next_tab_id = 1;
         let mut next_sheet_id = 1;

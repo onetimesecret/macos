@@ -174,29 +174,24 @@ public struct TimeRailView: View {
         return projection.units.first { $0.bucket == 0 }?.bucket
     }
 
-    /// The ⌘-number that lands on the row at this place on the rail.
-    ///
-    /// ⌘1 to ⌘9 count the rail's rows while the mode is on, so the row at
-    /// index 1 is what ⌘2 selects and its tooltip can say so. Asked of
-    /// the keymap rather than spelled here, for `newPageHelp`'s reason:
-    /// a user who moved the chord moves the tooltip with it, and a user
-    /// who unbound it gets a tooltip that says only what the row does.
-    /// Nothing is bound past the ninth row, and a tenth day simply has
-    /// no chord: the shortcuts count to nine, the strip does not
-    /// (issue #158).
-    /// Where the day at `day` sits in `PageModel.visibleTargets`,
-    /// which is the array `select(index:)` indexes.
+    /// Where the day at `day` sits in `PageModel.visibleTargets`, which
+    /// is the array `select(index:)` indexes.
     ///
     /// Pure, and the only expression of the offset, so the chord a row
     /// prints and the chord that reaches that row are one arithmetic
     /// rather than two that have to be kept in step. Files come first
-    /// in both layouts, which is the lead's decision, so the days
-    /// start after them; numbering the days from zero would print
-    /// command 1 beside today while command 1 selected the first file.
+    /// in both layouts, which is the lead's decision, so the days start
+    /// after them; numbering the days from zero would print command 1
+    /// beside today while command 1 selected the first file.
     nonisolated static func targetIndex(forDay day: Int, openFileCount: Int) -> Int {
         openFileCount + day
     }
 
+    /// The ⌘-number that lands on the rail row at this index.
+    ///
+    /// ⌘1 to ⌘9 count the rail's rows while the mode is on. Asked of the
+    /// keymap rather than spelled here, so moving or removing a binding
+    /// changes the tooltip with it. A tenth row simply has no chord.
     static func chord(forRowAt index: Int, keymap: ResolvedKeymap) -> Keystroke? {
         let number = index + 1
         guard let command = CommandID.allCases.first(where: { $0.selectsPageNumber == number })
@@ -439,6 +434,9 @@ struct TimeUnitTab: View {
         .accessibilityLabel(Text(unit.spokenLabel))
         .accessibilityValue(Text(unit.spokenRemaining))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityNewPageAction(when: Self.offersNewPage(unit)) {
+            model.newPage()
+        }
     }
 
     /// The strip's + button, on the one row where a new page lands
@@ -525,5 +523,16 @@ struct TimeUnitTab: View {
     private static func chorded(_ what: String, chord: Keystroke?) -> String {
         guard let chord else { return what }
         return "\(what) (\(chord.displaySymbol))"
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func accessibilityNewPageAction(when offered: Bool, action: @escaping () -> Void) -> some View {
+        if offered {
+            accessibilityAction(named: Text("New page"), action)
+        } else {
+            self
+        }
     }
 }

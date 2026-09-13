@@ -262,7 +262,9 @@ renamed or re-ordered; a new sealed generation written for a flip.
 
 **Pass:** each rail row announces its day in full words ("today",
 "yesterday", "3 days ago") followed by how long the page on it that
-dies soonest has left, and the selected row announces as selected. Since
+dies soonest has left, and the selected row announces as selected. On
+Today, VoiceOver also offers a **New page** action that mints another
+page. Since
 issue #131 the row says the same words on screen, so what is heard and
 what is read agree apart from the capital. The short form (`-3d`) is
 left only in the roll's gutter, whose header announces the phrase, so
@@ -272,9 +274,9 @@ the foot of the rail, when it is there, announces the whole sentence and
 not just the number.
 
 **Fail:** a row that announces only "-3d"; a row that shows different
-words from the ones it speaks; a row with no value; a perforation that
-announces nothing; a decorative gauge or a minimap bar that VoiceOver
-reads.
+words from the ones it speaks; a row with no value; Today with no
+**New page** action; a perforation that announces nothing; a decorative
+gauge or a minimap bar that VoiceOver reads.
 
 ## Case 8: reduced motion
 
@@ -292,12 +294,15 @@ reduce.
 There is no cap any more (issue #158), so this case is the count and
 the tenth page, not a refusal.
 
-1. With the mode off, make nine pages and leave several blank. Turn the
-   mode on.
+1. With the mode off, make nine pages over several days and leave at
+   least three of the older pages blank. Follow the staging procedure
+   above, or use the documented clock-step-back procedure between pages.
+   Turn the mode on.
 
 **Pass:** the foot of the rail shows a dimmed count ("3 blank") whose
 tooltip says how many live pages the days are not showing and names this
-Settings toggle as the way to reach them.
+Settings toggle as the way to reach them. Today's blank pages stay on the
+Today row and do not contribute to the count.
 
 **Fail:** a count that is wrong, or no count with blank pages standing.
 
@@ -429,7 +434,7 @@ stay: a re-run adds a row rather than replacing one.
 | | | 10 minimap reads as texture, not as a chart | | Record the two inks and the appearance. |
 | | | 10 band tracks the scroll and clamps at both ends | | |
 | | | 10 nothing legible in the minimap at any size | | |
-| | | 10 rail width at the 360pt floor | | Do the day words fit without truncation. Does the roll's gutter still hold day, title and countdown on one line. |
+| | | 10 rail width at the 360pt floor | | Do the day words and Today's + fit without truncation. Does the roll's gutter still hold day, title and countdown on one line. |
 | | | 10 rail width on a wide card | | Does 96pt read as generous or as a wasted column. Decision: pin 96, narrow the rail, or raise the card's floor. |
 | | | 11 ⌘N on today's page mints a second page | | Note where the caret landed. |
 | | | 11 ⌘1 and the Today row make one page, not two | | |

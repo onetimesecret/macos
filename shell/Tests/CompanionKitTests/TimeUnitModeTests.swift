@@ -283,13 +283,12 @@ final class TimeUnitModeTests: XCTestCase {
         model.applyOps(sheet: page, opsJSON: ops)
     }
 
-    /// The trap the cap used to set, sprung (issue #158). Nine slots
-    /// holding old pages with nothing on them draw no rows at all, so
-    /// the strip a tab would have been closed from is not on screen;
-    /// today's page opens anyway, as a tenth slot, and no notice names
-    /// a wall. Nothing is auto-discarded to make room, because nothing
-    /// needs making room for: the nine are still standing afterwards.
-    func testNineHiddenSlotsDoNotStandBetweenAPersonAndToday() throws {
+    /// The trap the cap used to set, sprung (issue #158). Nine empty
+    /// slots draw no rows at all, so the strip a tab would have been
+    /// closed from is not on screen; today's page opens anyway, as a
+    /// tenth slot, and no notice names a wall. Nothing is auto-discarded
+    /// to make room, because the nine are still standing afterwards.
+    func testNineEmptySlotsDoNotStandBetweenAPersonAndToday() throws {
         let (model, _) = try makeModel()
         model.loadStateIfNeeded()
         for _ in 1..<9 { model.newPage() }

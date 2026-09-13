@@ -278,20 +278,17 @@ decision's status waits on.
    lives in one place; the existing focus-law suite, which pins that a
    walk leaving the ledger and minting asks for the keys exactly once,
    passes unedited.
-10. `openToday()`: select today's tab when a live page is there, else go
-    through the shipped create path (`newPage()`,
-    shell/Sources/CompanionKit/PageModel.swift, and
-    `createPageAndFocus(in:)`) unchanged. It originally widened the cap
-    refusal to name the Settings toggle in this mode; the cap and its
-    refusal were removed on 2026-09-06 (issue #158). The `.pageNew` arm
-    (shell/Sources/CompanionKit/Keymap/KeymapRegistry.swift)
-    branches on the mode. No new `CommandID`, no keymap row.
+10. `openToday()`: select today's tab when a live page is there, create
+    through `newPage()` when today is empty, and create another only when
+    today's page is already on screen. The place gestures use
+    `startToday()`, which never creates a second page
+    (shell/Sources/CompanionKit/PageModel.swift). The `.pageNew` arm
+    (shell/Sources/CompanionKit/Keymap/KeymapRegistry.swift) branches on
+    the mode. No new `CommandID`, no keymap row.
 
-    **Landed**, through `newPage()`. The refusal was the shipped one with
-    its sentence widened in this mode (`PageModel.capRefusal`), so the
-    words the strip had always shown were unchanged and a test held both
-    of them; the cap, the sentence and the test went on 2026-09-06
-    (issue #158).
+    **Landed**, through `newPage()`. The capacity refusal was removed on
+    2026-09-06 (issue #158); neither mode can now refuse a new page for
+    lack of room.
 11. The editor factoring: building the one persistent `InkTextView`
     separates from wrapping it in a scroll view
     (shell/Sources/CompanionKit/InkEditorView.swift, and
