@@ -37,12 +37,17 @@ select the wrong scanner.
 
 Deliverables:
 
-- [ ] Review and accept ADR-0029, including its narrow partial replacement of
-  ADR-0024. Confirm
-  initial default off, session-only rendering choices, and v1 encoding scope.
-- [ ] Retrieve the published `0.1.1` crate; verify the model size/hash against the
-  ADR and record registry checksum/VCS metadata. Inspect actual packaged API,
-  inference window, initialization, and transitive dependencies.
+- [x] ADR-0029 is accepted, including its narrow partial replacement of
+  ADR-0024. Confirm the initial default off, session-only rendering choices, and
+  v1 encoding scope before implementation.
+- [x] Retrieve the published `0.1.1` crate and record the registry checksum
+  `5f89b0929539eaee70109704ae4e345df438be6ab02e4dc8ac060e05098ad1b7`, package
+  VCS revision `13b5cbf7b934fdbd4be0bb7437faeb03124700de`, and matching 47,840-byte
+  model SHA-256 `8493d2d3757572c8661141e414b1c0755aa08d4c4e5382dfbbc6b73b02d89083`.
+  ADR-0029's erratum records the package/source discrepancy and makes the
+  published registry artifact the review target.
+- [ ] Inspect the packaged inference window, initialization, and transitive
+  dependencies on each supported target.
 - [ ] Audit licenses and define where third-party notices enter both app and
   framework packaging. Check `deny.toml`; do not broaden license allowances to
   silence a failed check without review.
@@ -58,7 +63,9 @@ Deliverables:
   false-positive fencing, and confusion pairs by surface and length. Evaluate
   `c/cpp`, `javascript/typescript`, `markdown/yaml`, and `ini/toml` explicitly.
 - [ ] Select and document top-score, top-two-margin, minimum evidence, and paste
-  eligibility thresholds. Proposed automatic-paste gate: at least 99% precision
+  eligibility thresholds. Zed PR #61412 supplies an external starting baseline:
+  20 input bytes, a 0.20 minimum score, and a 0.20 candidate-group gap; it does
+  not validate Companion's automatic-paste use case. Proposed automatic-paste gate: at least 99% precision
   on eligible held-out paste cases and no automatic conversions on a dedicated
   suite of at least 1,000 prose/list/URL negative cases. Publish counts and
   uncertainty; zero observed errors is not proof of a zero production error rate.

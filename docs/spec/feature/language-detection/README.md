@@ -3,15 +3,15 @@
 Status: **proposed** · 2026-09-12  
 Scope: recognize visible pasted code, suggest a rendering language for opened
 text files, and suggest a language for unlabeled Markdown fences. No
-implementation or dependency change is included in this plan.
+implementation or dependency change is included in this specification.
 
-- [ADR-0029: Betlang source-language detection behind the existing C ABI](../../../adr/0029-betlang-source-language-detection-behind-the-existing-c-abi.md) — proposed dependency pin, model checksum,
-  attribution, architecture, and policy changes requiring acceptance.
+- [ADR-0029: Betlang source-language detection behind the existing C ABI](../../../adr/0029-betlang-source-language-detection-behind-the-existing-c-abi.md) — accepted architecture, dependency pin, artifact record, attribution, and policy boundaries.
 - [Implementation plan](plan.md) — ordered work, integration points, tests, and
   release gates.
 
-All requirements below are proposals, not existing project guarantees. Current
-behavior is identified separately. The proposed ADR is not an accepted authority.
+All requirements below are proposals, not existing project guarantees, except
+where they restate the accepted boundaries in ADR-0029. Current behavior is
+identified separately.
 
 ## Purpose
 
@@ -48,10 +48,10 @@ accepted ADRs below, within their stated scope:
 - Its rejected bare-fence alternative concludes: “The info string is
   the only signal, the position ADR-0023 already took on link detection.”
 
-Interpretation: inferred bare-fence coloring, whole-file coloring, a distinct
-code font, and automatic multi-line fence insertion are not all authorized by
-ADR-0024. Accept a narrowly scoped amendment before implementing those changes;
-do not describe them as already covered by display-only styling. The
+ADR-0029 now provides the narrowly scoped amendment for inferred bare-fence
+coloring, whole-file Source mode, fixed-width code regions, explicit
+wrap/insert-label actions, and opt-in paste replacements. The remaining
+ADR-0024 decision still governs other automation and display-only styling. The
 [file-editing spec](../file-editing/README.md) describes a related implementation
 but identifies its own decision as proposed; it is context, not authority here.
 
