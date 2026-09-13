@@ -1,6 +1,7 @@
 import Foundation
 import CompanionCore
 
+
 // The shared seam wrapper, one copy for every form factor. ADR-0010
 // carried two copies deliberately while the backdrop was an
 // exploration, and named the extraction as the trigger that fires when
@@ -9,7 +10,7 @@ import CompanionCore
 // Logic that would need adding twice belongs in the core once.
 
 /// A non-secret snapshot of one tab, a durable slot on the strip,
-/// holding at most one perishable page of ink and sealed chips, 
+/// holding at most one perishable page of ink and sealed chips,
 /// decoded from the core's JSON (see crates/ffi/include/companion_ffi.h
 /// for the field contract). There is deliberately no content field of
 /// any kind: sealed bytes have no display form at all (the boundary
@@ -1413,6 +1414,27 @@ public final class CompanionClient: @unchecked Sendable {
     @discardableResult
     public func draftsErase(at path: String) -> Bool {
         path.withCString { companion_drafts_erase(handle, $0) }
+    }
+
+    /// Detect a source-language slug without consulting or mutating a client
+    /// handle. The input storage is borrowed only for the synchronous C call;
+    /// the returned owned C string is copied before it is freed.
+    public static func detectSourceLanguage(in data: Data) -> String? {
+        let detected: UnsafeMutablePointer<CChar>? =
+            if data.isEmpty {
+                companion_detect_source_language(nil, 0)
+            } else {
+                data.withUnsafeBytes { bytes in
+                    companion_detect_source_language(
+                        bytes.bindMemory(to: UInt8.self).baseAddress,
+                        bytes.count
+                    )
+                }
+            }
+
+        guard let detected else { return nil }
+        defer { companion_string_free(detected) }
+        return String(cString: detected)
     }
 
     /// The core's version string.
