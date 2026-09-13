@@ -10,20 +10,22 @@ are not evidence of accepted policy.
 
 ## Immediate execution step
 
-Measurement can begin before the production adapter or any user-visible surface
-is approved. ADR-0029 says: “Keep ranked scores internal for evaluation. Choose
-minimum evidence, top-score, and top-two-margin thresholds from the local corpus
-before freezing the adapter.” This plan interprets that ordering to require an
-executable evaluation first, not prior agreement on the thresholds it will
-measure.
+Measurement and production-path implementation can begin before the adapter or
+any user-visible surface is approved for release. ADR-0029 says: “Keep ranked
+scores internal for evaluation. Choose minimum evidence, top-score, and
+top-two-margin thresholds from the local corpus before freezing the adapter.”
+This ordering makes threshold selection a release gate, not a prerequisite for
+building the path needed to measure integration cost and behavior.
 
 The non-shipping `tools/language-eval` harness calls the recorded registry
 artifact directly, retains ranked results, and keeps thresholds configurable.
 Its synthetic tuning and hold-out data must not include clipboard history,
-private documents, or real secrets. Running and extending this harness is the
-next step. Production dependency placement, C/Swift adapters, clipboard access,
-automatic edits, and user-visible surfaces remain out of scope until the results
-support a reviewed shipping choice.
+private documents, or real secrets. In parallel, implement the core adapter,
+C/Swift bridge, bounded worker, and an explicitly enabled development-only
+ordinary-paste shadow path. The shadow path must leave the existing paste
+unchanged and must not expose automatic edits or a user-visible setting.
+Provisional thresholds and successful integration tests are evidence to review;
+they are not approval to ship the dependency, detector, or automatic behavior.
 
 ## Integration map
 
