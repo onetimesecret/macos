@@ -67,6 +67,7 @@ public struct InkEditorView: NSViewRepresentable {
     /// unconditionally would then drop the live editor a moment after it
     /// arrived.
     public static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+        coordinator.invalidateOrdinaryPasteMeasurement()
         guard let textView = scroll.documentView as? InkTextView,
               coordinator.model.activeEditor === textView else { return }
         coordinator.model.activeEditor = nil
@@ -303,7 +304,7 @@ public struct InkEditorView: NSViewRepresentable {
         model.activeEditor = textView
         // The stance can change without the page changing, so editing
         // is re-gated on every pass rather than at mount alone.
-        textView.isEditable = !readOnly
+        coordinator.updateEditability(of: textView, to: !readOnly)
         // Same for wrapping, which ⌥Z and Settings can flip while the
         // page stays put. The coordinator skips the pass when the state
         // has not moved, so the common update rebuilds no geometry.
@@ -348,6 +349,27 @@ public struct InkEditorView: NSViewRepresentable {
         weak var textView: InkTextView?
         var currentSheet: UInt64?
 
+        struct OrdinaryPasteMeasurement: Sendable {
+            let result: LanguageDetectionResult
+            let elapsed: Duration
+        }
+
+        #if DEBUG
+        private static let defaultOrdinaryPasteShadowEnabled =
+            ProcessInfo.processInfo.environment["ONETIMEPAD_MEASURE_PASTE_LANGUAGE"] == "1"
+        #else
+        private static let defaultOrdinaryPasteShadowEnabled = false
+        #endif
+
+        private let ordinaryPasteShadowEnabled: Bool
+        private let languageDetectionService: LanguageDetectionService?
+        private let ordinaryPastePayload: () -> Data?
+        private var pendingOrdinaryPasteRequestID: UUID?
+
+        /// In-memory development/test observation only. The source payload is
+        /// deliberately absent from the reported value.
+        var onOrdinaryPasteMeasurement: ((OrdinaryPasteMeasurement) -> Void)?
+
         /// Caret and scroll are view state. With one editor serving
         /// every page (ADR-0006) they no longer die with a torn-down
         /// view — they must be carried per page by hand: saved before
@@ -364,8 +386,106 @@ public struct InkEditorView: NSViewRepresentable {
         /// which is what a file leaving the roster sets it to.
         private var lastLiveSheets: Set<UInt64>?
 
-        init(model: PageModel) {
+        init(
+            model: PageModel,
+            ordinaryPasteShadowEnabled: Bool? = nil,
+            languageDetectionService: LanguageDetectionService? = nil,
+            ordinaryPastePayload: @escaping () -> Data? = {
+                NSPasteboard.general.string(forType: .string).map { Data($0.utf8) }
+            }
+        ) {
             self.model = model
+            self.ordinaryPasteShadowEnabled =
+                ordinaryPasteShadowEnabled ?? Self.defaultOrdinaryPasteShadowEnabled
+            self.languageDetectionService = if self.ordinaryPasteShadowEnabled {
+                languageDetectionService ?? LanguageDetectionService()
+            } else {
+                nil
+            }
+            self.ordinaryPastePayload = ordinaryPastePayload
+        }
+
+        /// Captures the ordinary plain-text payload once, before AppKit performs
+        /// its own pasteboard read. Shadow measurements are discarded on later
+        /// editor changes; they assume the board itself did not change between
+        /// these two synchronous reads. Nil keeps the shipping path untouched
+        /// while the shadow gate is off.
+        func ordinaryPasteMeasurementPayload() -> Data? {
+            guard ordinaryPasteShadowEnabled else { return nil }
+            return ordinaryPastePayload()
+        }
+
+        /// Starts non-shipping source-language measurement after the unchanged
+        /// plain paste has completed. The request therefore carries the revision
+        /// and selection produced by that paste; only later edits invalidate it.
+        func observeOrdinaryPaste(payload data: Data) {
+            invalidateOrdinaryPasteMeasurement()
+            let started = ContinuousClock.now
+            guard let documentID = currentSheet, let textView else { return }
+            let selection = textView.selectedRange()
+            let request = LanguageDetectionRequest(
+                documentID: documentID,
+                revision: UInt64(generation),
+                targetRange: selection,
+                trigger: .ordinaryPaste,
+                selectionSnapshot: selection,
+                data: data
+            )
+            pendingOrdinaryPasteRequestID = request.requestID
+            languageDetectionService?.submit(
+                request,
+                validating: { [weak self] context in
+                    guard Thread.isMainThread else { return false }
+                    return MainActor.assumeIsolated {
+                        self?.isCurrentOrdinaryPaste(context) ?? false
+                    }
+                },
+                completion: { [weak self] result in
+                    guard Thread.isMainThread else { return }
+                    MainActor.assumeIsolated {
+                        guard let self, self.isCurrentOrdinaryPaste(result.context) else { return }
+                        self.pendingOrdinaryPasteRequestID = nil
+                        self.onOrdinaryPasteMeasurement?(.init(
+                            result: result,
+                            elapsed: started.duration(to: .now)
+                        ))
+                    }
+                }
+            )
+        }
+
+        func invalidateOrdinaryPasteMeasurement() {
+            guard ordinaryPasteShadowEnabled else { return }
+            pendingOrdinaryPasteRequestID = nil
+            languageDetectionService?.invalidate()
+        }
+
+        func updateEditability(of textView: InkTextView, to editable: Bool) {
+            if textView.isEditable != editable {
+                invalidateOrdinaryPasteMeasurement()
+            }
+            textView.isEditable = editable
+        }
+
+        func parkEditor() {
+            invalidateOrdinaryPasteMeasurement()
+            currentSheet = nil
+        }
+
+        public func textViewDidChangeSelection(_ notification: Notification) {
+            invalidateOrdinaryPasteMeasurement()
+        }
+
+        private func isCurrentOrdinaryPaste(_ context: LanguageDetectionContext) -> Bool {
+            guard pendingOrdinaryPasteRequestID == context.requestID,
+                  currentSheet == context.documentID,
+                  UInt64(generation) == context.revision,
+                  let textView,
+                  textView.isEditable,
+                  !textView.hasMarkedText()
+            else { return false }
+            let selection = textView.selectedRange()
+            return selection == context.selectionSnapshot && selection == context.targetRange
         }
 
         // MARK: The page swap (ADR-0006)
@@ -401,6 +521,7 @@ public struct InkEditorView: NSViewRepresentable {
             storage incoming: NSTextStorage,
             restoringScrollIn scrollView: NSScrollView?
         ) {
+            invalidateOrdinaryPasteMeasurement()
             InkEditorView.discardComposition(in: textView)
             saveViewState(textView: textView, scrollView: scrollView)
             // The one-layout-manager-per-storage invariant rests on this
@@ -705,6 +826,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// not undo that reaches across them, and nothing on this route
         /// should be built as though it could.
         func step(back: Bool) {
+            invalidateOrdinaryPasteMeasurement()
             guard let sheet = currentSheet, let textView else { return }
             // The gate lives here rather than only at the callers. Both
             // routes that exist today check it before they arrive, and
@@ -798,6 +920,7 @@ public struct InkEditorView: NSViewRepresentable {
             // that filled the classification cache. An edit this method
             // declines to emit still moves the page under that reading.
             generation &+= 1
+            invalidateOrdinaryPasteMeasurement()
             guard !model.isApplyingProjection else { return }
             guard let sheet = currentSheet else { return }
             if markedTextInFlight || (textView?.hasMarkedText() ?? false) {
@@ -822,6 +945,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// replace held, so its end can be diffed against a truth
         /// rather than replayed edit by edit.
         func beginComposition(over range: NSRange, in storage: NSTextStorage) {
+            invalidateOrdinaryPasteMeasurement()
             guard imeComposition == nil else { return }
             let clamped = Self.clamped(range, to: storage.length)
             imeComposition = CompositionSpan(
@@ -2021,7 +2145,21 @@ final class InkTextView: NSTextView, EditStepResponder {
     /// ⌘V behaves like every text editor on the machine — plain text,
     /// no surprises (docs/spec/04).
     override func paste(_ sender: Any?) {
+        performOrdinaryPaste(sender) { [unowned self] sender in
+            pasteAsPlainText(sender)
+        }
+    }
+
+    /// A narrow test seam around the unchanged AppKit paste operation. The
+    /// optional measurement payload is captured once before AppKit performs its
+    /// own synchronous board read, while inference starts only after the plain
+    /// paste has completed.
+    func performOrdinaryPaste(_ sender: Any?, pasteAsPlainText: (Any?) -> Void) {
+        let measurementPayload = coordinator?.ordinaryPasteMeasurementPayload()
         pasteAsPlainText(sender)
+        if let measurementPayload {
+            coordinator?.observeOrdinaryPaste(payload: measurementPayload)
+        }
     }
 
     // MARK: Lists (ADR-0024: automation only on the caret's line)

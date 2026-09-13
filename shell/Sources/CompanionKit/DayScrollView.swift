@@ -113,6 +113,7 @@ public struct DayScrollView: NSViewRepresentable {
     public static func dismantleNSView(
         _ scroll: NSScrollView, coordinator: InkEditorView.Coordinator
     ) {
+        coordinator.invalidateOrdinaryPasteMeasurement()
         guard let stack = scroll.documentView as? DayStackView else { return }
         // Whatever became of the editor, this roll's measurement
         // describes a surface that is going away, and the rail must not
@@ -374,7 +375,9 @@ final class DayStackView: NSView {
             refreshGutters()
             refreshQuietRegions()
             relayout()
-            editor?.isEditable = !readOnly
+            if let editor {
+                coordinator.updateEditability(of: editor, to: !readOnly)
+            }
             model.scheduleEditStepsRefresh()
             return
         }
@@ -403,7 +406,9 @@ final class DayStackView: NSView {
         assembleRows(projection: projection, selectedPage: selectedPage)
         settleEditor(on: selectedPage)
         isLayingOut = false
-        editor?.isEditable = !readOnly
+        if let editor {
+            coordinator.updateEditability(of: editor, to: !readOnly)
+        }
         model.scheduleEditStepsRefresh()
         relayout()
         keepStill(anchoredOn: anchor)
@@ -692,7 +697,7 @@ final class DayStackView: NSView {
         parkedStorage = empty
         editor.layoutManager?.replaceTextStorage(empty)
         outgoing?.delegate = nil
-        coordinator.currentSheet = nil
+        coordinator.parkEditor()
         editor.frame = .zero
         if model.activeEditor === editor { model.activeEditor = nil }
     }
