@@ -9,7 +9,9 @@ final class LanguageDetectionPasteIntegrationTests: XCTestCase {
         let suiteName = "companion-language-paste-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
-        return isolatedModel(defaults: defaults)
+        let model = isolatedModel(defaults: defaults)
+        model.languageDetectionEnabled = true
+        return model
     }
 
     private func mintPage(in model: PageModel) throws -> UInt64 {
@@ -43,6 +45,41 @@ final class LanguageDetectionPasteIntegrationTests: XCTestCase {
         )
         textView.isEditable = true
         return (coordinator, textView)
+    }
+
+    func testLanguageDetectionOffKeepsAutofencingInert() throws {
+        let detectorCalled = expectation(description: "detector called")
+        detectorCalled.isInverted = true
+        let service = LanguageDetectionService(detector: { _ in
+            detectorCalled.fulfill()
+            return "swift"
+        })
+        let model = try makeModel()
+        model.languageDetectionEnabled = false
+        model.automaticallyFencePastes = true
+        let page = try mintPage(in: model)
+        var payloadReads = 0
+        let (_, textView) = makeEditor(
+            model: model,
+            page: page,
+            enabled: false,
+            service: service,
+            payload: {
+                payloadReads += 1
+                return Data("let value = 1".utf8)
+            }
+        )
+        var plainPasteCalls = 0
+
+        textView.performOrdinaryPaste(nil) { _ in
+            plainPasteCalls += 1
+            textView.insertText("let value = 1", replacementRange: textView.selectedRange())
+        }
+
+        XCTAssertEqual(plainPasteCalls, 1)
+        XCTAssertEqual(payloadReads, 0)
+        XCTAssertEqual(textView.string, "let value = 1")
+        wait(for: [detectorCalled], timeout: 0.1)
     }
 
     func testGateOffNeitherReadsPayloadNorCallsDetector() throws {

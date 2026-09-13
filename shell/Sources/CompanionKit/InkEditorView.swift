@@ -166,6 +166,8 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.textView = textView
         coordinator.currentSheet = sheetID
         coordinator.appliedTypeface = InkStyle.typeface
+        coordinator.appliedSyntaxHighlighting = model.syntaxHighlightingEnabled
+        coordinator.appliedLanguageDetection = model.languageDetectionEnabled
         coordinator.restyle()
         model.activeEditor = textView
         // The summon-time offer's button takes the same road as ⇧⌘V,
@@ -314,6 +316,8 @@ public struct InkEditorView: NSViewRepresentable {
         // page stays put; the same gate, so the common pass restyles
         // nothing.
         coordinator.applyTypeface(model.typeface)
+        coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
+        coordinator.applyLanguageDetection(model.languageDetectionEnabled)
         // Dead pages take their saved view state with them — the same
         // pruning `refresh()` applies to the storage cache, and keyed
         // the same way, by page identity: a tab outlives its pages
@@ -454,6 +458,7 @@ public struct InkEditorView: NSViewRepresentable {
             guard !bypassingAutomaticFencing else { return nil }
             guard ordinaryPasteShadowEnabled
                     || (PageModel.languageDetectionFeaturesAvailable
+                        && model.languageDetectionEnabled
                         && model.automaticallyFencePastes)
             else { return nil }
             return ordinaryPastePayload()
@@ -599,6 +604,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// as one ordinary replacement at the current, revalidated selection.
         func beginAutomaticPaste(payload data: Data) -> Bool {
             guard PageModel.languageDetectionFeaturesAvailable,
+                  model.languageDetectionEnabled,
                   model.automaticallyFencePastes,
                   let payload = String(data: data, encoding: .utf8)
             else { return false }
@@ -736,7 +742,8 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         private func isCurrentAutomaticPaste(_ context: LanguageDetectionContext) -> Bool {
-            guard let pendingAutomaticPaste,
+            guard model.languageDetectionEnabled,
+                  let pendingAutomaticPaste,
                   pendingAutomaticPaste.requestID == context.requestID,
                   pendingAutomaticPaste.documentID == context.documentID,
                   pendingAutomaticPaste.revision == context.revision,
@@ -803,11 +810,15 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         var canDetectCodeLanguage: Bool {
-            PageModel.languageDetectionFeaturesAvailable && manualLanguageTarget() != nil
+            PageModel.languageDetectionFeaturesAvailable
+                && model.languageDetectionEnabled
+                && manualLanguageTarget() != nil
         }
 
         func detectCodeLanguage() {
-            guard PageModel.languageDetectionFeaturesAvailable else { return }
+            guard PageModel.languageDetectionFeaturesAvailable,
+                  model.languageDetectionEnabled
+            else { return }
             guard let target = manualLanguageTarget(), let storage = textView?.textStorage else {
                 model.flash("Select whole lines or place the caret inside a bare code fence.")
                 return
@@ -854,7 +865,8 @@ public struct InkEditorView: NSViewRepresentable {
         private func isCurrentManualRequest(
             _ context: LanguageDetectionContext, target: ManualLanguageTarget
         ) -> Bool {
-            guard pendingManualRequestID == context.requestID,
+            guard model.languageDetectionEnabled,
+                  pendingManualRequestID == context.requestID,
                   context.documentID == target.documentID,
                   context.revision == target.revision,
                   context.targetRange == target.detectionRange,
@@ -1046,7 +1058,7 @@ public struct InkEditorView: NSViewRepresentable {
                 keyEquivalent: ""
             )
             detect.target = self
-            detect.isEnabled = manualLanguageTarget() != nil
+            detect.isEnabled = model.languageDetectionEnabled && manualLanguageTarget() != nil
             menu.addItem(detect)
 
             if let suggestion = languageSuggestion,
@@ -1385,6 +1397,8 @@ public struct InkEditorView: NSViewRepresentable {
         /// pass that changed nothing restyles nothing. Set at the
         /// building, where the first styling happens.
         var appliedTypeface: InkStyle.Typeface?
+        var appliedSyntaxHighlighting: Bool?
+        var appliedLanguageDetection: Bool?
 
         /// Restyle the mounted page in the typeface Settings now names.
         /// The model has already written it to `InkStyle`, so the
@@ -1399,6 +1413,23 @@ public struct InkEditorView: NSViewRepresentable {
             appliedTypeface = typeface
             textView.typingAttributes[.font] = InkStyle.baseFont
             restyle()
+        }
+
+        func applySyntaxHighlighting(_ enabled: Bool) {
+            guard appliedSyntaxHighlighting != enabled else { return }
+            appliedSyntaxHighlighting = enabled
+            restyle()
+        }
+
+        func applyLanguageDetection(_ enabled: Bool) {
+            guard appliedLanguageDetection != enabled else { return }
+            appliedLanguageDetection = enabled
+            guard !enabled else { return }
+            settleAutomaticPasteAsPlainIfPossible()
+            pendingOrdinaryPasteRequestID = nil
+            pendingManualRequestID = nil
+            languageSuggestion = nil
+            languageDetectionService.invalidate()
         }
 
         /// Watch the clip so the unwrapped page's width floor stays level
@@ -2054,7 +2085,7 @@ public struct InkEditorView: NSViewRepresentable {
                             language: scanner.fenceLanguage
                                 ?? sessionLanguage.flatMap(CodeInk.renderingLanguage(ofInfoString:))
                         )
-                    case .code:
+                    case .code where model.syntaxHighlightingEnabled:
                         // The line without its separator, taken off the
                         // tail alone. Trimming both ends would move
                         // every offset the tokenizer returns whenever a
@@ -2199,8 +2230,8 @@ public struct InkEditorView: NSViewRepresentable {
             // A list item hangs from its content: an item long enough
             // to wrap keeps its second line under the words rather than
             // under the bullet, so the marker column stays a column.
-            // The page is monospaced, so the width is exact arithmetic
-            // and never a measured layout.
+            // This indent belongs to prose; code wrapping and caret
+            // geometry come from each range's attributed fixed-pitch font.
             if case .list(let markerLength) = kind {
                 paragraphStyle.headIndent = InkStyle.hangingIndent(markerLength: markerLength)
             }
@@ -2212,7 +2243,7 @@ public struct InkEditorView: NSViewRepresentable {
             // should linger behind a line either.)
             storage.addAttributes(
                 [
-                    .font: InkStyle.baseFont,
+                    .font: InkStyle.font(for: kind),
                     .foregroundColor: NSColor.labelColor,
                     .backgroundColor: NSColor.clear,
                     .paragraphStyle: paragraphStyle,
@@ -2238,12 +2269,7 @@ public struct InkEditorView: NSViewRepresentable {
                 // links and all: "- see https://…" is the commonest
                 // line in a working note.
                 styleLinks(in: range, of: storage)
-            case .heading(let level, let markerLength):
-                storage.addAttribute(
-                    .font,
-                    value: InkStyle.headingFont(level: level),
-                    range: range
-                )
+            case .heading(_, let markerLength):
                 // The `### ` stays on screen, dimmed, exactly where typed.
                 storage.addAttribute(
                     .foregroundColor,
@@ -2251,7 +2277,6 @@ public struct InkEditorView: NSViewRepresentable {
                     range: NSRange(location: range.location, length: markerLength)
                 )
             case .fenceRule:
-                storage.addAttribute(.font, value: InkStyle.codeFont, range: range)
                 // The fence's own line is markup, dimmed the way a
                 // heading's hashes are. The wash it shares with the
                 // lines it brackets is not an attribute: painting the
@@ -2264,14 +2289,13 @@ public struct InkEditorView: NSViewRepresentable {
                     range: range
                 )
             case .code:
-                storage.addAttribute(.font, value: InkStyle.codeFont, range: range)
                 // Literally what was typed: the markup a code line
                 // carries is part of the code, so nothing here is read
                 // as a heading and nothing is dimmed. The wash behind
                 // it belongs to the whole fence region and is painted
                 // by the layout manager, not laid down per line.
                 //
-                // Color goes on last, over base ink that is already
+                // Color goes on last, over code ink that is already
                 // laid down, and color is all it is: the font, the
                 // paragraph style and every byte of the line are the
                 // ones a bare fence would have given, so wrapping and
@@ -2832,7 +2856,10 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         case .clipboardSealSelection:
             coordinator.sealSelectionOrLine()
         case .editorDetectCodeLanguage:
-            guard PageModel.languageDetectionFeaturesAvailable, isEditable else { return false }
+            guard PageModel.languageDetectionFeaturesAvailable,
+                  coordinator.model.languageDetectionEnabled,
+                  isEditable
+            else { return false }
             coordinator.detectCodeLanguage()
         case .editorUndo, .editorRedo:
             // A resting card and a page shown read-only both arrive
@@ -3024,9 +3051,9 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// the item's marker region: two spaces at the line's start, and
     /// the item hangs one level deeper.
     ///
-    /// Two spaces rather than a tab because the page is monospaced and
-    /// the hanging indent is measured in cells (`styleParagraph` gives
-    /// `.list` a head indent of the prefix's own width): a tab's width
+    /// Two spaces rather than a tab because the hanging indent is measured
+    /// from the prose face (`styleParagraph` gives `.list` a head indent
+    /// approximating the prefix's own width): a tab's width
     /// would be the layout manager's opinion, and the marker's would be
     /// the parser's. Nothing about the marker itself changes on a depth
     /// change; a nested `-` is still a `-`, because substituting a
@@ -3376,11 +3403,10 @@ final class ChipCell: NSTextAttachmentCell {
 /// The page's type ramp: monospaced ink; headings by weight and size,
 /// their markup dimmed in place (docs/spec/04).
 ///
-/// The face and the size are the user's (Settings, General), the way
-/// an editor's buffer font is: a family named the way the system names
-/// it, and a point size. Everything on the page is derived from that
-/// one `Typeface`: the base font, the heading ramp, the cell width the
-/// hanging indents are counted in, and the chip's own label.
+/// Prose and code families are the user's (Settings, General and Code),
+/// with one shared point size. `Typeface` resolves the prose base and
+/// heading ramp separately from fixed-pitch code; list indentation and
+/// chip labels continue to follow the prose face.
 @MainActor
 public enum InkStyle {
     /// A font as the user names it: a family, and a size in points. The
@@ -3389,16 +3415,18 @@ public enum InkStyle {
     /// back to when the named family is not installed.
     public struct Typeface: Equatable, Sendable {
         public var family: String
+        public var codeFamily: String
         public var size: CGFloat
 
-        public init(family: String, size: CGFloat) {
+        public init(family: String, codeFamily: String = "", size: CGFloat) {
             self.family = family.trimmingCharacters(in: .whitespaces)
+            self.codeFamily = codeFamily.trimmingCharacters(in: .whitespaces)
             self.size = Self.clamp(size)
         }
 
-        /// What the page wore before it had a setting: the system's
-        /// monospaced face at 13 points.
-        public static let standard = Typeface(family: "", size: 13)
+        /// What the page wore before it had a setting: System Monospaced
+        /// at 13 points for both prose and code.
+        public static let standard = Typeface(family: "", codeFamily: "", size: 13)
 
         /// The sizes a page will take. Below the floor a page is
         /// illegible and above the ceiling a card holds a word; either
@@ -3409,15 +3437,24 @@ public enum InkStyle {
             min(max(size.rounded(), sizeRange.lowerBound), sizeRange.upperBound)
         }
 
-        /// Whether the family is the system's monospaced face, named by
-        /// leaving the field empty.
+        /// Whether the prose family is the system's monospaced face, named
+        /// by leaving the field empty.
         public var usesSystemFamily: Bool { family.isEmpty }
+        public var usesSystemCodeFamily: Bool { codeFamily.isEmpty }
 
         /// Whether the named family is one this Mac can draw. The system
         /// family always is. Compared case-insensitively, since a user
         /// types "menlo" and the system says "Menlo".
         public var isInstalled: Bool {
             usesSystemFamily || Self.installedName(for: family) != nil
+        }
+
+        /// Whether the requested code family resolves to a fixed-pitch font.
+        /// Empty always means the system fixed-pitch face.
+        public var codeFamilyIsUsable: Bool {
+            usesSystemCodeFamily || Self.namedFont(
+                family: codeFamily, size: size, weight: .regular
+            )?.isFixedPitch == true
         }
 
         /// The family as the system spells it, or nil when it has no
@@ -3433,16 +3470,28 @@ public enum InkStyle {
         /// monospaced face rather than to nothing, so a page whose font
         /// was uninstalled is still a page.
         func font(size: CGFloat, weight: NSFont.Weight) -> NSFont {
-            if let name = Self.installedName(for: family), !usesSystemFamily {
-                let descriptor = NSFontDescriptor(fontAttributes: [
-                    .family: name,
-                    .traits: [NSFontDescriptor.TraitKey.weight: weight.rawValue],
-                ])
-                if let font = NSFont(descriptor: descriptor, size: size) {
-                    return font
-                }
+            Self.namedFont(family: family, size: size, weight: weight)
+                ?? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+        }
+
+        func codeFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+            guard let font = Self.namedFont(
+                family: codeFamily, size: size, weight: weight
+            ), font.isFixedPitch else {
+                return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
             }
-            return NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+            return font
+        }
+
+        private static func namedFont(
+            family: String, size: CGFloat, weight: NSFont.Weight
+        ) -> NSFont? {
+            guard !family.isEmpty, let name = installedName(for: family) else { return nil }
+            let descriptor = NSFontDescriptor(fontAttributes: [
+                .family: name,
+                .traits: [NSFontDescriptor.TraitKey.weight: weight.rawValue],
+            ])
+            return NSFont(descriptor: descriptor, size: size)
         }
     }
 
@@ -3454,7 +3503,7 @@ public enum InkStyle {
         didSet {
             guard typeface != oldValue else { return }
             baseFont = typeface.font(size: typeface.size, weight: .regular)
-            codeFont = NSFont.monospacedSystemFont(ofSize: typeface.size, weight: .regular)
+            codeFont = typeface.codeFont(size: typeface.size, weight: .regular)
             cellWidth = Self.measureCell(in: baseFont)
         }
     }
@@ -3463,9 +3512,31 @@ public enum InkStyle {
         size: Typeface.standard.size, weight: .regular
     )
 
-    public private(set) static var codeFont = NSFont.monospacedSystemFont(
-        ofSize: Typeface.standard.size, weight: .regular
+    public private(set) static var codeFont = Typeface.standard.codeFont(
+        size: Typeface.standard.size, weight: .regular
     )
+
+    public enum TextRole {
+        case prose
+        case code
+    }
+
+    /// Font selection is range-aware: TextKit measures wrapping and insertion
+    /// geometry from the attributed font carried by each prose or code range.
+    public static func font(for role: TextRole) -> NSFont {
+        switch role {
+        case .prose: baseFont
+        case .code: codeFont
+        }
+    }
+
+    public static func font(for kind: LineKind) -> NSFont {
+        switch kind {
+        case .heading(let level, _): headingFont(level: level)
+        case .fenceRule, .code: font(for: .code)
+        case .body, .list: font(for: .prose)
+        }
+    }
 
     /// The heading ramp, as a proportion of the base size so the
     /// steps keep their shape at any size: 17, 15 and 14 over 13 at the
@@ -3514,8 +3585,8 @@ public enum InkStyle {
     /// A list item as the page reads it: the whitespace it hangs from,
     /// the marker it wears, and how many UTF-16 units stand between the
     /// line's start and its content. That last number is the whole of
-    /// what display needs, since the page is monospaced and a prefix's
-    /// width on screen is exactly its character count.
+    /// what display needs; the prose cell measurement turns that count
+    /// into the list's hanging indent.
     public struct ListItem: Equatable {
         public let indent: String
         public let marker: ListMarker
@@ -3619,11 +3690,10 @@ public enum InkStyle {
         }
     }
 
-    /// One cell of the base font, measured once per typeface. The page
-    /// is a single fixed-pitch font, so the width of a marker is
-    /// arithmetic rather than a layout question. A proportional family
-    /// named in Settings makes the hanging indent approximate, which is
-    /// the user's trade to make.
+    /// One representative prose cell, measured once per typeface. List
+    /// indentation uses this approximation when prose is proportional.
+    /// Code wrapping and caret geometry do not use it; TextKit measures
+    /// each attributed code range in `codeFont`.
     public private(set) static var cellWidth: CGFloat = measureCell(in: baseFont)
 
     private static func measureCell(in font: NSFont) -> CGFloat {
@@ -3645,10 +3715,9 @@ public enum InkStyle {
     /// What each kind of token wears inside a fence, and the only place
     /// these four colors are written down, so a test can assert them and
     /// dark mode costs nothing: every one is a system color that already
-    /// knows both appearances. Color is the whole of the styling. The
-    /// font stays `baseFont`, so metrics, wrapping and the wash geometry
-    /// are exactly what they were before a line was colored, and the
-    /// bytes are untouched (ADR-0024, amendment C: display only).
+    /// knows both appearances. Color is the whole of token styling. The
+    /// surrounding code range keeps `codeFont`, so coloring cannot change
+    /// metrics, wrapping, caret geometry, or bytes.
     public nonisolated static func tokenColor(_ kind: CodeInk.TokenKind) -> NSColor {
         switch kind {
         case .keyword: NSColor.systemPurple

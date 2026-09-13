@@ -366,6 +366,8 @@ final class DayStackView: NSView {
         // through `refreshQuietRegions`, since the model dropped their
         // renderings when the setting moved.
         coordinator.applyTypeface(model.typeface)
+        coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
+        coordinator.applyLanguageDetection(model.languageDetectionEnabled)
         guard signature != rendered else {
             // The ordinary pass: a keystroke, or the cosmetic redraw.
             // The countdowns in the gutters move every second and the

@@ -461,8 +461,23 @@ public final class PageModel: ObservableObject {
         #endif
     }
 
+    /// Whether explicit fence labels color recognized source tokens. This is
+    /// presentation only; fixed-width code typography remains when it is off.
+    @Published public var syntaxHighlightingEnabled: Bool {
+        didSet { defaults.set(syntaxHighlightingEnabled, forKey: Self.syntaxHighlightingKey) }
+    }
+    private static let syntaxHighlightingKey = "syntaxHighlightingEnabled"
+
+    /// Whether detector-backed suggestions and automatic paste recognition may
+    /// run. Off by default while detection remains an explicit opt-in.
+    @Published public var languageDetectionEnabled: Bool {
+        didSet { defaults.set(languageDetectionEnabled, forKey: Self.languageDetectionKey) }
+    }
+    private static let languageDetectionKey = "languageDetectionEnabled"
+
     /// This is a default-off editing preference in this form factor's defaults.
-    /// Changing it does not inspect or rewrite existing text.
+    /// Changing it does not inspect or rewrite existing text. Detection must also
+    /// be enabled before this preference can affect a paste.
     @Published public var automaticallyFencePastes: Bool {
         didSet { defaults.set(automaticallyFencePastes, forKey: Self.automaticPasteFencingKey) }
     }
@@ -487,6 +502,22 @@ public final class PageModel: ObservableObject {
     }
     private static let fontFamilyKey = "fontFamily"
 
+    /// The fixed-pitch family used for fenced code and, later, whole-file Source
+    /// mode. Empty means System Monospaced. An unavailable or proportional
+    /// family is retained as the preference but rendered with that fallback.
+    @Published public var codeFontFamily: String {
+        didSet {
+            let trimmed = codeFontFamily.trimmingCharacters(in: .whitespaces)
+            if trimmed != codeFontFamily {
+                codeFontFamily = trimmed
+                return
+            }
+            defaults.set(codeFontFamily, forKey: Self.codeFontFamilyKey)
+            applyTypeface()
+        }
+    }
+    private static let codeFontFamilyKey = "codeFontFamily"
+
     /// The page's base size in points. Persisted, and clamped to
     /// `InkStyle.Typeface.sizeRange` on the way in, so a slip in the
     /// field cannot leave a page nobody can read.
@@ -505,7 +536,11 @@ public final class PageModel: ObservableObject {
 
     /// The two settings as the one value the styling reads.
     public var typeface: InkStyle.Typeface {
-        InkStyle.Typeface(family: fontFamily, size: CGFloat(fontSize))
+        InkStyle.Typeface(
+            family: fontFamily,
+            codeFamily: codeFontFamily,
+            size: CGFloat(fontSize)
+        )
     }
 
     /// Hand the typeface to the styling and forget every quiet day's
@@ -961,20 +996,26 @@ public final class PageModel: ObservableObject {
         // requested in the menu-bar menu.
         showsVersionsInMenu =
             defaults.object(forKey: Self.showsVersionsInMenuKey) as? Bool ?? false
-        // Unset → off. This opt-in affects future pastes only; loading the
-        // preference performs no edit and writes no default implicitly.
+        // Unset → current highlighting behavior, while detector-backed actions
+        // and automatic edits remain explicit opt-ins.
+        syntaxHighlightingEnabled =
+            defaults.object(forKey: Self.syntaxHighlightingKey) as? Bool ?? true
+        languageDetectionEnabled =
+            defaults.object(forKey: Self.languageDetectionKey) as? Bool ?? false
         automaticallyFencePastes =
             defaults.object(forKey: Self.automaticPasteFencingKey) as? Bool ?? false
-        // Unset → the system monospaced face at 13, which is what every
-        // page wore before the setting existed. Handed to the styling
-        // here because a property observer does not run during init.
+        // Unset → System Monospaced for both roles at 13 points. Handed to
+        // styling here because property observers do not run during init.
         let typeface = InkStyle.Typeface(
             family: defaults.string(forKey: Self.fontFamilyKey) ?? InkStyle.Typeface.standard.family,
+            codeFamily: defaults.string(forKey: Self.codeFontFamilyKey)
+                ?? InkStyle.Typeface.standard.codeFamily,
             size: CGFloat(
                 defaults.object(forKey: Self.fontSizeKey) as? Double ?? Double(InkStyle.Typeface.standard.size)
             )
         )
         fontFamily = typeface.family
+        codeFontFamily = typeface.codeFamily
         fontSize = Double(typeface.size)
         // Unset → off. A prototype is something a user turns on, and an
         // upgrade must not rearrange the pad of somebody who never

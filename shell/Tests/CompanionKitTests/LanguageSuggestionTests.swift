@@ -9,7 +9,9 @@ final class LanguageSuggestionTests: XCTestCase {
         let suiteName = "companion-language-suggestion-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
-        return isolatedModel(defaults: defaults)
+        let model = isolatedModel(defaults: defaults)
+        model.languageDetectionEnabled = true
+        return model
     }
 
     private func makeEditor(
@@ -39,6 +41,23 @@ final class LanguageSuggestionTests: XCTestCase {
         let settled = expectation(description: "main queue settled")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { settled.fulfill() }
         wait(for: [settled], timeout: 1)
+    }
+
+    func testDetectionSettingDisablesDetectorBackedAction() throws {
+        let detectorCalled = expectation(description: "detector called")
+        detectorCalled.isInverted = true
+        let (model, coordinator, textView) = try makeEditor(detector: { _ in
+            detectorCalled.fulfill()
+            return "swift"
+        })
+        insert("let value = 1", into: textView)
+        textView.setSelectedRange(NSRange(location: 0, length: textView.string.utf16.count))
+        model.languageDetectionEnabled = false
+        coordinator.applyLanguageDetection(false)
+
+        XCTAssertFalse(textView.canDetectCodeLanguage)
+        textView.detectCodeLanguage(nil)
+        wait(for: [detectorCalled], timeout: 0.1)
     }
 
     func testManualSelectionWrapIsOneExplicitEdit() throws {

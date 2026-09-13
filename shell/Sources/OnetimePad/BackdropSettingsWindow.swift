@@ -3,19 +3,21 @@ import CompanionKit
 import SwiftUI
 
 /// The tabs of the Settings window, in toolbar order. General first,
-/// as every Apple app has it, then the two that reach outside the Mac:
-/// where a conceal goes, and how pages travel.
+/// as every Apple app has it, then code presentation, followed by the
+/// two that reach outside the Mac: where a conceal goes, and how pages travel.
 ///
 /// The symbol names are SF Symbols. A misspelt one draws nothing and
 /// complains nowhere, so `SettingsTabTests` resolves each of them.
 enum SettingsTab: Int, CaseIterable {
     case general
+    case code
     case connection
     case sync
 
     var label: String {
         switch self {
         case .general: "General"
+        case .code: "Code"
         case .connection: "Connection"
         case .sync: "Sync"
         }
@@ -24,6 +26,7 @@ enum SettingsTab: Int, CaseIterable {
     var symbolName: String {
         switch self {
         case .general: "gearshape"
+        case .code: "curlybraces"
         case .connection: "network"
         case .sync: "arrow.triangle.2.circlepath"
         }
@@ -45,7 +48,7 @@ enum SettingsTab: Int, CaseIterable {
 }
 
 /// Settings, backdrop edition: a standard macOS Settings window, its
-/// tabs along the top as a toolbar, hosting the three shared forms.
+/// tabs along the top as a toolbar, hosting the shared forms.
 /// Unlike the backdrop itself this window activates normally: opening
 /// Settings is a deliberate act, and its fields need the keyboard.
 ///
@@ -60,7 +63,7 @@ final class BackdropSettingsWindowController {
 
     /// One width for every tab: the forms are built for it, and a
     /// Settings window that changed width between tabs would look like
-    /// three windows taking turns.
+    /// several windows taking turns.
     private static let width: CGFloat = 480
 
     /// Each tab's height, fixed, so the window animates between them
@@ -76,6 +79,7 @@ final class BackdropSettingsWindowController {
     private static func height(of tab: SettingsTab) -> CGFloat {
         switch tab {
         case .general: 700
+        case .code: 390
         case .connection: 360
         case .sync: 380
         }
@@ -97,7 +101,7 @@ final class BackdropSettingsWindowController {
             // needs and the window takes that size as the tab changes;
             // a resize handle would only let the user break that. The
             // minimise button goes too, deliberately: a Settings window
-            // with three short tabs is closed and reopened, and a
+            /// with short tabs is closed and reopened, and a
             // minimised one would only hide the tab a refused ledger
             // sends the user to (`SettingsTab.landing`).
             window.styleMask = [.titled, .closable]
@@ -162,6 +166,8 @@ final class BackdropSettingsWindowController {
                 ),
                 for: tab
             )
+        case .code:
+            hosted = host(CodeSettingsView(model: model.pages), for: tab)
         case .connection:
             hosted = host(ConnectionSettingsView(model: model.pages), for: tab)
         case .sync:

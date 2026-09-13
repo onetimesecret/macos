@@ -14,6 +14,11 @@ final class SettingsTabTests: XCTestCase {
         XCTAssertEqual(SettingsTab.general.label, "General")
     }
 
+    func testCodeFollowsGeneral() {
+        XCTAssertEqual(Array(SettingsTab.allCases.prefix(2)), [.general, .code])
+        XCTAssertEqual(SettingsTab.code.label, "Code")
+    }
+
     func testEachTabHasItsOwnLabelAndIndex() {
         let labels = SettingsTab.allCases.map(\.label)
         XCTAssertEqual(Set(labels).count, labels.count, "two tabs sharing a label would be one tab twice")
