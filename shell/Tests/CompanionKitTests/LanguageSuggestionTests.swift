@@ -79,6 +79,41 @@ final class LanguageSuggestionTests: XCTestCase {
         XCTAssertEqual(color, InkStyle.tokenColor(.keyword))
     }
 
+    func testDetectedBareFenceUnsupportedScannerLanguageUsesCodeFontWithoutTokenColors() throws {
+        let detectorCalled = expectation(description: "detector called")
+        let (_, coordinator, textView) = try makeEditor(detector: { _ in
+            detectorCalled.fulfill()
+            return "kotlin"
+        })
+        let source = "```\nfun answer() = 42\n```"
+        insert(source, into: textView)
+        textView.setSelectedRange(NSRange(location: 5, length: 0))
+
+        textView.detectCodeLanguage(nil)
+        wait(for: [detectorCalled], timeout: 1)
+        settleMainQueue()
+
+        let menu = NSMenu()
+        coordinator.appendLanguageItems(to: menu)
+        let highlight = try XCTUnwrap(
+            menu.items.first { $0.title == "Use Kotlin for Highlighting" }
+        )
+        XCTAssertTrue(
+            NSApp.sendAction(try XCTUnwrap(highlight.action), to: highlight.target, from: highlight)
+        )
+
+        XCTAssertEqual(textView.string, source)
+        let codeOffset = (source as NSString).range(of: "fun").location
+        let font = try XCTUnwrap(
+            textView.textStorage?.attribute(.font, at: codeOffset, effectiveRange: nil) as? NSFont
+        )
+        XCTAssertEqual(font, InkStyle.codeFont)
+        let color = try XCTUnwrap(
+            textView.textStorage?.attribute(.foregroundColor, at: codeOffset, effectiveRange: nil) as? NSColor
+        )
+        XCTAssertEqual(color, NSColor.labelColor)
+    }
+
     func testDetectedBareFenceSuggestionIsVisibleAndCanInsertLabel() throws {
         let detectorCalled = expectation(description: "detector called")
         let (_, coordinator, textView) = try makeEditor(detector: { data in

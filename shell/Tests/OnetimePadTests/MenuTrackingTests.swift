@@ -255,7 +255,7 @@ final class MenuTrackingTests: XCTestCase {
 /// it. Nothing else about it differs from the real thing, which is the
 /// point: the watch cannot tell it apart, and deinit either returns the
 /// tokens here or quietly loses them somewhere else.
-private final class RecordingCenter: NotificationCenter {
+private final class RecordingCenter: NotificationCenter, @unchecked Sendable {
     // nonisolated(unsafe) because the watch's deinit is nonisolated, as
     // every deinit is; the only writes come from there and from the test
     // that owns this instance, both on the main thread.

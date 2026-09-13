@@ -2051,7 +2051,8 @@ public struct InkEditorView: NSViewRepresentable {
                             ? fenceRenderingLanguages[sheet]?[paragraph.location]
                             : nil
                         tokenizer = CodeInk.Tokenizer(
-                            language: scanner.fenceLanguage ?? sessionLanguage
+                            language: scanner.fenceLanguage
+                                ?? sessionLanguage.flatMap(CodeInk.renderingLanguage(ofInfoString:))
                         )
                     case .code:
                         // The line without its separator, taken off the
@@ -3817,10 +3818,11 @@ public enum InkStyle {
         /// which is the reading a writer mid-paste would expect.
         public var insideFence: Bool { open != nil }
 
-        /// The language of the fence currently open, if the table knows
-        /// it. The restyle walk reads this at the opening rule, which is
-        /// the one place a language is declared and therefore the one
-        /// place a tokenizer for the lines below can be made.
+        /// The renderer selected by the fence currently open, if its
+        /// label is a supported CodeInk label. The restyle walk reads this
+        /// at the opening rule, which is the one place a tokenizer for the
+        /// lines below can be made. Labels without a token scanner still
+        /// select fixed-width, uncolored code presentation.
         public var fenceLanguage: String? { open?.language }
 
         /// The exact trimmed info string on the current opening rule.
@@ -3834,7 +3836,7 @@ public enum InkStyle {
                 guard let open else {
                     self.open = (
                         run.marker, run.length,
-                        CodeInk.canonicalLanguage(ofInfoString: run.info), run.info
+                        CodeInk.renderingLanguage(ofInfoString: run.info), run.info
                     )
                     return .fenceRule
                 }

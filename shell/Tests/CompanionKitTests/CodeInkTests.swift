@@ -53,6 +53,35 @@ final class CodeInkTests: XCTestCase {
         }
     }
 
+    /// Betlang 0.1.1 can return exactly these 48 labels. Each must have
+    /// an explicit rendering decision: the existing twelve select their
+    /// scanner; every other label remains itself and renders as uncolored
+    /// fixed-width code.
+    func testEveryBetlangLabelHasAnExplicitRendererMapping() {
+        let expected: [String: String] = [
+            "asm": "asm", "batch": "batch", "c": "c", "clojure": "clojure",
+            "cmake": "cmake", "cobol": "cobol", "cpp": "cpp", "cs": "cs",
+            "css": "css", "dart": "dart", "dockerfile": "dockerfile", "elixir": "elixir",
+            "erlang": "erlang", "gemfile": "gemfile", "gemspec": "gemspec", "go": "go",
+            "gradle": "gradle", "groovy": "groovy", "haskell": "haskell", "html": "html",
+            "ini": "ini", "java": "java", "javascript": "javascript", "json": "json",
+            "julia": "julia", "kotlin": "kotlin", "lisp": "lisp", "lua": "lua",
+            "markdown": "markdown", "objectivec": "objectivec", "ocaml": "ocaml", "perl": "perl",
+            "php": "php", "powershell": "powershell", "python": "python", "r": "r",
+            "ruby": "ruby", "rust": "rust", "scala": "scala", "shell": "shell",
+            "sql": "sql", "swift": "swift", "toml": "toml", "typescript": "typescript",
+            "vba": "vba", "verilog": "verilog", "xml": "xml", "yaml": "yaml",
+        ]
+        XCTAssertEqual(expected.count, 48)
+        XCTAssertEqual(CodeInk.detectorLanguageRenderers, expected)
+
+        for (label, renderer) in expected {
+            XCTAssertEqual(CodeInk.renderingLanguage(ofInfoString: label), renderer, label)
+            XCTAssertEqual(CodeInk.spec(forInfoString: label) != nil, CodeInk.specs[renderer] != nil, label)
+        }
+        XCTAssertNil(CodeInk.renderingLanguage(ofInfoString: "brainfuck"))
+    }
+
     func testNicknamesResolveToTheirLanguage() {
         let expected = [
             "js": "javascript", "jsx": "javascript", "node": "javascript",
@@ -81,6 +110,7 @@ final class CodeInkTests: XCTestCase {
         XCTAssertNil(CodeInk.canonicalLanguage(ofInfoString: "   "))
         XCTAssertNil(CodeInk.canonicalLanguage(ofInfoString: ""))
         XCTAssertNil(CodeInk.canonicalLanguage(ofInfoString: nil))
+        XCTAssertEqual(CodeInk.renderingLanguage(ofInfoString: "Kotlin"), "kotlin")
     }
 
     /// The whole position on guessing, in one test. A bare fence, a
