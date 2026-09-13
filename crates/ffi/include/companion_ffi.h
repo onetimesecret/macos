@@ -5,19 +5,20 @@
  * interaction-model rev C (docs/spec/04): sheets of ink and sealed
  * chips. By construction it hands out only opaque handles, non-secret
  * JSON metadata (titles, counts, and a chip's mechanical excerpt in the
- * sheet-facing JSON; the ledger carries no excerpt at all), and action
- * results. It never hands out
+ * sheet-facing JSON; the ledger carries no excerpt at all), source-language
+ * slugs from the explicit experimental detector, and action results. It never
+ * hands out
  * a sealed byte. Sealed-byte movement stays in Rust: the sealed paste
  * reads the pasteboard in the core, copy-out writes it in the core.
- * The one deliberate plaintext-in entry is companion_sheet_seal_text()
- * (the ⌘↩ gesture): its argument is visible ink the shell's editor
+ * The one deliberate visible-ink entry into sealed custody is
+ * companion_sheet_seal_text() (the ⌘↩ gesture): its argument is visible ink the shell's editor
  * already holds; after the call the shell deletes its copy. Keep this
  * header in sync with crates/ffi/src/lib.rs; a later milestone
  * generates it (cbindgen) rather than hand-maintains it.
  *
  * Memory rules:
- *   - Pointers returned by the *_json() and *_seal_*() functions are
- *     owned by the caller; free each with companion_string_free().
+ *   - Owned string pointers returned by this library, including detection,
+ *     *_json(), and *_seal_*(), are freed with companion_string_free().
  *   - The CompanionHandle* from companion_new() is freed with
  *     companion_free().
  *   - companion_version() returns a static string; do NOT free it.
@@ -32,6 +33,7 @@
 #define COMPANION_FFI_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -60,6 +62,24 @@ void companion_init(void);
 
 /* Static version string; do not free. */
 const char *companion_version(void);
+
+/*
+ * Experimental source-language detection (ADR-0029). Returns a newly
+ * allocated canonical slug, freed with companion_string_free(), or NULL for
+ * abstention, invalid input, or contained inference failure. No handle or
+ * store is involved. Input is borrowed only for this synchronous call.
+ *
+ * (NULL, 0) is empty input; (NULL, nonzero) is invalid. For lengths at or
+ * below 4 MiB, non-null input must be readable for len bytes and remain
+ * unchanged until return. Larger lengths are rejected before the pointer is
+ * read. Embedded NUL bytes are input, not terminators, and cause abstention.
+ *
+ * The 20-byte evidence, 0.20 top-score, and 0.20 top-two-margin thresholds
+ * are an external evaluation baseline. This API is not approved for shipping
+ * and remains subject to local corpus review. A result is not proof that the
+ * input is source code.
+ */
+char *companion_detect_source_language(const uint8_t *bytes, size_t len);
 
 /* ------------------------------------------------------------------ */
 /* Diagnostics                                                         */
@@ -1369,7 +1389,7 @@ bool companion_drafts_erase(CompanionHandle *handle, const char *path);
  */
 char *companion_drafts_notices_json(CompanionHandle *handle);
 
-/* Free a string returned by this library. Null is a no-op. */
+/* Free an owned string returned by this library. Null is a no-op. */
 void companion_string_free(char *s);
 
 #ifdef __cplusplus
