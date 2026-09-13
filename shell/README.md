@@ -36,11 +36,12 @@ The bundle id is `com.onetimesecret.pad`; the version
 users see is `CFBundleShortVersionString` in `OnetimePad-Info.plist`,
 which is the product's own number, edited there by hand when work a
 user can touch lands. The packaging script reads it and stamps
-`CFBundleVersion` from it plus the short commit, so About and the tray
-name the exact build. The core's version is a separate fact about a
-separate artifact and `companion_version()` still speaks for it; the
-tray menu prints both, and the two differing means the app and the seam
-moved for their own reasons rather than that anything is wrong. Ad-hoc
+`CFBundleVersion` from it plus the short commit. About leads with that
+app/build pair and labels the independently versioned Rust artifacts as
+`FFI` and `Core`. The menu-bar menu omits those technical versions by
+default; General → Show versions in menu adds the build, FFI, and core
+versions for diagnostics. `companion_ffi_version()` and
+`companion_core_version()` report the two Rust versions. Ad-hoc
 signing changes the code identity on every rebuild, so
 TCC grants reset and the Keychain re-confirms access to stored items
 (the API token, the state key); set `CODESIGN_IDENTITY` to a real

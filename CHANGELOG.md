@@ -92,6 +92,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Version details distinguish the app, build, FFI, and core** (app 0.21.0;
+  `companion-core` 0.21.0, `companion-ffi` 0.27.0). About keeps the standard
+  app version and build presentation, with the two Rust crate versions under
+  Technical Versions. The menu-bar menu hides its diagnostic
+  version line by default; General → Show versions in menu restores it.
+
 - **The bundle identifier is `com.onetimesecret.pad`**, and a dev
   build runs as `dev.onetimesecret.pad`; the app is 0.19.0. The
   release id was `com.onetimesecret.companion.backdrop`, a working
