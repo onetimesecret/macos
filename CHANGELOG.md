@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Source-language detection is available for evaluation** (ADR-0029;
+  `companion-core` 0.20.0, `companion-ffi` 0.26.0). The core accepts
+  explicitly submitted bytes and either returns a canonical language slug or
+  abstains; a stateless C route exposes the same result to the shell. The API
+  remains experimental and is not approved for shipping.
+
 - **A second page on today, with the time tabs down the side** (issue
   #158). ⌘N and ⌘T still go to today's page first, and still start it
   when today has none. Pressed again while already on today's page,
