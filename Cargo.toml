@@ -17,6 +17,7 @@ members = [
   "crates/pasteboard",
   "crates/sync",
   "crates/transport",
+  "tools/language-eval",
 ]
 
 [workspace.package]

@@ -1,0 +1,16 @@
+[package]
+name = "language-eval"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+betlang = "=0.1.1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

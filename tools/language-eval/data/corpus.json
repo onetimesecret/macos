@@ -1,0 +1,272 @@
+{
+  "schema_version": 2,
+  "cases": [
+    {
+      "id": "tune-rust",
+      "split": "tune",
+      "surface": "paste",
+      "expected": "rust",
+      "useful_code": true,
+      "text": "fn main() { let values = [1, 2, 3]; println!(\"{}\", values.iter().sum::<i32>()); }",
+      "kind": "code"
+    },
+    {
+      "id": "tune-python",
+      "split": "tune",
+      "surface": "fence",
+      "expected": "python",
+      "useful_code": true,
+      "text": "def total(values):\n    return sum(value for value in values if value > 0)\n\nprint(total([1, -2, 3]))",
+      "kind": "code"
+    },
+    {
+      "id": "tune-js",
+      "split": "tune",
+      "surface": "paste",
+      "expected": "javascript",
+      "useful_code": true,
+      "text": "const active = users.filter((user) => user.enabled);\nconsole.log(active.map(({ id }) => id));",
+      "kind": "code"
+    },
+    {
+      "id": "tune-sql",
+      "split": "tune",
+      "surface": "file",
+      "expected": "sql",
+      "useful_code": true,
+      "text": "SELECT account_id, COUNT(*) AS events FROM audit_events WHERE created_at >= CURRENT_DATE GROUP BY account_id;",
+      "kind": "code"
+    },
+    {
+      "id": "tune-prose",
+      "split": "tune",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "Please review the attached proposal before Wednesday and send any questions to the project group.",
+      "kind": "prose"
+    },
+    {
+      "id": "tune-list",
+      "split": "tune",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "Groceries:\n- apples\n- oat milk\n- coffee beans\n- dish soap",
+      "kind": "list"
+    },
+    {
+      "id": "tune-url",
+      "split": "tune",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "https://example.invalid/projects/quarterly-review?view=summary&sort=updated",
+      "kind": "url"
+    },
+    {
+      "id": "tune-credential",
+      "split": "tune",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "service_user: synthetic-example-only\naccess_token: EXAMPLE_NOT_A_REAL_SECRET_0001",
+      "kind": "credential-shaped"
+    },
+    {
+      "id": "tune-log",
+      "split": "tune",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "2026-01-04T09:15:31Z INFO worker=example-3 task=synthetic status=complete elapsed_ms=42",
+      "kind": "log"
+    },
+    {
+      "id": "tune-markdown",
+      "split": "tune",
+      "surface": "fence",
+      "expected": null,
+      "useful_code": false,
+      "text": "## Meeting notes\n\n- Review the draft\n- Assign follow-up owners\n- Meet again next week",
+      "kind": "markdown"
+    },
+    {
+      "id": "tune-config",
+      "split": "tune",
+      "surface": "file",
+      "expected": null,
+      "useful_code": false,
+      "text": "theme = dark\nnotifications = enabled\nrefresh interval = every fifteen minutes",
+      "kind": "config-shaped"
+    },
+    {
+      "id": "tune-mixed",
+      "split": "tune",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "To reset the sample, type `remove cache`, then wait until the status panel says ready.",
+      "kind": "mixed"
+    },
+    {
+      "id": "tune-malformed",
+      "split": "tune",
+      "surface": "fence",
+      "expected": "json",
+      "useful_code": true,
+      "text": "{\"items\": [1, 2, 3], \"enabled\": tru, \"nested\": {\"value\": null}",
+      "kind": "malformed-code"
+    },
+    {
+      "id": "tune-binary",
+      "split": "tune",
+      "surface": "file",
+      "expected": null,
+      "useful_code": false,
+      "hex": "00010203fffefdfc89504e470d0a1a0a0000000d49484452",
+      "kind": "binary"
+    },
+    {
+      "id": "holdout-swift",
+      "split": "holdout",
+      "surface": "paste",
+      "expected": "swift",
+      "useful_code": true,
+      "text": "struct Greeter { let name: String; func message() -> String { \"Hello, \\(name)!\" } }\nprint(Greeter(name: \"World\").message())",
+      "kind": "code"
+    },
+    {
+      "id": "holdout-go",
+      "split": "holdout",
+      "surface": "fence",
+      "expected": "go",
+      "useful_code": true,
+      "text": "package main\nimport \"fmt\"\nfunc main() { values := []int{2, 4, 6}; fmt.Println(values) }",
+      "kind": "code"
+    },
+    {
+      "id": "holdout-html",
+      "split": "holdout",
+      "surface": "file",
+      "expected": "html",
+      "useful_code": true,
+      "text": "<!doctype html><html lang=\"en\"><head><title>Sample</title></head><body><main><h1>Hello</h1></main></body></html>",
+      "kind": "code"
+    },
+    {
+      "id": "holdout-shell",
+      "split": "holdout",
+      "surface": "paste",
+      "expected": "shell",
+      "useful_code": true,
+      "text": "#!/bin/sh\nset -eu\nfor file in src/*.rs; do\n  printf '%s\\n' \"$file\"\ndone",
+      "kind": "code"
+    },
+    {
+      "id": "holdout-prose",
+      "split": "holdout",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "The train arrives after lunch, so we can walk to the office and discuss the schedule there.",
+      "kind": "prose"
+    },
+    {
+      "id": "holdout-list",
+      "split": "holdout",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "Weekend tasks\n1. Water the plants\n2. Return library books\n3. Prepare lunches",
+      "kind": "list"
+    },
+    {
+      "id": "holdout-url",
+      "split": "holdout",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "https://docs.example.invalid/guides/getting-started#synthetic-section",
+      "kind": "url"
+    },
+    {
+      "id": "holdout-credential",
+      "split": "holdout",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "username=demo-account\npassword=NOT_A_REAL_PASSWORD\nrecovery_code=EXAMPLE-0000",
+      "kind": "credential-shaped"
+    },
+    {
+      "id": "holdout-log",
+      "split": "holdout",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "127.0.0.1 - synthetic [04/Jan/2026:09:15:31 +0000] \"GET /health HTTP/1.1\" 200 17",
+      "kind": "log"
+    },
+    {
+      "id": "holdout-markdown",
+      "split": "holdout",
+      "surface": "fence",
+      "expected": null,
+      "useful_code": false,
+      "text": "# Travel checklist\n\nPack the following:\n\n- tickets\n- charger\n- notebook",
+      "kind": "markdown"
+    },
+    {
+      "id": "holdout-config",
+      "split": "holdout",
+      "surface": "file",
+      "expected": null,
+      "useful_code": false,
+      "text": "Display Name: Example Person\nTime Zone: Pacific\nDaily Summary: On",
+      "kind": "config-shaped"
+    },
+    {
+      "id": "holdout-mixed",
+      "split": "holdout",
+      "surface": "paste",
+      "expected": null,
+      "useful_code": false,
+      "text": "The dashboard showed `status: ready`, but this sentence is a note rather than a configuration file.",
+      "kind": "mixed"
+    },
+    {
+      "id": "holdout-malformed",
+      "split": "holdout",
+      "surface": "fence",
+      "expected": "python",
+      "useful_code": true,
+      "text": "def greet(name)\n    message = f\"hello {name}\"\n    print(message\n\ngreet(\"sample\")",
+      "kind": "malformed-code"
+    },
+    {
+      "id": "holdout-binary",
+      "split": "holdout",
+      "surface": "file",
+      "expected": null,
+      "useful_code": false,
+      "hex": "7f454c4602010100000000000000000002003e0001000000",
+      "kind": "binary"
+    }
+  ],
+  "families": [
+    {
+      "id_prefix": "tune-paste-negative",
+      "split": "tune",
+      "count": 600,
+      "generator": "paste_negative"
+    },
+    {
+      "id_prefix": "holdout-paste-negative",
+      "split": "holdout",
+      "count": 600,
+      "start_index": 600,
+      "generator": "paste_negative"
+    }
+  ]
+}
