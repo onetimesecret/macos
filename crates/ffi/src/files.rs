@@ -303,6 +303,7 @@ pub unsafe extern "C" fn companion_file_open_error_json(
     };
     let value = match refusal {
         OpenRefusal::NotUtf8 => serde_json::json!({ "error": "notUtf8" }),
+        OpenRefusal::Binary => serde_json::json!({ "error": "binary" }),
         OpenRefusal::TooLarge { limit } => {
             serde_json::json!({ "error": "tooLarge", "limit": limit as u64 })
         }
@@ -1267,12 +1268,18 @@ mod tests {
         let (handle, dir) = scratch("refuse");
         let bad = dir.join("bad.bin");
         std::fs::write(&bad, [0x66, 0xFF, 0xFE]).unwrap();
+        let binary = dir.join("binary.txt");
+        std::fs::write(&binary, b"alpha\0beta").unwrap();
         let big = dir.join("big.txt");
         std::fs::write(&big, vec![b'x'; LIMIT + 1]).unwrap();
         unsafe {
             assert_eq!(open(handle, &bad), 0);
             let error = take_json(companion_file_open_error_json(handle));
             assert_eq!(error, r#"{"error":"notUtf8"}"#);
+
+            assert_eq!(open(handle, &binary), 0);
+            let error = take_json(companion_file_open_error_json(handle));
+            assert_eq!(error, r#"{"error":"binary"}"#);
 
             assert_eq!(open(handle, &big), 0);
             let error: serde_json::Value =
