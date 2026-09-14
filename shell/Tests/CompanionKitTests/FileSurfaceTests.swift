@@ -52,7 +52,7 @@ final class FileSurfaceTests: XCTestCase {
         XCTAssertEqual(state.saveWord, "saved")
         XCTAssertFalse(state.showsUnsavedDot)
         XCTAssertNil(state.lastEditStamp)
-        XCTAssertEqual(state.encodingAndFormat, "UTF-8 · Markdown")
+        XCTAssertEqual(state.encodingAndFormat, "UTF-8 · Plain Text")
     }
 
     func testADirtyFileReadsAsUnsavedInWordsAndNotOnlyAsADot() {
@@ -79,10 +79,10 @@ final class FileSurfaceTests: XCTestCase {
         XCTAssertNil(state.lastEditStamp)
     }
 
-    func testTheFormatComesFromTheExtension() {
-        XCTAssertEqual(FileHeaderState.format(forName: "notes.txt"), "Plain text")
-        XCTAssertEqual(FileHeaderState.format(forName: "README.MD"), "Markdown")
-        XCTAssertEqual(FileHeaderState.format(forName: "Makefile"), "Plain text")
+    func testTheFormatComesFromTheSelectedMode() {
+        XCTAssertEqual(FileHeaderState.format(for: .plainText), "Plain Text")
+        XCTAssertEqual(FileHeaderState.format(for: .markdown), "Markdown")
+        XCTAssertEqual(FileHeaderState.format(for: .source("swift")), "Source (Swift)")
     }
 
     /// Line endings are shown only when they are not LF, which is the
@@ -91,11 +91,11 @@ final class FileSurfaceTests: XCTestCase {
     func testCRLFIsNamedAndLFIsNot() {
         XCTAssertEqual(
             FileHeaderState.derive(from: file(name: "notes.txt")).encodingAndFormat,
-            "UTF-8 · Plain text")
+            "UTF-8 · Plain Text")
         XCTAssertEqual(
             FileHeaderState.derive(from: file(name: "notes.txt", lineEnding: .crlf))
                 .encodingAndFormat,
-            "UTF-8 · Plain text · CRLF")
+            "UTF-8 · Plain Text · CRLF")
     }
 
     // MARK: Rows, spoken
@@ -120,13 +120,13 @@ final class FileSurfaceTests: XCTestCase {
 
     // MARK: Drops
 
-    func testThePadOpensPlainTextAndMarkdownAndRefusesTheRest() {
+    func testTheDropGateDoesNotRejectAFileByItsExtension() {
         XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/notes.txt")))
         XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/README.md")))
         XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/Makefile")))
-        XCTAssertFalse(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/shot.png")))
-        XCTAssertFalse(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/paper.pdf")))
-        XCTAssertFalse(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/archive.zip")))
+        XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/shot.png")))
+        XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/unknown.data")))
+        XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/folder/", isDirectory: true)))
     }
 
     func testARefusedDropSaysSoAndNamesTheItem() throws {
@@ -134,6 +134,11 @@ final class FileSurfaceTests: XCTestCase {
         model.refuseUnsupportedDrop(name: "shot.png")
         XCTAssertEqual(model.notice, PageModel.unsupportedDropNotice(name: "shot.png"))
         XCTAssertTrue(try XCTUnwrap(model.notice).contains("shot.png"))
+    }
+
+    func testHeaderUsesTheExplicitlySelectedModeRatherThanTheFilename() {
+        let state = FileHeaderState.derive(from: file(name: "README.md"), renderMode: .source("swift"))
+        XCTAssertEqual(state.encodingAndFormat, "UTF-8 · Source (Swift)")
     }
 
     // MARK: Selection and the visible order
