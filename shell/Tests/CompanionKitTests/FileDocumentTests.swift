@@ -147,6 +147,57 @@ final class FileDocumentTests: XCTestCase {
             "the storage is built from the file's own runs")
     }
 
+    func testOpeningAnUnknownOrExtensionlessUtf8FileIsNotExtensionGated() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+
+        model.openFile(at: try write("plain text\n", named: "no-suffix", in: fixture))
+        model.openFile(at: try write("also text\n", named: "notes.unknown", in: fixture))
+
+        XCTAssertEqual(model.openFiles.map(\.name), ["no-suffix", "notes.unknown"])
+    }
+
+    func testFileRenderingChoiceIsSessionOnlyAndDoesNotDirtyOrWriteTheFile() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        let url = try write("# literal source\n", named: "example.swift", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.activeFile?.id)
+
+        XCTAssertEqual(model.fileRenderSuggestion?.mode, .source("swift"))
+        model.selectFileRenderMode(.source("swift"))
+
+        XCTAssertEqual(model.fileRenderMode(for: id), .source("swift"))
+        XCTAssertNil(model.fileRenderSuggestion)
+        XCTAssertFalse(try XCTUnwrap(model.activeFile).isDirty)
+        XCTAssertEqual(try read(url), "# literal source\n")
+        XCTAssertEqual(
+            FileHeaderState.derive(from: try XCTUnwrap(model.activeFile), renderMode: model.activeFileRenderMode)
+                .encodingAndFormat,
+            "UTF-8 · Source (Swift)"
+        )
+    }
+
+    func testExplicitRenderingChoiceOutranksLaterFilenameHints() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("body\n", named: "example.swift", in: fixture))
+        let id = try XCTUnwrap(model.activeFile?.id)
+        model.keepFilePlainText()
+
+        // Refreshing the roster may reconsider hints, but never replaces an
+        // explicit session choice.
+        model.refreshOpenFiles()
+        XCTAssertEqual(model.fileRenderMode(for: id), .plainText)
+        XCTAssertNil(model.fileRenderSuggestion)
+    }
+
     func testTheOpenPanelsAnswerIsWhatGetsOpened() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
@@ -463,6 +514,9 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(
             PageModel.openRefusalNotice(name: "a.txt", json: #"{"error":"io","detail":"x"}"#),
             "a.txt could not be read, so it was not opened.")
+        XCTAssertEqual(
+            PageModel.openRefusalNotice(name: "folder", json: #"{"error":"io","detail":"is a directory"}"#),
+            "folder is a directory, so it was not opened.")
         XCTAssertEqual(
             PageModel.openRefusalNotice(name: "a.txt", json: nil),
             "a.txt could not be opened.")
