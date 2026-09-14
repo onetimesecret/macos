@@ -56,8 +56,47 @@ final class LanguageSuggestionTests: XCTestCase {
         coordinator.applyLanguageDetection(false)
 
         XCTAssertFalse(textView.canDetectCodeLanguage)
+        XCTAssertFalse(model.languageActions.canDetect)
+        XCTAssertTrue(model.languageActions.canChoose)
         textView.detectCodeLanguage(nil)
         wait(for: [detectorCalled], timeout: 0.1)
+    }
+
+    func testManualPickerRemainsAvailableWhenDetectionAbstains() throws {
+        let detectorCalled = expectation(description: "detector called")
+        let (model, coordinator, textView) = try makeEditor(detector: { _ in
+            detectorCalled.fulfill()
+            return nil
+        })
+        let source = "let value = 1"
+        insert(source, into: textView)
+        textView.setSelectedRange(NSRange(location: 0, length: source.utf16.count))
+
+        textView.detectCodeLanguage(nil)
+        wait(for: [detectorCalled], timeout: 1)
+        settleMainQueue()
+
+        let menu = NSMenu()
+        coordinator.appendLanguageItems(to: menu)
+        let choose = try XCTUnwrap(menu.items.first { $0.title == "Choose Language" })
+        XCTAssertNotNil(choose.submenu?.items.first { $0.title == "Swift" })
+        XCTAssertTrue(model.languageActions.canChoose)
+
+        textView.chooseCodeLanguage("swift")
+
+        XCTAssertEqual(textView.string, "```swift\n\(source)\n```")
+    }
+
+    func testUnmountingEditorRetiresLanguageMenuAvailability() throws {
+        let (model, coordinator, textView) = try makeEditor()
+        insert("let value = 1", into: textView)
+        textView.setSelectedRange(NSRange(location: 0, length: textView.string.utf16.count))
+        XCTAssertTrue(model.languageActions.canChoose)
+
+        coordinator.parkEditor()
+
+        XCTAssertFalse(model.languageActions.canChoose)
+        XCTAssertFalse(model.languageActions.canDetect)
     }
 
     func testManualSelectionWrapIsOneExplicitEdit() throws {
