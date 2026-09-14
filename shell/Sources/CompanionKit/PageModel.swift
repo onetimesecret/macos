@@ -345,11 +345,11 @@ public final class PageModel: ObservableObject {
     /// core owns file content and persistence, while these choices last only
     /// until this open file is closed or the app relaunches.
     @Published public private(set) var fileRenderModes: [UInt64: FileRenderMode] = [:]
-    @Published public private(set) var fileRenderSuggestion: FileRenderSuggestion?
+    @Published public private(set) var fileRenderSuggestions: [UInt64: FileRenderSuggestion] = [:]
     private var explicitFileRenderModes: Set<UInt64> = []
     private var dismissedFileRenderSuggestions: Set<UInt64> = []
     private var fileContentRenderHints: [UInt64: FileRenderMode] = [:]
-    private let fileLanguageDetection = LanguageDetectionService()
+    private let fileLanguageDetection: LanguageDetectionService
     private var fileLanguageRequestIDs: [UInt64: UUID] = [:]
 
     /// The open file the surface is showing, by its tagged id, or nil
@@ -395,6 +395,15 @@ public final class PageModel: ObservableObject {
         fileRenderModes[id] ?? .plainText
     }
 
+    public var fileRenderSuggestion: FileRenderSuggestion? {
+        guard let selectedFile else { return nil }
+        return fileRenderSuggestions[selectedFile]
+    }
+
+    public func renderSuggestion(for id: UInt64) -> FileRenderSuggestion? {
+        fileRenderSuggestions[id]
+    }
+
     public func fileContentRenderHint(for id: UInt64) -> FileRenderMode? {
         fileContentRenderHints[id]
     }
@@ -404,7 +413,8 @@ public final class PageModel: ObservableObject {
         fileRenderModes[id] = mode
         explicitFileRenderModes.insert(id)
         dismissedFileRenderSuggestions.insert(id)
-        if fileRenderSuggestion?.fileID == id { fileRenderSuggestion = nil }
+        cancelFileLanguageDetection(for: id)
+        fileRenderSuggestions[id] = nil
     }
 
     public func keepFilePlainText(_ id: UInt64? = nil) {
@@ -414,7 +424,8 @@ public final class PageModel: ObservableObject {
     public func dismissFileRenderSuggestion(_ id: UInt64? = nil) {
         guard let id = id ?? selectedFile else { return }
         dismissedFileRenderSuggestions.insert(id)
-        if fileRenderSuggestion?.fileID == id { fileRenderSuggestion = nil }
+        cancelFileLanguageDetection(for: id)
+        fileRenderSuggestions[id] = nil
     }
 
     /// The visibly selected **tab**, the slot the editor shows a page
@@ -946,6 +957,7 @@ public final class PageModel: ObservableObject {
         let client: CompanionClient?
         let saveDebounce: TimeInterval?
         let saveRetryDebounce: TimeInterval?
+        let fileLanguageDetection: LanguageDetectionService?
         /// The user keymap a test wants read, if any. This one reads
         /// differently from its neighbours: nil under the runner means
         /// *no override at all*, rather than the shipping path, and it
@@ -962,13 +974,15 @@ public final class PageModel: ObservableObject {
             client: CompanionClient? = nil,
             saveDebounce: TimeInterval? = nil,
             saveRetryDebounce: TimeInterval? = nil,
-            keymapOverride: URL? = nil
+            keymapOverride: URL? = nil,
+            fileLanguageDetection: LanguageDetectionService? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
             self.saveDebounce = saveDebounce
             self.saveRetryDebounce = saveRetryDebounce
             self.keymapOverride = keymapOverride
+            self.fileLanguageDetection = fileLanguageDetection
         }
     }
 
@@ -1032,6 +1046,7 @@ public final class PageModel: ObservableObject {
         self.formFactor = formFactor
         self.defaults = defaults
         client = seams.client ?? CompanionClient(credentialService: formFactor.credentialService)
+        fileLanguageDetection = seams.fileLanguageDetection ?? LanguageDetectionService()
         stateFileURL = seams.stateDirectory.map(FormFactor.stateFileURL(in:))
             ?? formFactor.stateFileURL
         ledgerFileURL = seams.stateDirectory.map(FormFactor.ledgerFileURL(in:))
@@ -1747,8 +1762,7 @@ public final class PageModel: ObservableObject {
         for file in openFiles {
             refreshBookmark(for: file)
             // The core restored either the draft or the current disk copy;
-            // classify that displayed buffer, not a second stale disk read.
-            _ = storage(for: file.id)
+            // classify that buffer directly, without creating editor storage.
             reconsiderFileRenderMode(for: file.id, resetDismissal: true)
         }
         // The reload flag is sticky, so it is answered as it is
@@ -2204,11 +2218,12 @@ public final class PageModel: ObservableObject {
         fileRenderModes = fileRenderModes.filter { live.contains($0.key) }
         explicitFileRenderModes.formIntersection(live)
         dismissedFileRenderSuggestions.formIntersection(live)
+        for (id, requestID) in fileLanguageRequestIDs where !live.contains(id) {
+            fileLanguageDetection.cancel(requestID: requestID)
+        }
         fileLanguageRequestIDs = fileLanguageRequestIDs.filter { live.contains($0.key) }
         fileContentRenderHints = fileContentRenderHints.filter { live.contains($0.key) }
-        if let suggestion = fileRenderSuggestion, !live.contains(suggestion.fileID) {
-            fileRenderSuggestion = nil
-        }
+        fileRenderSuggestions = fileRenderSuggestions.filter { live.contains($0.key) }
     }
 
     /// The counterpart to the tag exemption in the two prunes.
@@ -2258,11 +2273,24 @@ public final class PageModel: ObservableObject {
         standOpenFiles(client.fileRoster())
     }
 
+    private func cancelFileLanguageDetection(for id: UInt64) {
+        guard let requestID = fileLanguageRequestIDs.removeValue(forKey: id) else { return }
+        fileLanguageDetection.cancel(requestID: requestID)
+    }
+
+    private func fileTextSnapshot(for id: UInt64) -> String {
+        client.fileRuns(id).reduce(into: "") { text, run in
+            if case .ink(let ink) = run { text += ink }
+        }
+    }
+
     /// Seed Markdown's stable filename default and offer source-language hints.
     /// Content inference is asynchronous and only contributes when there is no
     /// explicit choice and no stronger filename hint.
     private func reconsiderFileRenderMode(for id: UInt64, resetDismissal: Bool = false) {
         guard let file = openFiles.first(where: { $0.id == id }) else { return }
+        cancelFileLanguageDetection(for: id)
+        fileRenderSuggestions[id] = nil
         // A replacement buffer is a new revision. A previous dismissal must
         // not suppress a new proposal, while an explicit mode remains the
         // strongest session choice.
@@ -2273,7 +2301,6 @@ public final class PageModel: ObservableObject {
         if !explicitFileRenderModes.contains(id) {
             if FileDropDecision.markdownExtensions.contains((file.name as NSString).pathExtension.lowercased()) {
                 fileRenderModes[id] = .markdown
-                if fileRenderSuggestion?.fileID == id { fileRenderSuggestion = nil }
                 return
             }
             fileRenderModes[id] = .plainText
@@ -2281,14 +2308,12 @@ public final class PageModel: ObservableObject {
         guard !explicitFileRenderModes.contains(id), !dismissedFileRenderSuggestions.contains(id) else { return }
         let filenameHint = Self.filenameRenderHint(for: file.name)
         if let filenameHint {
-            fileRenderSuggestion = FileRenderSuggestion(fileID: id, mode: filenameHint)
+            fileRenderSuggestions[id] = FileRenderSuggestion(fileID: id, mode: filenameHint)
         }
-        guard PageModel.languageDetectionFeaturesAvailable, modelLanguageDetectionEnabledForFileHints,
-              let storage = storages[id]
-        else { return }
-        let snapshot = storage.string
+        guard PageModel.languageDetectionFeaturesAvailable, modelLanguageDetectionEnabledForFileHints else { return }
+        let snapshot = fileTextSnapshot(for: id)
         let request = LanguageDetectionRequest(
-            documentID: id, revision: 0, targetRange: NSRange(location: 0, length: storage.length),
+            documentID: id, revision: 0, targetRange: NSRange(location: 0, length: snapshot.utf16.count),
             trigger: .manual, selectionSnapshot: NSRange(location: 0, length: 0), data: Data(snapshot.utf8)
         )
         fileLanguageRequestIDs[id] = request.requestID
@@ -2298,7 +2323,7 @@ public final class PageModel: ObservableObject {
                 guard let self, self.fileLanguageRequestIDs[context.documentID] == context.requestID,
                       !self.explicitFileRenderModes.contains(context.documentID),
                       !self.dismissedFileRenderSuggestions.contains(context.documentID),
-                      self.storages[context.documentID]?.string == snapshot
+                      self.fileTextSnapshot(for: context.documentID) == snapshot
                 else { return false }
                 return true
             }
@@ -2315,7 +2340,7 @@ public final class PageModel: ObservableObject {
                 guard let file = self.openFiles.first(where: { $0.id == result.context.documentID }),
                       Self.filenameRenderHint(for: file.name) == nil
                 else { return }
-                self.fileRenderSuggestion = FileRenderSuggestion(
+                self.fileRenderSuggestions[result.context.documentID] = FileRenderSuggestion(
                     fileID: result.context.documentID, mode: contentHint
                 )
             }
@@ -2375,9 +2400,6 @@ public final class PageModel: ObservableObject {
             restateStorage(sheet: id)
         }
         refreshOpenFiles()
-        // Build only the file's display projection before inference. It emits
-        // neither document operations nor a file write.
-        _ = storage(for: id)
         reconsiderFileRenderMode(for: id)
         selectFile(id)
         markFilesDirty()

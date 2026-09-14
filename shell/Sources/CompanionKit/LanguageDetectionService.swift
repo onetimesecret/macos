@@ -64,7 +64,7 @@ public struct LanguageDetectionResult: Sendable, Hashable {
 }
 
 /// Runs source-language inference serially while retaining at most one running
-/// request and the newest pending request.
+/// request and the newest pending request for each document.
 public final class LanguageDetectionService: @unchecked Sendable {
     public typealias Detector = @Sendable (Data) -> String?
     public typealias ContextValidator = @Sendable (LanguageDetectionContext) -> Bool
@@ -87,10 +87,10 @@ public final class LanguageDetectionService: @unchecked Sendable {
     private struct State {
         var generation: UInt64 = 0
         var running: Work?
-        var pending: Work?
-        var currentRequestID: UUID?
-        var currentRequest: LanguageDetectionRequest?
-        var currentResult: LanguageDetectionResult?
+        var pending: [UInt64: Work] = [:]
+        var pendingOrder: [UInt64] = []
+        var currentRequests: [UInt64: Work] = [:]
+        var currentResults: [UInt64: (generation: UInt64, result: LanguageDetectionResult)] = [:]
     }
 
     private let detector: Detector
@@ -114,16 +114,16 @@ public final class LanguageDetectionService: @unchecked Sendable {
 
     /// The newest request still eligible to produce a result.
     public var currentRequest: LanguageDetectionRequest? {
-        locked { state.currentRequest }
+        locked { state.currentRequests.values.max(by: { $0.generation < $1.generation })?.request }
     }
 
     /// The newest result that passed its supplied context validator.
     public var currentResult: LanguageDetectionResult? {
-        locked { state.currentResult }
+        locked { state.currentResults.values.max(by: { $0.generation < $1.generation })?.result }
     }
 
-    /// Submit work without creating an unbounded queue. If inference is already
-    /// running, this replaces any pending request with the new request.
+    /// Submit work without creating an unbounded per-document queue. If inference
+    /// is already running, this replaces pending work for the same document.
     public func submit(
         _ request: LanguageDetectionRequest,
         validating validator: @escaping ContextValidator,
@@ -140,14 +140,16 @@ public final class LanguageDetectionService: @unchecked Sendable {
             validator: validator,
             completion: completion
         )
-        state.currentRequestID = request.requestID
-        state.currentRequest = request
-        state.currentResult = nil
+        state.currentRequests[request.documentID] = work
+        state.currentResults[request.documentID] = nil
         if state.running == nil {
             state.running = work
             shouldStart = true
         } else {
-            state.pending = work
+            if state.pending[request.documentID] == nil {
+                state.pendingOrder.append(request.documentID)
+            }
+            state.pending[request.documentID] = work
         }
         lock.unlock()
 
@@ -160,15 +162,15 @@ public final class LanguageDetectionService: @unchecked Sendable {
     /// already in progress is allowed to return, but its result is discarded.
     public func cancel(requestID: UUID) {
         lock.lock()
-        guard state.currentRequestID == requestID else {
+        guard let entry = state.currentRequests.first(where: { $0.value.request.requestID == requestID }) else {
             lock.unlock()
             return
         }
-        state.generation &+= 1
-        state.pending = nil
-        state.currentRequestID = nil
-        state.currentRequest = nil
-        state.currentResult = nil
+        let documentID = entry.key
+        state.currentRequests[documentID] = nil
+        state.pending[documentID] = nil
+        state.pendingOrder.removeAll { $0 == documentID }
+        state.currentResults[documentID] = nil
         lock.unlock()
     }
 
@@ -177,10 +179,10 @@ public final class LanguageDetectionService: @unchecked Sendable {
     public func invalidate() {
         lock.lock()
         state.generation &+= 1
-        state.pending = nil
-        state.currentRequestID = nil
-        state.currentRequest = nil
-        state.currentResult = nil
+        state.pending.removeAll()
+        state.pendingOrder.removeAll()
+        state.currentRequests.removeAll()
+        state.currentResults.removeAll()
         lock.unlock()
     }
 
@@ -197,18 +199,17 @@ public final class LanguageDetectionService: @unchecked Sendable {
 
         lock.lock()
         if state.running?.generation == work.generation {
-            if let pending = state.pending {
-                state.pending = nil
-                state.running = pending
-                next = pending
-            } else {
-                state.running = nil
+            while let documentID = state.pendingOrder.first {
+                state.pendingOrder.removeFirst()
+                if let pending = state.pending.removeValue(forKey: documentID) {
+                    state.running = pending
+                    next = pending
+                    break
+                }
             }
+            if next == nil { state.running = nil }
         }
-        if state.generation == work.generation,
-           state.currentRequestID == work.request.requestID
-        {
-            state.currentRequest = nil
+        if state.currentRequests[work.request.documentID]?.generation == work.generation {
             delivery = Delivery(
                 context: work.request.context,
                 generation: work.generation,
@@ -241,14 +242,12 @@ public final class LanguageDetectionService: @unchecked Sendable {
         }
 
         lock.lock()
-        guard state.generation == delivery.generation,
-              state.currentRequestID == delivery.context.requestID
-        else {
+        guard state.currentRequests[delivery.context.documentID]?.generation == delivery.generation else {
             lock.unlock()
             return
         }
-        state.currentRequestID = nil
-        state.currentResult = result
+        state.currentRequests[delivery.context.documentID] = nil
+        state.currentResults[delivery.context.documentID] = (delivery.generation, result)
         lock.unlock()
 
         delivery.completion(result)
@@ -256,19 +255,15 @@ public final class LanguageDetectionService: @unchecked Sendable {
 
     private func isCurrent(_ delivery: Delivery) -> Bool {
         locked {
-            state.generation == delivery.generation
-                && state.currentRequestID == delivery.context.requestID
+            state.currentRequests[delivery.context.documentID]?.generation == delivery.generation
         }
     }
 
     private func discardIfCurrent(_ delivery: Delivery) {
         lock.lock()
-        if state.generation == delivery.generation,
-           state.currentRequestID == delivery.context.requestID
-        {
-            state.currentRequestID = nil
-            state.currentRequest = nil
-            state.currentResult = nil
+        if state.currentRequests[delivery.context.documentID]?.generation == delivery.generation {
+            state.currentRequests[delivery.context.documentID] = nil
+            state.currentResults[delivery.context.documentID] = nil
         }
         lock.unlock()
     }
