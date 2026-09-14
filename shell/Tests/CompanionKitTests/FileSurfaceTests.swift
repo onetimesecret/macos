@@ -118,23 +118,6 @@ final class FileSurfaceTests: XCTestCase {
                 .contains("no longer at its path"))
     }
 
-    // MARK: Drops
-
-    func testTheDropGateDoesNotRejectAFileByItsExtension() {
-        XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/notes.txt")))
-        XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/README.md")))
-        XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/Makefile")))
-        XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/shot.png")))
-        XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/unknown.data")))
-        XCTAssertTrue(FileDropDecision.opens(URL(fileURLWithPath: "/tmp/folder/", isDirectory: true)))
-    }
-
-    func testARefusedDropSaysSoAndNamesTheItem() throws {
-        let model = isolatedModel(defaults: try defaults())
-        model.refuseUnsupportedDrop(name: "shot.png")
-        XCTAssertEqual(model.notice, PageModel.unsupportedDropNotice(name: "shot.png"))
-        XCTAssertTrue(try XCTUnwrap(model.notice).contains("shot.png"))
-    }
 
     func testHeaderUsesTheExplicitlySelectedModeRatherThanTheFilename() {
         let state = FileHeaderState.derive(from: file(name: "README.md"), renderMode: .source("swift"))

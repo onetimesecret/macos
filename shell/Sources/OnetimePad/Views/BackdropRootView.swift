@@ -164,8 +164,9 @@ struct BackdropRootView: View {
                 .allowsHitTesting(false)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        // A file dropped on the card opens as a file, and anything else
-        // is refused in words (ADR-0028). It rides the whole card
+        // Every URL dropped on the card goes through the shared file-open
+        // path, where the core decides whether it can be opened (ADR-0028).
+        // It rides the whole card
         // rather than the editor, so the gesture works over the tabs
         // and the header too, and it is mounted whatever the stance:
         // dropping a file onto a resting card is a deliberate act like
@@ -293,26 +294,22 @@ struct BackdropRootView: View {
         )
     }
 
-    /// Open every dropped file the pad opens, and say so about each one
-    /// it does not.
+    /// Forward every dropped URL to the shared file-open path. The core
+    /// evaluates each item by its contents, not its suffix or declared type.
     ///
-    /// Each item is answered on its own, so a drop of a README beside
-    /// a screenshot opens the README and refuses the screenshot rather
-    /// than refusing both. The refusal names the item, because a person
-    /// who dropped several needs to know which one was not taken.
-    ///
-    /// It answers true whenever anything was dropped, refusals
-    /// included: a refusal the pad said out loud is a drop it handled,
-    /// and answering false would give the item back to whatever is
-    /// underneath the card.
+    /// It answers true whenever anything was dropped, including files the
+    /// core refuses with a notice. Answering false would give the item back
+    /// to whatever is underneath the card.
     private func openDropped(_ urls: [URL]) -> Bool {
+        Self.forwardDroppedURLs(urls) { pages.openFile(at: $0) }
+    }
+
+    /// The testable part of drop handling: no suffix or type classification,
+    /// only forwarding every URL in order to the caller's file-open path.
+    static func forwardDroppedURLs(_ urls: [URL], openFile: (URL) -> Void) -> Bool {
         guard !urls.isEmpty else { return false }
         for url in urls {
-            if FileDropDecision.opens(url) {
-                pages.openFile(at: url)
-            } else {
-                pages.refuseUnsupportedDrop(name: url.lastPathComponent)
-            }
+            openFile(url)
         }
         return true
     }
