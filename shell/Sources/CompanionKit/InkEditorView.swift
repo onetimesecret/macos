@@ -168,6 +168,7 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.appliedTypeface = InkStyle.typeface
         coordinator.appliedSyntaxHighlighting = model.syntaxHighlightingEnabled
         coordinator.appliedLanguageDetection = model.languageDetectionEnabled
+        coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
         coordinator.restyle()
         model.activeEditor = textView
         // The summon-time offer's button takes the same road as ⇧⌘V,
@@ -318,6 +319,7 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
+        coordinator.applyFileRenderMode(model.fileRenderMode(for: sheetID))
         // Dead pages take their saved view state with them — the same
         // pruning `refresh()` applies to the storage cache, and keyed
         // the same way, by page identity: a tab outlives its pages
@@ -734,11 +736,7 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         private func isMarkdownCapable(sheet: UInt64) -> Bool {
-            guard sheet.isFileID else { return true }
-            let name = model.openFiles.first(where: { $0.id == sheet })?.name ?? ""
-            return FileDropDecision.markdownExtensions.contains(
-                (name as NSString).pathExtension.lowercased()
-            )
+            !sheet.isFileID || model.fileRenderMode(for: sheet) == .markdown
         }
 
         private func isCurrentAutomaticPaste(_ context: LanguageDetectionContext) -> Bool {
@@ -1399,6 +1397,7 @@ public struct InkEditorView: NSViewRepresentable {
         var appliedTypeface: InkStyle.Typeface?
         var appliedSyntaxHighlighting: Bool?
         var appliedLanguageDetection: Bool?
+        var appliedFileRenderMode: FileRenderMode?
 
         /// Restyle the mounted page in the typeface Settings now names.
         /// The model has already written it to `InkStyle`, so the
@@ -1418,6 +1417,12 @@ public struct InkEditorView: NSViewRepresentable {
         func applySyntaxHighlighting(_ enabled: Bool) {
             guard appliedSyntaxHighlighting != enabled else { return }
             appliedSyntaxHighlighting = enabled
+            restyle()
+        }
+
+        func applyFileRenderMode(_ mode: FileRenderMode) {
+            guard appliedFileRenderMode != mode else { return }
+            appliedFileRenderMode = mode
             restyle()
         }
 
@@ -2007,6 +2012,18 @@ public struct InkEditorView: NSViewRepresentable {
         /// touching how it edits.
         func restyle() {
             guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
+            if sheet.isFileID {
+                switch model.fileRenderMode(for: sheet) {
+                case .plainText:
+                    restylePlainFile(storage, sheet: sheet)
+                    return
+                case .source(let language):
+                    restyleSourceFile(storage, sheet: sheet, language: language)
+                    return
+                case .markdown:
+                    break
+                }
+            }
             let text = storage.string as NSString
             // A file gets no block stamps, and the route is not merely
             // skipped for dull values: `blocks(sheet:)` is a
@@ -2188,6 +2205,95 @@ public struct InkEditorView: NSViewRepresentable {
             let inset = Self.topInset + (leading ? Self.blockLabelReserve : 0)
             if let textView, textView.textContainerInset.height != inset {
                 textView.textContainerInset.height = inset
+            }
+            updateBlockLabelViews()
+        }
+
+        /// File plain text is intentionally not Markdown-capable: it receives
+        /// only base attributes and leaves headings, links, lists, and fences
+        /// as literal characters.
+        private func restylePlainFile(_ storage: NSTextStorage, sheet: UInt64) {
+            let text = storage.string as NSString
+            let full = NSRange(location: 0, length: storage.length)
+            storage.beginEditing()
+            if full.length > 0 {
+                let paragraphStyle = NSMutableParagraphStyle()
+                storage.addAttributes([
+                    .font: InkStyle.baseFont,
+                    .foregroundColor: NSColor.labelColor,
+                    .backgroundColor: NSColor.clear,
+                    .paragraphStyle: paragraphStyle,
+                ], range: full)
+                storage.removeAttribute(.link, range: full)
+                storage.removeAttribute(.underlineStyle, range: full)
+            }
+            storage.endEditing()
+            blockDisplays = []
+            fenceRegions = []
+            lineKinds = text.length == 0 ? [] : [(range: full, kind: .body)]
+            lineKindsStamp = generation
+            lineKindsSheet = sheet
+            structuralStyleNeedsRebuild = false
+            if let layoutManager = textView?.layoutManager as? InkLayoutManager {
+                layoutManager.fenceRegions = []
+                textView?.needsDisplay = true
+            }
+            if textView?.textContainerInset.height != Self.topInset {
+                textView?.textContainerInset.height = Self.topInset
+            }
+            updateBlockLabelViews()
+        }
+
+        /// Source mode tokenizes the complete buffer as code. No Markdown
+        /// scanner runs here, so `#`, lists, links, and fence markers retain
+        /// their literal source meaning.
+        private func restyleSourceFile(_ storage: NSTextStorage, sheet: UInt64, language: String) {
+            let text = storage.string as NSString
+            var tokenizer = CodeInk.Tokenizer(
+                language: CodeInk.renderingLanguage(ofInfoString: language)
+            )
+            var paragraphs: [NSRange] = []
+            var location = 0
+            storage.beginEditing()
+            while location < text.length {
+                let range = text.paragraphRange(for: NSRange(location: location, length: 0))
+                let style = NSMutableParagraphStyle()
+                storage.addAttributes([
+                    .font: InkStyle.codeFont,
+                    .foregroundColor: NSColor.labelColor,
+                    .backgroundColor: NSColor.clear,
+                    .paragraphStyle: style,
+                ], range: range)
+                storage.removeAttribute(.link, range: range)
+                storage.removeAttribute(.underlineStyle, range: range)
+                if model.syntaxHighlightingEnabled {
+                    var line = Substring(text.substring(with: range))
+                    while let last = line.last, last.isNewline { line = line.dropLast() }
+                    for token in tokenizer.tokens(in: String(line)) {
+                        let span = NSRange(location: range.location + token.range.location, length: token.range.length)
+                        guard token.range.location >= 0, token.range.length > 0,
+                              NSMaxRange(span) <= NSMaxRange(range) else { continue }
+                        storage.addAttribute(.foregroundColor, value: InkStyle.tokenColor(token.kind), range: span)
+                    }
+                }
+                paragraphs.append(range)
+                let next = NSMaxRange(range)
+                if next <= location { break }
+                location = next
+            }
+            storage.endEditing()
+            blockDisplays = []
+            fenceRegions = []
+            lineKinds = paragraphs.map { (range: $0, kind: .code(language: language)) }
+            lineKindsStamp = generation
+            lineKindsSheet = sheet
+            structuralStyleNeedsRebuild = false
+            if let layoutManager = textView?.layoutManager as? InkLayoutManager {
+                layoutManager.fenceRegions = []
+                textView?.needsDisplay = true
+            }
+            if textView?.textContainerInset.height != Self.topInset {
+                textView?.textContainerInset.height = Self.topInset
             }
             updateBlockLabelViews()
         }

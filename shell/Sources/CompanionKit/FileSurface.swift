@@ -2,6 +2,22 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The presentation selected for one open file. This is shell session state:
+/// it changes attributes only and is never encoded with the file or its draft.
+public enum FileRenderMode: Equatable, Hashable, Sendable {
+    case plainText
+    case markdown
+    case source(String)
+
+    public var formatLabel: String {
+        switch self {
+        case .plainText: return "Plain Text"
+        case .markdown: return "Markdown"
+        case .source(let language): return "Source (\(language.capitalized))"
+        }
+    }
+}
+
 /// What the surface says about the file it is showing, and the banner
 /// it puts up when that file changed underneath (ADR-0028).
 ///
@@ -30,7 +46,8 @@ public struct FileHeaderState: Equatable, Sendable {
     /// the file with it. Nil for everything else, including a file
     /// dirtied in this session, whose age a person already knows.
     public let lastEditStamp: String?
-    /// `UTF-8 · Markdown` or `UTF-8 · Plain text`, with the line ending
+    /// `UTF-8 · Markdown`, `UTF-8 · Plain Text`, or a selected Source label,
+    /// with the line ending
     /// appended when the file did not arrive with plain LF.
     public let encodingAndFormat: String
     /// The whole of the above in a sentence, for a reader who is
@@ -39,12 +56,14 @@ public struct FileHeaderState: Equatable, Sendable {
 
     /// The header's reading, derived. Pure, so the four readings are
     /// four assertions rather than four screenshots.
-    public static func derive(from file: FileSummary) -> FileHeaderState {
+    public static func derive(
+        from file: FileSummary, renderMode: FileRenderMode = .plainText
+    ) -> FileHeaderState {
         let dirty = file.isDirty
         let stamp: String? = (dirty && file.restoredFromDraft && file.lastEditedAt > 0)
             ? editStamp(unixSeconds: file.lastEditedAt)
             : nil
-        var facts = "UTF-8 · \(format(forName: file.name))"
+        var facts = "UTF-8 · \(renderMode.formatLabel)"
         if file.lineEnding == .crlf { facts += " · CRLF" }
         var spoken = "\(file.name), \(dirty ? "unsaved" : "saved")"
         if let stamp { spoken += ", last edited \(stamp)" }
@@ -59,14 +78,11 @@ public struct FileHeaderState: Equatable, Sendable {
         )
     }
 
-    /// Plain text or Markdown, from the filename's own extension. The
-    /// pad opens nothing else, so there is no third answer and no
-    /// unknown: a name with no extension at all is plain text, which is
-    /// what it will be read and written as.
-    public static func format(forName name: String) -> String {
-        let markdown: Set<String> = ["md", "markdown", "mdown", "mkd", "mdwn"]
-        let ext = (name as NSString).pathExtension.lowercased()
-        return markdown.contains(ext) ? "Markdown" : "Plain text"
+    /// The selected presentation, not a filename inference. Filename hints
+    /// are considered only when a file opens; the header reports the current
+    /// choice afterwards.
+    public static func format(for mode: FileRenderMode) -> String {
+        mode.formatLabel
     }
 
     /// `Thu 14:32`: the same day name and clock time the block stamps
@@ -94,41 +110,80 @@ public struct FileHeaderState: Equatable, Sendable {
     }
 }
 
-/// Whether a dropped item is one the pad opens.
+/// Whether a dropped item is forwarded to the shared file-open path.
 ///
-/// The decision is here and not at the drop site because it is a rule
-/// about the feature rather than about the gesture: the open panel
-/// filters on the same answer, and a drop that opened something the
-/// panel would not offer would be a second, wider door into the same
-/// room.
-///
-/// It is deliberately narrow. Anything that is not plain text as far as
-/// the system is concerned is refused, and refused out loud: a drop
-/// must never become a paste of the item's bytes into whatever page is
-/// under the cursor, which is the one outcome here that would put a
-/// person's file contents onto a page with a countdown on it.
+/// The shell does not classify a path by extension. The core evaluates the
+/// actual item and returns the same refusal an open-panel or restore path
+/// receives. A drop never falls through to a text paste.
 public enum FileDropDecision {
-    /// The Markdown extensions the pad answers to. Markdown has no
-    /// single system type every editor agrees on, so the extension is
-    /// what decides, and it decides the same way the format label does.
+    /// Markdown's conventional extensions, used for the open panel and the
+    /// initial Markdown rendering default. They never decide file admission.
     static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mdwn"]
 
-    /// Whether the pad opens the item at this path. Pure and taking a
-    /// URL rather than a provider, so the rule is testable without a
-    /// drag.
+    /// Drop admission is intentionally extension-independent. The core owns
+    /// the regular-file, UTF-8, and size checks and reports the refusal after
+    /// an attempted open; an unknown suffix is not enough evidence to reject
+    /// a text file before those shared checks run.
     public static func opens(_ url: URL) -> Bool {
-        if markdownExtensions.contains(url.pathExtension.lowercased()) { return true }
-        guard let type = UTType(filenameExtension: url.pathExtension) else {
-            // No extension at all, or one the system has never seen.
-            // A file with no extension is usually plain text and the
-            // core refuses it in one sentence if it is not, which is a
-            // better answer than a drop that does nothing.
-            return url.pathExtension.isEmpty
+        true
+    }
+}
+
+/// A nonmodal rendering proposal shown after a source-language hint. Each
+/// action changes session presentation only; it never edits the text storage.
+public struct FileRenderSuggestionBanner: View {
+    @ObservedObject private var model: PageModel
+    public let suggestion: FileRenderSuggestion
+
+    public init(model: PageModel, suggestion: FileRenderSuggestion) {
+        _model = ObservedObject(wrappedValue: model)
+        self.suggestion = suggestion
+    }
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            Text("Do you want to render as \(suggestion.language)?")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Button("Use \(suggestion.language)") {
+                model.selectFileRenderMode(suggestion.mode, for: suggestion.fileID)
+            }
+            .font(.system(.caption, design: .monospaced))
+            .controlSize(.small)
+            .accessibilityLabel(Text("Use \(suggestion.language) rendering"))
+            Button("Keep Plain Text") { model.keepFilePlainText(suggestion.fileID) }
+                .font(.system(.caption, design: .monospaced))
+                .controlSize(.small)
+            Menu("Choose Language…") {
+                Button("Plain Text") { model.selectFileRenderMode(.plainText, for: suggestion.fileID) }
+                Button("Markdown") { model.selectFileRenderMode(.markdown, for: suggestion.fileID) }
+                if let contentHint = model.fileContentRenderHint(for: suggestion.fileID),
+                   contentHint != suggestion.mode
+                {
+                    Divider()
+                    Button("Detected: \(contentHint.formatLabel)") {
+                        model.selectFileRenderMode(contentHint, for: suggestion.fileID)
+                    }
+                }
+                Divider()
+                ForEach(InkEditorView.Coordinator.manualLanguages, id: \.self) { language in
+                    Button(language.capitalized) {
+                        model.selectFileRenderMode(.source(language), for: suggestion.fileID)
+                    }
+                }
+            }
+            .font(.system(.caption, design: .monospaced))
+            .controlSize(.small)
+            Button("Dismiss") { model.dismissFileRenderSuggestion(suggestion.fileID) }
+                .font(.system(.caption, design: .monospaced))
+                .controlSize(.small)
+            Spacer(minLength: 0)
         }
-        // Conformance rather than equality: .txt, .text, .log, .conf
-        // and a source file all conform to plain text, and all of them
-        // are files a person edits by hand.
-        return type.conforms(to: .plainText)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Rendering suggestion: \(suggestion.language)"))
     }
 }
 

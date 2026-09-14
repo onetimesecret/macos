@@ -229,7 +229,9 @@ struct BackdropRootView: View {
                 // product name stands, because on a file surface the
                 // question the header answers is which file this is and
                 // whether it is on disk (ADR-0028).
-                fileIdentity(FileHeaderState.derive(from: file))
+                fileIdentity(FileHeaderState.derive(
+                    from: file, renderMode: pages.activeFileRenderMode
+                ))
             } else {
                 Text(pages.showingLedger ? "the ledger" : BackdropAppDelegate.productName)
                     .font(.system(.caption, design: .monospaced))
