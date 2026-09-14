@@ -612,7 +612,7 @@ final class FileDocumentTests: XCTestCase {
         )
     }
 
-    func testABinaryFileIsRefusedWithTextFileGuidance() throws {
+    func testAnInvalidUtf8PNGIsRefusedAsUnsupportedEncoding() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
         let model = makeModel(fixture, panels: panels)
@@ -625,7 +625,7 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertTrue(model.openFiles.isEmpty, "a refused file opens no tab")
         XCTAssertEqual(
             model.notice,
-            "image.png contains binary data and cannot be opened as text. Choose a UTF-8 text file instead."
+            "image.png uses an unsupported text encoding. Convert it to UTF-8, then try again."
         )
     }
 

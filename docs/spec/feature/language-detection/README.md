@@ -137,9 +137,21 @@ any regular file that passes strict UTF-8 decoding and a separately specified
 binary-content check, subject to the existing 4 MiB limit. This does **not** mean
 all non-binary encodings are supported. UTF-16 and legacy encodings require a
 follow-up encoding/round-trip design; do not silently decode with replacement
-characters. Define binary checks and their false-rejection cases before widening
-drop acceptance. Treat UTF-8-valid control-heavy data separately from ordinary
-Unicode text; NUL detection alone is not a complete binary classifier.
+characters.
+
+The proposed binary-content rule runs only after strict UTF-8 decoding. Reject
+content containing any NUL scalar. Otherwise, count all Unicode scalars and reject
+only when at least two scalars are controls other than tab, line feed, carriage
+return, or form feed, and those disallowed controls are more than ten percent of
+all scalars. Exactly ten percent is accepted. File signatures do not participate
+in admission: invalid UTF-8 remains an unsupported-encoding refusal even when its
+bytes identify a common binary format, while UTF-8 text is judged only by the NUL
+and control-density rules.
+
+This deliberately permits some UTF-8 binary payloads and can reject legitimate
+control-rich UTF-8 text. For example, compact text containing multiple ANSI escape
+sequences can cross the density threshold. That is an acknowledged false rejection
+of this first increment rather than evidence that the text has an invalid encoding.
 
 After successful open, offer a nonmodal **Do you want to render as <Language>?**
 with **Use <Language>**, **Keep Plain Text**, and **Choose Language…**. Opening
