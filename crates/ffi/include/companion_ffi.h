@@ -1152,7 +1152,7 @@ bool companion_sync_pairing_cancel(CompanionHandle *handle);
  *     {"state": "unchanged" | "changed" | "missing", "path": string}
  *
  *   companion_file_open_error_json():
- *     {"error": "notUtf8" | "tooLarge" | "io",
+ *     {"error": "notUtf8" | "binary" | "tooLarge" | "io",
  *      "limit": u64,      present only for "tooLarge", in bytes
  *      "detail": string}  present only for "io"
  *
