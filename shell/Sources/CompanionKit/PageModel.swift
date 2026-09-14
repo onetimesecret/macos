@@ -267,6 +267,23 @@ public enum SurfaceTarget: Equatable, Sendable {
 
 /// What a person chose to do about a file that changed on disk while
 /// their own copy held unsaved edits.
+/// A nonmodal offer to change an open file's presentation. The proposed mode
+/// is not applied until a person chooses it.
+public struct FileRenderSuggestion: Equatable, Sendable {
+    public let fileID: UInt64
+    public let mode: FileRenderMode
+
+    public init(fileID: UInt64, mode: FileRenderMode) {
+        self.fileID = fileID
+        self.mode = mode
+    }
+
+    public var language: String {
+        if case .source(let language) = mode { return language.capitalized }
+        return mode.formatLabel
+    }
+}
+
 public enum FileConflictResolution: Equatable, Sendable {
     /// Keep the buffer and overwrite the file on the next save.
     case keepMine
@@ -324,6 +341,17 @@ public final class PageModel: ObservableObject {
     /// rather than rules a reader has to remember.
     @Published public private(set) var openFiles: [FileSummary] = []
 
+    /// Presentation state is deliberately separate from `FileSummary`: the
+    /// core owns file content and persistence, while these choices last only
+    /// until this open file is closed or the app relaunches.
+    @Published public private(set) var fileRenderModes: [UInt64: FileRenderMode] = [:]
+    @Published public private(set) var fileRenderSuggestion: FileRenderSuggestion?
+    private var explicitFileRenderModes: Set<UInt64> = []
+    private var dismissedFileRenderSuggestions: Set<UInt64> = []
+    private var fileContentRenderHints: [UInt64: FileRenderMode] = [:]
+    private let fileLanguageDetection = LanguageDetectionService()
+    private var fileLanguageRequestIDs: [UInt64: UUID] = [:]
+
     /// The open file the surface is showing, by its tagged id, or nil
     /// while the surface is showing a page.
     ///
@@ -354,6 +382,39 @@ public final class PageModel: ObservableObject {
     public var activeFile: FileSummary? {
         guard let selectedFile else { return nil }
         return openFiles.first { $0.id == selectedFile }
+    }
+
+    /// The active file's actual presentation. A file with no selection yet is
+    /// plain text; filename hints are proposals, not a substitute for a mode.
+    public var activeFileRenderMode: FileRenderMode {
+        guard let selectedFile else { return .plainText }
+        return fileRenderMode(for: selectedFile)
+    }
+
+    public func fileRenderMode(for id: UInt64) -> FileRenderMode {
+        fileRenderModes[id] ?? .plainText
+    }
+
+    public func fileContentRenderHint(for id: UInt64) -> FileRenderMode? {
+        fileContentRenderHints[id]
+    }
+
+    public func selectFileRenderMode(_ mode: FileRenderMode, for id: UInt64? = nil) {
+        guard let id = id ?? selectedFile, openFiles.contains(where: { $0.id == id }) else { return }
+        fileRenderModes[id] = mode
+        explicitFileRenderModes.insert(id)
+        dismissedFileRenderSuggestions.insert(id)
+        if fileRenderSuggestion?.fileID == id { fileRenderSuggestion = nil }
+    }
+
+    public func keepFilePlainText(_ id: UInt64? = nil) {
+        selectFileRenderMode(.plainText, for: id)
+    }
+
+    public func dismissFileRenderSuggestion(_ id: UInt64? = nil) {
+        guard let id = id ?? selectedFile else { return }
+        dismissedFileRenderSuggestions.insert(id)
+        if fileRenderSuggestion?.fileID == id { fileRenderSuggestion = nil }
     }
 
     /// The visibly selected **tab**, the slot the editor shows a page
@@ -1683,7 +1744,13 @@ public final class PageModel: ObservableObject {
     private func restoreDrafts() {
         guard client.draftsRestore(from: draftsFileURL.path) else { return }
         refreshOpenFiles()
-        for file in openFiles { refreshBookmark(for: file) }
+        for file in openFiles {
+            refreshBookmark(for: file)
+            // The core restored either the draft or the current disk copy;
+            // classify that displayed buffer, not a second stale disk read.
+            _ = storage(for: file.id)
+            reconsiderFileRenderMode(for: file.id, resetDismissal: true)
+        }
         // The reload flag is sticky, so it is answered as it is
         // posted. Reading the roster does not drain it, deliberately:
         // the strip redraws more than once and a flag that vanished on
@@ -2133,6 +2200,15 @@ public final class PageModel: ObservableObject {
             self.selectedFile = nil
         }
         forgetFilesOffTheRoster(files)
+        let live = Set(files.map(\.id))
+        fileRenderModes = fileRenderModes.filter { live.contains($0.key) }
+        explicitFileRenderModes.formIntersection(live)
+        dismissedFileRenderSuggestions.formIntersection(live)
+        fileLanguageRequestIDs = fileLanguageRequestIDs.filter { live.contains($0.key) }
+        fileContentRenderHints = fileContentRenderHints.filter { live.contains($0.key) }
+        if let suggestion = fileRenderSuggestion, !live.contains(suggestion.fileID) {
+            fileRenderSuggestion = nil
+        }
     }
 
     /// The counterpart to the tag exemption in the two prunes.
@@ -2182,6 +2258,83 @@ public final class PageModel: ObservableObject {
         standOpenFiles(client.fileRoster())
     }
 
+    /// Seed Markdown's stable filename default and offer source-language hints.
+    /// Content inference is asynchronous and only contributes when there is no
+    /// explicit choice and no stronger filename hint.
+    private func reconsiderFileRenderMode(for id: UInt64, resetDismissal: Bool = false) {
+        guard let file = openFiles.first(where: { $0.id == id }) else { return }
+        // A replacement buffer is a new revision. A previous dismissal must
+        // not suppress a new proposal, while an explicit mode remains the
+        // strongest session choice.
+        if resetDismissal {
+            dismissedFileRenderSuggestions.remove(id)
+            fileContentRenderHints[id] = nil
+        }
+        if !explicitFileRenderModes.contains(id) {
+            if FileDropDecision.markdownExtensions.contains((file.name as NSString).pathExtension.lowercased()) {
+                fileRenderModes[id] = .markdown
+                if fileRenderSuggestion?.fileID == id { fileRenderSuggestion = nil }
+                return
+            }
+            fileRenderModes[id] = .plainText
+        }
+        guard !explicitFileRenderModes.contains(id), !dismissedFileRenderSuggestions.contains(id) else { return }
+        let filenameHint = Self.filenameRenderHint(for: file.name)
+        if let filenameHint {
+            fileRenderSuggestion = FileRenderSuggestion(fileID: id, mode: filenameHint)
+        }
+        guard PageModel.languageDetectionFeaturesAvailable, modelLanguageDetectionEnabledForFileHints,
+              let storage = storages[id]
+        else { return }
+        let snapshot = storage.string
+        let request = LanguageDetectionRequest(
+            documentID: id, revision: 0, targetRange: NSRange(location: 0, length: storage.length),
+            trigger: .manual, selectionSnapshot: NSRange(location: 0, length: 0), data: Data(snapshot.utf8)
+        )
+        fileLanguageRequestIDs[id] = request.requestID
+        fileLanguageDetection.submit(request, validating: { [weak self] context in
+            guard Thread.isMainThread else { return false }
+            return MainActor.assumeIsolated {
+                guard let self, self.fileLanguageRequestIDs[context.documentID] == context.requestID,
+                      !self.explicitFileRenderModes.contains(context.documentID),
+                      !self.dismissedFileRenderSuggestions.contains(context.documentID),
+                      self.storages[context.documentID]?.string == snapshot
+                else { return false }
+                return true
+            }
+        }, completion: { [weak self] result in
+            guard Thread.isMainThread else { return }
+            MainActor.assumeIsolated {
+                guard let self, self.fileLanguageRequestIDs[result.context.documentID] == result.context.requestID else { return }
+                self.fileLanguageRequestIDs[result.context.documentID] = nil
+                guard let language = result.language, language.lowercased() != "markdown" else { return }
+                let contentHint = FileRenderMode.source(language)
+                self.fileContentRenderHints[result.context.documentID] = contentHint
+                // A recognized filename wins the initial offer. The picker
+                // still exposes this content result when the two disagree.
+                guard let file = self.openFiles.first(where: { $0.id == result.context.documentID }),
+                      Self.filenameRenderHint(for: file.name) == nil
+                else { return }
+                self.fileRenderSuggestion = FileRenderSuggestion(
+                    fileID: result.context.documentID, mode: contentHint
+                )
+            }
+        })
+    }
+
+    private var modelLanguageDetectionEnabledForFileHints: Bool { languageDetectionEnabled }
+
+    public nonisolated static func filenameRenderHint(for name: String) -> FileRenderMode? {
+        let ext = (name as NSString).pathExtension.lowercased()
+        let languages = [
+            "swift": "swift", "rs": "rust", "py": "python", "rb": "ruby",
+            "js": "javascript", "mjs": "javascript", "ts": "typescript", "tsx": "typescript",
+            "go": "go", "sh": "shell", "bash": "shell", "zsh": "shell",
+            "sql": "sql", "json": "json", "yaml": "yaml", "yml": "yaml", "toml": "toml",
+        ]
+        return languages[ext].map(FileRenderMode.source)
+    }
+
     /// Ask for a file and open it. The panel lives in the file
     /// coordinator, never here.
     public func openFile() {
@@ -2222,6 +2375,10 @@ public final class PageModel: ObservableObject {
             restateStorage(sheet: id)
         }
         refreshOpenFiles()
+        // Build only the file's display projection before inference. It emits
+        // neither document operations nor a file write.
+        _ = storage(for: id)
+        reconsiderFileRenderMode(for: id)
         selectFile(id)
         markFilesDirty()
     }
@@ -2315,6 +2472,7 @@ public final class PageModel: ObservableObject {
             client.setFileBookmark(file.id, base64: data.base64EncodedString())
         }
         refreshOpenFiles()
+        reconsiderFileRenderMode(for: file.id, resetDismissal: true)
         markFilesDirty()
     }
 
@@ -2377,7 +2535,7 @@ public final class PageModel: ObservableObject {
     /// drop carries is not a phrase anybody recognises, and the person
     /// dropping already knows which item they dragged.
     public static func unsupportedDropNotice(name: String) -> String {
-        "\(name) is not a plain text or Markdown file, so it was not opened."
+        "\(name) could not be opened as a supported text file."
     }
 
     /// Refuse a drop the pad does not open, saying so rather than
@@ -2406,6 +2564,7 @@ public final class PageModel: ObservableObject {
                 return
             }
             restateStorage(sheet: file.id)
+            reconsiderFileRenderMode(for: file.id, resetDismissal: true)
         case .saveAs:
             // Save As settles the conflict by moving the identity
             // somewhere nothing else has written, so it is the same
@@ -2514,6 +2673,7 @@ public final class PageModel: ObservableObject {
             if client.reloadFile(id) {
                 restateStorage(sheet: id)
                 refreshOpenFiles()
+                reconsiderFileRenderMode(for: id, resetDismissal: true)
                 return .reloaded(file.name)
             }
             refreshOpenFiles()
@@ -2535,6 +2695,7 @@ public final class PageModel: ObservableObject {
         struct Refusal: Decodable {
             let error: String
             let limit: UInt64?
+            let detail: String?
         }
         guard let json,
               let data = json.data(using: .utf8),
@@ -2548,6 +2709,8 @@ public final class PageModel: ObservableObject {
         case "tooLarge":
             let limit = refusal.limit.map(Self.sizePhrase(bytes:)) ?? "the size limit"
             return "\(name) is larger than \(limit), so it was not opened."
+        case "io" where refusal.detail?.localizedCaseInsensitiveContains("directory") == true:
+            return "\(name) is a directory, so it was not opened."
         default:
             return "\(name) could not be read, so it was not opened."
         }

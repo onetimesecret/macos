@@ -55,6 +55,10 @@ public struct PageContentView: View {
                     FileConflictBanner(file: file) { model.resolveConflict($0) }
                     Divider()
                 }
+                if let suggestion = model.fileRenderSuggestion, suggestion.fileID == file.id {
+                    FileRenderSuggestionBanner(model: model, suggestion: suggestion)
+                    Divider()
+                }
                 InkEditorView(model: model, sheetID: file.id, readOnly: readOnly)
             }
         } else if model.showsTimeUnits {

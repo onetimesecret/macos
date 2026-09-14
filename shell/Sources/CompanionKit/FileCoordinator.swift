@@ -205,7 +205,7 @@ public struct SystemFilePanels: FilePanels {
         // core refuses what it cannot open, out loud and by name.
         panel.allowsOtherFileTypes = true
         panel.prompt = "Open"
-        panel.message = "Open a plain text or Markdown file."
+        panel.message = "Open a UTF-8 text file."
         // Bracketed, as every modal of ours is, so the surface learns
         // when the panel has returned and comes forward again.
         return ModalSession.run { panel.runModal() } == .OK ? panel.url : nil
