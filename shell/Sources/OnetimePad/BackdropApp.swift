@@ -163,20 +163,67 @@ private struct FileMenuItems: View {
 /// own: the click posts an action nobody answers when no page holds the
 /// keyboard, and the page refuses the step outright when it is shown
 /// read-only.
+enum ManualLanguageChoiceTarget: Equatable {
+    case editor
+    case file(UInt64)
+
+    static func resolve(editorCanChoose: Bool, selectedFile: UInt64?) -> Self? {
+        if editorCanChoose { return .editor }
+        return selectedFile.map(Self.file)
+    }
+}
+
 @MainActor
 private struct LanguageDetectionMenuItems: View {
     @ObservedObject var pages: PageModel
+    @ObservedObject private var languageActions: LanguageActionAvailability
     let send: (Selector) -> Void
+
+    init(pages: PageModel, send: @escaping (Selector) -> Void) {
+        self.pages = pages
+        _languageActions = ObservedObject(wrappedValue: pages.languageActions)
+        self.send = send
+    }
 
     private var responder: LanguageDetectionResponder? {
         pages.activeEditor as? LanguageDetectionResponder
+    }
+
+    private var manualChoiceTarget: ManualLanguageChoiceTarget? {
+        ManualLanguageChoiceTarget.resolve(
+            editorCanChoose: languageActions.canChoose,
+            selectedFile: pages.showingLedger ? nil : pages.selectedFile
+        )
+    }
+
+    private func chooseSourceLanguage(_ language: String) {
+        switch manualChoiceTarget {
+        case .editor:
+            responder?.chooseCodeLanguage(language)
+        case .file(let id):
+            pages.selectFileRenderMode(.source(language), for: id)
+        case nil:
+            break
+        }
     }
 
     var body: some View {
         Button("Detect Code Language…") {
             send(#selector(LanguageDetectionResponder.detectCodeLanguage(_:)))
         }
-        .disabled(responder?.canDetectCodeLanguage != true)
+        .disabled(!languageActions.canDetect)
+
+        Menu("Choose Language") {
+            if case .file(let id) = manualChoiceTarget {
+                Button("Plain Text") { pages.selectFileRenderMode(.plainText, for: id) }
+                Button("Markdown") { pages.selectFileRenderMode(.markdown, for: id) }
+                Divider()
+            }
+            ForEach(InkEditorView.Coordinator.manualLanguages, id: \.self) { language in
+                Button(language.capitalized) { chooseSourceLanguage(language) }
+            }
+        }
+        .disabled(manualChoiceTarget == nil)
 
         Button("Paste Without Detection") {
             send(#selector(LanguageDetectionResponder.pasteWithoutDetection(_:)))

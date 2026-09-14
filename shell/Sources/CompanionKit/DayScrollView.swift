@@ -125,6 +125,7 @@ public struct DayScrollView: NSViewRepresentable {
         coordinator.model.rollGeometry.reset(from: stack)
         guard let editor = stack.editor,
               coordinator.model.activeEditor === editor else { return }
+        coordinator.parkEditor()
         coordinator.model.activeEditor = nil
     }
 

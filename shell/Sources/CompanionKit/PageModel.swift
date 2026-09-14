@@ -311,6 +311,17 @@ public enum FileConflictResolution: Equatable, Sendable {
 /// the core's own answers, re-asked whenever the page under the editor,
 /// its editability, or its history can have moved.
 @MainActor
+public final class LanguageActionAvailability: ObservableObject {
+    @Published public private(set) var canDetect = false
+    @Published public private(set) var canChoose = false
+
+    func stand(canDetect: Bool, canChoose: Bool) {
+        if self.canDetect != canDetect { self.canDetect = canDetect }
+        if self.canChoose != canChoose { self.canChoose = canChoose }
+    }
+}
+
+@MainActor
 public final class EditStepAvailability: ObservableObject {
     @Published public private(set) var canUndo = false
     @Published public private(set) var canRedo = false
@@ -763,6 +774,9 @@ public final class PageModel: ObservableObject {
     public weak var activeEditor: NSTextView? {
         didSet { scheduleEditStepsRefresh() }
     }
+
+    /// What the Edit menu's language actions read as the selection moves.
+    public let languageActions = LanguageActionAvailability()
 
     /// What the Edit menu's Undo and Redo read as right now.
     public let editSteps = EditStepAvailability()
