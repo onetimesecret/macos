@@ -173,23 +173,19 @@ public struct RefusingFilePanels: FilePanels {
 
 /// The real panels: the ones with a window.
 ///
-/// The open panel is restricted to plain text and Markdown and still
-/// lets a person reach anything else, because the restriction is a
-/// filter for the common case and not a rule about what may be
-/// opened. The core is the one that decides, and it refuses a file
-/// that is not UTF-8 or is too large in a sentence naming the file,
-/// which is a better answer than a panel that greys the file out and
-/// says nothing.
+/// The open panel allows every file type because the core decides whether
+/// the selected item can be opened as UTF-8 text. The save panel retains its
+/// plain-text and Markdown suggestions.
 @MainActor
 public struct SystemFilePanels: FilePanels {
     public init() {}
 
-    /// The types the panel offers first. Markdown has no single system
-    /// type every editor agrees on, so the extensions are listed
-    /// beside `.plainText`, the same way `FileDropDecision` decides.
+    /// The types the save panel offers first. Markdown has no single system
+    /// type every editor agrees on, so the extensions are listed beside
+    /// `.plainText`.
     static var offeredTypes: [UTType] {
         var types: [UTType] = [.plainText, .text]
-        for ext in FileDropDecision.markdownExtensions.sorted() {
+        for ext in FileFormatHints.markdownExtensions.sorted() {
             if let type = UTType(filenameExtension: ext) { types.append(type) }
         }
         return types
@@ -200,12 +196,8 @@ public struct SystemFilePanels: FilePanels {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = Self.offeredTypes
-        // The person insisting on something else is allowed to: the
-        // core refuses what it cannot open, out loud and by name.
-        panel.allowsOtherFileTypes = true
         panel.prompt = "Open"
-        panel.message = "Open a UTF-8 text file."
+        panel.message = "Choose a UTF-8 text file."
         // Bracketed, as every modal of ours is, so the surface learns
         // when the panel has returned and comes forward again.
         return ModalSession.run { panel.runModal() } == .OK ? panel.url : nil

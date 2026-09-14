@@ -2299,7 +2299,7 @@ public final class PageModel: ObservableObject {
             fileContentRenderHints[id] = nil
         }
         if !explicitFileRenderModes.contains(id) {
-            if FileDropDecision.markdownExtensions.contains((file.name as NSString).pathExtension.lowercased()) {
+            if FileFormatHints.markdownExtensions.contains((file.name as NSString).pathExtension.lowercased()) {
                 fileRenderModes[id] = .markdown
                 return
             }
@@ -2549,22 +2549,6 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// What the pad says when something is dropped on it that it does
-    /// not open. Named rather than typed at the drop site so the drop
-    /// and the open panel refuse in the same words.
-    ///
-    /// It says the name and not the type, because the type identifier a
-    /// drop carries is not a phrase anybody recognises, and the person
-    /// dropping already knows which item they dragged.
-    public static func unsupportedDropNotice(name: String) -> String {
-        "\(name) could not be opened as a supported text file."
-    }
-
-    /// Refuse a drop the pad does not open, saying so rather than
-    /// pasting the item's bytes into whatever page is under the cursor.
-    public func refuseUnsupportedDrop(name: String) {
-        flash(Self.unsupportedDropNotice(name: name))
-    }
 
     /// Settle a file that changed on disk under unsaved edits. Save
     /// stays refused until one of the three is chosen.
@@ -2726,8 +2710,10 @@ public final class PageModel: ObservableObject {
             return "\(name) could not be opened."
         }
         switch refusal.error {
+        case "binary":
+            return "\(name) contains binary data and cannot be opened as text. Choose a UTF-8 text file instead."
         case "notUtf8":
-            return "\(name) is not UTF-8 text, so it was not opened."
+            return "\(name) uses an unsupported text encoding. Convert it to UTF-8, then try again."
         case "tooLarge":
             let limit = refusal.limit.map(Self.sizePhrase(bytes:)) ?? "the size limit"
             return "\(name) is larger than \(limit), so it was not opened."
