@@ -70,6 +70,7 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.invalidateOrdinaryPasteMeasurement()
         guard let textView = scroll.documentView as? InkTextView,
               coordinator.model.activeEditor === textView else { return }
+        coordinator.parkEditor()
         coordinator.model.activeEditor = nil
     }
 
@@ -171,6 +172,7 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
         coordinator.restyle()
         model.activeEditor = textView
+        coordinator.refreshLanguageActionAvailability()
         // The summon-time offer's button takes the same road as ⇧⌘V,
         // so the chip lands at the caret and consent stays a gesture
         // aimed at this page (ADR-0007 Amendment 1).
@@ -404,7 +406,7 @@ public struct InkEditorView: NSViewRepresentable {
             let language: String
         }
 
-        static let manualLanguages = [
+        public static let manualLanguages = [
             "swift", "rust", "python", "ruby", "javascript", "typescript",
             "go", "shell", "sql", "json", "yaml", "toml",
         ]
@@ -577,15 +579,18 @@ public struct InkEditorView: NSViewRepresentable {
                 invalidateOrdinaryPasteMeasurement()
             }
             textView.isEditable = editable
+            refreshLanguageActionAvailability()
         }
 
         func parkEditor() {
             invalidateOrdinaryPasteMeasurement()
             currentSheet = nil
+            refreshLanguageActionAvailability()
         }
 
         public func textViewDidChangeSelection(_ notification: Notification) {
             abandonAutomaticConversionForEditorChange()
+            refreshLanguageActionAvailability()
         }
 
         private func isCurrentOrdinaryPaste(_ context: LanguageDetectionContext) -> Bool {
@@ -807,10 +812,34 @@ public struct InkEditorView: NSViewRepresentable {
             textView.scrollRangeToVisible(textView.selectedRange())
         }
 
+        var manualLanguageTargetAvailable: Bool {
+            PageModel.languageDetectionFeaturesAvailable && manualLanguageTarget() != nil
+        }
+
+        func refreshLanguageActionAvailability() {
+            let canChoose = manualLanguageTargetAvailable
+            let selectionIsEmpty: Bool?
+            if PageModel.languageDetectionFeaturesAvailable,
+               let textView, let storage = textView.textStorage,
+               currentSheet != nil, textView.isEditable, !textView.hasMarkedText()
+            {
+                let selection = textView.selectedRange()
+                selectionIsEmpty = selection.location != NSNotFound
+                    && NSMaxRange(selection) <= storage.length
+                    ? selection.length == 0
+                    : nil
+            } else {
+                selectionIsEmpty = nil
+            }
+            model.languageActions.stand(
+                canDetect: canChoose && model.languageDetectionEnabled,
+                canChoose: canChoose,
+                selectionIsEmpty: selectionIsEmpty
+            )
+        }
+
         var canDetectCodeLanguage: Bool {
-            PageModel.languageDetectionFeaturesAvailable
-                && model.languageDetectionEnabled
-                && manualLanguageTarget() != nil
+            manualLanguageTargetAvailable && model.languageDetectionEnabled
         }
 
         func detectCodeLanguage() {
@@ -1210,6 +1239,7 @@ public struct InkEditorView: NSViewRepresentable {
             currentSheet = sheetID
             restyle()
             restoreViewState(textView: textView, scrollView: scrollView, for: sheetID)
+            refreshLanguageActionAvailability()
         }
 
         // MARK: Per-page view state (ADR-0006)
@@ -1429,6 +1459,7 @@ public struct InkEditorView: NSViewRepresentable {
         func applyLanguageDetection(_ enabled: Bool) {
             guard appliedLanguageDetection != enabled else { return }
             appliedLanguageDetection = enabled
+            refreshLanguageActionAvailability()
             guard !enabled else { return }
             settleAutomaticPasteAsPlainIfPossible()
             pendingOrdinaryPasteRequestID = nil
@@ -2820,7 +2851,9 @@ final class InkLayoutManager: NSLayoutManager {
 @MainActor
 @objc public protocol LanguageDetectionResponder {
     var canDetectCodeLanguage: Bool { get }
+    var canChooseCodeLanguage: Bool { get }
     func detectCodeLanguage(_ sender: Any?)
+    func chooseCodeLanguage(_ language: String)
     func pasteWithoutDetection(_ sender: Any?)
 }
 
@@ -2831,6 +2864,14 @@ final class InkLayoutManager: NSLayoutManager {
 /// whole, selection cannot reach inside it.
 final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder {
     weak var coordinator: InkEditorView.Coordinator?
+
+    var canChooseCodeLanguage: Bool {
+        coordinator?.manualLanguageTargetAvailable == true
+    }
+
+    func chooseCodeLanguage(_ language: String) {
+        coordinator?.applyManualLanguage(language)
+    }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
