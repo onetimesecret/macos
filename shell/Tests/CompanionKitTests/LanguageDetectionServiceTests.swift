@@ -41,11 +41,12 @@ final class LanguageDetectionServiceTests: XCTestCase {
     private func request(
         _ text: String,
         requestID: UUID = UUID(),
+        documentID: UInt64 = 42,
         revision: UInt64 = 1
     ) -> LanguageDetectionRequest {
         LanguageDetectionRequest(
             requestID: requestID,
-            documentID: 42,
+            documentID: documentID,
             revision: revision,
             targetRange: NSRange(location: 3, length: 4),
             trigger: .ordinaryPaste,
@@ -98,6 +99,49 @@ final class LanguageDetectionServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.completed, [third.requestID])
         XCTAssertEqual(service.currentResult?.context.requestID, third.requestID)
         XCTAssertNil(service.currentRequest)
+    }
+
+    func testPendingRequestsAreCoalescedPerDocumentWithoutDroppingOtherDocuments() {
+        let firstStarted = DispatchSemaphore(value: 0)
+        let releaseFirst = DispatchSemaphore(value: 0)
+        let allCompleted = expectation(description: "all current documents completed")
+        allCompleted.expectedFulfillmentCount = 3
+        let probe = Probe()
+        let callbackQueue = DispatchQueue(label: "language-detection-test.per-document-callback")
+        let service = LanguageDetectionService(
+            detector: { data in
+                let text = String(decoding: data, as: UTF8.self)
+                probe.began(text)
+                if text == "first" {
+                    firstStarted.signal()
+                    _ = releaseFirst.wait(timeout: .now() + 2)
+                }
+                probe.ended()
+                return text
+            },
+            completionQueue: callbackQueue
+        )
+        let first = request("first", documentID: 1)
+        let secondDocument = request("second-document", documentID: 2)
+        let replaced = request("replaced", documentID: 3, revision: 1)
+        let replacement = request("replacement", documentID: 3, revision: 2)
+
+        for request in [first, secondDocument, replaced, replacement] {
+            service.submit(request, validating: { _ in true }) { result in
+                probe.completed(result.context.requestID)
+                allCompleted.fulfill()
+            }
+            if request == first {
+                XCTAssertEqual(firstStarted.wait(timeout: .now() + 1), .success)
+            }
+        }
+        releaseFirst.signal()
+
+        wait(for: [allCompleted], timeout: 2)
+        let snapshot = probe.snapshot()
+        XCTAssertEqual(snapshot.maximumActive, 1)
+        XCTAssertEqual(snapshot.detected, ["first", "second-document", "replacement"])
+        XCTAssertEqual(snapshot.completed, [first.requestID, secondDocument.requestID, replacement.requestID])
     }
 
     func testFailedCurrentContextValidationDropsResultAndReleasesRequest() {

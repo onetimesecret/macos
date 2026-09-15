@@ -89,7 +89,9 @@ final class FileDocumentTests: XCTestCase {
     /// is what makes the second one a relaunch rather than a stranger.
     @discardableResult
     private func makeModel(
-        _ fixture: Fixture, panels: ScriptedFilePanels
+        _ fixture: Fixture,
+        panels: ScriptedFilePanels,
+        fileLanguageDetection: LanguageDetectionService? = nil
     ) -> PageModel {
         let model = PageModel(
             formFactor: .panel,
@@ -97,7 +99,8 @@ final class FileDocumentTests: XCTestCase {
             seams: .init(
                 stateDirectory: fixture.state,
                 client: .ephemeral(tag: fixture.tag),
-                saveDebounce: 0.05
+                saveDebounce: 0.05,
+                fileLanguageDetection: fileLanguageDetection
             )
         )
         model.fileCoordinator = FileCoordinator(panels: panels)
@@ -145,6 +148,190 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(
             model.storage(for: file.id).string, "first line\nsecond line\n",
             "the storage is built from the file's own runs")
+    }
+
+    func testOpeningAnUnknownOrExtensionlessUtf8FileIsNotExtensionGated() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+
+        model.openFile(at: try write("plain text\n", named: "no-suffix", in: fixture))
+        model.openFile(at: try write("also text\n", named: "notes.unknown", in: fixture))
+
+        XCTAssertEqual(model.openFiles.map(\.name), ["no-suffix", "notes.unknown"])
+    }
+
+    func testFileRenderingChoiceIsSessionOnlyAndDoesNotDirtyOrWriteTheFile() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        let url = try write("# literal source\n", named: "example.swift", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.activeFile?.id)
+
+        XCTAssertEqual(model.fileRenderSuggestion?.mode, .source("swift"))
+        model.selectFileRenderMode(.source("swift"))
+
+        XCTAssertEqual(model.fileRenderMode(for: id), .source("swift"))
+        XCTAssertNil(model.fileRenderSuggestion)
+        XCTAssertFalse(try XCTUnwrap(model.activeFile).isDirty)
+        XCTAssertEqual(try read(url), "# literal source\n")
+        XCTAssertEqual(
+            FileHeaderState.derive(from: try XCTUnwrap(model.activeFile), renderMode: model.activeFileRenderMode)
+                .encodingAndFormat,
+            "UTF-8 · Source (Swift)"
+        )
+    }
+
+    func testExplicitRenderingChoiceOutranksLaterFilenameHints() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("body\n", named: "example.swift", in: fixture))
+        let id = try XCTUnwrap(model.activeFile?.id)
+        model.keepFilePlainText()
+
+        // Refreshing the roster may reconsider hints, but never replaces an
+        // explicit session choice.
+        model.refreshOpenFiles()
+        XCTAssertEqual(model.fileRenderMode(for: id), .plainText)
+        XCTAssertNil(model.fileRenderSuggestion)
+    }
+
+    func testRenderingSuggestionsRemainOwnedByEachOpenFile() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("let value = 1\n", named: "first.swift", in: fixture))
+        let first = try XCTUnwrap(model.activeFile?.id)
+        model.openFile(at: try write("print('hello')\n", named: "second.py", in: fixture))
+        let second = try XCTUnwrap(model.activeFile?.id)
+
+        XCTAssertEqual(model.renderSuggestion(for: first)?.mode, .source("swift"))
+        XCTAssertEqual(model.renderSuggestion(for: second)?.mode, .source("python"))
+        model.selectFile(first)
+        XCTAssertEqual(model.fileRenderSuggestion?.mode, .source("swift"))
+    }
+
+    func testDismissingOneSuggestionDoesNotDismissAnotherAndReloadOffersAgain() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let firstURL = try write("let first = 1\n", named: "first.swift", in: fixture)
+        model.openFile(at: firstURL)
+        let first = try XCTUnwrap(model.activeFile?.id)
+        model.dismissFileRenderSuggestion()
+        model.openFile(at: try write("let second = 2\n", named: "second.swift", in: fixture))
+        let second = try XCTUnwrap(model.activeFile?.id)
+
+        XCTAssertNil(model.renderSuggestion(for: first))
+        XCTAssertEqual(model.renderSuggestion(for: second)?.mode, .source("swift"))
+
+        try Data("let reloaded = 3\n".utf8).write(to: firstURL)
+        model.checkOpenFilesOnActivate()
+        XCTAssertEqual(model.renderSuggestion(for: first)?.mode, .source("swift"))
+    }
+
+    func testSaveAsReconsidersFilenameSuggestionWithoutOverridingExplicitMode() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("let value = 1\n", named: "example.swift", in: fixture))
+        let id = try XCTUnwrap(model.activeFile?.id)
+        panels.destinationURL = fixture.workspace.appendingPathComponent("example.py")
+
+        model.saveActiveFileAs()
+        XCTAssertEqual(model.renderSuggestion(for: id)?.mode, .source("python"))
+
+        model.selectFileRenderMode(.plainText, for: id)
+        panels.destinationURL = fixture.workspace.appendingPathComponent("example.rb")
+        model.saveActiveFileAs()
+        XCTAssertEqual(model.fileRenderMode(for: id), .plainText)
+        XCTAssertNil(model.renderSuggestion(for: id))
+    }
+
+    func testStaleContentDetectionCannotOfferAChangedFileSnapshot() throws {
+        guard PageModel.languageDetectionFeaturesAvailable else { throw XCTSkip("detection is unavailable") }
+        let fixture = try makeFixture()
+        let started = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let service = LanguageDetectionService(detector: { _ in
+            started.signal()
+            _ = release.wait(timeout: .now() + 2)
+            return "swift"
+        })
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(), fileLanguageDetection: service
+        )
+        model.languageDetectionEnabled = true
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("unclassified content\n", named: "extensionless", in: fixture))
+        let id = try XCTUnwrap(model.activeFile?.id)
+        XCTAssertEqual(started.wait(timeout: .now() + 1), .success)
+
+        try type("changed ", at: 0, into: id, on: model)
+        release.signal()
+        spinRunLoop(until: { service.currentRequest == nil })
+
+        XCTAssertNil(model.renderSuggestion(for: id))
+        XCTAssertNil(model.fileContentRenderHint(for: id))
+    }
+
+    func testSaveAsToMarkdownCancelsAnOlderContentSuggestion() throws {
+        guard PageModel.languageDetectionFeaturesAvailable else { throw XCTSkip("detection is unavailable") }
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let started = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let service = LanguageDetectionService(detector: { _ in
+            started.signal()
+            _ = release.wait(timeout: .now() + 2)
+            return "swift"
+        })
+        let model = makeModel(
+            fixture, panels: panels, fileLanguageDetection: service
+        )
+        model.languageDetectionEnabled = true
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("let value = 1\n", named: "extensionless", in: fixture))
+        let id = try XCTUnwrap(model.activeFile?.id)
+        XCTAssertEqual(started.wait(timeout: .now() + 1), .success)
+        panels.destinationURL = fixture.workspace.appendingPathComponent("notes.md")
+
+        model.saveActiveFileAs()
+        release.signal()
+        spinRunLoop(until: { service.currentRequest == nil })
+
+        XCTAssertEqual(model.fileRenderMode(for: id), .markdown)
+        XCTAssertNil(model.renderSuggestion(for: id))
+        XCTAssertNil(model.fileContentRenderHint(for: id))
+    }
+
+    func testConcurrentExtensionlessDetectionRetainsSuggestionsForBothFiles() throws {
+        guard PageModel.languageDetectionFeaturesAvailable else { throw XCTSkip("detection is unavailable") }
+        let fixture = try makeFixture()
+        let service = LanguageDetectionService(detector: { data in
+            let text = String(decoding: data, as: UTF8.self)
+            return text.contains("let ") ? "swift" : "python"
+        })
+        let model = makeModel(
+            fixture, panels: ScriptedFilePanels(), fileLanguageDetection: service
+        )
+        model.languageDetectionEnabled = true
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("let value = 1\n", named: "first", in: fixture))
+        let first = try XCTUnwrap(model.activeFile?.id)
+        model.openFile(at: try write("print('hello')\n", named: "second", in: fixture))
+        let second = try XCTUnwrap(model.activeFile?.id)
+
+        spinRunLoop(until: { model.fileRenderSuggestions.count == 2 })
+
+        XCTAssertEqual(model.renderSuggestion(for: first)?.mode, .source("swift"))
+        XCTAssertEqual(model.renderSuggestion(for: second)?.mode, .source("python"))
     }
 
     func testTheOpenPanelsAnswerIsWhatGetsOpened() throws {
@@ -464,6 +651,9 @@ final class FileDocumentTests: XCTestCase {
             PageModel.openRefusalNotice(name: "a.txt", json: #"{"error":"io","detail":"x"}"#),
             "a.txt could not be read, so it was not opened.")
         XCTAssertEqual(
+            PageModel.openRefusalNotice(name: "folder", json: #"{"error":"io","detail":"is a directory"}"#),
+            "folder is a directory, so it was not opened.")
+        XCTAssertEqual(
             PageModel.openRefusalNotice(name: "a.txt", json: nil),
             "a.txt could not be opened.")
     }
@@ -576,6 +766,24 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(
             second.storage(for: restored.id).string, "just reading\n",
             "the restore hands back a roster that is ready to draw")
+    }
+
+    func testRestoredFileReinfersSuggestionButDoesNotPersistExplicitMode() throws {
+        let fixture = try makeFixture()
+        let url = try write("let value = 1\n", named: "example.swift", in: fixture)
+        let first = makeModel(fixture, panels: ScriptedFilePanels())
+        first.loadStateIfNeeded()
+        first.openFile(at: url)
+        let firstID = try XCTUnwrap(first.activeFile?.id)
+        first.selectFileRenderMode(.markdown, for: firstID)
+        XCTAssertTrue(first.saveState())
+
+        let second = makeModel(fixture, panels: ScriptedFilePanels())
+        second.loadStateIfNeeded()
+        let restored = try XCTUnwrap(second.openFiles.first)
+
+        XCTAssertEqual(second.fileRenderMode(for: restored.id), .plainText)
+        XCTAssertEqual(second.renderSuggestion(for: restored.id)?.mode, .source("swift"))
     }
 
     func testFilesComeBackInTheOrderTheyWereOpened() throws {

@@ -180,7 +180,55 @@ final class CodeHighlightingRenderingTests: XCTestCase {
         storage.delegate = coordinator
     }
 
-    private var storage: NSTextStorage { model.storage(for: sheet) }
+    private var storage: NSTextStorage {
+        try! XCTUnwrap(textView.textStorage)
+    }
+
+    private func makeFileEditor(_ text: String, mode: FileRenderMode) {
+        let suite = "companion-kit-file-rendering-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        model = isolatedModel(defaults: defaults)
+        sheet = CompanionClient.fileIDTag | 9_001
+        model.standOpenFiles([
+            FileSummary(
+                id: sheet, name: "sample.txt", path: "/tmp/sample.txt",
+                isDirty: false, conflict: .none, lineEnding: .lf, hasBOM: false,
+                lastEditedAt: 0, restoredFromDraft: false
+            )
+        ])
+        model.selectFile(sheet)
+        model.selectFileRenderMode(mode, for: sheet)
+
+        let textStorage = NSTextStorage(attributedString: NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 24, weight: .bold),
+                .foregroundColor: NSColor.systemRed,
+                .backgroundColor: NSColor.systemYellow,
+                .link: URL(string: "https://stale.invalid")!,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ]
+        ))
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(
+            size: NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude))
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(container)
+        textView = InkTextView(frame: .zero, textContainer: container)
+        textView.isRichText = true
+        coordinator = InkEditorView.Coordinator(model: model)
+        textView.coordinator = coordinator
+        textView.delegate = coordinator
+        coordinator.textView = textView
+        coordinator.currentSheet = sheet
+        textStorage.delegate = coordinator
+        coordinator.restyle()
+    }
+
+    private func offset(of needle: String) -> Int {
+        (storage.string as NSString).range(of: needle).location
+    }
 
     /// A passage handed over whole, newlines and all: a paste, which is
     /// how a fenced block usually arrives on a page.
@@ -200,6 +248,70 @@ final class CodeHighlightingRenderingTests: XCTestCase {
         }
         return storage.attributes(at: range.location, effectiveRange: nil)[.foregroundColor]
             as? NSColor
+    }
+
+    func testPlainTextFileLeavesMarkdownConstructsLiteral() throws {
+        let text = "# Heading\n- item\n```swift\nlet value = 1\n```\n[link](https://example.com)\n"
+        makeFileEditor(text, mode: .plainText)
+
+        XCTAssertEqual(storage.string, text)
+        for needle in ["#", "-", "```swift", "[link]"] {
+            let location = offset(of: needle)
+            XCTAssertEqual(
+                try XCTUnwrap(storage.attribute(.font, at: location, effectiveRange: nil) as? NSFont),
+                InkStyle.baseFont
+            )
+            XCTAssertEqual(
+                try XCTUnwrap(storage.attribute(.foregroundColor, at: location, effectiveRange: nil) as? NSColor),
+                NSColor.labelColor
+            )
+            XCTAssertNil(storage.attribute(.link, at: location, effectiveRange: nil))
+            XCTAssertNil(storage.attribute(.underlineStyle, at: location, effectiveRange: nil))
+        }
+        let listStyle = try XCTUnwrap(
+            storage.attribute(.paragraphStyle, at: offset(of: "- item"), effectiveRange: nil)
+                as? NSParagraphStyle
+        )
+        XCTAssertEqual(listStyle.firstLineHeadIndent, 0)
+    }
+
+    func testSourceFileUsesFixedWidthTypographyWithoutMarkdownRendering() throws {
+        let text = "# Heading\n- item\n```swift\nlet value = 1\n```\n[link](https://example.com)\n"
+        makeFileEditor(text, mode: .source("swift"))
+
+        XCTAssertEqual(storage.string, text)
+        storage.enumerateAttribute(
+            .font, in: NSRange(location: 0, length: storage.length)
+        ) { value, _, _ in
+            XCTAssertEqual(value as? NSFont, InkStyle.codeFont)
+            XCTAssertTrue((value as? NSFont)?.isFixedPitch == true)
+        }
+        let fence = offset(of: "```swift")
+        XCTAssertEqual(
+            try XCTUnwrap(storage.attribute(.foregroundColor, at: fence, effectiveRange: nil) as? NSColor),
+            NSColor.labelColor
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(storage.attribute(.backgroundColor, at: fence, effectiveRange: nil) as? NSColor),
+            NSColor.clear
+        )
+        XCTAssertNil(storage.attribute(.link, at: offset(of: "[link]"), effectiveRange: nil))
+        XCTAssertEqual(foreground(of: "let"), InkStyle.tokenColor(.keyword))
+    }
+
+    func testUnsupportedSourceLanguageIsFixedWidthAndUncolored() throws {
+        let text = "# Heading\n```kotlin\nfun answer() = 42\n```\n[link](https://example.com)\n"
+        makeFileEditor(text, mode: .source("kotlin"))
+
+        storage.enumerateAttributes(
+            in: NSRange(location: 0, length: storage.length)
+        ) { attributes, _, _ in
+            XCTAssertEqual(attributes[.font] as? NSFont, InkStyle.codeFont)
+            XCTAssertEqual(attributes[.foregroundColor] as? NSColor, NSColor.labelColor)
+            XCTAssertEqual(attributes[.backgroundColor] as? NSColor, NSColor.clear)
+            XCTAssertNil(attributes[.link])
+            XCTAssertNil(attributes[.underlineStyle])
+        }
     }
 
     func testASwiftFenceColorsItsKeywordsStringsCommentsAndNumbers() {
