@@ -283,7 +283,7 @@ final class PageModelPreviewRenderingTests: XCTestCase {
 
         var count = 0
         let token = NotificationCenter.default.addObserver(
-            forName: PageModel.previewRenderingDidChangeNotification,
+            forName: PageModel.quietRenderingsDidInvalidateNotification,
             object: model,
             queue: nil
         ) { _ in count += 1 }

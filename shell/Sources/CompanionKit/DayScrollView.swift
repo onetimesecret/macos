@@ -315,15 +315,16 @@ final class DayStackView: NSView {
             name: NSView.boundsDidChangeNotification,
             object: clip
         )
-        // The preview-rendering scope is a preference the model already
-        // clears its quiet cache under; the roll picks up the change by
-        // reseeding every visible region from the model, and the
-        // coordinator restyles the mounted page on its own published
-        // side. Registered by selector so it retires with the view.
+        // A rendering dependency moved under a page whose contents did
+        // not change (preview scope, syntax highlighting, typeface); the
+        // model has already dropped its quiet cache, and the roll picks
+        // up the change by reseeding every visible region. The mounted
+        // page is restyled by the coordinator on its own published side.
+        // Registered by selector so it retires with the view.
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(previewRenderingChanged),
-            name: PageModel.previewRenderingDidChangeNotification,
+            selector: #selector(quietRenderingsInvalidated),
+            name: PageModel.quietRenderingsDidInvalidateNotification,
             object: model
         )
     }
@@ -360,11 +361,12 @@ final class DayStackView: NSView {
         publishGeometry()
     }
 
-    /// The preview-rendering scope moved. Every quiet region still on
-    /// screen belongs to a page whose cached rendering the model has
-    /// already dropped, so a fresh call to `quietRendering(for:)` builds
-    /// under the new preference and is handed back through `reseed`.
-    @objc private func previewRenderingChanged(_ notification: Notification) {
+    /// A rendering dependency moved (preview scope, syntax highlighting,
+    /// typeface). Every quiet region still on screen belongs to a page
+    /// whose cached rendering the model has already dropped, so a fresh
+    /// call to `quietRendering(for:)` builds under the new preference
+    /// and is handed back through `reseed`.
+    @objc private func quietRenderingsInvalidated(_ notification: Notification) {
         refreshQuietRegions()
     }
 

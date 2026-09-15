@@ -562,7 +562,14 @@ public final class PageModel: ObservableObject {
     /// Whether explicit fence labels color recognized source tokens. This is
     /// presentation only; fixed-width code typography remains when it is off.
     @Published public var syntaxHighlightingEnabled: Bool {
-        didSet { defaults.set(syntaxHighlightingEnabled, forKey: Self.syntaxHighlightingKey) }
+        didSet {
+            guard syntaxHighlightingEnabled != oldValue else { return }
+            defaults.set(syntaxHighlightingEnabled, forKey: Self.syntaxHighlightingKey)
+            // Quiet renderings baked the old token colors into their
+            // attributes; a live-mounted page is restyled by the coordinator
+            // on its own published side.
+            invalidateQuietRenderings()
+        }
     }
     private static let syntaxHighlightingKey = "syntaxHighlightingEnabled"
 
@@ -579,19 +586,17 @@ public final class PageModel: ObservableObject {
             defaults.set(previewRendering.rawValue, forKey: Self.previewRenderingKey)
             // Any cached quiet ink was built to the old scope, so drop the
             // lot: the next reader rebuilds them under the new preference.
-            quietRenderings.removeAll()
-            NotificationCenter.default.post(
-                name: Self.previewRenderingDidChangeNotification, object: self
-            )
+            invalidateQuietRenderings()
         }
     }
     private static let previewRenderingKey = "previewRendering"
 
-    /// Posted when `previewRendering` moves. The roll listens so every
-    /// visible quiet region is reseeded from the model at once, and the
-    /// coordinator restyles the mounted page.
-    public static let previewRenderingDidChangeNotification =
-        Notification.Name("PageModel.previewRenderingDidChange")
+    /// Posted when a rendering dependency (preview scope, syntax highlighting,
+    /// typeface) moves and the quiet cache has been dropped. The roll listens
+    /// so every visible quiet region is reseeded from the model at once, and
+    /// the coordinator restyles the mounted page on its own published side.
+    public static let quietRenderingsDidInvalidateNotification =
+        Notification.Name("PageModel.quietRenderingsDidInvalidate")
 
     /// Whether detector-backed suggestions and automatic paste recognition may
     /// run. Off by default while detection remains an explicit opt-in.
@@ -677,7 +682,19 @@ public final class PageModel: ObservableObject {
     /// mistake `showsTimeUnits` refuses.
     private func applyTypeface() {
         InkStyle.typeface = typeface
+        invalidateQuietRenderings()
+    }
+
+    /// Drop every cached quiet rendering and tell the roll so it reseeds
+    /// its visible regions from the model at once. Called whenever a
+    /// rendering dependency moves under a page whose contents have not
+    /// changed: preview scope, syntax-highlighting, typeface. Per-page
+    /// content edits go through `invalidateQuietRendering(for:)` instead.
+    private func invalidateQuietRenderings() {
         quietRenderings.removeAll()
+        NotificationCenter.default.post(
+            name: Self.quietRenderingsDidInvalidateNotification, object: self
+        )
     }
 
     /// Whether a rung, when applied, rounds its deadline up to the next
