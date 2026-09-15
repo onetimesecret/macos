@@ -3913,18 +3913,20 @@ public enum InkStyle {
     /// into a document of boxes.
     public static let codeBackground = NSColor.quaternaryLabelColor
 
-    /// What each kind of token wears inside a fence, and the only place
-    /// these four colors are written down, so a test can assert them and
-    /// dark mode costs nothing: every one is a system color that already
-    /// knows both appearances. Color is the whole of token styling. The
-    /// surrounding code range keeps `codeFont`, so coloring cannot change
-    /// metrics, wrapping, caret geometry, or bytes.
+    /// What each kind of token wears inside a fence. The four inks are
+    /// written down once, in Theme.swift beside ember, as dynamic
+    /// colours darkened or lightened from the system hues until each
+    /// clears 4.5:1 on the fence wash in its appearance (D-06); a test
+    /// measures them rather than naming them. Color is the whole of
+    /// token styling. The surrounding code range keeps `codeFont`, so
+    /// coloring cannot change metrics, wrapping, caret geometry, or
+    /// bytes.
     public nonisolated static func tokenColor(_ kind: CodeInk.TokenKind) -> NSColor {
         switch kind {
-        case .keyword: NSColor.systemPurple
-        case .string: NSColor.systemRed
-        case .comment: NSColor.secondaryLabelColor
-        case .number: NSColor.systemBlue
+        case .keyword: NSColor.inkKeyword
+        case .string: NSColor.inkString
+        case .comment: NSColor.inkComment
+        case .number: NSColor.inkNumber
         }
     }
 

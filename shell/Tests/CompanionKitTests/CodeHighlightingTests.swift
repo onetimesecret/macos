@@ -132,13 +132,31 @@ final class FenceLanguageTests: XCTestCase {
         XCTAssertNil(scanner.fenceLanguage)
     }
 
-    /// The colors live in one place so a test can name them and dark
-    /// mode costs nothing: every one is a system color.
-    func testTheFourColorsAreFixedInOnePlace() {
-        XCTAssertEqual(InkStyle.tokenColor(.keyword), NSColor.systemPurple)
-        XCTAssertEqual(InkStyle.tokenColor(.string), NSColor.systemRed)
-        XCTAssertEqual(InkStyle.tokenColor(.comment), NSColor.secondaryLabelColor)
-        XCTAssertEqual(InkStyle.tokenColor(.number), NSColor.systemBlue)
+    /// The colours live in one place, Theme.swift, and the editor
+    /// reads them from there: each kind maps to its ink token and the
+    /// four are distinct from each other. What the tokens measure
+    /// against the wash is ThemeContrastTests' question (D-06).
+    func testTheFourColoursComeFromTheTheme() {
+        XCTAssertEqual(InkStyle.tokenColor(.keyword), NSColor.inkKeyword)
+        XCTAssertEqual(InkStyle.tokenColor(.string), NSColor.inkString)
+        XCTAssertEqual(InkStyle.tokenColor(.comment), NSColor.inkComment)
+        XCTAssertEqual(InkStyle.tokenColor(.number), NSColor.inkNumber)
+    }
+
+    /// Each token clears the record's bar against the wash it is drawn
+    /// on, under both appearances, measured rather than named.
+    func testTokenColoursClearFourPointFiveAgainstTheFenceWash() {
+        for kind in [CodeInk.TokenKind.keyword, .string, .comment, .number] {
+            for appearance in ThemeContrastTests.appearances {
+                for (backingName, layers) in ThemeContrastTests.fenceWashes {
+                    let ratio = ThemeContrastTests.contrastRatio(
+                        InkStyle.tokenColor(kind), over: layers, appearance: appearance)
+                    XCTAssertGreaterThanOrEqual(
+                        ratio, ThemeContrastTests.bar,
+                        "\(kind) on \(backingName) under \(appearance.rawValue) reads \(ratio):1")
+                }
+            }
+        }
     }
 }
 

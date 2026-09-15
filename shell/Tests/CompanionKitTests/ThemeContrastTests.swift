@@ -54,10 +54,18 @@ final class ThemeContrastTests: XCTestCase {
     static func contrastRatio(
         _ ink: NSColor, on backing: NSColor, appearance name: NSAppearance.Name
     ) -> CGFloat {
+        contrastRatio(ink, over: [backing], appearance: name)
+    }
+
+    /// The same, over a stack of layers laid bottom to top, for an ink
+    /// drawn on a translucent wash that itself sits on the page.
+    static func contrastRatio(
+        _ ink: NSColor, over layers: [NSColor], appearance name: NSAppearance.Name
+    ) -> CGFloat {
         let appearance = NSAppearance(named: name)!
         var ratio: CGFloat = 0
         appearance.performAsCurrentDrawingAppearance {
-            let ground = composite(backing, over: .white)
+            let ground = layers.reduce(NSColor.white) { composite($1, over: $0) }
             let figure = composite(ink, over: ground)
             let lighter = max(relativeLuminance(figure), relativeLuminance(ground))
             let darker = min(relativeLuminance(figure), relativeLuminance(ground))
@@ -76,6 +84,14 @@ final class ThemeContrastTests: XCTestCase {
     static let backings: [(String, NSColor)] = [
         ("page", .windowBackgroundColor),
         ("card", .controlBackgroundColor),
+    ]
+
+    /// The fence wash as the eye sees it: the editor's translucent
+    /// `codeBackground` laid on each of the two backings, bottom first.
+    /// Token ink is drawn on this and nowhere else.
+    static let fenceWashes: [(String, [NSColor])] = [
+        ("the fence wash on the page", [.windowBackgroundColor, InkStyle.codeBackground]),
+        ("the fence wash on the card", [.controlBackgroundColor, InkStyle.codeBackground]),
     ]
 
     /// Asserts `ink` clears the bar on every backing in both
@@ -166,5 +182,56 @@ final class ThemeContrastTests: XCTestCase {
         // reason the second token is there at all.
         let fill = NSColor(srgbHex: 0xDC4A22)
         XCTAssertLessThan(Self.contrastRatio(fill, on: .white, appearance: .aqua), Self.bar)
+    }
+
+    // MARK: The fence token ramp (D-06)
+
+    /// Each of the four inks clears the bar on the wash it is drawn on,
+    /// under both appearances. The message names the pair that missed.
+    func testTheFourTokenInksClearTheBarOnTheFenceWash() {
+        let inks: [(String, NSColor)] = [
+            ("the keyword ink", .inkKeyword),
+            ("the string ink", .inkString),
+            ("the comment ink", .inkComment),
+            ("the number ink", .inkNumber),
+        ]
+        for (inkName, ink) in inks {
+            for appearance in Self.appearances {
+                for (washName, layers) in Self.fenceWashes {
+                    let ratio = Self.contrastRatio(ink, over: layers, appearance: appearance)
+                    XCTAssertGreaterThanOrEqual(
+                        ratio, Self.bar,
+                        "\(inkName) on \(washName) under \(appearance.rawValue) reads \(ratio):1")
+                }
+            }
+        }
+    }
+
+    /// The system hues the ramp descends from do not clear the wash,
+    /// which is the whole reason the ramp exists rather than the hues.
+    func testTheSystemHuesThemselvesMissTheWashUnderLight() {
+        for hue in [NSColor.systemPurple, .systemRed, .systemBlue] {
+            let ratio = Self.contrastRatio(
+                hue, over: Self.fenceWashes[0].1, appearance: .aqua)
+            XCTAssertLessThan(ratio, Self.bar)
+        }
+    }
+
+    /// The four are told apart by hue, not only by depth: no two share
+    /// a shade in either appearance. A ramp that darkened them into one
+    /// grey would pass the bar and lose the point of colouring.
+    func testTheFourTokenInksStayDistinct() {
+        for appearance in Self.appearances {
+            NSAppearance(named: appearance)!.performAsCurrentDrawingAppearance {
+                let shades = [NSColor.inkKeyword, .inkString, .inkComment, .inkNumber]
+                    .map { Self.composite($0, over: .white) }
+                    .map { [$0.redComponent, $0.greenComponent, $0.blueComponent] }
+                for i in shades.indices {
+                    for j in shades.indices where j > i {
+                        XCTAssertNotEqual(shades[i], shades[j])
+                    }
+                }
+            }
+        }
     }
 }
