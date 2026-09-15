@@ -9,8 +9,12 @@ publish = false
 
 [dependencies]
 betlang = "=0.1.1"
+companion-language-detection-policy = { path = "../../crates/language-detection-policy" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+companion-core = { path = "../../crates/core" }
 
 [lints]
 workspace = true

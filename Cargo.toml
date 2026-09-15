@@ -13,6 +13,7 @@ members = [
   "crates/core",
   "crates/credentials",
   "crates/ffi",
+  "crates/language-detection-policy",
   "crates/ots-client",
   "crates/pasteboard",
   "crates/sync",

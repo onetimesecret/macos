@@ -145,6 +145,7 @@ version = "0.22.0"
 dependencies = [
  "betlang",
  "companion-credentials",
+ "companion-language-detection-policy",
  "companion-pasteboard",
  "companion-transport",
  "getrandom 0.2.17",
@@ -182,6 +183,10 @@ dependencies = [
  "serde_json",
  "zeroize",
 ]
+
+[[package]]
+name = "companion-language-detection-policy"
+version = "0.1.0"
 
 [[package]]
 name = "companion-pasteboard"
@@ -595,6 +600,8 @@ name = "language-eval"
 version = "0.1.0"
 dependencies = [
  "betlang",
+ "companion-core",
+ "companion-language-detection-policy",
  "serde",
  "serde_json",
 ]

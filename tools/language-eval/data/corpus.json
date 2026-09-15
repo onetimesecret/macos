@@ -272,14 +272,14 @@
       "split": "holdout",
       "count": 1200,
       "start_index": 600,
-      "generator": "dedicated_paste_negative"
+      "generator": "independent_holdout_paste_negative"
     },
     {
       "id_prefix": "holdout-paste-code",
       "split": "holdout",
       "count": 120,
       "start_index": 120,
-      "generator": "paste_code"
+      "generator": "independent_holdout_paste_code"
     }
   ]
 }

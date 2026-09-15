@@ -2,7 +2,7 @@
 
 `language-eval` is a maintained, non-shipping Rust workspace tool for measuring the registry artifact `betlang = "=0.1.1"` against deterministic synthetic clipboard-shaped inputs. It is not linked by any shipping crate or the macOS app.
 
-The corpus contains synthetic examples only. Do not add private data or user clipboard contents. Tune and holdout cases use disjoint explicit examples and generated serial ranges; use tune results when changing thresholds and reserve holdout results for evaluation. The harness rejects duplicate IDs, duplicate expanded inputs, and exact input overlap between splits.
+The corpus contains synthetic examples only. Do not add private data or user clipboard contents. Tune and holdout use different generator implementations as well as disjoint explicit examples; the holdout negatives use compositional text/list/URL inputs rather than serial-number changes to tuning templates. The harness rejects duplicate IDs, duplicate expanded inputs, and exact input overlap between splits. These controls reduce direct split correlation but do not make generated cases representative of production clipboard content.
 
 `data/zed-baseline.json` is explicitly labeled as the Zed external starting baseline. It sets 20 non-whitespace bytes, a 0.20 top score, and a 0.20 top-two margin. It is not a Companion-selected threshold. `data/tuned-candidate.json` records the candidate selected from the 2026-09-14 tuning run; it failed holdout and is not approved for production. `maximum_input_bytes` remains configurable.
 
@@ -22,7 +22,20 @@ cargo run --release -p language-eval -- evaluate \
   --warm-iterations 100
 ```
 
-`--split` accepts `all`, `tune`, or `holdout`. Output consists of `cases.jsonl`, `report.json`, and `report.md`. The generated `output/` directory is ignored by Git. Selected summary snapshots are committed under `reports/`; regenerate `cases.jsonl` from the identified corpus and configuration when raw ranked values are needed.
+`--split` accepts `all`, `tune`, or `holdout`. Output consists of `cases.jsonl`, `report.json`, and `report.md`. The generated `output/` directory is ignored by Git. Evidence snapshots, including the raw rankings used for threshold selection and the final diagnostic runs, are committed under `reports/2026-09-14/`.
+
+Reproduce the committed threshold grid and verify that it selects `data/tuned-candidate.json`:
+
+```sh
+python3 tools/language-eval/select-thresholds.py \
+  --cases tools/language-eval/reports/2026-09-14/selection/baseline-tune-cases.jsonl \
+  --grid tools/language-eval/data/threshold-grid.json \
+  --output /tmp/threshold-selection.json \
+  --markdown-output /tmp/threshold-selection.md \
+  --expect-candidate tools/language-eval/data/tuned-candidate.json
+```
+
+The selection calculation is now reproducible. Repository artifacts cannot retroactively prove that the original holdout was untouched before the candidate was selected; the evaluation record states this limitation.
 
 ## Interpretation and limitations
 

@@ -1,7 +1,8 @@
 THIRD-PARTY NOTICES
 
-This file contains notices for Betlang 0.1.1 and its embedded student model.
-It does not replace notices required for other third-party components.
+This file contains notices for Betlang 0.1.1, its embedded student model, and
+Betlang's resolved runtime dependency fearless_simd 0.4.0. It does not replace
+notices required for other third-party components.
 
 RELEASE STATUS — UNRESOLVED MODEL-WEIGHT LICENSING
 
@@ -285,3 +286,50 @@ repository revision:
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+===============================================================================
+fearless_simd 0.4.0
+===============================================================================
+
+Package: https://crates.io/crates/fearless_simd/0.4.0
+Dependency path: betlang 0.1.1 -> fearless_simd 0.4.0
+Registry package checksum SHA-256:
+76258897e51fd156ee03b6246ea53f3e0eb395d0b327e9961c4fc4c8b2fa151a
+Upstream: https://github.com/linebender/fearless_simd
+Upstream revision recorded in the published package:
+c3632abfdbe3357ddb68496f9c4dd001ff13e218
+Published license expression: Apache-2.0 OR MIT
+License text reproduced here: MIT
+
+The fearless_simd 0.4.0 package contains LICENSE-MIT and LICENSE-APACHE. It
+contains no NOTICE file. Reproducing the MIT option here records the selected
+redistribution notice; it is not a legal conclusion about unrelated materials.
+
+The following is the exact LICENSE-MIT text included in the fearless_simd 0.4.0
+crates.io package:
+
+Copyright (c) 2018 Raph Levien
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,12 @@
+{
+  "minimum_non_whitespace_bytes": [20],
+  "minimum_top_score": [0.2, 0.3, 0.4, 0.5, 0.6],
+  "minimum_top_two_margin": [0.2, 0.3, 0.4],
+  "maximum_input_bytes": 4194304,
+  "selection": {
+    "minimum_automatic_paste_precision": 0.99,
+    "maximum_dedicated_paste_negative_conversions": 0,
+    "require_automatic_paste_conversion": true,
+    "objective": "maximize_automatic_paste_useful_code_coverage"
+  }
+}
