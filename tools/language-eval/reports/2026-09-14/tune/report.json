@@ -1,0 +1,2658 @@
+{
+  "schema_version": 4,
+  "split": "tune",
+  "thresholds": {
+    "minimum_non_whitespace_bytes": 20,
+    "minimum_top_score": 0.4,
+    "minimum_top_two_margin": 0.2,
+    "maximum_input_bytes": 4194304
+  },
+  "metadata": {
+    "os": "macos",
+    "arch": "aarch64",
+    "profile": "release",
+    "package": "language-eval 0.1.0",
+    "executable_size_bytes": 742608,
+    "process_max_rss_whole_process_proxy": {
+      "metric": "maximum resident set size (whole-process proxy)",
+      "bytes": 6864896,
+      "source": "/usr/bin/time"
+    },
+    "artifact": {
+      "betlang_version": "0.1.1",
+      "registry_crate_checksum_sha256": "5f89b0929539eaee70109704ae4e345df438be6ab02e4dc8ac060e05098ad1b7",
+      "vcs_revision": "13b5cbf7b934fdbd4be0bb7437faeb03124700de",
+      "model_sha256": "8493d2d3757572c8661141e414b1c0755aa08d4c4e5382dfbbc6b73b02d89083",
+      "model_size_bytes": 47840,
+      "verification": "recorded registry artifact metadata; not re-verified at runtime"
+    }
+  },
+  "automatic_paste_gate": {
+    "status": "insufficient_evidence",
+    "requirements": [
+      "at least 99% automatic-paste code precision on held-out conversions",
+      "zero conversions over at least 1,000 dedicated prose/list/URL paste negatives",
+      "report useful-code coverage and uncertainty",
+      "at least one automatic paste conversion (all-abstain is forbidden)"
+    ],
+    "reasons": [
+      "the gate can be concluded only from the holdout split"
+    ]
+  },
+  "metrics": {
+    "total_cases": 734,
+    "eligible_cases": 733,
+    "useful_code_cases": 125,
+    "eligible_useful_code_cases": 125,
+    "accepted_cases": 246,
+    "accepted_precision": {
+      "numerator": 113,
+      "denominator": 246,
+      "rate": 0.45934959349593496,
+      "wilson_95_percent": {
+        "lower": 0.3981775327012739,
+        "upper": 0.5217717019277412
+      }
+    },
+    "exact_label_precision_where_defined": {
+      "numerator": 107,
+      "denominator": 113,
+      "rate": 0.9469026548672568,
+      "wilson_95_percent": {
+        "lower": 0.8889787873352814,
+        "upper": 0.9754404095783368
+      }
+    },
+    "useful_code_coverage": {
+      "numerator": 113,
+      "denominator": 125,
+      "rate": 0.904,
+      "wilson_95_percent": {
+        "lower": 0.8396803879985666,
+        "upper": 0.9442287738851058
+      }
+    },
+    "exact_useful_code_coverage": {
+      "numerator": 107,
+      "denominator": 125,
+      "rate": 0.856,
+      "wilson_95_percent": {
+        "lower": 0.7838403899326721,
+        "upper": 0.9069310497469996
+      }
+    },
+    "abstention": {
+      "numerator": 488,
+      "denominator": 734,
+      "rate": 0.6648501362397821,
+      "wilson_95_percent": {
+        "lower": 0.6299207966347898,
+        "upper": 0.6980629417509511
+      }
+    },
+    "negative_false_conversions": {
+      "numerator": 133,
+      "denominator": 609,
+      "rate": 0.21839080459770116,
+      "wilson_95_percent": {
+        "lower": 0.18739800095343967,
+        "upper": 0.25291401602393115
+      }
+    },
+    "automatic_paste_conversions": 111,
+    "automatic_paste_precision": {
+      "numerator": 110,
+      "denominator": 111,
+      "rate": 0.990990990990991,
+      "wilson_95_percent": {
+        "lower": 0.950726667364727,
+        "upper": 0.9984079145129328
+      }
+    },
+    "automatic_paste_useful_code_coverage": {
+      "numerator": 110,
+      "denominator": 122,
+      "rate": 0.9016393442622952,
+      "wilson_95_percent": {
+        "lower": 0.8359226807162072,
+        "upper": 0.942834979266389
+      }
+    },
+    "dedicated_paste_negative_conversions": {
+      "numerator": 0,
+      "denominator": 603,
+      "rate": 0.0,
+      "wilson_95_percent": {
+        "lower": 0.0,
+        "upper": 0.006330251113955574
+      }
+    }
+  },
+  "by_surface": {
+    "fence": {
+      "total_cases": 3,
+      "eligible_cases": 3,
+      "useful_code_cases": 2,
+      "eligible_useful_code_cases": 2,
+      "accepted_cases": 3,
+      "accepted_precision": {
+        "numerator": 2,
+        "denominator": 3,
+        "rate": 0.6666666666666666,
+        "wilson_95_percent": {
+          "lower": 0.2076596008020477,
+          "upper": 0.9385080552796036
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 2,
+        "denominator": 2,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.34238022750665303,
+          "upper": 1.0
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 2,
+        "denominator": 2,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.34238022750665303,
+          "upper": 1.0
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 2,
+        "denominator": 2,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.34238022750665303,
+          "upper": 1.0
+        }
+      },
+      "abstention": {
+        "numerator": 0,
+        "denominator": 3,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.5614970317550454
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "file": {
+      "total_cases": 3,
+      "eligible_cases": 2,
+      "useful_code_cases": 1,
+      "eligible_useful_code_cases": 1,
+      "accepted_cases": 1,
+      "accepted_precision": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "abstention": {
+        "numerator": 2,
+        "denominator": 3,
+        "rate": 0.6666666666666666,
+        "wilson_95_percent": {
+          "lower": 0.2076596008020477,
+          "upper": 0.9385080552796036
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 2,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.6576197724933469
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "paste": {
+      "total_cases": 728,
+      "eligible_cases": 728,
+      "useful_code_cases": 122,
+      "eligible_useful_code_cases": 122,
+      "accepted_cases": 242,
+      "accepted_precision": {
+        "numerator": 110,
+        "denominator": 242,
+        "rate": 0.4545454545454546,
+        "wilson_95_percent": {
+          "lower": 0.39300895707094574,
+          "upper": 0.5175024753557312
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 104,
+        "denominator": 110,
+        "rate": 0.9454545454545454,
+        "wilson_95_percent": {
+          "lower": 0.8860821392400117,
+          "upper": 0.9747641729488964
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 110,
+        "denominator": 122,
+        "rate": 0.9016393442622952,
+        "wilson_95_percent": {
+          "lower": 0.8359226807162072,
+          "upper": 0.942834979266389
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 104,
+        "denominator": 122,
+        "rate": 0.8524590163934426,
+        "wilson_95_percent": {
+          "lower": 0.7788100522620708,
+          "upper": 0.90458952690633
+        }
+      },
+      "abstention": {
+        "numerator": 486,
+        "denominator": 728,
+        "rate": 0.6675824175824175,
+        "wilson_95_percent": {
+          "lower": 0.6325616161749569,
+          "upper": 0.7008439282351494
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 132,
+        "denominator": 606,
+        "rate": 0.21782178217821785,
+        "wilson_95_percent": {
+          "lower": 0.18679112638733875,
+          "upper": 0.2524073815964305
+        }
+      },
+      "automatic_paste_conversions": 111,
+      "automatic_paste_precision": {
+        "numerator": 110,
+        "denominator": 111,
+        "rate": 0.990990990990991,
+        "wilson_95_percent": {
+          "lower": 0.950726667364727,
+          "upper": 0.9984079145129328
+        }
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 110,
+        "denominator": 122,
+        "rate": 0.9016393442622952,
+        "wilson_95_percent": {
+          "lower": 0.8359226807162072,
+          "upper": 0.942834979266389
+        }
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 603,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.006330251113955574
+        }
+      }
+    }
+  },
+  "by_kind": {
+    "binary": {
+      "total_cases": 1,
+      "eligible_cases": 0,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 0,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "code": {
+      "total_cases": 124,
+      "eligible_cases": 124,
+      "useful_code_cases": 124,
+      "eligible_useful_code_cases": 124,
+      "accepted_cases": 112,
+      "accepted_precision": {
+        "numerator": 112,
+        "denominator": 112,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.9668386529330562,
+          "upper": 1.0
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 106,
+        "denominator": 112,
+        "rate": 0.9464285714285714,
+        "wilson_95_percent": {
+          "lower": 0.8880297362776991,
+          "upper": 0.975219060983958
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 112,
+        "denominator": 124,
+        "rate": 0.9032258064516128,
+        "wilson_95_percent": {
+          "lower": 0.8384470662529209,
+          "upper": 0.9437717923433068
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 106,
+        "denominator": 124,
+        "rate": 0.8548387096774194,
+        "wilson_95_percent": {
+          "lower": 0.7821891669914196,
+          "upper": 0.9061634285732608
+        }
+      },
+      "abstention": {
+        "numerator": 12,
+        "denominator": 124,
+        "rate": 0.0967741935483871,
+        "wilson_95_percent": {
+          "lower": 0.056228207656693285,
+          "upper": 0.16155293374707905
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_conversions": 110,
+      "automatic_paste_precision": {
+        "numerator": 110,
+        "denominator": 110,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.9662560647018358,
+          "upper": 1.0
+        }
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 110,
+        "denominator": 122,
+        "rate": 0.9016393442622952,
+        "wilson_95_percent": {
+          "lower": 0.8359226807162072,
+          "upper": 0.942834979266389
+        }
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "config-shaped": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 0,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "credential-shaped": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 1,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "automatic_paste_conversions": 1,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "list": {
+      "total_cases": 201,
+      "eligible_cases": 201,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 106,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 106,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.034972758573472214
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 95,
+        "denominator": 201,
+        "rate": 0.472636815920398,
+        "wilson_95_percent": {
+          "lower": 0.4047792595695876,
+          "upper": 0.5415206737382066
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 106,
+        "denominator": 201,
+        "rate": 0.527363184079602,
+        "wilson_95_percent": {
+          "lower": 0.45847932626179344,
+          "upper": 0.5952207404304124
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 201,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.01875332680605788
+        }
+      }
+    },
+    "log": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 0,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "malformed-code": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 1,
+      "eligible_useful_code_cases": 1,
+      "accepted_cases": 1,
+      "accepted_precision": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "abstention": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "markdown": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 1,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "mixed": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 0,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "prose": {
+      "total_cases": 201,
+      "eligible_cases": 201,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 25,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 25,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.13319225093904846
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 176,
+        "denominator": 201,
+        "rate": 0.8756218905472637,
+        "wilson_95_percent": {
+          "lower": 0.8228392218649249,
+          "upper": 0.9143162390917182
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 25,
+        "denominator": 201,
+        "rate": 0.12437810945273632,
+        "wilson_95_percent": {
+          "lower": 0.08568376090828181,
+          "upper": 0.1771607781350751
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 201,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.01875332680605788
+        }
+      }
+    },
+    "url": {
+      "total_cases": 201,
+      "eligible_cases": 201,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 0,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 201,
+        "denominator": 201,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.981246673193942,
+          "upper": 1.0
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 201,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.01875332680605788
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 201,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.01875332680605788
+        }
+      }
+    }
+  },
+  "by_length_band": {
+    "020-079": {
+      "total_cases": 445,
+      "eligible_cases": 444,
+      "useful_code_cases": 41,
+      "eligible_useful_code_cases": 41,
+      "accepted_cases": 147,
+      "accepted_precision": {
+        "numerator": 41,
+        "denominator": 147,
+        "rate": 0.2789115646258503,
+        "wilson_95_percent": {
+          "lower": 0.2127534510745994,
+          "upper": 0.3563305361250618
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 41,
+        "denominator": 41,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.914332429815568,
+          "upper": 1.0
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 41,
+        "denominator": 41,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.914332429815568,
+          "upper": 1.0
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 41,
+        "denominator": 41,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.914332429815568,
+          "upper": 1.0
+        }
+      },
+      "abstention": {
+        "numerator": 298,
+        "denominator": 445,
+        "rate": 0.6696629213483146,
+        "wilson_95_percent": {
+          "lower": 0.6246746850442002,
+          "upper": 0.7117470002358184
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 106,
+        "denominator": 404,
+        "rate": 0.2623762376237624,
+        "wilson_95_percent": {
+          "lower": 0.22186029131479051,
+          "upper": 0.30736854050828305
+        }
+      },
+      "automatic_paste_conversions": 40,
+      "automatic_paste_precision": {
+        "numerator": 40,
+        "denominator": 40,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.9123783988027137,
+          "upper": 1.0
+        }
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 40,
+        "denominator": 40,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.9123783988027137,
+          "upper": 1.0
+        }
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 402,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.00946541743629827
+        }
+      }
+    },
+    "080-255": {
+      "total_cases": 289,
+      "eligible_cases": 289,
+      "useful_code_cases": 84,
+      "eligible_useful_code_cases": 84,
+      "accepted_cases": 99,
+      "accepted_precision": {
+        "numerator": 72,
+        "denominator": 99,
+        "rate": 0.7272727272727273,
+        "wilson_95_percent": {
+          "lower": 0.6322907548010729,
+          "upper": 0.8052759669862785
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 66,
+        "denominator": 72,
+        "rate": 0.9166666666666666,
+        "wilson_95_percent": {
+          "lower": 0.8298764477932348,
+          "upper": 0.9612475750430504
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 72,
+        "denominator": 84,
+        "rate": 0.8571428571428571,
+        "wilson_95_percent": {
+          "lower": 0.7666989708237691,
+          "upper": 0.9163497945943307
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 66,
+        "denominator": 84,
+        "rate": 0.7857142857142857,
+        "wilson_95_percent": {
+          "lower": 0.6865066777843957,
+          "upper": 0.8599323345500843
+        }
+      },
+      "abstention": {
+        "numerator": 190,
+        "denominator": 289,
+        "rate": 0.657439446366782,
+        "wilson_95_percent": {
+          "lower": 0.6009813454852546,
+          "upper": 0.7097670040362487
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 27,
+        "denominator": 205,
+        "rate": 0.13170731707317074,
+        "wilson_95_percent": {
+          "lower": 0.09211952018650224,
+          "upper": 0.1848439675583104
+        }
+      },
+      "automatic_paste_conversions": 71,
+      "automatic_paste_precision": {
+        "numerator": 70,
+        "denominator": 71,
+        "rate": 0.9859154929577464,
+        "wilson_95_percent": {
+          "lower": 0.92443949479751,
+          "upper": 0.9975093967294558
+        }
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 70,
+        "denominator": 82,
+        "rate": 0.8536585365853658,
+        "wilson_95_percent": {
+          "lower": 0.7614058151019909,
+          "upper": 0.9142583778976944
+        }
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 201,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.01875332680605788
+        }
+      }
+    }
+  },
+  "confusion_matrix": {
+    "__negative__:binary": {
+      "__abstain__": 1
+    },
+    "__negative__:config-shaped": {
+      "__abstain__": 1
+    },
+    "__negative__:credential-shaped": {
+      "yaml": 1
+    },
+    "__negative__:list": {
+      "__abstain__": 95,
+      "markdown": 106
+    },
+    "__negative__:log": {
+      "__abstain__": 1
+    },
+    "__negative__:markdown": {
+      "markdown": 1
+    },
+    "__negative__:mixed": {
+      "__abstain__": 1
+    },
+    "__negative__:prose": {
+      "__abstain__": 176,
+      "markdown": 25
+    },
+    "__negative__:url": {
+      "__abstain__": 201
+    },
+    "go": {
+      "go": 10
+    },
+    "javascript": {
+      "javascript": 11
+    },
+    "json": {
+      "json": 11
+    },
+    "python": {
+      "python": 11
+    },
+    "ruby": {
+      "ruby": 10
+    },
+    "rust": {
+      "__abstain__": 5,
+      "javascript": 6
+    },
+    "shell": {
+      "shell": 10
+    },
+    "sql": {
+      "sql": 11
+    },
+    "swift": {
+      "__abstain__": 6,
+      "swift": 4
+    },
+    "toml": {
+      "toml": 10
+    },
+    "typescript": {
+      "__abstain__": 1,
+      "typescript": 9
+    },
+    "yaml": {
+      "yaml": 10
+    }
+  },
+  "confusion_pairs": {
+    "__negative__:credential-shaped -> yaml": 1,
+    "__negative__:list -> markdown": 106,
+    "__negative__:markdown -> markdown": 1,
+    "__negative__:prose -> markdown": 25,
+    "rust -> __abstain__": 5,
+    "rust -> javascript": 6,
+    "swift -> __abstain__": 6,
+    "typescript -> __abstain__": 1
+  },
+  "detailed_confusion_cases": [
+    {
+      "id": "tune-rust",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "__abstain__",
+      "top_score": 0.24798020720481873
+    },
+    {
+      "id": "tune-list",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.47322362661361694
+    },
+    {
+      "id": "tune-credential",
+      "surface": "paste",
+      "kind": "credential-shaped",
+      "expected": "__negative__:credential-shaped",
+      "outcome": "yaml",
+      "top_score": 0.878070056438446
+    },
+    {
+      "id": "tune-markdown",
+      "surface": "fence",
+      "kind": "markdown",
+      "expected": "__negative__:markdown",
+      "outcome": "markdown",
+      "top_score": 0.927417814731598
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0007",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6066966652870178
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0010",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5461397767066956
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0018",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4645068943500519
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0019",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4187813997268677
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0025",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5011566877365112
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0031",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6433654427528381
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0034",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5875467658042908
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0042",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4279303252696991
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0043",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.44817495346069336
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0049",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5228975415229797
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0055",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6481271982192993
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0058",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5978134274482727
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0066",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.42038071155548096
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0067",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.48015663027763367
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0073",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5397186279296875
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0079",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6574959754943848
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0082",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5871214270591736
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0090",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4379149675369262
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0091",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4843212068080902
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0097",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5581090450286865
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0103",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6521133184432983
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0106",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5925114154815674
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0114",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4335944652557373
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0115",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.465331494808197
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0121",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5307429432868958
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0124",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.41097939014434814
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0127",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6464371085166931
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0130",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6267170310020447
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0138",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4524978697299957
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0139",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.47534018754959106
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0145",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5494332909584045
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0151",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6711094379425049
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0154",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6163243651390076
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0162",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4312043786048889
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0163",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.488442987203598
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0169",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5474846363067627
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0175",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6275784373283386
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0178",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6272264122962952
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0186",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4504595994949341
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0187",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4710208475589752
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0193",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5040957927703857
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0199",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6458613276481628
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0202",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6074053645133972
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0210",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.462139368057251
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0211",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4484408795833587
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0217",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5409756302833557
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0223",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6912714242935181
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0226",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5802969336509705
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0234",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4462191164493561
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0235",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4871406555175781
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0241",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5472965240478516
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0244",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.43033331632614136
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0247",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6551184058189392
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0250",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5906433463096619
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0258",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4573378562927246
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0259",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.47191381454467773
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0271",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6595937609672546
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0274",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.587982714176178
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0282",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4343111515045166
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0283",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5169628262519836
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0289",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5647284388542175
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0292",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4152786135673523
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0295",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.644949197769165
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0298",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.627128541469574
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0306",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4639079570770264
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0307",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4396162033081054
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0313",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5325307250022888
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0316",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4385828375816345
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0319",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6686593890190125
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0322",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5651281476020813
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0330",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.45052582025527954
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0331",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4857289493083954
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0337",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.595495879650116
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0340",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4100668430328369
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0343",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6395602226257324
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0346",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6117695569992065
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0354",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4672157168388366
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0355",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4865698218345642
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0361",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5372253656387329
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0367",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6509540677070618
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0370",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6577433943748474
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0378",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4076457619667053
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0379",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4747244417667389
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0385",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5233933329582214
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0388",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.41050681471824646
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0391",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6390594244003296
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0394",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6365164518356323
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0402",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4558943808078766
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0403",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.45984721183776855
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0415",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.683364987373352
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0418",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5752806067466736
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0426",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4414501488208771
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0433",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.598624050617218
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0436",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4421509802341461
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0439",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6526475548744202
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0442",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.617773711681366
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0450",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4596734941005707
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0451",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4667453169822693
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0457",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5486667156219482
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0460",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.42302995920181274
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0463",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.679070770740509
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0466",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6189499497413635
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0474",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4414317011833191
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0475",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.504994809627533
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0481",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5509713888168335
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0484",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4287084639072418
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0487",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6433380842208862
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0490",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.606676459312439
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0498",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4529672861099243
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0499",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4861961603164673
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0505",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5905067920684814
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0511",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.658236026763916
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0514",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6203143000602722
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0522",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4493610858917236
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0523",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4529241919517517
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0532",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4346827566623688
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0535",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6144186854362488
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0538",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.597088098526001
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0546",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.46056973934173584
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0547",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4645766615867615
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0553",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5319823026657104
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0559",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6320052146911621
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0562",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6219992637634277
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0570",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4209514260292053
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0571",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4626424908638001
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0577",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5788927674293518
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0583",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6281805634498596
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0586",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6216785907745361
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0594",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4482934474945069
+    },
+    {
+      "id": "tune-dedicated-paste-negative-0595",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.499277800321579
+    },
+    {
+      "id": "tune-paste-code-0000",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.5262017250061035
+    },
+    {
+      "id": "tune-paste-code-0004",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.386256605386734
+    },
+    {
+      "id": "tune-paste-code-0012",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.505925178527832
+    },
+    {
+      "id": "tune-paste-code-0016",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.3634582459926605
+    },
+    {
+      "id": "tune-paste-code-0024",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.4993576407432556
+    },
+    {
+      "id": "tune-paste-code-0028",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.3910045325756073
+    },
+    {
+      "id": "tune-paste-code-0036",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "__abstain__",
+      "top_score": 0.4412879645824432
+    },
+    {
+      "id": "tune-paste-code-0048",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "__abstain__",
+      "top_score": 0.4365392029285431
+    },
+    {
+      "id": "tune-paste-code-0060",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.4412996172904968
+    },
+    {
+      "id": "tune-paste-code-0064",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.3514291048049927
+    },
+    {
+      "id": "tune-paste-code-0072",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "__abstain__",
+      "top_score": 0.42019352316856384
+    },
+    {
+      "id": "tune-paste-code-0075",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "typescript",
+      "outcome": "__abstain__",
+      "top_score": 0.4303409159183502
+    },
+    {
+      "id": "tune-paste-code-0076",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.3052063584327698
+    },
+    {
+      "id": "tune-paste-code-0084",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.4397076964378357
+    },
+    {
+      "id": "tune-paste-code-0096",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "__abstain__",
+      "top_score": 0.4382411539554596
+    },
+    {
+      "id": "tune-paste-code-0100",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.38542088866233826
+    },
+    {
+      "id": "tune-paste-code-0108",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.46366605162620544
+    }
+  ],
+  "cold_first_eligible_inference_nanoseconds": 1962375,
+  "warm_latency": {
+    "samples": 100,
+    "p50_nanoseconds": 780084,
+    "p95_nanoseconds": 820375,
+    "p99_nanoseconds": 868041,
+    "max_nanoseconds": 876042
+  }
+}

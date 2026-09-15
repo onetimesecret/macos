@@ -1,0 +1,3899 @@
+{
+  "schema_version": 4,
+  "split": "holdout",
+  "thresholds": {
+    "minimum_non_whitespace_bytes": 20,
+    "minimum_top_score": 0.4,
+    "minimum_top_two_margin": 0.2,
+    "maximum_input_bytes": 4194304
+  },
+  "metadata": {
+    "os": "macos",
+    "arch": "aarch64",
+    "profile": "release",
+    "package": "language-eval 0.1.0",
+    "executable_size_bytes": 742608,
+    "process_max_rss_whole_process_proxy": {
+      "metric": "maximum resident set size (whole-process proxy)",
+      "bytes": 8863744,
+      "source": "/usr/bin/time"
+    },
+    "artifact": {
+      "betlang_version": "0.1.1",
+      "registry_crate_checksum_sha256": "5f89b0929539eaee70109704ae4e345df438be6ab02e4dc8ac060e05098ad1b7",
+      "vcs_revision": "13b5cbf7b934fdbd4be0bb7437faeb03124700de",
+      "model_sha256": "8493d2d3757572c8661141e414b1c0755aa08d4c4e5382dfbbc6b73b02d89083",
+      "model_size_bytes": 47840,
+      "verification": "recorded registry artifact metadata; not re-verified at runtime"
+    }
+  },
+  "automatic_paste_gate": {
+    "status": "fail",
+    "requirements": [
+      "at least 99% automatic-paste code precision on held-out conversions",
+      "zero conversions over at least 1,000 dedicated prose/list/URL paste negatives",
+      "report useful-code coverage and uncertainty",
+      "at least one automatic paste conversion (all-abstain is forbidden)"
+    ],
+    "reasons": [
+      "automatic-paste precision is 115/128; at least 99% required",
+      "12 dedicated negative conversions observed; zero required"
+    ]
+  },
+  "metrics": {
+    "total_cases": 1334,
+    "eligible_cases": 1333,
+    "useful_code_cases": 125,
+    "eligible_useful_code_cases": 125,
+    "accepted_cases": 408,
+    "accepted_precision": {
+      "numerator": 118,
+      "denominator": 408,
+      "rate": 0.28921568627450983,
+      "wilson_95_percent": {
+        "lower": 0.2473488793773185,
+        "upper": 0.33501468233761644
+      }
+    },
+    "exact_label_precision_where_defined": {
+      "numerator": 110,
+      "denominator": 118,
+      "rate": 0.9322033898305084,
+      "wilson_95_percent": {
+        "lower": 0.8719046446836871,
+        "upper": 0.9652488249748348
+      }
+    },
+    "useful_code_coverage": {
+      "numerator": 118,
+      "denominator": 125,
+      "rate": 0.944,
+      "wilson_95_percent": {
+        "lower": 0.8889121558924442,
+        "upper": 0.972611774494562
+      }
+    },
+    "exact_useful_code_coverage": {
+      "numerator": 110,
+      "denominator": 125,
+      "rate": 0.88,
+      "wilson_95_percent": {
+        "lower": 0.8114261894188212,
+        "upper": 0.9259141113628508
+      }
+    },
+    "abstention": {
+      "numerator": 926,
+      "denominator": 1334,
+      "rate": 0.6941529235382309,
+      "wilson_95_percent": {
+        "lower": 0.668898891225833,
+        "upper": 0.7182919799978892
+      }
+    },
+    "negative_false_conversions": {
+      "numerator": 290,
+      "denominator": 1209,
+      "rate": 0.23986765922249792,
+      "wilson_95_percent": {
+        "lower": 0.2166462026402056,
+        "upper": 0.26473696131297275
+      }
+    },
+    "automatic_paste_conversions": 128,
+    "automatic_paste_precision": {
+      "numerator": 115,
+      "denominator": 128,
+      "rate": 0.8984375,
+      "wilson_95_percent": {
+        "lower": 0.8339751366963888,
+        "upper": 0.9396813512731592
+      }
+    },
+    "automatic_paste_useful_code_coverage": {
+      "numerator": 115,
+      "denominator": 122,
+      "rate": 0.9426229508196722,
+      "wilson_95_percent": {
+        "lower": 0.8862911697412956,
+        "upper": 0.9719315575864635
+      }
+    },
+    "dedicated_paste_negative_conversions": {
+      "numerator": 12,
+      "denominator": 1203,
+      "rate": 0.00997506234413965,
+      "wilson_95_percent": {
+        "lower": 0.005715265637582502,
+        "upper": 0.017354424765579773
+      }
+    }
+  },
+  "by_surface": {
+    "fence": {
+      "total_cases": 3,
+      "eligible_cases": 3,
+      "useful_code_cases": 2,
+      "eligible_useful_code_cases": 2,
+      "accepted_cases": 3,
+      "accepted_precision": {
+        "numerator": 2,
+        "denominator": 3,
+        "rate": 0.6666666666666666,
+        "wilson_95_percent": {
+          "lower": 0.2076596008020477,
+          "upper": 0.9385080552796036
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 2,
+        "denominator": 2,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.34238022750665303,
+          "upper": 1.0
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 2,
+        "denominator": 2,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.34238022750665303,
+          "upper": 1.0
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 2,
+        "denominator": 2,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.34238022750665303,
+          "upper": 1.0
+        }
+      },
+      "abstention": {
+        "numerator": 0,
+        "denominator": 3,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.5614970317550454
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "file": {
+      "total_cases": 3,
+      "eligible_cases": 2,
+      "useful_code_cases": 1,
+      "eligible_useful_code_cases": 1,
+      "accepted_cases": 1,
+      "accepted_precision": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "abstention": {
+        "numerator": 2,
+        "denominator": 3,
+        "rate": 0.6666666666666666,
+        "wilson_95_percent": {
+          "lower": 0.2076596008020477,
+          "upper": 0.9385080552796036
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 2,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.6576197724933469
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "paste": {
+      "total_cases": 1328,
+      "eligible_cases": 1328,
+      "useful_code_cases": 122,
+      "eligible_useful_code_cases": 122,
+      "accepted_cases": 404,
+      "accepted_precision": {
+        "numerator": 115,
+        "denominator": 404,
+        "rate": 0.28465346534653463,
+        "wilson_95_percent": {
+          "lower": 0.24284043750763257,
+          "upper": 0.3305231913320278
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 107,
+        "denominator": 115,
+        "rate": 0.9304347826086956,
+        "wilson_95_percent": {
+          "lower": 0.8687112719351276,
+          "upper": 0.9643313462085072
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 115,
+        "denominator": 122,
+        "rate": 0.9426229508196722,
+        "wilson_95_percent": {
+          "lower": 0.8862911697412956,
+          "upper": 0.9719315575864635
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 107,
+        "denominator": 122,
+        "rate": 0.8770491803278688,
+        "wilson_95_percent": {
+          "lower": 0.8070223510127791,
+          "upper": 0.9240562685627192
+        }
+      },
+      "abstention": {
+        "numerator": 924,
+        "denominator": 1328,
+        "rate": 0.6957831325301205,
+        "wilson_95_percent": {
+          "lower": 0.6705032492147511,
+          "upper": 0.7199336128877731
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 289,
+        "denominator": 1206,
+        "rate": 0.2396351575456053,
+        "wilson_95_percent": {
+          "lower": 0.2163946095788234,
+          "upper": 0.26452911359053327
+        }
+      },
+      "automatic_paste_conversions": 128,
+      "automatic_paste_precision": {
+        "numerator": 115,
+        "denominator": 128,
+        "rate": 0.8984375,
+        "wilson_95_percent": {
+          "lower": 0.8339751366963888,
+          "upper": 0.9396813512731592
+        }
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 115,
+        "denominator": 122,
+        "rate": 0.9426229508196722,
+        "wilson_95_percent": {
+          "lower": 0.8862911697412956,
+          "upper": 0.9719315575864635
+        }
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 12,
+        "denominator": 1203,
+        "rate": 0.00997506234413965,
+        "wilson_95_percent": {
+          "lower": 0.005715265637582502,
+          "upper": 0.017354424765579773
+        }
+      }
+    }
+  },
+  "by_kind": {
+    "binary": {
+      "total_cases": 1,
+      "eligible_cases": 0,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 0,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "code": {
+      "total_cases": 124,
+      "eligible_cases": 124,
+      "useful_code_cases": 124,
+      "eligible_useful_code_cases": 124,
+      "accepted_cases": 117,
+      "accepted_precision": {
+        "numerator": 117,
+        "denominator": 117,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.9682107543372668,
+          "upper": 1.0
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 109,
+        "denominator": 117,
+        "rate": 0.9316239316239316,
+        "wilson_95_percent": {
+          "lower": 0.8708575754228228,
+          "upper": 0.9649482894324244
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 117,
+        "denominator": 124,
+        "rate": 0.9435483870967742,
+        "wilson_95_percent": {
+          "lower": 0.8880520154039525,
+          "upper": 0.972388729051898
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 109,
+        "denominator": 124,
+        "rate": 0.8790322580645161,
+        "wilson_95_percent": {
+          "lower": 0.8099807076815497,
+          "upper": 0.9253050193989044
+        }
+      },
+      "abstention": {
+        "numerator": 7,
+        "denominator": 124,
+        "rate": 0.056451612903225805,
+        "wilson_95_percent": {
+          "lower": 0.027611270948101965,
+          "upper": 0.1119479845960476
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_conversions": 115,
+      "automatic_paste_precision": {
+        "numerator": 115,
+        "denominator": 115,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.9676757685506868,
+          "upper": 1.0
+        }
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 115,
+        "denominator": 122,
+        "rate": 0.9426229508196722,
+        "wilson_95_percent": {
+          "lower": 0.8862911697412956,
+          "upper": 0.9719315575864635
+        }
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "config-shaped": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 0,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "credential-shaped": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 1,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "automatic_paste_conversions": 1,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "list": {
+      "total_cases": 401,
+      "eligible_cases": 401,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 238,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 238,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.015884202979201578
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 163,
+        "denominator": 401,
+        "rate": 0.4064837905236908,
+        "wilson_95_percent": {
+          "lower": 0.3595171534849537,
+          "upper": 0.4552251404034352
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 238,
+        "denominator": 401,
+        "rate": 0.5935162094763092,
+        "wilson_95_percent": {
+          "lower": 0.5447748595965647,
+          "upper": 0.6404828465150463
+        }
+      },
+      "automatic_paste_conversions": 12,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 12,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.24249400665524085
+        }
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 12,
+        "denominator": 401,
+        "rate": 0.029925187032418952,
+        "wilson_95_percent": {
+          "lower": 0.017199816733610433,
+          "upper": 0.05157144721202517
+        }
+      }
+    },
+    "log": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 0,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "malformed-code": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 1,
+      "eligible_useful_code_cases": 1,
+      "accepted_cases": 1,
+      "accepted_precision": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "abstention": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "markdown": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 1,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "mixed": {
+      "total_cases": 1,
+      "eligible_cases": 1,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 0,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 1,
+        "denominator": 1,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.20654931437723745,
+          "upper": 1.0
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 1,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.7934506856227626
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      }
+    },
+    "prose": {
+      "total_cases": 401,
+      "eligible_cases": 401,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 50,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 50,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.07134759913335872
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 351,
+        "denominator": 401,
+        "rate": 0.8753117206982544,
+        "wilson_95_percent": {
+          "lower": 0.8393729942828082,
+          "upper": 0.9041279329117904
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 50,
+        "denominator": 401,
+        "rate": 0.12468827930174564,
+        "wilson_95_percent": {
+          "lower": 0.09587206708820964,
+          "upper": 0.1606270057171918
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 401,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.009488797989920104
+        }
+      }
+    },
+    "url": {
+      "total_cases": 401,
+      "eligible_cases": 401,
+      "useful_code_cases": 0,
+      "eligible_useful_code_cases": 0,
+      "accepted_cases": 0,
+      "accepted_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "abstention": {
+        "numerator": 401,
+        "denominator": 401,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.99051120201008,
+          "upper": 1.0
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 0,
+        "denominator": 401,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.009488797989920104
+        }
+      },
+      "automatic_paste_conversions": 0,
+      "automatic_paste_precision": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "wilson_95_percent": null
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 401,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.009488797989920104
+        }
+      }
+    }
+  },
+  "by_length_band": {
+    "020-079": {
+      "total_cases": 847,
+      "eligible_cases": 846,
+      "useful_code_cases": 41,
+      "eligible_useful_code_cases": 41,
+      "accepted_cases": 281,
+      "accepted_precision": {
+        "numerator": 41,
+        "denominator": 281,
+        "rate": 0.14590747330960854,
+        "wilson_95_percent": {
+          "lower": 0.1094100331658071,
+          "upper": 0.19195571315530963
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 41,
+        "denominator": 41,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.914332429815568,
+          "upper": 1.0
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 41,
+        "denominator": 41,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.914332429815568,
+          "upper": 1.0
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 41,
+        "denominator": 41,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.914332429815568,
+          "upper": 1.0
+        }
+      },
+      "abstention": {
+        "numerator": 566,
+        "denominator": 847,
+        "rate": 0.6682408500590319,
+        "wilson_95_percent": {
+          "lower": 0.6358346741092434,
+          "upper": 0.6991278468697216
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 240,
+        "denominator": 806,
+        "rate": 0.2977667493796526,
+        "wilson_95_percent": {
+          "lower": 0.26721749869426825,
+          "upper": 0.33023457485760055
+        }
+      },
+      "automatic_paste_conversions": 54,
+      "automatic_paste_precision": {
+        "numerator": 41,
+        "denominator": 54,
+        "rate": 0.7592592592592593,
+        "wilson_95_percent": {
+          "lower": 0.6305247581649721,
+          "upper": 0.8535570850471558
+        }
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 41,
+        "denominator": 41,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.914332429815568,
+          "upper": 1.0
+        }
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 12,
+        "denominator": 802,
+        "rate": 0.014962593516209476,
+        "wilson_95_percent": {
+          "lower": 0.008579611281604938,
+          "upper": 0.025969937535898952
+        }
+      }
+    },
+    "080-255": {
+      "total_cases": 487,
+      "eligible_cases": 487,
+      "useful_code_cases": 84,
+      "eligible_useful_code_cases": 84,
+      "accepted_cases": 127,
+      "accepted_precision": {
+        "numerator": 77,
+        "denominator": 127,
+        "rate": 0.6062992125984252,
+        "wilson_95_percent": {
+          "lower": 0.5194053896936472,
+          "upper": 0.6869512211494111
+        }
+      },
+      "exact_label_precision_where_defined": {
+        "numerator": 69,
+        "denominator": 77,
+        "rate": 0.8961038961038961,
+        "wilson_95_percent": {
+          "lower": 0.8081562490731851,
+          "upper": 0.946407076352419
+        }
+      },
+      "useful_code_coverage": {
+        "numerator": 77,
+        "denominator": 84,
+        "rate": 0.9166666666666666,
+        "wilson_95_percent": {
+          "lower": 0.8378427769435238,
+          "upper": 0.9590474493775928
+        }
+      },
+      "exact_useful_code_coverage": {
+        "numerator": 69,
+        "denominator": 84,
+        "rate": 0.8214285714285714,
+        "wilson_95_percent": {
+          "lower": 0.7260557754840193,
+          "upper": 0.8886881133922706
+        }
+      },
+      "abstention": {
+        "numerator": 360,
+        "denominator": 487,
+        "rate": 0.7392197125256673,
+        "wilson_95_percent": {
+          "lower": 0.6984604164469708,
+          "upper": 0.7762346114746939
+        }
+      },
+      "negative_false_conversions": {
+        "numerator": 50,
+        "denominator": 403,
+        "rate": 0.1240694789081886,
+        "wilson_95_percent": {
+          "lower": 0.09538962580816956,
+          "upper": 0.15984851811575096
+        }
+      },
+      "automatic_paste_conversions": 74,
+      "automatic_paste_precision": {
+        "numerator": 74,
+        "denominator": 74,
+        "rate": 1.0,
+        "wilson_95_percent": {
+          "lower": 0.950650220603614,
+          "upper": 1.0
+        }
+      },
+      "automatic_paste_useful_code_coverage": {
+        "numerator": 74,
+        "denominator": 81,
+        "rate": 0.9135802469135802,
+        "wilson_95_percent": {
+          "lower": 0.8322008336612947,
+          "upper": 0.9575074166600406
+        }
+      },
+      "dedicated_paste_negative_conversions": {
+        "numerator": 0,
+        "denominator": 401,
+        "rate": 0.0,
+        "wilson_95_percent": {
+          "lower": 0.0,
+          "upper": 0.009488797989920104
+        }
+      }
+    }
+  },
+  "confusion_matrix": {
+    "__negative__:binary": {
+      "__abstain__": 1
+    },
+    "__negative__:config-shaped": {
+      "__abstain__": 1
+    },
+    "__negative__:credential-shaped": {
+      "ini": 1
+    },
+    "__negative__:list": {
+      "__abstain__": 163,
+      "haskell": 12,
+      "markdown": 226
+    },
+    "__negative__:log": {
+      "__abstain__": 1
+    },
+    "__negative__:markdown": {
+      "markdown": 1
+    },
+    "__negative__:mixed": {
+      "__abstain__": 1
+    },
+    "__negative__:prose": {
+      "__abstain__": 351,
+      "markdown": 50
+    },
+    "__negative__:url": {
+      "__abstain__": 401
+    },
+    "go": {
+      "go": 11
+    },
+    "html": {
+      "html": 1
+    },
+    "javascript": {
+      "javascript": 10
+    },
+    "json": {
+      "json": 10
+    },
+    "python": {
+      "python": 11
+    },
+    "ruby": {
+      "ruby": 10
+    },
+    "rust": {
+      "__abstain__": 2,
+      "javascript": 8
+    },
+    "shell": {
+      "shell": 11
+    },
+    "sql": {
+      "sql": 10
+    },
+    "swift": {
+      "__abstain__": 4,
+      "swift": 7
+    },
+    "toml": {
+      "toml": 10
+    },
+    "typescript": {
+      "__abstain__": 1,
+      "typescript": 9
+    },
+    "yaml": {
+      "yaml": 10
+    }
+  },
+  "confusion_pairs": {
+    "__negative__:credential-shaped -> ini": 1,
+    "__negative__:list -> haskell": 12,
+    "__negative__:list -> markdown": 226,
+    "__negative__:markdown -> markdown": 1,
+    "__negative__:prose -> markdown": 50,
+    "rust -> __abstain__": 2,
+    "rust -> javascript": 8,
+    "swift -> __abstain__": 4,
+    "typescript -> __abstain__": 1
+  },
+  "detailed_confusion_cases": [
+    {
+      "id": "holdout-list",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.40170469880104065
+    },
+    {
+      "id": "holdout-credential",
+      "surface": "paste",
+      "kind": "credential-shaped",
+      "expected": "__negative__:credential-shaped",
+      "outcome": "ini",
+      "top_score": 0.7450267672538757
+    },
+    {
+      "id": "holdout-markdown",
+      "surface": "fence",
+      "kind": "markdown",
+      "expected": "__negative__:markdown",
+      "outcome": "markdown",
+      "top_score": 0.8396845459938049
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0001",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5201460719108582
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0004",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4135649800300598
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0007",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.656245231628418
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0010",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6133394837379456
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0018",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4612082540988922
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0019",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.446101576089859
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0025",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5651131868362427
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0028",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4181669056415558
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0031",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6602216958999634
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0034",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6033770442008972
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0037",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.4319780170917511
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0042",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4489973187446594
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0043",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.48165762424468994
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0049",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5704030394554138
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0055",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6698878407478333
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0058",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5556461811065674
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0061",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.4103819727897644
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0066",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4230522215366363
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0067",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.48311862349510193
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0073",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5501108169555664
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0076",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4204944968223572
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0079",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6730862259864807
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0082",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5607317686080933
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0085",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.42552027106285095
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0090",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.47722187638282776
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0091",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4333178997039795
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0097",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5312215089797974
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0100",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4659687578678131
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0103",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6483481526374817
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0106",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5778454542160034
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0114",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4314214885234833
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0115",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.46565619111061096
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0121",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5028209090232849
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0127",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6275358200073242
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0130",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5734414458274841
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0138",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4458606541156769
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0139",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.489184707403183
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0145",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6183583736419678
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0151",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6544257402420044
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0154",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6134677529335022
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0162",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4482481777667999
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0163",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.48752596974372864
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0169",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6121476292610168
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0175",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6501909494400024
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0178",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6423333883285522
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0186",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4449231624603271
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0187",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4460415542125702
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0193",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5751377940177917
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0196",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4094397723674774
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0199",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6309071183204651
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0202",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6459594964981079
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0210",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.459624707698822
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0211",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4546536803245544
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0217",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.566910982131958
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0220",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.48712995648384094
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0223",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6195076704025269
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0226",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6229620575904846
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0234",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.48547717928886414
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0235",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.472200870513916
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0241",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5207036733627319
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0247",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6468213796615601
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0250",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5777897834777832
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0258",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4314151108264923
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0259",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.46872562170028687
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0265",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6084764003753662
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0271",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.660243809223175
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0274",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5889529585838318
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0282",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4469956457614898
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0283",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.48658445477485657
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0289",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4991326034069062
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0292",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4334111213684082
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0295",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6320405006408691
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0298",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6286211013793945
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0306",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4802105128765106
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0307",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4918249845504761
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0313",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5620163679122925
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0316",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.43829652667045593
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0319",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6362080574035645
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0322",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6158962845802307
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0330",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.504639744758606
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0331",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4666443169116974
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0340",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4597088396549225
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0343",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6158772110939026
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0346",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5890257954597473
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0349",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.4048164486885071
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0354",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4418818354606629
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0355",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4478633105754852
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0361",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6150478720664978
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0364",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4836290776729584
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0367",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6432695984840393
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0370",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6445477604866028
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0373",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.40140068531036377
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0378",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4735075831413269
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0379",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4830239713191986
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0385",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5507099032402039
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0388",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4030306339263916
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0391",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.657357394695282
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0394",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6305797100067139
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0402",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4773207604885102
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0403",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5007001161575317
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0412",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4130827188491822
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0415",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6380155682563782
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0418",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6130138039588928
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0426",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4513234794139862
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0427",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.48078981041908264
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0433",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5451764464378357
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0436",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4721281230449677
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0439",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6134383082389832
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0442",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.645622730255127
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0450",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4823906719684601
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0451",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4642251431941986
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0457",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6016690731048584
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0460",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4648077189922333
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0463",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6551826000213623
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0466",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6407128572463989
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0469",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.43573155999183655
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0474",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4637071490287781
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0475",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4879407584667206
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0481",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6431503891944885
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0487",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.63410884141922
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0490",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5768800377845764
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0498",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4323659539222718
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0499",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.487114816904068
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0505",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5950453877449036
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0508",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.439898282289505
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0511",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6391199827194214
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0514",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6143550872802734
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0522",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4538629949092865
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0523",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.453464537858963
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0529",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6021213531494141
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0532",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5022974014282227
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0535",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6271235346794128
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0538",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6380804181098938
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0541",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.4095672070980072
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0546",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4888780117034912
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0547",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4599636495113373
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0553",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6301125288009644
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0559",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6620513796806335
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0562",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6682178974151611
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0570",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.46283942461013794
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0571",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.44091856479644775
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0577",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6065292358398438
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0580",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4808387458324432
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0583",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6318224668502808
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0586",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6405271291732788
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0589",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.41503381729125977
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0594",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4575726389884949
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0595",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4482655227184296
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0601",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5574737787246704
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0604",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4036007225513458
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0607",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6067541241645813
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0610",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6259914040565491
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0618",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.436158150434494
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0619",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.43994876742362976
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0625",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5318336486816406
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0631",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6781953573226929
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0634",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5902895927429199
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0642",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4739898443222046
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0643",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4589259326457978
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0649",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.558903157711029
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0655",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.620215654373169
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0658",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6040385365486145
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0661",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.4134113788604736
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0666",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.43705129623413086
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0667",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4581869244575501
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0679",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.671863317489624
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0682",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5787032246589661
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0690",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.45994266867637634
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0691",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.48508062958717346
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0697",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5709497332572937
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0703",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6307555437088013
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0706",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.616958498954773
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0714",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4688584804534912
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0715",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.46069350838661194
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0721",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5893909335136414
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0727",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6619943380355835
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0730",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6347600817680359
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0738",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4619804620742798
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0739",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4807842969894409
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0745",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5657448172569275
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0748",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.432514488697052
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0751",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.653998851776123
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0754",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6183340549468994
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0762",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.46055036783218384
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0763",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.49349886178970337
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0769",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6352046132087708
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0772",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4406077265739441
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0775",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6302548050880432
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0778",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6356251239776611
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0786",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.46416059136390686
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0787",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4531864821910858
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0793",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5763058662414551
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0796",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4419219195842743
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0799",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6248083114624023
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0802",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.608466625213623
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0810",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.45259004831314087
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0811",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4763595163822174
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0817",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5103827118873596
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0820",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4322882890701294
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0823",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6571065783500671
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0826",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6200173497200012
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0829",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.4029461145401001
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0834",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.44122275710105896
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0835",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5071386098861694
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0841",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5730794072151184
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0844",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4002898335456848
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0847",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6490139961242676
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0850",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.613567590713501
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0858",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4420357942581177
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0859",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.48312002420425415
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0865",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6184822916984558
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0868",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.45911920070648193
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0871",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6446680426597595
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0874",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6708221435546875
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0882",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4762457013130188
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0883",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.44075506925582886
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0889",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5302243828773499
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0895",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6294229626655579
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0898",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5993609428405762
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0906",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4297601580619812
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0907",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4709609150886536
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0913",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6516245007514954
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0916",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4780469238758087
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0919",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6256075501441956
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0922",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5954853892326355
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0925",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.4296503961086273
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0930",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4910455644130707
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0931",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4730086624622345
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0937",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5793018341064453
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0943",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6600261926651001
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0946",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6473996043205261
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0954",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4370594620704651
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0955",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4726002514362335
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0961",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5673195719718933
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0964",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.47476282715797424
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0967",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6472316980361938
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0970",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6220041513442993
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0973",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "haskell",
+      "top_score": 0.4053896069526672
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0978",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.46942296624183655
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0979",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4715675115585327
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0985",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.527719259262085
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0991",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6416076421737671
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-0994",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5684336423873901
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1002",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4144572913646698
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1003",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4371776580810547
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1009",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5687244534492493
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1012",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4561630189418793
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1015",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6319225430488586
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1018",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6386874318122864
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1026",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4623856544494629
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1027",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4997088313102722
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1033",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5205374360084534
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1039",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6654595732688904
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1042",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5530986785888672
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1050",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4220326244831085
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1051",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5298472046852112
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1063",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6143986582756042
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1066",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5831685066223145
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1074",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.44109445810317993
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1075",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4666855335235596
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1081",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5976956486701965
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1087",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6552577018737793
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1090",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6284701824188232
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1098",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4480750858783722
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1099",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.47538378834724426
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1105",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5553544163703918
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1108",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.43647870421409607
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1111",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6452399492263794
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1114",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6187446117401123
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1122",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4417961537837982
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1123",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.48488032817840576
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1129",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5358962416648865
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1135",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6786705851554871
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1138",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6018353700637817
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1146",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4205931723117829
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1147",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5003596544265747
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1153",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5850359797477722
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1156",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.4601498544216156
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1159",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6582304239273071
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1162",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6697350144386292
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1170",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4735127687454224
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1171",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5095832943916321
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1177",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6235971450805664
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1183",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6776055693626404
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1186",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.6205577254295349
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1194",
+      "surface": "paste",
+      "kind": "prose",
+      "expected": "__negative__:prose",
+      "outcome": "markdown",
+      "top_score": 0.4447768628597259
+    },
+    {
+      "id": "holdout-dedicated-paste-negative-1195",
+      "surface": "paste",
+      "kind": "list",
+      "expected": "__negative__:list",
+      "outcome": "markdown",
+      "top_score": 0.5151697397232056
+    },
+    {
+      "id": "holdout-paste-code-0000",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.46720996499061584
+    },
+    {
+      "id": "holdout-paste-code-0012",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.5126955509185791
+    },
+    {
+      "id": "holdout-paste-code-0024",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.46807169914245605
+    },
+    {
+      "id": "holdout-paste-code-0036",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.4993249475955963
+    },
+    {
+      "id": "holdout-paste-code-0048",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "__abstain__",
+      "top_score": 0.4084471762180328
+    },
+    {
+      "id": "holdout-paste-code-0060",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.4932573139667511
+    },
+    {
+      "id": "holdout-paste-code-0063",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "typescript",
+      "outcome": "__abstain__",
+      "top_score": 0.4361860156059265
+    },
+    {
+      "id": "holdout-paste-code-0064",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.3484831750392914
+    },
+    {
+      "id": "holdout-paste-code-0072",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.4439467787742615
+    },
+    {
+      "id": "holdout-paste-code-0076",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.3325739800930023
+    },
+    {
+      "id": "holdout-paste-code-0084",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.5215855240821838
+    },
+    {
+      "id": "holdout-paste-code-0088",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.3232366442680359
+    },
+    {
+      "id": "holdout-paste-code-0096",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "__abstain__",
+      "top_score": 0.42418694496154785
+    },
+    {
+      "id": "holdout-paste-code-0108",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "rust",
+      "outcome": "javascript",
+      "top_score": 0.4702271521091461
+    },
+    {
+      "id": "holdout-paste-code-0112",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.36852478981018066
+    }
+  ],
+  "cold_first_eligible_inference_nanoseconds": 1615583,
+  "warm_latency": {
+    "samples": 100,
+    "p50_nanoseconds": 852208,
+    "p95_nanoseconds": 896833,
+    "p99_nanoseconds": 936000,
+    "max_nanoseconds": 937167
+  }
+}
