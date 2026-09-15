@@ -63,6 +63,12 @@ deploy Friday
 
 Use subdued fill, a clear outline, monospaced excerpt where appropriate, and a compact metadata count. The chip must never look like an invitation to inspect sensitive content: the spec requires hover to reveal **actions, never content**.
 
+### Affordance ordering: state first, identity second, actions third
+
+Read a protected surface in that order. **State** is the visual weight that establishes the surface as protected before anything else registers: opaque fill, outline, muted palette, the chip shape itself. **Identity** is the mechanical excerpt and count that let the person who placed the content recognize it. **Actions** are copy-out and conceal, kept behind hover so they never crowd the first two.
+
+The ordering protects the guarantee at a glance. Nobody has to open a menu to learn that the bytes are not for them, and the chip does not invite a stranger to try. Any future protected surface inherits the same order: a locked page, an enrolled peer, a paused countdown, each one visibly protected before it is identified and identified before it is acted on.
+
 ### What to avoid
 
 - Sidebar-heavy organization, folders, tags, search, history, or an archive aesthetic.
