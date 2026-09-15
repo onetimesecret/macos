@@ -363,6 +363,19 @@ public struct CodeSettingsView: View {
                 )
             }
 
+            Section {
+                Picker("Preview rendering", selection: $model.previewRendering) {
+                    Text("Focused page only").tag(PreviewRenderingScope.focusedOnly)
+                    Text("All pages").tag(PreviewRenderingScope.allPages)
+                    Text("Never").tag(PreviewRenderingScope.never)
+                }
+                .pickerStyle(.inline)
+            } header: {
+                SettingsCaption(
+                    "When to apply markdown formatting and syntax highlighting. Focused page only preserves the earlier behavior; All pages styles every visible day."
+                )
+            }
+
             if PageModel.languageDetectionFeaturesAvailable {
                 Section {
                     Toggle("Language detection", isOn: $model.languageDetectionEnabled)

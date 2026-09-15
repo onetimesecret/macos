@@ -168,6 +168,7 @@ public struct InkEditorView: NSViewRepresentable {
         coordinator.currentSheet = sheetID
         coordinator.appliedTypeface = InkStyle.typeface
         coordinator.appliedSyntaxHighlighting = model.syntaxHighlightingEnabled
+        coordinator.appliedPreviewRendering = model.previewRendering
         coordinator.appliedLanguageDetection = model.languageDetectionEnabled
         coordinator.appliedFileRenderMode = model.fileRenderMode(for: sheetID)
         coordinator.restyle()
@@ -320,6 +321,7 @@ public struct InkEditorView: NSViewRepresentable {
         // nothing.
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
+        coordinator.applyPreviewRendering(model.previewRendering)
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
         coordinator.applyFileRenderMode(model.fileRenderMode(for: sheetID))
         // Dead pages take their saved view state with them — the same
@@ -1426,6 +1428,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// building, where the first styling happens.
         var appliedTypeface: InkStyle.Typeface?
         var appliedSyntaxHighlighting: Bool?
+        var appliedPreviewRendering: PreviewRenderingScope?
         var appliedLanguageDetection: Bool?
         var appliedFileRenderMode: FileRenderMode?
 
@@ -1447,6 +1450,16 @@ public struct InkEditorView: NSViewRepresentable {
         func applySyntaxHighlighting(_ enabled: Bool) {
             guard appliedSyntaxHighlighting != enabled else { return }
             appliedSyntaxHighlighting = enabled
+            restyle()
+        }
+
+        /// Restyle the mounted page when the preview-rendering scope
+        /// changes. `.never` short-circuits to the plain-file path, and
+        /// the other two return to the block walk; the roll picks up its
+        /// own reseed through the notification the model posts.
+        func applyPreviewRendering(_ scope: PreviewRenderingScope) {
+            guard appliedPreviewRendering != scope else { return }
+            appliedPreviewRendering = scope
             restyle()
         }
 
@@ -2043,6 +2056,15 @@ public struct InkEditorView: NSViewRepresentable {
         /// touching how it edits.
         func restyle() {
             guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
+            // `.never` collapses every page to plain ink, source files
+            // included: the reader has asked for no markup and no token
+            // colors anywhere, so file-mode routing does not run either
+            // (the plain-file path takes off links and underlines the
+            // way the Markdown walk does at every restyle).
+            if model.previewRendering == .never {
+                restylePlainFile(storage, sheet: sheet)
+                return
+            }
             if sheet.isFileID {
                 switch model.fileRenderMode(for: sheet) {
                 case .plainText:

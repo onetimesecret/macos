@@ -293,6 +293,17 @@ public enum FileConflictResolution: Equatable, Sendable {
     case saveAs
 }
 
+/// Which pages the hybrid markdown preview and syntax highlighting reach.
+/// `focusedOnly` preserves the older behavior where only the active editor
+/// carried block labels, fence washes and token colors; `allPages` extends
+/// the same styling to every visible day; `never` collapses the roll to
+/// plain ink even where a file mode would ordinarily read as source.
+public enum PreviewRenderingScope: String, CaseIterable, Codable, Sendable {
+    case focusedOnly
+    case allPages
+    case never
+}
+
 /// Whether the page holding the keyboard has a step waiting in each
 /// direction: the two answers the Edit menu's Undo and Redo grey
 /// themselves out on (issue #132).
@@ -554,6 +565,33 @@ public final class PageModel: ObservableObject {
         didSet { defaults.set(syntaxHighlightingEnabled, forKey: Self.syntaxHighlightingKey) }
     }
     private static let syntaxHighlightingKey = "syntaxHighlightingEnabled"
+
+    /// Which pages receive hybrid markdown preview and syntax highlighting.
+    /// The default styles every visible day: the roll used to render quiet
+    /// pages as plain text carrying only the base font, so a code fence
+    /// walked out of the editor lost its wash and its keyword colors as
+    /// soon as the caret left. Reserved is the option to hold that older
+    /// behavior for a reader who prefers a quieter roll, and an option to
+    /// turn markdown styling off outright.
+    @Published public var previewRendering: PreviewRenderingScope {
+        didSet {
+            guard previewRendering != oldValue else { return }
+            defaults.set(previewRendering.rawValue, forKey: Self.previewRenderingKey)
+            // Any cached quiet ink was built to the old scope, so drop the
+            // lot: the next reader rebuilds them under the new preference.
+            quietRenderings.removeAll()
+            NotificationCenter.default.post(
+                name: Self.previewRenderingDidChangeNotification, object: self
+            )
+        }
+    }
+    private static let previewRenderingKey = "previewRendering"
+
+    /// Posted when `previewRendering` moves. The roll listens so every
+    /// visible quiet region is reseeded from the model at once, and the
+    /// coordinator restyles the mounted page.
+    public static let previewRenderingDidChangeNotification =
+        Notification.Name("PageModel.previewRenderingDidChange")
 
     /// Whether detector-backed suggestions and automatic paste recognition may
     /// run. Off by default while detection remains an explicit opt-in.
@@ -1094,6 +1132,12 @@ public final class PageModel: ObservableObject {
         // and automatic edits remain explicit opt-ins.
         syntaxHighlightingEnabled =
             defaults.object(forKey: Self.syntaxHighlightingKey) as? Bool ?? true
+        // Unset → all pages styled. The older reading (focused page only,
+        // quiet days rendered as plain ink) is kept as a scope, not the
+        // default: a fence that stays a fence off the caret is what the
+        // eye expects of a page it can already read.
+        previewRendering = (defaults.string(forKey: Self.previewRenderingKey)
+            .flatMap(PreviewRenderingScope.init(rawValue:))) ?? .allPages
         languageDetectionEnabled =
             defaults.object(forKey: Self.languageDetectionKey) as? Bool ?? false
         automaticallyFencePastes =
@@ -2119,6 +2163,28 @@ public final class PageModel: ObservableObject {
             case .chip(let info):
                 rendered.append(NSAttributedString(attachment: ChipAttachment(info: info)))
             }
+        }
+        // `.allPages` runs the same block walk over a temporary storage
+        // that the mounted editor runs over its live one, so a quiet day
+        // reads as a fence, a heading or a list wherever the focused page
+        // would. `.focusedOnly` and `.never` return the plain rendering
+        // already assembled above (chips carry no bytes, the base font
+        // carries the reader's typography).
+        if previewRendering == .allPages, !id.isFileID {
+            // A throwaway storage keeps the styling pass off any layout
+            // manager: the roll copies the result into its own storage,
+            // and the copy is what the region draws (ADR-0006).
+            let scratch = NSTextStorage(attributedString: rendered)
+            _ = InkEditorView.Coordinator.applyMarkdownStyling(
+                to: scratch,
+                sheet: id,
+                blockMetas: client.blocks(sheet: id),
+                syntaxHighlightingEnabled: syntaxHighlightingEnabled,
+                fenceRenderingLanguages: [:]
+            )
+            let styled = NSAttributedString(attributedString: scratch)
+            quietRenderings[id] = styled
+            return styled
         }
         quietRenderings[id] = rendered
         return rendered

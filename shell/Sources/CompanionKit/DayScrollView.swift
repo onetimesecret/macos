@@ -315,6 +315,17 @@ final class DayStackView: NSView {
             name: NSView.boundsDidChangeNotification,
             object: clip
         )
+        // The preview-rendering scope is a preference the model already
+        // clears its quiet cache under; the roll picks up the change by
+        // reseeding every visible region from the model, and the
+        // coordinator restyles the mounted page on its own published
+        // side. Registered by selector so it retires with the view.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(previewRenderingChanged),
+            name: PageModel.previewRenderingDidChangeNotification,
+            object: nil
+        )
     }
 
     private func observeEditor(_ editor: InkTextView) {
@@ -347,6 +358,14 @@ final class DayStackView: NSView {
     /// minimap says.
     @objc private func rollScrolled(_ notification: Notification) {
         publishGeometry()
+    }
+
+    /// The preview-rendering scope moved. Every quiet region still on
+    /// screen belongs to a page whose cached rendering the model has
+    /// already dropped, so a fresh call to `quietRendering(for:)` builds
+    /// under the new preference and is handed back through `reseed`.
+    @objc private func previewRenderingChanged(_ notification: Notification) {
+        refreshQuietRegions()
     }
 
     // MARK: The pass
