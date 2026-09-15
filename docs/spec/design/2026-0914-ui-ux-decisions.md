@@ -1,10 +1,10 @@
 ---
 id: 2026-0914-ui-ux-decisions
 title: UI/UX decisions for the background surface
-status: accepted     # draft → accepted → superseded
+status: superseded   # draft → accepted → superseded
 dated: 2026-09-14
 supersedes: docs/design-brief.md (Tokens and parameters)
-superseded-by:
+superseded-by: docs/spec/design/2026-0915-ui-ux-decisions.md
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface)
 sources:
@@ -25,6 +25,8 @@ sources:
 ---
 
 # UI/UX decisions for the background surface
+
+Superseded by `docs/spec/design/2026-0915-ui-ux-decisions.md` (2026-09-15).
 
 What the shipping surface looks like, what each visible decision is, and
 what a build has to satisfy before the decision counts as honoured. The
