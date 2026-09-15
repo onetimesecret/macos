@@ -72,9 +72,13 @@ Deliverables:
   published registry artifact the review target.
 - [ ] Inspect the packaged inference window, initialization, and transitive
   dependencies on each supported target.
-- [ ] Audit licenses and define where third-party notices enter both app and
-  framework packaging. Check `deny.toml`; do not broaden license allowances to
-  silence a failed check without review.
+- [x] Define and verify where `THIRD_PARTY_NOTICES.md` enters both the app and
+  framework packaging. The release scripts compare both packaged copies byte for
+  byte with the canonical notice.
+- [ ] Complete the license audit and resolve the model-weight licensing ambiguity
+  recorded by ADR-0029. Notice inclusion does not resolve that release blocker.
+  Check `deny.toml`; do not broaden license allowances to silence a failed check
+  without review.
 - [ ] Review source-derived scratch retention, panic handling, and concurrency.
   Do not promise erasure merely because inference is local. Decide whether
   upstream changes or a reviewed patch are needed before processing user text.
@@ -89,12 +93,14 @@ Deliverables:
   synthetic strings, logs, stack traces, JSON/YAML/TOML, mixed prose/code,
   unsupported languages, malformed text, and binary samples. Never use real
   clipboard history or secrets.
-- [ ] Run tuning and hold-out sets and publish the generated report. The harness
-  keeps the splits separate and reports precision, abstention/coverage,
-  false-positive fencing, and confusion pairs by surface and length. Evaluate
-  `c/cpp`, `javascript/typescript`, `markdown/yaml`, and `ini/toml` explicitly.
+- [x] Run tuning and hold-out sets and publish the generated report. The
+  [2026-09-14 evaluation](evaluation-2026-09-14.md) kept exact examples disjoint,
+  preserved the selected candidate, and failed the proposed automatic-paste gate.
+  The corpus still does not complete the planned every-label and ambiguity matrix,
+  including `c/cpp`; that remaining corpus work is not erased by this execution.
 - [ ] Select and document top-score, top-two-margin, minimum evidence, and paste
-  eligibility thresholds. Zed PR #61412 supplies an external starting baseline:
+  eligibility thresholds. A tuning-selected candidate is documented, but its
+  untouched holdout failed and production values remain provisional. Zed PR #61412 supplies an external starting baseline:
   20 input bytes, a 0.20 minimum score, and a 0.20 candidate-group gap; it does
   not validate Companion's automatic-paste use case. Proposed automatic-paste gate: at least 99% precision
   on eligible held-out paste cases and no automatic conversions on a dedicated
