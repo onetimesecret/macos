@@ -45,7 +45,7 @@ struct SyncSettingsSection: View {
                     // merely stops listening.
                     HStack {
                         ProgressView().controlSize(.small)
-                        Text("waiting on your browser…")
+                        Text("waiting on the browser…")
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.secondary)
                         Spacer()

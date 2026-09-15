@@ -811,7 +811,7 @@ public final class PageModel: ObservableObject {
     /// will not honour it, which hands horizontal mode back unwrapped
     /// for a keystroke whose effect the user was never shown.
     public static let wrapIsFixedNotice =
-        "long lines always wrap while the time tabs are showing"
+        "long lines always wrap while the days are showing"
 
     /// The rule, as a pure decision on the two facts a launch knows, so
     /// the release branch is testable from a debug test binary: a debug

@@ -201,8 +201,8 @@ public struct ConcealView: View {
 
     private var burnHelp: String {
         switch draft.target {
-        case .chip: "The content travelled — remove the chip; its bytes are zeroized"
-        case .page: "The page travelled — close it; it rests in the ledger"
+        case .chip: "the content travelled · remove the chip; its bytes are zeroized"
+        case .page: "the page travelled · close it; it rests in the ledger"
         }
     }
 
