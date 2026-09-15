@@ -363,10 +363,13 @@ ledger record.
 
 - **D-08 (fixed)** No plaintext, ever, in the UI: no reveal, no eye
   toggle, no copy-to-see-it. The bytes are not available to draw. ⇧⌘V
-  over a line already holding a chip refuses: `already sealed — a chip
+  over a line already holding a chip refuses: `already sealed · a chip
   has no plaintext to seal`. (The core's own vocabulary still says
   "chip"; the UI says nothing at all about the shape, so the internal
   name can stay.)
+  *Errata 2026-09-15:* the refusal line above was quoted with an em
+  dash; the shipping string joins its two halves with a middle dot,
+  as the copy register (D-15) asks, and the quote now matches it.
   *Acceptance:* find cannot match a chip; ⌘E over a selection holding
   one refuses; a chip leaves only by an act aimed at the chip.
 - **D-09 (fixed)** Concealing is the app's one outbound action:
@@ -428,6 +431,12 @@ ledger record.
   only; the decrypted-drag handle is visually distinct from the move
   handle; the confirmation names the interval the core enforces; no
   ordinary copy path (object, page, or select-all) offers plaintext.
+  *Errata 2026-09-15:* the 60 second clear now exists in the tree as
+  one core constant, `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi`, read
+  by the shell through the stateless seam
+  `companion_clipboard_clear_seconds`, and the model arms the clear on
+  every pasteboard egress. The number stays provisional: the call
+  under D-32 is still pending maintainer confirmation.
 - **D-30 (fixed)** Sealing an existing selection replaces it in place,
   keeps the surrounding whitespace and selects the new object, and is
   **one-way**: ⌘Z does not restore the plaintext. No confirmation

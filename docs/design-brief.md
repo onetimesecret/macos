@@ -96,7 +96,8 @@ below are history.
 
 - **Accent:** ember `#D45A2A`. The *single* accent colour, used sparingly,
   never as the only carrier of state. (The record's value is `#DC4A22`,
-  matching the shipped logo asset; `Theme.swift` is being aligned to it.)
+  matching the shipped logo asset, and `Theme.swift` now carries
+  `#DC4A22` as well; the value above is the one this brief shipped with.)
 - **Surfaces:** drawn from the system palette
   (`windowBackgroundColor` / `controlBackgroundColor`) so Increase Contrast
   and Reduce Transparency degrade them to legible solid fills for free.
