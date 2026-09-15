@@ -167,9 +167,77 @@ ADR-0017 own the superseded staged-content and object-graph decisions.
   or availability assumptions unavailable. The remaining persistence policy
   must then be re-evaluated against that platform change.
 
+## Amendment 1: three egress points and one clear interval
+
+- **Status:** accepted
+- **Date:** 2026-09-15
+
+Appended, not folded in. Unlike the ADR-0007 amendments, this one leaves
+the Decision text above as written: the base record already says that
+successors name the subsections they replace rather than editing them,
+and this section does the same for two bullets of **Supporting
+decisions**, the secret-handling discipline bullet and the input path
+bullet that follows it.
+
+### What changed
+
+The secret-handling discipline bullet counts "one egress (send)". The
+successor design record,
+[docs/spec/design/2026-0915-ui-ux-decisions.md](../spec/design/2026-0915-ui-ux-decisions.md),
+decision D-32, makes it three, and this amendment adopts that count so
+the ADR does not drift from the surface it governs:
+
+1. **Copy decrypted.** The plaintext goes to the general pasteboard.
+   This is the riskier path: the channel the Context section names as
+   the existential risk (clipboard managers, Universal Clipboard,
+   polling apps), kept as the fallback for destinations that take no
+   drop.
+2. **Decrypted drag.** The plaintext goes to the drag pasteboard, from
+   the explicit decrypted-drag handle only, and never enters clipboard
+   history or Universal Clipboard. This is the recommended path into a
+   form field.
+3. **Promotion to a one-time link.** The conceal of ADR-0007 Amendment
+   3: plaintext leaves for the server and a link comes back.
+
+All three are core-side writes. The Swift shell asks the core to write
+to a named destination and never holds the plaintext, so the inventory
+in the discipline bullet stays honest: one ingress, three egresses, each
+crossing the FFI at a documented point.
+
+The input path bullet's "clear on any pasteboard egress" gains the
+number it lacked. The clear-on-egress interval is one core constant,
+60 seconds, exposed through a seam so the confirmation line and the
+timer read the same value; the number is provisional until the
+maintainer confirms it (D-32 records the call as pending). Nothing in
+the tree arms the clear today: `clearClipboardIfOurs`
+(`shell/Sources/CompanionKit/CompanionClient.swift:833`) exists and
+nothing calls it, so the interval is the number the build owes, not a
+description of what it does. The clear applies to the general
+pasteboard only; the drag pasteboard is released when the drag session
+ends and needs no timer.
+
+The ledger's `sent` record keeps its shape. Its `DestinationClass`
+(`crates/core/src/ledger.rs:108`) names `Clipboard` and `OneTimeLink`
+today; it gains a `Drag` class when issue 170 (the sealed object
+pasteboard model: private type, placeholder, detach on cut, reattach on
+paste, lazy decrypted drag) lands, written at the moment the drag's
+plaintext is provided, not when the drag starts. Recording the class
+costs no content, as the Ledger subsection already argues for
+`clipboard`, and it lets the ledger tell the riskier egress from the
+recommended one.
+
+### What this does not claim
+
+Three named egresses do not narrow the residual exposure the
+Consequences list. A decrypted drag is safer than a copy because of
+where the bytes land, not because the bytes are protected in flight;
+the destination application holds them from the drop onward, exactly
+as it does after a paste.
+
 ## Decision history
 
 - **2026-07-15:** This remains the proposed base record.
 - **2026-08-06:** Revised to incorporate external review and implementation findings. The revision did not change the proposed status.
 - **2026-08-20:** [ADR-0016](0016-content-persists-across-restart.md) superseded the named staged-content lifecycle and related consequences portions; [ADR-0017](0017-durable-tabs-expiring-pages.md) superseded the named object-graph and title-ownership portions. See [Supersession](#supersession) for scope.
 - **2026-08-20 onward:** The portions named as still standing in [Supersession](#supersession) remain in force.
+- **2026-09-15:** [Amendment 1](#amendment-1-three-egress-points-and-one-clear-interval) was appended, adopting D-32 of the [2026-0915 design record](../spec/design/2026-0915-ui-ux-decisions.md): three egress points in place of one, the clear-on-egress interval as one core constant of 60 seconds (provisional), and the `Drag` destination class owed to issue 170.
