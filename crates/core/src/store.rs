@@ -2406,9 +2406,31 @@ mod tests {
         let chip = seal(&mut store, id, "correct horse battery staple!!");
         let sheet = store.sheet(id).unwrap();
         let sealed = sheet.chip(chip).unwrap();
-        assert_eq!(sealed.size_label(), "30 ch");
+        assert_eq!(sealed.size_label(), "tiny");
         assert!(sealed.excerpt().contains('…'));
         assert_eq!(sheet.chip_count(), 1);
+    }
+
+    #[test]
+    fn a_multi_line_chip_reports_a_size_class_not_lines() {
+        // The face and the ledger read the same bucket (D-29): a
+        // private key of a few hundred bytes is "small" on the chip
+        // and "small" in the record, and neither says how many lines
+        // it ran to.
+        let (mut store, _) = store();
+        let id = store.new_tab().1;
+        let key = format!(
+            "-----BEGIN OPENSSH PRIVATE KEY-----\n{}\n-----END OPENSSH PRIVATE KEY-----",
+            "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\n".repeat(3)
+        );
+        let chip = seal(&mut store, id, &key);
+        let sealed = store.sheet(id).unwrap().chip(chip).unwrap();
+        assert_eq!(sealed.size_label(), "small");
+        let sealed_record = store
+            .ledger()
+            .find(|record| record.event() == LedgerEvent::Sealed)
+            .expect("the seal left a record");
+        assert_eq!(sealed_record.size, SizeClass::Small);
     }
 
     #[test]

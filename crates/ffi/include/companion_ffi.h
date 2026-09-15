@@ -334,8 +334,8 @@ bool companion_store_emptiness(CompanionHandle *handle,
  * staged (ADR-0007 Amendment 1). A refused seal clears nothing.
  * Returns the chip's JSON (free with companion_string_free()):
  *   chip_id, kind ("text"|"image"), excerpt (the mechanical face —
- *   the only rendering the content ever gets), size_label ("40 ch",
- *   "5 ln", "212 KB"), concealed (bool).
+ *   the only rendering the content ever gets), size_label (a size
+ *   class, "tiny" through "huge", never a count), concealed (bool).
  * Null when the board is empty, the page unknown, content empty, or
  * the range not on the page.
  * at_utf16/len_utf16 name the selection the gesture replaces, in

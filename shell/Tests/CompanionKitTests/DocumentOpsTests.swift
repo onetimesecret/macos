@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class OpEmitterTests: XCTestCase {
     private func chipInfo(id: UInt64) -> ChipInfo {
-        ChipInfo(chipId: id, kind: "text", excerpt: "ch…ip", sizeLabel: "4 ch", concealed: false)
+        ChipInfo(chipId: id, kind: "text", excerpt: "ch…ip", sizeLabel: "tiny", concealed: false)
     }
 
     func testTypingEmitsOneInsert() {

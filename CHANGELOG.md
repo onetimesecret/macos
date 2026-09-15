@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A chip's size label is a size class, never a count** (D-29, D-31;
+  `companion-core` 0.23.0, `companion-ffi` 0.29.0). The face beside the
+  excerpt reads "tiny", "small", "medium", "large" or "huge", the same
+  bucket the ledger reduces the seal to, in place of the old "40 ch",
+  "5 ln" and "212 KB" forms. An exact length is a weak fingerprint of the
+  content, and the label is what a pasteboard placeholder will carry.
+
 ### Added
 
 - **Source-language detection is available for evaluation** (ADR-0029;

@@ -4265,7 +4265,9 @@ mod tests {
                 ptr::null_mut(),
             ));
             assert!(chip.contains("\"kind\":\"text\""), "{chip}");
-            assert!(chip.contains("size_label"), "{chip}");
+            // The face carries the ledger's bucket, never a count
+            // (D-29): 25 bytes is "tiny" on both.
+            assert!(chip.contains("\"size_label\":\"tiny\""), "{chip}");
             companion_free(handle);
         }
     }
