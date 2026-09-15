@@ -39,6 +39,17 @@ struct BackdropRootView: View {
 
     private var raised: Bool { model.stance == .raised }
 
+    /// The crossing between the two stances (D-02): a short fade of
+    /// the dimmed content, or no animation at all under Reduce Motion,
+    /// where SwiftUI takes nil as "arrive at once". Read on each body
+    /// evaluation rather than captured, so a stance change sees the
+    /// setting as it stands. Nothing else on the card animates: the
+    /// keyline, the header words and the geometry all snap.
+    private var stanceFade: Animation? {
+        let duration = BackdropStance.currentStanceFadeDuration()
+        return duration > 0 ? .easeInOut(duration: duration) : nil
+    }
+
     var body: some View {
         let placed = model.displayedGeometry
         // While the window hugs the card (a pinned rest, and every
@@ -125,10 +136,12 @@ struct BackdropRootView: View {
                     // its clamp are untouched by the mode.
                     TimeRailView(model: pages)
                         .opacity(raised ? 1 : 0.72)
+                        .animation(stanceFade, value: raised)
                     Divider()
                     PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .opacity(raised ? 1 : 0.72)
+                        .animation(stanceFade, value: raised)
                 }
             } else {
                 PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
@@ -137,6 +150,7 @@ struct BackdropRootView: View {
                     // dimmed. Raising and lowering must not make the
                     // text jump, so only the opacity changes.
                     .opacity(raised ? 1 : 0.72)
+                    .animation(stanceFade, value: raised)
             }
             PageStatusStack(model: pages)
             // The two are exclusive: the days are the tabs while the
@@ -147,6 +161,7 @@ struct BackdropRootView: View {
                 Divider()
                 TabStripView(model: pages)
                     .opacity(raised ? 1 : 0.72)
+                    .animation(stanceFade, value: raised)
             }
         }
         .background(

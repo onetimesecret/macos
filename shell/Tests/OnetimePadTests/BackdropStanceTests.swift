@@ -302,4 +302,29 @@ final class BackdropStanceTests: XCTestCase {
     func testDesktopLevelSitsBelowNormalWindows() {
         XCTAssertLessThan(NSWindow.Level.backdropDesktop.rawValue, NSWindow.Level.normal.rawValue)
     }
+
+    // MARK: The crossing between the two stances (D-02)
+
+    func testStanceFadeIsOneHundredSixtyMilliseconds() {
+        XCTAssertEqual(BackdropStance.stanceFadeDuration(reduceMotion: false), 0.16)
+    }
+
+    func testReduceMotionZeroesTheStanceFade() {
+        // The end state is the same either way; only the crossing
+        // goes, so a person who asked for less motion sees the card
+        // arrive in the frame the stance changes.
+        XCTAssertEqual(BackdropStance.stanceFadeDuration(reduceMotion: true), 0)
+    }
+
+    /// The seam the view reads through, driven here without touching
+    /// the accessibility preference of the machine the test runs on.
+    @MainActor
+    func testTheViewReadsTheSystemSettingThroughTheSeam() {
+        let before = BackdropStance.reduceMotionPreferred
+        defer { BackdropStance.reduceMotionPreferred = before }
+        BackdropStance.reduceMotionPreferred = { true }
+        XCTAssertEqual(BackdropStance.currentStanceFadeDuration(), 0)
+        BackdropStance.reduceMotionPreferred = { false }
+        XCTAssertEqual(BackdropStance.currentStanceFadeDuration(), 0.16)
+    }
 }
