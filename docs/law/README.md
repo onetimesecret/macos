@@ -67,6 +67,4 @@ date a draft first entered the tree.
 
 ## Index
 
-- [0001 The sealed object](0001-sealed-object.md): a sealed item occupies one
-  position in the document, but its plaintext is not part of the document's
-  ambient text.
+The source of truth is the list the files in this directory.
