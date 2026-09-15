@@ -307,11 +307,31 @@ public enum CodeInk {
         "sqlite": "sql",
     ]
 
-    /// The language a fence's info string names, if this file knows it.
-    /// An info string can carry more than a language (` ```js
-    /// title=main.js `), so only its first whitespace-delimited token
-    /// is read, and it is lowercased before the table is asked: a fence
-    /// saying `Swift` means swift.
+    /// The pinned Betlang 0.1.1 model-label registry. Values name the
+    /// renderer: the twelve scanner entries select token colors; every
+    /// other label selects fixed-width, uncolored code presentation.
+    ///
+    /// Keep this exhaustive rather than accepting arbitrary labels. A
+    /// Betlang upgrade must make an intentional mapping decision for any
+    /// added or renamed output instead of silently changing rendering.
+    public static let detectorLanguageRenderers: [String: String] = [
+        "asm": "asm", "batch": "batch", "c": "c", "clojure": "clojure",
+        "cmake": "cmake", "cobol": "cobol", "cpp": "cpp", "cs": "cs",
+        "css": "css", "dart": "dart", "dockerfile": "dockerfile", "elixir": "elixir",
+        "erlang": "erlang", "gemfile": "gemfile", "gemspec": "gemspec", "go": "go",
+        "gradle": "gradle", "groovy": "groovy", "haskell": "haskell", "html": "html",
+        "ini": "ini", "java": "java", "javascript": "javascript", "json": "json",
+        "julia": "julia", "kotlin": "kotlin", "lisp": "lisp", "lua": "lua",
+        "markdown": "markdown", "objectivec": "objectivec", "ocaml": "ocaml", "perl": "perl",
+        "php": "php", "powershell": "powershell", "python": "python", "r": "r",
+        "ruby": "ruby", "rust": "rust", "scala": "scala", "shell": "shell",
+        "sql": "sql", "swift": "swift", "toml": "toml", "typescript": "typescript",
+        "vba": "vba", "verilog": "verilog", "xml": "xml", "yaml": "yaml",
+    ]
+
+    /// The token-scanner language a fence's info string names, if one
+    /// exists. This intentionally excludes detector labels that render as
+    /// uncolored code.
     public static func canonicalLanguage(ofInfoString info: String?) -> String? {
         guard let token = info?.split(whereSeparator: \.isWhitespace).first else { return nil }
         let name = token.lowercased()
@@ -319,8 +339,18 @@ public enum CodeInk {
         return aliases[name]
     }
 
+    /// The renderer a detector label or fence info string selects. An
+    /// info string can carry more than a language (` ```js title=main.js `),
+    /// so only its first whitespace-delimited token is read.
+    public static func renderingLanguage(ofInfoString info: String?) -> String? {
+        guard let token = info?.split(whereSeparator: \.isWhitespace).first else { return nil }
+        let name = token.lowercased()
+        if let canonical = canonicalLanguage(ofInfoString: String(token)) { return canonical }
+        return detectorLanguageRenderers[name]
+    }
+
     /// The spec a fence's info string resolves to, or nil for a bare
-    /// fence and for every language the table has never heard of.
+    /// fence and for labels without a token scanner.
     public static func spec(forInfoString info: String?) -> LanguageSpec? {
         guard let name = canonicalLanguage(ofInfoString: info) else { return nil }
         return specs[name]

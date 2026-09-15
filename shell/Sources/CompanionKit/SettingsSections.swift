@@ -122,7 +122,7 @@ public struct GeneralSettingsView: View {
                 }
             }
             Section {
-                TextField("Font", text: $fontFamilyDraft, prompt: Text("system monospaced"))
+                TextField("Prose font", text: $fontFamilyDraft, prompt: Text("System Monospaced"))
                     .focused($fontFamilyFocused)
                     .onSubmit(commitFontFamily)
                     .onChange(of: fontFamilyFocused) { focused in
@@ -155,6 +155,7 @@ public struct GeneralSettingsView: View {
                     "What the page does with a line wider than the card. Off lets lines run on and the page scrolls sideways. ⌥Z flips it while you write, and whichever way you left it is how the page opens."
                 )
             }
+
             Section {
                 Toggle("Round a page's deadline up to the hour, or to midnight", isOn: $model.snapsToBoundaries)
             } header: {
@@ -177,6 +178,13 @@ public struct GeneralSettingsView: View {
                 }
             } header: {
                 SettingsCaption(loginCaption)
+            }
+            Section {
+                Toggle("Show versions in menu", isOn: $model.showsVersionsInMenu)
+            } header: {
+                SettingsCaption(
+                    "Adds the app build and linked Rust component versions to the menu-bar menu. Technical versions remain available in About."
+                )
             }
             if offersCaptureToggle, PageModel.captureOptOutOffered {
                 Section {
@@ -308,6 +316,85 @@ public struct GeneralSettingsView: View {
     /// receipt.
     private func clearLedger() {
         model.clearLedger()
+    }
+}
+
+/// Code typography and source presentation. Font and highlighting are
+/// display-only; detector-backed controls stay behind their release gate.
+public struct CodeSettingsView: View {
+    @ObservedObject var model: PageModel
+
+    @State private var codeFontFamilyDraft = ""
+    @FocusState private var codeFontFamilyFocused: Bool
+
+    public init(model: PageModel) {
+        self.model = model
+    }
+
+    public var body: some View {
+        Form {
+            Section {
+                TextField(
+                    "Code font",
+                    text: $codeFontFamilyDraft,
+                    prompt: Text("System Monospaced")
+                )
+                .focused($codeFontFamilyFocused)
+                .onSubmit(commitCodeFontFamily)
+                .onChange(of: codeFontFamilyFocused) { focused in
+                    if !focused { commitCodeFontFamily() }
+                }
+                if let codeFontStatus {
+                    Text(codeFontStatus)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Color.ember)
+                }
+            } header: {
+                SettingsCaption(
+                    "Fenced code uses this fixed-width family at the page's text size. Leave it empty for System Monospaced."
+                )
+            }
+
+            Section {
+                Toggle("Syntax highlighting", isOn: $model.syntaxHighlightingEnabled)
+            } header: {
+                SettingsCaption(
+                    "Colors recognized source tokens. Turning it off keeps the code font and fence presentation."
+                )
+            }
+
+            if PageModel.languageDetectionFeaturesAvailable {
+                Section {
+                    Toggle("Language detection", isOn: $model.languageDetectionEnabled)
+                    Toggle(
+                        "Automatically fence detected code",
+                        isOn: $model.automaticallyFencePastes
+                    )
+                    .disabled(!model.languageDetectionEnabled)
+                    .accessibilityHint(
+                        "Requires Language detection. Applies to future pastes only. Hold Option while pasting to bypass once."
+                    )
+                } header: {
+                    SettingsCaption(
+                        "Detection suggests a source language on request. Autofencing additionally wraps eligible whole-line pastes when detection returns a language; existing text is unchanged."
+                    )
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { codeFontFamilyDraft = model.codeFontFamily }
+    }
+
+    private var codeFontStatus: String? {
+        guard !model.typeface.codeFamilyIsUsable else { return nil }
+        return "\(model.codeFontFamily) is not an installed fixed-width family; using System Monospaced"
+    }
+
+    private func commitCodeFontFamily() {
+        let family = codeFontFamilyDraft.trimmingCharacters(in: .whitespaces)
+        codeFontFamilyDraft = family
+        guard family != model.codeFontFamily else { return }
+        model.codeFontFamily = family
     }
 }
 

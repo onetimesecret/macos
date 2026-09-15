@@ -443,6 +443,46 @@ public final class PageModel: ObservableObject {
     }
     private static let wrapKey = "wrapsLines"
 
+    /// Whether the menu-bar menu includes the app build and linked Rust
+    /// component versions. Persisted presentation preference; off by default.
+    @Published public var showsVersionsInMenu: Bool {
+        didSet { defaults.set(showsVersionsInMenu, forKey: Self.showsVersionsInMenuKey) }
+    }
+    private static let showsVersionsInMenuKey = "showsVersionsInMenu"
+
+    /// Whether future eligible pastes are wrapped in Markdown fences when
+    /// source detection returns a language. The accepted release gates in
+    /// ADR-0029 are not complete, so visible detection remains development-only.
+    public static var languageDetectionFeaturesAvailable: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
+
+    /// Whether explicit fence labels color recognized source tokens. This is
+    /// presentation only; fixed-width code typography remains when it is off.
+    @Published public var syntaxHighlightingEnabled: Bool {
+        didSet { defaults.set(syntaxHighlightingEnabled, forKey: Self.syntaxHighlightingKey) }
+    }
+    private static let syntaxHighlightingKey = "syntaxHighlightingEnabled"
+
+    /// Whether detector-backed suggestions and automatic paste recognition may
+    /// run. Off by default while detection remains an explicit opt-in.
+    @Published public var languageDetectionEnabled: Bool {
+        didSet { defaults.set(languageDetectionEnabled, forKey: Self.languageDetectionKey) }
+    }
+    private static let languageDetectionKey = "languageDetectionEnabled"
+
+    /// This is a default-off editing preference in this form factor's defaults.
+    /// Changing it does not inspect or rewrite existing text. Detection must also
+    /// be enabled before this preference can affect a paste.
+    @Published public var automaticallyFencePastes: Bool {
+        didSet { defaults.set(automaticallyFencePastes, forKey: Self.automaticPasteFencingKey) }
+    }
+    private static let automaticPasteFencingKey = "automaticallyFencePastes"
+
     /// The family the page is set in, named the way the system names
     /// it ("Menlo", "JetBrains Mono"), the way an editor's buffer font
     /// is named. Empty means the system's monospaced face. Persisted;
@@ -462,6 +502,22 @@ public final class PageModel: ObservableObject {
     }
     private static let fontFamilyKey = "fontFamily"
 
+    /// The fixed-pitch family used for fenced code and, later, whole-file Source
+    /// mode. Empty means System Monospaced. An unavailable or proportional
+    /// family is retained as the preference but rendered with that fallback.
+    @Published public var codeFontFamily: String {
+        didSet {
+            let trimmed = codeFontFamily.trimmingCharacters(in: .whitespaces)
+            if trimmed != codeFontFamily {
+                codeFontFamily = trimmed
+                return
+            }
+            defaults.set(codeFontFamily, forKey: Self.codeFontFamilyKey)
+            applyTypeface()
+        }
+    }
+    private static let codeFontFamilyKey = "codeFontFamily"
+
     /// The page's base size in points. Persisted, and clamped to
     /// `InkStyle.Typeface.sizeRange` on the way in, so a slip in the
     /// field cannot leave a page nobody can read.
@@ -480,7 +536,11 @@ public final class PageModel: ObservableObject {
 
     /// The two settings as the one value the styling reads.
     public var typeface: InkStyle.Typeface {
-        InkStyle.Typeface(family: fontFamily, size: CGFloat(fontSize))
+        InkStyle.Typeface(
+            family: fontFamily,
+            codeFamily: codeFontFamily,
+            size: CGFloat(fontSize)
+        )
     }
 
     /// Hand the typeface to the styling and forget every quiet day's
@@ -932,16 +992,30 @@ public final class PageModel: ObservableObject {
         // Unset → wrap, which is how every plain-text editor opens and
         // the only sane default for a card this narrow.
         wrapsLines = defaults.object(forKey: Self.wrapKey) as? Bool ?? true
-        // Unset → the system monospaced face at 13, which is what every
-        // page wore before the setting existed. Handed to the styling
-        // here because a property observer does not run during init.
+        // Unset → off. Technical build details stay in About until explicitly
+        // requested in the menu-bar menu.
+        showsVersionsInMenu =
+            defaults.object(forKey: Self.showsVersionsInMenuKey) as? Bool ?? false
+        // Unset → current highlighting behavior, while detector-backed actions
+        // and automatic edits remain explicit opt-ins.
+        syntaxHighlightingEnabled =
+            defaults.object(forKey: Self.syntaxHighlightingKey) as? Bool ?? true
+        languageDetectionEnabled =
+            defaults.object(forKey: Self.languageDetectionKey) as? Bool ?? false
+        automaticallyFencePastes =
+            defaults.object(forKey: Self.automaticPasteFencingKey) as? Bool ?? false
+        // Unset → System Monospaced for both roles at 13 points. Handed to
+        // styling here because property observers do not run during init.
         let typeface = InkStyle.Typeface(
             family: defaults.string(forKey: Self.fontFamilyKey) ?? InkStyle.Typeface.standard.family,
+            codeFamily: defaults.string(forKey: Self.codeFontFamilyKey)
+                ?? InkStyle.Typeface.standard.codeFamily,
             size: CGFloat(
                 defaults.object(forKey: Self.fontSizeKey) as? Double ?? Double(InkStyle.Typeface.standard.size)
             )
         )
         fontFamily = typeface.family
+        codeFontFamily = typeface.codeFamily
         fontSize = Double(typeface.size)
         // Unset → off. A prototype is something a user turns on, and an
         // upgrade must not rearrange the pad of somebody who never

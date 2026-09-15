@@ -30,8 +30,24 @@ final class TypefaceTests: XCTestCase {
     func testTheStandardTypefaceIsTheSystemMonospacedFaceAtThirteen() {
         let expected = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         XCTAssertEqual(InkStyle.Typeface.standard.font(size: 13, weight: .regular), expected)
+        XCTAssertEqual(InkStyle.Typeface.standard.codeFont(size: 13, weight: .regular), expected)
         XCTAssertTrue(InkStyle.Typeface.standard.usesSystemFamily)
+        XCTAssertTrue(InkStyle.Typeface.standard.usesSystemCodeFamily)
         XCTAssertTrue(InkStyle.Typeface.standard.isInstalled)
+        XCTAssertTrue(InkStyle.Typeface.standard.codeFamilyIsUsable)
+    }
+
+    func testCodeRejectsAProportionalFamilyAndAcceptsAFixedPitchFamily() {
+        let proportional = InkStyle.Typeface(family: "Helvetica", codeFamily: "Helvetica", size: 16)
+        XCTAssertFalse(proportional.codeFamilyIsUsable)
+        XCTAssertEqual(
+            proportional.codeFont(size: 16, weight: .regular),
+            NSFont.monospacedSystemFont(ofSize: 16, weight: .regular)
+        )
+
+        let fixed = InkStyle.Typeface(family: "Helvetica", codeFamily: "Menlo", size: 16)
+        XCTAssertTrue(fixed.codeFamilyIsUsable)
+        XCTAssertEqual(fixed.codeFont(size: 16, weight: .regular).familyName, "Menlo")
     }
 
     func testANamedFamilyResolvesToThatFamilyAtTheAskedSize() {
@@ -101,6 +117,7 @@ final class TypefaceTests: XCTestCase {
     func testAPageOpensInTheStandardTypefaceUntilToldOtherwise() throws {
         let model = isolatedModel(defaults: try makeDefaults("default"))
         XCTAssertEqual(model.fontFamily, "")
+        XCTAssertEqual(model.codeFontFamily, "")
         XCTAssertEqual(model.fontSize, 13)
         XCTAssertEqual(model.typeface, .standard)
         XCTAssertEqual(InkStyle.typeface, .standard)
@@ -159,17 +176,118 @@ final class TypefaceTests: XCTestCase {
             styleMask: [.titled], backing: .buffered, defer: false
         )
         window.contentView?.addSubview(textView)
-        textView.insertText("# heading\nbody line\n", replacementRange: NSRange(location: 0, length: 0))
+        textView.insertText(
+            "# heading\nbody line\n```swift\nlet value = 1\n```",
+            replacementRange: NSRange(location: 0, length: 0)
+        )
         let storage = try XCTUnwrap(textView.textStorage)
         XCTAssertEqual((storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize, 17)
 
         model.fontSize = 20
+        model.codeFontFamily = "Menlo"
         coordinator.applyTypeface(model.typeface)
 
         XCTAssertEqual((storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize, 26)
         let bodyStart = ("# heading\n" as NSString).length
         XCTAssertEqual((storage.attribute(.font, at: bodyStart, effectiveRange: nil) as? NSFont)?.pointSize, 20)
+        let codeStart = (storage.string as NSString).range(of: "let value").location
+        let codeFont = storage.attribute(.font, at: codeStart, effectiveRange: nil) as? NSFont
+        XCTAssertEqual(codeFont?.familyName, "Menlo")
+        XCTAssertEqual(codeFont?.pointSize, 20)
         XCTAssertEqual((textView.typingAttributes[.font] as? NSFont)?.pointSize, 20)
+    }
+
+    func testProportionalProseAndFixedWidthCodeCarryIndependentRangeMetrics() throws {
+        let model = isolatedModel(defaults: try makeDefaults("mixed-fonts"))
+        model.fontFamily = "Helvetica"
+        model.codeFontFamily = "Menlo"
+        model.fontSize = 18
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        let coordinator = InkEditorView.Coordinator(model: model)
+        let textView = InkEditorView.makeInkTextView(
+            model: model, sheetID: page, coordinator: coordinator
+        )
+        let source = "iiiiiiiiiiii\n```swift\niiiiiiiiiiii\n```\nafter"
+        textView.insertText(source, replacementRange: NSRange(location: 0, length: 0))
+        coordinator.restyle()
+        let storage = try XCTUnwrap(textView.textStorage)
+        let proseStart = 0
+        let codeStart = (source as NSString).range(of: "iiiiiiiiiiii", options: [], range: NSRange(
+            location: (source as NSString).range(of: "```swift").location,
+            length: source.utf16.count - (source as NSString).range(of: "```swift").location
+        )).location
+        let afterStart = (source as NSString).range(of: "after").location
+
+        let proseFont = try XCTUnwrap(storage.attribute(.font, at: proseStart, effectiveRange: nil) as? NSFont)
+        let codeFont = try XCTUnwrap(storage.attribute(.font, at: codeStart, effectiveRange: nil) as? NSFont)
+        let afterFont = try XCTUnwrap(storage.attribute(.font, at: afterStart, effectiveRange: nil) as? NSFont)
+        XCTAssertEqual(proseFont.familyName, "Helvetica")
+        XCTAssertFalse(proseFont.isFixedPitch)
+        XCTAssertEqual(codeFont.familyName, "Menlo")
+        XCTAssertTrue(codeFont.isFixedPitch)
+        XCTAssertEqual(afterFont.familyName, "Helvetica")
+
+        let proseWidth = NSAttributedString(
+            string: "iiiiiiiiiiii", attributes: [.font: proseFont]
+        ).size().width
+        let codeWidth = NSAttributedString(
+            string: "iiiiiiiiiiii", attributes: [.font: codeFont]
+        ).size().width
+        XCTAssertGreaterThan(codeWidth, proseWidth)
+
+        let container = try XCTUnwrap(textView.textContainer)
+        let layout = try XCTUnwrap(textView.layoutManager)
+        container.lineFragmentPadding = 0
+        container.widthTracksTextView = false
+        container.size = NSSize(
+            width: (proseWidth + codeWidth) / 2,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        layout.ensureLayout(for: container)
+
+        let proseGlyphs = layout.glyphRange(
+            forCharacterRange: NSRange(location: proseStart, length: 12),
+            actualCharacterRange: nil
+        )
+        let codeGlyphs = layout.glyphRange(
+            forCharacterRange: NSRange(location: codeStart, length: 12),
+            actualCharacterRange: nil
+        )
+        let proseFirst = layout.lineFragmentRect(
+            forGlyphAt: proseGlyphs.location, effectiveRange: nil
+        )
+        let proseLast = layout.lineFragmentRect(
+            forGlyphAt: NSMaxRange(proseGlyphs) - 1, effectiveRange: nil
+        )
+        let codeFirst = layout.lineFragmentRect(
+            forGlyphAt: codeGlyphs.location, effectiveRange: nil
+        )
+        let codeLast = layout.lineFragmentRect(
+            forGlyphAt: NSMaxRange(codeGlyphs) - 1, effectiveRange: nil
+        )
+        XCTAssertEqual(proseFirst.minY, proseLast.minY, accuracy: 0.5)
+        XCTAssertGreaterThan(codeLast.minY, codeFirst.minY)
+
+        let firstCodeGlyph = codeGlyphs.location
+        let fourthCodeGlyph = firstCodeGlyph + 3
+        let measuredAdvance = layout.location(forGlyphAt: fourthCodeGlyph).x
+            - layout.location(forGlyphAt: firstCodeGlyph).x
+        let expectedAdvance = NSAttributedString(
+            string: "iii", attributes: [.font: codeFont]
+        ).size().width
+        XCTAssertEqual(measuredAdvance, expectedAdvance, accuracy: 1)
+
+        let firstCodeRect = layout.boundingRect(
+            forGlyphRange: NSRange(location: firstCodeGlyph, length: 1),
+            in: container
+        )
+        let origin = textView.textContainerOrigin
+        let insertionPoint = NSPoint(
+            x: origin.x + firstCodeRect.maxX - 0.1,
+            y: origin.y + firstCodeRect.midY
+        )
+        XCTAssertEqual(textView.characterIndexForInsertion(at: insertionPoint), codeStart + 1)
     }
 
     /// A quiet day's rendering carries its font in its attributes, so

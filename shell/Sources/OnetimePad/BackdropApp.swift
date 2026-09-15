@@ -27,6 +27,14 @@ struct BackdropApp: App {
                 // is the Settings placeholder, so the standard Edit menu
                 // is asked for by name rather than assumed.
                 TextEditingCommands()
+                if PageModel.languageDetectionFeaturesAvailable {
+                    CommandGroup(after: .pasteboard) {
+                        LanguageDetectionMenuItems(
+                            pages: appDelegate.pages,
+                            send: appDelegate.sendToResponder
+                        )
+                    }
+                }
                 // The app's first File menu (ADR-0028). Every item
                 // dispatches the same command id the chord does, so
                 // there is one implementation of each verb and the menu
@@ -80,8 +88,8 @@ struct BackdropApp: App {
                 // was first shown on carries the user back there on the
                 // next ⌘Tab. The app is `.regular`, so this menu is on
                 // screen whenever the app is active and the route is not
-                // hypothetical. It also carries the version the core
-                // reports, which the standard item cannot know.
+                // hypothetical. It also adds the linked Rust component
+                // versions, which the standard item cannot know.
                 CommandGroup(replacing: .appInfo) {
                     Button("About \(BackdropAppDelegate.productName)") {
                         appDelegate.showAbout()
@@ -155,6 +163,28 @@ private struct FileMenuItems: View {
 /// own: the click posts an action nobody answers when no page holds the
 /// keyboard, and the page refuses the step outright when it is shown
 /// read-only.
+@MainActor
+private struct LanguageDetectionMenuItems: View {
+    @ObservedObject var pages: PageModel
+    let send: (Selector) -> Void
+
+    private var responder: LanguageDetectionResponder? {
+        pages.activeEditor as? LanguageDetectionResponder
+    }
+
+    var body: some View {
+        Button("Detect Code Language…") {
+            send(#selector(LanguageDetectionResponder.detectCodeLanguage(_:)))
+        }
+        .disabled(responder?.canDetectCodeLanguage != true)
+
+        Button("Paste Without Detection") {
+            send(#selector(LanguageDetectionResponder.pasteWithoutDetection(_:)))
+        }
+        .disabled(pages.activeEditor?.isEditable != true)
+    }
+}
+
 @MainActor
 private struct UndoRedoItems: View {
     @ObservedObject var steps: EditStepAvailability
@@ -452,22 +482,22 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     @objc private func statusItemClicked() {
         if NSApp.currentEvent?.type == .rightMouseUp {
             let menu = NSMenu()
-            // "Which build am I on" answered at a glance: the stamped
-            // bundle version (which carries the git SHA on dogfood
-            // builds) alongside the core the binary actually linked.
-            // No action, so the menu leaves it disabled: it is a fact,
-            // not a feature.
-            menu.addItem(
-                withTitle: BuildVersion.trayTitle(
-                    core: CompanionClient.version,
-                    bundleVersion: Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
-                    devLane: BuildVersion.isDevLane(
-                        bundleIdentifier: Bundle.main.bundleIdentifier)
-                ),
-                action: nil,
-                keyEquivalent: ""
-            )
-            menu.addItem(.separator())
+            // Technical identity is optional here; About always carries it.
+            // No action, so the line is disabled when the preference exposes it.
+            if pages.showsVersionsInMenu {
+                menu.addItem(
+                    withTitle: BuildVersion.menuTitle(
+                        ffiVersion: CompanionClient.ffiVersion,
+                        coreVersion: CompanionClient.coreVersion,
+                        bundleVersion: Bundle.main.infoDictionary?["CFBundleVersion"] as? String,
+                        devLane: BuildVersion.isDevLane(
+                            bundleIdentifier: Bundle.main.bundleIdentifier)
+                    ),
+                    action: nil,
+                    keyEquivalent: ""
+                )
+                menu.addItem(.separator())
+            }
             menu.addItem(
                 withTitle: "About \(Self.productName)",
                 action: #selector(showAbout),
@@ -593,22 +623,18 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         settings.show()
     }
 
-    /// The standard About panel. The version it leads with is the app's
-    /// own, `CFBundleShortVersionString`, which since issue #89 is the
-    /// product's number rather than the Rust seam's, with the stamped
-    /// `CFBundleVersion` behind it in the panel's build slot: "Version
-    /// 0.13.0 (0.13.0+ab12cd3)". A bare `swift run` binary has no
-    /// Info.plist to read either key from, and there the core is the only
-    /// version the process can honestly claim, so it stands alone as it
-    /// did before. `AboutVersion.fields` holds that resolution, tested
-    /// without a bundle or a panel.
+    /// The standard About panel leads with the app's product version and
+    /// stamped build in AppKit's conventional fields. The independently
+    /// versioned Rust crates sit below them as explicitly labelled technical
+    /// details. `AboutVersion.fields` resolves the bundle-less test run too.
     ///
     /// Every route to the panel goes through here, the tray menu and the
     /// app menu's own item alike, because what happens after the panel
     /// is up is load-bearing and AppKit's synthesized item skips it.
     @objc func showAbout() {
         let versions = AboutVersion.fields(
-            core: CompanionClient.version,
+            ffiVersion: CompanionClient.ffiVersion,
+            coreVersion: CompanionClient.coreVersion,
             shortVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
                 as? String,
             bundleVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
@@ -623,6 +649,29 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         if let build = versions.build {
             aboutOptions[.version] = build
         }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.paragraphSpacing = 3
+        let technicalVersions = NSMutableAttributedString(
+            string: "Technical Versions\n",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        technicalVersions.append(NSAttributedString(
+            string: versions.technicalVersions,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(
+                    ofSize: NSFont.smallSystemFontSize,
+                    weight: .regular
+                ),
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .paragraphStyle: paragraph,
+            ]
+        ))
+        aboutOptions[.credits] = technicalVersions
         // A bare `swift run` has no bundle icon to fall back on; the
         // bundled app shows its AppIcon.icns without help.
         if Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") == nil {

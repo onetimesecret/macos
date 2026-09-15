@@ -79,9 +79,8 @@ fi
 # in shell/OnetimePad-Info.plist, edited by hand when user visible work
 # lands (issue #89). It used to be read from crates/ffi/Cargo.toml,
 # which told the user about the Rust seam rather than about the app.
-# The core's version is still worth printing here, because it is the
-# other half of what a packager is shipping, so both are read and both
-# are echoed at the assembly line below. The plist is copied into the
+# The FFI and core crate versions are separate artifact identities, so all
+# three are read and echoed at the assembly line below. The plist is copied into the
 # bundle whole, so CFBundleShortVersionString needs no stamping; only
 # CFBundleVersion does.
 VERSION="$(plutil -extract CFBundleShortVersionString raw shell/OnetimePad-Info.plist 2>/dev/null || true)"
@@ -96,13 +95,17 @@ if [[ "$VERSION" == "0.0.0" ]]; then
   echo "Set CFBundleShortVersionString there to the version this build ships." >&2
   exit 1
 fi
-# Read, not stamped: the core answers for itself at runtime through
-# companion_version(), and a stale xcframework keeps the old string
-# until build-core.sh reruns, so this is what Cargo says today rather
-# than what the linked library will say.
-CORE_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/ffi/Cargo.toml | head -n1)"
-if [[ -z "$CORE_VERSION" ]]; then
+# Read, not stamped: companion_ffi_version() answers from the linked
+# xcframework at runtime, while this reads what Cargo says today. A
+# difference means build-core.sh has not rebuilt the linked artifact.
+FFI_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/ffi/Cargo.toml | head -n1)"
+if [[ -z "$FFI_VERSION" ]]; then
   echo "could not read version from crates/ffi/Cargo.toml" >&2
+  exit 1
+fi
+CORE_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/core/Cargo.toml | head -n1)"
+if [[ -z "$CORE_VERSION" ]]; then
+  echo "could not read version from crates/core/Cargo.toml" >&2
   exit 1
 fi
 
@@ -143,7 +146,7 @@ if [[ "$CONFIG" == "release" ]]; then
 fi
 
 APP=dist/OnetimePad.app
-echo "==> Assembling $APP (app $VERSION, core $CORE_VERSION, $CONFIG)"
+echo "==> Assembling $APP (App $VERSION, FFI $FFI_VERSION, Core $CORE_VERSION, $CONFIG)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/OnetimePad"

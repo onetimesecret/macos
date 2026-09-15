@@ -22,9 +22,9 @@
   lands. It used to be stamped from crates/ffi's CARGO_PKG_VERSION,
   which made the number users see a fact about the Rust seam, so a
   release that changed every keystroke and no crate did not move it
-  while two invisible seam changes did (issue #89). The core keeps its
-  crate version and still speaks for itself through companion_version();
-  the two numbers now move for their own reasons.
+  while two invisible seam changes did (issue #89). The FFI and core
+  crates keep independent versions, reported by companion_ffi_version()
+  and companion_core_version(); all three numbers move for their own reasons.
 
   CFBundleVersion holds a placeholder. The build script stamps it from
   the short version above plus the commit the bundle was built from, so
@@ -49,7 +49,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.19.0</string>
+	<string>0.21.0</string>
 	<key>CFBundleVersion</key>
 	<string>0.0.0</string>
 	<key>LSApplicationCategoryType</key>

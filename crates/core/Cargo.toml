@@ -1,6 +1,6 @@
 [package]
 name = "companion-core"
-version = "0.19.0"
+version = "0.21.0"
 description = "Sheet store for the Onetime Secret macOS companion: ink + sealed chips, pausable per-page countdowns, the session ledger, zeroizing buffers. No UI, no macOS dependencies."
 publish = false
 edition.workspace = true
@@ -13,6 +13,9 @@ workspace = true
 
 [dependencies]
 zeroize = { workspace = true }
+# Experimental ADR-0029 source-language classifier. Exact pin: model, labels,
+# and inference behavior require deliberate review before any upgrade.
+betlang = "=0.1.1"
 # The OS CSPRNG, for minting random 128-bit item identities (ADR-0012).
 # Already in the workspace lock by way of ring, so this adds no new
 # supply chain.

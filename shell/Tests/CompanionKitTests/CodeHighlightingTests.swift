@@ -314,4 +314,24 @@ final class CodeHighlightingRenderingTests: XCTestCase {
         XCTAssertEqual(foreground(of: "/* still open"), NSColor.secondaryLabelColor)
         XCTAssertEqual(foreground(of: "let x"), NSColor.systemPurple)
     }
+
+    func testTurningHighlightingOffKeepsFixedWidthCodeTypography() throws {
+        makeEditor()
+        paste("prose\n```swift\nlet value = 1\n```\nafter")
+        let code = (storage.string as NSString).range(of: "let").location
+        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+
+        model.syntaxHighlightingEnabled = false
+        coordinator.applySyntaxHighlighting(false)
+
+        XCTAssertEqual(foreground(of: "let"), NSColor.labelColor)
+        XCTAssertEqual(
+            try XCTUnwrap(storage.attribute(.font, at: code, effectiveRange: nil) as? NSFont),
+            InkStyle.codeFont
+        )
+
+        model.syntaxHighlightingEnabled = true
+        coordinator.applySyntaxHighlighting(true)
+        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+    }
 }

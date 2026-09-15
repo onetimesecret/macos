@@ -2,41 +2,31 @@ import XCTest
 
 @testable import CompanionKit
 
-/// The tray menu's version line (App.swift). Two shapes: a bare
-/// `swift run` has no bundle version and the core speaks alone, and a
-/// bundled build names both the stamped bundle version and the core it
-/// linked. Since issue #89 the app's marketing version and the core's
-/// crate version have separate sources, so the two numbers differing is
-/// the ordinary case and the line no longer treats it as a warning
-/// worth special phrasing.
+/// The optional menu-bar diagnostic line. Every artifact is labelled by
+/// what it versions; a bare `swift run` simply has no app build to name.
 final class VersionTitleTests: XCTestCase {
-    func testUnbundledRunSpeaksForTheCore() {
+    func testUnbundledRunNamesBothRustCrates() {
         XCTAssertEqual(
-            BuildVersion.trayTitle(core: "0.1.0", bundleVersion: nil),
-            "core 0.1.0")
+            BuildVersion.menuTitle(
+                ffiVersion: "0.27.0", coreVersion: "0.21.0", bundleVersion: nil),
+            "FFI 0.27.0 · Core 0.21.0")
     }
 
-    func testStampedBundleShowsTheBuild() {
+    func testStampedBundleNamesBuildAndBothRustCrates() {
         XCTAssertEqual(
-            BuildVersion.trayTitle(core: "0.1.0", bundleVersion: "0.1.0+ab12cd3"),
-            "build 0.1.0+ab12cd3, core 0.1.0")
+            BuildVersion.menuTitle(
+                ffiVersion: "0.27.0",
+                coreVersion: "0.21.0",
+                bundleVersion: "0.21.0+ab12cd3"
+            ),
+            "Build 0.21.0+ab12cd3 · FFI 0.27.0 · Core 0.21.0")
     }
 
-    func testPlainBundleShowsTheBuild() {
-        // No git available at build time: the stamp is just the version.
-        // Matching the core is now a coincidence rather than a claim, so
-        // the core is still named.
+    func testPlainBundleStillLabelsEachArtifact() {
         XCTAssertEqual(
-            BuildVersion.trayTitle(core: "0.1.0", bundleVersion: "0.1.0"),
-            "build 0.1.0, core 0.1.0")
-    }
-
-    func testDriftNamesBothSides() {
-        // The everyday case now: the app moved for work a user can see
-        // and the seam did not move with it.
-        XCTAssertEqual(
-            BuildVersion.trayTitle(core: "0.1.0", bundleVersion: "0.13.0+ab12cd3"),
-            "build 0.13.0+ab12cd3, core 0.1.0")
+            BuildVersion.menuTitle(
+                ffiVersion: "0.27.0", coreVersion: "0.21.0", bundleVersion: "0.21.0"),
+            "Build 0.21.0 · FFI 0.27.0 · Core 0.21.0")
     }
 
     // MARK: Which lane the build came from
@@ -46,16 +36,28 @@ final class VersionTitleTests: XCTestCase {
         // this menu belongs to is the question the line is opened to
         // answer, so it is the one thing it must not leave out.
         XCTAssertEqual(
-            BuildVersion.trayTitle(
-                core: "0.1.0", bundleVersion: "0.13.0+ab12cd3", devLane: true),
-            "build 0.13.0+ab12cd3, core 0.1.0, dev")
+            BuildVersion.menuTitle(
+                ffiVersion: "0.27.0",
+                coreVersion: "0.21.0",
+                bundleVersion: "0.21.0+ab12cd3",
+                devLane: true
+            ),
+            "Build 0.21.0+ab12cd3 · FFI 0.27.0 · Core 0.21.0 · Dev")
     }
 
     func testTheReleaseLineIsUnchanged() {
         XCTAssertEqual(
-            BuildVersion.trayTitle(
-                core: "0.1.0", bundleVersion: "0.13.0", devLane: false),
-            BuildVersion.trayTitle(core: "0.1.0", bundleVersion: "0.13.0"))
+            BuildVersion.menuTitle(
+                ffiVersion: "0.27.0",
+                coreVersion: "0.21.0",
+                bundleVersion: "0.21.0",
+                devLane: false
+            ),
+            BuildVersion.menuTitle(
+                ffiVersion: "0.27.0",
+                coreVersion: "0.21.0",
+                bundleVersion: "0.21.0"
+            ))
     }
 
     func testTheLaneIsReadOffTheBundleIdentifier() {

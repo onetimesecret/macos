@@ -24,7 +24,7 @@
 //!   ([`companion_chip_copy_out`]), applying the hygiene contract
 //!   (transient + `ConcealedType` marks, change-count-guarded clear). The
 //!   shell never sees the bytes it is copying.
-//! - **The one deliberate ingest-direction entry** is
+//! - **The one deliberate visible-ink entry into sealed custody** is
 //!   [`companion_sheet_seal_text`], the ⌘↩ retrofit: its argument is
 //!   visible ink the shell's editor already holds — not yet sealed,
 //!   readable on screen by definition. The gesture moves it into core
@@ -35,7 +35,10 @@
 //! Visible ink crosses freely in both directions
 //! ([`companion_sheet_sync_document`], the ledger) — it renders on
 //! screen, so holding it shell-side breaks no law; the core keeps a
-//! snapshot for tab titles, the ledger, and concealing a page.
+//! snapshot for tab titles, the ledger, and concealing a page. ADR-0029
+//! also permits explicit, synchronous source-language detection through
+//! [`companion_detect_source_language`]. That path is experimental, is not
+//! approved for shipping, and remains subject to local corpus review.
 //!
 //! ## Scheduling, not polling
 //!
@@ -84,7 +87,7 @@ use std::ffi::{CString, c_char, c_int};
 use std::path::Path;
 use std::ptr;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use companion_credentials::{CredentialStore, credential_store_for, default_credential_store};
@@ -92,8 +95,9 @@ use conceal::{ConcealOpts, Concealed, Connection, Wire, conceal};
 use ots_client::Transport as _;
 
 use companion_core::{
-    ChipId, ChipMeta, DestinationClass, EditOp, FileId, LedgerEvent, RestoreError, Segment, Sheet,
-    SheetId, SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, TabId, Ttl, local_day,
+    ChipId, ChipMeta, DestinationClass, EditOp, FILE_SIZE_LIMIT, FileId, LedgerEvent, RestoreError,
+    Segment, Sheet, SheetId, SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, TabId, Ttl,
+    detect_source_language, local_day,
 };
 #[cfg(target_os = "macos")]
 use companion_pasteboard::SystemPasteboard;
@@ -288,11 +292,73 @@ pub extern "C" fn companion_init() {
     companion_core::harden_process();
 }
 
-/// Library version string (static; do **not** free).
+/// FFI crate version string (static; do **not** free).
+#[unsafe(no_mangle)]
+pub extern "C" fn companion_ffi_version() -> *const c_char {
+    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr().cast()
+}
+
+/// Compatibility alias for callers built against the original ambiguous name.
 #[unsafe(no_mangle)]
 pub extern "C" fn companion_version() -> *const c_char {
-    // A NUL-terminated static byte string.
-    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr().cast()
+    companion_ffi_version()
+}
+
+/// Core crate version string (static; do **not** free).
+#[unsafe(no_mangle)]
+pub extern "C" fn companion_core_version() -> *const c_char {
+    static VERSION: OnceLock<CString> = OnceLock::new();
+    VERSION
+        .get_or_init(|| CString::new(companion_core::VERSION).expect("crate version contains NUL"))
+        .as_ptr()
+}
+
+/// Detect a canonical source-language slug without creating or locking a
+/// companion handle. Returns an owned C string, freed with
+/// [`companion_string_free`], or null for abstention, invalid input, or a
+/// contained panic.
+///
+/// The detector's `20 bytes / 0.20 score / 0.20 margin` gate is an external
+/// evaluation baseline. This export is experimental, is not approved for
+/// shipping, and remains subject to local corpus review.
+///
+/// `(NULL, 0)` is empty input; `(NULL, nonzero)` is invalid. Input is borrowed
+/// only for this synchronous call. Length is rejected above 4 MiB before a
+/// slice is constructed. Embedded NUL bytes do not terminate input and cause
+/// abstention.
+///
+/// # Safety
+/// When `len <= 4 MiB`, a non-null `bytes` pointer must be readable for `len`
+/// bytes and remain unchanged until return. Oversized calls return before the
+/// pointer is read. This function cannot validate arbitrary pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_detect_source_language(
+    bytes: *const u8,
+    len: usize,
+) -> *mut c_char {
+    if len > FILE_SIZE_LIMIT {
+        return ptr::null_mut();
+    }
+    let input = if len == 0 {
+        &[]
+    } else {
+        if bytes.is_null() {
+            return ptr::null_mut();
+        }
+        unsafe { std::slice::from_raw_parts(bytes, len) }
+    };
+
+    detect_source_language_owned(input, detect_source_language)
+}
+
+fn detect_source_language_owned<F>(input: &[u8], detector: F) -> *mut c_char
+where
+    F: FnOnce(&[u8]) -> Option<&'static str> + std::panic::UnwindSafe,
+{
+    std::panic::catch_unwind(|| {
+        detector(input).map_or(ptr::null_mut(), |slug| into_c_string(slug.to_owned()))
+    })
+    .unwrap_or(ptr::null_mut())
 }
 
 /// Create the companion state, returning an owned handle. The caller
@@ -3257,8 +3323,8 @@ pub unsafe extern "C" fn companion_sync_pairing_cancel(handle: *mut CompanionHan
 /// Free a string returned by this library. Passing null is a no-op.
 ///
 /// # Safety
-/// `s` must be a pointer returned by one of this library's `*_json` or
-/// seal functions (or null), not previously freed.
+/// `s` must be an owned string pointer returned by this library (or null),
+/// not previously freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn companion_string_free(s: *mut c_char) {
     if !s.is_null() {
@@ -3522,6 +3588,17 @@ fn ttl_to_code(ttl: Ttl) -> c_int {
 mod tests {
     use super::*;
 
+    #[test]
+    fn version_exports_name_the_crates_they_report() {
+        let ffi = unsafe { CStr::from_ptr(companion_ffi_version()) };
+        let compatibility = unsafe { CStr::from_ptr(companion_version()) };
+        let core = unsafe { CStr::from_ptr(companion_core_version()) };
+
+        assert_eq!(ffi.to_str().unwrap(), env!("CARGO_PKG_VERSION"));
+        assert_eq!(compatibility, ffi);
+        assert_eq!(core.to_str().unwrap(), companion_core::VERSION);
+    }
+
     /// A handle over the in-process board — never `companion_new`, so
     /// the tests stay deterministic and never read or clobber a real
     /// clipboard on macOS, where `companion_new` binds
@@ -3581,6 +3658,70 @@ mod tests {
 
     fn cstring(s: &str) -> CString {
         CString::new(s).unwrap()
+    }
+
+    #[test]
+    fn language_detection_returns_an_owned_canonical_slug() {
+        let source = b"def total(values):\n    return sum(value for value in values if value > 0)\n\nprint(total([1, -2, 3]))";
+        unsafe {
+            let result = companion_detect_source_language(source.as_ptr(), source.len());
+            assert_eq!(take_json(result), "python");
+        }
+    }
+
+    #[test]
+    fn language_detection_handles_null_and_length_rules() {
+        unsafe {
+            assert!(companion_detect_source_language(ptr::null(), 0).is_null());
+            assert!(companion_detect_source_language(ptr::null(), 1).is_null());
+
+            let byte = b'x';
+            assert!(
+                companion_detect_source_language(&byte, FILE_SIZE_LIMIT + 1).is_null(),
+                "oversize must return before constructing a slice"
+            );
+        }
+    }
+
+    #[test]
+    fn language_detection_rejects_ineligible_text_bytes() {
+        let with_nul = b"fn main() {\0 println!(\"no\"); }";
+        let invalid_utf8 = [0xff; 20];
+        unsafe {
+            assert!(companion_detect_source_language(with_nul.as_ptr(), with_nul.len()).is_null());
+            assert!(
+                companion_detect_source_language(invalid_utf8.as_ptr(), invalid_utf8.len())
+                    .is_null()
+            );
+        }
+    }
+
+    #[test]
+    fn language_detection_contains_panics() {
+        let result = detect_source_language_owned(b"enough ASCII evidence for inference", |_| {
+            panic!("synthetic detector panic")
+        });
+        assert!(result.is_null());
+    }
+
+    #[test]
+    fn language_detection_supports_concurrent_stateless_calls() {
+        let threads = (0..4)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    let source = b"def total(values):\n    return sum(value for value in values if value > 0)\n\nprint(total([1, -2, 3]))";
+                    unsafe {
+                        let result =
+                            companion_detect_source_language(source.as_ptr(), source.len());
+                        assert_eq!(take_json(result), "python");
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for thread in threads {
+            thread.join().expect("detection thread panicked");
+        }
     }
 
     /// A fresh tab and the page it was born holding, as the two ids the
@@ -4090,10 +4231,9 @@ mod tests {
     }
 
     #[test]
-    fn there_is_no_detection_and_no_reveal_surface() {
-        // Rev C deleted detection: nothing in the seam's output ever
-        // claims to know what the content is. The vocabulary itself is
-        // gone from the wire.
+    fn sealed_outputs_have_no_detection_and_no_reveal_surface() {
+        // Source detection is a separate explicit call under ADR-0029; sealed
+        // content and metadata never invoke it or carry its result.
         let handle = handle();
         unsafe {
             let (_tab, sheet) = new_page(handle);

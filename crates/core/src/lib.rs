@@ -12,10 +12,11 @@
 //!   [`persist`]: at the shell's explicit request the whole store
 //!   crosses to disk *encrypted* at quit and comes back at launch —
 //!   never in plaintext, never on its own (see the module docs).
-//! - **Masking is by gesture, never by content.** The core never
-//!   parses, classifies, or scores what arrives — rev C deleted
-//!   detection outright. A chip's excerpt is a fixed-budget substring;
-//!   counts are counts.
+//! - **Masking is by gesture, never by content.** Sealing never classifies
+//!   what arrives. ADR-0029 separately permits experimental source-language
+//!   detection for bytes explicitly submitted to [`detect_source_language`];
+//!   it is not approved for shipping. A chip's excerpt is a fixed-budget
+//!   substring; counts are counts.
 //! - **Evicts by policy, never by surprise.** Every page expires on the
 //!   countdown the user chose, and nothing else ends one: the strip
 //!   has no cap, so there is no wall to evict at (issue #158).
@@ -37,6 +38,7 @@ mod document;
 pub mod file_persist;
 pub mod files;
 pub mod harden;
+mod language_detection;
 pub mod ledger;
 pub mod persist;
 pub mod secret;
@@ -44,6 +46,9 @@ pub mod sheet;
 pub mod store;
 pub mod sync;
 pub mod ttl;
+
+/// This crate's semantic version, independent of the FFI crate that links it.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub use blocks::BlockMeta;
 pub use clock::{Clock, ManualClock, SystemClock};
@@ -53,6 +58,7 @@ pub use files::{
     SaveError, StepOutcome,
 };
 pub use harden::harden_process;
+pub use language_detection::detect_source_language;
 pub use ledger::{DestinationClass, LEDGER_RETENTION_MS, LedgerEvent, LedgerRecord, SizeClass};
 pub use persist::RestoreError;
 pub use secret::SecretBuffer;
