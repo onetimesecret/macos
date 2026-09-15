@@ -27,6 +27,18 @@ struct BackdropApp: App {
                 // is the Settings placeholder, so the standard Edit menu
                 // is asked for by name rather than assumed.
                 TextEditingCommands()
+                // Edit → Seal Selected Content (D-30): the menu bar's
+                // placement of the seal, beside the pasteboard verbs
+                // it is a cousin of. It posts the same action down
+                // the responder chain that Undo does, and the page's
+                // text view answers with the method the chord runs.
+                CommandGroup(after: .pasteboard) {
+                    SealSelectionMenuItem(
+                        availability: appDelegate.sealActions,
+                        shortcut: appDelegate.shortcut(for: SealSelectionMenu.command),
+                        send: appDelegate.sendToResponder
+                    )
+                }
                 if PageModel.languageDetectionFeaturesAvailable {
                     CommandGroup(after: .pasteboard) {
                         LanguageDetectionMenuItems(
@@ -252,6 +264,27 @@ private struct UndoRedoItems: View {
         Button("Redo") { send(#selector(EditStepResponder.redo(_:))) }
             .keyboardShortcut(redoShortcut)
             .disabled(!steps.canRedo)
+    }
+}
+
+/// The Edit menu's Seal Selected Content (D-30), a view of its own for
+/// `UndoRedoItems`' reason: it greys itself out on the model's answer,
+/// which is whether the editor holds an editable page with a
+/// selection. The chord comes from the keymap like every other chord
+/// the menus advertise, and the page's text view claims it first; the
+/// menu carries it to show what the item costs, not to be the thing
+/// that fires.
+private struct SealSelectionMenuItem: View {
+    @ObservedObject var availability: SealActionAvailability
+    let shortcut: KeyboardShortcut?
+    let send: (Selector) -> Void
+
+    var body: some View {
+        Button(SealSelectionMenu.editMenuTitle) {
+            send(#selector(SealResponder.sealSelectedContent(_:)))
+        }
+        .keyboardShortcut(shortcut)
+        .disabled(!availability.canSeal)
     }
 }
 
@@ -649,6 +682,11 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// What the two items grey themselves out on: the core's answer for
     /// the page under the editor, published by the model.
     var editSteps: EditStepAvailability { model.pages.editSteps }
+
+    /// What Seal Selected Content greys itself out on: whether the
+    /// editor holds an editable page with a selection, published by
+    /// the model as the selection moves.
+    var sealActions: SealActionAvailability { model.pages.sealActions }
 
     /// Post an action down the responder chain, which is how a menu
     /// item reaches whoever is first responder. Nothing happens when

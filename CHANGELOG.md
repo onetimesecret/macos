@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "5 ln" and "212 KB" forms. An exact length is a weak fingerprint of the
   content, and the label is what a pasteboard placeholder will carry.
 
+- **The sealed object's gestures follow the 2026-0915 record** (D-08,
+  D-28, D-29, D-30). Both seal chords refuse a selection that already
+  holds a chip, in the core and in the editor, instead of reaping it.
+  After a seal the new object is selected rather than the caret parked
+  after it. A plain click on a chip selects it whole; its menu, now
+  "Copy decrypted contents", "Create one-time link…", a separator and
+  "Remove protected content", opens on a right or control click. The
+  seal of a selection is offered as Seal Selection in the editor's
+  context menu and as Edit → Seal Selected Content in the menu bar,
+  both running the verb the chord runs.
+
 ### Added
 
 - **Source-language detection is available for evaluation** (ADR-0029;

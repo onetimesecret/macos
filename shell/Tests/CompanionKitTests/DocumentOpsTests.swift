@@ -460,6 +460,45 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertTrue(ink.items.isEmpty)
     }
 
+    func testTheContextMenuOffersSealSelectionOverInkOnly() {
+        makeEditor()
+        textView.isEditable = true
+        textView.insertText(
+            "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        // Nothing selected: no row, and the Edit menu item is dimmed.
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        coordinator.refreshLanguageActionAvailability()
+        XCTAssertFalse(model.sealActions.canSeal)
+        let bare = NSMenu()
+        coordinator.appendSealItem(to: bare)
+        XCTAssertTrue(bare.items.isEmpty)
+
+        // Ink selected: the row is offered and runs the seal (D-30).
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.refreshLanguageActionAvailability()
+        XCTAssertTrue(model.sealActions.canSeal)
+        let offered = NSMenu()
+        coordinator.appendSealItem(to: offered)
+        XCTAssertEqual(offered.items.map(\.title), [SealSelectionMenu.contextMenuTitle])
+        XCTAssertTrue(offered.items[0].target === coordinator)
+        coordinator.sealSelectionOrLine()
+
+        // A selection holding the chip: the row is withheld, because
+        // it would only refuse; the Edit item stays enabled so the
+        // refusal is said rather than hidden.
+        textView.setSelectedRange(NSRange(location: 1, length: 4))
+        coordinator.refreshLanguageActionAvailability()
+        XCTAssertTrue(model.sealActions.canSeal)
+        let overChip = NSMenu()
+        coordinator.appendSealItem(to: overChip)
+        XCTAssertTrue(overChip.items.isEmpty)
+        model.notice = nil
+        textView.sealSelectedContent(nil)
+        XCTAssertEqual(model.notice, InkEditorView.Coordinator.alreadySealedLine)
+        assertParity()
+    }
+
     func testAClickOnAChipSelectsItWhole() throws {
         makeEditor()
         textView.insertText(

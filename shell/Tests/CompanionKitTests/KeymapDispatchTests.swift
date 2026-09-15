@@ -54,6 +54,22 @@ final class KeymapDispatchTests: XCTestCase {
         XCTAssertFalse(model.perform(.editorRedo))
     }
 
+    /// Edit → Seal Selected Content and the chord are one verb (D-30):
+    /// the menu item names the same command id the keymap binds, and
+    /// the chord it advertises is read from the keymap rather than
+    /// spelled in Swift, so a person who rebound it sees their own.
+    func testSealSelectedContentIsWiredToTheSameCommand() throws {
+        XCTAssertEqual(SealSelectionMenu.command, CommandID.clipboardSealSelection)
+        XCTAssertEqual(SealSelectionMenu.editMenuTitle, "Seal Selected Content")
+        XCTAssertEqual(SealSelectionMenu.contextMenuTitle, "Seal Selection")
+        let model = try makeModel()
+        let keystroke = try XCTUnwrap(model.keymap.menuKeystroke(for: SealSelectionMenu.command))
+        XCTAssertEqual(keystroke, try Keystroke.parse("cmd-enter").get())
+        XCTAssertTrue(
+            InkTextView.instancesRespond(to: #selector(SealResponder.sealSelectedContent(_:))),
+            "the page's text view must answer the menu's action")
+    }
+
     func testAJumpCommandSelectsThatPlaceInTheTabOrder() throws {
         let model = try makeModel()
         model.perform(.pageNew)

@@ -349,6 +349,23 @@ public final class EditStepAvailability: ObservableObject {
     }
 }
 
+/// What Edit → Seal Selected Content greys itself out on: whether the
+/// editor holds an editable page with a non-empty selection. Published
+/// for the same reason as the two above, a SwiftUI menu item carries
+/// its own target and is never validated down the responder chain.
+///
+/// Enablement is display, never a gate. A selection that holds a chip
+/// leaves the item enabled and the click refuses out loud (D-08); a
+/// disabled item would hide the refusal rather than say it.
+@MainActor
+public final class SealActionAvailability: ObservableObject {
+    @Published public private(set) var canSeal = false
+
+    func stand(canSeal: Bool) {
+        if self.canSeal != canSeal { self.canSeal = canSeal }
+    }
+}
+
 @MainActor
 public final class PageModel: ObservableObject {
     /// What this form factor decides differently — where its Keychain
@@ -856,6 +873,9 @@ public final class PageModel: ObservableObject {
 
     /// What the Edit menu's Undo and Redo read as right now.
     public let editSteps = EditStepAvailability()
+
+    /// What Edit → Seal Selected Content reads as the selection moves.
+    public let sealActions = SealActionAvailability()
 
     /// Set by the app delegate; Esc routes here when no editor holds
     /// the keys (the controller re-keys the frontmost app's window).

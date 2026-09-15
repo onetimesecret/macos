@@ -837,6 +837,45 @@ public struct InkEditorView: NSViewRepresentable {
                 canChoose: canChoose,
                 selectionIsEmpty: selectionIsEmpty
             )
+            model.sealActions.stand(canSeal: sealableSelection() != nil)
+        }
+
+        /// The selection Edit → Seal Selected Content and the context
+        /// menu row would seal: non-empty, on an editable page rather
+        /// than a file, and not mid-composition. Nil otherwise. The
+        /// chord is wider (it takes the current line when nothing is
+        /// selected); the menus name a selection and offer only that.
+        func sealableSelection() -> NSRange? {
+            guard let textView, let storage = textView.textStorage,
+                  let sheet = currentSheet, !sheet.isFileID,
+                  textView.isEditable, !textView.hasMarkedText()
+            else { return nil }
+            let selection = textView.selectedRange()
+            guard selection.location != NSNotFound, selection.length > 0,
+                  NSMaxRange(selection) <= storage.length
+            else { return nil }
+            return selection
+        }
+
+        /// The context menu's Seal Selection row (D-30), offered when
+        /// the selection is sealable and holds no chip: over a chip the
+        /// row would only ever refuse, and a menu should not offer a
+        /// verb it knows it will decline.
+        func appendSealItem(to menu: NSMenu) {
+            guard let storage = textView?.textStorage, let selection = sealableSelection(),
+                  !Self.containsChip(storage, in: selection)
+            else { return }
+            let seal = NSMenuItem(
+                title: SealSelectionMenu.contextMenuTitle,
+                action: #selector(sealSelectionFromMenu(_:)),
+                keyEquivalent: ""
+            )
+            seal.target = self
+            menu.addItem(seal)
+        }
+
+        @objc private func sealSelectionFromMenu(_ sender: NSMenuItem) {
+            sealSelectionOrLine()
         }
 
         var canDetectCodeLanguage: Bool {
@@ -2980,12 +3019,35 @@ final class InkLayoutManager: NSLayoutManager {
     func pasteWithoutDetection(_ sender: Any?)
 }
 
+/// The seal of a selection, posted by Edit → Seal Selected Content down
+/// the responder chain (D-30). Same shape as `EditStepResponder`, for
+/// the same reason: the app target cannot name the page's text view,
+/// and a selector spelled once here is checked by the compiler at both
+/// ends of the route.
+@MainActor
+@objc public protocol SealResponder {
+    func sealSelectedContent(_ sender: Any?)
+}
+
+/// The two placements the record gives the seal of a selection (D-30):
+/// a row in the editor's context menu and an item in the Edit menu.
+/// Both run the same coordinator method the chord runs, so there is
+/// one implementation of the verb and the menus cannot drift from the
+/// keyboard. The command id is the one the keymap names.
+public enum SealSelectionMenu {
+    public static let contextMenuTitle = "Seal Selection"
+    public static let editMenuTitle = "Seal Selected Content"
+    public static let command = CommandID.clipboardSealSelection
+}
+
 /// The page's text view: routes the seal gestures, keeps ⌘V plain,
 /// hands Esc back, and seals external drops through the core's drag
 /// route. Chips are atomic under the caret by construction — an
 /// attachment is one character: arrows step over it, one ⌫ removes it
 /// whole, selection cannot reach inside it.
-final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder {
+final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder,
+    SealResponder
+{
     weak var coordinator: InkEditorView.Coordinator?
 
     var canChooseCodeLanguage: Bool {
@@ -3010,6 +3072,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             return menu
         }
         let menu = super.menu(for: event) ?? NSMenu()
+        coordinator?.appendSealItem(to: menu)
         coordinator?.appendLanguageItems(to: menu)
         return menu
     }
@@ -3066,6 +3129,14 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 
     @objc func redo(_ sender: Any?) {
         coordinator?.step(back: false)
+    }
+
+    /// Edit → Seal Selected Content, arriving nil-targeted. The same
+    /// method the chord and the context menu row run; a page shown
+    /// read-only refuses it here, as it refuses the chord.
+    @objc func sealSelectedContent(_ sender: Any?) {
+        guard isEditable else { return }
+        coordinator?.sealSelectionOrLine()
     }
 
     /// The answer for any nil-targeted item that asks this view about
