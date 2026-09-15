@@ -324,7 +324,7 @@ final class DayStackView: NSView {
             self,
             selector: #selector(previewRenderingChanged),
             name: PageModel.previewRenderingDidChangeNotification,
-            object: nil
+            object: model
         )
     }
 
@@ -388,6 +388,7 @@ final class DayStackView: NSView {
         coordinator.applyTypeface(model.typeface)
         coordinator.applySyntaxHighlighting(model.syntaxHighlightingEnabled)
         coordinator.applyLanguageDetection(model.languageDetectionEnabled)
+        coordinator.applyPreviewRendering(model.previewRendering)
         guard signature != rendered else {
             // The ordinary pass: a keystroke, or the cosmetic redraw.
             // The countdowns in the gutters move every second and the
