@@ -361,14 +361,16 @@ struct BackdropRootView: View {
                 // from the drafts file rather than from disk. It is the
                 // whole of what the app owes for quitting without a
                 // save sheet: a person can see how old the typing is
-                // before pressing the save chord.
+                // before pressing the save chord. Secondary rather than
+                // tertiary ink, since a fact the app owes is text that
+                // carries meaning and must be readable as such.
                 Text(stamp)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             Text(state.encodingAndFormat)
                 .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(state.spoken))
