@@ -166,7 +166,7 @@ public struct GeneralSettingsView: View {
             Section {
                 Toggle("A page a day, with time tabs down the side", isOn: $model.showsTimeUnits)
             } header: {
-                SettingsCaption(timeUnitsCaption)
+                SettingsCaption(Self.timeUnitsCaption)
             }
             Section {
                 Toggle("Start at login", isOn: loginBinding)
@@ -259,18 +259,23 @@ public struct GeneralSettingsView: View {
     /// order is deliberate: say that it is a prototype, say that it
     /// moves no content, and say what it costs while the mode is on.
     /// A toggle whose caption promised only the good half would be the
-    /// kind of setting a user flips once and distrusts afterwards, and
-    /// the missing verbs are a real limit until each page carries its
-    /// own gutter.
-    private var timeUnitsCaption: String {
-        "A prototype. Your live pages stand down the side of the card grouped by the day they "
+    /// kind of setting a user flips once and distrusts afterwards. The
+    /// costs are the two the tree really imposes (D-26): lines wrap
+    /// whatever the wrap preference says, and an older page with
+    /// nothing on it draws no row and is only counted. Each day's
+    /// gutter carries the four verbs now, so they are no longer a cost
+    /// to name. "Strip" and "rail" are code names and stay out of the
+    /// caption, which a test pins.
+    static let timeUnitsCaption: String =
+        "A prototype. Live pages stand down the side of the card grouped by the day they "
             + "were written, newest first, instead of along the bottom as slots. It moves no "
             + "content and writes nothing new to disk: the tabs, their names and their rungs "
-            + "are the same underneath either way you look at them, and turning it off puts the "
-            + "strip back as it was. The days read as one page torn along a perforation: "
+            + "are the same underneath either way, and turning it off puts the slots back "
+            + "along the bottom. The days read as one page torn along a perforation: "
             + "renaming, holding, shortening and closing live on each day's own gutter, and "
-            + "the column beside them is for getting about."
-    }
+            + "the column beside them is for getting about. Lines always wrap while days are "
+            + "showing. An older page with nothing on it is not drawn; it is counted at the "
+            + "foot of the column."
 
     /// The section only exists when the switch is offered, so the
     /// caption's job is to say why this build has one and how long it
