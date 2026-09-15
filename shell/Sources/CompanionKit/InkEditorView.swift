@@ -1940,6 +1940,11 @@ public struct InkEditorView: NSViewRepresentable {
         /// back as ops would stand the chip twice. Undo dies with it:
         /// sealing is not undoable, and undo never un-seals (doc 06
         /// №5).
+        ///
+        /// The new object is left selected rather than the caret placed
+        /// after it (D-30): the seal is the app's one irreversible
+        /// gesture, and the selection is what makes the transformation
+        /// visible at the moment it happens.
         private func placeChipFace(_ chip: ChipInfo, replacing range: NSRange) {
             guard let textView, let storage = textView.textStorage else { return }
             model.applyingProjection {
@@ -1948,7 +1953,7 @@ public struct InkEditorView: NSViewRepresentable {
                     textView.didChangeText()
                 }
             }
-            textView.setSelectedRange(NSRange(location: range.location + 1, length: 0))
+            textView.setSelectedRange(NSRange(location: range.location, length: 1))
         }
 
         static func containsChip(_ storage: NSTextStorage, in range: NSRange) -> Bool {

@@ -377,10 +377,29 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertEqual(head, "a\u{1F600} ")
         XCTAssertEqual(tail, " tail")
         XCTAssertFalse(storage.string.contains("SECRET"))
-        // The caret sits just past the chip, and sealing is not
+        // The new object is selected (D-30), and sealing is not
         // undoable.
-        XCTAssertEqual(textView.selectedRange(), NSRange(location: 5, length: 0))
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 4, length: 1))
         XCTAssertNil(textView.undoManager, "AppKit is vending a stack for a page it does not own")
+        assertParity()
+    }
+
+    func testSealingSelectsTheNewObject() {
+        makeEditor()
+        textView.insertText(
+            "head SECRET tail", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 5, length: 6))
+        coordinator.sealSelectionOrLine()
+
+        // The selection covers exactly the sentinel character, so the
+        // transformation is visible where it happened rather than the
+        // caret sitting quietly after it.
+        let selected = textView.selectedRange()
+        XCTAssertEqual(selected, NSRange(location: 5, length: 1))
+        XCTAssertTrue(
+            InkEditorView.Coordinator.containsChip(storage, in: selected),
+            "the selection is the chip, not the ink beside it")
+        XCTAssertEqual((storage.string as NSString).character(at: 5), 0xFFFC)
         assertParity()
     }
 
