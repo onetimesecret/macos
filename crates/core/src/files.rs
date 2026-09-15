@@ -69,6 +69,15 @@ pub const DRAFT_SNAPSHOT_LIMIT: usize = 4 * FILE_SIZE_LIMIT;
 /// a file that arrived with one.
 const UTF8_BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
 
+/// UTF-16 and UTF-32 byte order marks. These identify non-UTF-8 encodings
+/// before the content classifier can mistake their zero bytes for binary.
+const NON_UTF8_BOMS: &[&[u8]] = &[
+    &[0xFF, 0xFE, 0x00, 0x00],
+    &[0x00, 0x00, 0xFE, 0xFF],
+    &[0xFF, 0xFE],
+    &[0xFE, 0xFF],
+];
+
 /// Why a file that was in the drafts file is not in the roster, or came
 /// back with less than it was staged with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,7 +87,8 @@ pub enum DroppedReason {
     /// in a [`FileConflict::Missing`] conflict instead.
     Missing,
     /// Something is at the path, but this build will not open it: not
-    /// UTF-8, past [`FILE_SIZE_LIMIT`], or a read the platform refused.
+    /// UTF-8, binary-like, past [`FILE_SIZE_LIMIT`], or a read the platform
+    /// refused.
     Unreadable,
     /// The file's draft was larger than [`DRAFT_SNAPSHOT_LIMIT`] when
     /// the drafts file was written, so it was left out. The file itself
@@ -276,6 +286,8 @@ pub enum OpenRefusal {
     /// only, and nothing opens with replacement characters standing in
     /// for a person's text.
     NotUtf8,
+    /// The bytes decode as UTF-8 with binary-like control content.
+    Binary,
     /// The file is larger than [`FILE_SIZE_LIMIT`], which travels with
     /// the refusal so the notice can state it.
     TooLarge {
@@ -540,6 +552,7 @@ impl FileStore {
     /// # Errors
     ///
     /// [`OpenRefusal::NotUtf8`] for bytes that are not UTF-8,
+    /// [`OpenRefusal::Binary`] for content that looks binary,
     /// [`OpenRefusal::TooLarge`] above [`FILE_SIZE_LIMIT`], and
     /// [`OpenRefusal::Io`] for a read the platform refused.
     pub fn open(&mut self, io: &dyn FileIo, path: &Path) -> Result<FileId, OpenRefusal> {
@@ -1203,6 +1216,9 @@ fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefus
             limit: FILE_SIZE_LIMIT,
         });
     }
+    if NON_UTF8_BOMS.iter().any(|bom| bytes.starts_with(bom)) {
+        return Err(OpenRefusal::NotUtf8);
+    }
     let has_bom = bytes.starts_with(UTF8_BOM);
     let body = if has_bom {
         &bytes[UTF8_BOM.len()..]
@@ -1210,6 +1226,9 @@ fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefus
         &bytes[..]
     };
     let text = std::str::from_utf8(body).map_err(|_| OpenRefusal::NotUtf8)?;
+    if looks_binary(text) {
+        return Err(OpenRefusal::Binary);
+    }
     let line_ending = LineEnding::detect(text);
     Ok(Some(ReadFile {
         text: text.replace("\r\n", "\n"),
@@ -1217,6 +1236,28 @@ fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefus
         line_ending,
         has_bom,
     }))
+}
+
+/// Whether valid UTF-8 is conservatively binary-like.
+///
+/// Any NUL is binary. Otherwise, tab, line feed, carriage return and form
+/// feed are accepted; other Unicode control scalars cause refusal only when
+/// there are at least two and they exceed ten percent of all scalars.
+fn looks_binary(text: &str) -> bool {
+    let mut scalar_count = 0;
+    let mut disallowed_controls = 0;
+
+    for scalar in text.chars() {
+        scalar_count += 1;
+        if scalar == '\0' {
+            return true;
+        }
+        if scalar.is_control() && !matches!(scalar, '\t' | '\n' | '\r' | '\u{000C}') {
+            disallowed_controls += 1;
+        }
+    }
+
+    disallowed_controls >= 2 && disallowed_controls * 10 > scalar_count
 }
 
 /// A save target, in the same terms as every path the store holds.
@@ -1336,6 +1377,7 @@ fn boundary(sim: &[u16], at: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -1475,6 +1517,28 @@ mod tests {
         }
     }
 
+    /// A path the platform reports as non-regular. Its read records whether
+    /// the core incorrectly continued after the rejecting stat.
+    #[derive(Default)]
+    struct NonRegularIo {
+        read_called: Cell<bool>,
+    }
+
+    impl FileIo for NonRegularIo {
+        fn read(&self, _path: &Path) -> io::Result<Vec<u8>> {
+            self.read_called.set(true);
+            Ok(Vec::new())
+        }
+
+        fn write_atomic(&self, _path: &Path, _bytes: &[u8]) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn stat(&self, _path: &Path) -> io::Result<FileWitness> {
+            Err(io::Error::from(io::ErrorKind::InvalidInput))
+        }
+    }
+
     fn ins(at: u32, text: &str) -> EditOp {
         EditOp::Insert {
             pos_u16: at,
@@ -1570,6 +1634,119 @@ mod tests {
     }
 
     #[test]
+    fn valid_utf8_with_a_nul_is_refused_as_binary() {
+        let io = MemoryIo::with("/nul.txt", b"alpha\0beta");
+        let mut store = FileStore::new();
+        assert_eq!(
+            store.open(&io, Path::new("/nul.txt")),
+            Err(OpenRefusal::Binary)
+        );
+        assert!(store.files().is_empty());
+    }
+
+    #[test]
+    fn invalid_utf8_with_a_known_binary_signature_remains_not_utf8() {
+        for (path, bytes) in [
+            ("/image.png", b"\x89PNG\r\n\x1A\n\xFF".as_slice()),
+            ("/image.jpg", b"\xFF\xD8\xFF".as_slice()),
+        ] {
+            let io = MemoryIo::with(path, bytes);
+            let mut store = FileStore::new();
+            assert_eq!(store.open(&io, Path::new(path)), Err(OpenRefusal::NotUtf8));
+        }
+    }
+
+    #[test]
+    fn valid_utf8_signature_text_is_not_rejected_for_its_prefix() {
+        for (path, bytes) in [
+            ("/paper.pdf", b"%PDF-1.7\n".as_slice()),
+            ("/image.gif", b"GIF89a ordinary text\n".as_slice()),
+            ("/data.plist", b"bplist00 ordinary text\n".as_slice()),
+        ] {
+            let io = MemoryIo::with(path, bytes);
+            let mut store = FileStore::new();
+            assert!(store.open(&io, Path::new(path)).is_ok());
+        }
+    }
+
+    #[test]
+    fn exactly_ten_percent_disallowed_controls_is_accepted() {
+        let io = MemoryIo::with("/boundary.txt", b"\x01\x02abcdefghijklmnopqr");
+        let mut store = FileStore::new();
+        assert!(store.open(&io, Path::new("/boundary.txt")).is_ok());
+    }
+
+    #[test]
+    fn just_over_ten_percent_disallowed_controls_is_refused_as_binary() {
+        let io = MemoryIo::with("/boundary.txt", b"\x01\x02abcdefghijklmnopq");
+        let mut store = FileStore::new();
+        assert_eq!(
+            store.open(&io, Path::new("/boundary.txt")),
+            Err(OpenRefusal::Binary)
+        );
+        assert!(store.files().is_empty());
+    }
+
+    #[test]
+    fn one_disallowed_control_is_accepted_even_above_ten_percent() {
+        let io = MemoryIo::with("/one-control.txt", b"\x01a");
+        let mut store = FileStore::new();
+        assert!(store.open(&io, Path::new("/one-control.txt")).is_ok());
+    }
+
+    #[test]
+    fn ansi_control_rich_utf8_is_an_acknowledged_false_rejection() {
+        let io = MemoryIo::with("/terminal.txt", b"\x1B[31mred\x1B[0m");
+        let mut store = FileStore::new();
+        assert_eq!(
+            store.open(&io, Path::new("/terminal.txt")),
+            Err(OpenRefusal::Binary)
+        );
+    }
+
+    #[test]
+    fn normal_text_controls_are_accepted() {
+        let io = MemoryIo::with("/controls.txt", b"\t\n\r\x0C");
+        let mut store = FileStore::new();
+        assert!(store.open(&io, Path::new("/controls.txt")).is_ok());
+    }
+
+    #[test]
+    fn utf16_and_utf32_boms_remain_not_utf8() {
+        for (path, bytes) in [
+            ("/utf16le.txt", &[0xFF, 0xFE, b'a', 0x00][..]),
+            ("/utf16be.txt", &[0xFE, 0xFF, 0x00, b'a'][..]),
+            ("/utf32le.txt", &[0xFF, 0xFE, 0x00, 0x00][..]),
+            ("/utf32be.txt", &[0x00, 0x00, 0xFE, 0xFF][..]),
+        ] {
+            let io = MemoryIo::with(path, bytes);
+            let mut store = FileStore::new();
+            assert_eq!(store.open(&io, Path::new(path)), Err(OpenRefusal::NotUtf8));
+        }
+    }
+
+    #[test]
+    fn text_with_an_unknown_extension_is_accepted() {
+        let io = MemoryIo::with("/notes.unknown", b"ordinary UTF-8 text\n");
+        let mut store = FileStore::new();
+        assert!(store.open(&io, Path::new("/notes.unknown")).is_ok());
+    }
+
+    #[test]
+    fn extensionless_text_is_accepted() {
+        let io = MemoryIo::with("/Makefile", b"ordinary UTF-8 text\n");
+        let mut store = FileStore::new();
+        assert!(store.open(&io, Path::new("/Makefile")).is_ok());
+    }
+
+    #[test]
+    fn a_file_exactly_at_the_limit_is_accepted() {
+        let io = MemoryIo::with("/limit.txt", &vec![b'x'; FILE_SIZE_LIMIT]);
+        let mut store = FileStore::new();
+        assert!(store.open(&io, Path::new("/limit.txt")).is_ok());
+    }
+
+    #[test]
     fn a_file_past_the_limit_is_refused_with_the_limit() {
         let io = MemoryIo::with("/big.txt", &vec![b'x'; FILE_SIZE_LIMIT + 1]);
         let mut store = FileStore::new();
@@ -1579,6 +1756,18 @@ mod tests {
                 limit: FILE_SIZE_LIMIT
             })
         );
+    }
+
+    #[test]
+    fn a_non_regular_path_is_refused_before_reading() {
+        let io = NonRegularIo::default();
+        let mut store = FileStore::new();
+        assert_eq!(
+            store.open(&io, Path::new("/named-pipe")),
+            Err(OpenRefusal::Io(io::ErrorKind::InvalidInput))
+        );
+        assert!(!io.read_called.get());
+        assert!(store.files().is_empty());
     }
 
     #[test]

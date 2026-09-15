@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// The presentation selected for one open file. This is shell session state:
 /// it changes attributes only and is never encoded with the file or its draft.
@@ -110,23 +109,13 @@ public struct FileHeaderState: Equatable, Sendable {
     }
 }
 
-/// Whether a dropped item is forwarded to the shared file-open path.
-///
-/// The shell does not classify a path by extension. The core evaluates the
-/// actual item and returns the same refusal an open-panel or restore path
-/// receives. A drop never falls through to a text paste.
-public enum FileDropDecision {
-    /// Markdown's conventional extensions, used for the open panel and the
-    /// initial Markdown rendering default. They never decide file admission.
+/// File suffix hints used for presentation and save-panel suggestions.
+/// They never decide whether a file may be opened; the core evaluates the
+/// actual bytes after every panel selection or drop.
+enum FileFormatHints {
+    /// Markdown's conventional extensions, used for the save panel and the
+    /// initial Markdown rendering default.
     static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "mdwn"]
-
-    /// Drop admission is intentionally extension-independent. The core owns
-    /// the regular-file, UTF-8, and size checks and reports the refusal after
-    /// an attempted open; an unknown suffix is not enough evidence to reject
-    /// a text file before those shared checks run.
-    public static func opens(_ url: URL) -> Bool {
-        true
-    }
 }
 
 /// A nonmodal rendering proposal shown after a source-language hint. Each

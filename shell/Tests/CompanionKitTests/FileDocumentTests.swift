@@ -595,18 +595,38 @@ final class FileDocumentTests: XCTestCase {
 
     // MARK: Refusals
 
-    func testAFileThatIsNotUtf8IsRefusedByName() throws {
+    func testAFileWithAnUnsupportedEncodingIsRefusedWithConversionGuidance() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
         let model = makeModel(fixture, panels: panels)
         model.loadStateIfNeeded()
-        let url = fixture.workspace.appendingPathComponent("binary.txt")
+        let url = fixture.workspace.appendingPathComponent("utf16.txt")
         try Data([0xFF, 0xFE, 0x00, 0x80]).write(to: url)
 
         model.openFile(at: url)
 
         XCTAssertTrue(model.openFiles.isEmpty, "a refused file opens no tab")
-        XCTAssertEqual(model.notice, "binary.txt is not UTF-8 text, so it was not opened.")
+        XCTAssertEqual(
+            model.notice,
+            "utf16.txt uses an unsupported text encoding. Convert it to UTF-8, then try again."
+        )
+    }
+
+    func testAnInvalidUtf8PNGIsRefusedAsUnsupportedEncoding() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        let url = fixture.workspace.appendingPathComponent("image.png")
+        try Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0xFF]).write(to: url)
+
+        model.openFile(at: url)
+
+        XCTAssertTrue(model.openFiles.isEmpty, "a refused file opens no tab")
+        XCTAssertEqual(
+            model.notice,
+            "image.png uses an unsupported text encoding. Convert it to UTF-8, then try again."
+        )
     }
 
     func testAFilePastTheLimitIsRefusedAndTheRefusalNamesTheLimit() throws {
@@ -637,12 +657,17 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(model.notice, "nothing.txt could not be read, so it was not opened.")
     }
 
-    /// The refusal wording, without a file on disk that is genuinely
-    /// four megabytes of anything.
+    /// The refusal wording, without files on disk that are genuinely binary
+    /// or four megabytes of anything.
     func testTheRefusalSentencesAreDerivedFromTheCoresOwnJson() {
         XCTAssertEqual(
+            PageModel.openRefusalNotice(name: "a.txt", json: #"{"error":"binary"}"#),
+            "a.txt contains binary data and cannot be opened as text. Choose a UTF-8 text file instead."
+        )
+        XCTAssertEqual(
             PageModel.openRefusalNotice(name: "a.txt", json: #"{"error":"notUtf8"}"#),
-            "a.txt is not UTF-8 text, so it was not opened.")
+            "a.txt uses an unsupported text encoding. Convert it to UTF-8, then try again."
+        )
         XCTAssertEqual(
             PageModel.openRefusalNotice(
                 name: "a.txt", json: #"{"error":"tooLarge","limit":4194304}"#),
