@@ -7,6 +7,12 @@ documentation_status: reviewed # draft | needs-review | reviewed | stale
 - **Status:** proposed
 - **Date:** 2026-07-15
 
+This record was never accepted, and its non undoable removal clause is
+superseded by the accepted design record
+[2026-0915-ui-ux-decisions](../spec/design/2026-0915-ui-ux-decisions.md)
+(D-30); see [Decision history](#decision-history). The argument below
+stands as written.
+
 ## Context
 
 The persistent-editor work (ADR-0006, issue #23) reopened how undo and
@@ -84,3 +90,18 @@ stands unweakened.
   at which point the immediate-undo tombstone scoped here is the
   starting point, with its cost (sealed bytes surviving until the next
   edit) accepted explicitly rather than by default.
+
+## Decision history
+
+- 2026-07-15: Proposed. Never accepted.
+- 2026-09-15: Superseded in part by the accepted design record
+  [2026-0915-ui-ux-decisions](../spec/design/2026-0915-ui-ux-decisions.md),
+  D-30 and the sealed-object contract, which is a spec record rather
+  than an ADR, so `Status` stays `proposed` and no relationship field
+  names it. Replaced: the clause that removal of a sealed object is not
+  undoable. Removal is structural and undoable, the core keeps the bytes
+  so undo restores a reference and never plaintext in the shell, and
+  the record's two stage backspace (first press selects, second
+  removes) stands as the keyboard gesture. The context, the tombstone
+  costing and the eject triggers above remain the history of the
+  argument.

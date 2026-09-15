@@ -78,11 +78,11 @@ After a decrypted copy, confirm the boundary crossing with the interval the core
 - the plain-text placeholder `[sealed content · <size class>]` (successor record D-29);
 - a public URL representation *only* as the direct result of “Create one-time link”, never on an ordinary copy. A one-time link is itself a declassification: the first reader burns it, and a pasteboard-polling app is a reader.
 
-Clipboard managers and Universal Clipboard do not pick a representation; they archive all of them and sync them to other devices. That is why the private type carries a ticket and not the chip: a ticket is content-free and linkage-free, whereas the chip’s stable UUID (already in the ledger) would let a history entry be linked to a ledger record forever.
+Clipboard managers and Universal Clipboard do not pick a representation; they archive all of them and sync them to other devices. That is why the private type carries a reference and never the chip's payload or ciphertext. This note argued for a ticket over the chip's UUID on linkage grounds; the successor record D-31 weighed that against the ledger, which already records the same UUID in plain, and chose the UUID (see Tickets below).
 
 ### Tickets
 
-See D-31 in docs/spec/design/2026-0915-ui-ux-decisions.md, which now reads ticket; the UUID versus ticket call is pending maintainer confirmation there, and this passage stays until it lands.
+D-31 in docs/spec/design/2026-0915-ui-ux-decisions.md chose the chip's UUID over the ticket described here, and the record wins: the UUID is the same random id the ledger already records in plain, so the pasteboard adds no exposure the ledger does not carry, and a minted per copy reference would buy a map in the core and a staleness path for nothing. The ticket passage below stays as the argument's history; the contract rows above and the pasteboard bullets are read with UUID in place of ticket.
 
 A ticket is a fresh random 128-bit value the core mints per copy or cut and maps internally to `{chip id, operation, pasteboard changeCount at issue}`. Tickets persist in the content store alongside the chips, so quitting between cut and paste and relaunching still pastes. On paste the core checks `changeCount`; a ticket issued under an older count is stale, and pasting it is a no-op with a one-line notice, never a resurrection. Across a reboot the chip is gone by crypto-erasure, so the ticket resolves to *expired* and the paste inserts the expired placeholder, which is the honest answer rather than a failure.
 
@@ -132,7 +132,7 @@ Every departure from the ADR above (three egress points, decrypted drag as prefe
 ## Changes from the first draft
 
 - **Undo of sealing** was “restore the plaintext”, then the named Unseal command. The successor record withdrew Unseal too: sealing is one-way, ⌘Z is not offered, and the undo stack holds no plaintext.
-- **Paste inside OnetimePad** was “restores the complete sealed object, including its protected payload”. The private type now carries a ticket; the core owns the payload throughout.
+- **Paste inside OnetimePad** was “restores the complete sealed object, including its protected payload”. The private type carries a reference (the chip's UUID, per the successor record D-31); the core owns the payload throughout.
 - **Drag outside OnetimePad** was placeholder-only with a vague exception for destinations that understand the format. It is now placeholder by default plus an explicit decrypted-drag handle, because the drag pasteboard is the safer declassification channel.
 - **Placeholder** was `[sealed content · 51 characters]`, then `[sealed: <title>]`. It is now `[sealed content · <size class>]` (successor record D-29).
 - **Cut** now defines the detached state instead of leaving an unpasted chip undefined.
