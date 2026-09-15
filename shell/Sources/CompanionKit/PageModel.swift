@@ -934,6 +934,16 @@ public final class PageModel: ObservableObject {
     /// paths somebody thought of.
     private var quietRenderings: [UInt64: QuietRendering] = [:]
 
+    /// Manual or inferred fence-language labels a page carries in its
+    /// presentation state, per bare-fence opening paragraph. Keyed by
+    /// page identity, then by the paragraph location of the opening
+    /// rule; the value is the language name a user picked or the
+    /// detector inferred. Presentation only: the fence characters and
+    /// the block above the language name are unchanged, and nothing in
+    /// the core moves. Pruned alongside `quietRenderings` when a page
+    /// dies, and dropped for a page on any structural rewrite.
+    private var fenceRenderingLanguages: [UInt64: [Int: String]] = [:]
+
     /// The slot a selection gesture last minted a page into, and the
     /// monotonic reading at which it did. Read by `pause` alone, so a
     /// double-click on an empty slot cannot mint a page with its first
@@ -2020,6 +2030,7 @@ public final class PageModel: ObservableObject {
         // a page, so an entry outliving its page would be exactly the
         // ink an expiry is supposed to take away.
         quietRenderings = quietRenderings.filter { livePages.contains($0.key) }
+        fenceRenderingLanguages = fenceRenderingLanguages.filter { livePages.contains($0.key) }
         selection = Self.reconciledSelection(current: selection, live: tabs.map(\.id))
         // With the days down the side, a slot holding no page is not on
         // the rail at all, so a selection left on one would be pointing
@@ -2220,7 +2231,7 @@ public final class PageModel: ObservableObject {
                 sheet: id,
                 blockMetas: [],
                 syntaxHighlightingEnabled: syntaxHighlightingEnabled,
-                fenceRenderingLanguages: [:],
+                fenceRenderingLanguages: fenceRenderingLanguages(for: id),
                 renderBlockLabels: false
             )
             let styled = NSAttributedString(attributedString: scratch)
@@ -2251,6 +2262,36 @@ public final class PageModel: ObservableObject {
     /// back is not the one its region was seeded from.
     public func invalidateQuietRendering(for id: UInt64) {
         quietRenderings[id] = nil
+    }
+
+    /// Snapshot of the fence-language labels a page carries in its
+    /// presentation state, keyed by the paragraph location of each
+    /// bare fence's opening rule. Read by both the mounted editor's
+    /// styling walk and `quietRendering(for:)`, so a fence a reader
+    /// coloured on one page looks the same when the editor is standing
+    /// on another day.
+    public func fenceRenderingLanguages(for id: UInt64) -> [Int: String] {
+        fenceRenderingLanguages[id] ?? [:]
+    }
+
+    /// Attach a language name to a bare fence's opening paragraph on
+    /// the given page. Presentation only: no text is rewritten and
+    /// nothing in the core moves. The page's quiet cache is dropped so
+    /// the roll rebuilds it under the new label.
+    public func setFenceRenderingLanguage(
+        _ language: String, sheet: UInt64, at paragraphLocation: Int
+    ) {
+        fenceRenderingLanguages[sheet, default: [:]][paragraphLocation] = language
+        invalidateQuietRendering(for: sheet)
+    }
+
+    /// Drop every fence-language label a page was carrying. Called on
+    /// a structural rewrite of the page's projection, since the
+    /// paragraph locations the labels were keyed against no longer
+    /// name the fences they were placed above.
+    public func clearFenceRenderingLanguages(for sheet: UInt64) {
+        guard fenceRenderingLanguages.removeValue(forKey: sheet) != nil else { return }
+        invalidateQuietRendering(for: sheet)
     }
 
     /// Which pages the editor has a storage for.

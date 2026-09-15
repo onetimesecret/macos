@@ -379,7 +379,6 @@ public struct InkEditorView: NSViewRepresentable {
         private var deferredPlainAutomaticPaste: AutomaticPaste?
         private var pendingManualRequestID: UUID?
         private var languageSuggestion: LanguageSuggestion?
-        private var fenceRenderingLanguages: [UInt64: [Int: String]] = [:]
         private var structuralStyleNeedsRebuild = false
 
         private struct AutomaticPaste {
@@ -1042,8 +1041,11 @@ public struct InkEditorView: NSViewRepresentable {
                 )
             case .bareFence(let opening, _, let insertion):
                 if displayOnly {
-                    fenceRenderingLanguages[suggestion.target.documentID, default: [:]][opening.location]
-                        = suggestion.language
+                    model.setFenceRenderingLanguage(
+                        suggestion.language,
+                        sheet: suggestion.target.documentID,
+                        at: opening.location
+                    )
                     restyle()
                 } else {
                     languageSuggestion = nil
@@ -1661,7 +1663,7 @@ public struct InkEditorView: NSViewRepresentable {
             if let sheet = currentSheet {
                 // Display-only inferred labels belong to the old character
                 // projection and cannot survive a projection rewrite.
-                fenceRenderingLanguages[sheet] = nil
+                model.clearFenceRenderingLanguages(for: sheet)
             }
             abandonAutomaticConversionForEditorChange()
             if model.isApplyingProjection {
@@ -2091,7 +2093,7 @@ public struct InkEditorView: NSViewRepresentable {
             let (regions, displays, kinds) = Self.applyMarkdownStyling(
                 to: storage, sheet: sheet, blockMetas: metas,
                 syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
-                fenceRenderingLanguages: fenceRenderingLanguages
+                fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet)
             )
             blockDisplays = displays
             fenceRegions = regions
@@ -2126,7 +2128,7 @@ public struct InkEditorView: NSViewRepresentable {
             sheet: UInt64,
             blockMetas: [BlockInfo],
             syntaxHighlightingEnabled: Bool,
-            fenceRenderingLanguages: [UInt64: [Int: String]],
+            fenceRenderingLanguages: [Int: String],
             renderBlockLabels: Bool = true
         ) -> (
             fenceRegions: [NSRange],
@@ -2194,7 +2196,7 @@ public struct InkEditorView: NSViewRepresentable {
                         // the boundary the spec asks tokenizer state
                         // never to cross.
                         let sessionLanguage = scanner.fenceInfoString?.isEmpty == true
-                            ? fenceRenderingLanguages[sheet]?[paragraph.location]
+                            ? fenceRenderingLanguages[paragraph.location]
                             : nil
                         tokenizer = CodeInk.Tokenizer(
                             language: scanner.fenceLanguage

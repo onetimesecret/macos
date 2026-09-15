@@ -372,7 +372,7 @@ public struct CodeSettingsView: View {
                 .pickerStyle(.inline)
             } header: {
                 SettingsCaption(
-                    "When to apply markdown formatting and syntax highlighting. Focused page only preserves the earlier behavior; All pages styles every visible day."
+                    "When to apply markdown formatting and syntax highlighting."
                 )
             }
 
