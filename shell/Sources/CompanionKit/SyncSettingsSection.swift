@@ -18,7 +18,7 @@ struct SyncSettingsSection: View {
                     Text(line)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(
-                            sync.settingsLineIsTrouble ? Color.ember : Color.secondary)
+                            sync.settingsLineIsTrouble ? Color.emberText : Color.secondary)
                 }
                 if sync.status?.signedIn == true {
                     Button("Sign out of sync") { confirmingSignout = true }
@@ -138,7 +138,7 @@ private struct SyncDeviceRow: View {
             Spacer()
             Text(badge)
                 .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(device.verified ? Color.secondary : Color.ember)
+                .foregroundStyle(device.verified ? Color.secondary : Color.emberText)
             if !device.thisDevice, device.verified {
                 Button("Revoke", role: .destructive) { confirmingRevoke = true }
                     .controlSize(.small)
@@ -223,7 +223,7 @@ private struct SyncPairingStatus: View {
             HStack {
                 Text(SyncController.pairingSentence(stage: stage.stage, reason: stage.reason))
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(Color.ember)
+                    .foregroundStyle(Color.emberText)
                 Spacer()
                 Button("Dismiss") { sync.cancelPairing() }
                     .controlSize(.small)

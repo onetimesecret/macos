@@ -143,7 +143,7 @@ public struct GeneralSettingsView: View {
                 if let fontStatus {
                     Text(fontStatus)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(Color.ember)
+                        .foregroundStyle(Color.emberText)
                 }
             } header: {
                 SettingsCaption(typeCaption)
@@ -176,7 +176,7 @@ public struct GeneralSettingsView: View {
                 if let loginStatus {
                     Text(loginStatus)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(Color.ember)
+                        .foregroundStyle(Color.emberText)
                 }
             } header: {
                 SettingsCaption(loginCaption)
@@ -354,7 +354,7 @@ public struct CodeSettingsView: View {
                 if let codeFontStatus {
                     Text(codeFontStatus)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(Color.ember)
+                        .foregroundStyle(Color.emberText)
                 }
             } header: {
                 SettingsCaption(
@@ -478,7 +478,7 @@ public struct ConnectionSettingsView: View {
                 if let status {
                     Text(status)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(statusIsError ? Color.ember : Color.secondary)
+                        .foregroundStyle(statusIsError ? Color.emberText : Color.secondary)
                 }
                 Spacer()
                 Button("Save") { save() }

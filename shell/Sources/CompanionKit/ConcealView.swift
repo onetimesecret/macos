@@ -153,7 +153,7 @@ public struct ConcealView: View {
             if let error = draft.error {
                 Text(error)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(Color.ember)
+                    .foregroundStyle(Color.emberText)
                     .accessibilityLabel(Text("Conceal failed: \(error)"))
             }
             HStack {

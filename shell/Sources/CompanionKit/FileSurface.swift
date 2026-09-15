@@ -254,7 +254,7 @@ public struct FileConflictBanner: View {
         HStack(spacing: 8) {
             Text(Self.sentence(for: file.conflict, name: file.name))
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(Color.ember)
+                .foregroundStyle(Color.emberText)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             // Keep mine and Take theirs each destroy one of the two
