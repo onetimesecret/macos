@@ -384,6 +384,35 @@ final class DocumentOpsWiringTests: XCTestCase {
         assertParity()
     }
 
+    func testSealedPasteOverAChipIsRefused() {
+        makeEditor()
+        textView.insertText(
+            "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.sealSelectionOrLine()
+        guard case .chip(let sealed)? = coreRuns().dropFirst().first else {
+            return XCTFail("the seal left no chip")
+        }
+        // A selection that swallows the chip: "b", the chip, " c".
+        textView.setSelectedRange(NSRange(location: 1, length: 4))
+        batches = []
+        model.notice = nil
+        coordinator.sealedPaste()
+
+        // A chip leaves the page only by an act aimed at it (D-08). The
+        // chord refuses with the line, no delete crosses the seam, and
+        // the chip is still standing core-side with the ink around it.
+        XCTAssertEqual(model.notice, InkEditorView.Coordinator.alreadySealedLine)
+        XCTAssertEqual(batches, [], "a refused seal must emit no ops")
+        XCTAssertEqual(coreRuns().count, 3)
+        guard case .chip(let still)? = coreRuns().dropFirst().first else {
+            return XCTFail("the refused seal reaped the chip")
+        }
+        XCTAssertEqual(still.chipId, sealed.chipId)
+        XCTAssertEqual(storage.string.utf16.count, 7, "ab, space, the chip, space, cd")
+        assertParity()
+    }
+
     func testAnUndoResurrectingADeadChipIsStrippedSilently() {
         makeEditor()
         textView.insertText(

@@ -48,6 +48,12 @@ pub enum Refusal {
     /// out of bounds, or a boundary inside a surrogate pair. Nothing
     /// was sealed and nothing moved.
     InvalidRange,
+    /// The seal gesture's range swallows a chip that already stands
+    /// there. A chip has no plaintext to seal, and it leaves the page
+    /// only by an act aimed at the chip itself (D-08), so the seal
+    /// refuses whole rather than reaping it the way typing over it
+    /// would. Nothing was sealed and nothing moved.
+    AlreadySealed,
 }
 
 impl std::fmt::Display for Refusal {
@@ -56,6 +62,9 @@ impl std::fmt::Display for Refusal {
             Refusal::EmptyContent => write!(f, "nothing to seal"),
             Refusal::UnknownSheet => write!(f, "no such page"),
             Refusal::InvalidRange => write!(f, "the selection no longer matches the page"),
+            Refusal::AlreadySealed => {
+                write!(f, "already sealed · a chip has no plaintext to seal")
+            }
         }
     }
 }
@@ -673,9 +682,16 @@ impl<C: Clock> SheetStore<C> {
     }
 
     /// Whether a seal gesture's range describes the page's body as it
-    /// stands: in bounds, and neither boundary inside a surrogate pair.
-    /// Judged against the cached projection in exact code units, the
-    /// same discipline [`SheetStore::apply_ops`] validates with.
+    /// stands: in bounds, neither boundary inside a surrogate pair, and
+    /// no chip inside it. Judged against the cached projection in exact
+    /// code units, the same discipline [`SheetStore::apply_ops`]
+    /// validates with.
+    ///
+    /// The chip check is the seal's own rule rather than the document's
+    /// (D-08): a batch of ops may delete over a sentinel, because
+    /// typing over a selected chip is an act aimed at it, but a seal
+    /// that swallowed one would destroy sealed content in the name of
+    /// sealing, and the gesture refuses instead.
     fn check_seal_range(&self, id: SheetId, at_u16: u32, len_u16: u32) -> Result<(), Refusal> {
         let Some(sheet) = self.sheet(id) else {
             return Err(Refusal::UnknownSheet);
@@ -690,6 +706,12 @@ impl<C: Clock> SheetStore<C> {
             || splits_surrogate_pair(&units, end)
         {
             return Err(Refusal::InvalidRange);
+        }
+        if units[at..end]
+            .iter()
+            .any(|unit| matches!(unit, SimUnit::Chip(_)))
+        {
+            return Err(Refusal::AlreadySealed);
         }
         Ok(())
     }
@@ -3858,7 +3880,7 @@ mod tests {
     }
 
     #[test]
-    fn a_range_seal_over_a_selected_chip_reaps_it() {
+    fn a_range_seal_over_a_selected_chip_is_refused() {
         let (mut store, _) = store();
         let id = store.new_tab().1;
         let old = seal(&mut store, id, "the earlier secret");
@@ -3875,12 +3897,35 @@ mod tests {
                 },
             ]
         ));
-        // The selection swallows the old chip's sentinel, so the seal
-        // that replaces it kills the old chip the same way typing over
-        // it would.
-        let fresh = store.seal_image_at(id, vec![1, 2, 3], 0, 3).unwrap();
-        assert_eq!(store.sheet(id).unwrap().segments(), &[Segment::Chip(fresh)]);
-        assert!(store.copy_out_chip(old).is_none());
+        let before: Vec<Segment> = store.sheet(id).unwrap().segments().to_vec();
+        let records_before = store.ledger().count();
+        // The selection swallows the old chip's sentinel. A chip leaves
+        // the page only by an act aimed at it (D-08), and a seal is
+        // not one: both routes refuse whole, mint nothing, and leave
+        // the old chip standing with its bytes intact.
+        assert_eq!(
+            store.seal_image_at(id, vec![1, 2, 3], 0, 3),
+            Err(Refusal::AlreadySealed)
+        );
+        assert_eq!(
+            store.seal_text_at(id, "a fresh secret", 1, 1),
+            Err(Refusal::AlreadySealed)
+        );
+        assert_eq!(store.sheet(id).unwrap().segments(), before.as_slice());
+        assert_eq!(store.sheet(id).unwrap().chip_count(), 1);
+        assert!(store.copy_out_chip(old).is_some());
+        assert_eq!(store.ledger().count(), records_before);
+        // A range beside the chip still seals: the refusal is about
+        // what the range holds, not about the page holding a chip.
+        let fresh = store.seal_text_at(id, "a fresh secret", 2, 1).unwrap();
+        assert_eq!(
+            store.sheet(id).unwrap().segments(),
+            &[
+                Segment::Ink("a".into()),
+                Segment::Chip(old),
+                Segment::Chip(fresh)
+            ]
+        );
     }
 
     #[test]

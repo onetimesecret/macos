@@ -1858,18 +1858,31 @@ public struct InkEditorView: NSViewRepresentable {
 
         // MARK: The seal gestures
 
+        /// What both seal chords say over a selection that already
+        /// holds a chip (D-08). A chip leaves the page only by an act
+        /// aimed at the chip; a seal is not one, so the gesture refuses
+        /// here, and the core refuses it again on its own.
+        static let alreadySealedLine = "already sealed · a chip has no plaintext to seal"
+
         /// ⇧⌘V: the core reads the pasteboard itself, deletes the
         /// selection captured here, and stands the chip in its place,
         /// one atomic locked call. This process never sees the pasted
         /// bytes.
         func sealedPaste() {
-            guard let textView else { return }
+            guard let textView, let storage = textView.textStorage else { return }
             // Captured at gesture time and passed whole. The seal call
             // is synchronous on the main actor from here through the C
             // seam, so no event can move the caret between this capture
             // and the core's replace: the range is still true when the
             // core deletes it.
             let range = textView.selectedRange()
+            // Refused before the board is read: a take that ended in a
+            // refusal would have cleared nothing, but it would have
+            // read the board for no reason.
+            if Self.containsChip(storage, in: range) {
+                model.flash(Self.alreadySealedLine)
+                return
+            }
             guard let chip = model.sealPasteboard(replacing: range) else { return }
             placeChipFace(chip, replacing: range)
         }
@@ -1907,7 +1920,7 @@ public struct InkEditorView: NSViewRepresentable {
             }
             guard range.length > 0 else { return }
             if Self.containsChip(storage, in: range) {
-                model.flash("already sealed — a chip has no plaintext to seal")
+                model.flash(Self.alreadySealedLine)
                 return
             }
             let ink = text.substring(with: range)
