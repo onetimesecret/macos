@@ -432,6 +432,51 @@ final class DocumentOpsWiringTests: XCTestCase {
         assertParity()
     }
 
+    func testTheChipMenuOffersPlaintextByName() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.chipMenuTitles,
+            ["Copy decrypted contents", "Create one-time link…", "Remove protected content"])
+        makeEditor()
+        textView.insertText(
+            "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.sealSelectionOrLine()
+
+        // The two egresses, a separator, then the removal (D-29), every
+        // action aimed at the coordinator that owns the chip.
+        let menu = NSMenu()
+        coordinator.appendChipItems(to: menu, at: 3)
+        XCTAssertEqual(menu.items.count, 4)
+        XCTAssertEqual(menu.items[0].title, "Copy decrypted contents")
+        XCTAssertEqual(menu.items[1].title, "Create one-time link…")
+        XCTAssertTrue(menu.items[2].isSeparatorItem)
+        XCTAssertEqual(menu.items[3].title, "Remove protected content")
+        for item in menu.items where !item.isSeparatorItem {
+            XCTAssertTrue(item.target === coordinator, "\(item.title) is not the coordinator's")
+        }
+        // Ink offers no chip items at all.
+        let ink = NSMenu()
+        coordinator.appendChipItems(to: ink, at: 0)
+        XCTAssertTrue(ink.items.isEmpty)
+    }
+
+    func testAClickOnAChipSelectsItWhole() throws {
+        makeEditor()
+        textView.insertText(
+            "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.sealSelectionOrLine()
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let attachment = try XCTUnwrap(
+            storage.attribute(.attachment, at: 3, effectiveRange: nil) as? ChipAttachment)
+        let cell = try XCTUnwrap(attachment.attachmentCell)
+
+        // A plain click selects the whole object and never places a
+        // caret inside it (D-28); no menu opens on the click.
+        coordinator.textView(textView, clickedOn: cell, in: .zero, at: 3)
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 1))
+    }
+
     func testAnUndoResurrectingADeadChipIsStrippedSilently() {
         makeEditor()
         textView.insertText(

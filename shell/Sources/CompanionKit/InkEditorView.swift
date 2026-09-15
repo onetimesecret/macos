@@ -1971,19 +1971,70 @@ public struct InkEditorView: NSViewRepresentable {
             NSAttributedString(attachment: ChipAttachment(info: chip))
         }
 
-        // MARK: Chip actions — hover/click reveals actions, never content
+        // MARK: Chip actions: a click selects, a secondary click offers actions, never content
 
+        /// The chip's menu, in order (D-29): the two egresses, then the
+        /// removal set apart. Lifted so the titles are pinned by a test
+        /// rather than read off a screen.
+        static let chipMenuTitles = [
+            "Copy decrypted contents",
+            "Create one-time link…",
+            "Remove protected content",
+        ]
+
+        /// A plain click on a chip selects the whole object and never
+        /// places a caret inside it (D-28). The menu no longer opens on
+        /// a click; it belongs to the secondary click, where every
+        /// other object on the platform keeps its actions.
         public func textView(
             _ view: NSTextView,
             clickedOn cell: NSTextAttachmentCellProtocol,
             in cellFrame: NSRect,
             at charIndex: Int
         ) {
-            guard let chipCell = cell as? ChipCell else { return }
-            let chipID = chipCell.info.chipId
-            let menu = NSMenu()
+            guard cell is ChipCell else { return }
+            view.setSelectedRange(NSRange(location: charIndex, length: 1))
+        }
+
+        /// The character index of the chip under `point` (in the text
+        /// view's coordinates), or nil when the point is over ink or
+        /// past the end of a line. The nearest-glyph answer the layout
+        /// manager gives is checked against the glyph's own bounds, so
+        /// a click in the margin beside a chip is not a click on it.
+        func chipIndex(at point: NSPoint, in view: NSTextView) -> Int? {
+            guard let layoutManager = view.layoutManager,
+                  let container = view.textContainer,
+                  let storage = view.textStorage,
+                  storage.length > 0
+            else { return nil }
+            let origin = view.textContainerOrigin
+            let local = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+            var fraction: CGFloat = 0
+            let glyph = layoutManager.glyphIndex(
+                for: local, in: container, fractionOfDistanceThroughGlyph: &fraction)
+            let bounds = layoutManager.boundingRect(
+                forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+            guard bounds.contains(local) else { return nil }
+            let index = layoutManager.characterIndexForGlyph(at: glyph)
+            guard index < storage.length,
+                  storage.attribute(.attachment, at: index, effectiveRange: nil) is ChipAttachment
+            else { return nil }
+            return index
+        }
+
+        /// The chip's three actions, appended to `menu` for the chip
+        /// standing at `charIndex`: the egresses first, a separator,
+        /// then the removal, which keeps today's behaviour of deleting
+        /// the sentinel whole (the two stage removal is a separate
+        /// call).
+        func appendChipItems(to menu: NSMenu, at charIndex: Int) {
+            guard let storage = textView?.textStorage, charIndex < storage.length,
+                  let attachment = storage.attribute(.attachment, at: charIndex, effectiveRange: nil)
+                    as? ChipAttachment
+            else { return }
+            let chipID = attachment.info.chipId
             let copy = NSMenuItem(
-                title: "Copy out — stays sealed",
+                title: Self.chipMenuTitles[0],
                 action: #selector(copyOutChip(_:)),
                 keyEquivalent: ""
             )
@@ -1991,22 +2042,22 @@ public struct InkEditorView: NSViewRepresentable {
             copy.representedObject = chipID as NSNumber
             menu.addItem(copy)
             let conceal = NSMenuItem(
-                title: "Conceal into a one-time link…",
+                title: Self.chipMenuTitles[1],
                 action: #selector(concealChip(_:)),
                 keyEquivalent: ""
             )
             conceal.target = self
             conceal.representedObject = chipID as NSNumber
             menu.addItem(conceal)
+            menu.addItem(.separator())
             let remove = NSMenuItem(
-                title: "Remove chip",
+                title: Self.chipMenuTitles[2],
                 action: #selector(removeChip(_:)),
                 keyEquivalent: ""
             )
             remove.target = self
             remove.representedObject = charIndex as NSNumber
             menu.addItem(remove)
-            menu.popUp(positioning: nil, at: NSPoint(x: cellFrame.minX, y: cellFrame.maxY), in: view)
         }
 
         // MARK: Links — ⌘-click opens, a plain click edits (ADR-0023)
@@ -2945,7 +2996,19 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         coordinator?.applyManualLanguage(language)
     }
 
+    /// The context menu. Over a chip it is the chip's own: the object
+    /// is selected whole first, as a plain click selects it, and the
+    /// text menu AppKit would build is not consulted, because Cut and
+    /// Copy of a sealed object are not the text menu's to offer. Over
+    /// ink it is AppKit's menu with the page's items appended.
     override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        if let coordinator, let index = coordinator.chipIndex(at: point, in: self) {
+            setSelectedRange(NSRange(location: index, length: 1))
+            let menu = NSMenu()
+            coordinator.appendChipItems(to: menu, at: index)
+            return menu
+        }
         let menu = super.menu(for: event) ?? NSMenu()
         coordinator?.appendLanguageItems(to: menu)
         return menu
