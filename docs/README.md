@@ -10,7 +10,7 @@ replacement for it.
 - [ROADMAP.md](ROADMAP.md): where the product is going, milestone by milestone.
 - [tenets.md](tenets.md): the commitments that decide arguments when two good options conflict.
 - [purpose-aspirations-and-peers.md](purpose-aspirations-and-peers.md): why the app exists and which software it wants to be measured against.
-- [design-brief.md](design-brief.md): the original brief for the menu-bar companion.
+- [design-brief.md](design-brief.md): the original panel-era brief; tokens superseded by the design record.
 
 Read these first, and amend them rather than fork them when the shape of
 the product changes.
