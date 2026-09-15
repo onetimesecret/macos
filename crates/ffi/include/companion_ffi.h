@@ -543,6 +543,14 @@ bool companion_chip_delete(CompanionHandle *handle, uint64_t chip);
  */
 bool companion_clear_clipboard_if_ours(CompanionHandle *handle);
 
+/*
+ * The clear-after-copy interval in seconds: how long a copy-out may
+ * dwell on the general pasteboard before the shell's armed clear takes
+ * it back. One core constant, read here so the confirmation line and
+ * the timer name the same number. Stateless.
+ */
+uint32_t companion_clipboard_clear_seconds(void);
+
 /* ------------------------------------------------------------------ */
 /* Time: the ladder, the pause, the one armed timer                    */
 /* ------------------------------------------------------------------ */

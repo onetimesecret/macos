@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   context menu and as Edit → Seal Selected Content in the menu bar,
   both running the verb the chord runs.
 
+- **The clipboard clears itself after a copy-out** (D-29, D-32;
+  `companion-ffi` 0.29.0). Copying a chip's decrypted contents, or a
+  one-time link, arms a one-shot clear that takes the board back after
+  the core's interval, provisionally 60 seconds, and only while the board
+  still holds what the core wrote; anything copied since is left alone.
+  Every egress also retires the receipt of the one before it. The
+  confirmation reads "decrypted contents copied · clipboard clears in 60
+  seconds", with the number read from the core through
+  `companion_clipboard_clear_seconds`.
+
 ### Added
 
 - **Source-language detection is available for evaluation** (ADR-0029;

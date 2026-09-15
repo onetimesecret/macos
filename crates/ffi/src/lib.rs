@@ -1263,6 +1263,7 @@ pub unsafe extern "C" fn companion_chip_copy_out(handle: *mut CompanionHandle, c
         ChipMeta::Text { .. } => ContentKind::Text,
         ChipMeta::Image { .. } => ContentKind::Image,
     };
+    guard.retire_last_write();
     let receipt = guard.pasteboard.write(
         bytes,
         kind,
@@ -1316,6 +1317,35 @@ pub unsafe extern "C" fn companion_clear_clipboard_if_ours(handle: *mut Companio
         guard.last_write = None;
     }
     cleared
+}
+
+/// How long a copy-out may dwell on the general pasteboard before the
+/// shell's armed clear takes it back: the one number behind every
+/// "clipboard clears in N seconds" line, owned here so the shell reads
+/// it rather than promising one of its own (D-29, D-32). Provisional
+/// at 60 until the maintainer picks the interval; ADR-0012's egress
+/// amendment names it.
+pub const CLIPBOARD_CLEAR_SECONDS: u32 = 60;
+
+/// The clear-after-copy interval in seconds ([`CLIPBOARD_CLEAR_SECONDS`]).
+/// Stateless: no handle, nothing to fail.
+#[unsafe(no_mangle)]
+pub extern "C" fn companion_clipboard_clear_seconds() -> u32 {
+    CLIPBOARD_CLEAR_SECONDS
+}
+
+impl Companion {
+    /// The step every pasteboard egress takes before it writes: if the
+    /// board still holds this handle's previous write, take it back
+    /// now. The new write would replace it anyway, but retiring the
+    /// receipt first means a clear armed for the old write can never
+    /// fire against the new one, and a receipt never outlives the
+    /// content it stood for.
+    fn retire_last_write(&mut self) {
+        if let Some(receipt) = self.last_write.take() {
+            self.pasteboard.clear_if_unchanged(receipt);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2762,6 +2792,7 @@ fn finish_conceal(
     let Ok(mut guard) = handle.inner.lock() else {
         return ptr::null_mut();
     };
+    guard.retire_last_write();
     let receipt = guard.pasteboard.write(
         Zeroizing::new(concealed.link.into_bytes()),
         ContentKind::Text,
@@ -4444,6 +4475,50 @@ mod tests {
                 "already cleared"
             );
 
+            companion_free(handle);
+        }
+    }
+
+    /// The interval behind "clipboard clears in N seconds" is the
+    /// core's one constant, read through the seam (D-29, D-32).
+    #[test]
+    fn the_clear_interval_is_the_core_constant() {
+        assert_eq!(companion_clipboard_clear_seconds(), CLIPBOARD_CLEAR_SECONDS);
+        assert_eq!(companion_clipboard_clear_seconds(), 60);
+    }
+
+    /// Every egress retires the receipt of the one before it: a second
+    /// copy-out takes the first write back before it writes, and the
+    /// guarded clear afterwards answers for the newest write alone.
+    #[test]
+    fn a_second_egress_retires_the_first_receipt() {
+        let handle = handle();
+        unsafe {
+            let (_tab, sheet) = new_page(handle);
+            let chip_json = take_json(companion_sheet_seal_text(
+                handle,
+                sheet,
+                cstring("copied twice").as_ptr(),
+                0,
+                0,
+            ));
+            let chip: serde_json::Value = serde_json::from_str(&chip_json).unwrap();
+            let chip_id = chip["chip_id"].as_u64().unwrap();
+
+            assert!(companion_chip_copy_out(handle, chip_id));
+            let first = (*handle).inner.lock().unwrap().last_write;
+            assert!(companion_chip_copy_out(handle, chip_id));
+            let second = (*handle).inner.lock().unwrap().last_write;
+            assert_ne!(first, second, "the second write is a new receipt");
+            assert!(
+                (*handle).inner.lock().unwrap().pasteboard.read().is_some(),
+                "the retire took only the old write; the new one stands"
+            );
+            assert!(companion_clear_clipboard_if_ours(handle));
+            assert!(
+                (*handle).inner.lock().unwrap().pasteboard.read().is_none(),
+                "the clear answered for the newest write"
+            );
             companion_free(handle);
         }
     }

@@ -996,6 +996,11 @@ public final class PageModel: ObservableObject {
     private nonisolated(unsafe) var eventTimer: Timer?
     private nonisolated(unsafe) var redrawTimer: Timer?
     private nonisolated(unsafe) var saveTimer: Timer?
+    /// The clear-after-copy: one shot, armed on every pasteboard
+    /// egress, re-armed rather than doubled when a second egress lands
+    /// inside the window. Its firing is the guarded clear, which takes
+    /// nothing the user copied since.
+    private nonisolated(unsafe) var clipboardClearTimer: Timer?
 
     // nonisolated(unsafe) for the same reason as the timers: deinit is
     // nonisolated even on a @MainActor class, and deinit is where a
@@ -1059,6 +1064,10 @@ public final class PageModel: ObservableObject {
     /// retry at its far end needs no further gesture.
     private let saveRetryDebounce: TimeInterval
 
+    /// The clear-after-copy window a test shortened, or nil for the
+    /// core's own interval (`CompanionClient.clipboardClearSeconds`).
+    private let clipboardClearDebounce: TimeInterval?
+
     /// The init's test seams, gathered into one struct so the shipping
     /// signature stays narrow however many seams the tests grow. Each
     /// member is optional and nil means the shipping value: a
@@ -1088,6 +1097,11 @@ public final class PageModel: ObservableObject {
         /// passing or failing on whatever the person running the tests
         /// happens to have bound, which is not a test.
         let keymapOverride: URL?
+        /// A shorter window for the clear-after-copy timer, so a test
+        /// can watch it fire. The number the confirmation line names
+        /// is never this one: that is always the core's constant, and
+        /// only the timer's wait is shortened.
+        let clipboardClearDebounce: TimeInterval?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1095,7 +1109,8 @@ public final class PageModel: ObservableObject {
             saveDebounce: TimeInterval? = nil,
             saveRetryDebounce: TimeInterval? = nil,
             keymapOverride: URL? = nil,
-            fileLanguageDetection: LanguageDetectionService? = nil
+            fileLanguageDetection: LanguageDetectionService? = nil,
+            clipboardClearDebounce: TimeInterval? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1103,6 +1118,7 @@ public final class PageModel: ObservableObject {
             self.saveRetryDebounce = saveRetryDebounce
             self.keymapOverride = keymapOverride
             self.fileLanguageDetection = fileLanguageDetection
+            self.clipboardClearDebounce = clipboardClearDebounce
         }
     }
 
@@ -1175,6 +1191,7 @@ public final class PageModel: ObservableObject {
             ?? formFactor.draftsFileURL
         saveDebounce = seams.saveDebounce ?? Self.saveDebounce
         saveRetryDebounce = seams.saveRetryDebounce ?? Self.saveRetryDebounce
+        clipboardClearDebounce = seams.clipboardClearDebounce
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         // Resolved once, here, so the surface and the page's text view
         // are answering out of one map. A test reads only the override
@@ -1681,6 +1698,29 @@ public final class PageModel: ObservableObject {
         saveTimer = timer
     }
 
+    /// Arm the clear-after-copy (D-29, D-32; ADR-0012): one shot, the
+    /// core's interval unless a test shortened it, firing the guarded
+    /// clear that takes the board back only while it still holds what
+    /// the core wrote. Re-armed on every egress: a second copy inside
+    /// the window gets its own full window, and the first timer is
+    /// stood down rather than left to fire early against the newer
+    /// write. In `.common` so a tracked menu cannot hold the clear
+    /// past its window.
+    private func armClipboardClear() {
+        clipboardClearTimer?.invalidate()
+        let interval =
+            clipboardClearDebounce ?? TimeInterval(CompanionClient.clipboardClearSeconds())
+        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.clipboardClearTimer = nil
+                self.client.clearClipboardIfOurs()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        clipboardClearTimer = timer
+    }
+
     /// Seal the store into its two files: live pages and their chips
     /// into the state file, the audit trail into the ledger file. Two
     /// files because they are sealed under two different keys with two
@@ -1988,6 +2028,7 @@ public final class PageModel: ObservableObject {
     deinit {
         eventTimer?.invalidate()
         redrawTimer?.invalidate()
+        clipboardClearTimer?.invalidate()
         // A pending write dies with the model. In practice the model
         // outlives everything but the process, and the process's own
         // exit routes through `saveState` first.
@@ -3792,7 +3833,17 @@ public final class PageModel: ObservableObject {
     /// ledger, and that record is lost unless a write is armed for it
     /// (issue #52).
     public func copyOutChip(_ id: UInt64) {
-        if client.copyOutChip(id: id) { markDirty() }
+        guard client.copyOutChip(id: id) else { return }
+        markDirty()
+        armClipboardClear()
+        flash(Self.copiedLine(clearsIn: CompanionClient.clipboardClearSeconds()))
+    }
+
+    /// The confirmation after a copy-out (D-29): what happened, and
+    /// when the board gives it back. The number is the core's, read
+    /// through the seam, never a promise the shell makes on its own.
+    public nonisolated static func copiedLine(clearsIn seconds: UInt32) -> String {
+        "decrypted contents copied · clipboard clears in \(seconds) seconds"
     }
 
     /// True while the shell is writing the projection itself: a
@@ -4166,6 +4217,10 @@ public final class PageModel: ObservableObject {
         if outcome.ok {
             draft.error = nil
             draft.receiptId = outcome.receiptId
+            // The link is a capability, not the secret, but it is a
+            // pasteboard egress all the same, and every egress arms
+            // the clear (ADR-0012).
+            armClipboardClear()
             flash("the link is on the clipboard")
         } else {
             // Inline, with retry; content never left the sheet.

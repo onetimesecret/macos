@@ -834,6 +834,14 @@ public final class CompanionClient: @unchecked Sendable {
         companion_clear_clipboard_if_ours(handle)
     }
 
+    /// How long a copy-out may dwell on the general pasteboard before
+    /// the armed clear takes it back, in seconds. The core's one
+    /// constant, so the confirmation line and the timer name the same
+    /// number (D-29, D-32).
+    public static func clipboardClearSeconds() -> UInt32 {
+        companion_clipboard_clear_seconds()
+    }
+
     // MARK: Time
 
     /// Milliseconds until the next scheduled instant — page expiry or
