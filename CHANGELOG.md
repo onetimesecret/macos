@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A tab is renamed in place** (D-14, issue #172). Rename tab… on the
+  strip and Rename page… on a day's gutter turn the title into a field
+  where it stands: return commits, escape or the keyboard going
+  elsewhere cancels, and an empty name lets the title follow the page
+  again. The alert that used to ask, and the modal session it ran in,
+  are gone; the other dialogs are untouched.
+
 - **The header never says "synced" with no peer awake** (D-20). An
   attached channel with no other device awake says "sync waiting", in
   the plain tone, whether or not any page is enrolled; "synced" is kept

@@ -991,6 +991,17 @@ final class DayHeaderView: NSView {
     /// enrolment is per page (relay protocol §1), not per slot.
     private var pageID: UInt64?
 
+    /// The title the gutter showed when a rename began, or nil while
+    /// the title is a label (D-14, issue #172). Its presence is the
+    /// fact of a rename in progress, which the per second pass reads
+    /// so it does not write the page's first line over the draft, and
+    /// its value is what a cancel puts back.
+    private var titleBeforeRename: String?
+    /// Who held the keyboard when the rename began, given it back on
+    /// return and on escape. On a focus loss the keyboard has already
+    /// gone where the user sent it and is left there.
+    private weak var responderBeforeRename: NSResponder?
+
     init(model: PageModel) {
         self.model = model
         super.init(frame: .zero)
@@ -1075,11 +1086,16 @@ final class DayHeaderView: NSView {
         paused = summary?.paused ?? false
         toppedUp = summary?.holdToppedUp ?? false
         pageID = summary?.pageID
-        titleField.stringValue = summary?.title ?? ""
+        // Not while a draft is in the field: this pass runs every
+        // second, and the title it would write is the one the rename
+        // is there to replace.
+        if titleBeforeRename == nil {
+            titleField.stringValue = summary?.title ?? ""
+        }
         remainingField.stringValue = summary.map { $0.hasPage ? $0.remainingLabel : "" } ?? ""
         setAccessibilityLabel(Self.spokenHeader(
             spokenLabel: spokenLabel,
-            title: titleField.stringValue,
+            title: summary?.title ?? "",
             remainingLabel: remainingField.stringValue
         ))
         needsDisplay = true
@@ -1197,10 +1213,71 @@ final class DayHeaderView: NSView {
     }
 
     @objc private func renameTab() {
-        guard let tab, let name = TabRenamePrompt.newName(for: titleField.stringValue) else {
-            return
+        beginRename()
+    }
+
+    // MARK: The rename, in place
+
+    /// The title becomes a field where it stands (D-14, issue #172): a
+    /// rename is not destructive and has no claim on an interrupting
+    /// question, so the gutter's own label takes the keyboard, with
+    /// the whole title selected, and gives it back when the draft is
+    /// committed or let go of. The label is a text field already; what
+    /// changes is that it may be edited, and who holds the keyboard.
+    ///
+    /// Internal, with `endRename` and `renameDraft`, so the roll's
+    /// tests can drive a rename without a window's field editor and
+    /// pin that no modal session is entered on the way.
+    func beginRename() {
+        guard tab != nil, titleBeforeRename == nil else { return }
+        titleBeforeRename = titleField.stringValue
+        responderBeforeRename = window?.firstResponder
+        titleField.delegate = self
+        titleField.isSelectable = true
+        titleField.isEditable = true
+        window?.makeFirstResponder(titleField)
+        titleField.currentEditor()?.selectAll(nil)
+    }
+
+    /// The draft as the field holds it, readable and settable so a test
+    /// can stand in for the keyboard.
+    var renameDraft: String {
+        get { titleField.stringValue }
+        set { titleField.stringValue = newValue }
+    }
+
+    /// Ends the rename one way or the other, deciding through
+    /// `TabRename` what the ending means. The label goes back to being
+    /// a label; on a keep the title it showed is restored, and on a
+    /// rename the model's next pass writes the name it settled on. The
+    /// keyboard is not moved here: the endings that give it back do so
+    /// themselves, and a focus loss has already moved it.
+    func endRename(committed: Bool) {
+        guard let current = titleBeforeRename else { return }
+        titleBeforeRename = nil
+        titleField.delegate = nil
+        titleField.isEditable = false
+        titleField.isSelectable = false
+        switch TabRename.outcome(draft: titleField.stringValue, current: current, committed: committed) {
+        case .rename(let name):
+            guard let tab else { return }
+            model.renameTab(tab, to: name)
+        case .keep:
+            titleField.stringValue = current
         }
-        model.renameTab(tab, to: name)
+        needsDisplay = true
+    }
+
+    /// The keyboard back to whoever held it before the rename, or to
+    /// nobody when that responder is gone or refuses. Moving it ends
+    /// the field's editing, which is how escape reaches `endRename`.
+    private func returnKeyboard() {
+        guard let window else { return }
+        let previous = responderBeforeRename
+        responderBeforeRename = nil
+        if !window.makeFirstResponder(previous) {
+            window.makeFirstResponder(nil)
+        }
     }
 
     @objc private func holdClock() {
@@ -1221,6 +1298,29 @@ final class DayHeaderView: NSView {
     @objc private func closeTab() {
         guard let tab else { return }
         model.close(tab)
+    }
+}
+
+/// How the field's endings reach the header. Return ends editing with
+/// its movement named, and so does a click elsewhere, which is the
+/// focus loss; escape never ends editing by itself in a field editor,
+/// so it is caught as the command it is and the keyboard is moved,
+/// which ends the editing the ordinary way.
+extension DayHeaderView: NSTextFieldDelegate {
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
+        returnKeyboard()
+        // Without a window nothing ended the editing, so end it here.
+        endRename(committed: false)
+        return true
+    }
+
+    func controlTextDidEndEditing(_ notification: Notification) {
+        let movement = (notification.userInfo?["NSTextMovement"] as? Int)
+            .flatMap(NSTextMovement.init(rawValue:))
+        let committed = movement == .return
+        endRename(committed: committed)
+        if committed { returnKeyboard() }
     }
 }
 

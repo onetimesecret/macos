@@ -249,16 +249,28 @@ struct SheetTab: View {
 
     @State private var hovering = false
 
+    /// The rename in progress (D-14, issue #172): the title becomes a
+    /// field in the tab's own seat, holding the draft, and the field
+    /// goes away when the draft is committed or let go of. The draft
+    /// is the field's, not the model's, until return is pressed.
+    @State private var renaming = false
+    @State private var renameDraft = ""
+    @FocusState private var renameFocused: Bool
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 4) {
                 if sheet.paused {
                     HoldChip(toppedUp: sheet.holdToppedUp)
                 }
-                Text(sheet.title)
-                    .font(.system(.caption, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                if renaming {
+                    renameField
+                } else {
+                    Text(sheet.title)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
                 reorderHandle
                 // The ✕ keeps its seat whether or not it is visible, since
                 // revealing it must never nudge the title (the browsers'
@@ -310,15 +322,21 @@ struct SheetTab: View {
         // (ADR-0017), and the hold that would land on that fresh page is
         // refused by the model, which is where the decision lives
         // because these recognizers are re-made as the view re-renders.
-        .gesture(TapGesture(count: 2).onEnded { model.pause(sheet.id) })
-        .simultaneousGesture(TapGesture().onEnded { model.select(sheet.id) })
+        // Neither tap means anything over the rename field: a double
+        // click there selects a word of the draft and must not hold the
+        // clock, and the tab is already selected by the click that
+        // opened its menu.
+        .gesture(TapGesture(count: 2).onEnded { if !renaming { model.pause(sheet.id) } })
+        .simultaneousGesture(TapGesture().onEnded { if !renaming { model.select(sheet.id) } })
         .help(holdDescription)
-        .accessibilityElement(children: .ignore)
+        // The tab speaks as one element until it holds the field, which
+        // has to be reachable on its own for the draft to be read back.
+        .accessibilityElement(children: renaming ? .contain : .ignore)
         .accessibilityLabel(Text(accessibilityDescription))
         .accessibilityValue(Text(sheet.spokenRemaining))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .contextMenu {
-            Button("Rename tab…") { promptForRename() }
+            Button("Rename tab…") { beginRename() }
             // Disabled rather than hidden on an empty slot: the item
             // keeps its place in a menu whose shape the user knows, and
             // an item that says it will hold a clock there would be
@@ -420,15 +438,57 @@ struct SheetTab: View {
         return formatter
     }()
 
-    /// The rename gesture lives here because double-click is already
-    /// the pause gesture: a tab that renamed on double-click could not
-    /// hold its own clock. The prompt itself is shared
-    /// (`TabRenamePrompt`), since the roll's day headers offer the same
-    /// verb on the same slots (issue #79) and two alerts explaining one
-    /// rule would eventually explain it differently.
-    private func promptForRename() {
-        guard let name = TabRenamePrompt.newName(for: sheet.title) else { return }
-        model.renameTab(sheet.id, to: name)
+    /// The rename gesture lives on the menu because double-click is
+    /// already the pause gesture: a tab that renamed on double-click
+    /// could not hold its own clock. It opens a field in the title's
+    /// seat rather than a dialog, since a rename is not destructive and
+    /// has no claim on an interrupting question (D-14, issue #172). The
+    /// roll's day headers offer the same verb on the same slots (issue
+    /// #79) through their own field, and the two agree on what an
+    /// ending means through `TabRename`, so one rule is stated once.
+    private func beginRename() {
+        renameDraft = sheet.title
+        renaming = true
+    }
+
+    /// The field, focused as it appears. Return commits and escape
+    /// cancels; so does the keyboard going anywhere else, because a
+    /// draft left behind in a tab would be a question the user never
+    /// answered. The keyboard map's own escape rests the surface, and
+    /// that lands here as the focus leaving, which is the same cancel.
+    private var renameField: some View {
+        TextField("", text: $renameDraft)
+            .textFieldStyle(.plain)
+            .font(.system(.caption, design: .monospaced))
+            .frame(minWidth: 48)
+            .focused($renameFocused)
+            .onSubmit { endRename(committed: true) }
+            .onExitCommand { endRename(committed: false) }
+            .onChange(of: renameFocused) { focused in
+                if !focused { endRename(committed: false) }
+            }
+            .onAppear {
+                // Asked for on the next turn, once the field is in the
+                // window; asked for on this one the request can land
+                // before there is anything to focus.
+                DispatchQueue.main.async { renameFocused = true }
+            }
+            .accessibilityLabel(Text("Tab name"))
+            .help("Return renames the tab; escape leaves it as it was")
+    }
+
+    /// Ends the rename one way or the other. The guard makes the field
+    /// going away, which drops its focus and would otherwise report a
+    /// second ending, a no-op.
+    private func endRename(committed: Bool) {
+        guard renaming else { return }
+        renaming = false
+        switch TabRename.outcome(draft: renameDraft, current: sheet.title, committed: committed) {
+        case .rename(let name):
+            model.renameTab(sheet.id, to: name)
+        case .keep:
+            break
+        }
     }
 
     private var accessibilityDescription: String {
@@ -544,55 +604,6 @@ struct GroupLabel: View {
             .foregroundStyle(.tertiary)
             .padding(.horizontal, 4)
             .accessibilityLabel(Text("\(text.lowercased()) group"))
-    }
-}
-
-/// Asking for a tab's new name, wherever the asking is done from.
-///
-/// An `NSAlert` with a text field rather than a SwiftUI alert, since the
-/// SwiftUI form of this takes a text field only from macOS 14 and both
-/// apps ship to 13. It answers with the string the user submitted and
-/// nothing else (the caller renames) so the one surface that owns a
-/// tab's identity stays the model.
-///
-/// Submitting an empty field is meaningful, not a cancel: it drops the
-/// override and lets the title derive from the page again. Cancelling is
-/// nil, and nil means nothing happened at all.
-///
-/// Shared because the strip is no longer the only place the verb is
-/// offered. The roll carries rename on each page's own day-header gutter
-/// (issue #79), and the informative text below is a rule about what a
-/// tab name *is* (it outlives every page, it is frozen into every
-/// ledger record, so the secret must stay out of it), which is a rule
-/// the app should state once.
-@MainActor
-enum TabRenamePrompt {
-    static func newName(for currentTitle: String) -> String? {
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "Rename this tab"
-        alert.informativeText =
-            "The name shows on the tab and is frozen into each ledger record "
-            + "the tab's pages produce, so keep the secret itself out of it. It "
-            + "outlives every page the tab holds, and only closing the tab ends "
-            + "it. Leave the field empty to let the label follow the page's own "
-            + "first line again."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.stringValue = currentTitle
-        field.placeholderString = "empty derives the title from the page"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        // An accessory app's alert would otherwise open behind whatever
-        // is frontmost.
-        NSApp.activate(ignoringOtherApps: true)
-        // Bracketed like every modal of ours, so the surface comes
-        // forward again once the prompt has returned.
-        guard ModalSession.run({ alert.runModal() }) == .alertFirstButtonReturn else {
-            return nil
-        }
-        return field.stringValue
     }
 }
 
