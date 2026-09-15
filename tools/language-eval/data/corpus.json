@@ -256,17 +256,30 @@
   ],
   "families": [
     {
-      "id_prefix": "tune-paste-negative",
+      "id_prefix": "tune-dedicated-paste-negative",
       "split": "tune",
       "count": 600,
-      "generator": "paste_negative"
+      "generator": "dedicated_paste_negative"
     },
     {
-      "id_prefix": "holdout-paste-negative",
+      "id_prefix": "tune-paste-code",
+      "split": "tune",
+      "count": 120,
+      "generator": "paste_code"
+    },
+    {
+      "id_prefix": "holdout-dedicated-paste-negative",
       "split": "holdout",
-      "count": 600,
+      "count": 1200,
       "start_index": 600,
-      "generator": "paste_negative"
+      "generator": "independent_holdout_paste_negative"
+    },
+    {
+      "id_prefix": "holdout-paste-code",
+      "split": "holdout",
+      "count": 120,
+      "start_index": 120,
+      "generator": "independent_holdout_paste_code"
     }
   ]
 }

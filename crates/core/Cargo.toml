@@ -13,6 +13,7 @@ workspace = true
 
 [dependencies]
 zeroize = { workspace = true }
+companion-language-detection-policy = { path = "../language-detection-policy" }
 # Experimental ADR-0029 source-language classifier. Exact pin: model, labels,
 # and inference behavior require deliberate review before any upgrade.
 betlang = "=0.1.1"

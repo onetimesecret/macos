@@ -9,7 +9,8 @@
 # (debug, launched from dist/) and scripts/install.sh (release,
 # installed to /Applications).
 #
-# Prereq: scripts/build-core.sh has produced the xcframework.
+# This script owns the required core shape: release packaging rebuilds without
+# test-util, while --debug requests the development seams.
 #
 # --debug builds the debug configuration, which always offers the
 # Settings switch that lifts the surface's capture exclusion. A release
@@ -70,9 +71,24 @@ elif [[ -n "${1:-}" ]]; then
   exit 1
 fi
 
+if [[ "$CONFIG" == "debug" ]]; then
+  scripts/build-core.sh --if-stale --test-util
+else
+  # ADR-0018: never trust whichever development framework happens to be in
+  # bindings/. The explicit release shape rebuilds whenever the stamp differs.
+  scripts/build-core.sh --if-stale
+fi
+
 if [[ ! -d bindings/CompanionCore.xcframework ]]; then
-  echo "bindings/CompanionCore.xcframework is missing; run scripts/build-core.sh first." >&2
+  echo "bindings/CompanionCore.xcframework is missing after the core build." >&2
   exit 1
+fi
+if ! cmp -s THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PARTY_NOTICES.md; then
+  echo "CompanionCore.xcframework is missing the canonical third-party notices." >&2
+  exit 1
+fi
+if [[ "$CONFIG" == "release" ]]; then
+  scripts/verify-release-core.sh
 fi
 
 # The app's marketing version is the product's own number and it lives
@@ -126,7 +142,14 @@ if [[ "$CONFIG" == "release" ]]; then
   # its C exports, would otherwise read as "no seam found" and pass. A
   # symbol every shape exports has to be visible before the absence of
   # a seam means anything.
-  EXPORTS="$(nm -gU "$BIN" 2>/dev/null || true)"
+  EXPORTS_FILE="$(mktemp -t companion-exports)"
+  if ! nm -gU "$BIN" >"$EXPORTS_FILE"; then
+    echo "nm could not inspect $BIN; refusing to package an unchecked release." >&2
+    rm -f "$EXPORTS_FILE"
+    exit 1
+  fi
+  EXPORTS="$(cat "$EXPORTS_FILE")"
+  rm -f "$EXPORTS_FILE"
   if ! grep -q -E '_companion_free$' <<<"$EXPORTS"; then
     echo "nm found no companion exports in $BIN, so the seam check cannot" >&2
     echo "run (ADR-0018). The symbol table is unreadable or the core is not" >&2
@@ -161,6 +184,11 @@ cp shell/Sources/CompanionKit/Resources/onetime-logo-v3-xl.svg "$APP/Contents/Re
 # app looks first, and a bundle without this file has no shortcuts at
 # all.
 cp shell/Sources/CompanionKit/Resources/default-keymap.json "$APP/Contents/Resources/"
+cp THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
+cmp -s THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md" || {
+  echo "app third-party notices do not match the canonical notice" >&2
+  exit 1
+}
 cp shell/OnetimePad-Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 # A debug build always takes the black dev icon and never an ad-hoc
@@ -321,5 +349,13 @@ fi
 echo "==> Verifying"
 plutil -lint "$APP/Contents/Info.plist"
 codesign --verify --strict "$APP"
+cmp -s THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md" || {
+  echo "signed app third-party notices do not match the canonical notice" >&2
+  exit 1
+}
+cmp -s THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PARTY_NOTICES.md || {
+  echo "final xcframework third-party notices do not match the canonical notice" >&2
+  exit 1
+}
 
 echo "Built $APP. Launch with: open $APP"

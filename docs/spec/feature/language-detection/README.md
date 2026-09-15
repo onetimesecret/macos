@@ -8,6 +8,9 @@ implementation or dependency change is included in this specification.
 - [ADR-0029: Betlang source-language detection behind the existing C ABI](../../../adr/0029-betlang-source-language-detection-behind-the-existing-c-abi.md) — accepted architecture, dependency pin, artifact record, attribution, and policy boundaries.
 - [Implementation plan](plan.md) — ordered work, integration points, tests, and
   release gates.
+- [2026-09-14 threshold evaluation](evaluation-2026-09-14.md) and
+  [execution checklist](evaluation-checklist.md) — failed holdout evidence; no
+  production threshold freeze.
 
 All requirements below are proposals, not existing project guarantees, except
 where they restate the accepted boundaries in ADR-0029. Current behavior is

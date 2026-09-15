@@ -1,7 +1,11 @@
 //! Non-shipping synthetic evaluation harness for `betlang`.
 
+use companion_language_detection_policy::{
+    DetectionPolicy, EligibilityRejection, RankingRejection, count_non_whitespace,
+    eligibility_rejection, ranking_rejection,
+};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
 use std::error::Error;
 use std::fmt::Write as _;
@@ -69,12 +73,21 @@ struct Family {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Thresholds {
     minimum_non_whitespace_bytes: usize,
-    minimum_top_score: f64,
-    minimum_top_two_margin: f64,
+    minimum_top_score: f32,
+    minimum_top_two_margin: f32,
     maximum_input_bytes: usize,
 }
 
 impl Thresholds {
+    fn policy(&self) -> DetectionPolicy {
+        DetectionPolicy {
+            minimum_non_whitespace_bytes: self.minimum_non_whitespace_bytes,
+            minimum_top_score: self.minimum_top_score,
+            minimum_top_two_margin: self.minimum_top_two_margin,
+            maximum_input_bytes: self.maximum_input_bytes,
+        }
+    }
+
     fn validate(&self) -> Result<(), AnyError> {
         if !self.minimum_top_score.is_finite()
             || !self.minimum_top_two_margin.is_finite()
@@ -147,7 +160,7 @@ struct EvalCase {
 
 #[derive(Clone, Debug, Serialize)]
 struct RankedValue {
-    score: f64,
+    score: f32,
     slug: String,
 }
 
@@ -228,6 +241,10 @@ struct Metrics {
     exact_useful_code_coverage: Rate,
     abstention: Rate,
     negative_false_conversions: Rate,
+    automatic_paste_conversions: u64,
+    automatic_paste_precision: Rate,
+    automatic_paste_useful_code_coverage: Rate,
+    dedicated_paste_negative_conversions: Rate,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -274,7 +291,7 @@ struct ConfusionCase {
     kind: String,
     expected: String,
     outcome: String,
-    top_score: Option<f64>,
+    top_score: Option<f32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -283,6 +300,7 @@ struct Report {
     split: String,
     thresholds: Thresholds,
     metadata: RunMetadata,
+    automatic_paste_gate: GateAssessment,
     metrics: Metrics,
     by_surface: BTreeMap<String, Metrics>,
     by_kind: BTreeMap<String, Metrics>,
@@ -292,6 +310,13 @@ struct Report {
     detailed_confusion_cases: Vec<ConfusionCase>,
     cold_first_eligible_inference_nanoseconds: Option<u64>,
     warm_latency: LatencyStats,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct GateAssessment {
+    status: String,
+    requirements: Vec<String>,
+    reasons: Vec<String>,
 }
 
 fn main() -> ExitCode {
@@ -467,7 +492,9 @@ fn evaluate(args: &EvaluateArgs) -> Result<(), AnyError> {
     }
     let thresholds: Thresholds = read_json(&args.thresholds)?;
     thresholds.validate()?;
-    let cases = expand_corpus(corpus)?
+    let expanded = expand_corpus(corpus)?;
+    validate_corpus(&expanded)?;
+    let cases = expanded
         .into_iter()
         .filter(|case| args.split.includes(case.split))
         .collect::<Vec<_>>();
@@ -481,7 +508,7 @@ fn evaluate(args: &EvaluateArgs) -> Result<(), AnyError> {
     let mut warm_input = None;
     for case in cases {
         let non_whitespace_bytes = count_non_whitespace(&case.input);
-        let eligibility = eligibility_reason(&case.input, non_whitespace_bytes, &thresholds);
+        let eligibility = eligibility_reason(&case.input, &thresholds);
         let eligible = eligibility.is_none();
         let (ranked, elapsed) = if eligible {
             if warm_input.is_none() {
@@ -541,46 +568,39 @@ fn collect_ranked(detection: &betlang::Detection) -> Result<Vec<RankedValue>, An
                 )));
             }
             Ok(RankedValue {
-                score: f64::from(score),
+                score,
                 slug: language.slug().to_owned(),
             })
         })
         .collect()
 }
 
-fn eligibility_reason(
-    input: &[u8],
-    non_whitespace_bytes: usize,
-    thresholds: &Thresholds,
-) -> Option<String> {
-    if input.len() > thresholds.maximum_input_bytes {
-        Some("input_exceeds_maximum_bytes".to_owned())
-    } else if non_whitespace_bytes < thresholds.minimum_non_whitespace_bytes {
-        Some("insufficient_non_whitespace_bytes".to_owned())
-    } else {
-        None
-    }
+fn eligibility_reason(input: &[u8], thresholds: &Thresholds) -> Option<String> {
+    eligibility_rejection(input, thresholds.policy()).map(|rejection| {
+        match rejection {
+            EligibilityRejection::InputExceedsMaximumBytes => "input_exceeds_maximum_bytes",
+            EligibilityRejection::InputContainsNul => "input_contains_nul",
+            EligibilityRejection::InputIsNotUtf8 => "input_is_not_utf8",
+            EligibilityRejection::InsufficientNonWhitespaceBytes => {
+                "insufficient_non_whitespace_bytes"
+            }
+        }
+        .to_owned()
+    })
 }
 
 fn decide(ranked: &[RankedValue], thresholds: &Thresholds) -> (Option<String>, Option<String>) {
-    let Some(top) = ranked.first() else {
-        return (None, Some("model_returned_no_rankings".to_owned()));
-    };
-    if top.score < thresholds.minimum_top_score {
-        return (None, Some("top_score_below_minimum".to_owned()));
+    let rejection = ranking_rejection(ranked.iter().map(|value| value.score), thresholds.policy());
+    if let Some(rejection) = rejection {
+        let reason = match rejection {
+            RankingRejection::FewerThanTwoRankings => "model_returned_fewer_than_two_rankings",
+            RankingRejection::NonFiniteScore => "model_returned_non_finite_score",
+            RankingRejection::TopScoreBelowMinimum => "top_score_below_minimum",
+            RankingRejection::TopTwoMarginBelowMinimum => "top_two_margin_below_minimum",
+        };
+        return (None, Some(reason.to_owned()));
     }
-    let second_score = ranked.get(1).map_or(0.0, |value| value.score);
-    if top.score < second_score + thresholds.minimum_top_two_margin {
-        return (None, Some("top_two_margin_below_minimum".to_owned()));
-    }
-    (Some(top.slug.clone()), None)
-}
-
-fn count_non_whitespace(input: &[u8]) -> usize {
-    input
-        .iter()
-        .filter(|byte| !byte.is_ascii_whitespace())
-        .count()
+    (ranked.first().map(|top| top.slug.clone()), None)
 }
 
 fn measure_warm(input: Option<&[u8]>, iterations: usize) -> Result<LatencyStats, AnyError> {
@@ -668,8 +688,11 @@ fn build_report(
     let executable = env::current_exe()?;
     let executable_size_bytes = fs::metadata(executable)?.len();
 
+    let metrics = calculate_metrics(&results.iter().collect::<Vec<_>>());
+    let automatic_paste_gate = assess_automatic_paste_gate(args.split, &metrics);
+
     Ok(Report {
-        schema_version: 3,
+        schema_version: 4,
         split: args.split.as_str().to_owned(),
         thresholds,
         metadata: RunMetadata {
@@ -693,7 +716,8 @@ fn build_report(
                     .to_owned(),
             },
         },
-        metrics: calculate_metrics(&results.iter().collect::<Vec<_>>()),
+        automatic_paste_gate,
+        metrics,
         by_surface,
         by_kind,
         by_length_band,
@@ -703,6 +727,65 @@ fn build_report(
         cold_first_eligible_inference_nanoseconds: cold,
         warm_latency,
     })
+}
+
+fn assess_automatic_paste_gate(split: SplitFilter, metrics: &Metrics) -> GateAssessment {
+    let requirements = vec![
+        "at least 99% automatic-paste code precision on held-out conversions".to_owned(),
+        "zero conversions over at least 1,000 dedicated prose/list/URL paste negatives".to_owned(),
+        "report useful-code coverage and uncertainty".to_owned(),
+        "at least one automatic paste conversion (all-abstain is forbidden)".to_owned(),
+    ];
+    if split != SplitFilter::Holdout {
+        return GateAssessment {
+            status: "insufficient_evidence".to_owned(),
+            requirements,
+            reasons: vec!["the gate can be concluded only from the holdout split".to_owned()],
+        };
+    }
+
+    let mut insufficient = Vec::new();
+    if metrics.dedicated_paste_negative_conversions.denominator < 1_000 {
+        insufficient.push(format!(
+            "only {} dedicated negatives; at least 1,000 required",
+            metrics.dedicated_paste_negative_conversions.denominator
+        ));
+    }
+    if metrics.automatic_paste_conversions == 0 {
+        insufficient.push("no automatic paste conversions; all-abstain is forbidden".to_owned());
+    }
+    if !insufficient.is_empty() {
+        return GateAssessment {
+            status: "insufficient_evidence".to_owned(),
+            requirements,
+            reasons: insufficient,
+        };
+    }
+
+    let mut failures = Vec::new();
+    if metrics
+        .automatic_paste_precision
+        .rate
+        .is_none_or(|rate| rate < 0.99)
+    {
+        failures.push(format!(
+            "automatic-paste precision is {}/{}; at least 99% required",
+            metrics.automatic_paste_precision.numerator,
+            metrics.automatic_paste_precision.denominator
+        ));
+    }
+    if metrics.dedicated_paste_negative_conversions.numerator != 0 {
+        failures.push(format!(
+            "{} dedicated negative conversions observed; zero required",
+            metrics.dedicated_paste_negative_conversions.numerator
+        ));
+    }
+
+    GateAssessment {
+        status: if failures.is_empty() { "pass" } else { "fail" }.to_owned(),
+        requirements,
+        reasons: failures,
+    }
 }
 
 fn metrics_by(
@@ -762,6 +845,28 @@ fn calculate_metrics(results: &[&CaseResult]) -> Metrics {
         .iter()
         .filter(|result| !result.useful_code && result.accepted.is_some())
         .count() as u64;
+    let paste_useful = results
+        .iter()
+        .filter(|result| result.surface == "paste" && result.useful_code)
+        .count() as u64;
+    let automatic_paste_conversions = results
+        .iter()
+        .filter(|result| is_automatic_paste_conversion(result))
+        .count() as u64;
+    let automatic_paste_useful = results
+        .iter()
+        .filter(|result| result.useful_code && is_automatic_paste_conversion(result))
+        .count() as u64;
+    let dedicated_paste_negatives = results
+        .iter()
+        .filter(|result| is_dedicated_paste_negative(result))
+        .count() as u64;
+    let dedicated_paste_negative_conversions = results
+        .iter()
+        .filter(|result| {
+            is_dedicated_paste_negative(result) && is_automatic_paste_conversion(result)
+        })
+        .count() as u64;
 
     Metrics {
         total_cases: total,
@@ -775,7 +880,25 @@ fn calculate_metrics(results: &[&CaseResult]) -> Metrics {
         exact_useful_code_coverage: Rate::new(useful_exact, useful),
         abstention: Rate::new(total - accepted, total),
         negative_false_conversions: Rate::new(negative_conversions, negatives),
+        automatic_paste_conversions,
+        automatic_paste_precision: Rate::new(automatic_paste_useful, automatic_paste_conversions),
+        automatic_paste_useful_code_coverage: Rate::new(automatic_paste_useful, paste_useful),
+        dedicated_paste_negative_conversions: Rate::new(
+            dedicated_paste_negative_conversions,
+            dedicated_paste_negatives,
+        ),
     }
+}
+
+fn is_automatic_paste_conversion(result: &CaseResult) -> bool {
+    result.surface == "paste"
+        && matches!(result.accepted.as_deref(), Some(slug) if slug != "markdown")
+}
+
+fn is_dedicated_paste_negative(result: &CaseResult) -> bool {
+    result.surface == "paste"
+        && !result.useful_code
+        && matches!(result.kind.as_str(), "prose" | "list" | "url")
 }
 
 fn exact_label_matches(result: &CaseResult) -> bool {
@@ -803,17 +926,57 @@ fn expand_corpus(corpus: Corpus) -> Result<Vec<EvalCase>, AnyError> {
         .map(convert_case)
         .collect::<Result<Vec<_>, _>>()?;
     for family in corpus.families {
-        if family.generator != "paste_negative" {
-            return Err(invalid(format!(
-                "unknown family generator: {}",
-                family.generator
-            )));
-        }
         for index in 0..family.count {
-            expanded.push(generated_negative(&family, index));
+            let case = match family.generator.as_str() {
+                "paste_negative" => generated_negative(&family, index),
+                "dedicated_paste_negative" => generated_dedicated_paste_negative(&family, index),
+                "independent_holdout_paste_negative" => {
+                    generated_independent_holdout_paste_negative(&family, index)
+                }
+                "paste_code" => generated_paste_code(&family, index),
+                "independent_holdout_paste_code" => {
+                    generated_independent_holdout_paste_code(&family, index)
+                }
+                _ => {
+                    return Err(invalid(format!(
+                        "unknown family generator: {}",
+                        family.generator
+                    )));
+                }
+            };
+            expanded.push(case);
         }
     }
     Ok(expanded)
+}
+
+fn validate_corpus(cases: &[EvalCase]) -> Result<(), AnyError> {
+    let mut ids = BTreeSet::new();
+    let mut inputs: HashMap<&[u8], (&str, Split)> = HashMap::new();
+    for case in cases {
+        if !ids.insert(case.id.as_str()) {
+            return Err(invalid(format!("duplicate corpus case id: {}", case.id)));
+        }
+        if case.useful_code != case.expected.is_some() {
+            return Err(invalid(format!(
+                "case {} must define expected exactly when useful_code is true",
+                case.id
+            )));
+        }
+        if let Some((other_id, other_split)) = inputs.insert(&case.input, (&case.id, case.split)) {
+            if other_split != case.split {
+                return Err(invalid(format!(
+                    "tune/holdout input overlap: {} and {}",
+                    other_id, case.id
+                )));
+            }
+            return Err(invalid(format!(
+                "duplicate corpus input: {} and {}",
+                other_id, case.id
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn convert_case(case: CorpusCase) -> Result<EvalCase, AnyError> {
@@ -913,6 +1076,481 @@ fn generated_negative(family: &Family, index: usize) -> EvalCase {
     }
 }
 
+fn generated_dedicated_paste_negative(family: &Family, index: usize) -> EvalCase {
+    let generation_index = family.start_index + index;
+    let variant = generation_index % 3;
+    let style = (generation_index / 3) % 8;
+    let serial = generation_index / 24;
+    let (kind, text) = match (variant, style) {
+        (0, 0) => (
+            "prose",
+            format!(
+                "Reminder {serial}: the east meeting room is reserved after lunch for the quarterly planning discussion."
+            ),
+        ),
+        (0, 1) => (
+            "prose",
+            format!(
+                "Note {serial}: please return the library books before walking to the neighborhood market."
+            ),
+        ),
+        (0, 2) => (
+            "prose",
+            format!(
+                "Update {serial}: the delivery will arrive tomorrow morning, and reception has the tracking details."
+            ),
+        ),
+        (0, 3) => (
+            "prose",
+            format!(
+                "Message {serial}: we reviewed the draft together and agreed to discuss the remaining questions next week."
+            ),
+        ),
+        (0, 4) => (
+            "prose",
+            format!(
+                "Agenda item {serial}: compare the travel options, choose a departure time, and notify the group."
+            ),
+        ),
+        (0, 5) => (
+            "prose",
+            format!(
+                "Journal entry {serial}: rain continued through the afternoon while the garden paths slowly filled with water."
+            ),
+        ),
+        (0, 6) => (
+            "prose",
+            format!(
+                "Notice {serial}: visitors should sign in at the front desk and wear a badge inside the building."
+            ),
+        ),
+        (0, _) => (
+            "prose",
+            format!(
+                "Summary {serial}: customer interviews identified clearer instructions as the most common request."
+            ),
+        ),
+        (1, 0) => (
+            "list",
+            format!("Groceries {serial}:\n- apples\n- rice\n- coffee\n- soap"),
+        ),
+        (1, 1) => (
+            "list",
+            format!(
+                "Weekend tasks {serial}\n1. Water the plants\n2. Wash the towels\n3. Call the family"
+            ),
+        ),
+        (1, 2) => (
+            "list",
+            format!("Packing checklist {serial}:\n• passport\n• charger\n• notebook\n• raincoat"),
+        ),
+        (1, 3) => (
+            "list",
+            format!(
+                "Meeting topics {serial}:\n- budget review\n- hiring update\n- office schedule"
+            ),
+        ),
+        (1, 4) => (
+            "list",
+            format!("Books to borrow {serial}\n1) Local history\n2) Winter gardens\n3) City maps"),
+        ),
+        (1, 5) => (
+            "list",
+            format!("Supplies for room {serial}: paper, markers, tape, folders, and name cards."),
+        ),
+        (1, 6) => (
+            "list",
+            format!("Travel plan {serial}\nMorning — train\nAfternoon — museum\nEvening — dinner"),
+        ),
+        (1, _) => (
+            "list",
+            format!(
+                "Priorities {serial}:\nA. Confirm attendance\nB. Reserve tables\nC. Send directions"
+            ),
+        ),
+        (2, 0) => (
+            "url",
+            format!("https://example.invalid/articles/{serial}/planning-a-meeting"),
+        ),
+        (2, 1) => (
+            "url",
+            format!("https://docs.example.invalid/guide/{serial}?view=reader&lang=en"),
+        ),
+        (2, 2) => (
+            "url",
+            format!("https://calendar.example.invalid/events/{serial}#schedule"),
+        ),
+        (2, 3) => (
+            "url",
+            format!("https://shop.example.invalid/products/notebook-{serial}/reviews"),
+        ),
+        (2, 4) => (
+            "url",
+            format!("https://maps.example.invalid/place/library-{serial}?zoom=14"),
+        ),
+        (2, 5) => (
+            "url",
+            format!("https://news.example.invalid/2026/09/story-{serial}.html"),
+        ),
+        (2, 6) => (
+            "url",
+            format!("https://support.example.invalid/tickets/{serial}?status=open"),
+        ),
+        (2, _) => (
+            "url",
+            format!("https://community.example.invalid/topics/{serial}-welcome-to-the-group"),
+        ),
+        _ => unreachable!(),
+    };
+    EvalCase {
+        id: format!("{}-{index:04}", family.id_prefix),
+        split: family.split,
+        surface: "paste".to_owned(),
+        kind: kind.to_owned(),
+        expected: None,
+        useful_code: false,
+        input: text.into_bytes(),
+    }
+}
+
+fn generated_independent_holdout_paste_negative(family: &Family, index: usize) -> EvalCase {
+    const SUBJECTS: [&str; 10] = [
+        "the design group",
+        "our neighbor",
+        "the evening class",
+        "a museum guide",
+        "the clinic receptionist",
+        "the volunteer team",
+        "the train conductor",
+        "the building manager",
+        "the local baker",
+        "the school librarian",
+    ];
+    const ACTIVITIES: [&str; 10] = [
+        "confirmed the revised schedule",
+        "moved the appointment",
+        "found the missing parcel",
+        "prepared the visitor badges",
+        "reserved a quieter room",
+        "returned the borrowed equipment",
+        "reviewed the printed map",
+        "cancelled the afternoon delivery",
+        "shared the meeting summary",
+        "reported a broken window",
+    ];
+    const TIMES: [&str; 4] = [
+        "before breakfast",
+        "shortly after noon",
+        "during the evening",
+        "early next week",
+    ];
+    const LIST_TITLES: [&str; 10] = [
+        "Items beside the door",
+        "Things to discuss",
+        "Stops on the walk",
+        "Names for the table",
+        "Food for the picnic",
+        "Rooms to inspect",
+        "Calls to return",
+        "Gifts to wrap",
+        "Plants to water",
+        "Documents to bring",
+    ];
+    const LIST_ITEMS: [[&str; 3]; 10] = [
+        ["blue umbrella", "canvas bag", "spare keys"],
+        ["arrival time", "seating plan", "dietary notes"],
+        ["post office", "public garden", "corner shop"],
+        ["Mara", "Tomas", "Yuki"],
+        ["bread rolls", "pears", "sparkling water"],
+        ["front office", "west stairwell", "storage room"],
+        ["dentist", "electrician", "music teacher"],
+        ["striped scarf", "wooden puzzle", "recipe book"],
+        ["fern", "rosemary", "small lemon tree"],
+        ["train ticket", "museum pass", "hotel address"],
+    ];
+    const URL_HOSTS: [&str; 10] = [
+        "library.example.invalid",
+        "events.example.invalid",
+        "travel.example.invalid",
+        "recipes.example.invalid",
+        "gallery.example.invalid",
+        "weather.example.invalid",
+        "transit.example.invalid",
+        "catalog.example.invalid",
+        "school.example.invalid",
+        "garden.example.invalid",
+    ];
+    const URL_PATHS: [&str; 10] = [
+        "reading-rooms",
+        "autumn-calendar",
+        "coastal-routes",
+        "soup-collection",
+        "new-exhibitions",
+        "weekly-outlook",
+        "station-access",
+        "linen-notebooks",
+        "family-evening",
+        "winter-pruning",
+    ];
+    const URL_SUFFIXES: [&str; 4] = [
+        "?display=compact",
+        "?language=en#details",
+        "/printable",
+        "?from=newsletter&mode=reader",
+    ];
+
+    let generation_index = family.start_index + index;
+    let variant = generation_index % 3;
+    let combination = generation_index / 3;
+    let first = combination % 10;
+    let second = (combination / 10) % 10;
+    let style = (combination / 100) % 4;
+    let (kind, text) = match variant {
+        0 => {
+            let text = match style {
+                0 => format!(
+                    "{} {} {}.",
+                    SUBJECTS[first], ACTIVITIES[second], TIMES[style]
+                ),
+                1 => format!(
+                    "{}: {} said that {}.",
+                    TIMES[style], SUBJECTS[first], ACTIVITIES[second]
+                ),
+                2 => format!(
+                    "A handwritten note explains that {} {} {}.",
+                    SUBJECTS[first], ACTIVITIES[second], TIMES[style]
+                ),
+                _ => format!(
+                    "Please remember: {} {}, {}.",
+                    SUBJECTS[first], ACTIVITIES[second], TIMES[style]
+                ),
+            };
+            ("prose", text)
+        }
+        1 => {
+            let items = LIST_ITEMS[second];
+            let text = match style {
+                0 => format!(
+                    "{}\n• {}\n• {}\n• {}",
+                    LIST_TITLES[first], items[0], items[1], items[2]
+                ),
+                1 => format!(
+                    "{}:\n(a) {}\n(b) {}\n(c) {}",
+                    LIST_TITLES[first], items[0], items[1], items[2]
+                ),
+                2 => format!(
+                    "{} — {}, {}, and {}.",
+                    LIST_TITLES[first], items[0], items[1], items[2]
+                ),
+                _ => format!(
+                    "{}\n□ {}\n□ {}\n□ {}",
+                    LIST_TITLES[first], items[0], items[1], items[2]
+                ),
+            };
+            ("list", text)
+        }
+        _ => (
+            "url",
+            format!(
+                "https://{}/{}/{}{}",
+                URL_HOSTS[first],
+                URL_PATHS[second],
+                first + second + 1,
+                URL_SUFFIXES[style]
+            ),
+        ),
+    };
+    EvalCase {
+        id: format!("{}-{index:04}", family.id_prefix),
+        split: family.split,
+        surface: "paste".to_owned(),
+        kind: kind.to_owned(),
+        expected: None,
+        useful_code: false,
+        input: text.into_bytes(),
+    }
+}
+
+fn generated_paste_code(family: &Family, index: usize) -> EvalCase {
+    let generation_index = family.start_index + index;
+    let variant = generation_index % 12;
+    let serial = generation_index / 12;
+    let (expected, text) = match variant {
+        0 => (
+            "rust",
+            format!(
+                "fn total_{serial}(values: &[i32]) -> i32 {{ values.iter().copied().filter(|value| *value > 0).sum() }}\nprintln!(\"{{}}\", total_{serial}(&[1, -2, 3]));"
+            ),
+        ),
+        1 => (
+            "python",
+            format!(
+                "def total_{serial}(values):\n    return sum(value for value in values if value > 0)\n\nprint(total_{serial}([1, -2, 3]))"
+            ),
+        ),
+        2 => (
+            "javascript",
+            format!(
+                "const enabled{serial} = users.filter((user) => user.enabled);\nconsole.log(enabled{serial}.map((user) => user.id));"
+            ),
+        ),
+        3 => (
+            "typescript",
+            format!(
+                "interface Record{serial} {{ id: number; active: boolean }}\nconst active{serial}: Record{serial}[] = records.filter((item) => item.active);"
+            ),
+        ),
+        4 => (
+            "swift",
+            format!(
+                "struct Greeter{serial} {{ let name: String; func message() -> String {{ \"Hello, \\(name)!\" }} }}\nprint(Greeter{serial}(name: \"World\").message())"
+            ),
+        ),
+        5 => (
+            "go",
+            format!(
+                "package main\nimport \"fmt\"\nfunc total{serial}(values []int) int {{ sum := 0; for _, value := range values {{ sum += value }}; return sum }}\nfunc main() {{ fmt.Println(total{serial}([]int{{1, 2, 3}})) }}"
+            ),
+        ),
+        6 => (
+            "shell",
+            format!(
+                "#!/bin/sh\nset -eu\nfor file in sample-{serial}/*.txt; do\n  printf '%s\\n' \"$file\"\ndone"
+            ),
+        ),
+        7 => (
+            "sql",
+            format!(
+                "SELECT account_id, COUNT(*) AS event_count_{serial}\nFROM audit_events\nWHERE created_at >= CURRENT_DATE\nGROUP BY account_id\nORDER BY event_count_{serial} DESC;"
+            ),
+        ),
+        8 => (
+            "json",
+            format!(
+                "{{\"batch\": {serial}, \"enabled\": true, \"items\": [{{\"id\": 1}}, {{\"id\": 2}}], \"owner\": null}}"
+            ),
+        ),
+        9 => (
+            "yaml",
+            format!(
+                "job_{serial}:\n  enabled: true\n  retries: 3\n  tags:\n    - synthetic\n    - evaluation"
+            ),
+        ),
+        10 => (
+            "toml",
+            format!(
+                "[job_{serial}]\nenabled = true\nretries = 3\ntags = [\"synthetic\", \"evaluation\"]"
+            ),
+        ),
+        _ => (
+            "ruby",
+            format!(
+                "def total_{serial}(values)\n  values.select {{ |value| value.positive? }}.sum\nend\n\nputs total_{serial}([1, -2, 3])"
+            ),
+        ),
+    };
+    EvalCase {
+        id: format!("{}-{index:04}", family.id_prefix),
+        split: family.split,
+        surface: "paste".to_owned(),
+        kind: "code".to_owned(),
+        expected: Some(expected.to_owned()),
+        useful_code: true,
+        input: text.into_bytes(),
+    }
+}
+
+fn generated_independent_holdout_paste_code(family: &Family, index: usize) -> EvalCase {
+    let generation_index = family.start_index + index;
+    let variant = generation_index % 12;
+    let name = [
+        "amber", "birch", "cedar", "dune", "elm", "fjord", "grove", "harbor", "iris", "juniper",
+    ][(generation_index / 12) % 10];
+    let (expected, text) = match variant {
+        0 => (
+            "rust",
+            format!(
+                "enum Signal {{ Ready, Waiting }}\nfn describe_{name}(value: Signal) -> &'static str {{ match value {{ Signal::Ready => \"ready\", Signal::Waiting => \"waiting\" }} }}"
+            ),
+        ),
+        1 => (
+            "python",
+            format!(
+                "from pathlib import Path\n\ndef names_{name}(root):\n    return sorted(path.stem for path in Path(root).glob(\"*.txt\"))\n\nprint(names_{name}(\"notes\"))"
+            ),
+        ),
+        2 => (
+            "javascript",
+            format!(
+                "async function load{name}(url) {{\n  const response = await fetch(url);\n  if (!response.ok) throw new Error(response.statusText);\n  return response.json();\n}}"
+            ),
+        ),
+        3 => (
+            "typescript",
+            format!(
+                "type Entry{name} = {{ label: string; count: number }};\nfunction labels{name}(entries: Entry{name}[]): string[] {{\n  return entries.filter((entry) => entry.count > 0).map((entry) => entry.label);\n}}"
+            ),
+        ),
+        4 => (
+            "swift",
+            format!(
+                "enum Route{name}: String, CaseIterable {{ case home, archive, settings }}\nlet labels{name} = Route{name}.allCases.map(\\.rawValue)\nprint(labels{name}.joined(separator: \", \"))"
+            ),
+        ),
+        5 => (
+            "go",
+            format!(
+                "package main\nimport (\"fmt\"; \"strings\")\nfunc main() {{ words{name} := []string{{\"north\", \"south\"}}; fmt.Println(strings.Join(words{name}, \",\")) }}"
+            ),
+        ),
+        6 => (
+            "shell",
+            format!(
+                "#!/bin/sh\nset -eu\ndestination='{name}-archive'\nmkdir -p \"$destination\"\nfind notes -type f -name '*.md' -exec cp {{}} \"$destination\" \\;"
+            ),
+        ),
+        7 => (
+            "sql",
+            format!(
+                "WITH recent_{name} AS (\n  SELECT customer_id, MAX(created_at) AS latest\n  FROM orders GROUP BY customer_id\n)\nSELECT customer_id, latest FROM recent_{name} WHERE latest IS NOT NULL;"
+            ),
+        ),
+        8 => (
+            "json",
+            format!(
+                "{{\"workspace\":\"{name}\",\"members\":[{{\"name\":\"Ada\",\"active\":true}},{{\"name\":\"Lin\",\"active\":false}}],\"limit\":12}}"
+            ),
+        ),
+        9 => (
+            "yaml",
+            format!(
+                "service_{name}:\n  image: example.invalid/worker:1\n  environment:\n    MODE: batch\n    RETRIES: '4'\n  ports:\n    - '8080:8080'"
+            ),
+        ),
+        10 => (
+            "toml",
+            format!(
+                "[workspace.{name}]\nroot = \"./documents\"\nexclude = [\"drafts\", \"tmp\"]\n\n[workspace.{name}.display]\nline_numbers = true"
+            ),
+        ),
+        _ => (
+            "ruby",
+            format!(
+                "class Ledger{name}\n  def initialize\n    @entries = Hash.new(0)\n  end\n  def add(label)\n    @entries[label] += 1\n  end\nend"
+            ),
+        ),
+    };
+    EvalCase {
+        id: format!("{}-{index:04}", family.id_prefix),
+        split: family.split,
+        surface: "paste".to_owned(),
+        kind: "code".to_owned(),
+        expected: Some(expected.to_owned()),
+        useful_code: true,
+        input: text.into_bytes(),
+    }
+}
+
 fn decode_hex(value: &str) -> Result<Vec<u8>, AnyError> {
     if !value.len().is_multiple_of(2) {
         return Err(invalid("hex input must have an even number of digits"));
@@ -989,6 +1627,17 @@ fn report_markdown(report: &Report) -> String {
         format_ns(report.warm_latency.max_nanoseconds)
     )
     .expect("writing to a String cannot fail");
+
+    output.push_str("\n## Automatic-paste gate\n\n");
+    writeln!(
+        output,
+        "- Conclusion: **{}**",
+        report.automatic_paste_gate.status
+    )
+    .expect("writing to a String cannot fail");
+    for reason in &report.automatic_paste_gate.reasons {
+        writeln!(output, "- {reason}").expect("writing to a String cannot fail");
+    }
 
     output.push_str("\n## Aggregate metrics\n\n");
     write_metrics_table(&mut output, &report.metrics);
@@ -1150,6 +1799,36 @@ fn write_metrics_table(output: &mut String, metrics: &Metrics) {
         format_rate(&metrics.negative_false_conversions)
     )
     .expect("writing to a String cannot fail");
+    writeln!(
+        output,
+        "| Automatic paste conversions | {} | n/a |",
+        metrics.automatic_paste_conversions
+    )
+    .expect("writing to a String cannot fail");
+    writeln!(
+        output,
+        "| Automatic paste precision | {}/{} | {} |",
+        metrics.automatic_paste_precision.numerator,
+        metrics.automatic_paste_precision.denominator,
+        format_rate(&metrics.automatic_paste_precision)
+    )
+    .expect("writing to a String cannot fail");
+    writeln!(
+        output,
+        "| Automatic paste useful-code coverage | {}/{} | {} |",
+        metrics.automatic_paste_useful_code_coverage.numerator,
+        metrics.automatic_paste_useful_code_coverage.denominator,
+        format_rate(&metrics.automatic_paste_useful_code_coverage)
+    )
+    .expect("writing to a String cannot fail");
+    writeln!(
+        output,
+        "| Dedicated prose/list/URL paste-negative conversions | {}/{} | {} |",
+        metrics.dedicated_paste_negative_conversions.numerator,
+        metrics.dedicated_paste_negative_conversions.denominator,
+        format_rate(&metrics.dedicated_paste_negative_conversions)
+    )
+    .expect("writing to a String cannot fail");
 }
 
 fn format_rate(rate: &Rate) -> String {
@@ -1185,7 +1864,7 @@ mod tests {
         }
     }
 
-    fn ranked(top: f64, second: f64) -> Vec<RankedValue> {
+    fn ranked(top: f32, second: f32) -> Vec<RankedValue> {
         vec![
             RankedValue {
                 score: top,
@@ -1222,20 +1901,78 @@ mod tests {
         }
     }
 
+    fn evaluate_with_policy(input: &[u8], policy: DetectionPolicy) -> Option<String> {
+        if eligibility_rejection(input, policy).is_some() {
+            return None;
+        }
+        let detection = betlang::detect(input);
+        let ranked = collect_ranked(&detection).expect("fixture rankings must be finite");
+        let thresholds = Thresholds {
+            minimum_non_whitespace_bytes: policy.minimum_non_whitespace_bytes,
+            minimum_top_score: policy.minimum_top_score,
+            minimum_top_two_margin: policy.minimum_top_two_margin,
+            maximum_input_bytes: policy.maximum_input_bytes,
+        };
+        decide(&ranked, &thresholds).0
+    }
+
+    #[test]
+    fn evaluator_matches_the_production_adapter_across_eligibility_and_paste_policy() {
+        let policy = companion_language_detection_policy::PRODUCTION_POLICY;
+        let oversized = vec![b'x'; policy.maximum_input_bytes + 1];
+        let fixtures: [&[u8]; 7] = [
+            b"def total(values):\n    return sum(values)\nprint(total([1, 2, 3]))",
+            b"# Meeting notes\n\n- confirm attendance\n- reserve a room\n- send directions",
+            b"fn x() {}",
+            b"fn main() {\0 println!(\"no\"); }",
+            &[0xff; 20],
+            b"                    ",
+            &oversized,
+        ];
+
+        for input in fixtures {
+            let production = companion_core::detect_source_language(input).map(str::to_owned);
+            let evaluator = evaluate_with_policy(input, policy);
+            assert_eq!(evaluator, production, "adapter drift for {input:?}");
+
+            let production_paste = production.filter(|slug| slug != "markdown");
+            let evaluator_paste = evaluator.filter(|slug| slug != "markdown");
+            assert_eq!(evaluator_paste, production_paste, "paste-policy drift");
+        }
+    }
+
+    #[test]
+    fn production_policy_matches_the_committed_external_baseline_shape() {
+        let baseline: Thresholds = serde_json::from_str(include_str!("../data/zed-baseline.json"))
+            .expect("baseline must parse");
+        assert_eq!(
+            baseline.policy(),
+            companion_language_detection_policy::PRODUCTION_POLICY
+        );
+    }
+
     #[test]
     fn threshold_edges_are_inclusive() {
         let config = thresholds();
-        assert_eq!(eligibility_reason(b"a b c", 3, &config), None);
+        assert_eq!(eligibility_reason(b"a b c", &config), None);
         assert_eq!(
             decide(&ranked(0.7, 0.5), &config).0.as_deref(),
             Some("rust")
         );
         assert_eq!(
-            eligibility_reason(b"abcdef", 6, &config).as_deref(),
+            eligibility_reason(b"abcdef", &config).as_deref(),
             Some("input_exceeds_maximum_bytes")
         );
         assert_eq!(decide(&ranked(0.699, 0.1), &config).0, None);
         assert_eq!(decide(&ranked(0.8, 0.601), &config).0, None);
+        assert_eq!(
+            eligibility_reason(b"abc\0d", &config).as_deref(),
+            Some("input_contains_nul")
+        );
+        assert_eq!(
+            eligibility_reason(&[0xff, 0xfe, b'a'], &config).as_deref(),
+            Some("input_is_not_utf8")
+        );
     }
 
     #[test]
@@ -1263,6 +2000,101 @@ mod tests {
             .map(|case| case.kind.as_str())
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(kinds.len(), 10);
+    }
+
+    #[test]
+    fn generated_family_implementations_are_split_specific() {
+        let corpus: Corpus =
+            serde_json::from_str(include_str!("../data/corpus.json")).expect("corpus must parse");
+        let tune = corpus
+            .families
+            .iter()
+            .filter(|family| family.split == Split::Tune)
+            .map(|family| family.generator.as_str())
+            .collect::<BTreeSet<_>>();
+        let holdout = corpus
+            .families
+            .iter()
+            .filter(|family| family.split == Split::Holdout)
+            .map(|family| family.generator.as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(tune.is_disjoint(&holdout));
+    }
+
+    #[test]
+    fn independent_holdout_negative_family_is_unique_and_gate_scoped() {
+        let family = Family {
+            id_prefix: "holdout-negative".to_owned(),
+            split: Split::Holdout,
+            generator: "independent_holdout_paste_negative".to_owned(),
+            count: 1_200,
+            start_index: 600,
+        };
+        let cases = (0..family.count)
+            .map(|index| generated_independent_holdout_paste_negative(&family, index))
+            .collect::<Vec<_>>();
+        let inputs = cases
+            .iter()
+            .map(|case| case.input.as_slice())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(inputs.len(), 1_200);
+        assert!(cases.iter().all(is_dedicated_paste_negative_case));
+    }
+
+    #[test]
+    fn dedicated_negative_family_contains_only_gate_kinds() {
+        let family = Family {
+            id_prefix: "negative".to_owned(),
+            split: Split::Holdout,
+            generator: "dedicated_paste_negative".to_owned(),
+            count: 1_200,
+            start_index: 600,
+        };
+        let cases = (0..family.count)
+            .map(|index| generated_dedicated_paste_negative(&family, index))
+            .collect::<Vec<_>>();
+
+        assert_eq!(cases.len(), 1_200);
+        assert!(cases.iter().all(is_dedicated_paste_negative_case));
+    }
+
+    fn is_dedicated_paste_negative_case(case: &EvalCase) -> bool {
+        case.surface == "paste"
+            && !case.useful_code
+            && matches!(case.kind.as_str(), "prose" | "list" | "url")
+    }
+
+    #[test]
+    fn corpus_validation_rejects_split_overlap() {
+        let input = b"same input".to_vec();
+        let cases = vec![
+            EvalCase {
+                id: "tune".to_owned(),
+                split: Split::Tune,
+                surface: "paste".to_owned(),
+                kind: "prose".to_owned(),
+                expected: None,
+                useful_code: false,
+                input: input.clone(),
+            },
+            EvalCase {
+                id: "holdout".to_owned(),
+                split: Split::Holdout,
+                surface: "paste".to_owned(),
+                kind: "prose".to_owned(),
+                expected: None,
+                useful_code: false,
+                input,
+            },
+        ];
+
+        assert!(
+            validate_corpus(&cases)
+                .expect_err("overlap must fail")
+                .to_string()
+                .contains("tune/holdout input overlap")
+        );
     }
 
     #[test]
@@ -1299,6 +2131,17 @@ mod tests {
         assert_eq!(metrics.exact_useful_code_coverage.denominator, 4);
         assert_eq!(metrics.negative_false_conversions.numerator, 1);
         assert_eq!(metrics.negative_false_conversions.denominator, 2);
+        assert_eq!(metrics.automatic_paste_conversions, 1);
+        assert_eq!(metrics.automatic_paste_precision.numerator, 1);
+        assert_eq!(metrics.automatic_paste_precision.denominator, 1);
+        assert_eq!(metrics.automatic_paste_useful_code_coverage.numerator, 1);
+        assert_eq!(metrics.automatic_paste_useful_code_coverage.denominator, 2);
+        assert_eq!(metrics.dedicated_paste_negative_conversions.numerator, 0);
+        assert_eq!(metrics.dedicated_paste_negative_conversions.denominator, 2);
+        assert_eq!(
+            assess_automatic_paste_gate(SplitFilter::Holdout, &metrics).status,
+            "insufficient_evidence"
+        );
         assert_eq!(
             Rate::new(0, 5).wilson_95_percent.expect("interval").lower,
             0.0
@@ -1306,6 +2149,30 @@ mod tests {
         assert_eq!(
             Rate::new(5, 5).wilson_95_percent.expect("interval").upper,
             1.0
+        );
+    }
+
+    #[test]
+    fn holdout_gate_reports_pass_and_fail() {
+        let mut passing = Metrics {
+            automatic_paste_conversions: 100,
+            automatic_paste_precision: Rate::new(99, 100),
+            dedicated_paste_negative_conversions: Rate::new(0, 1_000),
+            ..Metrics::default()
+        };
+        assert_eq!(
+            assess_automatic_paste_gate(SplitFilter::Holdout, &passing).status,
+            "pass"
+        );
+
+        passing.dedicated_paste_negative_conversions = Rate::new(1, 1_000);
+        assert_eq!(
+            assess_automatic_paste_gate(SplitFilter::Holdout, &passing).status,
+            "fail"
+        );
+        assert_eq!(
+            assess_automatic_paste_gate(SplitFilter::Tune, &passing).status,
+            "insufficient_evidence"
         );
     }
 

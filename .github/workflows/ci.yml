@@ -26,12 +26,27 @@ jobs:
       - name: Install pinned toolchain
         run: rustup show # respects rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
+      - name: Verify pinned Betlang package and model
+        run: |
+          cargo fetch --locked
+          ./scripts/verify-betlang.py
+          python3 -m unittest scripts/tests/test_verify_betlang.py
+      - name: Reproduce language threshold selection
+        run: |
+          python3 tools/language-eval/select-thresholds.py \
+            --cases tools/language-eval/reports/2026-09-14/selection/baseline-tune-cases.jsonl \
+            --grid tools/language-eval/data/threshold-grid.json \
+            --output /tmp/threshold-selection.json \
+            --markdown-output /tmp/threshold-selection.md \
+            --expect-candidate tools/language-eval/data/tuned-candidate.json
+          cmp /tmp/threshold-selection.json tools/language-eval/reports/2026-09-14/selection/threshold-selection.json
+          cmp /tmp/threshold-selection.md tools/language-eval/reports/2026-09-14/selection/threshold-selection.md
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-sync -p companion-transport --all-targets -- -D warnings
+        run: cargo clippy -p companion-core -p language-eval -p ots-client -p companion-credentials -p companion-ffi -p companion-sync -p companion-transport --all-targets -- -D warnings
       - name: Test
-        run: cargo test -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-sync -p companion-transport
+        run: cargo test -p companion-core -p language-eval -p ots-client -p companion-credentials -p companion-ffi -p companion-sync -p companion-transport
       # cargo test enables no features on its own (cargo issue 2911),
       # so the gated test seams (ADR-0018) are exercised by name here
       # and stay absent from every run above.
@@ -125,6 +140,8 @@ jobs:
           # empty file means the hash pipeline broke silently.
           test -s dist/OnetimePad.presig.sha256 \
             || { echo "dist/OnetimePad.presig.sha256 is missing or empty" >&2; exit 1; }
+          cmp THIRD_PARTY_NOTICES.md dist/OnetimePad.app/Contents/Resources/THIRD_PARTY_NOTICES.md
+          cmp THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PARTY_NOTICES.md
           cat dist/OnetimePad.presig.sha256
 
   # The release lane, which exists for the checks that only the release
@@ -173,6 +190,9 @@ jobs:
             || { echo "expected NSSupportsSuddenTermination true, got: $sudden" >&2; exit 1; }
           test -s dist/OnetimePad.presig.sha256 \
             || { echo "dist/OnetimePad.presig.sha256 is missing or empty" >&2; exit 1; }
+          cmp THIRD_PARTY_NOTICES.md dist/OnetimePad.app/Contents/Resources/THIRD_PARTY_NOTICES.md
+          cmp THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PARTY_NOTICES.md
+          test "$(cat bindings/CompanionCore.features)" = "release"
           cat dist/OnetimePad.presig.sha256
 
   # The ADR conventions (docs/adr/README.md) are structural enough to
@@ -189,7 +209,7 @@ jobs:
       # reproducibility, not about a feature floor.
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - name: Lint ADRs
         run: python3 scripts/lint-adrs.py docs/adr
 

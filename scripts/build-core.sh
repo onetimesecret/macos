@@ -12,20 +12,19 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 XCF=bindings/CompanionCore.xcframework
-# The feature set the last build baked in, recorded beside the
-# xcframework so --if-stale can tell a dev build from a release build:
-# the two differ only in cargo features, which no timestamp reflects.
+# The feature shape the last build baked in. Release is explicit: a missing
+# stamp must never compare equal to the release shape.
 STAMP=bindings/CompanionCore.features
 
 IF_STALE=0
-# Empty means the release shape: the C interface and nothing else.
+FEATURES=""
+SHAPE="release"
 # --test-util adds the gated test seams (ADR-0018) for the dev build
 # the Swift suite links against.
-FEATURES=""
 for arg in "$@"; do
   case "$arg" in
     --if-stale) IF_STALE=1 ;;
-    --test-util) FEATURES="test-util" ;;
+    --test-util) FEATURES="test-util"; SHAPE="test-util" ;;
     *)
       echo "unknown argument: $arg (the flags are --if-stale and --test-util)" >&2
       exit 1
@@ -33,15 +32,20 @@ for arg in "$@"; do
   esac
 done
 
+echo "==> Verifying pinned Betlang package and model"
+scripts/verify-betlang.py
+
 if [[ "$IF_STALE" == 1 ]]; then
-  # Rebuild only when the xcframework is missing outright, was built
-  # with a different feature set, or is older than any Rust source,
-  # manifest, or C header it is built from. The workspace manifest and
-  # lockfile live at the repo root, so a cargo update that touches only
-  # root files still triggers a rebuild, and the packaged FFI header is
-  # a direct input too.
-  if [[ -d "$XCF" && "$(cat "$STAMP" 2>/dev/null)" == "$FEATURES" && -z "$(find crates Cargo.toml Cargo.lock -type f \( -name '*.rs' -o -name 'Cargo.*' -o -name '*.h' \) -newer "$XCF" -print -quit)" ]]; then
-    echo "==> $XCF is current; skipping core build"
+  # Rebuild only when the xcframework and explicit shape stamp exist, the
+  # shape matches, and no source, manifest, header, notice, toolchain, or build
+  # script input is newer. The verifier above always runs, even on a cache hit.
+  if [[ -d "$XCF" && -f "$STAMP" && "$(cat "$STAMP")" == "$SHAPE" \
+    && ! THIRD_PARTY_NOTICES.md -nt "$XCF" \
+    && ! rust-toolchain.toml -nt "$XCF" \
+    && ! scripts/build-core.sh -nt "$XCF" \
+    && -z "$(find crates Cargo.toml Cargo.lock -type f \( -name '*.rs' -o -name 'Cargo.*' -o -name '*.h' \) -newer "$XCF" -print -quit)" ]] \
+    && cmp -s THIRD_PARTY_NOTICES.md "$XCF/THIRD_PARTY_NOTICES.md"; then
+    echo "==> $XCF is current ($SHAPE); skipping core build"
     exit 0
   fi
 fi
@@ -62,8 +66,8 @@ echo "==> Ensuring Apple targets are installed"
 rustup target add "${TARGETS[@]}"
 
 for t in "${TARGETS[@]}"; do
-  echo "==> cargo build --release -p companion-ffi --target $t${FEATURES:+ --features $FEATURES}"
-  cargo build --release -p companion-ffi --target "$t" ${FEATURES:+--features "$FEATURES"}
+  echo "==> cargo build --locked --release -p companion-ffi --target $t${FEATURES:+ --features $FEATURES}"
+  cargo build --locked --release -p companion-ffi --target "$t" ${FEATURES:+--features "$FEATURES"}
 done
 
 echo "==> lipo -> universal static lib"
@@ -85,9 +89,15 @@ module CompanionCore {
 EOF
 
 echo "==> xcodebuild -create-xcframework"
+rm -f "$STAMP"
 xcodebuild -create-xcframework \
   -library "$UNIVERSAL/$LIB" -headers "$HEADERS" \
   -output "$XCF"
-
-printf '%s\n' "$FEATURES" > "$STAMP"
-echo "Built $XCF${FEATURES:+ (features: $FEATURES)}"
+cp THIRD_PARTY_NOTICES.md "$XCF/THIRD_PARTY_NOTICES.md"
+plutil -lint "$XCF/Info.plist"
+cmp -s THIRD_PARTY_NOTICES.md "$XCF/THIRD_PARTY_NOTICES.md" || {
+  echo "xcframework third-party notices do not match the canonical notice" >&2
+  exit 1
+}
+printf '%s\n' "$SHAPE" > "$STAMP"
+echo "Built $XCF ($SHAPE)"
