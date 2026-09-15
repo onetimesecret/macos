@@ -737,4 +737,72 @@ final class DayScrollTests: XCTestCase {
         XCTAssertNil(model.activeEditor, "a hand-off would settle on an editor with no page")
         XCTAssertEqual(editor.frame.height, 0)
     }
+
+    // MARK: The gutter's verbs
+
+    /// The titles the strip's context menu offers a slot with a page,
+    /// in its order (TabStripView.swift, `SheetTab.contextMenu`). That
+    /// menu is SwiftUI and cannot be walked, so its literal titles are
+    /// restated here; a verb added to one side and not the other fails
+    /// this list rather than going unnoticed.
+    private func stripMenuTitles(model: PageModel, tab: TabSummary) -> [String] {
+        var titles = [
+            "Rename tab…",
+            SheetTab.holdMenuTitle(paused: tab.paused, toppedUp: tab.holdToppedUp),
+            SheetTab.rungMenuTitle(hasPage: tab.hasPage),
+        ]
+        if model.sync.enabled, let pageID = tab.pageID {
+            titles.append(SheetTab.syncMenuTitle(enrolled: model.sync.isEnrolled(pageID)))
+        }
+        titles.append("Close tab")
+        return titles
+    }
+
+    /// A right click on the header, which the menu never reads beyond
+    /// its arrival.
+    private func rightClick(in roll: Roll) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: roll.window.windowNumber, context: nil, eventNumber: 0,
+            clickCount: 1, pressure: 1
+        ))
+    }
+
+    /// The day gutter is the strip's context menu verb for verb (D-13),
+    /// with the sync enrol item appearing on both only while the switch
+    /// is on. The one difference is the noun: a slot on the strip is a
+    /// tab, and on the roll it is a page under a day, so the gutter's
+    /// titles are compared with that word put back.
+    func testTheDayGutterOffersTheSameVerbsAsTheStrip() throws {
+        let model = try makeModel()
+        let only = try page(in: model, saying: "the credentials")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: only),
+            selectedPage: only,
+            readOnly: false
+        )
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let tab = try XCTUnwrap(model.tabs.first)
+        let click = try rightClick(in: roll)
+
+        for enabled in [false, true] {
+            model.sync.enabled = enabled
+            let gutter = try XCTUnwrap(header.menu(for: click)).items.map(\.title)
+            XCTAssertFalse(
+                gutter.contains { $0.contains("tab") },
+                "a day gutter that says tab is naming the strip's object, not its own: \(gutter)"
+            )
+            XCTAssertEqual(
+                gutter.map { $0.replacingOccurrences(of: "page…", with: "tab…") }
+                    .map { $0 == "Close page" ? "Close tab" : $0 },
+                stripMenuTitles(model: model, tab: tab),
+                "with sync \(enabled ? "on" : "off") the gutter and the strip disagree"
+            )
+        }
+        XCTAssertEqual(
+            try XCTUnwrap(header.menu(for: click)).items.count, 5,
+            "with sync on the gutter carries the four gated verbs and the enrol item"
+        )
+    }
 }

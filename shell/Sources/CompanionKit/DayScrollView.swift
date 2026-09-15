@@ -987,6 +987,9 @@ final class DayHeaderView: NSView {
     private var hasPage = false
     private var paused = false
     private var toppedUp = false
+    /// The page under the slot, which the sync item is addressed to:
+    /// enrolment is per page (relay protocol §1), not per slot.
+    private var pageID: UInt64?
 
     init(model: PageModel) {
         self.model = model
@@ -1071,6 +1074,7 @@ final class DayHeaderView: NSView {
         hasPage = summary?.hasPage ?? false
         paused = summary?.paused ?? false
         toppedUp = summary?.holdToppedUp ?? false
+        pageID = summary?.pageID
         titleField.stringValue = summary?.title ?? ""
         remainingField.stringValue = summary.map { $0.hasPage ? $0.remainingLabel : "" } ?? ""
         setAccessibilityLabel(Self.spokenHeader(
@@ -1143,8 +1147,11 @@ final class DayHeaderView: NSView {
 
     // MARK: The page's verbs
 
-    /// Rename, hold, rung and close, addressed to this page's own slot,
-    /// the strip's context menu, on the page rather than on the rail.
+    /// Rename, hold, rung, sync and close, addressed to this page's own
+    /// slot: the strip's context menu, verb for verb (D-13), on the page
+    /// rather than on the rail. The words differ where the object does:
+    /// on the strip a slot is a tab, on the roll it is a page under a
+    /// day, so the two items that name the object say "page" here.
     /// Built per click so each item says what the next press of it will
     /// actually do.
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -1154,7 +1161,7 @@ final class DayHeaderView: NSView {
         // decide would send it looking for a validator this view does
         // not have, and the hold item's own refusal would go with it.
         menu.autoenablesItems = false
-        menu.addItem(item(title: "Rename tab…", action: #selector(renameTab)))
+        menu.addItem(item(title: "Rename page…", action: #selector(renameTab)))
         let hold = item(
             title: SheetTab.holdMenuTitle(paused: paused, toppedUp: toppedUp),
             action: #selector(holdClock)
@@ -1168,7 +1175,18 @@ final class DayHeaderView: NSView {
         menu.addItem(item(
             title: SheetTab.rungMenuTitle(hasPage: hasPage), action: #selector(shortenRung)
         ))
-        menu.addItem(item(title: "Close tab", action: #selector(closeTab)))
+        // Present only while the sync switch is on, exactly as on the
+        // strip: with it off the menu is yesterday's menu, which is the
+        // indistinguishability issue #102 promises. Per page, because
+        // enrolment is (relay protocol §1), so an empty slot offers it
+        // no more than the strip does.
+        if model.sync.enabled, let pageID {
+            menu.addItem(item(
+                title: SheetTab.syncMenuTitle(enrolled: model.sync.isEnrolled(pageID)),
+                action: #selector(toggleSync)
+            ))
+        }
+        menu.addItem(item(title: "Close page", action: #selector(closeTab)))
         return menu
     }
 
@@ -1193,6 +1211,11 @@ final class DayHeaderView: NSView {
     @objc private func shortenRung() {
         guard let tab else { return }
         model.cycleRung(tab)
+    }
+
+    @objc private func toggleSync() {
+        guard let pageID else { return }
+        model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
     }
 
     @objc private func closeTab() {
