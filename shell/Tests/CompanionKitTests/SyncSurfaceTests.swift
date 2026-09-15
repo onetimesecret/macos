@@ -74,7 +74,7 @@ final class SyncSurfaceTests: XCTestCase {
                 enabled: true,
                 status: status(signedIn: false, attached: false, gate: .signingIn),
                 trouble: nil, peers: nil),
-            "waiting on your browser to finish signing in; Settings can give up on it"
+            "waiting on the browser to finish signing in; Settings can give up on it"
         )
         // The control exists exactly while the trip does, which is the
         // gated banner's shape rather than a disabled button.

@@ -744,7 +744,7 @@ public final class SyncController: ObservableObject {
         // that opened it should say so rather than look idle (ADR-0027
         // §5, `signing_in`).
         if status?.gate == .signingIn {
-            return "waiting on your browser to finish signing in; Settings can give up on it"
+            return "waiting on the browser to finish signing in; Settings can give up on it"
         }
         guard let status, status.attached else { return nil }
         if peers == 0, status.enrolled > 0 {

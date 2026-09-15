@@ -62,7 +62,7 @@ final class SyncCeremonyTests: XCTestCase {
         XCTAssertEqual(sync.headerWord?.text, "signing in")
         XCTAssertEqual(
             sync.standingSentence,
-            "waiting on your browser to finish signing in; Settings can give up on it",
+            "waiting on the browser to finish signing in; Settings can give up on it",
             "the page may not say signed out while the header says signing in"
         )
         XCTAssertFalse(

@@ -131,7 +131,7 @@ public struct FileRenderSuggestionBanner: View {
 
     public var body: some View {
         HStack(spacing: 8) {
-            Text("Do you want to render as \(suggestion.language)?")
+            Text("render as \(suggestion.language)?")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
             Button("Use \(suggestion.language)") {
@@ -242,11 +242,11 @@ public struct FileConflictBanner: View {
         case .none:
             return ""
         case .changed:
-            return "\(name) changed on disk and this copy has unsaved edits. "
-                + "Saving is refused until you choose."
+            return "\(name) changed on disk and this copy has unsaved edits · "
+                + "saving is refused until one copy is chosen"
         case .missing:
-            return "\(name) is no longer at its path and this copy has unsaved edits. "
-                + "Saving is refused until you choose."
+            return "\(name) is no longer at its path and this copy has unsaved edits · "
+                + "saving is refused until one copy is chosen"
         }
     }
 

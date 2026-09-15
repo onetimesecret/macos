@@ -518,7 +518,7 @@ public struct InkEditorView: NSViewRepresentable {
             languageSuggestion = nil
             languageDetectionService.invalidate()
             if canceledAutomaticPaste {
-                model.flash("Paste canceled because the editor changed before detection finished.")
+                model.flash("paste canceled: the editor changed before detection finished")
             }
         }
 
@@ -558,12 +558,12 @@ public struct InkEditorView: NSViewRepresentable {
                   textView.isEditable, !textView.hasMarkedText(),
                   let storage = textView.textStorage
             else {
-                model.flash("Paste canceled because the editor changed before detection finished.")
+                model.flash("paste canceled: the editor changed before detection finished")
                 return
             }
             let selection = textView.selectedRange()
             guard selection.location != NSNotFound, NSMaxRange(selection) <= storage.length else {
-                model.flash("Paste canceled because the editor changed before detection finished.")
+                model.flash("paste canceled: the editor changed before detection finished")
                 return
             }
             let caret = NSRange(
@@ -848,7 +848,7 @@ public struct InkEditorView: NSViewRepresentable {
                   model.languageDetectionEnabled
             else { return }
             guard let target = manualLanguageTarget(), let storage = textView?.textStorage else {
-                model.flash("Select whole lines or place the caret inside a bare code fence.")
+                model.flash("select whole lines or place the caret inside a bare code fence")
                 return
             }
             invalidateOrdinaryPasteMeasurement()
@@ -877,14 +877,14 @@ public struct InkEditorView: NSViewRepresentable {
                         else { return }
                         self.pendingManualRequestID = nil
                         guard let language = result.language else {
-                            self.model.flash("No code language suggestion.")
+                            self.model.flash("no code language suggestion")
                             return
                         }
                         self.languageSuggestion = LanguageSuggestion(
                             target: target, language: language
                         )
                         self.textView?.showFindIndicator(for: target.detectionRange)
-                        self.model.flash("Suggested language: \(language). Open the editor menu to apply it.")
+                        self.model.flash("suggested language: \(language) · open the editor menu to apply it")
                     }
                 }
             )
