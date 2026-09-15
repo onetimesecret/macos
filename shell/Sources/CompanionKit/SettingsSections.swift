@@ -157,16 +157,18 @@ public struct GeneralSettingsView: View {
             }
 
             Section {
+                Toggle("A page a day, with time tabs down the side", isOn: $model.showsTimeUnits)
+            } header: {
+                SettingsCaption(Self.timeUnitsCaption)
+            }
+            // The rounding switch is about time, so it reads as
+            // belonging to the Days choice and sits under it (D-26).
+            Section {
                 Toggle("Round a page's deadline up to the hour, or to midnight", isOn: $model.snapsToBoundaries)
             } header: {
                 SettingsCaption(
                     "A rung names a duration; this lets the deadline land where the clock does. Under a day it rounds up to the next whole hour, from a day up to the next midnight, and never by more than a day. Pages already counting down keep the deadline they have."
                 )
-            }
-            Section {
-                Toggle("A page a day, with time tabs down the side", isOn: $model.showsTimeUnits)
-            } header: {
-                SettingsCaption(Self.timeUnitsCaption)
             }
             Section {
                 Toggle("Start at login", isOn: loginBinding)
