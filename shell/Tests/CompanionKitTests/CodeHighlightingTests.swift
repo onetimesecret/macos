@@ -446,4 +446,40 @@ final class CodeHighlightingRenderingTests: XCTestCase {
         coordinator.applySyntaxHighlighting(true)
         XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
     }
+
+    /// The whole of D-05 from the reader's side: headings keep their
+    /// hashes and a fence keeps its rules on screen, dimmed rather than
+    /// removed, so select all and copy hands back the page as it was
+    /// typed. The reading is the one a copy takes: the text under the
+    /// selection after select all, which is the storage's string over
+    /// its full range. The pasteboard itself is not written, since a
+    /// headless test binary has no pasteboard server worth trusting
+    /// and the general pasteboard is the person's, not the suite's.
+    func testSelectAllCopyReturnsTheTypedString() {
+        makeEditor()
+        let page = """
+            # heading
+
+            ## second
+
+            body with a [link](https://example.invalid)
+
+            ```swift
+            let name = "ada" // who
+            ```
+            after
+            """
+        paste(page)
+        XCTAssertEqual(foreground(of: "# heading"), NSColor.tertiaryLabelColor)
+        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+
+        let full = NSRange(location: 0, length: storage.length)
+        XCTAssertEqual(storage.attributedSubstring(from: full).string, page)
+
+        textView.selectAll(nil)
+        XCTAssertEqual(textView.selectedRange(), full)
+        XCTAssertEqual(
+            storage.attributedSubstring(from: textView.selectedRange()).string, page,
+            "what the copy would take is not what was typed")
+    }
 }
