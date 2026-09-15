@@ -2055,7 +2055,6 @@ public struct InkEditorView: NSViewRepresentable {
                     break
                 }
             }
-            let text = storage.string as NSString
             // A file gets no block stamps, and the route is not merely
             // skipped for dull values: `blocks(sheet:)` is a
             // companion_sheet_* route, and a tagged id reaching it is
@@ -2067,6 +2066,51 @@ public struct InkEditorView: NSViewRepresentable {
             // paragraph, so there is nothing true to show
             // (decisions.md item 15).
             let metas = sheet.isFileID ? [] : model.coreClient.blocks(sheet: sheet)
+            let (regions, displays, kinds) = Self.applyMarkdownStyling(
+                to: storage, sheet: sheet, blockMetas: metas,
+                syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
+                fenceRenderingLanguages: fenceRenderingLanguages
+            )
+            blockDisplays = displays
+            fenceRegions = regions
+            lineKinds = kinds
+            lineKindsStamp = generation
+            lineKindsSheet = sheet
+            structuralStyleNeedsRebuild = false
+            if let layoutManager = textView?.layoutManager as? InkLayoutManager {
+                layoutManager.fenceRegions = fenceRegions
+                textView?.needsDisplay = true
+            }
+            // `paragraphSpacingBefore` is ignored on the first paragraph
+            // of the storage, so the top block's gap has to come from the
+            // container inset instead — otherwise its label would be laid
+            // out above the text view's own top edge and clipped away.
+            let leading = displays.first?.range.location == 0
+            let inset = Self.topInset + (leading ? Self.blockLabelReserve : 0)
+            if let textView, textView.textContainerInset.height != inset {
+                textView.textContainerInset.height = inset
+            }
+            updateBlockLabelViews()
+        }
+
+        /// The pure part of `restyle()`: walk the storage block by block
+        /// under one whole-page fence scanner, style each paragraph, and
+        /// return the fence regions, the block-label displays and the
+        /// classifications. Shared with `PageModel.quietRendering(for:)`
+        /// so a quiet day laid over its own temporary storage reads the
+        /// same as the mounted editor would over its live one.
+        static func applyMarkdownStyling(
+            to storage: NSTextStorage,
+            sheet: UInt64,
+            blockMetas: [BlockInfo],
+            syntaxHighlightingEnabled: Bool,
+            fenceRenderingLanguages: [UInt64: [Int: String]]
+        ) -> (
+            fenceRegions: [NSRange],
+            displays: [BlockDisplay],
+            lineKinds: [(range: NSRange, kind: InkStyle.LineKind)]
+        ) {
+            let text = storage.string as NSString
             // First pass: walk the page block by block and classify
             // every paragraph. One scanner serves the whole page, since
             // a fence opened in one block goes on holding the lines of
@@ -2086,7 +2130,7 @@ public struct InkEditorView: NSViewRepresentable {
             // language, so the tokenizer starts knowing none.
             var tokenizer = CodeInk.Tokenizer(language: nil)
             while location < text.length {
-                let meta = block < metas.count ? metas[block] : nil
+                let meta = block < blockMetas.count ? blockMetas[block] : nil
                 // A block is usually one paragraph and sometimes several
                 // (a paste keeps its lines together, ADR-0013), so the
                 // page is walked block by block, and the stamp stands
@@ -2133,7 +2177,7 @@ public struct InkEditorView: NSViewRepresentable {
                             language: scanner.fenceLanguage
                                 ?? sessionLanguage.flatMap(CodeInk.renderingLanguage(ofInfoString:))
                         )
-                    case .code where model.syntaxHighlightingEnabled:
+                    case .code where syntaxHighlightingEnabled:
                         // The line without its separator, taken off the
                         // tail alone. Trimming both ends would move
                         // every offset the tokenizer returns whenever a
@@ -2192,7 +2236,7 @@ public struct InkEditorView: NSViewRepresentable {
                         // gap the label sits in; the rest of a pasted
                         // passage or a fence region runs on at ordinary
                         // spacing.
-                        styleParagraph(
+                        Self.styleParagraph(
                             paragraph.range, of: storage, kind: paragraph.kind,
                             tokens: paragraph.tokens,
                             labeled: label != nil && position == 0 && index == 0
@@ -2205,39 +2249,20 @@ public struct InkEditorView: NSViewRepresentable {
                 lower = upper
             }
             storage.endEditing()
-            blockDisplays = displays
             // Third pass, cheap because the classification is already
             // in hand: collect the fence regions as character ranges,
             // opening rule through closing rule, for the layout manager
             // to wash as one slab. The wash used to be a per-paragraph
             // `.backgroundColor`, which rendered as per-line stripes
             // hugging the glyph runs; drawn once per region it is the
-            // contiguous rectangle the eye expects.
+            // contiguous rectangle the eye expects. Kept as a return
+            // value alongside the classification so the caller can seed
+            // its layout manager and its automation cache (ADR-0024:
+            // automation decides from the classification, never from a
+            // second scan that might disagree with the first).
             let paragraphs = walks.flatMap(\.paragraphs)
                 .map { (range: $0.range, kind: $0.kind) }
-            fenceRegions = Self.fenceRegions(of: paragraphs)
-            // The same reading, kept rather than dropped, so the
-            // keystroke path can consult it (ADR-0024: automation
-            // decides from the classification, never from a second
-            // scan that might disagree with the first).
-            lineKinds = paragraphs
-            lineKindsStamp = generation
-            lineKindsSheet = sheet
-            structuralStyleNeedsRebuild = false
-            if let layoutManager = textView?.layoutManager as? InkLayoutManager {
-                layoutManager.fenceRegions = fenceRegions
-                textView?.needsDisplay = true
-            }
-            // `paragraphSpacingBefore` is ignored on the first paragraph
-            // of the storage, so the top block's gap has to come from the
-            // container inset instead — otherwise its label would be laid
-            // out above the text view's own top edge and clipped away.
-            let leading = displays.first?.range.location == 0
-            let inset = Self.topInset + (leading ? Self.blockLabelReserve : 0)
-            if let textView, textView.textContainerInset.height != inset {
-                textView.textContainerInset.height = inset
-            }
-            updateBlockLabelViews()
+            return (Self.fenceRegions(of: paragraphs), displays, paragraphs)
         }
 
         /// File plain text is intentionally not Markdown-capable: it receives
@@ -2354,7 +2379,7 @@ public struct InkEditorView: NSViewRepresentable {
                 .isEmpty
         }
 
-        private func styleParagraph(
+        private static func styleParagraph(
             _ range: NSRange, of storage: NSTextStorage,
             kind: InkStyle.LineKind, tokens: [CodeInk.Token], labeled: Bool
         ) {
@@ -2467,7 +2492,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// fence's rules are. What a click does with the `.link` is the
         /// delegate's business (`textView(_:clickedOnLink:at:)`): ⌘
         /// opens, a plain click only moves the caret.
-        private func styleLinks(in range: NSRange, of storage: NSTextStorage) {
+        private static func styleLinks(in range: NSRange, of storage: NSTextStorage) {
             let line = (storage.string as NSString).substring(with: range)
             for link in InkStyle.links(in: line) {
                 guard let url = URL(string: link.target) else { continue }
@@ -2501,7 +2526,7 @@ public struct InkEditorView: NSViewRepresentable {
         /// `repositionBlockLabels` on every layout pass. Never holds an
         /// origin: the editable-surface rule keeps origin off every read
         /// surface, this one included.
-        private struct BlockDisplay {
+        struct BlockDisplay {
             let range: NSRange
             let text: String
         }
