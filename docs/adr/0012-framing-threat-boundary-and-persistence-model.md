@@ -207,12 +207,12 @@ crossing the FFI at a documented point.
 The input path bullet's "clear on any pasteboard egress" gains the
 number it lacked. The clear-on-egress interval is one core constant,
 60 seconds, exposed through a seam so the confirmation line and the
-timer read the same value; the number is provisional until the
-maintainer confirms it (D-32 records the call as pending). Nothing in
-the tree arms the clear today: `clearClipboardIfOurs`
-(`shell/Sources/CompanionKit/CompanionClient.swift:833`) exists and
-nothing calls it, so the interval is the number the build owes, not a
-description of what it does. The clear applies to the general
+timer read the same value (`CLIPBOARD_CLEAR_SECONDS` and the
+`companion_clipboard_clear_seconds` seam in `crates/ffi/src/lib.rs`).
+The shell arms a one shot timer after every copy out and after the
+one time link copy, calling `clearClipboardIfOurs`
+(`shell/Sources/CompanionKit/CompanionClient.swift:833`), so the
+interval describes what the build does. The clear applies to the general
 pasteboard only; the drag pasteboard is released when the drag session
 ends and needs no timer.
 
@@ -240,4 +240,4 @@ as it does after a paste.
 - **2026-08-06:** Revised to incorporate external review and implementation findings. The revision did not change the proposed status.
 - **2026-08-20:** [ADR-0016](0016-content-persists-across-restart.md) superseded the named staged-content lifecycle and related consequences portions; [ADR-0017](0017-durable-tabs-expiring-pages.md) superseded the named object-graph and title-ownership portions. See [Supersession](#supersession) for scope.
 - **2026-08-20 onward:** The portions named as still standing in [Supersession](#supersession) remain in force.
-- **2026-09-15:** [Amendment 1](#amendment-1-three-egress-points-and-one-clear-interval) was appended, adopting D-32 of the [2026-0915 design record](../spec/design/2026-0915-ui-ux-decisions.md): three egress points in place of one, the clear-on-egress interval as one core constant of 60 seconds (provisional), and the `Drag` destination class owed to issue 170.
+- **2026-09-15:** [Amendment 1](#amendment-1-three-egress-points-and-one-clear-interval) was appended, adopting D-32 of the [2026-0915 design record](../spec/design/2026-0915-ui-ux-decisions.md): three egress points in place of one, the clear-on-egress interval as one core constant of 60 seconds, and the `Drag` destination class owed to issue 170.
