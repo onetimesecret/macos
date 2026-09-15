@@ -2126,7 +2126,8 @@ public struct InkEditorView: NSViewRepresentable {
             sheet: UInt64,
             blockMetas: [BlockInfo],
             syntaxHighlightingEnabled: Bool,
-            fenceRenderingLanguages: [UInt64: [Int: String]]
+            fenceRenderingLanguages: [UInt64: [Int: String]],
+            renderBlockLabels: Bool = true
         ) -> (
             fenceRegions: [NSRange],
             displays: [BlockDisplay],
@@ -2251,7 +2252,11 @@ public struct InkEditorView: NSViewRepresentable {
                 var upper = lower + 1
                 while upper < walks.count, walks[upper].joinsPrevious { upper += 1 }
                 let group = Array(walks[lower..<upper])
-                let label = Self.groupLabel(for: group)
+                // Block created/modified labels are editor-only display:
+                // a quiet caller (ADR-0030) suppresses both the stamp and
+                // the paragraph spacing reserved for it by passing
+                // `renderBlockLabels: false`.
+                let label = renderBlockLabels ? Self.groupLabel(for: group) : nil
                 for (position, walk) in group.enumerated() {
                     for (index, paragraph) in walk.paragraphs.enumerated() {
                         // Only the group's very first line reserves the
