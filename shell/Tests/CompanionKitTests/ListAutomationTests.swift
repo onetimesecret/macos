@@ -422,6 +422,36 @@ final class ListKeystrokeTests: XCTestCase {
         )
     }
 
+    func testNeverKeepsFenceStructureForEditorBehaviorWhileRenderingPlain() {
+        makeEditor()
+        model.previewRendering = .never
+        write("# heading\n```sh\n- x")
+
+        XCTAssertEqual(
+            storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont,
+            InkStyle.baseFont
+        )
+        XCTAssertEqual(coordinator.classifiedKind(ofParagraphAt: 16), .code(language: "shell"))
+        XCTAssertEqual(coordinator.fenceRegions, [NSRange(location: 10, length: 9)])
+
+        caret(to: storage.length)
+        textView.insertNewline(nil)
+
+        XCTAssertEqual(storage.string, "# heading\n```sh\n- x\n")
+    }
+
+    func testNeverContinuesAndDeepensAnOrdinaryList() {
+        makeEditor()
+        model.previewRendering = .never
+        write("- milk")
+
+        textView.insertNewline(nil)
+        XCTAssertEqual(storage.string, "- milk\n- ")
+
+        textView.insertTab(nil)
+        XCTAssertEqual(storage.string, "- milk\n  - ")
+    }
+
     /// The stamp on the cached reading is the page's content and not
     /// its length, because a backtick typed over a letter above the
     /// caret opens a fence and changes what the caret's line means
@@ -668,6 +698,17 @@ final class ListKeystrokeTests: XCTestCase {
             storage.string, "```sh\n\t- x",
             "a flag inside a fence was nudged as if it had depth (issue #75)"
         )
+    }
+
+    func testNeverDoesNotChangeDepthInsideAFence() {
+        makeEditor()
+        model.previewRendering = .never
+        write("```sh\n- x")
+        caret(to: 6)
+
+        textView.insertTab(nil)
+
+        XCTAssertEqual(storage.string, "```sh\n\t- x")
     }
 
     func testNoDepthChangeWhileAnImeIsComposing() {

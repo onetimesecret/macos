@@ -2058,13 +2058,14 @@ public struct InkEditorView: NSViewRepresentable {
         /// touching how it edits.
         func restyle() {
             guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
-            // `.never` collapses every page to plain ink, source files
-            // included: the reader has asked for no markup and no token
-            // colors anywhere, so file-mode routing does not run either
-            // (the plain-file path takes off links and underlines the
-            // way the Markdown walk does at every restyle).
+            // `.never` uses the plain visual profile everywhere. Markdown-capable
+            // pages still need the Markdown walk's classifications and fence ranges
+            // for editing and paste safety, but neither result is rendered.
             if model.previewRendering == .never {
-                restylePlainFile(storage, sheet: sheet)
+                restylePlainFile(
+                    storage, sheet: sheet,
+                    preservingMarkdownStructure: !sheet.isFileID
+                )
                 return
             }
             if sheet.isFileID {
@@ -2296,10 +2297,23 @@ public struct InkEditorView: NSViewRepresentable {
 
         /// File plain text is intentionally not Markdown-capable: it receives
         /// only base attributes and leaves headings, links, lists, and fences
-        /// as literal characters.
-        private func restylePlainFile(_ storage: NSTextStorage, sheet: UInt64) {
+        /// as literal characters. Markdown-capable pages may retain a structural
+        /// reading for editor behavior while using this same visual profile.
+        private func restylePlainFile(
+            _ storage: NSTextStorage, sheet: UInt64,
+            preservingMarkdownStructure: Bool = false
+        ) {
             let text = storage.string as NSString
             let full = NSRange(location: 0, length: storage.length)
+            let structure = preservingMarkdownStructure
+                ? Self.applyMarkdownStyling(
+                    to: storage, sheet: sheet,
+                    blockMetas: model.coreClient.blocks(sheet: sheet),
+                    syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
+                    fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet),
+                    renderBlockLabels: false
+                )
+                : nil
             storage.beginEditing()
             if full.length > 0 {
                 let paragraphStyle = NSMutableParagraphStyle()
@@ -2314,12 +2328,15 @@ public struct InkEditorView: NSViewRepresentable {
             }
             storage.endEditing()
             blockDisplays = []
-            fenceRegions = []
-            lineKinds = text.length == 0 ? [] : [(range: full, kind: .body)]
+            fenceRegions = structure?.fenceRegions ?? []
+            lineKinds = structure?.lineKinds
+                ?? (text.length == 0 ? [] : [(range: full, kind: .body)])
             lineKindsStamp = generation
             lineKindsSheet = sheet
             structuralStyleNeedsRebuild = false
             if let layoutManager = textView?.layoutManager as? InkLayoutManager {
+                // The ranges remain available to the editor's behavior gates, but
+                // `.never` must not paint the Markdown fence slab.
                 layoutManager.fenceRegions = []
                 textView?.needsDisplay = true
             }
