@@ -184,7 +184,7 @@ final class PageModelPreviewRenderingTests: XCTestCase {
         model.previewRendering = .focusedOnly
         seedMarkdown(model: model, sheet: sheet)
 
-        let rendered = model.quietRendering(for: sheet)
+        let rendered = model.quietRendering(for: sheet).text
 
         XCTAssertTrue(
             isFlatQuiet(rendered),
@@ -207,7 +207,7 @@ final class PageModelPreviewRenderingTests: XCTestCase {
         model.previewRendering = .allPages
         seedMarkdown(model: model, sheet: sheet)
 
-        let rendered = model.quietRendering(for: sheet)
+        let rendered = model.quietRendering(for: sheet).text
 
         XCTAssertTrue(
             containsFont(rendered, matching: InkStyle.headingFont(level: 1)),
@@ -226,7 +226,7 @@ final class PageModelPreviewRenderingTests: XCTestCase {
         model.previewRendering = .allPages
         seedMarkdown(model: model, sheet: sheet)
 
-        let rendered = model.quietRendering(for: sheet)
+        let rendered = model.quietRendering(for: sheet).text
 
         XCTAssertTrue(
             hasNonLabelForeground(rendered),
@@ -243,7 +243,7 @@ final class PageModelPreviewRenderingTests: XCTestCase {
         model.previewRendering = .never
         seedMarkdown(model: model, sheet: sheet)
 
-        let rendered = model.quietRendering(for: sheet)
+        let rendered = model.quietRendering(for: sheet).text
 
         XCTAssertTrue(
             isFlatQuiet(rendered),
@@ -269,9 +269,9 @@ final class PageModelPreviewRenderingTests: XCTestCase {
         XCTAssertFalse(
             first === second,
             "changing preview scope must drop the cached rendering")
-        XCTAssertTrue(hasNonBaseFont(first), "allPages baseline missed heading/code fonts")
+        XCTAssertTrue(hasNonBaseFont(first.text), "allPages baseline missed heading/code fonts")
         XCTAssertFalse(
-            hasNonBaseFont(second),
+            hasNonBaseFont(second.text),
             "focusedOnly rebuild must be flat after the scope flip")
     }
 
@@ -310,7 +310,7 @@ final class PageModelPreviewRenderingTests: XCTestCase {
             model.previewRendering = scope
             _ = try seedChipDocument(model: model, sheet: sheet)
 
-            let rendered = model.quietRendering(for: sheet)
+            let rendered = model.quietRendering(for: sheet).text
 
             XCTAssertTrue(
                 containsChipAttachment(rendered),

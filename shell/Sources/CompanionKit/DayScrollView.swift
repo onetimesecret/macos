@@ -1233,21 +1233,31 @@ final class QuietPageView: NSTextView {
     /// that "has this day changed since?" is an identity comparison
     /// rather than a walk over two attributed strings.
     ///
-    /// A second hold on the plaintext, and deliberately not a widening
-    /// of it: the storage above already carries the same ink for exactly
-    /// as long as this view lives, so what this keeps alive is a copy
-    /// that is legible in this region anyway. It is dropped the moment
+    /// A second hold on the payload, and deliberately not a widening
+    /// of it: the storage below already carries the same ink for exactly
+    /// as long as this view lives, so what this keeps alive is the wrapper
+    /// whose identity is the cache-hit signal. It is dropped the moment
     /// the day is re-read.
-    private var seeded: NSAttributedString
+    private var seeded: PageModel.QuietRendering
 
-    init(page: UInt64, rendering: NSAttributedString, onClick: @escaping (UInt64, Int) -> Void) {
+    init(
+        page: UInt64,
+        rendering: PageModel.QuietRendering,
+        onClick: @escaping (UInt64, Int) -> Void
+    ) {
         self.page = page
         self.onClick = onClick
         self.seeded = rendering
         let storage = NSTextStorage()
-        storage.setAttributedString(rendering)
+        storage.setAttributedString(rendering.text)
         self.storage = storage
-        let layoutManager = NSLayoutManager()
+        // The same layout manager the editor uses, seeded with the
+        // payload's fence regions (ADR-0030): fence wash is part of the
+        // preview contract, and painting it here rather than in the
+        // storage means quiet regions render the slab as one rectangle,
+        // exactly as the mounted page does.
+        let layoutManager = InkLayoutManager()
+        layoutManager.fenceRegions = rendering.fenceRegions
         storage.addLayoutManager(layoutManager)
         let container = NSTextContainer(size: NSSize(
             width: 0, height: CGFloat.greatestFiniteMagnitude
@@ -1267,10 +1277,10 @@ final class QuietPageView: NSTextView {
         )
         // The editor's own inset and base font, so a day does not shift
         // sideways or change size the moment it becomes the page being
-        // written on. What does differ is the styling: a quiet day is
-        // rendered in the base ink with chips as their non-secret face
-        // and no markdown weighting and no block stamps, which is a
-        // stated gap of the prototype rather than an oversight.
+        // written on. The inset is the ordinary top inset alone: quiet
+        // pages carry no block labels (ADR-0030), so the label-reserve
+        // gap the editor adds above its first line is deliberately absent
+        // here.
         textContainerInset = NSSize(width: 12, height: InkEditorView.Coordinator.topInset)
         font = InkStyle.baseFont
     }
@@ -1294,10 +1304,14 @@ final class QuietPageView: NSTextView {
     /// rebuilt under the roll would take its layout, its measured height
     /// and its place in the stack down with it, for a day whose only
     /// news is a word.
-    func reseed(with rendering: NSAttributedString) {
+    func reseed(with rendering: PageModel.QuietRendering) {
         guard rendering !== seeded else { return }
         seeded = rendering
-        storage.setAttributedString(rendering)
+        storage.setAttributedString(rendering.text)
+        if let manager = layoutManager as? InkLayoutManager {
+            manager.fenceRegions = rendering.fenceRegions
+            needsDisplay = true
+        }
     }
 
     /// One focusable text view in the card, always. The editor is it.

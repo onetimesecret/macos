@@ -915,7 +915,7 @@ public final class PageModel: ObservableObject {
     /// is and the editor is standing on another day. A cache invalidated
     /// by a view's choreography is a cache that is correct only on the
     /// paths somebody thought of.
-    private var quietRenderings: [UInt64: NSAttributedString] = [:]
+    private var quietRenderings: [UInt64: QuietRendering] = [:]
 
     /// The slot a selection gesture last minted a page into, and the
     /// monotonic reading at which it did. Read by `pause` alone, so a
@@ -2150,7 +2150,27 @@ public final class PageModel: ObservableObject {
     /// storage no delegate is watching, so nothing it holds can emit an
     /// op, and the chips in it carry the same non-secret face they
     /// carry on the live page and no bytes at all.
-    public func quietRendering(for id: UInt64) -> NSAttributedString {
+    /// A quiet page's rendering contract (ADR-0030). Under `.allPages` a
+    /// quiet region reads the same as the mounted editor for Markdown
+    /// structure, code typography, links, lists, fence wash and syntax
+    /// tokens — but never for block created/modified labels, which are
+    /// editor-only. The attributed text carries the styled ink; the
+    /// fence regions are the character ranges an `InkLayoutManager` paints
+    /// as one slab per region. `.focusedOnly` and `.never` hand back
+    /// plain ink and an empty region list.
+    ///
+    /// A class rather than a struct so the roll's cache-hit comparison
+    /// (`!==`) stays an identity check.
+    public final class QuietRendering {
+        public let text: NSAttributedString
+        public let fenceRegions: [NSRange]
+        public init(text: NSAttributedString, fenceRegions: [NSRange]) {
+            self.text = text
+            self.fenceRegions = fenceRegions
+        }
+    }
+
+    public func quietRendering(for id: UInt64) -> QuietRendering {
         if let existing = quietRenderings[id] { return existing }
         let rendered = NSMutableAttributedString()
         for run in client.documentRuns(sheet: id) {
@@ -2167,27 +2187,36 @@ public final class PageModel: ObservableObject {
         // `.allPages` runs the same block walk over a temporary storage
         // that the mounted editor runs over its live one, so a quiet day
         // reads as a fence, a heading or a list wherever the focused page
-        // would. `.focusedOnly` and `.never` return the plain rendering
-        // already assembled above (chips carry no bytes, the base font
-        // carries the reader's typography).
+        // would. Block created/modified labels are editor-only per
+        // ADR-0030, so quiet passes `renderBlockLabels: false`: the label
+        // stamps and their reserved paragraph spacing are both suppressed.
+        // The payload carries the fence regions the styling walk returned
+        // so a quiet region's `InkLayoutManager` can paint the same slab
+        // the editor would. `.focusedOnly` and `.never` return plain ink.
         if previewRendering == .allPages, !id.isFileID {
             // A throwaway storage keeps the styling pass off any layout
             // manager: the roll copies the result into its own storage,
             // and the copy is what the region draws (ADR-0006).
             let scratch = NSTextStorage(attributedString: rendered)
-            _ = InkEditorView.Coordinator.applyMarkdownStyling(
+            let (regions, _, _) = InkEditorView.Coordinator.applyMarkdownStyling(
                 to: scratch,
                 sheet: id,
-                blockMetas: client.blocks(sheet: id),
+                blockMetas: [],
                 syntaxHighlightingEnabled: syntaxHighlightingEnabled,
-                fenceRenderingLanguages: [:]
+                fenceRenderingLanguages: [:],
+                renderBlockLabels: false
             )
             let styled = NSAttributedString(attributedString: scratch)
-            quietRenderings[id] = styled
-            return styled
+            let payload = QuietRendering(text: styled, fenceRegions: regions)
+            quietRenderings[id] = payload
+            return payload
         }
-        quietRenderings[id] = rendered
-        return rendered
+        let payload = QuietRendering(
+            text: NSAttributedString(attributedString: rendered),
+            fenceRegions: []
+        )
+        quietRenderings[id] = payload
+        return payload
     }
 
     /// Forget how a page reads quietly, because the page has changed.
