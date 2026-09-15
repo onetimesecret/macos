@@ -489,7 +489,7 @@ final class CodeHighlightingRenderingTests: XCTestCase {
             """
         paste(page)
         XCTAssertEqual(foreground(of: "# heading"), NSColor.tertiaryLabelColor)
-        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
 
         let full = NSRange(location: 0, length: storage.length)
         XCTAssertEqual(storage.attributedSubstring(from: full).string, page)
