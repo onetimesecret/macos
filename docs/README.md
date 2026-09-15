@@ -24,6 +24,16 @@ context and consequences, not a veto: an idea that cuts against one
 reopens it rather than being cancelled by it. New decisions take the next
 free number.
 
+## law/
+
+Numbered behaviour laws, 0001 upward, plus the [template](law/template.md)
+and [behaviour law conventions](law/README.md). One governing rule per
+file, named `NNNN-slug.md`, with the cluster of decisions that follow from
+it and a contract table that is the test list. An ADR decides one thing; a
+dated decision record snapshots many at a date; a law holds the rule they
+share across the core, the shell and the UI. A law is amended in place, and
+a build that contradicts an accepted law is a bug report.
+
 ## archive/
 
 Superseded documents kept for the record, not to build from. The
