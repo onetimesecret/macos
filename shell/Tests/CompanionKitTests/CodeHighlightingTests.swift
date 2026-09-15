@@ -342,10 +342,10 @@ final class CodeHighlightingRenderingTests: XCTestCase {
             ```
             """
         )
-        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
-        XCTAssertEqual(foreground(of: "\"ada\""), NSColor.systemRed)
-        XCTAssertEqual(foreground(of: "// who"), NSColor.secondaryLabelColor)
-        XCTAssertEqual(foreground(of: "42"), NSColor.systemBlue)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
+        XCTAssertEqual(foreground(of: "\"ada\""), NSColor.inkString)
+        XCTAssertEqual(foreground(of: "// who"), NSColor.inkComment)
+        XCTAssertEqual(foreground(of: "42"), NSColor.inkNumber)
         // Everything the tokenizer did not claim is ordinary ink, and
         // the rules themselves are markup, dimmed as they always were.
         XCTAssertEqual(foreground(of: "name"), NSColor.labelColor)
@@ -361,9 +361,9 @@ final class CodeHighlightingRenderingTests: XCTestCase {
     func testAControlCharacterAtTheHeadOfALineDoesNotShiftItsColor() {
         makeEditor()
         paste("```swift\n\u{0C}let name = 1\n```")
-        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
         XCTAssertEqual(foreground(of: "\u{0C}"), NSColor.labelColor)
-        XCTAssertEqual(foreground(of: "1"), NSColor.systemBlue)
+        XCTAssertEqual(foreground(of: "1"), NSColor.inkNumber)
         XCTAssertEqual(foreground(of: "name"), NSColor.labelColor)
     }
 
@@ -402,7 +402,7 @@ final class CodeHighlightingRenderingTests: XCTestCase {
         XCTAssertEqual(foreground(of: "\"quoted\""), NSColor.labelColor)
         // The one line that is inside the fence still colors, so the
         // page above is not simply going uncolored by accident.
-        XCTAssertEqual(foreground(of: "let x"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "let x"), NSColor.inkKeyword)
     }
 
     /// The whole contract of display-only styling: the restyle pass may
@@ -423,7 +423,7 @@ final class CodeHighlightingRenderingTests: XCTestCase {
         XCTAssertEqual(storage.string, before)
         XCTAssertEqual(storage.string, page)
         // And the coloring really did happen over those unchanged bytes.
-        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
     }
 
     /// A comment left open at the end of one block cannot color the
@@ -441,15 +441,15 @@ final class CodeHighlightingRenderingTests: XCTestCase {
             ```
             """
         )
-        XCTAssertEqual(foreground(of: "/* still open"), NSColor.secondaryLabelColor)
-        XCTAssertEqual(foreground(of: "let x"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "/* still open"), NSColor.inkComment)
+        XCTAssertEqual(foreground(of: "let x"), NSColor.inkKeyword)
     }
 
     func testTurningHighlightingOffKeepsFixedWidthCodeTypography() throws {
         makeEditor()
         paste("prose\n```swift\nlet value = 1\n```\nafter")
         let code = (storage.string as NSString).range(of: "let").location
-        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
 
         model.syntaxHighlightingEnabled = false
         coordinator.applySyntaxHighlighting(false)
@@ -462,7 +462,7 @@ final class CodeHighlightingRenderingTests: XCTestCase {
 
         model.syntaxHighlightingEnabled = true
         coordinator.applySyntaxHighlighting(true)
-        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
     }
 
     /// The whole of D-05 from the reader's side: headings keep their
