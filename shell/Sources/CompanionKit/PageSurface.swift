@@ -236,9 +236,13 @@ public struct PageStatusStack: View {
             .padding(.vertical, 4)
         }
         if let notice = model.notice {
+            // Ember only for what needs acting on (design record,
+            // section 5): a refusal that leaves a save undone. A
+            // notice that reports what just happened is a quiet line
+            // like the ones above it.
             Text(notice)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(Color.emberText)
+                .foregroundStyle(model.noticeTone == .actionable ? Color.emberText : Color.secondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -471,6 +471,23 @@ public final class PageModel: ObservableObject {
     /// seal"). When the app declines something it says so.
     @Published public var notice: String?
 
+    /// How the current notice is drawn. Ember is for what needs acting
+    /// on (design record, section 5); a notice that only reports what
+    /// just happened, "the link is on the clipboard" or "long lines
+    /// wrap", is a quiet line like any other. Set by `flash` alongside
+    /// the words, so the two never disagree.
+    @Published public private(set) var noticeTone: NoticeTone = .plain
+
+    /// The two ways a notice can read: as information, or as something
+    /// the person has to do something about.
+    public enum NoticeTone: Equatable, Sendable {
+        /// A fact about what just happened. Secondary ink.
+        case plain
+        /// A refusal that leaves work undone until the person acts,
+        /// such as a save that did not reach disk. Ember ink.
+        case actionable
+    }
+
     /// Notices are transient by contract: each `flash` restarts the
     /// clock, and the line clears itself unless a newer notice has
     /// taken its place.
@@ -2597,7 +2614,7 @@ public final class PageModel: ObservableObject {
     public func saveFile(_ id: UInt64) -> Bool {
         guard let before = openFiles.first(where: { $0.id == id }) else { return false }
         guard before.conflict == .none else {
-            flash(Self.unresolvedConflictNotice(name: before.name))
+            flash(Self.unresolvedConflictNotice(name: before.name), tone: .actionable)
             return false
         }
         // The check can reload a clean file out from under the save,
@@ -2609,7 +2626,7 @@ public final class PageModel: ObservableObject {
         guard let file = openFiles.first(where: { $0.id == id }) else { return false }
         guard file.conflict == .none else { return false }
         guard client.saveFile(id) else {
-            flash(Self.writeRefusalNotice(name: file.name))
+            flash(Self.writeRefusalNotice(name: file.name), tone: .actionable)
             return false
         }
         // The roster is what the header and the dots read, and a save
@@ -2655,7 +2672,7 @@ public final class PageModel: ObservableObject {
             return
         }
         guard client.saveFile(file.id, as: url.path) else {
-            flash(Self.writeRefusalNotice(name: url.lastPathComponent))
+            flash(Self.writeRefusalNotice(name: url.lastPathComponent), tone: .actionable)
             return
         }
         // The identity moved, so the bookmark has to move with it, or
@@ -2737,7 +2754,7 @@ public final class PageModel: ObservableObject {
             // throws it away now rather than later.
             guard fileCoordinator.confirmDiscardingEdits(named: file.name) else { return }
             guard client.reloadFile(file.id) else {
-                flash(Self.readRefusalNotice(name: file.name))
+                flash(Self.readRefusalNotice(name: file.name), tone: .actionable)
                 return
             }
             restateStorage(sheet: file.id)
@@ -3263,9 +3280,12 @@ public final class PageModel: ObservableObject {
     }
 
     /// Show `message` for a few seconds, then clear it — unless a newer
-    /// notice replaced it in the meantime.
-    public func flash(_ message: String) {
+    /// notice replaced it in the meantime. Plain unless the caller says
+    /// otherwise: most notices report, and the few that ask for a hand
+    /// name themselves as `.actionable` where they are raised.
+    public func flash(_ message: String, tone: NoticeTone = .plain) {
         notice = message
+        noticeTone = tone
         noticeGeneration += 1
         let generation = noticeGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
