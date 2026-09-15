@@ -354,7 +354,7 @@ struct BackdropRootView: View {
                 }
                 Text(state.saveWord)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(state.showsUnsavedDot ? Color.ember : Color.secondary)
+                    .foregroundStyle(state.showsUnsavedDot ? Color.emberText : Color.secondary)
             }
             if let stamp = state.lastEditStamp {
                 // The draft's age, on a file whose buffer came back
@@ -390,7 +390,7 @@ struct BackdropRootView: View {
         } else if pages.contentRestoreRefused {
             Text("not saving")
                 .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(Color.ember)
+                .foregroundStyle(Color.emberText)
                 .help("The existing state file would not open, so this session is not being saved. The page shows the recovery.")
                 .accessibilityLabel(Text("This session is not being saved"))
         } else {
@@ -412,7 +412,7 @@ struct BackdropRootView: View {
             case .failed:
                 Text("save failed")
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(Color.ember)
+                    .foregroundStyle(Color.emberText)
                     .help("The last write was refused; the app keeps retrying. Quitting now will warn before any loss.")
                     .accessibilityLabel(Text("Save failed, retrying"))
             }
@@ -437,7 +437,7 @@ struct BackdropRootView: View {
         switch tone {
         case .quiet: return AnyShapeStyle(.tertiary)
         case .plain: return AnyShapeStyle(.secondary)
-        case .loud: return AnyShapeStyle(Color.ember)
+        case .loud: return AnyShapeStyle(Color.emberText)
         }
     }
 

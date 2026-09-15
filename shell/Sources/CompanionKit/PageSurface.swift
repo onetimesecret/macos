@@ -158,7 +158,7 @@ public struct PageStatusStack: View {
             HStack(spacing: 8) {
                 Text("the existing state file would not open, so nothing in this session is being saved")
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(Color.ember)
+                    .foregroundStyle(Color.emberText)
                 Button("discard it and start saving") { model.clearUnreadableStateFile() }
                     .font(.system(.caption, design: .monospaced))
                     .controlSize(.small)
@@ -177,7 +177,7 @@ public struct PageStatusStack: View {
             // clears the ledger in Settings.
             Text("the audit trail would not open and is not recording; clear the ledger in Settings to start a new trail")
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(Color.ember)
+                .foregroundStyle(Color.emberText)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -191,7 +191,7 @@ public struct PageStatusStack: View {
             // which is a fact rather than a fault.
             Text(sentence)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(sync.standingSentenceIsTrouble ? Color.ember : Color.secondary)
+                .foregroundStyle(sync.standingSentenceIsTrouble ? Color.emberText : Color.secondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -238,7 +238,7 @@ public struct PageStatusStack: View {
         if let notice = model.notice {
             Text(notice)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(Color.ember)
+                .foregroundStyle(Color.emberText)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)

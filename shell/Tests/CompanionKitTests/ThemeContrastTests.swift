@@ -136,4 +136,35 @@ final class ThemeContrastTests: XCTestCase {
     func testThePrimaryLabelClearsTheBarOnPageAndCard() {
         assertClearsTheBar(.labelColor, named: "the primary label")
     }
+
+    // MARK: Ember as ink (D-03)
+
+    func testEmberTextClearsTheBarOnPageAndCard() {
+        assertClearsTheBar(.emberText, named: "ember text")
+    }
+
+    func testEmberTextIsTheFillDarkenedInLightAndLightenedInDark() {
+        // The token is the accent's hue moved toward the ink's end of
+        // the scale in each appearance, which is why one token serves
+        // both: darker than the fill under light, lighter under dark.
+        let fill = NSColor(srgbHex: 0xDC4A22)
+        let fillLuminance = Self.relativeLuminance(fill)
+        var light: CGFloat = 0
+        var dark: CGFloat = 0
+        NSAppearance(named: .aqua)!.performAsCurrentDrawingAppearance {
+            light = Self.relativeLuminance(Self.composite(.emberText, over: .white))
+        }
+        NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance {
+            dark = Self.relativeLuminance(Self.composite(.emberText, over: .black))
+        }
+        XCTAssertLessThan(light, fillLuminance)
+        XCTAssertGreaterThan(dark, fillLuminance)
+    }
+
+    func testTheFillItselfIsBelowTheBarWhichIsWhyTheInkExists() {
+        // Not a target to fix: the fill is never text. This pins the
+        // reason the second token is there at all.
+        let fill = NSColor(srgbHex: 0xDC4A22)
+        XCTAssertLessThan(Self.contrastRatio(fill, on: .white, appearance: .aqua), Self.bar)
+    }
 }
