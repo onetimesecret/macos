@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The header never says "synced" with no peer awake** (D-20). An
+  attached channel with no other device awake says "sync waiting", in
+  the plain tone, whether or not any page is enrolled; "synced" is kept
+  for a peer that is there to receive. A working channel is not news
+  until then.
+
 - **A chip's size label is a size class, never a count** (D-29, D-31;
   `companion-core` 0.23.0, `companion-ffi` 0.29.0). The face beside the
   excerpt reads "tiny", "small", "medium", "large" or "huge", the same

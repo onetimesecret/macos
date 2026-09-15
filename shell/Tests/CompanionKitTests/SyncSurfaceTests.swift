@@ -319,9 +319,15 @@ final class SyncSurfaceTests: XCTestCase {
 
     func testAttachedWithNobodyAwakeDoesNotClaimToBeSynced() {
         XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 2)?.text, "sync waiting")
-        // With nothing enrolled there is nothing waiting: an empty
-        // channel is genuinely up to date.
-        XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 0)?.text, "synced")
+        // With nothing enrolled the channel is still only a channel: a
+        // working one is not news until another device is there to
+        // receive, so the word waits whether or not pages are enrolled
+        // (D-20), and it waits in the plain tone, not the loud one.
+        XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 0)?.text, "sync waiting")
+        XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 0)?.tone, .plain)
+        // "synced" is the word for a peer awake, and for nothing else.
+        XCTAssertEqual(word(gate: .attached, peers: 1, enrolled: 0)?.text, "synced")
+        XCTAssertEqual(word(gate: .attached, peers: 1, enrolled: 2)?.text, "synced")
     }
 
     func testACoreWithNoGateLeavesTheShellsOwnReadingStanding() {

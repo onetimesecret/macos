@@ -826,10 +826,14 @@ public final class SyncController: ObservableObject {
                 spoken: "Reaching the relay"
             )
         case .attached:
-            // Issue #94's device: enrolled pages and nobody awake to
-            // receive them. Saying "synced" there would be the one
-            // cheerful lie this word could tell.
-            if peers == 0, let status, status.enrolled > 0 {
+            // Issue #94's device: attached, and nobody awake to receive
+            // anything. Saying "synced" there would be the one cheerful
+            // lie this word could tell, and it stays a lie with nothing
+            // enrolled: a working channel is not news until another
+            // device is there to receive (D-20). The count is the
+            // attach's answer, so a nil count is a core that never said
+            // and the gate's own reading stands.
+            if peers == 0 {
                 return SyncHeaderWord(
                     text: "sync waiting",
                     tone: .plain,
