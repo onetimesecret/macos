@@ -114,12 +114,12 @@ chrome.
   the Swift constant drifted) and align `Theme.swift` · pending
   maintainer confirmation
   *call:* the header draft stamp and format facts drawn `.tertiary`
-  (`BackdropRootView.swift:353`, `:357`) fail the 4.5:1 row; promote
+  (`BackdropRootView.swift:369`, `:373`) fail the 4.5:1 row; promote
   both to `.secondary`, since the stamp carries the age of unsaved
   typing · pending maintainer confirmation
 - **D-04 (fixed)** The resting card is translucent, and both stances
   share one material: `.ultraThinMaterial` in `BackdropRootView`
-  (`BackdropRootView.swift:154`); the resting look is that material
+  (`BackdropRootView.swift:169`); the resting look is that material
   with contents at 0.72. The background-surface spec's "transparent for
   both stances" is honoured, and the working copy's "resting: opaque
   fill" callout is a mockup artefact, not a decision. Reduce
@@ -384,8 +384,8 @@ ledger record.
   and the button becomes Retry; the local copy is offered up to burn and
   never burned automatically.
   *call:* adopt "Burn local copy" as the confirmation button name
-  (`ConcealView.swift:162` already draws it; the settled sentence beside
-  it at `:172` still says "remove the chip" and is aligned once the name
+  (`ConcealView.swift:194` already draws it; the settled sentence beside
+  it at `:204` still says "remove the chip" and is aligned once the name
   is confirmed) · pending maintainer confirmation
 - **D-10 (fixed)** Hover reveals affordances, never content, and the
   affordance keeps its seat whether visible or not (~120 ms opacity,
@@ -591,7 +591,7 @@ read as a page an instant from death rather than a slot standing ready.
   even though Days + side is where the default is headed; the default
   does not flip before D-26's two settings exist, or Days + side would
   ship as the only alternative. There is no page cap to design for: the
-  core has had none since issue #158 (`PageModel.swift:3292`), so no
+  core has had none since issue #158 (`PageModel.swift:3373`), so no
   refusal is drawn.
   *Needs a call:* the gutter's verb set.
   *call:* declare the verb gate met once rename, hold, shorten, close
