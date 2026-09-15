@@ -512,7 +512,14 @@ public struct ConnectionSettingsView: View {
         )
         token = ""
         statusIsError = !accepted
-        status = accepted ? "saved" : "refused: the server URL must be https://…"
+        status = Self.saveStatus(accepted: accepted)
+    }
+
+    /// The two words a save can end on. The refusal names the one rule
+    /// the core applies to the URL (D-24), and it lives here rather
+    /// than inline in `save()` so a test can hold it to the record.
+    nonisolated static func saveStatus(accepted: Bool) -> String {
+        accepted ? "saved" : "refused: the server URL must be https://…"
     }
 
     private func clearToken() {

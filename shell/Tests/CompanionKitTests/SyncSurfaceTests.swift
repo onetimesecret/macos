@@ -523,4 +523,14 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertEqual(outcome.events.count, 1)
         XCTAssertNil(outcome.events[0].pageID)
     }
+
+    /// The refusal names the one rule the URL has to meet (D-24), so
+    /// the sentence is held to the record rather than left to drift
+    /// inside `save()`.
+    func testARefusedServerURLNamesTheHttpsRule() {
+        XCTAssertEqual(
+            ConnectionSettingsView.saveStatus(accepted: false),
+            "refused: the server URL must be https://…")
+        XCTAssertEqual(ConnectionSettingsView.saveStatus(accepted: true), "saved")
+    }
 }
