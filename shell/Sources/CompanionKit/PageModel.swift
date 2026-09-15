@@ -314,10 +314,14 @@ public enum FileConflictResolution: Equatable, Sendable {
 public final class LanguageActionAvailability: ObservableObject {
     @Published public private(set) var canDetect = false
     @Published public private(set) var canChoose = false
+    @Published public private(set) var selectionIsEmpty: Bool?
 
-    func stand(canDetect: Bool, canChoose: Bool) {
+    func stand(canDetect: Bool, canChoose: Bool, selectionIsEmpty: Bool?) {
         if self.canDetect != canDetect { self.canDetect = canDetect }
         if self.canChoose != canChoose { self.canChoose = canChoose }
+        if self.selectionIsEmpty != selectionIsEmpty {
+            self.selectionIsEmpty = selectionIsEmpty
+        }
     }
 }
 

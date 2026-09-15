@@ -818,9 +818,23 @@ public struct InkEditorView: NSViewRepresentable {
 
         func refreshLanguageActionAvailability() {
             let canChoose = manualLanguageTargetAvailable
+            let selectionIsEmpty: Bool?
+            if PageModel.languageDetectionFeaturesAvailable,
+               let textView, let storage = textView.textStorage,
+               currentSheet != nil, textView.isEditable, !textView.hasMarkedText()
+            {
+                let selection = textView.selectedRange()
+                selectionIsEmpty = selection.location != NSNotFound
+                    && NSMaxRange(selection) <= storage.length
+                    ? selection.length == 0
+                    : nil
+            } else {
+                selectionIsEmpty = nil
+            }
             model.languageActions.stand(
                 canDetect: canChoose && model.languageDetectionEnabled,
-                canChoose: canChoose
+                canChoose: canChoose,
+                selectionIsEmpty: selectionIsEmpty
             )
         }
 

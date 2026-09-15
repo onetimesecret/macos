@@ -167,8 +167,13 @@ enum ManualLanguageChoiceTarget: Equatable {
     case editor
     case file(UInt64)
 
-    static func resolve(editorCanChoose: Bool, selectedFile: UInt64?) -> Self? {
+    static func resolve(
+        editorCanChoose: Bool,
+        editorSelectionIsEmpty: Bool?,
+        selectedFile: UInt64?
+    ) -> Self? {
         if editorCanChoose { return .editor }
+        guard editorSelectionIsEmpty == true else { return nil }
         return selectedFile.map(Self.file)
     }
 }
@@ -192,6 +197,7 @@ private struct LanguageDetectionMenuItems: View {
     private var manualChoiceTarget: ManualLanguageChoiceTarget? {
         ManualLanguageChoiceTarget.resolve(
             editorCanChoose: languageActions.canChoose,
+            editorSelectionIsEmpty: languageActions.selectionIsEmpty,
             selectedFile: pages.showingLedger ? nil : pages.selectedFile
         )
     }
