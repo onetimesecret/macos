@@ -87,6 +87,17 @@ final class LanguageSuggestionTests: XCTestCase {
         XCTAssertEqual(textView.string, "```swift\n\(source)\n```")
     }
 
+    func testIneligibleNonemptySelectionIsNotReportedAsNoSelection() throws {
+        let (model, _, textView) = try makeEditor()
+        let source = "```\nlet value = 1\n```\nafter"
+        insert(source, into: textView)
+
+        textView.setSelectedRange(NSRange(location: 0, length: source.utf16.count))
+
+        XCTAssertFalse(model.languageActions.canChoose)
+        XCTAssertEqual(model.languageActions.selectionIsEmpty, false)
+    }
+
     func testUnmountingEditorRetiresLanguageMenuAvailability() throws {
         let (model, coordinator, textView) = try makeEditor()
         insert("let value = 1", into: textView)
@@ -97,6 +108,7 @@ final class LanguageSuggestionTests: XCTestCase {
 
         XCTAssertFalse(model.languageActions.canChoose)
         XCTAssertFalse(model.languageActions.canDetect)
+        XCTAssertNil(model.languageActions.selectionIsEmpty)
     }
 
     func testManualSelectionWrapIsOneExplicitEdit() throws {
