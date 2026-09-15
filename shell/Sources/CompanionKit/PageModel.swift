@@ -293,6 +293,17 @@ public enum FileConflictResolution: Equatable, Sendable {
     case saveAs
 }
 
+/// Which pages the hybrid markdown preview and syntax highlighting reach.
+/// `focusedOnly` preserves the older behavior where only the active editor
+/// carried block labels, fence washes and token colors; `allPages` extends
+/// the same styling to every visible day; `never` collapses the roll to
+/// plain ink even where a file mode would ordinarily read as source.
+public enum PreviewRenderingScope: String, CaseIterable, Codable, Sendable {
+    case focusedOnly
+    case allPages
+    case never
+}
+
 /// Whether the page holding the keyboard has a step waiting in each
 /// direction: the two answers the Edit menu's Undo and Redo grey
 /// themselves out on (issue #132).
@@ -551,9 +562,41 @@ public final class PageModel: ObservableObject {
     /// Whether explicit fence labels color recognized source tokens. This is
     /// presentation only; fixed-width code typography remains when it is off.
     @Published public var syntaxHighlightingEnabled: Bool {
-        didSet { defaults.set(syntaxHighlightingEnabled, forKey: Self.syntaxHighlightingKey) }
+        didSet {
+            guard syntaxHighlightingEnabled != oldValue else { return }
+            defaults.set(syntaxHighlightingEnabled, forKey: Self.syntaxHighlightingKey)
+            // Quiet renderings baked the old token colors into their
+            // attributes; a live-mounted page is restyled by the coordinator
+            // on its own published side.
+            invalidateQuietRenderings()
+        }
     }
     private static let syntaxHighlightingKey = "syntaxHighlightingEnabled"
+
+    /// Which pages receive hybrid markdown preview and syntax highlighting.
+    /// The default styles every visible day: the roll used to render quiet
+    /// pages as plain text carrying only the base font, so a code fence
+    /// walked out of the editor lost its wash and its keyword colors as
+    /// soon as the caret left. Reserved is the option to hold that older
+    /// behavior for a reader who prefers a quieter roll, and an option to
+    /// turn markdown styling off outright.
+    @Published public var previewRendering: PreviewRenderingScope {
+        didSet {
+            guard previewRendering != oldValue else { return }
+            defaults.set(previewRendering.rawValue, forKey: Self.previewRenderingKey)
+            // Any cached quiet ink was built to the old scope, so drop the
+            // lot: the next reader rebuilds them under the new preference.
+            invalidateQuietRenderings()
+        }
+    }
+    private static let previewRenderingKey = "previewRendering"
+
+    /// Posted when a rendering dependency (preview scope, syntax highlighting,
+    /// typeface) moves and the quiet cache has been dropped. The roll listens
+    /// so every visible quiet region is reseeded from the model at once, and
+    /// the coordinator restyles the mounted page on its own published side.
+    public static let quietRenderingsDidInvalidateNotification =
+        Notification.Name("PageModel.quietRenderingsDidInvalidate")
 
     /// Whether detector-backed suggestions and automatic paste recognition may
     /// run. Off by default while detection remains an explicit opt-in.
@@ -639,7 +682,19 @@ public final class PageModel: ObservableObject {
     /// mistake `showsTimeUnits` refuses.
     private func applyTypeface() {
         InkStyle.typeface = typeface
+        invalidateQuietRenderings()
+    }
+
+    /// Drop every cached quiet rendering and tell the roll so it reseeds
+    /// its visible regions from the model at once. Called whenever a
+    /// rendering dependency moves under a page whose contents have not
+    /// changed: preview scope, syntax-highlighting, typeface. Per-page
+    /// content edits go through `invalidateQuietRendering(for:)` instead.
+    private func invalidateQuietRenderings() {
         quietRenderings.removeAll()
+        NotificationCenter.default.post(
+            name: Self.quietRenderingsDidInvalidateNotification, object: self
+        )
     }
 
     /// Whether a rung, when applied, rounds its deadline up to the next
@@ -877,7 +932,17 @@ public final class PageModel: ObservableObject {
     /// is and the editor is standing on another day. A cache invalidated
     /// by a view's choreography is a cache that is correct only on the
     /// paths somebody thought of.
-    private var quietRenderings: [UInt64: NSAttributedString] = [:]
+    private var quietRenderings: [UInt64: QuietRendering] = [:]
+
+    /// Manual or inferred fence-language labels a page carries in its
+    /// presentation state, per bare-fence opening paragraph. Keyed by
+    /// page identity, then by the paragraph location of the opening
+    /// rule; the value is the language name a user picked or the
+    /// detector inferred. Presentation only: the fence characters and
+    /// the block above the language name are unchanged, and nothing in
+    /// the core moves. Pruned alongside `quietRenderings` when a page
+    /// dies, and dropped for a page on any structural rewrite.
+    private var fenceRenderingLanguages: [UInt64: [Int: String]] = [:]
 
     /// The slot a selection gesture last minted a page into, and the
     /// monotonic reading at which it did. Read by `pause` alone, so a
@@ -1094,6 +1159,12 @@ public final class PageModel: ObservableObject {
         // and automatic edits remain explicit opt-ins.
         syntaxHighlightingEnabled =
             defaults.object(forKey: Self.syntaxHighlightingKey) as? Bool ?? true
+        // Unset → all pages styled. The older reading (focused page only,
+        // quiet days rendered as plain ink) is kept as a scope, not the
+        // default: a fence that stays a fence off the caret is what the
+        // eye expects of a page it can already read.
+        previewRendering = (defaults.string(forKey: Self.previewRenderingKey)
+            .flatMap(PreviewRenderingScope.init(rawValue:))) ?? .allPages
         languageDetectionEnabled =
             defaults.object(forKey: Self.languageDetectionKey) as? Bool ?? false
         automaticallyFencePastes =
@@ -1959,6 +2030,7 @@ public final class PageModel: ObservableObject {
         // a page, so an entry outliving its page would be exactly the
         // ink an expiry is supposed to take away.
         quietRenderings = quietRenderings.filter { livePages.contains($0.key) }
+        fenceRenderingLanguages = fenceRenderingLanguages.filter { livePages.contains($0.key) }
         selection = Self.reconciledSelection(current: selection, live: tabs.map(\.id))
         // With the days down the side, a slot holding no page is not on
         // the rail at all, so a selection left on one would be pointing
@@ -2106,7 +2178,27 @@ public final class PageModel: ObservableObject {
     /// storage no delegate is watching, so nothing it holds can emit an
     /// op, and the chips in it carry the same non-secret face they
     /// carry on the live page and no bytes at all.
-    public func quietRendering(for id: UInt64) -> NSAttributedString {
+    /// A quiet page's rendering contract (ADR-0030). Under `.allPages` a
+    /// quiet region reads the same as the mounted editor for Markdown
+    /// structure, code typography, links, lists, fence wash and syntax
+    /// tokens — but never for block created/modified labels, which are
+    /// editor-only. The attributed text carries the styled ink; the
+    /// fence regions are the character ranges an `InkLayoutManager` paints
+    /// as one slab per region. `.focusedOnly` and `.never` hand back
+    /// plain ink and an empty region list.
+    ///
+    /// A class rather than a struct so the roll's cache-hit comparison
+    /// (`!==`) stays an identity check.
+    public final class QuietRendering {
+        public let text: NSAttributedString
+        public let fenceRegions: [NSRange]
+        public init(text: NSAttributedString, fenceRegions: [NSRange]) {
+            self.text = text
+            self.fenceRegions = fenceRegions
+        }
+    }
+
+    public func quietRendering(for id: UInt64) -> QuietRendering {
         if let existing = quietRenderings[id] { return existing }
         let rendered = NSMutableAttributedString()
         for run in client.documentRuns(sheet: id) {
@@ -2120,8 +2212,39 @@ public final class PageModel: ObservableObject {
                 rendered.append(NSAttributedString(attachment: ChipAttachment(info: info)))
             }
         }
-        quietRenderings[id] = rendered
-        return rendered
+        // `.allPages` runs the same block walk over a temporary storage
+        // that the mounted editor runs over its live one, so a quiet day
+        // reads as a fence, a heading or a list wherever the focused page
+        // would. Block created/modified labels are editor-only per
+        // ADR-0030, so quiet passes `renderBlockLabels: false`: the label
+        // stamps and their reserved paragraph spacing are both suppressed.
+        // The payload carries the fence regions the styling walk returned
+        // so a quiet region's `InkLayoutManager` can paint the same slab
+        // the editor would. `.focusedOnly` and `.never` return plain ink.
+        if previewRendering == .allPages, !id.isFileID {
+            // A throwaway storage keeps the styling pass off any layout
+            // manager: the roll copies the result into its own storage,
+            // and the copy is what the region draws (ADR-0006).
+            let scratch = NSTextStorage(attributedString: rendered)
+            let (regions, _, _) = InkEditorView.Coordinator.applyMarkdownStyling(
+                to: scratch,
+                sheet: id,
+                blockMetas: [],
+                syntaxHighlightingEnabled: syntaxHighlightingEnabled,
+                fenceRenderingLanguages: fenceRenderingLanguages(for: id),
+                renderBlockLabels: false
+            )
+            let styled = NSAttributedString(attributedString: scratch)
+            let payload = QuietRendering(text: styled, fenceRegions: regions)
+            quietRenderings[id] = payload
+            return payload
+        }
+        let payload = QuietRendering(
+            text: NSAttributedString(attributedString: rendered),
+            fenceRegions: []
+        )
+        quietRenderings[id] = payload
+        return payload
     }
 
     /// Forget how a page reads quietly, because the page has changed.
@@ -2139,6 +2262,36 @@ public final class PageModel: ObservableObject {
     /// back is not the one its region was seeded from.
     public func invalidateQuietRendering(for id: UInt64) {
         quietRenderings[id] = nil
+    }
+
+    /// Snapshot of the fence-language labels a page carries in its
+    /// presentation state, keyed by the paragraph location of each
+    /// bare fence's opening rule. Read by both the mounted editor's
+    /// styling walk and `quietRendering(for:)`, so a fence a reader
+    /// coloured on one page looks the same when the editor is standing
+    /// on another day.
+    public func fenceRenderingLanguages(for id: UInt64) -> [Int: String] {
+        fenceRenderingLanguages[id] ?? [:]
+    }
+
+    /// Attach a language name to a bare fence's opening paragraph on
+    /// the given page. Presentation only: no text is rewritten and
+    /// nothing in the core moves. The page's quiet cache is dropped so
+    /// the roll rebuilds it under the new label.
+    public func setFenceRenderingLanguage(
+        _ language: String, sheet: UInt64, at paragraphLocation: Int
+    ) {
+        fenceRenderingLanguages[sheet, default: [:]][paragraphLocation] = language
+        invalidateQuietRendering(for: sheet)
+    }
+
+    /// Drop every fence-language label a page was carrying. Called on
+    /// a structural rewrite of the page's projection, since the
+    /// paragraph locations the labels were keyed against no longer
+    /// name the fences they were placed above.
+    public func clearFenceRenderingLanguages(for sheet: UInt64) {
+        guard fenceRenderingLanguages.removeValue(forKey: sheet) != nil else { return }
+        invalidateQuietRendering(for: sheet)
     }
 
     /// Which pages the editor has a storage for.

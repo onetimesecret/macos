@@ -8,6 +8,7 @@ documentation_status: needs-review # draft | reviewed | stale
 - **Date:** 2026-09-12
 - **Depends on:** [ADR-0024](0024-caret-only-automation-and-display-only-color.md)
 - **Supersedes in part:** [ADR-0024](0024-caret-only-automation-and-display-only-color.md), specifically its prohibition on inferred bare-fence highlighting and its caret-line restriction for the explicit actions named below. Its remaining decision stands.
+- **Superseded in part by:** [ADR-0030](0030-visible-pages-share-preview-rendering.md), specifically the exclusion of visible quiet roll pages from display-only highlighting. The remaining decision stands.
 
 Read [ADR conventions](README.md) before filing or changing an ADR.
 
@@ -178,6 +179,11 @@ ADR-0024 superseded wholesale.
 - 2026-09-12: Accepted. This record supersedes the named portions of
   [ADR-0024](0024-caret-only-automation-and-display-only-color.md); its
   remaining caret-only and display-only rules stand.
+- 2026-09-14: Superseded in part by
+  [ADR-0030](0030-visible-pages-share-preview-rendering.md). Accepted manual or
+  inferred language state may now drive display-only highlighting on visible
+  quiet roll pages under the accepted preview scope. The inference architecture,
+  release gates, and exclusion of other recognition surfaces stand.
 
 ## Erratum — 2026-09-12
 

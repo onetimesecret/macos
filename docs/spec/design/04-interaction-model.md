@@ -314,21 +314,28 @@ scans for. Inside a fence none of it happens, and it is the same walk
 that decides the styling which decides the automation, so the two can
 never read a line differently.
 
-**Fenced code carries color, and only color** (ADR-0024, recorded as
-amendment C to doc 03 §3). A fence whose opening rule names a language
-colors four kinds of token inside the block: keywords, strings, comments
-and numbers. The language comes from that info string and from nowhere
-else, so an unknown language, an unlisted one, or a bare ` ``` ` renders
-exactly as it does today; a guessed language is worse than plain ink.
-Nothing but the foreground color moves. Same font, same metrics, same
-wash, and the bytes are untouched, so select-all-copy still returns
-exactly what was typed and sealing a colored line seals the markup. The
-color lives where the page itself lives. Chips, the ledger and the roll's
-quiet renderings stay uncolored, because each of them renders a page
-rather than mounts one; the resting glance mounts the page, read only,
-and so carries color exactly as it already carries heading weight. The fence boundary holds in both directions,
-which is what keeps the reading above true: automation stops at it going
-in, and color stops at it coming out.
+**Fenced code carries display-only color** (ADR-0024 and ADR-0030,
+recorded as amendments C and D to doc 03 §3). A fence whose opening rule
+names a supported language colors keywords, strings, comments and numbers.
+A manually accepted or inferred language may color a bare fence without
+rewriting its info string (ADR-0029). The choice follows the page as
+session-only display state instead of following keyboard focus.
+
+The Preview rendering preference sets the surface boundary. **All pages**,
+the default, gives the mounted page and visible quiet roll pages the same
+Markdown structure, fence wash and token color. **Focused page only**
+leaves quiet pages flat. **Never** renders mounted and quiet pages as plain
+ink, including files otherwise shown in Source mode. The narrower Syntax
+highlighting switch removes token colors without removing code typography,
+fence wash or file mode.
+
+Every form is display-only: bytes and visible markup remain untouched,
+select-all-copy returns exactly what was typed, and sealing a colored line
+seals that markup. Quiet pages remain noninteractive and omit the mounted
+editor's block labels and their reserved spacing. Chips and the ledger stay
+uncolored, and the minimap remains geometry without text. The fence
+boundary still holds in both directions: editing automation stops at it
+going in, and token color stays inside it coming out.
 
 ## The keyboard map, complete
 

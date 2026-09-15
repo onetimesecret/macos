@@ -8,11 +8,11 @@ Every one traces back to the problem restatement (doc 01) or an overlooked
 opportunity (doc 02). When two principles conflict, the earlier-numbered
 one wins.
 
-Still binding as of interaction-model revision C (doc 04), with three
+Still binding as of interaction-model revision C (doc 04), with four
 narrow, argued amendments recorded at the end of this document rather
 than silently edited into the principles: the ledger (amending §1),
-markdown headings (amending §3) and fenced code color (amending §3
-again).
+markdown headings, fenced code color, and visible-page preview rendering
+(the latter three amending §3).
 
 ## 1. Comfortable being temporary
 
@@ -49,9 +49,9 @@ keep it readable. No rich previews, no syntax highlighting, no image
 zoom. Recognition, not consumption.
 
 *Settles:* "Markdown rendering?" — No rich text, no rewriting. *(Amended
-twice, both display-only and both on the editable page alone: heading
-lines are styled with the markup kept visible, see amendment B below;
-fenced code carries color, see amendment C.)* "Expandable preview?" — At
+by B, C, and D below: heading structure and fenced-code color are
+markup-preserving display; the visible-page scope is selected by the
+preview-rendering preference.)* "Expandable preview?" — At
 most a quick-look-style peek; never an editor. "Show full text on
 hover?" — No; hover reveals actions, not content (shoulder-surfing
 surface).
@@ -106,11 +106,12 @@ install?" — No; the core loop works forever without one.
 
 ## Amendments (interaction-model revision C, 12 Jul 2026)
 
-Three places where lived experience with the prototype overruled a
+Four places where lived experience with the prototype overruled a
 principle's absolutism. All are recorded here deliberately, because an
 amended law argued in the open is stronger than a quietly rewritten one.
 A and B arrived with revision C; the third followed in August 2026, once
-dogfooding put real code on the page.
+dogfooding put real code on the page; the fourth followed when the time
+roll made several readable pages visible together.
 
 ### A. The ledger (amends §1, "Comfortable being temporary")
 
@@ -154,6 +155,27 @@ still a text file. A page the user deliberately fenced code into is
 allowed to show that it is code. The language comes only from the fence's
 own info string; an unknown or absent language renders exactly as it does
 today.
+
+### D. Visible-page preview rendering (amends §3 and amendment C)
+
+ADR-0030 reopens amendment C's surface boundary for the time roll. A quiet
+region shows a readable page, not an excerpt or concealed-content handle,
+so its display no longer changes merely because the editor moves away.
+The Preview rendering preference chooses the reach: **All pages**, the
+default, gives the mounted page and visible quiet pages the same
+markup-preserving Markdown structure, fence wash and token color;
+**Focused page only** keeps quiet pages flat; **Never** makes every page
+plain ink. The existing Syntax highlighting setting remains the narrower
+color-only control.
+
+This does not turn quiet pages into editors or previews that consume the
+content. They remain noninteractive until clicked, chips remain non-secret
+faces, the ledger stays dim and uncolored, and the minimap stays geometric.
+Block created/modified labels remain with the mounted editor and quiet
+renderings reserve no space for them. A manually accepted or inferred
+language follows its page as display-only session state under **All pages**;
+it never rewrites a bare fence. The byte-preservation contract of B and C
+stands.
 
 ## Tone
 

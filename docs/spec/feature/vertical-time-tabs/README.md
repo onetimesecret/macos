@@ -815,9 +815,11 @@ decision that is Rust, the more of it is validated before a PR exists.
 - **No text selection, copy-out or chip interaction inside a quiet
   region.** Click it and it becomes the editor, which already has all
   four.
-- **No markdown styling parity on quiet regions.** A quiet day renders in
-  the base ink font with chips as their non-secret face; the flatness
-  against the live day is a stated gap.
+- **Preview rendering is scoped.** Under the default **All pages** scope, a
+  quiet day carries the mounted page's Markdown structure, fence wash and
+  syntax color without its block labels. **Focused page only** keeps quiet
+  days in base ink, and **Never** makes mounted and quiet pages plain. Chips
+  retain their non-secret faces in every scope (ADR-0030).
 - **No unwrapped lines in the mode.** Wrap is forced on and ⌥Z changes
   nothing while the mode is on: the dispatch refuses it and says so
   (`PageModel.wrapIsFixedNotice`) rather than leaving a dead key. The
@@ -999,11 +1001,10 @@ the height that arrived, so nothing shifts under a sentence being read.
    Day 0. *Leaning:* say it rather than paper over it, in the spec and in
    the QA procedure. A mode-specific default rung is refused: that is the
    mode reaching into core state.
-9. **Does a flat quiet day read as a rendering bug?** Quiet regions carry
-   no markdown styling in this prototype. *Leaning:* acceptable for a
-   prototype and cheap to fix if it grates, since the restyle pass already
-   exists; it is deliberately not paid for before anyone has looked at the
-   roll.
+9. **Resolved by ADR-0030: does a flat quiet day read as a rendering bug?**
+   Yes under the default scope. **All pages** keeps visible pages styled as
+   the editor moves; **Focused page only** retains the flat quiet roll for
+   readers who prefer it, and **Never** is the plain-ink override.
 10. **If the mode wins, do two modes survive?** A permanent toggle is two
     interaction models to maintain, test and document, which doc 03 §4
     would not thank us for. *Leaning:* the toggle is the prototype's

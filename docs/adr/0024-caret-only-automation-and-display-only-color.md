@@ -6,7 +6,7 @@ documentation_status: reviewed # draft | needs-review | reviewed | stale
 
 - **Status:** accepted
 - **Date:** 2026-08-27
-- **Superseded in part by:** [ADR-0029](0029-betlang-source-language-detection-behind-the-existing-c-abi.md), specifically its inferred bare-fence, explicit wrap/insert-label, opt-in paste-replacement, and whole-file Source-mode extensions. The remaining decision stands.
+- **Superseded in part by:** [ADR-0029](0029-betlang-source-language-detection-behind-the-existing-c-abi.md), specifically its inferred bare-fence, explicit wrap/insert-label, opt-in paste-replacement, and whole-file Source-mode extensions; and [ADR-0030](0030-visible-pages-share-preview-rendering.md), specifically amendment C's restriction of syntax color to the editable page. The remaining decision stands.
 
 ## Context
 
@@ -61,7 +61,11 @@ selectively uncolor it.
   [ADR-0029](0029-betlang-source-language-detection-behind-the-existing-c-abi.md).
   The replacement is limited to the inferred bare-fence, explicit wrap/insert-label,
   opt-in paste-replacement, and whole-file Source-mode extensions named there.
-  The remaining caret-only automation and display-only color decision stands.
+- 2026-09-14: Superseded in part by
+  [ADR-0030](0030-visible-pages-share-preview-rendering.md). Syntax color and
+  display-only Markdown presentation may now reach visible quiet roll pages under
+  the accepted preview scope. Caret-only automation, byte preservation, and the
+  exclusion of chips, the ledger, and other recognition surfaces stand.
 
 ## Consequences
 

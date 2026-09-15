@@ -552,10 +552,10 @@ the toggle alone.
    amended only if this ADR is accepted after the dogfood window, and
    then in a named section in the open rather than by editing the
    standing claim.
-3. **Markdown styling parity on quiet regions.** A quiet day renders in
-   the base ink font with chips as their non-secret face. The flatness
-   against the live day is a stated gap, cheap to close if it grates, and
-   deliberately not paid for before anyone has looked at the roll.
+3. **Resolved by ADR-0030 — Markdown styling parity on quiet regions.**
+   The default **All pages** scope closes the flatness gap while excluding
+   editor-only block labels. **Focused page only** preserves the prototype's
+   flat quiet rendering, and **Never** provides plain ink everywhere.
 4. **Whether both modes survive.** See the Consequences above; that is a
    question for the dogfood window and its answer belongs in this ADR's
    next revision, with Consequences rewritten against what was observed
