@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "input_cases": "tools/language-eval/reports/2026-09-14/selection/baseline-tune-cases.jsonl",
+  "grid": {
+    "minimum_non_whitespace_bytes": [
+      20
+    ],
+    "minimum_top_score": [
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6
+    ],
+    "minimum_top_two_margin": [
+      0.2,
+      0.3,
+      0.4
+    ],
+    "maximum_input_bytes": 4194304,
+    "selection": {
+      "minimum_automatic_paste_precision": 0.99,
+      "maximum_dedicated_paste_negative_conversions": 0,
+      "require_automatic_paste_conversion": true,
+      "objective": "maximize_automatic_paste_useful_code_coverage"
+    }
+  },
+  "candidate_count": 15,
+  "qualifying_candidate_count": 4,
+  "selected": {
+    "minimum_non_whitespace_bytes": 20,
+    "minimum_top_score": 0.4,
+    "minimum_top_two_margin": 0.2,
+    "maximum_input_bytes": 4194304,
+    "automatic_paste_conversions": 111,
+    "automatic_paste_precision": 0.990990990990991,
+    "automatic_paste_useful_code_coverage": 0.9016393442622951,
+    "dedicated_paste_negative_conversions": 0,
+    "dedicated_paste_negative_cases": 603
+  },
+  "candidates": [
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.2,
+      "minimum_top_two_margin": 0.2,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 122,
+      "automatic_paste_precision": 0.9426229508196722,
+      "automatic_paste_useful_code_coverage": 0.9426229508196722,
+      "dedicated_paste_negative_conversions": 5,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.2,
+      "minimum_top_two_margin": 0.3,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 105,
+      "automatic_paste_precision": 0.9904761904761905,
+      "automatic_paste_useful_code_coverage": 0.8524590163934426,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.2,
+      "minimum_top_two_margin": 0.4,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 98,
+      "automatic_paste_precision": 0.9897959183673469,
+      "automatic_paste_useful_code_coverage": 0.7950819672131147,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.3,
+      "minimum_top_two_margin": 0.2,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 122,
+      "automatic_paste_precision": 0.9426229508196722,
+      "automatic_paste_useful_code_coverage": 0.9426229508196722,
+      "dedicated_paste_negative_conversions": 5,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.3,
+      "minimum_top_two_margin": 0.3,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 105,
+      "automatic_paste_precision": 0.9904761904761905,
+      "automatic_paste_useful_code_coverage": 0.8524590163934426,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.3,
+      "minimum_top_two_margin": 0.4,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 98,
+      "automatic_paste_precision": 0.9897959183673469,
+      "automatic_paste_useful_code_coverage": 0.7950819672131147,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.4,
+      "minimum_top_two_margin": 0.2,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 111,
+      "automatic_paste_precision": 0.990990990990991,
+      "automatic_paste_useful_code_coverage": 0.9016393442622951,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.4,
+      "minimum_top_two_margin": 0.3,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 105,
+      "automatic_paste_precision": 0.9904761904761905,
+      "automatic_paste_useful_code_coverage": 0.8524590163934426,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.4,
+      "minimum_top_two_margin": 0.4,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 98,
+      "automatic_paste_precision": 0.9897959183673469,
+      "automatic_paste_useful_code_coverage": 0.7950819672131147,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.5,
+      "minimum_top_two_margin": 0.2,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 97,
+      "automatic_paste_precision": 0.9896907216494846,
+      "automatic_paste_useful_code_coverage": 0.7868852459016393,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.5,
+      "minimum_top_two_margin": 0.3,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 97,
+      "automatic_paste_precision": 0.9896907216494846,
+      "automatic_paste_useful_code_coverage": 0.7868852459016393,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.5,
+      "minimum_top_two_margin": 0.4,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 93,
+      "automatic_paste_precision": 0.989247311827957,
+      "automatic_paste_useful_code_coverage": 0.7540983606557377,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.6,
+      "minimum_top_two_margin": 0.2,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 80,
+      "automatic_paste_precision": 0.9875,
+      "automatic_paste_useful_code_coverage": 0.6475409836065574,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.6,
+      "minimum_top_two_margin": 0.3,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 80,
+      "automatic_paste_precision": 0.9875,
+      "automatic_paste_useful_code_coverage": 0.6475409836065574,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    },
+    {
+      "minimum_non_whitespace_bytes": 20,
+      "minimum_top_score": 0.6,
+      "minimum_top_two_margin": 0.4,
+      "maximum_input_bytes": 4194304,
+      "automatic_paste_conversions": 79,
+      "automatic_paste_precision": 0.9873417721518988,
+      "automatic_paste_useful_code_coverage": 0.639344262295082,
+      "dedicated_paste_negative_conversions": 0,
+      "dedicated_paste_negative_cases": 603
+    }
+  ]
+}

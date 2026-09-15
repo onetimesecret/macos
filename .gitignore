@@ -1,6 +1,7 @@
 # Rust
 /target/
 **/*.rs.bk
+__pycache__/
 /tools/language-eval/output/
 
 # Xcode / Swift (the shell)

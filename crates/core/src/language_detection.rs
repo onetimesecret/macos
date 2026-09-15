@@ -5,11 +5,9 @@
 //! corpus. A returned slug is a model result that passed this provisional gate,
 //! not proof that the input is source code.
 
-use crate::FILE_SIZE_LIMIT;
-
-const MINIMUM_NON_WHITESPACE_BYTES: usize = 20;
-const MINIMUM_TOP_SCORE: f32 = 0.20;
-const MINIMUM_TOP_TWO_MARGIN: f32 = 0.20;
+use companion_language_detection_policy::{
+    PRODUCTION_POLICY, eligibility_rejection, ranking_rejection,
+};
 
 /// Detect a canonical Betlang source-language slug.
 ///
@@ -19,42 +17,18 @@ const MINIMUM_TOP_TWO_MARGIN: f32 = 0.20;
 /// is not approved for shipping, and remains subject to local corpus review.
 /// A returned slug is not an assurance that the input is source code.
 pub fn detect_source_language(bytes: &[u8]) -> Option<&'static str> {
-    if bytes.len() > FILE_SIZE_LIMIT || bytes.contains(&0) {
+    if eligibility_rejection(bytes, PRODUCTION_POLICY).is_some() {
         return None;
     }
 
     let source = std::str::from_utf8(bytes).ok()?;
-    let evidence = bytes
-        .iter()
-        .filter(|byte| !byte.is_ascii_whitespace())
-        .count();
-    if evidence < MINIMUM_NON_WHITESPACE_BYTES {
-        return None;
-    }
-
     let detection = betlang::detect(source);
     let ranked = detection.top_languages().collect::<Vec<_>>();
-    if !ranking_is_accepted(ranked.iter().map(|(score, _)| *score)) {
+    if ranking_rejection(ranked.iter().map(|(score, _)| *score), PRODUCTION_POLICY).is_some() {
         return None;
     }
 
     ranked.first().map(|(_, language)| language.slug())
-}
-
-fn ranking_is_accepted(scores: impl IntoIterator<Item = f32>) -> bool {
-    let mut scores = scores.into_iter();
-    let Some(top) = scores.next() else {
-        return false;
-    };
-    let Some(second) = scores.next() else {
-        return false;
-    };
-
-    top.is_finite()
-        && second.is_finite()
-        && scores.all(f32::is_finite)
-        && top >= MINIMUM_TOP_SCORE
-        && top >= second + MINIMUM_TOP_TWO_MARGIN
 }
 
 #[cfg(test)]
@@ -64,6 +38,14 @@ mod tests {
     const PYTHON: &[u8] = b"def total(values):\n    return sum(value for value in values if value > 0)\n\nprint(total([1, -2, 3]))";
 
     #[test]
+    fn production_policy_uses_the_file_size_limit() {
+        assert_eq!(
+            PRODUCTION_POLICY.maximum_input_bytes,
+            crate::FILE_SIZE_LIMIT
+        );
+    }
+
+    #[test]
     fn canonical_result_passes_the_provisional_gate() {
         assert_eq!(detect_source_language(PYTHON), Some("python"));
     }
@@ -71,7 +53,7 @@ mod tests {
     #[test]
     fn input_eligibility_abstains_before_inference() {
         assert_eq!(
-            detect_source_language(&vec![b'x'; FILE_SIZE_LIMIT + 1]),
+            detect_source_language(&vec![b'x'; PRODUCTION_POLICY.maximum_input_bytes + 1]),
             None
         );
         assert_eq!(
@@ -96,19 +78,19 @@ mod tests {
 
     #[test]
     fn ranking_threshold_edges_are_explicit() {
-        assert!(!ranking_is_accepted([]));
-        assert!(!ranking_is_accepted([0.90]));
-        assert!(!ranking_is_accepted([0.199_999, 0.0]));
-        assert!(ranking_is_accepted([0.20, 0.0]));
-        assert!(!ranking_is_accepted([0.50, 0.300_001]));
-        assert!(ranking_is_accepted([0.50, 0.30]));
+        assert!(ranking_rejection([], PRODUCTION_POLICY).is_some());
+        assert!(ranking_rejection([0.90], PRODUCTION_POLICY).is_some());
+        assert!(ranking_rejection([0.199_999, 0.0], PRODUCTION_POLICY).is_some());
+        assert!(ranking_rejection([0.20, 0.0], PRODUCTION_POLICY).is_none());
+        assert!(ranking_rejection([0.50, 0.300_001], PRODUCTION_POLICY).is_some());
+        assert!(ranking_rejection([0.50, 0.30], PRODUCTION_POLICY).is_none());
     }
 
     #[test]
     fn ranking_rejects_nonfinite_scores() {
-        assert!(!ranking_is_accepted([f32::NAN, f32::NAN]));
-        assert!(!ranking_is_accepted([f32::INFINITY, 0.0]));
-        assert!(!ranking_is_accepted([0.80, f32::NEG_INFINITY]));
-        assert!(!ranking_is_accepted([0.80, 0.10, f32::NAN]));
+        assert!(ranking_rejection([f32::NAN, f32::NAN], PRODUCTION_POLICY).is_some());
+        assert!(ranking_rejection([f32::INFINITY, 0.0], PRODUCTION_POLICY).is_some());
+        assert!(ranking_rejection([0.80, f32::NEG_INFINITY], PRODUCTION_POLICY).is_some());
+        assert!(ranking_rejection([0.80, 0.10, f32::NAN], PRODUCTION_POLICY).is_some());
     }
 }

@@ -1,5 +1,9 @@
 //! Non-shipping synthetic evaluation harness for `betlang`.
 
+use companion_language_detection_policy::{
+    DetectionPolicy, EligibilityRejection, RankingRejection, count_non_whitespace,
+    eligibility_rejection, ranking_rejection,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
@@ -69,12 +73,21 @@ struct Family {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Thresholds {
     minimum_non_whitespace_bytes: usize,
-    minimum_top_score: f64,
-    minimum_top_two_margin: f64,
+    minimum_top_score: f32,
+    minimum_top_two_margin: f32,
     maximum_input_bytes: usize,
 }
 
 impl Thresholds {
+    fn policy(&self) -> DetectionPolicy {
+        DetectionPolicy {
+            minimum_non_whitespace_bytes: self.minimum_non_whitespace_bytes,
+            minimum_top_score: self.minimum_top_score,
+            minimum_top_two_margin: self.minimum_top_two_margin,
+            maximum_input_bytes: self.maximum_input_bytes,
+        }
+    }
+
     fn validate(&self) -> Result<(), AnyError> {
         if !self.minimum_top_score.is_finite()
             || !self.minimum_top_two_margin.is_finite()
@@ -147,7 +160,7 @@ struct EvalCase {
 
 #[derive(Clone, Debug, Serialize)]
 struct RankedValue {
-    score: f64,
+    score: f32,
     slug: String,
 }
 
@@ -278,7 +291,7 @@ struct ConfusionCase {
     kind: String,
     expected: String,
     outcome: String,
-    top_score: Option<f64>,
+    top_score: Option<f32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -495,7 +508,7 @@ fn evaluate(args: &EvaluateArgs) -> Result<(), AnyError> {
     let mut warm_input = None;
     for case in cases {
         let non_whitespace_bytes = count_non_whitespace(&case.input);
-        let eligibility = eligibility_reason(&case.input, non_whitespace_bytes, &thresholds);
+        let eligibility = eligibility_reason(&case.input, &thresholds);
         let eligible = eligibility.is_none();
         let (ranked, elapsed) = if eligible {
             if warm_input.is_none() {
@@ -555,50 +568,39 @@ fn collect_ranked(detection: &betlang::Detection) -> Result<Vec<RankedValue>, An
                 )));
             }
             Ok(RankedValue {
-                score: f64::from(score),
+                score,
                 slug: language.slug().to_owned(),
             })
         })
         .collect()
 }
 
-fn eligibility_reason(
-    input: &[u8],
-    non_whitespace_bytes: usize,
-    thresholds: &Thresholds,
-) -> Option<String> {
-    if input.len() > thresholds.maximum_input_bytes {
-        Some("input_exceeds_maximum_bytes".to_owned())
-    } else if input.contains(&0) {
-        Some("input_contains_nul".to_owned())
-    } else if std::str::from_utf8(input).is_err() {
-        Some("input_is_not_utf8".to_owned())
-    } else if non_whitespace_bytes < thresholds.minimum_non_whitespace_bytes {
-        Some("insufficient_non_whitespace_bytes".to_owned())
-    } else {
-        None
-    }
+fn eligibility_reason(input: &[u8], thresholds: &Thresholds) -> Option<String> {
+    eligibility_rejection(input, thresholds.policy()).map(|rejection| {
+        match rejection {
+            EligibilityRejection::InputExceedsMaximumBytes => "input_exceeds_maximum_bytes",
+            EligibilityRejection::InputContainsNul => "input_contains_nul",
+            EligibilityRejection::InputIsNotUtf8 => "input_is_not_utf8",
+            EligibilityRejection::InsufficientNonWhitespaceBytes => {
+                "insufficient_non_whitespace_bytes"
+            }
+        }
+        .to_owned()
+    })
 }
 
 fn decide(ranked: &[RankedValue], thresholds: &Thresholds) -> (Option<String>, Option<String>) {
-    let Some(top) = ranked.first() else {
-        return (None, Some("model_returned_no_rankings".to_owned()));
-    };
-    if top.score < thresholds.minimum_top_score {
-        return (None, Some("top_score_below_minimum".to_owned()));
+    let rejection = ranking_rejection(ranked.iter().map(|value| value.score), thresholds.policy());
+    if let Some(rejection) = rejection {
+        let reason = match rejection {
+            RankingRejection::FewerThanTwoRankings => "model_returned_fewer_than_two_rankings",
+            RankingRejection::NonFiniteScore => "model_returned_non_finite_score",
+            RankingRejection::TopScoreBelowMinimum => "top_score_below_minimum",
+            RankingRejection::TopTwoMarginBelowMinimum => "top_two_margin_below_minimum",
+        };
+        return (None, Some(reason.to_owned()));
     }
-    let second_score = ranked.get(1).map_or(0.0, |value| value.score);
-    if top.score < second_score + thresholds.minimum_top_two_margin {
-        return (None, Some("top_two_margin_below_minimum".to_owned()));
-    }
-    (Some(top.slug.clone()), None)
-}
-
-fn count_non_whitespace(input: &[u8]) -> usize {
-    input
-        .iter()
-        .filter(|byte| !byte.is_ascii_whitespace())
-        .count()
+    (ranked.first().map(|top| top.slug.clone()), None)
 }
 
 fn measure_warm(input: Option<&[u8]>, iterations: usize) -> Result<LatencyStats, AnyError> {
@@ -928,7 +930,13 @@ fn expand_corpus(corpus: Corpus) -> Result<Vec<EvalCase>, AnyError> {
             let case = match family.generator.as_str() {
                 "paste_negative" => generated_negative(&family, index),
                 "dedicated_paste_negative" => generated_dedicated_paste_negative(&family, index),
+                "independent_holdout_paste_negative" => {
+                    generated_independent_holdout_paste_negative(&family, index)
+                }
                 "paste_code" => generated_paste_code(&family, index),
+                "independent_holdout_paste_code" => {
+                    generated_independent_holdout_paste_code(&family, index)
+                }
                 _ => {
                     return Err(invalid(format!(
                         "unknown family generator: {}",
@@ -1205,6 +1213,164 @@ fn generated_dedicated_paste_negative(family: &Family, index: usize) -> EvalCase
     }
 }
 
+fn generated_independent_holdout_paste_negative(family: &Family, index: usize) -> EvalCase {
+    const SUBJECTS: [&str; 10] = [
+        "the design group",
+        "our neighbor",
+        "the evening class",
+        "a museum guide",
+        "the clinic receptionist",
+        "the volunteer team",
+        "the train conductor",
+        "the building manager",
+        "the local baker",
+        "the school librarian",
+    ];
+    const ACTIVITIES: [&str; 10] = [
+        "confirmed the revised schedule",
+        "moved the appointment",
+        "found the missing parcel",
+        "prepared the visitor badges",
+        "reserved a quieter room",
+        "returned the borrowed equipment",
+        "reviewed the printed map",
+        "cancelled the afternoon delivery",
+        "shared the meeting summary",
+        "reported a broken window",
+    ];
+    const TIMES: [&str; 4] = [
+        "before breakfast",
+        "shortly after noon",
+        "during the evening",
+        "early next week",
+    ];
+    const LIST_TITLES: [&str; 10] = [
+        "Items beside the door",
+        "Things to discuss",
+        "Stops on the walk",
+        "Names for the table",
+        "Food for the picnic",
+        "Rooms to inspect",
+        "Calls to return",
+        "Gifts to wrap",
+        "Plants to water",
+        "Documents to bring",
+    ];
+    const LIST_ITEMS: [[&str; 3]; 10] = [
+        ["blue umbrella", "canvas bag", "spare keys"],
+        ["arrival time", "seating plan", "dietary notes"],
+        ["post office", "public garden", "corner shop"],
+        ["Mara", "Tomas", "Yuki"],
+        ["bread rolls", "pears", "sparkling water"],
+        ["front office", "west stairwell", "storage room"],
+        ["dentist", "electrician", "music teacher"],
+        ["striped scarf", "wooden puzzle", "recipe book"],
+        ["fern", "rosemary", "small lemon tree"],
+        ["train ticket", "museum pass", "hotel address"],
+    ];
+    const URL_HOSTS: [&str; 10] = [
+        "library.example.invalid",
+        "events.example.invalid",
+        "travel.example.invalid",
+        "recipes.example.invalid",
+        "gallery.example.invalid",
+        "weather.example.invalid",
+        "transit.example.invalid",
+        "catalog.example.invalid",
+        "school.example.invalid",
+        "garden.example.invalid",
+    ];
+    const URL_PATHS: [&str; 10] = [
+        "reading-rooms",
+        "autumn-calendar",
+        "coastal-routes",
+        "soup-collection",
+        "new-exhibitions",
+        "weekly-outlook",
+        "station-access",
+        "linen-notebooks",
+        "family-evening",
+        "winter-pruning",
+    ];
+    const URL_SUFFIXES: [&str; 4] = [
+        "?display=compact",
+        "?language=en#details",
+        "/printable",
+        "?from=newsletter&mode=reader",
+    ];
+
+    let generation_index = family.start_index + index;
+    let variant = generation_index % 3;
+    let combination = generation_index / 3;
+    let first = combination % 10;
+    let second = (combination / 10) % 10;
+    let style = (combination / 100) % 4;
+    let (kind, text) = match variant {
+        0 => {
+            let text = match style {
+                0 => format!(
+                    "{} {} {}.",
+                    SUBJECTS[first], ACTIVITIES[second], TIMES[style]
+                ),
+                1 => format!(
+                    "{}: {} said that {}.",
+                    TIMES[style], SUBJECTS[first], ACTIVITIES[second]
+                ),
+                2 => format!(
+                    "A handwritten note explains that {} {} {}.",
+                    SUBJECTS[first], ACTIVITIES[second], TIMES[style]
+                ),
+                _ => format!(
+                    "Please remember: {} {}, {}.",
+                    SUBJECTS[first], ACTIVITIES[second], TIMES[style]
+                ),
+            };
+            ("prose", text)
+        }
+        1 => {
+            let items = LIST_ITEMS[second];
+            let text = match style {
+                0 => format!(
+                    "{}\n• {}\n• {}\n• {}",
+                    LIST_TITLES[first], items[0], items[1], items[2]
+                ),
+                1 => format!(
+                    "{}:\n(a) {}\n(b) {}\n(c) {}",
+                    LIST_TITLES[first], items[0], items[1], items[2]
+                ),
+                2 => format!(
+                    "{} — {}, {}, and {}.",
+                    LIST_TITLES[first], items[0], items[1], items[2]
+                ),
+                _ => format!(
+                    "{}\n□ {}\n□ {}\n□ {}",
+                    LIST_TITLES[first], items[0], items[1], items[2]
+                ),
+            };
+            ("list", text)
+        }
+        _ => (
+            "url",
+            format!(
+                "https://{}/{}/{}{}",
+                URL_HOSTS[first],
+                URL_PATHS[second],
+                first + second + 1,
+                URL_SUFFIXES[style]
+            ),
+        ),
+    };
+    EvalCase {
+        id: format!("{}-{index:04}", family.id_prefix),
+        split: family.split,
+        surface: "paste".to_owned(),
+        kind: kind.to_owned(),
+        expected: None,
+        useful_code: false,
+        input: text.into_bytes(),
+    }
+}
+
 fn generated_paste_code(family: &Family, index: usize) -> EvalCase {
     let generation_index = family.start_index + index;
     let variant = generation_index % 12;
@@ -1280,6 +1446,97 @@ fn generated_paste_code(family: &Family, index: usize) -> EvalCase {
             "ruby",
             format!(
                 "def total_{serial}(values)\n  values.select {{ |value| value.positive? }}.sum\nend\n\nputs total_{serial}([1, -2, 3])"
+            ),
+        ),
+    };
+    EvalCase {
+        id: format!("{}-{index:04}", family.id_prefix),
+        split: family.split,
+        surface: "paste".to_owned(),
+        kind: "code".to_owned(),
+        expected: Some(expected.to_owned()),
+        useful_code: true,
+        input: text.into_bytes(),
+    }
+}
+
+fn generated_independent_holdout_paste_code(family: &Family, index: usize) -> EvalCase {
+    let generation_index = family.start_index + index;
+    let variant = generation_index % 12;
+    let name = [
+        "amber", "birch", "cedar", "dune", "elm", "fjord", "grove", "harbor", "iris", "juniper",
+    ][(generation_index / 12) % 10];
+    let (expected, text) = match variant {
+        0 => (
+            "rust",
+            format!(
+                "enum Signal {{ Ready, Waiting }}\nfn describe_{name}(value: Signal) -> &'static str {{ match value {{ Signal::Ready => \"ready\", Signal::Waiting => \"waiting\" }} }}"
+            ),
+        ),
+        1 => (
+            "python",
+            format!(
+                "from pathlib import Path\n\ndef names_{name}(root):\n    return sorted(path.stem for path in Path(root).glob(\"*.txt\"))\n\nprint(names_{name}(\"notes\"))"
+            ),
+        ),
+        2 => (
+            "javascript",
+            format!(
+                "async function load{name}(url) {{\n  const response = await fetch(url);\n  if (!response.ok) throw new Error(response.statusText);\n  return response.json();\n}}"
+            ),
+        ),
+        3 => (
+            "typescript",
+            format!(
+                "type Entry{name} = {{ label: string; count: number }};\nfunction labels{name}(entries: Entry{name}[]): string[] {{\n  return entries.filter((entry) => entry.count > 0).map((entry) => entry.label);\n}}"
+            ),
+        ),
+        4 => (
+            "swift",
+            format!(
+                "enum Route{name}: String, CaseIterable {{ case home, archive, settings }}\nlet labels{name} = Route{name}.allCases.map(\\.rawValue)\nprint(labels{name}.joined(separator: \", \"))"
+            ),
+        ),
+        5 => (
+            "go",
+            format!(
+                "package main\nimport (\"fmt\"; \"strings\")\nfunc main() {{ words{name} := []string{{\"north\", \"south\"}}; fmt.Println(strings.Join(words{name}, \",\")) }}"
+            ),
+        ),
+        6 => (
+            "shell",
+            format!(
+                "#!/bin/sh\nset -eu\ndestination='{name}-archive'\nmkdir -p \"$destination\"\nfind notes -type f -name '*.md' -exec cp {{}} \"$destination\" \\;"
+            ),
+        ),
+        7 => (
+            "sql",
+            format!(
+                "WITH recent_{name} AS (\n  SELECT customer_id, MAX(created_at) AS latest\n  FROM orders GROUP BY customer_id\n)\nSELECT customer_id, latest FROM recent_{name} WHERE latest IS NOT NULL;"
+            ),
+        ),
+        8 => (
+            "json",
+            format!(
+                "{{\"workspace\":\"{name}\",\"members\":[{{\"name\":\"Ada\",\"active\":true}},{{\"name\":\"Lin\",\"active\":false}}],\"limit\":12}}"
+            ),
+        ),
+        9 => (
+            "yaml",
+            format!(
+                "service_{name}:\n  image: example.invalid/worker:1\n  environment:\n    MODE: batch\n    RETRIES: '4'\n  ports:\n    - '8080:8080'"
+            ),
+        ),
+        10 => (
+            "toml",
+            format!(
+                "[workspace.{name}]\nroot = \"./documents\"\nexclude = [\"drafts\", \"tmp\"]\n\n[workspace.{name}.display]\nline_numbers = true"
+            ),
+        ),
+        _ => (
+            "ruby",
+            format!(
+                "class Ledger{name}\n  def initialize\n    @entries = Hash.new(0)\n  end\n  def add(label)\n    @entries[label] += 1\n  end\nend"
             ),
         ),
     };
@@ -1607,7 +1864,7 @@ mod tests {
         }
     }
 
-    fn ranked(top: f64, second: f64) -> Vec<RankedValue> {
+    fn ranked(top: f32, second: f32) -> Vec<RankedValue> {
         vec![
             RankedValue {
                 score: top,
@@ -1644,26 +1901,76 @@ mod tests {
         }
     }
 
+    fn evaluate_with_policy(input: &[u8], policy: DetectionPolicy) -> Option<String> {
+        if eligibility_rejection(input, policy).is_some() {
+            return None;
+        }
+        let detection = betlang::detect(input);
+        let ranked = collect_ranked(&detection).expect("fixture rankings must be finite");
+        let thresholds = Thresholds {
+            minimum_non_whitespace_bytes: policy.minimum_non_whitespace_bytes,
+            minimum_top_score: policy.minimum_top_score,
+            minimum_top_two_margin: policy.minimum_top_two_margin,
+            maximum_input_bytes: policy.maximum_input_bytes,
+        };
+        decide(&ranked, &thresholds).0
+    }
+
+    #[test]
+    fn evaluator_matches_the_production_adapter_across_eligibility_and_paste_policy() {
+        let policy = companion_language_detection_policy::PRODUCTION_POLICY;
+        let oversized = vec![b'x'; policy.maximum_input_bytes + 1];
+        let fixtures: [&[u8]; 7] = [
+            b"def total(values):\n    return sum(values)\nprint(total([1, 2, 3]))",
+            b"# Meeting notes\n\n- confirm attendance\n- reserve a room\n- send directions",
+            b"fn x() {}",
+            b"fn main() {\0 println!(\"no\"); }",
+            &[0xff; 20],
+            b"                    ",
+            &oversized,
+        ];
+
+        for input in fixtures {
+            let production = companion_core::detect_source_language(input).map(str::to_owned);
+            let evaluator = evaluate_with_policy(input, policy);
+            assert_eq!(evaluator, production, "adapter drift for {input:?}");
+
+            let production_paste = production.filter(|slug| slug != "markdown");
+            let evaluator_paste = evaluator.filter(|slug| slug != "markdown");
+            assert_eq!(evaluator_paste, production_paste, "paste-policy drift");
+        }
+    }
+
+    #[test]
+    fn production_policy_matches_the_committed_external_baseline_shape() {
+        let baseline: Thresholds = serde_json::from_str(include_str!("../data/zed-baseline.json"))
+            .expect("baseline must parse");
+        assert_eq!(
+            baseline.policy(),
+            companion_language_detection_policy::PRODUCTION_POLICY
+        );
+    }
+
     #[test]
     fn threshold_edges_are_inclusive() {
         let config = thresholds();
-        assert_eq!(eligibility_reason(b"a b c", 3, &config), None);
+        assert_eq!(eligibility_reason(b"a b c", &config), None);
         assert_eq!(
             decide(&ranked(0.7, 0.5), &config).0.as_deref(),
             Some("rust")
         );
         assert_eq!(
-            eligibility_reason(b"abcdef", 6, &config).as_deref(),
+            eligibility_reason(b"abcdef", &config).as_deref(),
             Some("input_exceeds_maximum_bytes")
         );
         assert_eq!(decide(&ranked(0.699, 0.1), &config).0, None);
         assert_eq!(decide(&ranked(0.8, 0.601), &config).0, None);
         assert_eq!(
-            eligibility_reason(b"abc\0d", 5, &config).as_deref(),
+            eligibility_reason(b"abc\0d", &config).as_deref(),
             Some("input_contains_nul")
         );
         assert_eq!(
-            eligibility_reason(&[0xff, 0xfe, b'a'], 3, &config).as_deref(),
+            eligibility_reason(&[0xff, 0xfe, b'a'], &config).as_deref(),
             Some("input_is_not_utf8")
         );
     }
@@ -1693,6 +2000,46 @@ mod tests {
             .map(|case| case.kind.as_str())
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(kinds.len(), 10);
+    }
+
+    #[test]
+    fn generated_family_implementations_are_split_specific() {
+        let corpus: Corpus =
+            serde_json::from_str(include_str!("../data/corpus.json")).expect("corpus must parse");
+        let tune = corpus
+            .families
+            .iter()
+            .filter(|family| family.split == Split::Tune)
+            .map(|family| family.generator.as_str())
+            .collect::<BTreeSet<_>>();
+        let holdout = corpus
+            .families
+            .iter()
+            .filter(|family| family.split == Split::Holdout)
+            .map(|family| family.generator.as_str())
+            .collect::<BTreeSet<_>>();
+        assert!(tune.is_disjoint(&holdout));
+    }
+
+    #[test]
+    fn independent_holdout_negative_family_is_unique_and_gate_scoped() {
+        let family = Family {
+            id_prefix: "holdout-negative".to_owned(),
+            split: Split::Holdout,
+            generator: "independent_holdout_paste_negative".to_owned(),
+            count: 1_200,
+            start_index: 600,
+        };
+        let cases = (0..family.count)
+            .map(|index| generated_independent_holdout_paste_negative(&family, index))
+            .collect::<Vec<_>>();
+        let inputs = cases
+            .iter()
+            .map(|case| case.input.as_slice())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(inputs.len(), 1_200);
+        assert!(cases.iter().all(is_dedicated_paste_negative_case));
     }
 
     #[test]

@@ -87,6 +87,9 @@ if ! cmp -s THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PART
   echo "CompanionCore.xcframework is missing the canonical third-party notices." >&2
   exit 1
 fi
+if [[ "$CONFIG" == "release" ]]; then
+  scripts/verify-release-core.sh
+fi
 
 # The app's marketing version is the product's own number and it lives
 # in shell/OnetimePad-Info.plist, edited by hand when user visible work
@@ -346,5 +349,13 @@ fi
 echo "==> Verifying"
 plutil -lint "$APP/Contents/Info.plist"
 codesign --verify --strict "$APP"
+cmp -s THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md" || {
+  echo "signed app third-party notices do not match the canonical notice" >&2
+  exit 1
+}
+cmp -s THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PARTY_NOTICES.md || {
+  echo "final xcframework third-party notices do not match the canonical notice" >&2
+  exit 1
+}
 
 echo "Built $APP. Launch with: open $APP"

@@ -109,6 +109,23 @@ class BetlangVerificationTests(unittest.TestCase):
         with self.assertRaisesRegex(VERIFY.VerificationError, "must declare"):
             VERIFY.verify(self.root, self.metadata)
 
+    def test_rejects_lockfile_version_drift(self):
+        lock = self.root / "Cargo.lock"
+        lock.write_text(
+            lock.read_text().replace('version = "0.1.1"', 'version = "0.1.2"')
+        )
+        with self.assertRaisesRegex(
+            VERIFY.VerificationError, "Cargo.lock betlang version drifted"
+        ):
+            VERIFY.verify(self.root, self.metadata)
+
+    def test_rejects_resolved_version_drift(self):
+        self.metadata["packages"][2]["version"] = "0.1.2"
+        with self.assertRaisesRegex(
+            VERIFY.VerificationError, "resolved betlang version drifted"
+        ):
+            VERIFY.verify(self.root, self.metadata)
+
     def test_rejects_lock_checksum_drift(self):
         lock = self.root / "Cargo.lock"
         lock.write_text(
@@ -116,6 +133,20 @@ class BetlangVerificationTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             VERIFY.VerificationError, "package checksum drifted"
+        ):
+            VERIFY.verify(self.root, self.metadata)
+
+    def test_rejects_missing_resolved_manifest(self):
+        (self.package / "Cargo.toml").unlink()
+        with self.assertRaisesRegex(
+            VERIFY.VerificationError, "resolved betlang manifest is missing"
+        ):
+            VERIFY.verify(self.root, self.metadata)
+
+    def test_rejects_missing_model(self):
+        (self.package / "assets/magika/source-student-q4.bin").unlink()
+        with self.assertRaisesRegex(
+            VERIFY.VerificationError, "resolved Betlang model is missing"
         ):
             VERIFY.verify(self.root, self.metadata)
 

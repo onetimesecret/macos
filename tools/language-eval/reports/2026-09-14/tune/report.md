@@ -3,10 +3,10 @@
 - Split: `tune`
 - Platform: `macos/aarch64`
 - Profile: `release`
-- Executable size: 742608 bytes
-- Whole-process max RSS proxy: 6864896 bytes (/usr/bin/time)
-- Cold first eligible inference: 1962375 ns
-- Warm p50/p95/p99/max: 780084 ns/820375 ns/868041 ns/876042 ns
+- Executable size: 759360 bytes
+- Whole-process max RSS proxy: 7143424 bytes (/usr/bin/time)
+- Cold first eligible inference: 1549833 ns
+- Warm p50/p95/p99/max: 781292 ns/823416 ns/826458 ns/840875 ns
 
 ## Automatic-paste gate
 

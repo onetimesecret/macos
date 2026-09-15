@@ -2,5 +2,5 @@
   "minimum_non_whitespace_bytes": 20,
   "minimum_top_score": 0.2,
   "minimum_top_two_margin": 0.2,
-  "maximum_input_bytes": 16384
+  "maximum_input_bytes": 4194304
 }

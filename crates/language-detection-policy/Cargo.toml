@@ -1,0 +1,12 @@
+[package]
+name = "companion-language-detection-policy"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Shared pure eligibility and ranking policy for Companion source-language detection"
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true

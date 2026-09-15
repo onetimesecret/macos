@@ -1,6 +1,6 @@
 {
   "schema_version": 4,
-  "split": "tune",
+  "split": "holdout",
   "thresholds": {
     "minimum_non_whitespace_bytes": 20,
     "minimum_top_score": 0.4,
@@ -15,7 +15,7 @@
     "executable_size_bytes": 759360,
     "process_max_rss_whole_process_proxy": {
       "metric": "maximum resident set size (whole-process proxy)",
-      "bytes": 7143424,
+      "bytes": 8863744,
       "source": "/usr/bin/time"
     },
     "artifact": {
@@ -28,103 +28,101 @@
     }
   },
   "automatic_paste_gate": {
-    "status": "insufficient_evidence",
+    "status": "pass",
     "requirements": [
       "at least 99% automatic-paste code precision on held-out conversions",
       "zero conversions over at least 1,000 dedicated prose/list/URL paste negatives",
       "report useful-code coverage and uncertainty",
       "at least one automatic paste conversion (all-abstain is forbidden)"
     ],
-    "reasons": [
-      "the gate can be concluded only from the holdout split"
-    ]
+    "reasons": []
   },
   "metrics": {
-    "total_cases": 734,
-    "eligible_cases": 733,
+    "total_cases": 1334,
+    "eligible_cases": 1333,
     "useful_code_cases": 125,
     "eligible_useful_code_cases": 125,
-    "accepted_cases": 246,
+    "accepted_cases": 211,
     "accepted_precision": {
-      "numerator": 113,
-      "denominator": 246,
-      "rate": 0.45934959349593496,
+      "numerator": 105,
+      "denominator": 211,
+      "rate": 0.4976303317535545,
       "wilson_95_percent": {
-        "lower": 0.3981775327012739,
-        "upper": 0.5217717019277412
+        "lower": 0.4308145673092542,
+        "upper": 0.5645308375977445
       }
     },
     "exact_label_precision_where_defined": {
-      "numerator": 107,
-      "denominator": 113,
-      "rate": 0.9469026548672568,
+      "numerator": 105,
+      "denominator": 105,
+      "rate": 1.0,
       "wilson_95_percent": {
-        "lower": 0.8889787873352814,
-        "upper": 0.9754404095783368
+        "lower": 0.96470592307089,
+        "upper": 1.0
       }
     },
     "useful_code_coverage": {
-      "numerator": 113,
+      "numerator": 105,
       "denominator": 125,
-      "rate": 0.904,
+      "rate": 0.84,
       "wilson_95_percent": {
-        "lower": 0.8396803879985666,
-        "upper": 0.9442287738851058
+        "lower": 0.7657538554890242,
+        "upper": 0.8939716767893138
       }
     },
     "exact_useful_code_coverage": {
-      "numerator": 107,
+      "numerator": 105,
       "denominator": 125,
-      "rate": 0.856,
+      "rate": 0.84,
       "wilson_95_percent": {
-        "lower": 0.7838403899326721,
-        "upper": 0.9069310497469996
+        "lower": 0.7657538554890242,
+        "upper": 0.8939716767893138
       }
     },
     "abstention": {
-      "numerator": 488,
-      "denominator": 734,
-      "rate": 0.6648501362397821,
+      "numerator": 1123,
+      "denominator": 1334,
+      "rate": 0.8418290854572713,
       "wilson_95_percent": {
-        "lower": 0.6299207966347898,
-        "upper": 0.6980629417509511
+        "lower": 0.821269598899546,
+        "upper": 0.8604255257260034
       }
     },
     "negative_false_conversions": {
-      "numerator": 133,
-      "denominator": 609,
-      "rate": 0.21839080459770116,
+      "numerator": 106,
+      "denominator": 1209,
+      "rate": 0.08767576509511993,
       "wilson_95_percent": {
-        "lower": 0.18739800095343967,
-        "upper": 0.25291401602393115
+        "lower": 0.07301126986128532,
+        "upper": 0.10495218715194
       }
     },
-    "automatic_paste_conversions": 111,
+    "automatic_paste_conversions": 103,
     "automatic_paste_precision": {
-      "numerator": 110,
-      "denominator": 111,
-      "rate": 0.990990990990991,
+      "numerator": 102,
+      "denominator": 103,
+      "rate": 0.9902912621359224,
       "wilson_95_percent": {
-        "lower": 0.950726667364727,
-        "upper": 0.9984079145129328
+        "lower": 0.9470418081674632,
+        "upper": 0.99828410852095
       }
     },
     "automatic_paste_useful_code_coverage": {
-      "numerator": 110,
+      "numerator": 102,
       "denominator": 122,
-      "rate": 0.9016393442622952,
+      "rate": 0.8360655737704918,
       "wilson_95_percent": {
-        "lower": 0.8359226807162072,
-        "upper": 0.942834979266389
+        "lower": 0.7603151063673728,
+        "upper": 0.8912984458629629
       }
     },
     "dedicated_paste_negative_conversions": {
       "numerator": 0,
-      "denominator": 603,
+      "denominator": 1203,
       "rate": 0.0,
       "wilson_95_percent": {
         "lower": 0.0,
-        "upper": 0.006330251113955574
+        "upper": 0.003183068324855144
       }
     }
   },
@@ -290,91 +288,91 @@
       }
     },
     "paste": {
-      "total_cases": 728,
-      "eligible_cases": 728,
+      "total_cases": 1328,
+      "eligible_cases": 1328,
       "useful_code_cases": 122,
       "eligible_useful_code_cases": 122,
-      "accepted_cases": 242,
+      "accepted_cases": 207,
       "accepted_precision": {
-        "numerator": 110,
-        "denominator": 242,
-        "rate": 0.4545454545454546,
+        "numerator": 102,
+        "denominator": 207,
+        "rate": 0.4927536231884058,
         "wilson_95_percent": {
-          "lower": 0.39300895707094574,
-          "upper": 0.5175024753557312
+          "lower": 0.4254025059904806,
+          "upper": 0.5603687933698065
         }
       },
       "exact_label_precision_where_defined": {
-        "numerator": 104,
-        "denominator": 110,
-        "rate": 0.9454545454545454,
+        "numerator": 102,
+        "denominator": 102,
+        "rate": 1.0,
         "wilson_95_percent": {
-          "lower": 0.8860821392400117,
-          "upper": 0.9747641729488964
+          "lower": 0.9637055378535369,
+          "upper": 1.0
         }
       },
       "useful_code_coverage": {
-        "numerator": 110,
+        "numerator": 102,
         "denominator": 122,
-        "rate": 0.9016393442622952,
+        "rate": 0.8360655737704918,
         "wilson_95_percent": {
-          "lower": 0.8359226807162072,
-          "upper": 0.942834979266389
+          "lower": 0.7603151063673728,
+          "upper": 0.8912984458629629
         }
       },
       "exact_useful_code_coverage": {
-        "numerator": 104,
+        "numerator": 102,
         "denominator": 122,
-        "rate": 0.8524590163934426,
+        "rate": 0.8360655737704918,
         "wilson_95_percent": {
-          "lower": 0.7788100522620708,
-          "upper": 0.90458952690633
+          "lower": 0.7603151063673728,
+          "upper": 0.8912984458629629
         }
       },
       "abstention": {
-        "numerator": 486,
-        "denominator": 728,
-        "rate": 0.6675824175824175,
+        "numerator": 1121,
+        "denominator": 1328,
+        "rate": 0.8441265060240963,
         "wilson_95_percent": {
-          "lower": 0.6325616161749569,
-          "upper": 0.7008439282351494
+          "lower": 0.8236276431711446,
+          "upper": 0.8626402259859843
         }
       },
       "negative_false_conversions": {
-        "numerator": 132,
-        "denominator": 606,
-        "rate": 0.21782178217821785,
+        "numerator": 105,
+        "denominator": 1206,
+        "rate": 0.08706467661691543,
         "wilson_95_percent": {
-          "lower": 0.18679112638733875,
-          "upper": 0.2524073815964305
+          "lower": 0.07243542775055664,
+          "upper": 0.1043162096326906
         }
       },
-      "automatic_paste_conversions": 111,
+      "automatic_paste_conversions": 103,
       "automatic_paste_precision": {
-        "numerator": 110,
-        "denominator": 111,
-        "rate": 0.990990990990991,
+        "numerator": 102,
+        "denominator": 103,
+        "rate": 0.9902912621359224,
         "wilson_95_percent": {
-          "lower": 0.950726667364727,
-          "upper": 0.9984079145129328
+          "lower": 0.9470418081674632,
+          "upper": 0.99828410852095
         }
       },
       "automatic_paste_useful_code_coverage": {
-        "numerator": 110,
+        "numerator": 102,
         "denominator": 122,
-        "rate": 0.9016393442622952,
+        "rate": 0.8360655737704918,
         "wilson_95_percent": {
-          "lower": 0.8359226807162072,
-          "upper": 0.942834979266389
+          "lower": 0.7603151063673728,
+          "upper": 0.8912984458629629
         }
       },
       "dedicated_paste_negative_conversions": {
         "numerator": 0,
-        "denominator": 603,
+        "denominator": 1203,
         "rate": 0.0,
         "wilson_95_percent": {
           "lower": 0.0,
-          "upper": 0.006330251113955574
+          "upper": 0.003183068324855144
         }
       }
     }
@@ -453,50 +451,50 @@
       "eligible_cases": 124,
       "useful_code_cases": 124,
       "eligible_useful_code_cases": 124,
-      "accepted_cases": 112,
+      "accepted_cases": 104,
       "accepted_precision": {
-        "numerator": 112,
-        "denominator": 112,
+        "numerator": 104,
+        "denominator": 104,
         "rate": 1.0,
         "wilson_95_percent": {
-          "lower": 0.9668386529330562,
+          "lower": 0.964378645627548,
           "upper": 1.0
         }
       },
       "exact_label_precision_where_defined": {
-        "numerator": 106,
-        "denominator": 112,
-        "rate": 0.9464285714285714,
+        "numerator": 104,
+        "denominator": 104,
+        "rate": 1.0,
         "wilson_95_percent": {
-          "lower": 0.8880297362776991,
-          "upper": 0.975219060983958
+          "lower": 0.964378645627548,
+          "upper": 1.0
         }
       },
       "useful_code_coverage": {
-        "numerator": 112,
+        "numerator": 104,
         "denominator": 124,
-        "rate": 0.9032258064516128,
+        "rate": 0.8387096774193549,
         "wilson_95_percent": {
-          "lower": 0.8384470662529209,
-          "upper": 0.9437717923433068
+          "lower": 0.7639684956453251,
+          "upper": 0.8930953455755063
         }
       },
       "exact_useful_code_coverage": {
-        "numerator": 106,
+        "numerator": 104,
         "denominator": 124,
-        "rate": 0.8548387096774194,
+        "rate": 0.8387096774193549,
         "wilson_95_percent": {
-          "lower": 0.7821891669914196,
-          "upper": 0.9061634285732608
+          "lower": 0.7639684956453251,
+          "upper": 0.8930953455755063
         }
       },
       "abstention": {
-        "numerator": 12,
+        "numerator": 20,
         "denominator": 124,
-        "rate": 0.0967741935483871,
+        "rate": 0.16129032258064516,
         "wilson_95_percent": {
-          "lower": 0.056228207656693285,
-          "upper": 0.16155293374707905
+          "lower": 0.10690465442449376,
+          "upper": 0.236031504354675
         }
       },
       "negative_false_conversions": {
@@ -505,23 +503,23 @@
         "rate": null,
         "wilson_95_percent": null
       },
-      "automatic_paste_conversions": 110,
+      "automatic_paste_conversions": 102,
       "automatic_paste_precision": {
-        "numerator": 110,
-        "denominator": 110,
+        "numerator": 102,
+        "denominator": 102,
         "rate": 1.0,
         "wilson_95_percent": {
-          "lower": 0.9662560647018358,
+          "lower": 0.9637055378535369,
           "upper": 1.0
         }
       },
       "automatic_paste_useful_code_coverage": {
-        "numerator": 110,
+        "numerator": 102,
         "denominator": 122,
-        "rate": 0.9016393442622952,
+        "rate": 0.8360655737704918,
         "wilson_95_percent": {
-          "lower": 0.8359226807162072,
-          "upper": 0.942834979266389
+          "lower": 0.7603151063673728,
+          "upper": 0.8912984458629629
         }
       },
       "dedicated_paste_negative_conversions": {
@@ -674,18 +672,18 @@
       }
     },
     "list": {
-      "total_cases": 201,
-      "eligible_cases": 201,
+      "total_cases": 401,
+      "eligible_cases": 401,
       "useful_code_cases": 0,
       "eligible_useful_code_cases": 0,
-      "accepted_cases": 106,
+      "accepted_cases": 100,
       "accepted_precision": {
         "numerator": 0,
-        "denominator": 106,
+        "denominator": 100,
         "rate": 0.0,
         "wilson_95_percent": {
           "lower": 0.0,
-          "upper": 0.034972758573472214
+          "upper": 0.03699349820698568
         }
       },
       "exact_label_precision_where_defined": {
@@ -707,21 +705,21 @@
         "wilson_95_percent": null
       },
       "abstention": {
-        "numerator": 95,
-        "denominator": 201,
-        "rate": 0.472636815920398,
+        "numerator": 301,
+        "denominator": 401,
+        "rate": 0.7506234413965087,
         "wilson_95_percent": {
-          "lower": 0.4047792595695876,
-          "upper": 0.5415206737382066
+          "lower": 0.7060334379089527,
+          "upper": 0.7904572144701646
         }
       },
       "negative_false_conversions": {
-        "numerator": 106,
-        "denominator": 201,
-        "rate": 0.527363184079602,
+        "numerator": 100,
+        "denominator": 401,
+        "rate": 0.24937655860349128,
         "wilson_95_percent": {
-          "lower": 0.45847932626179344,
-          "upper": 0.5952207404304124
+          "lower": 0.20954278552983532,
+          "upper": 0.29396656209104727
         }
       },
       "automatic_paste_conversions": 0,
@@ -739,11 +737,11 @@
       },
       "dedicated_paste_negative_conversions": {
         "numerator": 0,
-        "denominator": 201,
+        "denominator": 401,
         "rate": 0.0,
         "wilson_95_percent": {
           "lower": 0.0,
-          "upper": 0.01875332680605788
+          "upper": 0.009488797989920104
         }
       }
     },
@@ -1032,18 +1030,18 @@
       }
     },
     "prose": {
-      "total_cases": 201,
-      "eligible_cases": 201,
+      "total_cases": 401,
+      "eligible_cases": 401,
       "useful_code_cases": 0,
       "eligible_useful_code_cases": 0,
-      "accepted_cases": 25,
+      "accepted_cases": 4,
       "accepted_precision": {
         "numerator": 0,
-        "denominator": 25,
+        "denominator": 4,
         "rate": 0.0,
         "wilson_95_percent": {
           "lower": 0.0,
-          "upper": 0.13319225093904846
+          "upper": 0.4898908364545973
         }
       },
       "exact_label_precision_where_defined": {
@@ -1065,21 +1063,21 @@
         "wilson_95_percent": null
       },
       "abstention": {
-        "numerator": 176,
-        "denominator": 201,
-        "rate": 0.8756218905472637,
+        "numerator": 397,
+        "denominator": 401,
+        "rate": 0.9900249376558604,
         "wilson_95_percent": {
-          "lower": 0.8228392218649249,
-          "upper": 0.9143162390917182
+          "lower": 0.9746361327197296,
+          "upper": 0.9961142473051116
         }
       },
       "negative_false_conversions": {
-        "numerator": 25,
-        "denominator": 201,
-        "rate": 0.12437810945273632,
+        "numerator": 4,
+        "denominator": 401,
+        "rate": 0.00997506234413965,
         "wilson_95_percent": {
-          "lower": 0.08568376090828181,
-          "upper": 0.1771607781350751
+          "lower": 0.003885752694888311,
+          "upper": 0.02536386728027029
         }
       },
       "automatic_paste_conversions": 0,
@@ -1097,17 +1095,17 @@
       },
       "dedicated_paste_negative_conversions": {
         "numerator": 0,
-        "denominator": 201,
+        "denominator": 401,
         "rate": 0.0,
         "wilson_95_percent": {
           "lower": 0.0,
-          "upper": 0.01875332680605788
+          "upper": 0.009488797989920104
         }
       }
     },
     "url": {
-      "total_cases": 201,
-      "eligible_cases": 201,
+      "total_cases": 401,
+      "eligible_cases": 401,
       "useful_code_cases": 0,
       "eligible_useful_code_cases": 0,
       "accepted_cases": 0,
@@ -1136,21 +1134,21 @@
         "wilson_95_percent": null
       },
       "abstention": {
-        "numerator": 201,
-        "denominator": 201,
+        "numerator": 401,
+        "denominator": 401,
         "rate": 1.0,
         "wilson_95_percent": {
-          "lower": 0.981246673193942,
+          "lower": 0.99051120201008,
           "upper": 1.0
         }
       },
       "negative_false_conversions": {
         "numerator": 0,
-        "denominator": 201,
+        "denominator": 401,
         "rate": 0.0,
         "wilson_95_percent": {
           "lower": 0.0,
-          "upper": 0.01875332680605788
+          "upper": 0.009488797989920104
         }
       },
       "automatic_paste_conversions": 0,
@@ -1168,191 +1166,191 @@
       },
       "dedicated_paste_negative_conversions": {
         "numerator": 0,
-        "denominator": 201,
+        "denominator": 401,
         "rate": 0.0,
         "wilson_95_percent": {
           "lower": 0.0,
-          "upper": 0.01875332680605788
+          "upper": 0.009488797989920104
         }
       }
     }
   },
   "by_length_band": {
     "020-079": {
-      "total_cases": 445,
-      "eligible_cases": 444,
-      "useful_code_cases": 41,
-      "eligible_useful_code_cases": 41,
-      "accepted_cases": 147,
+      "total_cases": 1037,
+      "eligible_cases": 1036,
+      "useful_code_cases": 1,
+      "eligible_useful_code_cases": 1,
+      "accepted_cases": 106,
       "accepted_precision": {
-        "numerator": 41,
-        "denominator": 147,
-        "rate": 0.2789115646258503,
+        "numerator": 1,
+        "denominator": 106,
+        "rate": 0.009433962264150945,
         "wilson_95_percent": {
-          "lower": 0.2127534510745994,
-          "upper": 0.3563305361250618
+          "lower": 0.0016672717027588907,
+          "upper": 0.051513548029704405
         }
       },
       "exact_label_precision_where_defined": {
-        "numerator": 41,
-        "denominator": 41,
+        "numerator": 1,
+        "denominator": 1,
         "rate": 1.0,
         "wilson_95_percent": {
-          "lower": 0.914332429815568,
+          "lower": 0.20654931437723745,
           "upper": 1.0
         }
       },
       "useful_code_coverage": {
-        "numerator": 41,
-        "denominator": 41,
+        "numerator": 1,
+        "denominator": 1,
         "rate": 1.0,
         "wilson_95_percent": {
-          "lower": 0.914332429815568,
+          "lower": 0.20654931437723745,
           "upper": 1.0
         }
       },
       "exact_useful_code_coverage": {
-        "numerator": 41,
-        "denominator": 41,
+        "numerator": 1,
+        "denominator": 1,
         "rate": 1.0,
         "wilson_95_percent": {
-          "lower": 0.914332429815568,
+          "lower": 0.20654931437723745,
           "upper": 1.0
         }
       },
       "abstention": {
-        "numerator": 298,
-        "denominator": 445,
-        "rate": 0.6696629213483146,
+        "numerator": 931,
+        "denominator": 1037,
+        "rate": 0.8977820636451301,
         "wilson_95_percent": {
-          "lower": 0.6246746850442002,
-          "upper": 0.7117470002358184
+          "lower": 0.8778518095351017,
+          "upper": 0.9147761099318562
         }
       },
       "negative_false_conversions": {
-        "numerator": 106,
-        "denominator": 404,
-        "rate": 0.2623762376237624,
+        "numerator": 105,
+        "denominator": 1036,
+        "rate": 0.10135135135135136,
         "wilson_95_percent": {
-          "lower": 0.22186029131479051,
-          "upper": 0.30736854050828305
+          "lower": 0.0844218789661039,
+          "upper": 0.12122625807126348
         }
       },
-      "automatic_paste_conversions": 40,
+      "automatic_paste_conversions": 2,
       "automatic_paste_precision": {
-        "numerator": 40,
-        "denominator": 40,
-        "rate": 1.0,
+        "numerator": 1,
+        "denominator": 2,
+        "rate": 0.5,
         "wilson_95_percent": {
-          "lower": 0.9123783988027137,
-          "upper": 1.0
+          "lower": 0.09453120573423074,
+          "upper": 0.9054687942657692
         }
       },
       "automatic_paste_useful_code_coverage": {
-        "numerator": 40,
-        "denominator": 40,
+        "numerator": 1,
+        "denominator": 1,
         "rate": 1.0,
         "wilson_95_percent": {
-          "lower": 0.9123783988027137,
+          "lower": 0.20654931437723745,
           "upper": 1.0
         }
       },
       "dedicated_paste_negative_conversions": {
         "numerator": 0,
-        "denominator": 402,
+        "denominator": 1032,
         "rate": 0.0,
         "wilson_95_percent": {
           "lower": 0.0,
-          "upper": 0.00946541743629827
+          "upper": 0.0037085393599399154
         }
       }
     },
     "080-255": {
-      "total_cases": 289,
-      "eligible_cases": 289,
-      "useful_code_cases": 84,
-      "eligible_useful_code_cases": 84,
-      "accepted_cases": 99,
+      "total_cases": 297,
+      "eligible_cases": 297,
+      "useful_code_cases": 124,
+      "eligible_useful_code_cases": 124,
+      "accepted_cases": 105,
       "accepted_precision": {
-        "numerator": 72,
-        "denominator": 99,
-        "rate": 0.7272727272727273,
+        "numerator": 104,
+        "denominator": 105,
+        "rate": 0.9904761904761904,
         "wilson_95_percent": {
-          "lower": 0.6322907548010729,
-          "upper": 0.8052759669862785
+          "lower": 0.9480137413881105,
+          "upper": 0.9983168307671438
         }
       },
       "exact_label_precision_where_defined": {
-        "numerator": 66,
-        "denominator": 72,
-        "rate": 0.9166666666666666,
+        "numerator": 104,
+        "denominator": 104,
+        "rate": 1.0,
         "wilson_95_percent": {
-          "lower": 0.8298764477932348,
-          "upper": 0.9612475750430504
+          "lower": 0.964378645627548,
+          "upper": 1.0
         }
       },
       "useful_code_coverage": {
-        "numerator": 72,
-        "denominator": 84,
-        "rate": 0.8571428571428571,
+        "numerator": 104,
+        "denominator": 124,
+        "rate": 0.8387096774193549,
         "wilson_95_percent": {
-          "lower": 0.7666989708237691,
-          "upper": 0.9163497945943307
+          "lower": 0.7639684956453251,
+          "upper": 0.8930953455755063
         }
       },
       "exact_useful_code_coverage": {
-        "numerator": 66,
-        "denominator": 84,
-        "rate": 0.7857142857142857,
+        "numerator": 104,
+        "denominator": 124,
+        "rate": 0.8387096774193549,
         "wilson_95_percent": {
-          "lower": 0.6865066777843957,
-          "upper": 0.8599323345500843
+          "lower": 0.7639684956453251,
+          "upper": 0.8930953455755063
         }
       },
       "abstention": {
-        "numerator": 190,
-        "denominator": 289,
-        "rate": 0.657439446366782,
+        "numerator": 192,
+        "denominator": 297,
+        "rate": 0.6464646464646465,
         "wilson_95_percent": {
-          "lower": 0.6009813454852546,
-          "upper": 0.7097670040362487
+          "lower": 0.5905403919519355,
+          "upper": 0.6986484729772605
         }
       },
       "negative_false_conversions": {
-        "numerator": 27,
-        "denominator": 205,
-        "rate": 0.13170731707317074,
+        "numerator": 1,
+        "denominator": 173,
+        "rate": 0.005780346820809248,
         "wilson_95_percent": {
-          "lower": 0.09211952018650224,
-          "upper": 0.1848439675583104
+          "lower": 0.001021102941249569,
+          "upper": 0.03201107661465982
         }
       },
-      "automatic_paste_conversions": 71,
+      "automatic_paste_conversions": 101,
       "automatic_paste_precision": {
-        "numerator": 70,
-        "denominator": 71,
-        "rate": 0.9859154929577464,
+        "numerator": 101,
+        "denominator": 101,
+        "rate": 1.0,
         "wilson_95_percent": {
-          "lower": 0.92443949479751,
-          "upper": 0.9975093967294558
+          "lower": 0.963359353600144,
+          "upper": 1.0
         }
       },
       "automatic_paste_useful_code_coverage": {
-        "numerator": 70,
-        "denominator": 82,
-        "rate": 0.8536585365853658,
+        "numerator": 101,
+        "denominator": 121,
+        "rate": 0.8347107438016529,
         "wilson_95_percent": {
-          "lower": 0.7614058151019909,
-          "upper": 0.9142583778976944
+          "lower": 0.7584457954318083,
+          "upper": 0.8903771257769045
         }
       },
       "dedicated_paste_negative_conversions": {
         "numerator": 0,
-        "denominator": 201,
+        "denominator": 171,
         "rate": 0.0,
         "wilson_95_percent": {
           "lower": 0.0,
-          "upper": 0.01875332680605788
+          "upper": 0.021971097968438207
         }
       }
     }
@@ -1365,11 +1363,11 @@
       "__abstain__": 1
     },
     "__negative__:credential-shaped": {
-      "yaml": 1
+      "ini": 1
     },
     "__negative__:list": {
-      "__abstain__": 95,
-      "markdown": 106
+      "__abstain__": 301,
+      "markdown": 100
     },
     "__negative__:log": {
       "__abstain__": 1
@@ -1381,20 +1379,24 @@
       "__abstain__": 1
     },
     "__negative__:prose": {
-      "__abstain__": 176,
-      "markdown": 25
+      "__abstain__": 397,
+      "markdown": 4
     },
     "__negative__:url": {
-      "__abstain__": 201
+      "__abstain__": 401
     },
     "go": {
-      "go": 10
+      "__abstain__": 10,
+      "go": 1
+    },
+    "html": {
+      "html": 1
     },
     "javascript": {
-      "javascript": 11
+      "javascript": 10
     },
     "json": {
-      "json": 11
+      "json": 10
     },
     "python": {
       "python": 11
@@ -1403,1256 +1405,1052 @@
       "ruby": 10
     },
     "rust": {
-      "__abstain__": 5,
-      "javascript": 6
+      "rust": 10
     },
     "shell": {
-      "shell": 10
+      "shell": 11
     },
     "sql": {
-      "sql": 11
+      "sql": 10
     },
     "swift": {
-      "__abstain__": 6,
-      "swift": 4
+      "__abstain__": 10,
+      "swift": 1
     },
     "toml": {
       "toml": 10
     },
     "typescript": {
-      "__abstain__": 1,
-      "typescript": 9
+      "typescript": 10
     },
     "yaml": {
       "yaml": 10
     }
   },
   "confusion_pairs": {
-    "__negative__:credential-shaped -> yaml": 1,
-    "__negative__:list -> markdown": 106,
+    "__negative__:credential-shaped -> ini": 1,
+    "__negative__:list -> markdown": 100,
     "__negative__:markdown -> markdown": 1,
-    "__negative__:prose -> markdown": 25,
-    "rust -> __abstain__": 5,
-    "rust -> javascript": 6,
-    "swift -> __abstain__": 6,
-    "typescript -> __abstain__": 1
+    "__negative__:prose -> markdown": 4,
+    "go -> __abstain__": 10,
+    "swift -> __abstain__": 10
   },
   "detailed_confusion_cases": [
     {
-      "id": "tune-rust",
-      "surface": "paste",
-      "kind": "code",
-      "expected": "rust",
-      "outcome": "__abstain__",
-      "top_score": 0.2479802
-    },
-    {
-      "id": "tune-list",
+      "id": "holdout-list",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.47322363
+      "top_score": 0.4017047
     },
     {
-      "id": "tune-credential",
+      "id": "holdout-credential",
       "surface": "paste",
       "kind": "credential-shaped",
       "expected": "__negative__:credential-shaped",
-      "outcome": "yaml",
-      "top_score": 0.87807006
+      "outcome": "ini",
+      "top_score": 0.74502677
     },
     {
-      "id": "tune-markdown",
+      "id": "holdout-markdown",
       "surface": "fence",
       "kind": "markdown",
       "expected": "__negative__:markdown",
       "outcome": "markdown",
-      "top_score": 0.9274178
+      "top_score": 0.83968455
     },
     {
-      "id": "tune-dedicated-paste-negative-0007",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.60669667
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0010",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.5461398
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0018",
+      "id": "holdout-dedicated-paste-negative-0336",
       "surface": "paste",
       "kind": "prose",
       "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.4645069
+      "top_score": 0.4303455
     },
     {
-      "id": "tune-dedicated-paste-negative-0019",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.4187814
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0025",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.5011567
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0031",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.64336544
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0034",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.58754677
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0042",
+      "id": "holdout-dedicated-paste-negative-0345",
       "surface": "paste",
       "kind": "prose",
       "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.42793033
+      "top_score": 0.42031163
     },
     {
-      "id": "tune-dedicated-paste-negative-0043",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.44817495
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0049",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.52289754
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0055",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.6481272
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0058",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.5978134
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0066",
+      "id": "holdout-dedicated-paste-negative-0366",
       "surface": "paste",
       "kind": "prose",
       "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.4203807
+      "top_score": 0.40588245
     },
     {
-      "id": "tune-dedicated-paste-negative-0067",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.48015663
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0073",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.5397186
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0079",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.657496
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0082",
-      "surface": "paste",
-      "kind": "list",
-      "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.5871214
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0090",
+      "id": "holdout-dedicated-paste-negative-0456",
       "surface": "paste",
       "kind": "prose",
       "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.43791497
+      "top_score": 0.4090081
     },
     {
-      "id": "tune-dedicated-paste-negative-0091",
+      "id": "holdout-dedicated-paste-negative-0601",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4843212
+      "top_score": 0.63727486
     },
     {
-      "id": "tune-dedicated-paste-negative-0097",
+      "id": "holdout-dedicated-paste-negative-0604",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.55810905
+      "top_score": 0.61940026
     },
     {
-      "id": "tune-dedicated-paste-negative-0103",
+      "id": "holdout-dedicated-paste-negative-0607",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6521133
+      "top_score": 0.66043806
     },
     {
-      "id": "tune-dedicated-paste-negative-0106",
+      "id": "holdout-dedicated-paste-negative-0610",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5925114
+      "top_score": 0.68846464
     },
     {
-      "id": "tune-dedicated-paste-negative-0114",
+      "id": "holdout-dedicated-paste-negative-0613",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
-      "outcome": "markdown",
-      "top_score": 0.43359447
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0115",
-      "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4653315
+      "top_score": 0.66114557
     },
     {
-      "id": "tune-dedicated-paste-negative-0121",
+      "id": "holdout-dedicated-paste-negative-0616",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.53074294
+      "top_score": 0.7194848
     },
     {
-      "id": "tune-dedicated-paste-negative-0124",
+      "id": "holdout-dedicated-paste-negative-0619",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4109794
+      "top_score": 0.65746784
     },
     {
-      "id": "tune-dedicated-paste-negative-0127",
+      "id": "holdout-dedicated-paste-negative-0622",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6464371
+      "top_score": 0.7552532
     },
     {
-      "id": "tune-dedicated-paste-negative-0130",
+      "id": "holdout-dedicated-paste-negative-0625",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.62671703
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0138",
-      "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.45249787
+      "top_score": 0.5548689
     },
     {
-      "id": "tune-dedicated-paste-negative-0139",
+      "id": "holdout-dedicated-paste-negative-0628",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4753402
+      "top_score": 0.77206796
     },
     {
-      "id": "tune-dedicated-paste-negative-0145",
+      "id": "holdout-dedicated-paste-negative-0631",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5494333
+      "top_score": 0.723305
     },
     {
-      "id": "tune-dedicated-paste-negative-0151",
+      "id": "holdout-dedicated-paste-negative-0634",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.67110944
+      "top_score": 0.65445167
     },
     {
-      "id": "tune-dedicated-paste-negative-0154",
+      "id": "holdout-dedicated-paste-negative-0637",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.61632437
+      "top_score": 0.76437443
     },
     {
-      "id": "tune-dedicated-paste-negative-0162",
+      "id": "holdout-dedicated-paste-negative-0640",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
-      "outcome": "markdown",
-      "top_score": 0.43120438
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0163",
-      "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.488443
+      "top_score": 0.72226596
     },
     {
-      "id": "tune-dedicated-paste-negative-0169",
+      "id": "holdout-dedicated-paste-negative-0643",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.54748464
+      "top_score": 0.7586464
     },
     {
-      "id": "tune-dedicated-paste-negative-0175",
+      "id": "holdout-dedicated-paste-negative-0646",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.62757844
+      "top_score": 0.74523795
     },
     {
-      "id": "tune-dedicated-paste-negative-0178",
+      "id": "holdout-dedicated-paste-negative-0649",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6272264
+      "top_score": 0.6134909
     },
     {
-      "id": "tune-dedicated-paste-negative-0186",
+      "id": "holdout-dedicated-paste-negative-0652",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
-      "outcome": "markdown",
-      "top_score": 0.4504596
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0187",
-      "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.47102085
+      "top_score": 0.76267254
     },
     {
-      "id": "tune-dedicated-paste-negative-0193",
+      "id": "holdout-dedicated-paste-negative-0655",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5040958
+      "top_score": 0.5635407
     },
     {
-      "id": "tune-dedicated-paste-negative-0199",
+      "id": "holdout-dedicated-paste-negative-0658",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6458613
+      "top_score": 0.7457078
     },
     {
-      "id": "tune-dedicated-paste-negative-0202",
+      "id": "holdout-dedicated-paste-negative-0661",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.60740536
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0210",
-      "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.46213937
+      "top_score": 0.53783244
     },
     {
-      "id": "tune-dedicated-paste-negative-0211",
+      "id": "holdout-dedicated-paste-negative-0664",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.44844088
+      "top_score": 0.40243456
     },
     {
-      "id": "tune-dedicated-paste-negative-0217",
+      "id": "holdout-dedicated-paste-negative-0667",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.54097563
+      "top_score": 0.548773
     },
     {
-      "id": "tune-dedicated-paste-negative-0223",
+      "id": "holdout-dedicated-paste-negative-0670",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6912714
+      "top_score": 0.58857167
     },
     {
-      "id": "tune-dedicated-paste-negative-0226",
+      "id": "holdout-dedicated-paste-negative-0673",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.58029693
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0234",
-      "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.44621912
+      "top_score": 0.58339286
     },
     {
-      "id": "tune-dedicated-paste-negative-0235",
+      "id": "holdout-dedicated-paste-negative-0676",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.48714066
+      "top_score": 0.53040123
     },
     {
-      "id": "tune-dedicated-paste-negative-0241",
+      "id": "holdout-dedicated-paste-negative-0679",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5472965
+      "top_score": 0.40447113
     },
     {
-      "id": "tune-dedicated-paste-negative-0244",
+      "id": "holdout-dedicated-paste-negative-0682",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.43033332
+      "top_score": 0.5036202
     },
     {
-      "id": "tune-dedicated-paste-negative-0247",
+      "id": "holdout-dedicated-paste-negative-0688",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6551184
+      "top_score": 0.53788936
     },
     {
-      "id": "tune-dedicated-paste-negative-0250",
+      "id": "holdout-dedicated-paste-negative-0691",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.59064335
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0258",
-      "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.45733786
+      "top_score": 0.66016334
     },
     {
-      "id": "tune-dedicated-paste-negative-0259",
+      "id": "holdout-dedicated-paste-negative-0694",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4719138
+      "top_score": 0.61361736
     },
     {
-      "id": "tune-dedicated-paste-negative-0271",
+      "id": "holdout-dedicated-paste-negative-0697",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.65959376
+      "top_score": 0.71538967
     },
     {
-      "id": "tune-dedicated-paste-negative-0274",
+      "id": "holdout-dedicated-paste-negative-0700",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.5879827
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0282",
-      "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.43431115
+      "top_score": 0.7237029
     },
     {
-      "id": "tune-dedicated-paste-negative-0283",
+      "id": "holdout-dedicated-paste-negative-0703",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5169628
+      "top_score": 0.6819686
     },
     {
-      "id": "tune-dedicated-paste-negative-0289",
+      "id": "holdout-dedicated-paste-negative-0706",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.56472844
+      "top_score": 0.69438463
     },
     {
-      "id": "tune-dedicated-paste-negative-0292",
+      "id": "holdout-dedicated-paste-negative-0709",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4152786
+      "top_score": 0.6097036
     },
     {
-      "id": "tune-dedicated-paste-negative-0295",
+      "id": "holdout-dedicated-paste-negative-0712",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6449492
+      "top_score": 0.72233945
     },
     {
-      "id": "tune-dedicated-paste-negative-0298",
+      "id": "holdout-dedicated-paste-negative-0715",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.62712854
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0306",
-      "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.46390796
+      "top_score": 0.5978198
     },
     {
-      "id": "tune-dedicated-paste-negative-0307",
+      "id": "holdout-dedicated-paste-negative-0718",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4396162
+      "top_score": 0.7244208
     },
     {
-      "id": "tune-dedicated-paste-negative-0313",
+      "id": "holdout-dedicated-paste-negative-0721",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5325307
+      "top_score": 0.65259403
     },
     {
-      "id": "tune-dedicated-paste-negative-0316",
+      "id": "holdout-dedicated-paste-negative-0724",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.43858284
+      "top_score": 0.63708115
     },
     {
-      "id": "tune-dedicated-paste-negative-0319",
+      "id": "holdout-dedicated-paste-negative-0727",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6686594
+      "top_score": 0.66139156
     },
     {
-      "id": "tune-dedicated-paste-negative-0322",
+      "id": "holdout-dedicated-paste-negative-0730",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.56512815
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0330",
-      "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.45052582
+      "top_score": 0.68177885
     },
     {
-      "id": "tune-dedicated-paste-negative-0331",
+      "id": "holdout-dedicated-paste-negative-0733",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.48572895
+      "top_score": 0.6500239
     },
     {
-      "id": "tune-dedicated-paste-negative-0337",
+      "id": "holdout-dedicated-paste-negative-0736",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5954959
+      "top_score": 0.7054555
     },
     {
-      "id": "tune-dedicated-paste-negative-0340",
+      "id": "holdout-dedicated-paste-negative-0739",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.41006684
+      "top_score": 0.6258799
     },
     {
-      "id": "tune-dedicated-paste-negative-0343",
+      "id": "holdout-dedicated-paste-negative-0742",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6395602
+      "top_score": 0.7007657
     },
     {
-      "id": "tune-dedicated-paste-negative-0346",
+      "id": "holdout-dedicated-paste-negative-0745",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
-      "outcome": "markdown",
-      "top_score": 0.61176956
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0354",
-      "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
       "outcome": "markdown",
-      "top_score": 0.46721572
+      "top_score": 0.5530437
     },
     {
-      "id": "tune-dedicated-paste-negative-0355",
+      "id": "holdout-dedicated-paste-negative-0748",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.48656982
+      "top_score": 0.701711
     },
     {
-      "id": "tune-dedicated-paste-negative-0361",
+      "id": "holdout-dedicated-paste-negative-0751",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.53722537
+      "top_score": 0.6662772
     },
     {
-      "id": "tune-dedicated-paste-negative-0367",
+      "id": "holdout-dedicated-paste-negative-0754",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.65095407
+      "top_score": 0.6456317
     },
     {
-      "id": "tune-dedicated-paste-negative-0370",
+      "id": "holdout-dedicated-paste-negative-0757",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6577434
+      "top_score": 0.63669
     },
     {
-      "id": "tune-dedicated-paste-negative-0378",
+      "id": "holdout-dedicated-paste-negative-0760",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
-      "outcome": "markdown",
-      "top_score": 0.40764576
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0379",
-      "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.47472444
+      "top_score": 0.64489514
     },
     {
-      "id": "tune-dedicated-paste-negative-0385",
+      "id": "holdout-dedicated-paste-negative-0763",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.52339333
+      "top_score": 0.6614941
     },
     {
-      "id": "tune-dedicated-paste-negative-0388",
+      "id": "holdout-dedicated-paste-negative-0766",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4105068
+      "top_score": 0.7280846
     },
     {
-      "id": "tune-dedicated-paste-negative-0391",
+      "id": "holdout-dedicated-paste-negative-0769",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6390594
+      "top_score": 0.668575
     },
     {
-      "id": "tune-dedicated-paste-negative-0394",
+      "id": "holdout-dedicated-paste-negative-0772",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.63651645
+      "top_score": 0.78846234
     },
     {
-      "id": "tune-dedicated-paste-negative-0402",
+      "id": "holdout-dedicated-paste-negative-0775",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
-      "outcome": "markdown",
-      "top_score": 0.45589438
-    },
-    {
-      "id": "tune-dedicated-paste-negative-0403",
-      "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4598472
+      "top_score": 0.5503001
     },
     {
-      "id": "tune-dedicated-paste-negative-0415",
+      "id": "holdout-dedicated-paste-negative-0778",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.683365
+      "top_score": 0.77453214
     },
     {
-      "id": "tune-dedicated-paste-negative-0418",
+      "id": "holdout-dedicated-paste-negative-0781",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5752806
+      "top_score": 0.72056985
     },
     {
-      "id": "tune-dedicated-paste-negative-0426",
+      "id": "holdout-dedicated-paste-negative-0784",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
+      "kind": "list",
+      "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.44145015
+      "top_score": 0.70864874
     },
     {
-      "id": "tune-dedicated-paste-negative-0433",
+      "id": "holdout-dedicated-paste-negative-0787",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.59862405
+      "top_score": 0.760883
     },
     {
-      "id": "tune-dedicated-paste-negative-0436",
+      "id": "holdout-dedicated-paste-negative-0790",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.44215098
+      "top_score": 0.7630317
     },
     {
-      "id": "tune-dedicated-paste-negative-0439",
+      "id": "holdout-dedicated-paste-negative-0793",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.65264755
+      "top_score": 0.7565615
     },
     {
-      "id": "tune-dedicated-paste-negative-0442",
+      "id": "holdout-dedicated-paste-negative-0796",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6177737
+      "top_score": 0.7146664
     },
     {
-      "id": "tune-dedicated-paste-negative-0450",
+      "id": "holdout-dedicated-paste-negative-0799",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
+      "kind": "list",
+      "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4596735
+      "top_score": 0.6120753
     },
     {
-      "id": "tune-dedicated-paste-negative-0451",
+      "id": "holdout-dedicated-paste-negative-0802",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.46674532
+      "top_score": 0.7545735
     },
     {
-      "id": "tune-dedicated-paste-negative-0457",
+      "id": "holdout-dedicated-paste-negative-0805",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5486667
+      "top_score": 0.64213717
     },
     {
-      "id": "tune-dedicated-paste-negative-0460",
+      "id": "holdout-dedicated-paste-negative-0808",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.42302996
+      "top_score": 0.77731466
     },
     {
-      "id": "tune-dedicated-paste-negative-0463",
+      "id": "holdout-dedicated-paste-negative-0811",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6790708
+      "top_score": 0.6560238
     },
     {
-      "id": "tune-dedicated-paste-negative-0466",
+      "id": "holdout-dedicated-paste-negative-0814",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.61894995
+      "top_score": 0.6875975
     },
     {
-      "id": "tune-dedicated-paste-negative-0474",
+      "id": "holdout-dedicated-paste-negative-0817",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
+      "kind": "list",
+      "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4414317
+      "top_score": 0.6881791
     },
     {
-      "id": "tune-dedicated-paste-negative-0475",
+      "id": "holdout-dedicated-paste-negative-0820",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5049948
+      "top_score": 0.74106044
     },
     {
-      "id": "tune-dedicated-paste-negative-0481",
+      "id": "holdout-dedicated-paste-negative-0823",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5509714
+      "top_score": 0.69336116
     },
     {
-      "id": "tune-dedicated-paste-negative-0484",
+      "id": "holdout-dedicated-paste-negative-0826",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.42870846
+      "top_score": 0.76108086
     },
     {
-      "id": "tune-dedicated-paste-negative-0487",
+      "id": "holdout-dedicated-paste-negative-0829",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6433381
+      "top_score": 0.6966882
     },
     {
-      "id": "tune-dedicated-paste-negative-0490",
+      "id": "holdout-dedicated-paste-negative-0832",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.60667646
+      "top_score": 0.76015
     },
     {
-      "id": "tune-dedicated-paste-negative-0498",
+      "id": "holdout-dedicated-paste-negative-0835",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
+      "kind": "list",
+      "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4529673
+      "top_score": 0.6126935
     },
     {
-      "id": "tune-dedicated-paste-negative-0499",
+      "id": "holdout-dedicated-paste-negative-0838",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.48619616
+      "top_score": 0.7711389
     },
     {
-      "id": "tune-dedicated-paste-negative-0505",
+      "id": "holdout-dedicated-paste-negative-0841",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5905068
+      "top_score": 0.6882154
     },
     {
-      "id": "tune-dedicated-paste-negative-0511",
+      "id": "holdout-dedicated-paste-negative-0844",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.658236
+      "top_score": 0.71190304
     },
     {
-      "id": "tune-dedicated-paste-negative-0514",
+      "id": "holdout-dedicated-paste-negative-0847",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6203143
+      "top_score": 0.755124
     },
     {
-      "id": "tune-dedicated-paste-negative-0522",
+      "id": "holdout-dedicated-paste-negative-0850",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
+      "kind": "list",
+      "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4493611
+      "top_score": 0.73925954
     },
     {
-      "id": "tune-dedicated-paste-negative-0523",
+      "id": "holdout-dedicated-paste-negative-0853",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4529242
+      "top_score": 0.7535238
     },
     {
-      "id": "tune-dedicated-paste-negative-0532",
+      "id": "holdout-dedicated-paste-negative-0856",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.43468276
+      "top_score": 0.77665347
     },
     {
-      "id": "tune-dedicated-paste-negative-0535",
+      "id": "holdout-dedicated-paste-negative-0859",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6144187
+      "top_score": 0.67241204
     },
     {
-      "id": "tune-dedicated-paste-negative-0538",
+      "id": "holdout-dedicated-paste-negative-0862",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5970881
+      "top_score": 0.79112643
     },
     {
-      "id": "tune-dedicated-paste-negative-0546",
+      "id": "holdout-dedicated-paste-negative-0865",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
+      "kind": "list",
+      "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.46056974
+      "top_score": 0.63137084
     },
     {
-      "id": "tune-dedicated-paste-negative-0547",
+      "id": "holdout-dedicated-paste-negative-0868",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.46457666
+      "top_score": 0.80954313
     },
     {
-      "id": "tune-dedicated-paste-negative-0553",
+      "id": "holdout-dedicated-paste-negative-0871",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.5319823
+      "top_score": 0.6550522
     },
     {
-      "id": "tune-dedicated-paste-negative-0559",
+      "id": "holdout-dedicated-paste-negative-0874",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6320052
+      "top_score": 0.68709147
     },
     {
-      "id": "tune-dedicated-paste-negative-0562",
+      "id": "holdout-dedicated-paste-negative-0877",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.62199926
+      "top_score": 0.72180325
     },
     {
-      "id": "tune-dedicated-paste-negative-0570",
+      "id": "holdout-dedicated-paste-negative-0880",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
+      "kind": "list",
+      "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.42095143
+      "top_score": 0.72984564
     },
     {
-      "id": "tune-dedicated-paste-negative-0571",
+      "id": "holdout-dedicated-paste-negative-0883",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4626425
+      "top_score": 0.6962231
     },
     {
-      "id": "tune-dedicated-paste-negative-0577",
+      "id": "holdout-dedicated-paste-negative-0886",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.57889277
+      "top_score": 0.7011721
     },
     {
-      "id": "tune-dedicated-paste-negative-0583",
+      "id": "holdout-dedicated-paste-negative-0889",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.62818056
+      "top_score": 0.6151127
     },
     {
-      "id": "tune-dedicated-paste-negative-0586",
+      "id": "holdout-dedicated-paste-negative-0892",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.6216786
+      "top_score": 0.70858055
     },
     {
-      "id": "tune-dedicated-paste-negative-0594",
+      "id": "holdout-dedicated-paste-negative-0895",
       "surface": "paste",
-      "kind": "prose",
-      "expected": "__negative__:prose",
+      "kind": "list",
+      "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.44829345
+      "top_score": 0.6067638
     },
     {
-      "id": "tune-dedicated-paste-negative-0595",
+      "id": "holdout-dedicated-paste-negative-0898",
       "surface": "paste",
       "kind": "list",
       "expected": "__negative__:list",
       "outcome": "markdown",
-      "top_score": 0.4992778
-    },
-    {
-      "id": "tune-paste-code-0000",
-      "surface": "paste",
-      "kind": "code",
-      "expected": "rust",
-      "outcome": "javascript",
-      "top_score": 0.5262017
+      "top_score": 0.68969965
     },
     {
-      "id": "tune-paste-code-0004",
+      "id": "holdout-paste-code-0004",
       "surface": "paste",
       "kind": "code",
       "expected": "swift",
       "outcome": "__abstain__",
-      "top_score": 0.3862566
+      "top_score": 0.32139575
     },
     {
-      "id": "tune-paste-code-0012",
+      "id": "holdout-paste-code-0005",
       "surface": "paste",
       "kind": "code",
-      "expected": "rust",
-      "outcome": "javascript",
-      "top_score": 0.5059252
+      "expected": "go",
+      "outcome": "__abstain__",
+      "top_score": 0.36206642
     },
     {
-      "id": "tune-paste-code-0016",
+      "id": "holdout-paste-code-0016",
       "surface": "paste",
       "kind": "code",
       "expected": "swift",
       "outcome": "__abstain__",
-      "top_score": 0.36345825
+      "top_score": 0.262028
     },
     {
-      "id": "tune-paste-code-0024",
+      "id": "holdout-paste-code-0017",
       "surface": "paste",
       "kind": "code",
-      "expected": "rust",
-      "outcome": "javascript",
-      "top_score": 0.49935764
+      "expected": "go",
+      "outcome": "__abstain__",
+      "top_score": 0.32177457
     },
     {
-      "id": "tune-paste-code-0028",
+      "id": "holdout-paste-code-0028",
       "surface": "paste",
       "kind": "code",
       "expected": "swift",
       "outcome": "__abstain__",
-      "top_score": 0.39100453
+      "top_score": 0.26448393
     },
     {
-      "id": "tune-paste-code-0036",
+      "id": "holdout-paste-code-0029",
       "surface": "paste",
       "kind": "code",
-      "expected": "rust",
+      "expected": "go",
       "outcome": "__abstain__",
-      "top_score": 0.44128796
+      "top_score": 0.34278205
     },
     {
-      "id": "tune-paste-code-0048",
-      "surface": "paste",
-      "kind": "code",
-      "expected": "rust",
-      "outcome": "__abstain__",
-      "top_score": 0.4365392
-    },
-    {
-      "id": "tune-paste-code-0060",
-      "surface": "paste",
-      "kind": "code",
-      "expected": "rust",
-      "outcome": "javascript",
-      "top_score": 0.44129962
-    },
-    {
-      "id": "tune-paste-code-0064",
+      "id": "holdout-paste-code-0040",
       "surface": "paste",
       "kind": "code",
       "expected": "swift",
       "outcome": "__abstain__",
-      "top_score": 0.3514291
+      "top_score": 0.22543193
     },
     {
-      "id": "tune-paste-code-0072",
+      "id": "holdout-paste-code-0041",
       "surface": "paste",
       "kind": "code",
-      "expected": "rust",
+      "expected": "go",
       "outcome": "__abstain__",
-      "top_score": 0.42019352
+      "top_score": 0.30036634
     },
     {
-      "id": "tune-paste-code-0075",
-      "surface": "paste",
-      "kind": "code",
-      "expected": "typescript",
-      "outcome": "__abstain__",
-      "top_score": 0.43034092
-    },
-    {
-      "id": "tune-paste-code-0076",
+      "id": "holdout-paste-code-0052",
       "surface": "paste",
       "kind": "code",
       "expected": "swift",
       "outcome": "__abstain__",
-      "top_score": 0.30520636
+      "top_score": 0.24376386
     },
     {
-      "id": "tune-paste-code-0084",
+      "id": "holdout-paste-code-0053",
       "surface": "paste",
       "kind": "code",
-      "expected": "rust",
-      "outcome": "javascript",
-      "top_score": 0.4397077
-    },
-    {
-      "id": "tune-paste-code-0096",
-      "surface": "paste",
-      "kind": "code",
-      "expected": "rust",
+      "expected": "go",
       "outcome": "__abstain__",
-      "top_score": 0.43824115
+      "top_score": 0.36534825
     },
     {
-      "id": "tune-paste-code-0100",
+      "id": "holdout-paste-code-0064",
       "surface": "paste",
       "kind": "code",
       "expected": "swift",
       "outcome": "__abstain__",
-      "top_score": 0.3854209
+      "top_score": 0.29961473
     },
     {
-      "id": "tune-paste-code-0108",
+      "id": "holdout-paste-code-0065",
       "surface": "paste",
       "kind": "code",
-      "expected": "rust",
-      "outcome": "javascript",
-      "top_score": 0.46366605
+      "expected": "go",
+      "outcome": "__abstain__",
+      "top_score": 0.33533743
+    },
+    {
+      "id": "holdout-paste-code-0076",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.35477576
+    },
+    {
+      "id": "holdout-paste-code-0077",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "go",
+      "outcome": "__abstain__",
+      "top_score": 0.3227872
+    },
+    {
+      "id": "holdout-paste-code-0088",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.25015265
+    },
+    {
+      "id": "holdout-paste-code-0089",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "go",
+      "outcome": "__abstain__",
+      "top_score": 0.3537834
+    },
+    {
+      "id": "holdout-paste-code-0100",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.13658062
+    },
+    {
+      "id": "holdout-paste-code-0101",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "go",
+      "outcome": "__abstain__",
+      "top_score": 0.312653
+    },
+    {
+      "id": "holdout-paste-code-0112",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "swift",
+      "outcome": "__abstain__",
+      "top_score": 0.25452286
+    },
+    {
+      "id": "holdout-paste-code-0113",
+      "surface": "paste",
+      "kind": "code",
+      "expected": "go",
+      "outcome": "__abstain__",
+      "top_score": 0.36035198
     }
   ],
-  "cold_first_eligible_inference_nanoseconds": 1549833,
+  "cold_first_eligible_inference_nanoseconds": 1619500,
   "warm_latency": {
     "samples": 100,
-    "p50_nanoseconds": 781292,
-    "p95_nanoseconds": 823416,
-    "p99_nanoseconds": 826458,
-    "max_nanoseconds": 840875
+    "p50_nanoseconds": 857208,
+    "p95_nanoseconds": 897083,
+    "p99_nanoseconds": 936416,
+    "max_nanoseconds": 937208
   }
 }

@@ -31,12 +31,22 @@ jobs:
           cargo fetch --locked
           ./scripts/verify-betlang.py
           python3 -m unittest scripts/tests/test_verify_betlang.py
+      - name: Reproduce language threshold selection
+        run: |
+          python3 tools/language-eval/select-thresholds.py \
+            --cases tools/language-eval/reports/2026-09-14/selection/baseline-tune-cases.jsonl \
+            --grid tools/language-eval/data/threshold-grid.json \
+            --output /tmp/threshold-selection.json \
+            --markdown-output /tmp/threshold-selection.md \
+            --expect-candidate tools/language-eval/data/tuned-candidate.json
+          cmp /tmp/threshold-selection.json tools/language-eval/reports/2026-09-14/selection/threshold-selection.json
+          cmp /tmp/threshold-selection.md tools/language-eval/reports/2026-09-14/selection/threshold-selection.md
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-sync -p companion-transport --all-targets -- -D warnings
+        run: cargo clippy -p companion-core -p language-eval -p ots-client -p companion-credentials -p companion-ffi -p companion-sync -p companion-transport --all-targets -- -D warnings
       - name: Test
-        run: cargo test -p companion-core -p ots-client -p companion-credentials -p companion-ffi -p companion-sync -p companion-transport
+        run: cargo test -p companion-core -p language-eval -p ots-client -p companion-credentials -p companion-ffi -p companion-sync -p companion-transport
       # cargo test enables no features on its own (cargo issue 2911),
       # so the gated test seams (ADR-0018) are exercised by name here
       # and stay absent from every run above.
