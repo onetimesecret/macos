@@ -26,6 +26,11 @@ jobs:
       - name: Install pinned toolchain
         run: rustup show # respects rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
+      - name: Verify pinned Betlang package and model
+        run: |
+          cargo fetch --locked
+          ./scripts/verify-betlang.py
+          python3 -m unittest scripts/tests/test_verify_betlang.py
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
@@ -125,6 +130,8 @@ jobs:
           # empty file means the hash pipeline broke silently.
           test -s dist/OnetimePad.presig.sha256 \
             || { echo "dist/OnetimePad.presig.sha256 is missing or empty" >&2; exit 1; }
+          cmp THIRD_PARTY_NOTICES.md dist/OnetimePad.app/Contents/Resources/THIRD_PARTY_NOTICES.md
+          cmp THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PARTY_NOTICES.md
           cat dist/OnetimePad.presig.sha256
 
   # The release lane, which exists for the checks that only the release
@@ -173,6 +180,9 @@ jobs:
             || { echo "expected NSSupportsSuddenTermination true, got: $sudden" >&2; exit 1; }
           test -s dist/OnetimePad.presig.sha256 \
             || { echo "dist/OnetimePad.presig.sha256 is missing or empty" >&2; exit 1; }
+          cmp THIRD_PARTY_NOTICES.md dist/OnetimePad.app/Contents/Resources/THIRD_PARTY_NOTICES.md
+          cmp THIRD_PARTY_NOTICES.md bindings/CompanionCore.xcframework/THIRD_PARTY_NOTICES.md
+          test "$(cat bindings/CompanionCore.features)" = "release"
           cat dist/OnetimePad.presig.sha256
 
   # The ADR conventions (docs/adr/README.md) are structural enough to
@@ -189,7 +199,7 @@ jobs:
       # reproducibility, not about a feature floor.
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - name: Lint ADRs
         run: python3 scripts/lint-adrs.py docs/adr
 
