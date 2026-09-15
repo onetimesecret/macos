@@ -426,6 +426,41 @@ final class LanguageDetectionPasteIntegrationTests: XCTestCase {
         wait(for: [detectorCalled], timeout: 0.1)
     }
 
+    func testNeverKeepsAutomaticPasteInsideAFenceImmediateAndPlain() throws {
+        let detectorCalled = expectation(description: "detector called")
+        detectorCalled.isInverted = true
+        let payload = "let value = 1"
+        let service = LanguageDetectionService(detector: { _ in
+            detectorCalled.fulfill()
+            return "swift"
+        })
+        let model = try makeModel()
+        model.previewRendering = .never
+        model.automaticallyFencePastes = true
+        let page = try mintPage(in: model)
+        let (coordinator, textView) = makeEditor(
+            model: model,
+            page: page,
+            enabled: false,
+            service: service,
+            payload: { Data(payload.utf8) }
+        )
+        textView.insertText("```sh\n- x", replacementRange: NSRange(location: 0, length: 0))
+        coordinator.restyle()
+        XCTAssertEqual(coordinator.fenceRegions, [NSRange(location: 0, length: 9)])
+        textView.setSelectedRange(NSRange(location: 8, length: 0))
+        var plainPasteCalls = 0
+
+        textView.performOrdinaryPaste(nil) { _ in
+            plainPasteCalls += 1
+            textView.insertText(payload, replacementRange: textView.selectedRange())
+        }
+
+        XCTAssertEqual(plainPasteCalls, 1)
+        XCTAssertEqual(textView.string, "```sh\n- \(payload)x")
+        wait(for: [detectorCalled], timeout: 0.1)
+    }
+
     func testAutomaticPasteBypassUsesImmediatePlainPasteWithoutDetection() throws {
         let detectorCalled = expectation(description: "detector called")
         detectorCalled.isInverted = true
