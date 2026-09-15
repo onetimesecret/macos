@@ -92,6 +92,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Code rendering can be chosen automatically or by hand, and file admission
+  now refuses binary-like content** (app 0.22.0; `companion-core` 0.22.0,
+  `companion-ffi` 0.28.0). The editor can render a session as plain text or
+  fenced code, offer a language choice when detection abstains, and admit
+  dropped files by their content rather than their extension. The core and
+  seam distinguish binary content from malformed UTF-8 so the shell can state
+  the refusal accurately.
+
 - **Version details distinguish the app, build, FFI, and core** (app 0.21.0;
   `companion-core` 0.21.0, `companion-ffi` 0.27.0). About keeps the standard
   app version and build presentation, with the two Rust crate versions under
