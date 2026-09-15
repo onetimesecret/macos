@@ -41,12 +41,6 @@ record; it covers D-01 to D-33 despite its filename. The shipping surface
 sets `sharingType = .none` and cannot be screenshotted, so every visual is
 a recreation from this source tree.
 
-*call:* the 15 MB bundle at commit 9441cc1 stays as committed; in a new
-commit replace it with `.dc.html` artboard sources beside this record
-(the archive's pattern, under 100 KB) or delete it and link the artifact
-URL here, and name the file for the record's scope · pending maintainer
-confirmation
-
 ## 0 · Pipeline and status
 
 1. This file lives at `docs/spec/design/2026-0915-ui-ux-decisions.md`.
@@ -67,13 +61,6 @@ confirmation
 Status vocabulary: **draft**: proposed, do not build against ·
 **accepted**: the build owes this · **superseded**: history, kept for
 the argument.
-
-Seventeen calls are put to the maintainer in this record. Each sits
-under its decision as a line beginning *call:* and ending *pending
-maintainer confirmation*; the decision text already reads as the
-recommendation. A decision carrying a call line holds its status word
-provisionally. When the maintainer confirms, the line is deleted; until
-then nothing a call covers counts as settled.
 
 ## 1 · The card and its two stances
 
@@ -99,36 +86,25 @@ chrome.
   *Acceptance:* both stances diff to within a pixel; under
   `prefers-reduced-motion` the transition is 0 ms and the end state
   identical.
-  *call:* record the tab strip as 32 at the bottom; the 0914 markdown
-  never stated the edge and section 9 row 7 already says top and bottom
-  · pending maintainer confirmation
 - **D-03 (fixed)** Ember (`#DC4A22`) is a fill and geometry colour,
   never text, never the only carrier of state. Every ember signal is
   paired with a word, a texture, or a shape. Ember text uses the
-  darkened `--ember-text`. `Theme.swift` still carries `#D45A2A` and is
-  being aligned to `#DC4A22`; no `emberText` token exists yet.
+  darkened `--ember-text`; `Theme.swift` carries `#DC4A22` and an
+  `emberText` token. The header draft stamp and format facts draw
+  `.secondary`, not `.tertiary`, since the stamp carries the age of
+  unsaved typing and is text the app owes.
   *Acceptance:* greyscale the surface and read every state (keyline
   present or absent, hatch, dot beside a word); ember text clears 4.5:1
   on page and card, light and dark.
-  *call:* keep `#DC4A22` (the shipped logo asset and this record agree;
-  the Swift constant drifted) and align `Theme.swift` · pending
-  maintainer confirmation
-  *call:* the header draft stamp and format facts drawn `.tertiary`
-  (`BackdropRootView.swift:369`, `:373`) fail the 4.5:1 row; promote
-  both to `.secondary`, since the stamp carries the age of unsaved
-  typing · pending maintainer confirmation
-- **D-04 (fixed)** The resting card is translucent, and both stances
-  share one material: `.ultraThinMaterial` in `BackdropRootView`
+- **D-04 (open)** Is the resting card opaque or translucent? Today both
+  stances share one material: `.ultraThinMaterial` in `BackdropRootView`
   (`BackdropRootView.swift:169`); the resting look is that material
-  with contents at 0.72. The background-surface spec's "transparent for
-  both stances" is honoured, and the working copy's "resting: opaque
-  fill" callout is a mockup artefact, not a decision. Reduce
-  Transparency lands on a solid system fill in either stance.
-  *Acceptance:* the material does not change with stance; under Reduce
-  Transparency both stances draw a solid system fill.
-  *call:* keep `.ultraThinMaterial` in both stances and close D-04 as
-  fixed; a stance-dependent material is a second layout axis with no
-  acceptance test · pending maintainer confirmation
+  with contents at 0.72. The background-surface spec says transparent
+  for both stances; the working copy's "resting: opaque fill" callout
+  is a mockup artefact, not a decision. Whichever way this closes,
+  Reduce Transparency lands on a solid system fill in either stance.
+  *Acceptance:* under Reduce Transparency both stances draw a solid
+  system fill.
 
 The 1.5px ember keyline at 80% shows exactly while the surface **holds
 the keyboard**. Raised and keyed are distinct facts: a card the user
@@ -167,6 +143,11 @@ below 8.
 
 ## 3 · Sealed content and the conceal flow
 
+The governing model (atomic attachment plus explicit declassification,
+structural versus declassification operations) is written out in the
+behaviour law `docs/law/0001-sealed-object.md`; this section applies it
+to the surface.
+
 Sealed content is an **atomic block attachment**, like an image or an
 embedded file in a rich-text editor, and it leaves the app only through
 an action that names what crosses the boundary. One rule settles most of
@@ -180,8 +161,7 @@ distinction is the whole design.
 
 - **Structural**: move, select, cut, paste within the app, duplicate,
   delete, expire. They act on the object, never on its payload. They are
-  undoable, with one exception: removal is deliberate and final (D-30,
-  ADR-0009).
+  undoable (D-30).
 - **Declassification**: copy decrypted contents, decrypted drag from
   the handle, promote to a one-time link, plaintext export. Plaintext
   crosses the boundary, the action names it, and the write is always
@@ -223,7 +203,7 @@ restored the plaintext would be the one reveal path that names nothing
 alive in its undo stack, which is the opposite of "from this point
 forward". ⌘Z after sealing is not offered; the content comes back only
 through *Copy decrypted contents*. Removing a sealed object is
-deliberate and final (D-30).
+structural and undoable (D-30); sealing is the only one-way edit.
 
 Honest scope: sealing protects the selection **from this point forward**.
 Autosave is already written under the boot-bound key, and the undo stack
@@ -243,16 +223,16 @@ ordinary text machinery, which must treat the chip as one opaque unit.
 | click | structural | selects the whole object; never places a caret inside it |
 | shift-selection | structural | includes the whole object or none of it |
 | select all | structural | includes the object structurally, not its plaintext |
-| copy, object or whole page | structural | writes a fresh ticket in the private type plus the placeholder in plain text; no payload, no ciphertext, never the chip's id |
-| cut | structural | writes a ticket, then detaches the chip from the page; a detached chip shows in the app's own clipboard slot, on the page's clock. Never an invisible limbo |
-| paste, inside OnetimePad | structural | the core resolves the ticket and reattaches the chip by id at the new position; a paste after copy, or a second paste of a cut, is a core-side clone with a new id and the same payload, on the page's clock. A stale ticket (issued under an older pasteboard `changeCount`, or unknown) is a no-op with a one-line notice, never a resurrection |
+| copy, object or whole page | structural | writes the chip's UUID in the private type plus the placeholder in plain text; no payload, no ciphertext |
+| cut | structural | writes the UUID, then detaches the chip from the page; a detached chip shows in the app's own clipboard slot, on the page's clock. Never an invisible limbo |
+| paste, inside OnetimePad | structural | the core reattaches the chip by id at the new position; a paste after copy, or a second paste of a cut, is a core-side clone with a new UUID and the same payload, on the page's clock. A reference whose chip is gone resolves to the *expired* placeholder in place, never a resurrection |
 | paste, another app | ambient | the destination gets the placeholder `[sealed content · small]`. Never plaintext |
 | drag, inside the document | structural | moves the object atomically with a clear insertion line; contents never preview |
 | ⌥-drag | structural | a core-side clone, following the macOS copy-drag convention; no pasteboard involvement, and no second copy of the bytes outside the core |
 | plain drag, outside | ambient | exposes only the placeholder |
 | decrypted drag, from the handle | declassify | an explicit affordance on the card: a distinct handle, or a modifier-drag the card labels while held. Plaintext is supplied lazily through `NSPasteboardItemDataProvider`, so the core writes it only when a destination asks. A successful drop never deletes the chip |
-| backspace beside it | structural | the first press selects the object, the second removes it: the two-stage gesture is permitted, the removal it ends in is final |
-| backspace, selected | structural | removes it immediately, deliberately and finally; no undo, no tombstone (ADR-0009) |
+| backspace beside it | structural | the first press selects the object, the second removes it; the removal is undoable |
+| backspace, selected | structural | removes it immediately, with undo available; the core keeps the bytes, so ⌘Z restores the object, never plaintext in the shell |
 | find, word count | ambient | do not inspect the plaintext; optionally count one protected object |
 | expiry | structural | a page's expiry takes its sealed objects with it, detached ones included. A detached object and its id live in the content store on the page's clock and die when the page expires; there is no per object TTL (doc 04 :155, maintainer decision 2026-08-07). A pasted reference whose object is gone resolves to an *expired* placeholder in place, visibly distinct from a removed one, and not undoable because nothing remains to restore. All of it holds at rest with the app not running: boot-bound key, refuse-to-reveal at next open |
 | export, print, share | ambient | emit the placeholder by default; a decrypting export is a separately named action |
@@ -267,10 +247,7 @@ sealed object writes:
 
 - a private type, `com.onetimesecret.onetimepad.sealed-ref` (with the
   `.debug` suffix on dev builds, so dev and prod cannot resolve each
-  other's tickets), carrying a **fresh random 128-bit ticket and nothing
-  else**; the core mints one per copy or cut and maps it internally to
-  the chip's id, the operation and the pasteboard `changeCount` at
-  issue;
+  other's references), carrying the **chip's UUID and nothing else**;
 - the plain-text placeholder `[sealed content · small]`;
 - a public URL representation *only* as the direct result of Create
   one-time link, never on an ordinary copy. A one-time link is itself a
@@ -280,21 +257,21 @@ sealed object writes:
 Never the payload. "Restores the complete sealed object, including its
 protected payload" would put ciphertext on `NSPasteboard`, where every
 clipboard manager archives it and Universal Clipboard syncs it to other
-devices. Never the chip's id either: the ledger already records that
-stable id in plain and outlives the page, so an id in clipboard history
-would link a pasteboard entry to a ledger record for as long as the
-ledger lives. A ticket is content-free and linkage-free. The core owns
-the bytes and identifies chips by id, so cut detaches, paste resolves
-the ticket and reattaches by id, and a duplicate is a core-side clone.
-Nothing about the secret ever leaves the process.
+devices. The UUID is the same random id the ledger already records in
+plain: the same exposure as the ledger, stated the same way, and the
+record chose it over a minted per copy reference because that would
+buy a map in the core and a staleness path for no exposure the ledger
+does not already carry. The core owns the bytes and identifies
+chips by UUID, so cut detaches, paste reattaches by id, and a duplicate
+is a core-side clone. Nothing about the secret ever leaves the process.
 
 **The detached state.** A cut chip is detached, not destroyed. It leaves
 the page, shows in the app's own clipboard slot, and is reattached by
 the next paste. A detached object takes its page's clock: it dies when
-the page expires, and a ticket whose chip is gone resolves to *expired*,
-so the paste inserts the expired placeholder rather than failing.
-Quitting between cut and paste is survivable, because the detached
-chip, its id and the ticket table live in the content store, not on the
+the page expires, and a reference whose chip is gone resolves to
+*expired*, so the paste inserts the expired placeholder rather than
+failing. Quitting between cut and paste is survivable, because the
+detached chip and its id live in the content store, not on the
 pasteboard.
 
 The drag pasteboard uses the same multi-representation API, so decrypted
@@ -316,16 +293,16 @@ Remove protected content
 After a decrypted copy, one line confirms the boundary crossing with the
 interval the core enforces:
 `decrypted contents copied · clipboard clears in 60 seconds`. The
-interval is one core constant, 60 seconds, and the confirmation states
-that number; a clear the app does not perform is never promised. Today
-the build does not arm the clear: `clearClipboardIfOurs`
-(`CompanionClient.swift:833`) exists and nothing calls it, and no
-interval constant exists for a copy-out clear. The line above is the
-number the build owes, not a description of what it does.
+interval is one core constant, `CLIPBOARD_CLEAR_SECONDS` (60) in
+`crates/ffi`, read by the shell through the stateless seam
+`companion_clipboard_clear_seconds`; the model arms the clear on every
+pasteboard egress (`PageModel.swift` `armClipboardClear`), and the
+confirmation states that number. A clear the app does not perform is
+never promised.
 
-ADR-0012 names one egress (send) at line 103. This record makes it
-three, and the ADR should say so rather than let it drift: **copy
-decrypted**, **decrypted drag**, **promotion**. All three are core-side
+ADR-0012 named one egress (send) at line 103. This record makes it
+three, **copy decrypted**, **decrypted drag**, **promotion**, and the
+ADR's Amendment 1 (2026-09-15) adopts them. All three are core-side
 writes, so the Swift shell still never holds plaintext.
 
 They are not equally safe, and the card's affordances reflect that. Copy
@@ -342,9 +319,9 @@ The plain-text placeholder therefore carries a **size class**, not a
 length: `[sealed content · small]`. An exact character count is
 precisely what the ledger reduces to a class (`SizeClass`,
 `crates/core/src/ledger.rs`), and it would sit in clipboard history
-forever. The private type's ticket is a random value that maps to
-nothing outside the core, so a clipboard-history entry links to no
-ledger record.
+forever. The private type's UUID is the same random id the ledger
+already records in plain: the same exposure as the ledger, stated the
+same way.
 
 ### The rubric for any new interaction
 
@@ -354,10 +331,9 @@ ledger record.
 - **Fidelity**: can the object move through trusted app operations
   without losing its payload?
 - **Legibility**: does the action name what crosses the boundary?
-- **Reversibility**: can structural edits be undone? Two exemptions:
+- **Reversibility**: can structural edits be undone? One exemption:
   sealing is one-way in the editor, because an unnamed Undo that
-  revealed plaintext would breach Legibility; removal is deliberate and
-  final (ADR-0009).
+  revealed plaintext would breach Legibility.
 - **Safe fallback**: when a destination cannot understand the object,
   does it get a placeholder rather than plaintext or nothing?
 
@@ -383,10 +359,6 @@ ledger record.
   is never seeded from the page's remaining time; failure is inline text
   and the button becomes Retry; the local copy is offered up to burn and
   never burned automatically.
-  *call:* adopt "Burn local copy" as the confirmation button name
-  (`ConcealView.swift:194` already draws it; the settled sentence beside
-  it at `:204` still says "remove the chip" and is aligned once the name
-  is confirmed) · pending maintainer confirmation
 - **D-10 (fixed)** Hover reveals affordances, never content, and the
   affordance keeps its seat whether visible or not (~120 ms opacity,
   0 ms under Reduce Motion): revealing it never nudges the ink or
@@ -407,15 +379,6 @@ ledger record.
   component to follow; the only `SealedChip` in the tree is the Rust
   type. Tracked as "Sealed block: full-measure attachment replaces
   ChipCell (D-27)" (issue 169).
-  *call:* block metadata is the size class, never a count; the record's
-  own rule is "a size class, never an exact length" and a count would
-  sit in clipboard history via the placeholder · pending maintainer
-  confirmation
-  *call:* define the mechanical excerpt as the tree's fact (head…tail,
-  at most 24 plaintext characters, `sheet.rs` `text_face`) and replace
-  "contents never preview, in any state" with "nothing beyond the
-  mechanical excerpt is ever drawn", since the two sentences
-  contradicted each other · pending maintainer confirmation
 - **D-28 (fixed)** A sealed item is one object in the document and its
   plaintext is not part of the document's ambient text. Structural
   operations act on the whole object; the caret never lands inside it
@@ -431,84 +394,74 @@ ledger record.
   only; the decrypted-drag handle is visually distinct from the move
   handle; the confirmation names the interval the core enforces; no
   ordinary copy path (object, page, or select-all) offers plaintext.
-  *Errata 2026-09-15:* the 60 second clear now exists in the tree as
-  one core constant, `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi`, read
-  by the shell through the stateless seam
-  `companion_clipboard_clear_seconds`, and the model arms the clear on
-  every pasteboard egress. The number stays provisional: the call
-  under D-32 is still pending maintainer confirmation.
+  The 60 second clear is implemented: one core constant,
+  `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi`, read by the shell through
+  the stateless seam `companion_clipboard_clear_seconds`, and armed by
+  the model on every pasteboard egress.
 - **D-30 (fixed)** Sealing an existing selection replaces it in place,
   keeps the surrounding whitespace and selects the new object, and is
   **one-way**: ⌘Z does not restore the plaintext. No confirmation
-  dialog. Removing a sealed object is **deliberate and final**: the
-  first backspace beside it selects, the second removes, and neither
-  the object nor its bytes come back (ADR-0009). Undo would restore a
-  reference only once a detached-object store exists, and today the
-  core zeroizes on settle and forgets undo, so the record promises no
-  more than a layer performs.
+  dialog. Removing a sealed object is **structural and undoable**: the
+  first backspace beside it selects, the second removes, and ⌘Z puts
+  the object back. The core owns the bytes throughout, so undo restores
+  a reference and the shell never holds plaintext for it. ADR-0009's
+  non undoable removal clause is superseded on this point; its Decision
+  history says so.
+  *Owed:* the core zeroizes a chip the moment a synced document stops
+  referencing it (`store.rs` `sync_document`, per ADR-0009's context),
+  so a removed chip cannot yet come back; the detached state the
+  pasteboard model defines (D-33) is what undo restores from, and the
+  build owes it under issue 170.
   *Acceptance:* nothing in the undo stack holds the plaintext, and the
   content returns only through *Copy decrypted contents*; removing a
-  sealed object is not undoable and the copy does not offer undo; the
-  copy protects the selection "from this point forward", naming the
-  real residuals: layout and glyph caches, and whatever the user pasted
-  from.
-  *call:* ADR-0009 finality wins over the 0914 record's undoable
-  removal, with the two-stage backspace adopted as a permitted gesture
-  and ADR-0009 moved to accepted with that amendment · pending
-  maintainer confirmation
-- **D-31 (fixed)** The in-app pasteboard type carries a fresh random
-  128-bit ticket the core maps to the object, never the chip's id and
+  sealed object is undoable; the copy protects the selection "from
+  this point forward", naming the real residuals: layout and glyph
+  caches, and whatever the user pasted from.
+- **D-31 (fixed)** The in-app pasteboard type carries the chip's UUID,
   never its payload. Clipboard managers and Universal Clipboard archive
   every representation they are offered, so ciphertext on the
-  pasteboard is ciphertext in a history file on another device, and a
-  stable id on the pasteboard is a link from that history to the ledger
-  for as long as the ledger lives. Tracked with D-33 as "Sealed object
-  pasteboard model: private type, placeholder, detach on cut, reattach
-  on paste, lazy decrypted drag (D-29, D-31, D-33)" (issue 170).
+  pasteboard is ciphertext in a history file on another device. The
+  UUID is the random id the ledger already records in plain, so the
+  pasteboard adds no exposure the ledger does not carry, and a minted
+  per copy reference would buy a map in the core for nothing. Tracked
+  with D-33 as "Sealed object pasteboard model: private type,
+  placeholder, detach on cut, reattach on paste, lazy decrypted drag
+  (D-29, D-31, D-33)" (issue 170).
   *Acceptance:* cut, quit, relaunch, paste still works, because the
-  detached chip and the ticket table live in the content store; a stale
-  ticket is a no-op with a one-line notice; a ticket whose chip is gone
-  resolves to *expired* and inserts the expired placeholder rather than
-  failing; no secret byte is written to any pasteboard except at a named
-  declassification.
-  *call:* ticket over UUID; the linkage argument in
-  `docs/spec/feature/sealed-content/sealed-content.md` is real once the
-  ledger outlives the page, and the cost is one map in the core ·
-  pending maintainer confirmation
+  detached chip lives in the content store; a reference whose chip is
+  gone resolves to *expired* and inserts the expired placeholder rather
+  than failing; no secret byte is written to any pasteboard except at a
+  named declassification.
 - **D-32 (fixed)** Three egress points, not one: copy decrypted,
   decrypted drag, promotion. The decrypted drag is the recommended path
   into a form field; copy decrypted, on the general pasteboard, is the
   riskier fallback. The clear-on-egress interval ADR-0012 already
-  mandates (line 104, unnumbered there) is stated as the number the
-  core uses: 60 seconds, owned as one core constant.
-  *Owed:* the ADR-0012 amendment (line 103 names one egress), and the
-  timer itself, since nothing in the tree arms the clear today. All
-  three are core-side writes, so the shell holds no plaintext at any
-  point.
-  *call:* 60 seconds, owned as one core constant; the 0914 record,
-  `sealed-content.md` and the working copy all use 60 and nothing in
-  the tree enforces any number today · pending maintainer confirmation
+  mandates (line 104, unnumbered there) is the number the core uses: 60
+  seconds, owned as one core constant. ADR-0012's Amendment 1
+  (2026-09-15) adopts the three egress points in place of the one at
+  line 103. All three are core-side writes, so the shell holds no
+  plaintext at any point.
 - **D-33 (fixed)** A cut chip is detached, not destroyed: it leaves the
   page, shows in the app's own clipboard slot, and is reattached by the
   next paste. A detached object takes its page's clock; there is no per
-  object TTL (doc 04 :155, maintainer decision 2026-08-07, and
-  `sheet.rs` :292 forbids per chip timers). When the page expires, its
-  sealed objects go with it, attached or detached, and a reference
-  pasted afterwards resolves to an *expired* placeholder, visibly
-  distinct from a removed one.
+  object TTL. When the page expires, its sealed objects go with it,
+  attached or detached, and a reference pasted afterwards resolves to
+  an *expired* placeholder, visibly distinct from a removed one.
   *Acceptance:* expiry is not undoable and the copy does not offer undo;
   a page's expiry takes its chips with it, detached ones included; both
   hold at rest with the app not running, under the boot-bound key; no
   timer exists per chip.
-  *call:* confirm the record-error reading: no per object TTL, detached
-  objects take the page's clock · pending maintainer confirmation
+  *Note 2026-09-15:* the 0914 record gave each chip its own TTL. That
+  clause is dropped, the one deliberate deviation from the record: the
+  core forbids per chip timers (`sheet.rs` :292, doc 04 :155) and the
+  maintainer rejected per block TTL on 2026-08-07.
 
 ### Amended since the first draft
 
 The working copy carried this list; it is kept as the argument's
-history. Three of its sentences (removal stays undoable, the UUID on
-the pasteboard, a chip dying by its own TTL) were reversed on
-2026-09-15 and section 10 has the current reading.
+history. One of its sentences (an unpasted chip dying by its own TTL)
+was dropped on 2026-09-15; D-33 and section 10 have the current
+reading.
 
 Sealing is one-way. "Allow Undo to restore the plaintext" is withdrawn:
 it was the one reveal path that named nothing, and it kept the
@@ -584,20 +537,17 @@ read as a page an instant from death rather than a slot standing ready.
   *Acceptance:* strip and rail speak a file identically; the row says
   "unsaved" in words and the dot is never the only cue; the tooltip is
   the last known path.
-- **D-13 (open)** Days is gated on parity: renaming, holding,
-  shortening, closing and sync enrolment must live on each day's own
-  gutter before it is a peer of slots. Until they do, Days ships
-  labelled a prototype and the shipping default stays Slots + bottom,
-  even though Days + side is where the default is headed; the default
-  does not flip before D-26's two settings exist, or Days + side would
-  ship as the only alternative. There is no page cap to design for: the
-  core has had none since issue #158 (`PageModel.swift:3373`), so no
-  refusal is drawn.
-  *Needs a call:* the gutter's verb set.
-  *call:* declare the verb gate met once rename, hold, shorten, close
-  and enrol all sit on the gutter; keep the prototype label and the
-  Slots + bottom default until the orientation axis has its own setting
-  · pending maintainer confirmation
+- **D-13 (open)** Days is gated on parity with slots: renaming,
+  holding, shortening, closing and sync enrolment on each day's own
+  gutter. The gutter carries all five today (`DayScrollView.swift`,
+  the day context menu). Days still ships labelled a prototype and the
+  shipping default stays Slots + bottom, even though Days + side is
+  where the default is headed; the default does not flip before D-26's
+  two settings exist, or Days + side would ship as the only
+  alternative. There is no page cap to design for: the core has had
+  none since issue #158 (`PageModel.swift:3373`), so no refusal is
+  drawn. What remains open is when the prototype label comes off and
+  the default flips.
 - **D-26 (fixed)** Two settings, four combinations, as above. The single
   switch that flips grouping and orientation together is the defect this
   replaces: it pushed code names into user-facing copy and left one
@@ -620,20 +570,18 @@ sentence · remote-edit line · pasteboard offer · notice · conceal sheet.
 
 - **D-14 (fixed)** No modals, no interrupting dialogs, no notifications,
   badges, bounce or count chips. A condition speaks in a line under the
-  page; the one confirmation the app asks for is inline. The exceptions
-  use the platform's own dialog: destructive actions (the destructive
-  Settings actions, the close review of a dirty file with Save / Cancel
-  / Discard, and the Take theirs confirmation, all ADR-0028 behaviour
-  the tests pin), the quit notice (D-19), and platform file pickers. A
-  rename is none of these and takes an inline field.
+  page; the one confirmation the app asks for is inline. Destructive
+  Settings actions are the one exception and use the platform
+  confirmation. `NSOpenPanel` and `NSSavePanel` are platform file
+  pickers the user asked for, not app dialogs. The build's four
+  dialogs (the quit alert, the close review of a dirty file, the Take
+  theirs confirmation and the tab rename alert) are defects against
+  this decision, tracked as "Replace the four interrupting dialogs with
+  inline surfaces (D-14, D-19)" (issue 172).
   *Acceptance:* every interaction completes without the surface becoming
   key unless the user deliberately raised it. An unexpected focus change
   is destructive for assistive tech, so this is an a11y rule, not
   etiquette.
-  *call:* widen D-14 to destructive actions, the quit notice and
-  platform file pickers; keep the close review and the Take theirs
-  confirmation; replace only the tab rename alert with an inline field
-  · pending maintainer confirmation
 - **D-15 (fixed)** Copy register: lower-case sentences, third person, em
   dash and middle dot doing real work, no exclamation marks, `…` as one
   character. Second person only in tooltips and a11y labels.
@@ -670,10 +618,6 @@ blocked while they stand (status lines stay 12 × 4).
   *Acceptance:* the sentence is a pure function of conflict and
   filename; the two conflict kinds are testable as words rather than as
   a drawn banner.
-  *call:* the banner's second sentence reads "saving is refused until
-  one copy is chosen", not the working copy's "Saving is refused until
-  you choose", because D-15 bans second person outside tooltips ·
-  pending maintainer confirmation
 - **D-18 (fixed)** Two "saved" words never show at once: a file's word
   replaces the session's. Render mode is session state and never
   encoded with the file or its draft.
@@ -681,14 +625,12 @@ blocked while they stand (status lines stay 12 × 4).
   suggestion banner never edits text storage.
 - **D-19 (fixed)** No save sheet on quit; the draft's age in the header
   is what the app owes instead, so a person can judge how old the typing
-  is before pressing the save chord. A quit with dirty files shows a
-  Quit Anyway / Cancel notice, never Save or Discard.
+  is before pressing the save chord. The build's Quit Anyway / Cancel
+  alert is a defect against this decision, tracked with D-14's three
+  others as issue 172.
   *Acceptance:* the stamp shows only for a draft-restored buffer, in
-  `EEE HH:mm` with a 24-hour clock whatever the locale; the quit notice
-  offers exactly Quit Anyway and Cancel.
-  *call:* keep the Quit Anyway / Cancel notice; `QuitPromptTests` pin it
-  and it asks nothing the header stamp already answers, it only stops an
-  accidental ⌘Q from discarding · pending maintainer confirmation
+  `EEE HH:mm` with a 24-hour clock whatever the locale; quitting with
+  dirty files asks nothing.
 
 ## 7 · The sync surface
 
@@ -723,12 +665,7 @@ paired).
   channel is not news, so the settled state is quiet; the two states a
   user must act on are loud.
   *Acceptance:* the word table is derived from the gate and unit
-  testable without a window; "synced" is never shown while enrolled
-  pages have no peer awake (`SyncController.swift:832-846`); an attached
-  channel with nothing enrolled is up to date and says "synced".
-  *call:* narrow the 0914 acceptance ("synced" never with no peer awake)
-  to enrolled pages, since an empty channel is genuinely up to date and
-  `SyncSurfaceTests:335-338` pin it · pending maintainer confirmation
+  testable without a window; "synced" is never shown with no peer awake.
 - **D-21 (fixed)** A comparison that cannot fail verifies nothing:
   "They don't match" is always offered beside "They match". A device
   nothing vouches for reads *attached, never paired*, in ember and in
@@ -833,36 +770,44 @@ moved a decision.
   errata may be corrected in place with a dated note.
 - Intro: the illustrated companion is named as the committed bundle
   beside this record, not "with the design record".
-- D-03: `Theme.swift` is noted as carrying `#D45A2A` pending alignment
-  to `#DC4A22` (call 6).
-- D-04: closed as fixed, `.ultraThinMaterial` in both stances (call 1).
-- D-13: the cap paragraph is struck; no cap exists since issue #158.
-  Sync enrolment joins the gutter verb set (call 2).
-- D-14: widened to destructive actions, the quit notice and platform
-  file pickers (call 3).
-- D-19: gains the Quit Anyway / Cancel clause (call 8).
-- D-20: acceptance narrowed to enrolled pages with no peer awake
-  (call 16).
+- Section 3: the governing model is named as living in the behaviour
+  law `docs/law/0001-sealed-object.md`.
+- D-03: `Theme.swift` is aligned to `#DC4A22` with an `emberText`
+  token; the header draft stamp and format facts draw `.secondary`.
+- D-04: stays open, restated with the shipping fact that both stances
+  share `.ultraThinMaterial`.
+- D-13: stays open. The cap paragraph is struck; no cap exists since
+  issue #158. Sync enrolment joins the gutter verb set, and the gutter
+  carries all five verbs today.
+- D-14 and D-19: unchanged in substance. The build's four dialogs are
+  named as defects and tracked as issue 172.
+- D-20: unchanged; the acceptance line stands as the 0914 record wrote
+  it, and the code is fixed to match.
 - D-27: the "design system's `SealedChip`" clause is removed; no such
   component exists, the only `SealedChip` is the Rust type. Metadata is
-  the size class, never a count (call 12); the mechanical excerpt is
-  defined from `sheet.rs` (call 13).
+  the size class, never a count; the mechanical excerpt is defined from
+  `sheet.rs`.
 - D-30, the structural list, the contract's backspace rows and the
-  rubric: removal of a sealed object is deliberate and final per
-  ADR-0009, no longer "still undoable"; the two-stage backspace stays as
-  a gesture (call 4).
-- D-31, the contract's copy and paste rows and the pasteboard model:
-  the private type carries a fresh ticket, not the chip's UUID (call 5).
-- D-32 and the confirmation paragraph: ADR-0012 is named (line 103 for
-  the one egress, line 104 for the unnumbered interval); the interval
-  is 60 seconds as one core constant, stated as owed because nothing in
-  the tree arms the clear today (call 7).
+  rubric: removal of a sealed object stays structural and undoable, as
+  the 0914 record had it; the two-stage backspace is written into the
+  contract rows. ADR-0009's non undoable removal clause is superseded
+  on that point and its Decision history records it.
+- D-31, the contract's copy, cut and paste rows and the pasteboard
+  model: unchanged, the private type carries the chip's UUID; the
+  reason it was chosen over a minted per copy reference is now written
+  down.
+- D-29, D-32 and the confirmation paragraph: ADR-0012 is named (line
+  103 for the one egress, line 104 for the unnumbered interval); the
+  interval is 60 seconds as one core constant, `CLIPBOARD_CLEAR_SECONDS`,
+  implemented and armed on every pasteboard egress; ADR-0012's
+  Amendment 1 adopts the three egress points.
 - D-33, the contract's cut, paste and expiry rows and the detached
   state: every per object or per chip TTL is removed. A detached object
   takes its page's clock and the expired placeholder appears when the
-  page expires (maintainer decision 2026-08-07, call 11).
-- D-09: the conceal confirmation names its button, Burn local copy
-  (call 17).
-- The three feature-scale items are linked by title: the sealed block
-  (D-27), the pasteboard model (D-29, D-31, D-33) and the split Days
-  setting (D-26); issue numbers pending.
+  page expires (maintainer decision 2026-08-07); the dated note under
+  D-33 records the deviation.
+- D-09: the conceal confirmation names its button, Burn local copy.
+- The feature-scale items are linked by issue: the sealed block (D-27,
+  issue 169), the pasteboard model (D-29, D-31, D-33, issue 170), the
+  split Days setting (D-26, issue 171) and the four dialogs (D-14,
+  D-19, issue 172).
