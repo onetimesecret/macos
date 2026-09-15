@@ -119,4 +119,37 @@ final class ConcealWireTests: XCTestCase {
         XCTAssertTrue(record.url.hasSuffix("/api/v3/guest/secret/conceal"), record.url)
         XCTAssertNil(record.recipient)
     }
+
+    /// A page travels with its sealed payloads, so the page target's
+    /// confirmation says how many are going (D-09). Zero says nothing,
+    /// one is singular, and the rest are plural.
+    func testTheSealedItemsLineCountsInTheSingularAndThePlural() {
+        XCTAssertNil(ConcealView.sealedItemsLine(count: 0), "nothing to announce at zero")
+        XCTAssertEqual(ConcealView.sealedItemsLine(count: 1), "includes 1 sealed item")
+        XCTAssertEqual(ConcealView.sealedItemsLine(count: 2), "includes 2 sealed items")
+    }
+
+    /// The count comes off the roster the model already holds, so a
+    /// chip sealed into the page is one sealed item on the sheet, and a
+    /// page the roster does not hold counts as carrying none.
+    func testTheSealedItemCountIsReadOffThePagesRoster() throws {
+        let model = try makeModel()
+        model.loadStateIfNeeded()
+        model.newPage()
+        let page = try XCTUnwrap(model.selectedPageID)
+        XCTAssertEqual(ConcealView.sealedItemCount(ofPage: page, in: model.tabs), 0)
+
+        XCTAssertNotNil(model.coreClient.sealText(sheet: page, secret, at: 0, length: 0))
+        model.refresh()
+        XCTAssertEqual(ConcealView.sealedItemCount(ofPage: page, in: model.tabs), 1)
+        XCTAssertEqual(
+            ConcealView.sealedItemsLine(
+                count: ConcealView.sealedItemCount(ofPage: page, in: model.tabs)),
+            "includes 1 sealed item"
+        )
+        XCTAssertEqual(
+            ConcealView.sealedItemCount(ofPage: page &+ 1, in: model.tabs), 0,
+            "a page the roster does not hold carries nothing the sheet can vouch for"
+        )
+    }
 }

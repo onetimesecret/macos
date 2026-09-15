@@ -29,6 +29,11 @@ public struct ConcealView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
+            if let sealed = sealedItemsLine {
+                Text(sealed)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
             if draft.receiptId != nil {
                 success
             } else {
@@ -78,6 +83,33 @@ public struct ConcealView: View {
         case .chip: "conceal this sealed content into a one-time link"
         case .page: "conceal this page into a one-time link"
         }
+    }
+
+    /// The confirmation's second line on a page target: a page travels
+    /// with its sealed payloads, that being the product (D-09), so the
+    /// sheet says how many are going. Nil on a chip target, where the
+    /// title already names the one item, and nil at zero, where there
+    /// is nothing to announce.
+    private var sealedItemsLine: String? {
+        guard case .page(let id) = draft.target else { return nil }
+        return Self.sealedItemsLine(count: Self.sealedItemCount(ofPage: id, in: model.tabs))
+    }
+
+    /// The sentence for a count of sealed items, or nil when there are
+    /// none. Pure, so the singular and the plural are assertions rather
+    /// than a thing read off a screen.
+    nonisolated static func sealedItemsLine(count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return count == 1 ? "includes 1 sealed item" : "includes \(count) sealed items"
+    }
+
+    /// How many sealed items a page carries, read from the roster the
+    /// model already decoded rather than asked of the core again. A
+    /// page the roster no longer holds counts as carrying none, which
+    /// is the fail closed reading: the sheet then says nothing rather
+    /// than something it cannot stand behind.
+    nonisolated static func sealedItemCount(ofPage id: UInt64, in tabs: [TabSummary]) -> Int {
+        Int(tabs.first { $0.pageID == id }?.chipCount ?? 0)
     }
 
     /// Where the request goes and as whom — the explicit boundary line.
