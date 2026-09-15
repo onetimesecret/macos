@@ -44,17 +44,17 @@ accepted ADRs below, within their stated scope:
   “Automation may insert or remove text only on the caret's line, or the
   line the keystroke creates, only in direct response to that keystroke,
   and never anywhere else in the document.”
-- The same accepted ADR says: “Syntax coloring inside fenced code blocks on the
-  editable page is display-only styling under amendment B's contract: the
-  bytes never change, select-all-copy returns exactly what was typed, and
-  chips, the ledger and the roll's quiet renderings stay uncolored.”
-- Its rejected bare-fence alternative concludes: “The info string is
-  the only signal, the position ADR-0023 already took on link detection.”
+- [ADR-0030, Decision](../../../adr/0030-visible-pages-share-preview-rendering.md)
+  partially supersedes the old editable-page-only boundary: “A manually
+  accepted or inferred rendering language is page-owned display state, not
+  coordinator-owned focus state.” It may therefore reach a visible quiet roll
+  page under **All pages**, without rewriting a bare fence.
 
-ADR-0029 now provides the narrowly scoped amendment for inferred bare-fence
+ADR-0029 provides the narrowly scoped amendment for inferred bare-fence
 coloring, whole-file Source mode, fixed-width code regions, explicit
-wrap/insert-label actions, and opt-in paste replacements. The remaining
-ADR-0024 decision still governs other automation and display-only styling. The
+wrap/insert-label actions, and opt-in paste replacements. ADR-0030 extends only
+the display surface for accepted language state. The remaining ADR-0024 and
+ADR-0029 decisions still govern automation, inference and display-only styling. The
 [file-editing spec](../file-editing/README.md) describes a related implementation
 but identifies its own decision as proposed; it is context, not authority here.
 
@@ -209,7 +209,10 @@ rule. Existing labels always take precedence, including unsupported labels.
   unrelated highlighter. Expanding the grammar set is a separate scope.
 - Suggestions have accessible names and keyboard actions and never depend on
   token color alone. Detection does not move focus.
-- Keep recognition surfaces and quiet roll renderings outside this feature.
+- Keep chips, the ledger, the minimap, and other recognition surfaces outside
+  this feature. A visible quiet roll page may use an accepted language for
+  display-only highlighting under **All pages** (ADR-0030); it remains
+  noninteractive and the choice remains page-owned session state.
 
 ## Proposed processing boundaries
 
