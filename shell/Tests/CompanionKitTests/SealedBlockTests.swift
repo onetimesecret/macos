@@ -45,7 +45,7 @@ final class SealedBlockTests: XCTestCase {
         let cell = ChipCell(info: chip())
 
         XCTAssertEqual(cell.cellSize().height, ChipCell.blockHeight)
-        XCTAssertGreaterThanOrEqual(cell.cellSize().width, 240)
+        XCTAssertGreaterThanOrEqual(cell.cellSize().width, ChipCell.fallbackBlockWidth)
     }
 
     func testMetadataAcceptsEveryCoreSizeClassAndFailsClosedForUnknownValues() throws {

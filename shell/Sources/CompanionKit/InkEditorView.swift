@@ -3218,18 +3218,36 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         super.mouseDown(with: event)
     }
 
-    private func chipFrame(at index: Int) -> NSRect? {
-        guard let layoutManager, let textContainer,
+    /// The frame the block at `index` is drawn with, in this view's
+    /// coordinates, so a click can be tested against the drawn actions
+    /// seat. It is derived the way the layout manager derives the frame
+    /// it hands the cell: the glyph's location on its line fragment is
+    /// where the cell is set down, its bottom left corner with the
+    /// cell's baseline offset already folded in, and in this flipped
+    /// view the block stands one attachment height above that point.
+    /// The glyph's bounding rect is not that frame: it takes the line's
+    /// used height at the glyph's column, so whenever ink shares the
+    /// line and rises above the block the bounding rect starts above
+    /// the block and stands taller than it, and a seat computed off it
+    /// misses the drawn glyph.
+    func chipFrame(at index: Int) -> NSRect? {
+        guard let layoutManager, textContainer != nil,
               let storage = textStorage, index < storage.length,
               storage.attribute(.attachment, at: index, effectiveRange: nil) is ChipAttachment
         else { return nil }
         let glyphs = layoutManager.glyphRange(
             forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
         guard glyphs.length == 1 else { return nil }
-        var frame = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
-        frame.origin.x += textContainerOrigin.x
-        frame.origin.y += textContainerOrigin.y
-        return frame
+        let glyph = glyphs.location
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let location = layoutManager.location(forGlyphAt: glyph)
+        let size = layoutManager.attachmentSize(forGlyphAt: glyph)
+        return NSRect(
+            x: textContainerOrigin.x + line.minX + location.x,
+            y: textContainerOrigin.y + line.minY + location.y - size.height,
+            width: size.width,
+            height: size.height
+        )
     }
 
     /// The secondary click over a chip pops the object's menu up here,
@@ -3286,7 +3304,15 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         // In unwrapped mode the text view can grow to its longest line;
         // the scroll viewport remains the page measure the chip should
         // occupy. A mount without a scroller uses its editor bounds.
-        let measure = max(0, enclosingScrollView?.contentSize.width ?? bounds.width)
+        // Either way the container inset comes off both edges, as it
+        // does for the ink, so a block is never wider than the page it
+        // sits on. A viewport not yet sized measures nothing, and a
+        // zero captured as the ceiling would refuse every candidate and
+        // drop every block to the floor, so an earlier capture is left
+        // in place until a real measure arrives.
+        let viewport = enclosingScrollView?.contentSize.width ?? bounds.width
+        let measure = viewport - textContainerInset.width * 2
+        guard measure > 0 else { return }
         var changed = false
         storage.enumerateAttribute(
             .attachment,
@@ -3976,7 +4002,18 @@ final class ChipCell: NSTextAttachmentCell {
     let info: ChipInfo
     private let editorMeasure = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
 
+    /// The frame the layout manager last drew this block with, in the
+    /// text view's coordinates. Kept so the click frame the view
+    /// derives can be held against the drawn one by a test rather
+    /// than by eye; nothing in the editor reads it.
+    @MainActor
+    private(set) var lastDrawnFrame: NSRect?
+
     nonisolated static let blockHeight: CGFloat = 52
+    /// The width a block takes when nothing has measured the editor:
+    /// a context-free `cellSize()` and a layout with no usable measure
+    /// both fall back to it, so it is named once.
+    nonisolated static let fallbackBlockWidth: CGFloat = 240
     nonisolated static let classification = "SEALED CONTENT"
 
     @MainActor
@@ -4039,6 +4076,9 @@ final class ChipCell: NSTextAttachmentCell {
     }
 
     struct ContentLayout {
+        /// The content column's leading edge, the one inset every row
+        /// starts from.
+        let left: CGFloat
         let topRowY: CGFloat
         let bottomRowY: CGFloat
         let lockRect: NSRect
@@ -4051,6 +4091,7 @@ final class ChipCell: NSTextAttachmentCell {
         let left = cellFrame.minX + 12
         let topRowY = cellFrame.minY + 8
         return ContentLayout(
+            left: left,
             topRowY: topRowY,
             bottomRowY: cellFrame.maxY - 24,
             lockRect: NSRect(x: left, y: topRowY + 1, width: 9, height: 9)
@@ -4122,7 +4163,7 @@ final class ChipCell: NSTextAttachmentCell {
             else { return nil }
             return width
         }
-        let measure = candidates.first ?? editorMeasure ?? 240
+        let measure = candidates.first ?? editorMeasure ?? fallbackBlockWidth
         let padding = (textContainer?.lineFragmentPadding ?? 0) * 2
         return max(160, (measure - padding).rounded(.down))
     }
@@ -4140,7 +4181,7 @@ final class ChipCell: NSTextAttachmentCell {
     override nonisolated func cellSize() -> NSSize {
         // Context-free callers have no editor measure. Live TextKit
         // layout uses cellFrame(...) below and replaces this fallback.
-        NSSize(width: 240, height: Self.blockHeight)
+        NSSize(width: Self.fallbackBlockWidth, height: Self.blockHeight)
     }
 
     override nonisolated func cellFrame(
@@ -4192,6 +4233,7 @@ final class ChipCell: NSTextAttachmentCell {
     /// selection itself so the colour is never the only carrier.
     @MainActor
     private func draw(withFrame cellFrame: NSRect, in controlView: NSView?, selected: Bool, hovered: Bool) {
+        lastDrawnFrame = cellFrame
         let block = NSBezierPath(
             roundedRect: cellFrame.insetBy(dx: 0.5, dy: 0.5),
             xRadius: 8,
@@ -4211,8 +4253,8 @@ final class ChipCell: NSTextAttachmentCell {
         }
         block.lineWidth = 1
         block.stroke()
-        let left = cellFrame.minX + 12
         let layout = Self.contentLayout(in: cellFrame)
+        let left = layout.left
 
         if let lock = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil) {
             lock.draw(

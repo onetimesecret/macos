@@ -84,11 +84,23 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(ChipCell.actionsGlyph, "···")
     }
 
-    /// This exercises the TextKit 1 attachment-cell path used by the
-    /// editor rather than calling the attachment's bounds method directly.
-    func testLiveAttachmentLayoutUsesTheEditorMeasure() throws {
+    /// An unwrapped editor, as the page mounts one: an effectively
+    /// infinite container inside a scroll view, so only the captured
+    /// viewport measure can size a block. The layout manager is the
+    /// caller's so a test can stand a recording one in.
+    private struct UnwrappedEditor {
+        let storage: NSTextStorage
+        let container: NSTextContainer
+        let scroll: NSScrollView
+        let textView: InkTextView
+    }
+
+    private func mountUnwrappedEditor(
+        layoutManager: NSLayoutManager = NSLayoutManager(),
+        scrollWidth: CGFloat = 480,
+        inset: NSSize
+    ) -> UnwrappedEditor {
         let storage = NSTextStorage()
-        let layoutManager = NSLayoutManager()
         let container = NSTextContainer(size: NSSize(
             width: CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
@@ -96,20 +108,39 @@ final class SealedCapsuleTests: XCTestCase {
         container.widthTracksTextView = false
         storage.addLayoutManager(layoutManager)
         layoutManager.addTextContainer(container)
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 300))
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: scrollWidth, height: 300))
         let textView = InkTextView(
             frame: scroll.contentView.bounds,
             textContainer: container
         )
-        textView.textContainerInset = .zero
+        textView.textContainerInset = inset
         scroll.documentView = textView
-        storage.append(InkEditorView.Coordinator.chipString(ChipInfo(
-            chipId: 7,
+        return UnwrappedEditor(
+            storage: storage, container: container, scroll: scroll, textView: textView)
+    }
+
+    private func chip(_ id: UInt64, excerpt: String) -> NSAttributedString {
+        InkEditorView.Coordinator.chipString(ChipInfo(
+            chipId: id,
             kind: "text",
-            excerpt: "sk-live-…9Qz",
+            excerpt: excerpt,
             sizeLabel: "small",
             concealed: false
-        )))
+        ))
+    }
+
+    /// This exercises the TextKit 1 attachment-cell path used by the
+    /// editor rather than calling the attachment's bounds method directly.
+    /// The container inset is not zero here on purpose: in unwrapped
+    /// mode the captured measure is the only thing that knows about
+    /// it, and a block that forgot it ran wider than the page.
+    func testLiveAttachmentLayoutUsesTheEditorMeasure() throws {
+        let inset = NSSize(width: 12, height: 12)
+        let editor = mountUnwrappedEditor(inset: inset)
+        let (storage, container, scroll, textView) =
+            (editor.storage, editor.container, editor.scroll, editor.textView)
+        let layoutManager = try XCTUnwrap(container.layoutManager)
+        storage.append(chip(7, excerpt: "sk-live-…9Qz"))
 
         textView.layout()
         layoutManager.ensureLayout(for: container)
@@ -122,13 +153,106 @@ final class SealedCapsuleTests: XCTestCase {
         let glyphBounds = layoutManager.boundingRect(
             forGlyphRange: glyphRange, in: container)
         let expectedWidth = floor(
-            scroll.contentSize.width - container.lineFragmentPadding * 2)
+            scroll.contentSize.width - inset.width * 2 - container.lineFragmentPadding * 2)
 
         XCTAssertEqual(attachmentSize.width, expectedWidth, accuracy: 0.5)
         XCTAssertEqual(glyphBounds.width, expectedWidth, accuracy: 0.5)
         XCTAssertEqual(attachmentSize.height, ChipCell.blockHeight, accuracy: 0.5)
-        XCTAssertNotEqual(attachmentSize.width, 240, "live layout used the fallback cell width")
+        XCTAssertNotEqual(
+            attachmentSize.width, ChipCell.fallbackBlockWidth,
+            "live layout used the fallback cell width")
         XCTAssertGreaterThan(glyphBounds.height, 0)
+        XCTAssertLessThanOrEqual(
+            textView.textContainerOrigin.x + glyphBounds.maxX + inset.width,
+            scroll.contentSize.width,
+            "the block ran past the page measure and forced a horizontal scroll")
+    }
+
+    /// A viewport that has not been sized yet measures nothing. That
+    /// zero must not be captured: captured, it is a ceiling every
+    /// candidate fails, and every block collapses to the floor until
+    /// another pass. The earlier capture stays until a real one comes.
+    func testAZeroWidthViewportLeavesTheEarlierMeasureInPlace() throws {
+        let editor = mountUnwrappedEditor(inset: .zero)
+        let (storage, container, scroll, textView) =
+            (editor.storage, editor.container, editor.scroll, editor.textView)
+        let layoutManager = try XCTUnwrap(container.layoutManager)
+        storage.append(chip(9, excerpt: "unsized"))
+        textView.layout()
+        layoutManager.ensureLayout(for: container)
+        let sizedWidth = layoutManager.attachmentSize(forGlyphAt: 0).width
+        XCTAssertEqual(
+            sizedWidth, floor(480 - container.lineFragmentPadding * 2), accuracy: 0.5)
+
+        scroll.setFrameSize(NSSize(width: 0, height: 300))
+        XCTAssertEqual(scroll.contentSize.width, 0, "the viewport did not collapse")
+        textView.layout()
+        layoutManager.invalidateLayout(
+            forCharacterRange: NSRange(location: 0, length: storage.length),
+            actualCharacterRange: nil
+        )
+        layoutManager.ensureLayout(for: container)
+
+        XCTAssertEqual(
+            layoutManager.attachmentSize(forGlyphAt: 0).width, sizedWidth, accuracy: 0.5,
+            "a zero measure was captured and the block fell to the floor")
+    }
+
+    /// The frame `chipFrame(at:)` answers, the one a click is tested
+    /// against, must be the frame the layout manager draws the block
+    /// with. A block sealed out of the middle of a line shares that
+    /// line with ink, and the ink's ascent rises above the block's own
+    /// four points, so the glyph's bounding rect, which takes the
+    /// line's used height, starts above the drawn block and stands
+    /// taller than it; a seat computed off it misses the drawn glyph.
+    /// The paragraph is labeled as well, to hold that the label
+    /// reserve above the block moves neither frame. The cell records
+    /// the frame it is drawn with, so the two are compared, not eyed.
+    func testTheClickFrameIsTheDrawnFrameWhenInkSharesTheLine() throws {
+        let editor = mountUnwrappedEditor(inset: NSSize(width: 12, height: 10))
+        let (storage, container, textView) = (editor.storage, editor.container, editor.textView)
+        let layoutManager = try XCTUnwrap(container.layoutManager)
+        let ink: [NSAttributedString.Key: Any] = [.font: InkStyle.font(for: .body)]
+        storage.append(NSAttributedString(string: "a line above\nab ", attributes: ink))
+        let chipIndex = storage.length
+        storage.append(chip(11, excerpt: "inline"))
+        storage.append(NSAttributedString(string: " cd", attributes: ink))
+        let style = NSMutableParagraphStyle()
+        style.paragraphSpacingBefore = InkEditorView.Coordinator.blockLabelReserve
+        storage.addAttribute(
+            .paragraphStyle, value: style,
+            range: NSRange(location: chipIndex - 3, length: storage.length - chipIndex + 3))
+        let cell = try XCTUnwrap(
+            (storage.attribute(.attachment, at: chipIndex, effectiveRange: nil) as? ChipAttachment)?
+                .attachmentCell as? ChipCell)
+
+        textView.layout()
+        layoutManager.ensureLayout(for: container)
+        let rep = try XCTUnwrap(textView.bitmapImageRepForCachingDisplay(in: textView.bounds))
+        textView.cacheDisplay(in: textView.bounds, to: rep)
+
+        let drawn = try XCTUnwrap(cell.lastDrawnFrame, "the block was never drawn")
+        let answered = try XCTUnwrap(textView.chipFrame(at: chipIndex))
+        XCTAssertEqual(answered.minX, drawn.minX, accuracy: 0.5)
+        XCTAssertEqual(answered.minY, drawn.minY, accuracy: 0.5)
+        XCTAssertEqual(answered.width, drawn.width, accuracy: 0.5)
+        XCTAssertEqual(answered.height, drawn.height, accuracy: 0.5)
+        XCTAssertEqual(drawn.height, ChipCell.blockHeight, accuracy: 0.5)
+        XCTAssertNil(textView.chipFrame(at: 0), "ink answered a chip frame")
+
+        // The case exists because the bounding rect is the wrong answer
+        // here: the ink beside the block lifts it above the block and
+        // stretches it, and the seat it yields is not the drawn seat.
+        let glyphs = layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: chipIndex, length: 1), actualCharacterRange: nil)
+        var bounding = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
+        bounding.origin.x += textView.textContainerOrigin.x
+        bounding.origin.y += textView.textContainerOrigin.y
+        XCTAssertLessThan(bounding.minY, drawn.minY, "the ink did not rise above the block; the case is moot")
+        XCTAssertGreaterThan(bounding.height, drawn.height)
+        XCTAssertNotEqual(
+            ChipCell.actionsRect(in: bounding).minY, ChipCell.actionsRect(in: drawn).minY,
+            "the seats agreed; the old frame would have hit")
     }
 
     /// A wrapped editor's finite container is already inset from the
@@ -163,7 +287,7 @@ final class SealedCapsuleTests: XCTestCase {
 
         XCTAssertEqual(attachmentSize.width, expectedWidth, accuracy: 0.5)
         XCTAssertLessThan(attachmentSize.width, scroll.contentSize.width)
-        XCTAssertNotEqual(attachmentSize.width, 240)
+        XCTAssertNotEqual(attachmentSize.width, ChipCell.fallbackBlockWidth)
     }
 
     /// Return and Space, bare, are the two keys that open a selected
