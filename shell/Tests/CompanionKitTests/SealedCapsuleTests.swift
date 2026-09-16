@@ -3,10 +3,9 @@ import XCTest
 
 @testable import CompanionKit
 
-/// The sealed block's actions and the lines that follow them, as the
-/// stream navigator design drew them (2026-09-15): the menu with its
-/// chord and its red removal, the actions glyph's seat, and the three
-/// notices. Words and rectangles, no window.
+/// The sealed block's actions, live TextKit geometry, and the lines
+/// that follow them, as the stream navigator design drew them
+/// (2026-09-15).
 @MainActor
 final class SealedCapsuleTests: XCTestCase {
     private func makeModel() throws -> PageModel {
@@ -18,9 +17,9 @@ final class SealedCapsuleTests: XCTestCase {
 
     // MARK: The menu
 
-    /// Copy decrypted advertises the keymap's chord beside the verb,
-    /// and the removal is set in red as well as apart.
-    func testTheMenuAdvertisesTheChordAndSetsRemovalInRed() throws {
+    /// The menu exposes the three named actions, advertises the copy
+    /// chord, and separates removal without depending on item offsets.
+    func testTheMenuExposesTheNamedActionsAndAdvertisesTheCopyChord() throws {
         let model = try makeModel()
         let coordinator = InkEditorView.Coordinator(model: model)
         model.newPage()
@@ -34,16 +33,31 @@ final class SealedCapsuleTests: XCTestCase {
 
         let menu = NSMenu()
         coordinator.appendChipItems(to: menu, at: 3)
-        XCTAssertEqual(menu.items.count, 4)
+        let copy = try XCTUnwrap(menu.items.first {
+            $0.title == "Copy decrypted contents"
+        })
+        let link = try XCTUnwrap(menu.items.first {
+            $0.title == "Create one-time link…"
+        })
+        let remove = try XCTUnwrap(menu.items.first {
+            $0.title == "Remove protected content"
+        })
+        XCTAssertEqual(copy.title, "Copy decrypted contents")
+        XCTAssertEqual(link.title, "Create one-time link…")
+        XCTAssertEqual(remove.title, "Remove protected content")
+        XCTAssertNotNil(copy.action)
+        XCTAssertNotNil(link.action)
+        XCTAssertNotNil(remove.action)
+        XCTAssertTrue(menu.items.contains { $0.isSeparatorItem })
+        XCTAssertGreaterThan(
+            try XCTUnwrap(menu.items.firstIndex(of: remove)),
+            try XCTUnwrap(menu.items.firstIndex { $0.isSeparatorItem })
+        )
+
         let chord = try XCTUnwrap(model.keymap.hintKeystroke(for: .chipCopyDecrypted))
         XCTAssertEqual(chord.displaySymbol, "⇧⌘C")
-        XCTAssertEqual(menu.items[0].keyEquivalent, "c")
-        XCTAssertEqual(menu.items[0].keyEquivalentModifierMask, [.command, .shift])
-        let title = try XCTUnwrap(menu.items[3].attributedTitle)
-        XCTAssertEqual(title.string, "Remove protected content")
-        XCTAssertEqual(
-            title.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor,
-            NSColor.systemRed)
+        XCTAssertEqual(copy.keyEquivalent, chord.menuKeyEquivalent)
+        XCTAssertEqual(copy.keyEquivalentModifierMask, chord.menuModifierMask)
 
         // The chord acts on exactly one selected object and on nothing
         // else, so it can never reach a payload nobody pointed at.
@@ -55,17 +69,101 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertNil(coordinator.selectedChipIndex, "a mixed selection offered the chord a payload")
     }
 
-    /// The actions glyph keeps a seat in the block's top trailing
-    /// corner, inside the block, whether or not it is drawn.
-    func testTheActionsGlyphSitsInTheBlocksTopTrailingCorner() {
+    /// In a flipped text view, the lock, classification, and actions
+    /// affordance occupy the upper row while excerpt metadata is below.
+    func testTheRowsLockAndActionsUseFlippedTextViewCoordinates() {
         let frame = NSRect(x: 10, y: 100, width: 400, height: ChipCell.blockHeight)
+        let layout = ChipCell.contentLayout(in: frame)
         let seat = ChipCell.actionsRect(in: frame)
+        XCTAssertTrue(frame.contains(layout.lockRect), "the lock hung off the block")
+        XCTAssertLessThan(layout.topRowY, layout.bottomRowY, "the rows were vertically reversed")
+        XCTAssertLessThan(layout.lockRect.midY, frame.midY, "the lock was not on the top row")
         XCTAssertTrue(frame.contains(seat), "the seat hung off the block")
         XCTAssertEqual(seat.maxX, frame.maxX - 12, "the seat did not share the metadata's inset")
-        // The block is drawn in a flipped text view: the top row is the
-        // one nearer `minY`.
         XCTAssertLessThan(seat.midY, frame.midY, "the seat was not on the top row")
         XCTAssertEqual(ChipCell.actionsGlyph, "···")
+    }
+
+    /// This exercises the TextKit 1 attachment-cell path used by the
+    /// editor rather than calling the attachment's bounds method directly.
+    func testLiveAttachmentLayoutUsesTheEditorMeasure() throws {
+        let storage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        ))
+        container.widthTracksTextView = false
+        storage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(container)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 300))
+        let textView = InkTextView(
+            frame: scroll.contentView.bounds,
+            textContainer: container
+        )
+        textView.textContainerInset = .zero
+        scroll.documentView = textView
+        storage.append(InkEditorView.Coordinator.chipString(ChipInfo(
+            chipId: 7,
+            kind: "text",
+            excerpt: "sk-live-…9Qz",
+            sizeLabel: "small",
+            concealed: false
+        )))
+
+        textView.layout()
+        layoutManager.ensureLayout(for: container)
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: 0, length: 1),
+            actualCharacterRange: nil
+        )
+        XCTAssertEqual(glyphRange.length, 1)
+        let attachmentSize = layoutManager.attachmentSize(forGlyphAt: glyphRange.location)
+        let glyphBounds = layoutManager.boundingRect(
+            forGlyphRange: glyphRange, in: container)
+        let expectedWidth = floor(
+            scroll.contentSize.width - container.lineFragmentPadding * 2)
+
+        XCTAssertEqual(attachmentSize.width, expectedWidth, accuracy: 0.5)
+        XCTAssertEqual(glyphBounds.width, expectedWidth, accuracy: 0.5)
+        XCTAssertEqual(attachmentSize.height, ChipCell.blockHeight, accuracy: 0.5)
+        XCTAssertNotEqual(attachmentSize.width, 240, "live layout used the fallback cell width")
+        XCTAssertGreaterThan(glyphBounds.height, 0)
+    }
+
+    /// A wrapped editor's finite container is already inset from the
+    /// viewport, so it must win over the captured viewport measure.
+    func testLiveAttachmentLayoutUsesTheWrappedContainerMeasure() throws {
+        let storage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: 456, height: 300))
+        container.widthTracksTextView = false
+        storage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(container)
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 300))
+        let textView = InkTextView(frame: scroll.contentView.bounds, textContainer: container)
+        textView.textContainerInset = NSSize(width: 12, height: 10)
+        scroll.documentView = textView
+        storage.append(InkEditorView.Coordinator.chipString(ChipInfo(
+            chipId: 8,
+            kind: "text",
+            excerpt: "wrapped",
+            sizeLabel: "small",
+            concealed: false
+        )))
+
+        textView.layout()
+        layoutManager.ensureLayout(for: container)
+        let glyphRange = layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: 0, length: 1),
+            actualCharacterRange: nil
+        )
+        let attachmentSize = layoutManager.attachmentSize(forGlyphAt: glyphRange.location)
+        let expectedWidth = floor(container.size.width - container.lineFragmentPadding * 2)
+
+        XCTAssertEqual(attachmentSize.width, expectedWidth, accuracy: 0.5)
+        XCTAssertLessThan(attachmentSize.width, scroll.contentSize.width)
+        XCTAssertNotEqual(attachmentSize.width, 240)
     }
 
     /// Return and Space, bare, are the two keys that open a selected
@@ -92,11 +190,11 @@ final class SealedCapsuleTests: XCTestCase {
     /// with it; the removal line says what happened.
     func testTheLinesReadAsTheDesignWroteThem() {
         XCTAssertEqual(
-            PageModel.copiedLine(clearsIn: 90, size: "small"),
-            "copied decrypted contents — small. the clipboard clears in 90 seconds.")
+            PageModel.copiedLine(clearsIn: 60, size: "small"),
+            "copied decrypted contents — small. the clipboard clears in 60 seconds.")
         XCTAssertEqual(
-            PageModel.copiedLine(clearsIn: 90),
-            "copied decrypted contents. the clipboard clears in 90 seconds.")
+            PageModel.copiedLine(clearsIn: 60),
+            "copied decrypted contents. the clipboard clears in 60 seconds.")
         XCTAssertEqual(
             PageModel.linkCopiedLine,
             "the link is on the clipboard — paste it where it needs to go.")

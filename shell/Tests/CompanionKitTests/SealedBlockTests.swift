@@ -48,9 +48,25 @@ final class SealedBlockTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(cell.cellSize().width, 240)
     }
 
-    func testMetadataAllowsOnlySizeClassesAndNeverCounts() {
-        XCTAssertEqual(ChipCell.displayedSizeClass("small"), "small")
-        XCTAssertEqual(ChipCell.displayedSizeClass("HUGE"), "huge")
+    func testMetadataAcceptsEveryCoreSizeClassAndFailsClosedForUnknownValues() throws {
+        let byteLengths = [1, 64, 1_024, 65_536, 1_048_576]
+        var labels = Set<String>()
+
+        for byteLength in byteLengths {
+            let client = CompanionClient.ephemeral(
+                tag: "sealed-size-class-\(byteLength)-\(UUID().uuidString)")
+            client.newTab()
+            let pageID = try XCTUnwrap(client.tabs().first?.pageID)
+            let text = String(repeating: "x", count: byteLength)
+            let label = try XCTUnwrap(
+                client.sealText(sheet: pageID, text, at: 0, length: 0)?.sizeLabel)
+
+            labels.insert(label)
+            XCTAssertEqual(ChipCell.displayedSizeClass(label), label)
+        }
+
+        XCTAssertEqual(labels.count, byteLengths.count)
         XCTAssertEqual(ChipCell.displayedSizeClass("40 ch"), "size unknown")
+        XCTAssertEqual(ChipCell.displayedSizeClass("future-class"), "size unknown")
     }
 }

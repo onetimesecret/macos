@@ -474,15 +474,24 @@ final class DocumentOpsWiringTests: XCTestCase {
         textView.setSelectedRange(NSRange(location: 3, length: 6))
         coordinator.sealSelectionOrLine()
 
-        // The two egresses, a separator, then the removal (D-29), every
-        // action aimed at the coordinator that owns the chip.
+        // The two egresses and the separated removal (D-29), every
+        // action aimed at the coordinator that owns the chip. Locate
+        // actions semantically so adding another item does not break an
+        // unrelated contract.
         let menu = NSMenu()
         coordinator.appendChipItems(to: menu, at: 3)
-        XCTAssertEqual(menu.items.count, 4)
-        XCTAssertEqual(menu.items[0].title, "Copy decrypted contents")
-        XCTAssertEqual(menu.items[1].title, "Create one-time link…")
-        XCTAssertTrue(menu.items[2].isSeparatorItem)
-        XCTAssertEqual(menu.items[3].title, "Remove protected content")
+        let copy = menu.items.first { $0.title == "Copy decrypted contents" }
+        let link = menu.items.first { $0.title == "Create one-time link…" }
+        let remove = menu.items.first { $0.title == "Remove protected content" }
+        XCTAssertNotNil(copy)
+        XCTAssertNotNil(link)
+        XCTAssertNotNil(remove)
+        XCTAssertTrue(menu.items.contains { $0.isSeparatorItem })
+        if let remove,
+           let removalIndex = menu.items.firstIndex(of: remove),
+           let separatorIndex = menu.items.firstIndex(where: \.isSeparatorItem) {
+            XCTAssertGreaterThan(removalIndex, separatorIndex)
+        }
         for item in menu.items where !item.isSeparatorItem {
             XCTAssertTrue(item.target === coordinator, "\(item.title) is not the coordinator's")
         }
