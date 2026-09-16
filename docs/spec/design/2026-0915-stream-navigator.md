@@ -148,13 +148,14 @@ the mechanical excerpt and the size class on the row under them.
   ```
 
   The removal item is *Remove protected content*, set apart by the
-  separator and styled by AppKit. The chord beside the first verb is the keymap's: `chip::
-  CopyDecrypted`, bound to `cmd-shift-c` in the bundled default, acts
-  on exactly one selected sealed object and is declined anywhere else,
-  so it can never reach a payload nobody pointed at. A keymap that
-  moves the chord moves the menu's hint; one that unbinds it leaves the
-  verb alone. This replaces the 2026-0915 record's *Remove from page*
-  wording; the removal stays structural and undoable (D-30).
+  separator and styled by AppKit. The chord beside the first verb is
+  the keymap's: `chip::CopyDecrypted`, bound to `cmd-shift-c` in the
+  bundled default, acts on exactly one selected sealed object and is
+  declined anywhere else, so it can never reach a payload nobody
+  pointed at. A keymap that moves the chord moves the menu's hint; one
+  that unbinds it leaves the verb alone. This replaces the 2026-0915
+  record's *Remove from page* wording; the removal stays structural
+  and undoable (D-30).
   *Acceptance:* `DocumentOpsTests.testTheChipMenuOffersPlaintextByName`,
   `SealedCapsuleTests.testTheMenuExposesTheNamedActionsAndAdvertisesTheCopyChord`,
   `BundledKeymapTests`.

@@ -35,9 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it, ⇧⌘C by default, bound as `chip::CopyDecrypted` and acting on exactly
   one selected object), Create one-time link…, and Remove protected
   content after a separator, with text styled by AppKit. The text system
-  appends neither AutoFill nor Services. A selected
-  block wears the ember keyline. The lines after the actions read "copied decrypted contents
-  — small. the clipboard clears in 60 seconds.", "the link is on the
+  appends neither AutoFill nor Services. A selected block wears the
+  ember keyline. The lines after the actions read "copied decrypted
+  contents — small. the clipboard clears in 60 seconds.", "the link is on the
   clipboard — paste it where it needs to go." and "protected content
   removed." (its Undo is gated until issue 170 lands the detached
   state). The interval is the core constant read through the seam; the
