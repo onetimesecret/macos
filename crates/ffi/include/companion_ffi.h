@@ -297,7 +297,12 @@ bool companion_tab_set_title(CompanionHandle *handle, uint64_t tab,
  *     the label and the day can never disagree; computed afresh on
  *     every call rather than cached, which is how a surface's labels
  *     roll over at local midnight without a timer. Null exactly when
- *     has_page is false: a slot holding no page is on no day).
+ *     has_page is false: a slot holding no page is on no day),
+ *   page_created_ms (uint64 or null: the PAGE's own creation stamp,
+ *     Unix epoch milliseconds, the absolute stamp page_day_offset is
+ *     counted from. A surface that draws each page as a checkpoint on
+ *     a stream renders its "MMDD-HHmm" from this in local time. Null
+ *     exactly when has_page is false).
  */
 char *companion_tabs_json(CompanionHandle *handle);
 
