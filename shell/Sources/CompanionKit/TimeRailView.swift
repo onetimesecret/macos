@@ -551,6 +551,11 @@ private final class StreamNavigatorLayoutCache: ObservableObject {
     private var key: Key?
     private var documentLayout: StreamNavigator.Layout?
 
+    /// Called from inside a `GeometryReader` builder, so the cache is
+    /// written during body evaluation. That is safe only while nothing
+    /// here is `@Published` and the answer is a pure function of the
+    /// key: a published property would invalidate the view from within
+    /// its own body. Never add one to this class.
     func layout(
         nodes: [StreamNavigator.Node], geometry: RollGeometry,
         height: CGFloat, width: CGFloat
@@ -603,6 +608,11 @@ private struct WheelRelay: NSViewRepresentable {
 
 final class WheelRelayView: NSView {
     var relay: ((NSEvent) -> Void)?
+    /// Marked `nonisolated(unsafe)` only so `deinit` can reach it. The
+    /// monitor is retired in `viewDidMoveToWindow` the moment the window
+    /// goes away, and that is the path that counts; the removal in
+    /// `deinit` is belt and braces for a view freed while still hosted,
+    /// and can go, annotation and all, once isolated deinit is available.
     nonisolated(unsafe) private var monitor: Any?
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -614,9 +624,7 @@ final class WheelRelayView: NSView {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, let relay = self.relay else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
-            let hitView = self.window?.contentView.map { content in
-                content.hitTest(content.convert(event.locationInWindow, from: nil))
-            } ?? nil
+            let hitView = Self.occludingView(at: event.locationInWindow, in: self.window)
             guard Self.shouldRelay(
                 eventWindow: event.window,
                 relayWindow: self.window,
@@ -627,6 +635,17 @@ final class WheelRelayView: NSView {
             relay(event)
             return nil
         }
+    }
+
+    /// The view under a wheel, asked of the window's content view.
+    /// `hitTest` wants a point in the receiver's superview's space, and
+    /// for a content view that is the window's base space, the one an
+    /// event's location already stands in, so the point is passed
+    /// straight through. Converting it into the content view's own
+    /// bounds first would test the wrong spot the moment those bounds
+    /// stop coinciding with the window's origin.
+    static func occludingView(at locationInWindow: NSPoint, in window: NSWindow?) -> NSView? {
+        window?.contentView?.hitTest(locationInWindow)
     }
 
     /// The representable deliberately answers nil from `hitTest`, so an

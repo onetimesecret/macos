@@ -358,7 +358,13 @@ public enum StreamNavigator {
     ///
     /// An unmeasured roll has no proportions: every node starts at the
     /// top and the packing alone decides, which is where the nodes go
-    /// for the pass between a roll mounting and its first layout.
+    /// for the pass between a roll mounting and its first layout. A
+    /// roll with a height but no measured blocks, the publish between a
+    /// height's capture and the extents' arrival, gets the rule any
+    /// missing run gets: each node is interpolated between its measured
+    /// neighbours or, with none, spread evenly between the document's
+    /// ends, so the extents landing moves the nodes instead of
+    /// unstacking them.
     public static func layout(
         nodes: [Node], geometry: RollGeometry, height: CGFloat, width: CGFloat
     ) -> Layout {
@@ -398,14 +404,7 @@ public enum StreamNavigator {
             + nodeYs.indices.map { Anchor(document: documentTops[$0], y: nodeYs[$0]) }
             + [Anchor(document: document, y: limit)]
         let map = { (offset: CGFloat) -> CGFloat in
-            for index in 1..<anchors.count {
-                let a = anchors[index - 1], b = anchors[index]
-                if offset <= b.document {
-                    let share = (offset - a.document) / max(1, b.document - a.document)
-                    return a.y + share * (b.y - a.y)
-                }
-            }
-            return limit
+            railY(forDocumentOffset: offset, anchors: anchors, trackBottom: limit)
         }
 
         let placed = nodes.indices.map { index in
@@ -417,14 +416,7 @@ public enum StreamNavigator {
             )
         }
 
-        var band: Band?
-        if geometry.documentHeight > 0, geometry.viewportHeight > 0,
-            geometry.viewportHeight < geometry.documentHeight {
-            let top = map(max(0, geometry.viewportTop))
-            let bottom = map(min(document, geometry.viewportTop + geometry.viewportHeight))
-            let drawn = max(Metrics.minimumBand, bottom - top)
-            band = Band(y: min(max(0, top), height - drawn), height: drawn)
-        }
+        let band = band(anchors: anchors, trackBottom: limit, geometry: geometry, height: height)
 
         var segment: Segment?
         if let active = nodes.firstIndex(where: \.active) {
@@ -481,26 +473,9 @@ public enum StreamNavigator {
     public static func updatingViewport(
         in layout: Layout, geometry: RollGeometry, height: CGFloat
     ) -> Layout {
-        let document = max(1, geometry.documentHeight)
-        let map = { (offset: CGFloat) -> CGFloat in
-            for index in 1..<layout.anchors.count {
-                let a = layout.anchors[index - 1], b = layout.anchors[index]
-                if offset <= b.document {
-                    let share = (offset - a.document) / max(1, b.document - a.document)
-                    return a.y + share * (b.y - a.y)
-                }
-            }
-            return layout.trackBottom
-        }
-
-        var band: Band?
-        if geometry.documentHeight > 0, geometry.viewportHeight > 0,
-            geometry.viewportHeight < geometry.documentHeight, layout.anchors.count >= 2 {
-            let top = map(max(0, geometry.viewportTop))
-            let bottom = map(min(document, geometry.viewportTop + geometry.viewportHeight))
-            let drawn = max(Metrics.minimumBand, bottom - top)
-            band = Band(y: min(max(0, top), height - drawn), height: drawn)
-        }
+        let band = band(
+            anchors: layout.anchors, trackBottom: layout.trackBottom,
+            geometry: geometry, height: height)
         let slivers = layout.slivers.map { sliver in
             Sliver(
                 id: sliver.id, y: sliver.y, width: sliver.width,
@@ -518,10 +493,51 @@ public enum StreamNavigator {
         )
     }
 
+    /// Where a document offset falls on the rail: the map through the
+    /// anchors, piece by piece, and the track's foot for anything past
+    /// the last one.
+    private static func railY(
+        forDocumentOffset offset: CGFloat, anchors: [Anchor], trackBottom: CGFloat
+    ) -> CGFloat {
+        guard anchors.count >= 2 else { return trackBottom }
+        for index in 1..<anchors.count {
+            let a = anchors[index - 1], b = anchors[index]
+            if offset <= b.document {
+                let share = (offset - a.document) / max(1, b.document - a.document)
+                return a.y + share * (b.y - a.y)
+            }
+        }
+        return trackBottom
+    }
+
+    /// The band over the clip's window, mapped through the anchors as
+    /// the nodes were placed. Absent when the whole roll is on screen,
+    /// never thinner than the minimum, and clamped into the rail when
+    /// the clip is in the elastic. The one rule for the first drawing
+    /// and for every viewport-only update after it.
+    private static func band(
+        anchors: [Anchor], trackBottom: CGFloat, geometry: RollGeometry, height: CGFloat
+    ) -> Band? {
+        guard anchors.count >= 2, geometry.documentHeight > 0, geometry.viewportHeight > 0,
+            geometry.viewportHeight < geometry.documentHeight
+        else { return nil }
+        let document = max(1, geometry.documentHeight)
+        let map = { (offset: CGFloat) -> CGFloat in
+            railY(forDocumentOffset: offset, anchors: anchors, trackBottom: trackBottom)
+        }
+        let top = map(max(0, geometry.viewportTop))
+        let bottom = map(min(document, geometry.viewportTop + geometry.viewportHeight))
+        let drawn = max(Metrics.minimumBand, bottom - top)
+        return Band(y: min(max(0, top), height - drawn), height: drawn)
+    }
+
     /// Resolve transient gaps in the measured extents without sending a
     /// later node back to document zero. Missing runs are interpolated
     /// between their measured neighbours, or between a neighbour and the
-    /// document boundary, then clamped into nondecreasing order.
+    /// document boundary, then clamped into nondecreasing order. A run
+    /// with no measured neighbour at all spans the whole document, so a
+    /// roll with a height and no extents yet spreads its nodes evenly
+    /// rather than stacking them at zero.
     private static func resolvedDocumentTops(
         nodes: [Node], geometry: RollGeometry
     ) -> [CGFloat] {
