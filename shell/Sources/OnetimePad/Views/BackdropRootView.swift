@@ -223,7 +223,7 @@ struct BackdropRootView: View {
     /// points at the summon that would change that; the pinned rest is
     /// clickable, so its hint says so.
     private var emptyHint: String {
-        if raised { return "click, ⌃⌥Space, or ↩ for a page" }
+        if raised { return "click, ⌃⌥Space, or ↩ to start one" }
         return model.pinned
             ? "click or ⌃⌥Space raises the surface"
             : "⌃⌥Space raises the surface"

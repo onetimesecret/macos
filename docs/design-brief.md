@@ -87,7 +87,7 @@ the metric, minimised. **Never cute about deletion, never guilt-tripping**
 ("3 items expiring soon!" is explicitly banned). "The app speaks when
 spoken to." Existing copy sets the register:
 
-> "Empty is the resting state." · "PRESENT, NOT CENTRAL" · "drop or paste here."
+> "No page here yet." · "PRESENT, NOT CENTRAL" · "drop or paste here."
 
 ## Tokens and parameters (current values)
 

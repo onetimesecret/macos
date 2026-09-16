@@ -105,7 +105,8 @@ final class DayScrollTests: XCTestCase {
     private func mountRoll(model: PageModel, height: CGFloat = 320) throws -> Roll {
         let coordinator = InkEditorView.Coordinator(model: model)
         let scroll = DayScrollView.makeRoll(
-            model: model, coordinator: coordinator, emptyHint: "⌃⌥Space to raise the card"
+            model: model, coordinator: coordinator,
+            emptyHint: "click, ⌃⌥Space, or ↩ to start one"
         )
         let card = NSRect(x: 0, y: 0, width: 420, height: height)
         let window = NSWindow(
@@ -756,7 +757,9 @@ final class DayScrollTests: XCTestCase {
         XCTAssertNil(roll.stack.editor, "there is no page, so there is no editor to build")
         let parts = roll.stack.laidOut
         XCTAssertEqual(parts.count, 1)
-        XCTAssertTrue(parts[0].body is EmptyTodayView)
+        let empty = try XCTUnwrap(parts[0].body as? EmptyTodayView)
+        XCTAssertEqual(empty.lead.stringValue, "No page here yet.")
+        XCTAssertEqual(empty.hint.stringValue, "click, ⌃⌥Space, or ↩ to start one")
         XCTAssertEqual(parts[0].header.mark, DayHeaderView.Mark.none)
         XCTAssertEqual(
             parts[0].body.frame.maxY,

@@ -623,10 +623,10 @@ sentence · remote-edit line · pasteboard offer · notice · conceal sheet.
   *Banned:* "3 items expiring soon", "Are you sure?" on expiry,
   onboarding or celebratory copy, "your secrets are safe with us", and
   any label implying content can be revealed.
-- **D-16 (fixed)** The empty state is one calm sentence ("Empty is the
-  resting state.") over a hint naming the gesture that works on this
-  surface and stance. No illustration, no onboarding flow.
-  *Acceptance:* raised: "click, ⌃⌥Space, or ↩ for a page" · pinned rest:
+- **D-16 (fixed)** The empty state is one calm sentence ("No page here
+  yet.") over a hint naming the gesture that works on this surface and
+  stance. No illustration, no onboarding flow.
+  *Acceptance:* raised: "click, ⌃⌥Space, or ↩ to start one" · pinned rest:
   "click or ⌃⌥Space raises the surface" · unpinned rest: "⌃⌥Space raises
   the surface".
 

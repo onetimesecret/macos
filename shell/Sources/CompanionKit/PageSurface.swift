@@ -96,7 +96,7 @@ public struct PageContentView: View {
                     onEscape: { model.escape() }
                 )
                 VStack(spacing: 6) {
-                    Text("Empty is the resting state.")
+                    Text("No page here yet.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Text(emptyHint)

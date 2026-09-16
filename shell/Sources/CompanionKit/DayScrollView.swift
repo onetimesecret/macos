@@ -1690,8 +1690,8 @@ final class EmptyTodayView: NSView {
     /// The focus law's catcher, kept reachable so a test can take the
     /// grant a click would take without synthesizing the click.
     let grant = KeyGrantingClickView(frame: .zero)
-    private let lead = NSTextField(labelWithString: "Empty is the resting state.")
-    private let hint: NSTextField
+    let lead = NSTextField(labelWithString: "No page here yet.")
+    let hint: NSTextField
 
     init(model: PageModel, hint: String) {
         self.hint = NSTextField(labelWithString: hint)
