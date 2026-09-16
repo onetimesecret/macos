@@ -296,6 +296,12 @@ Create one-time link…
 Remove from page
 ```
 
+*Amended 2026-09-15:* the removal item reads *Remove protected
+content*, the first verb carries the keymap's chord (⇧⌘C by default),
+and the block reveals an actions glyph on hover that opens this menu;
+see [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md)
+D-40 and D-41.
+
 After a decrypted copy, one line confirms the boundary crossing with the
 interval the core enforces:
 `decrypted contents copied · clipboard clears in 60 seconds`. The
@@ -305,6 +311,12 @@ interval is one core constant, `CLIPBOARD_CLEAR_SECONDS` (60) in
 pasteboard egress (`PageModel.swift` `armClipboardClear`), and the
 confirmation states that number. A clear the app does not perform is
 never promised.
+
+*Amended 2026-09-15:* the line reads `copied decrypted contents —
+small. the clipboard clears in 90 seconds.` and the constant is 90; the
+mechanism is unchanged. See
+[2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-42 and
+D-43.
 
 ADR-0012 named one egress (send) at line 103. This record makes it
 three, **copy decrypted**, **decrypted drag**, **promotion**, and the
@@ -391,6 +403,9 @@ in plain; the fragment adds order, not payload exposure.
   (copy out, ↗ conceal, remove), so a pointer is never required; the
   row is not itself a button, and a click selects the whole attachment
   without placing the caret inside it.
+  *Amended 2026-09-15:* the click also opens the object's menu, and
+  Return or Space over the selected object opens it too; see
+  [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-40.
 - **D-27 (fixed)** Sealed content is a full-measure block, not an inline
   pill: 8px radius, hairline border, a tracked `SEALED CONTENT` label
   with a lock over the mechanical excerpt, the size class right-aligned
@@ -422,7 +437,9 @@ in plain; the fragment adds order, not payload exposure.
   The 60 second clear is implemented: one core constant,
   `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi`, read by the shell through
   the stateless seam `companion_clipboard_clear_seconds`, and armed by
-  the model on every pasteboard egress.
+  the model on every pasteboard egress. *Amended 2026-09-15:* the
+  constant is 90 seconds
+  ([2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-43).
 - **D-30 (fixed)** Sealing an existing selection replaces it in place,
   keeps the surrounding whitespace and selects the new object, and is
   **one-way**: ⌘Z does not restore the plaintext. No confirmation
@@ -536,6 +553,10 @@ eating into the page's column and never into the header, rows padded 4
 vertically, blank count at the foot in words. The two orientations are
 exclusive: a side column of days with a bottom strip underneath would
 be the same slots counted twice.
+
+*Amended 2026-09-15:* down the side is 110 wide, and Days + side is the
+stream navigator rather than day rows; see
+[2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) section 1.
 
 Dash vocabulary: `2 3` a slot holding no page · `3 2` clock held for an
 hour · `7 2` hold topped up to 24h · `2 1.5` ember and hatched, under
@@ -821,7 +842,9 @@ moved a decision.
   general-pasteboard interval is 60 seconds as one core constant,
   `CLIPBOARD_CLEAR_SECONDS`; ADR-0012's Amendment 1 adopts the three
   complete-payload egress points. The drag guarantee is limited to what
-  Apple's pasteboard documentation establishes.
+  Apple's pasteboard documentation establishes. *Amended 2026-09-15:*
+  the interval is 90 seconds
+  ([2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-43).
 - D-33, the contract's cut, paste and expiry rows and the lifecycle table:
   every per-object TTL is removed. Cut and removed objects remain live on
   the page's clock; expiry, burn and unknown references remain distinct

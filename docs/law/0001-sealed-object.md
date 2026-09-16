@@ -203,21 +203,27 @@ Fixed details the rows rely on:
   decrypted data on the general pasteboard; copy decrypted does and is the
   riskier fallback. No claim is made about third-party observation,
   clipboard history or erasure of drag-pasteboard data.
-- The clear after copy is one core constant, 60 seconds
+- The clear after copy is one core constant, 90 seconds
   (`CLIPBOARD_CLEAR_SECONDS`, `crates/ffi/src/lib.rs`), read through the
   seam `companion_clipboard_clear_seconds`; the confirmation states that
-  number and never promises a clear the app does not perform (D-29).
+  number and never promises a clear the app does not perform (D-29,
+  D-43 of the 2026-0915 stream navigator record).
 - Time belongs to the page. A detached object takes its page's clock; there
   is no per chip TTL (`sheet.rs` forbids per chip timers; maintainer
   decision 2026-08-07; D-33).
 - The object's menu, in the copy register of D-15:
 
   ```text
-  Copy decrypted contents
+  Copy decrypted contents        ⇧⌘C
   Create one-time link…
   ────────────────────────
-  Remove from page
+  Remove protected content
   ```
+
+  The chord is the keymap's (`chip::CopyDecrypted`) and acts on exactly
+  one selected object; the removal is set in red as well as apart, and
+  stays structural and undoable (D-41 of the 2026-0915 stream navigator
+  record).
 
 ## What the rule forbids
 
@@ -328,3 +334,12 @@ dialog free).
 - 2026-09-15: Review evidence correction. Added D-14 and D-15 to the decision
   cluster; limited each cited test to the behaviour it directly proves; and
   recorded direct coverage that promotion retains the local payload.
+- 2026-09-15: Stream navigator amendment. The maintainer's interactive
+  design ([2026-0915-stream-navigator.md](../spec/design/2026-0915-stream-navigator.md))
+  renamed the removal item back to *Remove protected content*, put the
+  copy decrypted chord beside its verb, reworded the three lines that
+  follow the menu's actions, set the clear after copy to 90 seconds, and
+  made a plain click, Return and Space over the selected object open its
+  menu (the click still selects the whole object first).
+  The operation classes, the contract table and the lifecycle are
+  untouched; the removal's Undo remains owed to issue 170.

@@ -210,7 +210,8 @@ each crossing the FFI at a documented point.
 
 The input path bullet's "clear on any pasteboard egress" gains the
 number it lacked. The clear-on-egress interval is one core constant,
-60 seconds, exposed through a seam so the confirmation line and the
+60 seconds (90 since the 2026-09-15 stream navigator record, see the
+Decision history), exposed through a seam so the confirmation line and the
 timer read the same value (`CLIPBOARD_CLEAR_SECONDS` and the
 `companion_clipboard_clear_seconds` seam in `crates/ffi/src/lib.rs`).
 The shell arms a one shot timer after every copy out and after the
@@ -250,3 +251,4 @@ destination application holds them from the drop onward.
 - **2026-08-20 onward:** The portions named as still standing in [Supersession](#supersession) remain in force.
 - **2026-09-15:** [Amendment 1](#amendment-1-three-egress-points-and-one-clear-interval) was appended, adopting D-32 of the [2026-0915 design record](../spec/design/2026-0915-ui-ux-decisions.md): three egress points in place of one, the clear-on-egress interval as one core constant of 60 seconds, and the `Drag` destination class owed to issue 170.
 - **2026-09-15:** Amendment 1 was narrowed after documentation review: the shell does not receive the complete sealed payload but may hold visible ink and the mechanical excerpt; decrypted drag is guaranteed not to be written by OnetimePad to the general pasteboard, with no broader clipboard-history, observability or erasure claim.
+- **2026-09-15:** The clear-on-egress interval named in Amendment 1 is 90 seconds, not 60, adopting D-43 of the [2026-0915 stream navigator record](../spec/design/2026-0915-stream-navigator.md). The mechanism (one core constant, read through the seam, armed on every egress) is unchanged.

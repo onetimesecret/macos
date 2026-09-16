@@ -1322,10 +1322,11 @@ pub unsafe extern "C" fn companion_clear_clipboard_if_ours(handle: *mut Companio
 /// How long a copy-out may dwell on the general pasteboard before the
 /// shell's armed clear takes it back: the one number behind every
 /// "clipboard clears in N seconds" line, owned here so the shell reads
-/// it rather than promising one of its own (D-29, D-32). Provisional
-/// at 60 until the maintainer picks the interval; ADR-0012's egress
-/// amendment names it.
-pub const CLIPBOARD_CLEAR_SECONDS: u32 = 60;
+/// it rather than promising one of its own (D-29, D-32). Ninety, the
+/// interval the maintainer's stream navigator design names in its
+/// copy notice (2026-09-15); it was provisional at 60 until then.
+/// ADR-0012's egress amendment names it.
+pub const CLIPBOARD_CLEAR_SECONDS: u32 = 90;
 
 /// The clear-after-copy interval in seconds ([`CLIPBOARD_CLEAR_SECONDS`]).
 /// Stateless: no handle, nothing to fail.
@@ -4490,7 +4491,7 @@ mod tests {
     #[test]
     fn the_clear_interval_is_the_core_constant() {
         assert_eq!(companion_clipboard_clear_seconds(), CLIPBOARD_CLEAR_SECONDS);
-        assert_eq!(companion_clipboard_clear_seconds(), 60);
+        assert_eq!(companion_clipboard_clear_seconds(), 90);
     }
 
     /// Every egress retires the receipt of the one before it: a second
