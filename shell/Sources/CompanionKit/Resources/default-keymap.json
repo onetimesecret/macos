@@ -85,6 +85,13 @@
       "cmd-shift-v": "clipboard::Seal",
       "cmd-enter": "clipboard::SealSelection",
 
+      // The one chord that puts plaintext on the board: copy the
+      // selected sealed object's decrypted contents, the same verb the
+      // object's own menu offers by name. It does nothing unless the
+      // selection is exactly one sealed object, so an ordinary cmd-c
+      // over ink or over an object stays an ordinary copy.
+      "cmd-shift-c": "chip::CopyDecrypted",
+
       // Undo and redo. Bound here rather than left to the standard Edit
       // menu, because the stack they drive is the core's now and not
       // AppKit's (issue #132): the page's text view sees the chord

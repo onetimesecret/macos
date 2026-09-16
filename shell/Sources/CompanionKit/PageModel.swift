@@ -505,10 +505,30 @@ public final class PageModel: ObservableObject {
         case actionable
     }
 
+    /// The one thing a notice may offer to do about itself, drawn as a
+    /// button beside the words: "Undo" after a removal. Set by `flash`
+    /// with the words, cleared with them, so an action never outlives
+    /// the line it belongs to.
+    public struct NoticeAction {
+        public let label: String
+        public let perform: @MainActor () -> Void
+
+        public init(label: String, perform: @escaping @MainActor () -> Void) {
+            self.label = label
+            self.perform = perform
+        }
+    }
+
+    @Published public private(set) var noticeAction: NoticeAction?
+
     /// Notices are transient by contract: each `flash` restarts the
     /// clock, and the line clears itself unless a newer notice has
-    /// taken its place.
+    /// taken its place. A line with an action stays longer, because a
+    /// person has to find the button; a line that only reports stays
+    /// long enough to be read.
     private var noticeGeneration = 0
+    static let noticeDwell: TimeInterval = 4
+    static let noticeDwellWithAction: TimeInterval = 12
 
     /// The state file existed and would not open, so the content
     /// licence is withheld and nothing typed this session reaches disk.
@@ -3382,15 +3402,28 @@ public final class PageModel: ObservableObject {
     /// notice replaced it in the meantime. Plain unless the caller says
     /// otherwise: most notices report, and the few that ask for a hand
     /// name themselves as `.actionable` where they are raised.
-    public func flash(_ message: String, tone: NoticeTone = .plain) {
+    public func flash(_ message: String, tone: NoticeTone = .plain, action: NoticeAction? = nil) {
         notice = message
         noticeTone = tone
+        noticeAction = action
         noticeGeneration += 1
         let generation = noticeGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+        let dwell = action == nil ? Self.noticeDwell : Self.noticeDwellWithAction
+        DispatchQueue.main.asyncAfter(deadline: .now() + dwell) { [weak self] in
             guard let self, self.noticeGeneration == generation else { return }
             self.notice = nil
+            self.noticeAction = nil
         }
+    }
+
+    /// The notice's button was pressed: run it, and take the line down
+    /// with it, since what it offered has been done.
+    public func performNoticeAction() {
+        guard let action = noticeAction else { return }
+        noticeGeneration += 1
+        notice = nil
+        noticeAction = nil
+        action.perform()
     }
 
     /// Esc: leave the ledger if it is showing; otherwise hand the
@@ -3870,19 +3903,53 @@ public final class PageModel: ObservableObject {
     /// not read-only: a successful copy appends a sent record to the
     /// ledger, and that record is lost unless a write is armed for it
     /// (issue #52).
-    public func copyOutChip(_ id: UInt64) {
+    public func copyOutChip(_ id: UInt64, size: String? = nil) {
         guard client.copyOutChip(id: id) else { return }
         markDirty()
         armClipboardClear()
-        flash(Self.copiedLine(clearsIn: CompanionClient.clipboardClearSeconds()))
+        flash(Self.copiedLine(clearsIn: CompanionClient.clipboardClearSeconds(), size: size))
     }
 
-    /// The confirmation after a copy-out (D-29): what happened, and
-    /// when the board gives it back. The number is the core's, read
-    /// through the seam, never a promise the shell makes on its own.
-    public nonisolated static func copiedLine(clearsIn seconds: UInt32) -> String {
-        "decrypted contents copied · clipboard clears in \(seconds) seconds"
+    /// The confirmation after a copy-out (D-29): what happened, how
+    /// much of it, and when the board gives it back, in the words the
+    /// stream navigator design gave it. The size is the object's own
+    /// size class, the one its block already shows, never a count; the
+    /// number is the core's, read through the seam, never a promise the
+    /// shell makes on its own.
+    public nonisolated static func copiedLine(clearsIn seconds: UInt32, size: String? = nil)
+        -> String
+    {
+        let what = size.map { "copied decrypted contents — \($0)." }
+            ?? "copied decrypted contents."
+        return "\(what) the clipboard clears in \(seconds) seconds."
     }
+
+    /// The line after a sealed object is removed from the page, in the
+    /// design's words. Its Undo is owed to issue 170: today the core
+    /// zeroizes an object the moment the document stops referencing it,
+    /// so an Undo would put back a reference to nothing, and the
+    /// button is not offered until the detached state exists to
+    /// reattach from (D-30, D-33).
+    public static let removedLine = "protected content removed."
+
+    /// Whether a removal's Undo is offered beside `removedLine`. False
+    /// until issue 170 lands the detached state; the button and the
+    /// plumbing are ready for it.
+    public static let offersRemovalUndo = false
+
+    /// After a removal: the line, with Undo beside it once the core can
+    /// honour one.
+    public func noteRemoval(undo: @escaping @MainActor () -> Void) {
+        flash(
+            Self.removedLine,
+            action: Self.offersRemovalUndo ? NoticeAction(label: "Undo", perform: undo) : nil
+        )
+    }
+
+    /// The line after a one-time link is made, in the design's words:
+    /// the link is on the board, and what to do with it.
+    public static let linkCopiedLine =
+        "the link is on the clipboard — paste it where it needs to go."
 
     /// True while the shell is writing the projection itself: a
     /// page-switch rebuild, a seal's chip-face insertion, a recovery
@@ -4259,7 +4326,7 @@ public final class PageModel: ObservableObject {
         if outcome.ok {
             draft.error = nil
             draft.receiptId = outcome.receiptId
-            flash("the link is on the clipboard")
+            flash(Self.linkCopiedLine)
         } else {
             // Inline, with retry; content never left the sheet.
             draft.error = outcome.error ?? "the conceal failed"

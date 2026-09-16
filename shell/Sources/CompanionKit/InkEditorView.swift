@@ -2034,10 +2034,14 @@ public struct InkEditorView: NSViewRepresentable {
             "Remove protected content",
         ]
 
-        /// A plain click on a chip selects the whole object and never
-        /// places a caret inside it (D-28). The menu no longer opens on
-        /// a click; it belongs to the secondary click, where every
-        /// other object on the platform keeps its actions.
+        /// A plain click on a chip selects the whole object, never
+        /// places a caret inside it (D-28), and opens the object's menu
+        /// under the pointer: the capsule is its own actions, as the
+        /// stream navigator design draws it (D-40), so the click that
+        /// lands on it asks what may be done with it. The actions glyph
+        /// in the block's top corner is the visible affordance for the
+        /// same menu, and the secondary click opens it too. Actions,
+        /// never content.
         public func textView(
             _ view: NSTextView,
             clickedOn cell: NSTextAttachmentCellProtocol,
@@ -2046,6 +2050,20 @@ public struct InkEditorView: NSViewRepresentable {
         ) {
             guard cell is ChipCell else { return }
             view.setSelectedRange(NSRange(location: charIndex, length: 1))
+            guard let event = NSApp.currentEvent, event.type == .leftMouseDown else { return }
+            let point = view.convert(event.locationInWindow, from: nil)
+            openChipMenu(at: charIndex, from: point, in: view)
+        }
+
+        /// The object's menu, opened at `point`: the same items the
+        /// secondary click builds, so the three routes to it (a click,
+        /// the glyph, Return or Space over the selected block) cannot
+        /// offer three different lists.
+        func openChipMenu(at charIndex: Int, from point: NSPoint, in view: NSTextView) {
+            let menu = NSMenu()
+            appendChipItems(to: menu, at: charIndex)
+            guard !menu.items.isEmpty else { return }
+            menu.popUp(positioning: nil, at: point, in: view)
         }
 
         /// The character index of the chip under `point` (in the text
@@ -2091,7 +2109,20 @@ public struct InkEditorView: NSViewRepresentable {
                 keyEquivalent: ""
             )
             copy.target = self
-            copy.representedObject = chipID as NSNumber
+            // The item carries the object's place rather than its id,
+            // so the action can read the block's own size class off
+            // the storage for the confirmation line.
+            copy.representedObject = charIndex as NSNumber
+            // The chord beside the verb is the keymap's, the way every
+            // tooltip names its chord: a keymap that moved
+            // `chip::CopyDecrypted` moves this, and one that unbound it
+            // leaves the verb alone. Display only; the page's text view
+            // dispatches the chord itself, so the menu item advertises
+            // and never claims.
+            if let chord = model.keymap.hintKeystroke(for: .chipCopyDecrypted) {
+                copy.keyEquivalent = chord.menuKeyEquivalent
+                copy.keyEquivalentModifierMask = chord.menuModifierMask
+            }
             menu.addItem(copy)
             let conceal = NSMenuItem(
                 title: Self.chipMenuTitles[1],
@@ -2109,7 +2140,42 @@ public struct InkEditorView: NSViewRepresentable {
             )
             remove.target = self
             remove.representedObject = charIndex as NSNumber
+            // The destructive verb in the platform's red, set apart
+            // from the two egresses by the separator above it as well,
+            // so the colour is never the only carrier (D-03).
+            remove.attributedTitle = NSAttributedString(
+                string: Self.chipMenuTitles[2],
+                attributes: [.foregroundColor: NSColor.systemRed]
+            )
             menu.addItem(remove)
+        }
+
+        /// The chip standing at the selection, when the selection is
+        /// exactly one chip and nothing else: the one shape the copy
+        /// decrypted chord acts on. Nil over ink, over a caret, or over
+        /// a selection that mixes ink and objects, which is what keeps
+        /// ⇧⌘C from ever reaching a payload nobody pointed at.
+        var selectedChipIndex: Int? {
+            guard let textView, let storage = textView.textStorage else { return nil }
+            let range = textView.selectedRange()
+            guard range.length == 1, range.location < storage.length,
+                  storage.attribute(.attachment, at: range.location, effectiveRange: nil)
+                    is ChipAttachment
+            else { return nil }
+            return range.location
+        }
+
+        /// Copy the chip at `index` back out through the core, and say
+        /// so with the block's own size class in the line.
+        func copyOutChip(at index: Int) {
+            guard let storage = textView?.textStorage, index < storage.length,
+                  let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil)
+                    as? ChipAttachment
+            else { return }
+            model.copyOutChip(
+                attachment.info.chipId,
+                size: ChipCell.displayedSizeClass(attachment.info.sizeLabel)
+            )
         }
 
         // MARK: Links — ⌘-click opens, a plain click edits (ADR-0023)
@@ -2145,8 +2211,8 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         @objc private func copyOutChip(_ sender: NSMenuItem) {
-            guard let id = (sender.representedObject as? NSNumber)?.uint64Value else { return }
-            model.copyOutChip(id)
+            guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
+            copyOutChip(at: index)
         }
 
         /// The chip's ↗: open the inline confirmation. The bytes stay
@@ -2165,6 +2231,11 @@ public struct InkEditorView: NSViewRepresentable {
             if textView.shouldChangeText(in: range, replacementString: "") {
                 storage.replaceCharacters(in: range, with: "")
                 textView.didChangeText() // travels as a del op; the core reaps the chip
+                // The line says what happened. Its Undo steps the
+                // core's stack back once the core keeps a removed
+                // object to step back to (issue 170); until then the
+                // model offers the line without the button.
+                model.noteRemoval { [weak self] in self?.step(back: true) }
             }
         }
 
@@ -3088,6 +3159,56 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         coordinator?.applyManualLanguage(language)
     }
 
+    /// The sealed block under the pointer, if any, so the block can
+    /// draw its actions glyph while it is hovered (D-10). Kept here
+    /// rather than on the cell because the cell is drawn by the layout
+    /// manager and holds no state about the pointer; the view watches
+    /// the pointer and redraws the block that gained or lost it.
+    private(set) var hoveredChipIndex: Int? {
+        didSet {
+            guard hoveredChipIndex != oldValue else { return }
+            for index in [oldValue, hoveredChipIndex].compactMap({ $0 }) {
+                redrawChip(at: index)
+            }
+        }
+    }
+
+    private var hoverTracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTracking { removeTrackingArea(hoverTracking) }
+        let tracking = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil
+        )
+        addTrackingArea(tracking)
+        hoverTracking = tracking
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        let point = convert(event.locationInWindow, from: nil)
+        hoveredChipIndex = coordinator?.chipIndex(at: point, in: self)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        hoveredChipIndex = nil
+    }
+
+    private func redrawChip(at index: Int) {
+        guard let layoutManager, let textContainer,
+              let storage = textStorage, index < storage.length else { return }
+        let glyphs = layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        rect.origin.x += textContainerOrigin.x
+        rect.origin.y += textContainerOrigin.y
+        setNeedsDisplay(rect.insetBy(dx: -4, dy: -4))
+    }
+
     /// The context menu. Over a chip it is the chip's own: the object
     /// is selected whole first, as a plain click selects it, and the
     /// text menu AppKit would build is not consulted, because Cut and
@@ -3211,7 +3332,47 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
            dispatch(command.id) {
             return
         }
+        // Return or Space over a selected sealed object opens its menu
+        // rather than typing over it (D-40): the object is a block the
+        // keyboard has landed on, and the two keys that would replace
+        // it with a newline or a space are the two that ask it what may
+        // be done instead. The object's own keys, not chords, so they
+        // are not the keymap's; anywhere else they type as they always
+        // did.
+        if Self.opensObjectMenu(characters: event.charactersIgnoringModifiers,
+                                modifiers: event.modifierFlags),
+           let coordinator, let index = coordinator.selectedChipIndex {
+            coordinator.openChipMenu(at: index, from: menuAnchor(forChipAt: index), in: self)
+            return
+        }
         super.keyDown(with: event)
+    }
+
+    /// Whether a key press is Return or Space with no modifier held:
+    /// the two keys that open a selected object's menu. Pure, so the
+    /// decision is an assertion; the guard on the selection is the
+    /// caller's.
+    nonisolated static func opensObjectMenu(
+        characters: String?, modifiers: NSEvent.ModifierFlags
+    ) -> Bool {
+        guard modifiers.intersection([.command, .control, .option, .shift]).isEmpty,
+              let characters, characters.count == 1, let key = characters.first
+        else { return false }
+        return key == "\r" || key == "\n" || key == " "
+    }
+
+    /// Where a menu opened from the keyboard appears: under the block's
+    /// leading edge, where the block's own words begin, so the menu
+    /// reads as the block's rather than the caret's.
+    private func menuAnchor(forChipAt index: Int) -> NSPoint {
+        guard let layoutManager, let textContainer else { return .zero }
+        let glyphs = layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
+        let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        return NSPoint(
+            x: rect.minX + textContainerOrigin.x + 12,
+            y: rect.maxY + textContainerOrigin.y
+        )
     }
 
     /// What the keymap says this event means on the Editor surface,
@@ -3238,6 +3399,13 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             coordinator.sealedPaste()
         case .clipboardSealSelection:
             coordinator.sealSelectionOrLine()
+        case .chipCopyDecrypted:
+            // Only over exactly one selected object: anywhere else the
+            // chord is declined rather than swallowed, so it falls
+            // through to whatever else would have had it and never
+            // reaches a payload nobody pointed at (D-29).
+            guard let index = coordinator.selectedChipIndex else { return false }
+            coordinator.copyOutChip(at: index)
         case .editorDetectCodeLanguage:
             guard PageModel.languageDetectionFeaturesAvailable,
                   coordinator.model.languageDetectionEnabled,
@@ -3803,6 +3971,32 @@ final class ChipCell: NSTextAttachmentCell {
         return normalized
     }
 
+    /// The actions glyph: three dots in the block's top trailing
+    /// corner, drawn only while the pointer is over the block or the
+    /// block is selected, and clicked to open the object's menu. The
+    /// affordance is revealed, the content is not (D-10), and it keeps
+    /// its seat whether drawn or not, so revealing it moves nothing.
+    nonisolated static let actionsGlyph = "···"
+
+    /// Where the actions glyph sits in a block drawn at `cellFrame`,
+    /// and so where a click opens the menu. On the classification's
+    /// row, at the trailing edge, wide enough to hit. Pure, so the
+    /// click test is an assertion rather than a screen.
+    nonisolated static func actionsRect(in cellFrame: NSRect) -> NSRect {
+        NSRect(x: cellFrame.maxX - 12 - 22, y: cellFrame.maxY - 26, width: 22, height: 16)
+    }
+
+    @MainActor
+    private var actions: NSAttributedString {
+        NSAttributedString(
+            string: Self.actionsGlyph,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .bold),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+        )
+    }
+
     override func cellSize() -> NSSize {
         NSSize(width: 240, height: Self.blockHeight)
     }
@@ -3811,7 +4005,32 @@ final class ChipCell: NSTextAttachmentCell {
         NSPoint(x: 0, y: -(Self.blockHeight - 4))
     }
 
+    /// The layout manager's call, which names the character so the
+    /// block can ask its text view whether it is the one under the
+    /// pointer or the one selected. The plain `draw(withFrame:in:)` is
+    /// what it falls through to, with neither fact known.
+    override func draw(
+        withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int,
+        layoutManager: NSLayoutManager
+    ) {
+        let view = controlView as? InkTextView
+        let selected = view.map { $0.selectedRange() == NSRange(location: charIndex, length: 1) }
+            ?? false
+        let hovered = view?.hoveredChipIndex == charIndex
+        draw(withFrame: cellFrame, in: controlView, selected: selected, hovered: hovered)
+    }
+
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        draw(withFrame: cellFrame, in: controlView, selected: false, hovered: false)
+    }
+
+    /// State first, identity second, actions third: the lock and the
+    /// classification on the top row with the actions glyph at its
+    /// end, the excerpt and the size class on the row under them. A
+    /// selected block wears the ember keyline and its tint, the same
+    /// way the card says it holds the keyboard, paired with the
+    /// selection itself so the colour is never the only carrier.
+    private func draw(withFrame cellFrame: NSRect, in controlView: NSView?, selected: Bool, hovered: Bool) {
         let block = NSBezierPath(
             roundedRect: cellFrame.insetBy(dx: 0.5, dy: 0.5),
             xRadius: 8,
@@ -3819,12 +4038,22 @@ final class ChipCell: NSTextAttachmentCell {
         )
         NSColor.textBackgroundColor.withAlphaComponent(0.34).setFill()
         block.fill()
-        NSColor.separatorColor.setStroke()
+        if selected {
+            let ring = NSBezierPath(
+                roundedRect: cellFrame.insetBy(dx: -1, dy: -1), xRadius: 9, yRadius: 9)
+            NSColor.ember.withAlphaComponent(0.12).setStroke()
+            ring.lineWidth = 3
+            ring.stroke()
+            NSColor.ember.setStroke()
+        } else {
+            NSColor.separatorColor.setStroke()
+        }
         block.lineWidth = 1
         block.stroke()
         MainActor.assumeIsolated {
             let left = cellFrame.minX + 12
             let topBaseline = cellFrame.maxY - 17
+            let excerptY = cellFrame.minY + 9
 
             if let lock = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil) {
                 let lockRect = NSRect(x: left, y: topBaseline - 1, width: 9, height: 9)
@@ -3832,13 +4061,22 @@ final class ChipCell: NSTextAttachmentCell {
             }
 
             classificationLabel.draw(at: NSPoint(x: left + 14, y: topBaseline - 2))
+            if hovered || selected {
+                let glyph = actions
+                let size = glyph.size()
+                let seat = Self.actionsRect(in: cellFrame)
+                glyph.draw(at: NSPoint(
+                    x: seat.maxX - size.width,
+                    y: seat.midY - size.height / 2
+                ))
+            }
+
+            excerpt.draw(at: NSPoint(x: left, y: excerptY))
             let metadataSize = metadata.size()
             metadata.draw(at: NSPoint(
                 x: cellFrame.maxX - 12 - metadataSize.width,
-                y: topBaseline - 2
+                y: excerptY + 1
             ))
-
-            excerpt.draw(at: NSPoint(x: left, y: cellFrame.minY + 9))
         }
     }
 }

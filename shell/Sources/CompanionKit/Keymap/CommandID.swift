@@ -44,6 +44,11 @@ public enum CommandID: String, CaseIterable, Sendable {
     case clipboardSeal = "clipboard::Seal"
     case clipboardSealSelection = "clipboard::SealSelection"
 
+    // A sealed object's named declassification: the one chord that
+    // puts plaintext on the board, and only over a selected object
+    // (D-29). The object's menu advertises it beside the verb.
+    case chipCopyDecrypted = "chip::CopyDecrypted"
+
     // The page's own presentation
     case editorToggleWrap = "editor::ToggleWrap"
     case editorDetectCodeLanguage = "editor::DetectCodeLanguage"
@@ -77,7 +82,7 @@ public enum CommandID: String, CaseIterable, Sendable {
 
     public var dispatch: Dispatch {
         switch self {
-        case .clipboardSeal, .clipboardSealSelection, .editorToggleWrap,
+        case .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorToggleWrap,
             .editorDetectCodeLanguage, .editorUndo, .editorRedo:
             return .editor
         default:

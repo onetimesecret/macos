@@ -39,6 +39,9 @@ final class BundledKeymapTests: XCTestCase {
         "cmd-w": .pageClose,
         "cmd-shift-v": .clipboardSeal,
         "cmd-enter": .clipboardSealSelection,
+        // The one chord that puts plaintext on the board, over a
+        // selected sealed object only (D-29).
+        "cmd-shift-c": .chipCopyDecrypted,
         // Undo names its chords here rather than leaving them to the
         // standard Edit menu, because the stack behind them is the
         // core's now and not AppKit's (issue #132).
@@ -104,7 +107,10 @@ final class BundledKeymapTests: XCTestCase {
         let editorRoute = resolved.bindings(in: .editor, dispatch: .editor).map(\.command)
         XCTAssertEqual(
             Set(editorRoute),
-            [.clipboardSeal, .clipboardSealSelection, .editorToggleWrap, .editorUndo, .editorRedo])
+            [
+                .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted, .editorToggleWrap,
+                .editorUndo, .editorRedo,
+            ])
     }
 
     /// Everything else is carried by the surface's hidden buttons, and
