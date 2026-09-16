@@ -207,10 +207,7 @@ public enum StreamNavigator {
         createdMs: UInt64, pattern: String = StampFormat.standard.short,
         timeZone: TimeZone = .current
     ) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = pattern
+        let formatter = StampFormatterCache.formatter(pattern: pattern, timeZone: timeZone)
         return formatter.string(from: Date(timeIntervalSince1970: Double(createdMs) / 1000))
     }
 
@@ -660,5 +657,29 @@ public enum StreamNavigator {
     /// motion rule the surface has (D-02).
     public static func jumpDuration(reduceMotion: Bool) -> TimeInterval {
         reduceMotion ? 0 : 0.16
+    }
+}
+
+/// One `DateFormatter` per (pattern, timeZone.identifier), so the rail
+/// and the roll do not allocate a formatter every second per node
+/// (Claude #6). `DateFormatter` is thread-safe once configured for the
+/// read side; the cache guards the shared dictionary with a lock, since
+/// `stamp` is non-isolated and reads run from both the SwiftUI body and
+/// the assembly pass.
+private enum StampFormatterCache {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cache: [String: DateFormatter] = [:]
+
+    static func formatter(pattern: String, timeZone: TimeZone) -> DateFormatter {
+        let key = "\(timeZone.identifier)\u{1F}\(pattern)"
+        lock.lock()
+        defer { lock.unlock() }
+        if let hit = cache[key] { return hit }
+        let made = DateFormatter()
+        made.locale = Locale(identifier: "en_US_POSIX")
+        made.timeZone = timeZone
+        made.dateFormat = pattern
+        cache[key] = made
+        return made
     }
 }
