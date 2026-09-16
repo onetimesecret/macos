@@ -49,8 +49,8 @@ The durable tier: encrypted, audited, permanent, correct. Their gap is
 temporal and by design:
 
 - They are archives, not staging areas. Creating a vault item for a
-   90-second hold is category error, and everyone feels it — which is why
-  those items end up in Notes instead.
+  short-lived hold is category error, and everyone feels it — which is
+  why those items end up in Notes instead.
 - Their sharing flows are heavyweight (vaults, invitations, accounts on
   both ends) for the "send this one string to this one human once" case —
   the case Onetime Secret exists for.

@@ -603,6 +603,6 @@ final class TimeUnitModeTests: XCTestCase {
         }
         XCTAssertTrue(GeneralSettingsView.pageOrganizationCaption.contains("prototype"))
         XCTAssertTrue(GeneralSettingsView.pageOrganizationCaption.contains("moves no content"))
-        XCTAssertTrue(GeneralSettingsView.pagePlacementCaption.contains("96 points"))
+        XCTAssertTrue(GeneralSettingsView.pagePlacementCaption.contains("110 points"))
     }
 }

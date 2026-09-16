@@ -303,18 +303,13 @@ see [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md)
 D-40 and D-41.
 
 After a decrypted copy, one line confirms the boundary crossing with the
-interval the core enforces:
-`decrypted contents copied · clipboard clears in 60 seconds`. The
-interval is one core constant, `CLIPBOARD_CLEAR_SECONDS` (60) in
-`crates/ffi`, read by the shell through the stateless seam
-`companion_clipboard_clear_seconds`; the model arms the clear on every
-pasteboard egress (`PageModel.swift` `armClipboardClear`), and the
-confirmation states that number. A clear the app does not perform is
-never promised.
-
-*Amended 2026-09-15:* the line reads `copied decrypted contents —
-small. the clipboard clears in 90 seconds.` and the constant is 90; the
-mechanism is unchanged. See
+core's interval: `copied decrypted contents — small. the clipboard
+clears in 60 seconds.` The interval is one core constant,
+`CLIPBOARD_CLEAR_SECONDS` (60) in `crates/ffi`, read by the shell through
+`companion_clipboard_clear_seconds`. The model arms a timer after each
+general-pasteboard egress; when it fires, the core clears only if the
+pasteboard still holds that write. This does not bound copies retained
+by clipboard managers. See
 [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-42 and
 D-43.
 
@@ -434,11 +429,11 @@ in plain; the fragment adds order, not payload exposure.
   only; the decrypted-drag handle is visually distinct from the move
   handle; the confirmation names the interval the core enforces; no
   ordinary copy path (object, page, or select-all) offers plaintext.
-  The 60 second clear is implemented: one core constant,
-  `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi`, read by the shell through
-  the stateless seam `companion_clipboard_clear_seconds`, and armed by
-  the model on every pasteboard egress. *Amended 2026-09-15:* the
-  constant is 90 seconds
+  The guarded 60-second clear attempt is implemented as one core
+  constant, `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi`, read by the shell
+  through `companion_clipboard_clear_seconds` and armed by the model on
+  every general-pasteboard egress. It clears only while that write is
+  still current
   ([2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-43).
 - **D-30 (fixed)** Sealing an existing selection replaces it in place,
   keeps the surrounding whitespace and selects the new object, and is
@@ -548,14 +543,11 @@ timeline that keeps the page's full width.
 
 Metrics do not change with the choice. Along the bottom: 32 tall,
 padded 6 × 4, 2 between tabs, title row 18, gauge 3, capped 140 wide,
-`+` pinned right, groups `FILES` then `PAD`. Down the side: 96 wide,
-eating into the page's column and never into the header, rows padded 4
-vertically, blank count at the foot in words. The two orientations are
-exclusive: a side column of days with a bottom strip underneath would
-be the same slots counted twice.
-
-*Amended 2026-09-15:* down the side is 110 wide, and Days + side is the
-stream navigator rather than day rows; see
+`+` pinned right, groups `FILES` then `PAD`. Down the side: 110 wide,
+eating into the page's column and never into the header. Days + side is
+the stream navigator rather than day rows. The two orientations are
+exclusive: a side column with a bottom strip underneath would count the
+same pages twice. See
 [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) section 1.
 
 Dash vocabulary: `2 3` a slot holding no page · `3 2` clock held for an
@@ -841,9 +833,9 @@ moved a decision.
 - D-29, D-32 and the confirmation paragraph: ADR-0012 is named; the
   general-pasteboard interval is 60 seconds as one core constant,
   `CLIPBOARD_CLEAR_SECONDS`; ADR-0012's Amendment 1 adopts the three
-  complete-payload egress points. The drag guarantee is limited to what
-  Apple's pasteboard documentation establishes. *Amended 2026-09-15:*
-  the interval is 90 seconds
+  complete-payload egress points. The clear is change-count guarded, and
+  the drag and retention claims are limited to what the implementation
+  and Apple's pasteboard documentation establish
   ([2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-43).
 - D-33, the contract's cut, paste and expiry rows and the lifecycle table:
   every per-object TTL is removed. Cut and removed objects remain live on

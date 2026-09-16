@@ -120,20 +120,20 @@ State first, identity second, actions third. The block keeps D-27's
 shape: the lock and the tracked `SEALED CONTENT` label on the top row,
 the mechanical excerpt and the size class on the row under them.
 
-- **D-40 (fixed)** The capsule is its own actions. A plain click
-  selects the whole object (D-28) and opens its menu under the pointer;
-  Return or Space over the selected object opens the same menu where
-  the block's words begin, instead of typing a newline or a space over
-  it; the secondary click opens it too. Three dots (`···`) in the
-  block's top trailing corner are the visible affordance, drawn while
-  the pointer is over the block or the block is selected and never
-  otherwise, and keeping their seat whether drawn or not (D-10). The
-  block is still not a button: nothing happens until an item is chosen,
-  and the menu names what each item does with the payload. A selected
+- **D-40 (fixed)** The capsule is its own actions. A plain click selects
+  the whole object (D-28) without opening its menu. Return or Space over
+  the selected object opens the menu where the block's words begin,
+  instead of typing a newline or a space over it; the secondary click
+  opens it too. Three dots (`···`) in the block's top trailing corner are
+  the visible affordance and open the menu when clicked. They are drawn
+  while the pointer is over the block or the block is selected and keep
+  their seat whether drawn or not (D-10). The block is still not a
+  button: nothing happens until an explicit menu route is used and an
+  item is chosen. A selected
   block wears the ember keyline and its tint, paired with the selection
   itself. Return and Space are the object's own keys and not chords, so
   they are not the keymap's; ⌘↩ stays the seal.
-  *Acceptance:* `SealedCapsuleTests.testTheActionsGlyphSitsInTheBlocksTopTrailingCorner`
+  *Acceptance:* `SealedCapsuleTests.testTheRowsLockAndActionsUseFlippedTextViewCoordinates`
   and `testReturnAndSpaceOpenTheObjectsMenuAndNothingElseDoes`;
   `ChipCell.actionsRect(in:)` is the one seat the drawing reads;
   `Coordinator.openChipMenu(at:from:in:)` is the one menu all three
@@ -147,9 +147,8 @@ the mechanical excerpt and the size class on the row under them.
   Remove protected content
   ```
 
-  The removal item is *Remove protected content*, in the platform's red
-  and set apart by the separator, so the colour is never the only
-  carrier. The chord beside the first verb is the keymap's: `chip::
+  The removal item is *Remove protected content*, set apart by the
+  separator and styled by AppKit. The chord beside the first verb is the keymap's: `chip::
   CopyDecrypted`, bound to `cmd-shift-c` in the bundled default, acts
   on exactly one selected sealed object and is declined anywhere else,
   so it can never reach a payload nobody pointed at. A keymap that
@@ -157,15 +156,15 @@ the mechanical excerpt and the size class on the row under them.
   verb alone. This replaces the 2026-0915 record's *Remove from page*
   wording; the removal stays structural and undoable (D-30).
   *Acceptance:* `DocumentOpsTests.testTheChipMenuOffersPlaintextByName`,
-  `SealedCapsuleTests.testTheMenuAdvertisesTheChordAndSetsRemovalInRed`,
+  `SealedCapsuleTests.testTheMenuExposesTheNamedActionsAndAdvertisesTheCopyChord`,
   `BundledKeymapTests`.
 - **D-42 (fixed)** The lines, in the design's words:
 
   - after a decrypted copy: `copied decrypted contents — small. the
-    clipboard clears in 90 seconds.` The size is the object's own size
+    clipboard clears in 60 seconds.` The size is the object's own size
     class, the one its block shows, never a count (D-29); the number is
-    the core's constant read through the seam, never a promise the
-    shell makes on its own.
+    the core's constant read through the seam. The timer makes a guarded
+    clear attempt only if the general pasteboard still holds that write.
   - after a one-time link: `the link is on the clipboard — paste it
     where it needs to go.`
   - after a removal: `protected content removed.` with **Undo** beside
@@ -178,20 +177,19 @@ the mechanical excerpt and the size class on the row under them.
     reports stays four.
   *Acceptance:* `SealedCapsuleTests.testTheLinesReadAsTheDesignWroteThem`,
   `PasteboardOfferTests.testACopyOutArmsTheClearAndFlashesTheInterval`.
-- **D-43 (fixed)** The clear after copy is **90 seconds**, the interval
-  the design names. It stays one core constant,
-  `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi/src/lib.rs`, read by the
-  shell through `companion_clipboard_clear_seconds`; the constant was
-  provisional at 60 until the maintainer picked the interval, and the
-  design picked it. ADR-0012 Amendment 1 and Law 0001 carry dated notes.
-  *Acceptance:* the FFI's own test pins 90 and
-  `PasteboardOfferTests` reads it through the seam.
+- **D-43 (fixed)** The clear attempt after copy uses the core's
+  **60-second** constant, `CLIPBOARD_CLEAR_SECONDS` in
+  `crates/ffi/src/lib.rs`, read by the shell through
+  `companion_clipboard_clear_seconds`. At that interval the core clears
+  only if the general pasteboard still holds its write; this does not
+  bound copies retained elsewhere. *Acceptance:* the FFI test pins 60,
+  and `PasteboardOfferTests` reads it through the seam and verifies the
+  guarded clear.
 
-The 2026-0915 record's D-10 acceptance said a click only selects the
-attachment. It still selects it, and now also opens the menu, on the
-maintainer's decision of 2026-09-15 that the capsule's interaction is
-the design's: the block remains not a button, because the click
-commits nothing and the menu names every consequence.
+The 2026-0915 record's D-10 acceptance says a plain click only selects
+the attachment. Menu presentation requires the explicit actions glyph,
+Return, Space, or a secondary click, so selection does not put decrypted
+copy first under an ordinary click.
 
 ## 3 · What this record does not change
 
@@ -209,7 +207,8 @@ One line per passage, each of which carries a dated note pointing here.
 - Section 4, metrics: down the side is 110 wide, not 96 (D-26).
 - Section 3, the object's menu: the removal item reads *Remove
   protected content*, with the chord beside the first verb (D-41).
-- Section 3, the confirmation line: the design's words and 90 seconds
-  (D-42, D-43).
-- D-29's acceptance: "the 60 second clear" is 90.
-- Section 10's summary line for D-29, D-32: the interval is 90.
+- Section 3, the confirmation line: the design's words and the guarded
+  60-second clear attempt (D-42, D-43).
+- D-29's acceptance: the interval comes from the core and clearing is
+  conditional on the general pasteboard still holding the app's write.
+- Section 10's summary line for D-29, D-32: the interval is 60 seconds.

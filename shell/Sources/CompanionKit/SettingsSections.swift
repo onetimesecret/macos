@@ -282,7 +282,7 @@ public struct GeneralSettingsView: View {
 
     static let pagePlacementCaption: String =
         "Along the bottom keeps the page at full width and may scroll sideways. Down the side "
-            + "keeps longer names readable but takes 96 points from the page. Placement does "
+            + "keeps longer names readable but takes 110 points from the page. Placement does "
             + "not change how pages are grouped or stored."
 
     /// The section only exists when the switch is offered, so the

@@ -29,19 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `companion-ffi` 0.31.0;
   `docs/spec/design/2026-0915-stream-navigator.md`, D-40 to D-43). An
   actions glyph (`···`) appears in the block's top corner on hover or
-  selection; a plain click selects the block and opens its menu, Return
-  or Space over the selected block opens it, and the secondary click
-  still does. The menu reads Copy decrypted contents (with the keymap's
-  chord beside it, ⇧⌘C by default, bound as `chip::CopyDecrypted` and
-  acting on exactly one selected object), Create one-time link…, and
-  Remove protected content in red, and nothing the text system would
-  append to a text view's menu (no AutoFill, no Services). A selected
+  selection; a plain click selects the block, while the glyph, Return or
+  Space over the selected block, and the secondary click open its menu.
+  The menu reads Copy decrypted contents (with the keymap's chord beside
+  it, ⇧⌘C by default, bound as `chip::CopyDecrypted` and acting on exactly
+  one selected object), Create one-time link…, and Remove protected
+  content after a separator, with text styled by AppKit. The text system
+  appends neither AutoFill nor Services. A selected
   block wears the ember keyline. The lines after the actions read "copied decrypted contents
-  — small. the clipboard clears in 90 seconds.", "the link is on the
+  — small. the clipboard clears in 60 seconds.", "the link is on the
   clipboard — paste it where it needs to go." and "protected content
   removed." (its Undo is gated until issue 170 lands the detached
-  state). The clear after copy is 90 seconds, the interval the design
-  names, still one core constant read through the seam.
+  state). The interval is the core constant read through the seam; the
+  clear is attempted only if the general pasteboard still holds that write.
 
 - **A day's gutter says the day and the minute, and draws a gauge.**
   Each page's gutter on the roll reads "today · 0914-1139" and carries
@@ -81,15 +81,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   context menu and as Edit → Seal Selected Content in the menu bar,
   both running the verb the chord runs.
 
-- **The clipboard clears itself after a copy-out** (D-29, D-32;
-  `companion-ffi` 0.29.0). Copying a chip's decrypted contents, or a
-  one-time link, arms a one-shot clear that takes the board back after
-  the core's interval, provisionally 60 seconds, and only while the board
-  still holds what the core wrote; anything copied since is left alone.
-  Every egress also retires the receipt of the one before it. The
-  confirmation reads "decrypted contents copied · clipboard clears in 60
-  seconds", with the number read from the core through
-  `companion_clipboard_clear_seconds`.
+- **Copy-out arms a guarded clipboard clear** (D-29, D-32;
+  `companion-ffi` 0.29.0). Copying a chip's decrypted contents or a
+  one-time link schedules a clear attempt after the core's 60-second
+  interval. The core clears the general pasteboard only if it still
+  holds that write; anything copied since is left alone. This does not
+  control copies retained by clipboard managers. The confirmation reads
+  the interval through `companion_clipboard_clear_seconds`.
 
 ### Added
 
@@ -208,6 +206,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FormFactor` and in the tray's version line alike, and the old
   state directories can be removed by hand once nothing in them is
   wanted.
+
+- **Page organization and navigation placement are independent settings**
+  (D-26). General separately chooses Slots or Days and bottom or side,
+  persists all four combinations, and keeps the time-related rounding
+  control under Days. Existing installs that only carry the former
+  combined preference retain its placement; new installs start at Slots
+  and bottom.
 
 - **Settings is a standard macOS settings window with toolbar tabs**
   (dogfood phase 4). Three tabs across the top, General, Connection

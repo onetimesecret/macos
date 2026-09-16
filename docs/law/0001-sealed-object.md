@@ -203,11 +203,11 @@ Fixed details the rows rely on:
   decrypted data on the general pasteboard; copy decrypted does and is the
   riskier fallback. No claim is made about third-party observation,
   clipboard history or erasure of drag-pasteboard data.
-- The clear after copy is one core constant, 90 seconds
-  (`CLIPBOARD_CLEAR_SECONDS`, `crates/ffi/src/lib.rs`), read through the
-  seam `companion_clipboard_clear_seconds`; the confirmation states that
-  number and never promises a clear the app does not perform (D-29,
-  D-43 of the 2026-0915 stream navigator record).
+- Copy-out arms a change-count-guarded clear attempt after the core's
+  60-second constant (`CLIPBOARD_CLEAR_SECONDS`, `crates/ffi/src/lib.rs`),
+  read through `companion_clipboard_clear_seconds`. The general pasteboard
+  is cleared only if it still holds that write; no total-retention or
+  clipboard-manager guarantee is made (D-29, D-43).
 - Time belongs to the page. A detached object takes its page's clock; there
   is no per chip TTL (`sheet.rs` forbids per chip timers; maintainer
   decision 2026-08-07; D-33).
@@ -221,9 +221,9 @@ Fixed details the rows rely on:
   ```
 
   The chord is the keymap's (`chip::CopyDecrypted`) and acts on exactly
-  one selected object; the removal is set in red as well as apart, and
-  stays structural and undoable (D-41 of the 2026-0915 stream navigator
-  record).
+  one selected object; the removal follows a separator, uses AppKit's
+  standard menu styling, and stays structural and undoable (D-41 of the
+  2026-0915 stream navigator record).
 
 ## What the rule forbids
 
@@ -337,9 +337,9 @@ dialog free).
 - 2026-09-15: Stream navigator amendment. The maintainer's interactive
   design ([2026-0915-stream-navigator.md](../spec/design/2026-0915-stream-navigator.md))
   renamed the removal item back to *Remove protected content*, put the
-  copy decrypted chord beside its verb, reworded the three lines that
-  follow the menu's actions, set the clear after copy to 90 seconds, and
-  made a plain click, Return and Space over the selected object open its
-  menu (the click still selects the whole object first).
-  The operation classes, the contract table and the lifecycle are
+  copy decrypted chord beside its verb, and reworded the three lines that
+  follow the menu's actions. The explicit actions glyph, Return, Space,
+  and secondary click open the menu; a plain click only selects the whole
+  object. D-43 records the implemented guarded 60-second clear attempt.
+  The operation classes, the contract table, and the lifecycle are
   untouched; the removal's Undo remains owed to issue 170.
