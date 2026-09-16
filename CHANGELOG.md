@@ -25,6 +25,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   faint minimap behind them (issue #131). The tab summary now carries
   `page_created_ms`, the page's own birth stamp, for the minute.
 
+- **The sealed block's actions, as the design drew them** (app 0.23.0;
+  `companion-ffi` 0.31.0;
+  `docs/spec/design/2026-0915-stream-navigator.md`, D-40 to D-43). An
+  actions glyph (`···`) appears in the block's top corner on hover or
+  selection; a plain click selects the block and opens its menu, Return
+  or Space over the selected block opens it, and the secondary click
+  still does. The menu reads Copy decrypted contents (with the keymap's
+  chord beside it, ⇧⌘C by default, bound as `chip::CopyDecrypted` and
+  acting on exactly one selected object), Create one-time link…, and
+  Remove protected content in red. A selected block wears the ember
+  keyline. The lines after the actions read "copied decrypted contents
+  — small. the clipboard clears in 90 seconds.", "the link is on the
+  clipboard — paste it where it needs to go." and "protected content
+  removed." (its Undo is gated until issue 170 lands the detached
+  state). The clear after copy is 90 seconds, the interval the design
+  names, still one core constant read through the seam.
+
 - **A day's gutter says the day and the minute, and draws a gauge.**
   Each page's gutter on the roll reads "today · 0914-1139" and carries
   the strip's own gauge where the countdown text stood; a page past
