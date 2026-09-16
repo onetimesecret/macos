@@ -307,6 +307,11 @@ public enum StreamNavigator {
         public let band: Band?
         public let activeSegment: Segment?
         public let slivers: [Sliver]
+        /// The rail dimensions this document-proportional layout was
+        /// prepared for. Viewport-only updates reuse these values rather
+        /// than accepting unchecked dimensions from a caller.
+        let sourceHeight: CGFloat
+        let sourceWidth: CGFloat
         /// The map, kept so a click on bare track can be inverted.
         public let anchors: [Anchor]
 
@@ -334,7 +339,7 @@ public enum StreamNavigator {
 
         public static let empty = Layout(
             placed: [], trackTop: 0, trackBottom: 0, windowY: nil, band: nil,
-            activeSegment: nil, slivers: [], anchors: []
+            activeSegment: nil, slivers: [], sourceHeight: 0, sourceWidth: 0, anchors: []
         )
     }
 
@@ -369,9 +374,11 @@ public enum StreamNavigator {
         nodes: [Node], geometry: RollGeometry, height: CGFloat, width: CGFloat
     ) -> Layout {
         guard height > 0, !nodes.isEmpty else { return .empty }
-        let document = max(1, geometry.documentHeight)
+        let documentHeight = resolvedDocumentHeight(geometry)
+        let document = max(1, documentHeight)
         let windowIndex = nodes.firstIndex(where: \.trailing)
-        let documentTops = resolvedDocumentTops(nodes: nodes, geometry: geometry)
+        let documentTops = resolvedDocumentTops(
+            nodes: nodes, geometry: geometry, documentHeight: documentHeight)
         var reserves: [CGFloat] = []
         var gapBands: [CGFloat] = []
         var heights: [CGFloat] = []
@@ -463,6 +470,8 @@ public enum StreamNavigator {
             band: band,
             activeSegment: segment,
             slivers: slivers.values.sorted { $0.y < $1.y },
+            sourceHeight: height,
+            sourceWidth: width,
             anchors: anchors
         )
     }
@@ -470,12 +479,12 @@ public enum StreamNavigator {
     /// Reapply only the viewport-dependent half of a prepared document
     /// layout. Node placement, anchors, line mapping, collision removal,
     /// and sliver widths remain unchanged while the clip moves.
-    public static func updatingViewport(
-        in layout: Layout, geometry: RollGeometry, height: CGFloat
+    static func updatingViewport(
+        in layout: Layout, geometry: RollGeometry
     ) -> Layout {
         let band = band(
             anchors: layout.anchors, trackBottom: layout.trackBottom,
-            geometry: geometry, height: height)
+            geometry: geometry, height: layout.sourceHeight)
         let slivers = layout.slivers.map { sliver in
             Sliver(
                 id: sliver.id, y: sliver.y, width: sliver.width,
@@ -489,6 +498,8 @@ public enum StreamNavigator {
             band: band,
             activeSegment: layout.activeSegment,
             slivers: slivers,
+            sourceHeight: layout.sourceHeight,
+            sourceWidth: layout.sourceWidth,
             anchors: layout.anchors
         )
     }
@@ -518,10 +529,10 @@ public enum StreamNavigator {
     private static func band(
         anchors: [Anchor], trackBottom: CGFloat, geometry: RollGeometry, height: CGFloat
     ) -> Band? {
-        guard anchors.count >= 2, geometry.documentHeight > 0, geometry.viewportHeight > 0,
-            geometry.viewportHeight < geometry.documentHeight
+        let document = resolvedDocumentHeight(geometry)
+        guard anchors.count >= 2, document > 0, geometry.viewportHeight > 0,
+            geometry.viewportHeight < document
         else { return nil }
-        let document = max(1, geometry.documentHeight)
         let map = { (offset: CGFloat) -> CGFloat in
             railY(forDocumentOffset: offset, anchors: anchors, trackBottom: trackBottom)
         }
@@ -538,8 +549,12 @@ public enum StreamNavigator {
     /// with no measured neighbour at all spans the whole document, so a
     /// roll with a height and no extents yet spreads its nodes evenly
     /// rather than stacking them at zero.
+    private static func resolvedDocumentHeight(_ geometry: RollGeometry) -> CGFloat {
+        max(max(geometry.documentHeight, geometry.extents.map(\.bottom).max() ?? 0), 0)
+    }
+
     private static func resolvedDocumentTops(
-        nodes: [Node], geometry: RollGeometry
+        nodes: [Node], geometry: RollGeometry, documentHeight: CGFloat
     ) -> [CGFloat] {
         var measured: [CGFloat?] = nodes.map { node in
             geometry.extents.first {
@@ -558,7 +573,7 @@ public enum StreamNavigator {
             let lowerIndex = start == 0 ? 0 : start - 1
             let lower = start == 0 ? 0 : measured[lowerIndex] ?? 0
             let upperIndex = end
-            let upper = end < measured.count ? measured[end] ?? lower : geometry.documentHeight
+            let upper = end < measured.count ? measured[end] ?? lower : documentHeight
             let span = max(upperIndex - lowerIndex, 1)
             for index in start..<end {
                 let share = CGFloat(index - lowerIndex) / CGFloat(span)
@@ -567,7 +582,7 @@ public enum StreamNavigator {
             start = end
         }
 
-        let ceiling = max(geometry.documentHeight, 0)
+        let ceiling = documentHeight
         var floor: CGFloat = 0
         return measured.map { candidate in
             let top = min(max(candidate ?? floor, floor), ceiling)

@@ -1493,7 +1493,7 @@ pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> 
                 "title": record.title(),
                 "at_ms": record.at_wall_ms(),
                 "created_at_ms": record.item_created_wall_ms(),
-                "size": record.size().to_string(),
+                "size": record.size().as_str(),
                 "destination": match record.destination() {
                     DestinationClass::None => "none",
                     DestinationClass::Clipboard => "clipboard",

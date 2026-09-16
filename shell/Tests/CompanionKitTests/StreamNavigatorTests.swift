@@ -390,7 +390,7 @@ final class StreamNavigatorTests: XCTestCase {
         let prepared = StreamNavigator.layout(
             nodes: nodes, geometry: before, height: 400, width: 102)
         let updated = StreamNavigator.updatingViewport(
-            in: prepared, geometry: after, height: 400)
+            in: prepared, geometry: after)
 
         XCTAssertEqual(updated.placed, prepared.placed)
         XCTAssertEqual(updated.anchors, prepared.anchors)
@@ -429,11 +429,11 @@ final class StreamNavigatorTests: XCTestCase {
             nodes: nodes, geometry: resting, height: 400, width: 102)
 
         XCTAssertEqual(
-            StreamNavigator.updatingViewport(in: prepared, geometry: resting, height: 400),
+            StreamNavigator.updatingViewport(in: prepared, geometry: resting),
             prepared, "reapplying the same viewport changed the drawing")
         for geometry in [scrolled, elastic] {
             XCTAssertEqual(
-                StreamNavigator.updatingViewport(in: prepared, geometry: geometry, height: 400),
+                StreamNavigator.updatingViewport(in: prepared, geometry: geometry),
                 StreamNavigator.layout(nodes: nodes, geometry: geometry, height: 400, width: 102),
                 "a viewport update at \(geometry.viewportTop) drew something a fresh layout would not")
         }
@@ -470,6 +470,28 @@ final class StreamNavigatorTests: XCTestCase {
             spread.placed[1].y, stacked.placed[1].y,
             "a roll with a height and no extents stacked its nodes at the top")
         assertLaidOutInOrder(spread, height: 400)
+    }
+
+    func testMeasuredExtentsSetTheCeilingWhenDocumentHeightIsZeroOrStale() {
+        let laidOutNodes = nodes([
+            slot(tab: 1, page: 11, day: 0),
+            slot(tab: 2, page: 22, day: -1),
+        ])
+        let extents = [
+            extent(laidOutNodes[0], top: 0, height: 400),
+            extent(laidOutNodes[1], top: 400, height: 200),
+        ]
+
+        for documentHeight: CGFloat in [0, 100] {
+            let geometry = RollGeometry(
+                extents: extents, documentHeight: documentHeight,
+                viewportTop: 0, viewportHeight: 200)
+            let layout = StreamNavigator.layout(
+                nodes: laidOutNodes, geometry: geometry, height: 400, width: 102)
+
+            XCTAssertEqual(layout.placed.map(\.documentTop), [0, 400])
+            XCTAssertEqual(layout.anchors.last?.document, 600)
+        }
     }
 
     /// The relay may forward through its hosting ancestor, but a sibling

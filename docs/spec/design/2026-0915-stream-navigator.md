@@ -1,10 +1,10 @@
 ---
 id: 2026-0915-stream-navigator
 title: The stream navigator and the sealed capsule's actions
-status: accepted     # draft → accepted → superseded
+status: superseded   # draft → accepted → superseded
 dated: 2026-09-15
 supersedes: docs/spec/design/2026-0915-ui-ux-decisions.md, on D-26's side metrics, D-27's block, D-29's confirmation line, the object menu's removal item and the clear interval only
-superseded-by:
+superseded-by: docs/spec/design/2026-0916-clipboard-clear-interval.md
 reviewed: 2026-09-15
 surfaces: OnetimePad (background surface), Days + side
 sources:
@@ -162,10 +162,10 @@ the mechanical excerpt and the size class on the row under them.
 - **D-42 (fixed)** The lines, in the design's words:
 
   - after a decrypted copy: `copied decrypted contents — small. the
-    clipboard clears in 60 seconds.` The size is the object's own size
+    clipboard clears in 90 seconds.` The size is the object's own size
     class, the one its block shows, never a count (D-29); the number is
-    the core's constant read through the seam. The timer makes a guarded
-    clear attempt only if the general pasteboard still holds that write.
+    the core's constant read through the seam, never a promise the
+    shell makes on its own.
   - after a one-time link: `the link is on the clipboard — paste it
     where it needs to go.`
   - after a removal: `protected content removed.` with **Undo** beside
@@ -178,14 +178,14 @@ the mechanical excerpt and the size class on the row under them.
     reports stays four.
   *Acceptance:* `SealedCapsuleTests.testTheLinesReadAsTheDesignWroteThem`,
   `PasteboardOfferTests.testACopyOutArmsTheClearAndFlashesTheInterval`.
-- **D-43 (fixed)** The clear attempt after copy uses the core's
-  **60-second** constant, `CLIPBOARD_CLEAR_SECONDS` in
-  `crates/ffi/src/lib.rs`, read by the shell through
-  `companion_clipboard_clear_seconds`. At that interval the core clears
-  only if the general pasteboard still holds its write; this does not
-  bound copies retained elsewhere. *Acceptance:* the FFI test pins 60,
-  and `PasteboardOfferTests` reads it through the seam and verifies the
-  guarded clear.
+- **D-43 (fixed)** The clear after copy is **90 seconds**, the interval
+  the design names. It stays one core constant,
+  `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi/src/lib.rs`, read by the
+  shell through `companion_clipboard_clear_seconds`; the constant was
+  provisional at 60 until the maintainer picked the interval, and the
+  design picked it. ADR-0012 Amendment 1 and Law 0001 carry dated notes.
+  *Acceptance:* the FFI's own test pins 90 and
+  `PasteboardOfferTests` reads it through the seam.
 
 The 2026-0915 record's D-10 acceptance says a plain click only selects
 the attachment. Menu presentation requires the explicit actions glyph,
@@ -208,8 +208,16 @@ One line per passage, each of which carries a dated note pointing here.
 - Section 4, metrics: down the side is 110 wide, not 96 (D-26).
 - Section 3, the object's menu: the removal item reads *Remove
   protected content*, with the chord beside the first verb (D-41).
-- Section 3, the confirmation line: the design's words and the guarded
-  60-second clear attempt (D-42, D-43).
-- D-29's acceptance: the interval comes from the core and clearing is
-  conditional on the general pasteboard still holding the app's write.
-- Section 10's summary line for D-29, D-32: the interval is 60 seconds.
+- Section 3, the confirmation line: the design's words and 90 seconds
+  (D-42, D-43).
+- D-29's acceptance: "the 60 second clear" is 90.
+- Section 10's summary line for D-29, D-32: the interval is 90.
+
+## 5 · Supersession
+
+- **2026-09-16:** This dated record is superseded in full by
+  [The general-pasteboard clear interval](2026-0916-clipboard-clear-interval.md).
+  The successor incorporates D-34 through D-41 without change, amends
+  D-42's interval confirmation, and replaces D-43 in full. Its authoritative
+  interval is a change-count-guarded clear attempt after 60 seconds. The
+  2026-09-15 text above remains the historical snapshot.

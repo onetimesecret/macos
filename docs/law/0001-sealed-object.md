@@ -207,7 +207,8 @@ Fixed details the rows rely on:
   60-second constant (`CLIPBOARD_CLEAR_SECONDS`, `crates/ffi/src/lib.rs`),
   read through `companion_clipboard_clear_seconds`. The general pasteboard
   is cleared only if it still holds that write; no total-retention or
-  clipboard-manager guarantee is made (D-29, D-43).
+  clipboard-manager guarantee is made (D-29, D-43 of the accepted
+  [2026-09-16 clear-interval record](../spec/design/2026-0916-clipboard-clear-interval.md)).
 - Time belongs to the page. A detached object takes its page's clock; there
   is no per chip TTL (`sheet.rs` forbids per chip timers; maintainer
   decision 2026-08-07; D-33).
@@ -337,9 +338,21 @@ dialog free).
 - 2026-09-15: Stream navigator amendment. The maintainer's interactive
   design ([2026-0915-stream-navigator.md](../spec/design/2026-0915-stream-navigator.md))
   renamed the removal item back to *Remove protected content*, put the
-  copy decrypted chord beside its verb, and reworded the three lines that
-  follow the menu's actions. The explicit actions glyph, Return, Space,
-  and secondary click open the menu; a plain click only selects the whole
-  object. D-43 records the implemented guarded 60-second clear attempt.
-  The operation classes, the contract table, and the lifecycle are
+  copy decrypted chord beside its verb, reworded the three lines that
+  follow the menu's actions, set the clear after copy to 90 seconds, and
+  made a plain click, Return and Space over the selected object open its
+  menu (the click still selects the whole object first).
+  The operation classes, the contract table and the lifecycle are
   untouched; the removal's Undo remains owed to issue 170.
+- 2026-09-16: Authority amendment. The accepted
+  [general-pasteboard clear-interval record](../spec/design/2026-0916-clipboard-clear-interval.md)
+  supersedes the 2026-09-15 stream navigator record in full, incorporates
+  D-34 through D-41 without change, amends D-42's interval confirmation,
+  and replaces D-43 in full. The law therefore reads its clear-after-copy
+  contract through the successor: OnetimePad makes a change-count-guarded
+  clear attempt after the core-owned 60-second interval and leaves a newer
+  general-pasteboard write untouched. This is not a total-retention or
+  erasure guarantee. It also carries D-40's explicit-route correction: a
+  plain click selects the object without opening the menu. This amendment
+  supersedes the clear-interval and plain-click statements in the preceding
+  2026-09-15 entry; its remaining decisions stand.

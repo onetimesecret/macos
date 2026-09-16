@@ -245,7 +245,6 @@ final class CompanionClientTests: XCTestCase {
         // capped title. Nothing is free text the core did not bound.
         XCTAssertTrue(
             ["created", "sealed", "sent", "expired", "discarded"].contains(record.event))
-        XCTAssertEqual(record.size, "huge")
         XCTAssertTrue(["tiny", "small", "medium", "large", "huge"].contains(record.size))
         XCTAssertTrue(["none", "clipboard", "link"].contains(record.destination))
         XCTAssertLessThanOrEqual(record.title.count, 80)

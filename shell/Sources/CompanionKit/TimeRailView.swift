@@ -268,7 +268,7 @@ struct StreamNavigatorView: View {
     let chords: [UInt64: Keystroke]
 
     @State private var hoverID: UInt64?
-    @StateObject private var layoutCache = StreamNavigatorLayoutCache()
+    @State private var layoutCache = StreamNavigatorLayoutCache()
 
     private typealias Metrics = StreamNavigator.Metrics
 
@@ -539,7 +539,7 @@ struct StreamNavigatorView: View {
 /// publications. Revision zero is intentionally uncached: it belongs to
 /// hand-built or unmeasured geometry that has no identity contract.
 @MainActor
-private final class StreamNavigatorLayoutCache: ObservableObject {
+private final class StreamNavigatorLayoutCache {
     private struct Key: Equatable {
         let nodes: [StreamNavigator.Node]
         let documentIdentity: UUID
@@ -551,11 +551,10 @@ private final class StreamNavigatorLayoutCache: ObservableObject {
     private var key: Key?
     private var documentLayout: StreamNavigator.Layout?
 
-    /// Called from inside a `GeometryReader` builder, so the cache is
-    /// written during body evaluation. That is safe only while nothing
-    /// here is `@Published` and the answer is a pure function of the
-    /// key: a published property would invalidate the view from within
-    /// its own body. Never add one to this class.
+    /// Called from inside a `GeometryReader` builder. The reference is
+    /// retained in `@State`, but its cache mutations are intentionally not
+    /// observable: publishing from body evaluation would invalidate the
+    /// view from within its own body.
     func layout(
         nodes: [StreamNavigator.Node], geometry: RollGeometry,
         height: CGFloat, width: CGFloat
@@ -578,7 +577,7 @@ private final class StreamNavigatorLayoutCache: ObservableObject {
         }
         guard let documentLayout else { return .empty }
         return StreamNavigator.updatingViewport(
-            in: documentLayout, geometry: geometry, height: height)
+            in: documentLayout, geometry: geometry)
     }
 }
 
@@ -622,13 +621,16 @@ final class WheelRelayView: NSView {
         retireMonitor()
         guard window != nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self, let relay = self.relay else { return event }
+            guard let self, let relay = self.relay, let relayWindow = self.window,
+                  event.window === relayWindow
+            else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
-            let hitView = Self.occludingView(at: event.locationInWindow, in: self.window)
+            guard self.bounds.contains(point) else { return event }
+            let hitView = Self.occludingView(at: event.locationInWindow, in: relayWindow)
             guard Self.shouldRelay(
                 eventWindow: event.window,
-                relayWindow: self.window,
-                pointInside: self.bounds.contains(point),
+                relayWindow: relayWindow,
+                pointInside: true,
                 hitView: hitView,
                 relayView: self
             ) else { return event }

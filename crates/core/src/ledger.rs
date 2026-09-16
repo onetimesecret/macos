@@ -86,21 +86,27 @@ impl SizeClass {
             _ => SizeClass::Huge,
         }
     }
-}
 
-/// The ledger JSON vocabulary. The FFI writes `record.size().to_string()`
-/// straight into the `size` field, and the Swift shell fails closed on any
-/// label outside this set (`SealedBlockTests`), so a spelling here is a
-/// contract change on both sides of the seam, not a cosmetic one.
-impl std::fmt::Display for SizeClass {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
+    /// Stable JSON and shell-facing vocabulary for this class.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
             SizeClass::Tiny => "tiny",
             SizeClass::Small => "small",
             SizeClass::Medium => "medium",
             SizeClass::Large => "large",
             SizeClass::Huge => "huge",
-        })
+        }
+    }
+}
+
+/// The ledger JSON vocabulary comes from [`SizeClass::as_str`]. The Swift
+/// shell fails closed on any label outside this set (`SealedBlockTests`), so
+/// a spelling here is a contract change on both sides of the seam, not a
+/// cosmetic one.
+impl std::fmt::Display for SizeClass {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

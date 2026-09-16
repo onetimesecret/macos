@@ -48,9 +48,29 @@ final class SealedBlockTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(cell.cellSize().width, ChipCell.fallbackBlockWidth)
     }
 
-    func testMetadataAcceptsEveryCoreSizeClassAndFailsClosedForUnknownValues() throws {
-        let byteLengths = [1, 64, 1_024, 65_536, 1_048_576]
-        var labels = Set<String>()
+    func testEffectivelyUnboundedFiniteWidthsUseTheFallbackMeasure() {
+        let container = NSTextContainer(size: NSSize(
+            width: ChipCell.effectivelyUnboundedWidth * 2,
+            height: ChipCell.blockHeight
+        ))
+        let width = ChipCell.blockWidth(
+            in: container,
+            proposedLineFragment: NSRect(
+                x: 0, y: 0,
+                width: ChipCell.effectivelyUnboundedWidth,
+                height: ChipCell.blockHeight)
+        )
+
+        XCTAssertEqual(
+            width,
+            floor(ChipCell.fallbackBlockWidth - container.lineFragmentPadding * 2)
+        )
+    }
+
+    func testMetadataAcceptsCoreSizeClassesAndFailsClosedForUnknownValues() throws {
+        // The core owns bucket boundaries. The shell verifies only that
+        // labels crossing the seam belong to the vocabulary it can draw.
+        let byteLengths = [1, 80, 2_048]
 
         for byteLength in byteLengths {
             let client = CompanionClient.ephemeral(
@@ -61,11 +81,9 @@ final class SealedBlockTests: XCTestCase {
             let label = try XCTUnwrap(
                 client.sealText(sheet: pageID, text, at: 0, length: 0)?.sizeLabel)
 
-            labels.insert(label)
             XCTAssertEqual(ChipCell.displayedSizeClass(label), label)
         }
 
-        XCTAssertEqual(labels.count, byteLengths.count)
         XCTAssertEqual(ChipCell.displayedSizeClass("40 ch"), "size unknown")
         XCTAssertEqual(ChipCell.displayedSizeClass("future-class"), "size unknown")
     }

@@ -103,7 +103,7 @@ public struct InkEditorView: NSViewRepresentable {
         model: PageModel, sheetID: UInt64, coordinator: Coordinator
     ) -> InkTextView {
         let layoutManager = InkLayoutManager()
-        let container = NSTextContainer(size: NSSize(
+        let container = InkTextContainer(size: NSSize(
             width: 0, height: CGFloat.greatestFiniteMagnitude
         ))
         container.widthTracksTextView = true
@@ -2054,13 +2054,19 @@ public struct InkEditorView: NSViewRepresentable {
         /// explicit route builds, so the glyph, secondary click, and
         /// Return or Space over the selected block cannot drift apart.
         func openChipMenu(at charIndex: Int, from point: NSPoint, in view: NSTextView) {
+            guard let menu = chipMenu(at: charIndex) else { return }
+            menu.popUp(positioning: nil, at: point, in: view)
+        }
+
+        /// Build the sealed object's context menu once for both AppKit's
+        /// menu query and the explicit routes that pop it up directly.
+        func chipMenu(at charIndex: Int) -> NSMenu? {
             let menu = NSMenu()
             // The object's menu is the three items and nothing the text
             // system would append to a text view's menu (D-41).
             menu.allowsContextMenuPlugIns = false
             appendChipItems(to: menu, at: charIndex)
-            guard !menu.items.isEmpty else { return }
-            menu.popUp(positioning: nil, at: point, in: view)
+            return menu.items.isEmpty ? nil : menu
         }
 
         /// The character index of the chip under `point` (in the text
@@ -2079,13 +2085,17 @@ public struct InkEditorView: NSViewRepresentable {
             var fraction: CGFloat = 0
             let glyph = layoutManager.glyphIndex(
                 for: local, in: container, fractionOfDistanceThroughGlyph: &fraction)
-            let bounds = layoutManager.boundingRect(
-                forGlyphRange: NSRange(location: glyph, length: 1), in: container)
-            guard bounds.contains(local) else { return nil }
             let index = layoutManager.characterIndexForGlyph(at: glyph)
             guard index < storage.length,
                   storage.attribute(.attachment, at: index, effectiveRange: nil) is ChipAttachment
             else { return nil }
+            if let inkView = view as? InkTextView {
+                guard let frame = inkView.chipFrame(at: index), frame.contains(point) else { return nil }
+            } else {
+                let bounds = layoutManager.boundingRect(
+                    forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+                guard bounds.contains(local) else { return nil }
+            }
             return index
         }
 
@@ -3138,6 +3148,25 @@ public enum SealSelectionMenu {
 /// route. Chips are atomic under the caret by construction — an
 /// attachment is one character: arrows step over it, one ⌫ removes it
 /// whole, selection cannot reach inside it.
+/// Carries the mounted editor's finite viewport measure into TextKit's
+/// nonisolated attachment-sizing callbacks. One scalar update replaces a
+/// whole-document attachment scan on every layout pass.
+final class InkTextContainer: NSTextContainer {
+    private let editorMeasure = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
+
+    nonisolated func setEditorMeasure(_ measure: CGFloat) -> Bool {
+        editorMeasure.withLock { current in
+            guard current != measure else { return false }
+            current = measure
+            return true
+        }
+    }
+
+    nonisolated var capturedEditorMeasure: CGFloat? {
+        editorMeasure.withLock { $0 }
+    }
+}
+
 final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder,
     SealResponder
 {
@@ -3201,10 +3230,26 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         setNeedsDisplay(rect.insetBy(dx: -4, dy: -4))
     }
 
+    /// Only the first unmodified primary click may activate the actions
+    /// seat. Modifier gestures and later clicks in a multi-click sequence
+    /// stay on AppKit's text-system path.
+    nonisolated static func shouldOpenChipActions(
+        clickCount: Int, modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        clickCount == 1
+            && modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty
+    }
+
     /// A click on the explicit actions affordance opens the object's
     /// menu. Every other plain click stays on AppKit's attachment path,
     /// whose delegate selects the object without opening anything.
     override func mouseDown(with event: NSEvent) {
+        guard Self.shouldOpenChipActions(
+            clickCount: event.clickCount, modifierFlags: event.modifierFlags)
+        else {
+            super.mouseDown(with: event)
+            return
+        }
         let point = convert(event.locationInWindow, from: nil)
         if let coordinator,
            let index = coordinator.chipIndex(at: point, in: self),
@@ -3275,10 +3320,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         let point = convert(event.locationInWindow, from: nil)
         if let coordinator, let index = coordinator.chipIndex(at: point, in: self) {
             setSelectedRange(NSRange(location: index, length: 1))
-            let menu = NSMenu()
-            menu.allowsContextMenuPlugIns = false
-            coordinator.appendChipItems(to: menu, at: index)
-            return menu
+            return coordinator.chipMenu(at: index)
         }
         let menu = super.menu(for: event) ?? NSMenu()
         coordinator?.appendSealItem(to: menu)
@@ -3300,7 +3342,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// measure here, before layout, into each cell's lock-protected sizing
     /// state so the callback never reaches across actor isolation.
     private func updateChipEditorMeasure() {
-        guard let storage = textStorage, let layoutManager else { return }
+        guard let container = textContainer as? InkTextContainer, let layoutManager else { return }
         // In unwrapped mode the text view can grow to its longest line;
         // the scroll viewport remains the page measure the chip should
         // occupy. A mount without a scroller uses its editor bounds.
@@ -3313,19 +3355,8 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         let viewport = enclosingScrollView?.contentSize.width ?? bounds.width
         let measure = viewport - textContainerInset.width * 2
         guard measure > 0 else { return }
-        var changed = false
-        storage.enumerateAttribute(
-            .attachment,
-            in: NSRange(location: 0, length: storage.length)
-        ) { value, _, _ in
-            guard let cell = (value as? ChipAttachment)?.attachmentCell as? ChipCell else { return }
-            changed = cell.setEditorMeasure(measure) || changed
-        }
-        if changed {
-            layoutManager.invalidateLayout(
-                forCharacterRange: NSRange(location: 0, length: storage.length),
-                actualCharacterRange: nil
-            )
+        if container.setEditorMeasure(measure) {
+            layoutManager.textContainerChangedGeometry(container)
         }
     }
 
@@ -3987,11 +4018,7 @@ final class ChipAttachment: NSTextAttachment {
         ) ?? ChipCell.blockWidth(
             in: textContainer, proposedLineFragment: lineFrag
         )
-        return NSRect(
-            x: 0, y: -ChipCell.blockHeight + 4,
-            width: width,
-            height: ChipCell.blockHeight
-        )
+        return ChipCell.blockBounds(width: width)
     }
 }
 
@@ -4000,21 +4027,26 @@ final class ChipAttachment: NSTextAttachment {
 /// bordered rectangle rather than a pill or button (D-27).
 final class ChipCell: NSTextAttachmentCell {
     let info: ChipInfo
-    private let editorMeasure = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
 
-    /// The frame the layout manager last drew this block with, in the
-    /// text view's coordinates. Kept so the click frame the view
-    /// derives can be held against the drawn one by a test rather
-    /// than by eye; nothing in the editor reads it.
+    #if DEBUG
+    /// Test-only record of the frame handed to the drawing path.
     @MainActor
     private(set) var lastDrawnFrame: NSRect?
+    #endif
 
     nonisolated static let blockHeight: CGFloat = 52
     /// The width a block takes when nothing has measured the editor:
     /// a context-free `cellSize()` and a layout with no usable measure
     /// both fall back to it, so it is named once.
     nonisolated static let fallbackBlockWidth: CGFloat = 240
+    /// Widths at or above this value are TextKit's effectively-unbounded
+    /// sentinels, not usable page measurements.
+    nonisolated static let effectivelyUnboundedWidth: CGFloat = 1_000_000
     nonisolated static let classification = "SEALED CONTENT"
+
+    nonisolated static func blockBounds(width: CGFloat) -> NSRect {
+        NSRect(x: 0, y: -blockHeight + 4, width: width, height: blockHeight)
+    }
 
     @MainActor
     init(info: ChipInfo) {
@@ -4126,20 +4158,6 @@ final class ChipCell: NSTextAttachmentCell {
         )
     }
 
-    /// Main-actor editor geometry is reduced to a scalar before TextKit
-    /// enters its nonisolated attachment-sizing callback. The lock makes
-    /// that handoff safe without asserting an actor and risking a trap.
-    nonisolated func setEditorMeasure(_ measure: CGFloat) -> Bool {
-        editorMeasure.withLock { current in
-            guard current != measure else { return false }
-            current = measure
-            return true
-        }
-    }
-
-    nonisolated private var capturedEditorMeasure: CGFloat? {
-        editorMeasure.withLock { $0 }
-    }
 
     /// The captured editor measure wins when an unwrapped text container
     /// is effectively infinite; otherwise the finite container or
@@ -4153,17 +4171,19 @@ final class ChipCell: NSTextAttachmentCell {
         // finite number. Once the live editor measure is captured, a
         // container may narrow that measure (wrapped mode) but may never
         // widen it (unwrapped mode).
-        let maximum = editorMeasure ?? CGFloat.greatestFiniteMagnitude.squareRoot()
+        let capturedMeasure = editorMeasure
+            ?? (textContainer as? InkTextContainer)?.capturedEditorMeasure
+        let maximum = min(capturedMeasure ?? effectivelyUnboundedWidth, effectivelyUnboundedWidth)
         let candidates = [
             textContainer?.size.width,
             lineFrag.width,
-            editorMeasure,
+            capturedMeasure,
         ].compactMap { width -> CGFloat? in
-            guard let width, width.isFinite, width > 0, width <= maximum
+            guard let width, width.isFinite, width > 0, width < maximum
             else { return nil }
             return width
         }
-        let measure = candidates.first ?? editorMeasure ?? fallbackBlockWidth
+        let measure = candidates.first ?? capturedMeasure ?? fallbackBlockWidth
         let padding = (textContainer?.lineFragmentPadding ?? 0) * 2
         return max(160, (measure - padding).rounded(.down))
     }
@@ -4174,7 +4194,7 @@ final class ChipCell: NSTextAttachmentCell {
         Self.blockWidth(
             in: textContainer,
             proposedLineFragment: lineFrag,
-            editorMeasure: capturedEditorMeasure
+            editorMeasure: nil
         )
     }
 
@@ -4196,14 +4216,13 @@ final class ChipCell: NSTextAttachmentCell {
             glyphPosition: position,
             characterIndex: charIndex
         )
-        frame.size.width = resolvedBlockWidth(
-            in: textContainer, proposedLineFragment: lineFrag)
-        frame.size.height = Self.blockHeight
+        frame.size = Self.blockBounds(width: resolvedBlockWidth(
+            in: textContainer, proposedLineFragment: lineFrag)).size
         return frame
     }
 
     override nonisolated func cellBaselineOffset() -> NSPoint {
-        NSPoint(x: 0, y: -(Self.blockHeight - 4))
+        Self.blockBounds(width: 0).origin
     }
 
     /// The layout manager's call, which names the character so the
@@ -4233,7 +4252,9 @@ final class ChipCell: NSTextAttachmentCell {
     /// selection itself so the colour is never the only carrier.
     @MainActor
     private func draw(withFrame cellFrame: NSRect, in controlView: NSView?, selected: Bool, hovered: Bool) {
+        #if DEBUG
         lastDrawnFrame = cellFrame
+        #endif
         let block = NSBezierPath(
             roundedRect: cellFrame.insetBy(dx: 0.5, dy: 0.5),
             xRadius: 8,

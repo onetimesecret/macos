@@ -31,8 +31,7 @@ final class SealedCapsuleTests: XCTestCase {
         textView.setSelectedRange(NSRange(location: 3, length: 6))
         coordinator.sealSelectionOrLine()
 
-        let menu = NSMenu()
-        coordinator.appendChipItems(to: menu, at: 3)
+        let menu = try XCTUnwrap(coordinator.chipMenu(at: 3))
         let copy = try XCTUnwrap(menu.items.first {
             $0.title == "Copy decrypted contents"
         })
@@ -84,6 +83,17 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(ChipCell.actionsGlyph, "···")
     }
 
+    func testTheActionsSeatOpensOnlyOnAPlainFirstClick() {
+        XCTAssertTrue(InkTextView.shouldOpenChipActions(
+            clickCount: 1, modifierFlags: []))
+        XCTAssertFalse(InkTextView.shouldOpenChipActions(
+            clickCount: 2, modifierFlags: []))
+        XCTAssertFalse(InkTextView.shouldOpenChipActions(
+            clickCount: 1, modifierFlags: .command))
+        XCTAssertFalse(InkTextView.shouldOpenChipActions(
+            clickCount: 1, modifierFlags: .shift))
+    }
+
     /// An unwrapped editor, as the page mounts one: an effectively
     /// infinite container inside a scroll view, so only the captured
     /// viewport measure can size a block. The layout manager is the
@@ -101,7 +111,7 @@ final class SealedCapsuleTests: XCTestCase {
         inset: NSSize
     ) -> UnwrappedEditor {
         let storage = NSTextStorage()
-        let container = NSTextContainer(size: NSSize(
+        let container = InkTextContainer(size: NSSize(
             width: CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
         ))
@@ -253,6 +263,16 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertNotEqual(
             ChipCell.actionsRect(in: bounding).minY, ChipCell.actionsRect(in: drawn).minY,
             "the seats agreed; the old frame would have hit")
+
+        let outsideBlock = NSPoint(x: drawn.midX, y: bounding.minY + 0.5)
+        XCTAssertTrue(bounding.contains(outsideBlock))
+        XCTAssertFalse(drawn.contains(outsideBlock))
+        let coordinator = InkEditorView.Coordinator(model: try makeModel())
+        coordinator.textView = textView
+        textView.coordinator = coordinator
+        XCTAssertNil(
+            coordinator.chipIndex(at: outsideBlock, in: textView),
+            "hover used the glyph bounds instead of the clickable block frame")
     }
 
     /// A wrapped editor's finite container is already inset from the
