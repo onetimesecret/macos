@@ -1915,6 +1915,7 @@ public struct InkEditorView: NSViewRepresentable {
             // and the core's replace: the range is still true when the
             // core deletes it.
             let range = textView.selectedRange()
+            guard Self.isValid(range, for: storage.length) else { return }
             // Refused before the board is read: a take that ended in a
             // refusal would have cleared nothing, but it would have
             // read the board for no reason.
@@ -1948,6 +1949,7 @@ public struct InkEditorView: NSViewRepresentable {
             guard let textView, let storage = textView.textStorage else { return }
             let text = storage.string as NSString
             var range = textView.selectedRange()
+            guard Self.isValid(range, for: storage.length) else { return }
             if range.length == 0 {
                 range = text.lineRange(for: range)
                 // Seal the line's content, not its terminator.
@@ -1995,7 +1997,18 @@ public struct InkEditorView: NSViewRepresentable {
             textView.setSelectedRange(NSRange(location: range.location, length: 1))
         }
 
+        static func isValid(_ range: NSRange, for length: Int) -> Bool {
+            guard length >= 0,
+                  range.location != NSNotFound,
+                  range.location >= 0,
+                  range.length >= 0,
+                  range.location <= length
+            else { return false }
+            return range.length <= length - range.location
+        }
+
         static func containsChip(_ storage: NSTextStorage, in range: NSRange) -> Bool {
+            guard isValid(range, for: storage.length) else { return false }
             var found = false
             storage.enumerateAttribute(.attachment, in: range) { value, _, stop in
                 if value is ChipAttachment {

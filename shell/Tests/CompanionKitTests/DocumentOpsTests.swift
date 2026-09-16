@@ -46,6 +46,38 @@ final class OpEmitterTests: XCTestCase {
         XCTAssertEqual(ops, [.del(at: 1, len: 1)])
     }
 
+    func testContainsChipRejectsInvalidRangesWithoutEnumerating() {
+        let storage = NSTextStorage(string: "ink")
+        let invalidRanges = [
+            NSRange(location: NSNotFound, length: 0),
+            NSRange(location: storage.length + 1, length: 0),
+            NSRange(location: storage.length, length: 1),
+            NSRange(location: Int.max - 1, length: 10),
+        ]
+
+        for range in invalidRanges {
+            XCTAssertFalse(
+                InkEditorView.Coordinator.containsChip(storage, in: range),
+                "invalid range \(range) must not be enumerated"
+            )
+        }
+    }
+
+    func testContainsChipRetainsValidRangeBehavior() {
+        let storage = NSTextStorage(string: "ab")
+        storage.insert(InkEditorView.Coordinator.chipString(chipInfo(id: 7)), at: 1)
+
+        XCTAssertFalse(
+            InkEditorView.Coordinator.containsChip(
+                storage, in: NSRange(location: 0, length: 1)))
+        XCTAssertTrue(
+            InkEditorView.Coordinator.containsChip(
+                storage, in: NSRange(location: 1, length: 1)))
+        XCTAssertFalse(
+            InkEditorView.Coordinator.containsChip(
+                storage, in: NSRange(location: storage.length, length: 0)))
+    }
+
     func testAMultiRunPasteSplitsIntoInkAndChipOps() {
         let storage = NSTextStorage(string: "")
         let pasted = NSMutableAttributedString(string: "a\u{1F600}")
