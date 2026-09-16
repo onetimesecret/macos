@@ -1,0 +1,107 @@
+docs/dogfood/potentially-quirky-behaviour.md
+
+> Why does the main window sometimes disappear when the focus changes to the settings window and sometimes not? WHat would the conventional, idiomatic behaviour be?
+
+## Why it varies
+
+Changing focus alone does **not** dismiss the surface:
+
+- `windowDidResignKey` only sets `holdsKeys = false`; it explicitly does not rest the surface: `shell/Sources/OnetimePad/BackdropWindowController.swift:634`.
+- `openSettings()` activates and shows Settings but does not call `model.rest()`: `shell/Sources/OnetimePad/BackdropApp.swift:706`.
+- Consequently, opening Settings with `⌘,` can leave the surface raised and visible.
+
+Mouse-driven routes can behave differently:
+
+- While raised, a global outside-click monitor asynchronously calls `model.rest()`: `shell/Sources/OnetimePad/BackdropWindowController.swift:557`.
+- The implementation explicitly classifies Settings and About as outside the surface: “Our ordinary windows, Settings and About, are outside by this rule and rest the card”: `shell/Sources/OnetimePad/BackdropWindowController.swift:540`.
+- Menu-owned presses are exempt, so opening Settings through a tracked menu may leave the surface raised, while an unclaimed mouse press can rest it.
+- Once resting, an unpinned surface moves to desktop level and therefore appears to disappear behind normal windows. A pinned surface remains floating: `shell/Sources/OnetimePad/BackdropStance.swift:24`.
+
+So the result depends on the **input route, timing, current stance, and pin state**, not merely on focus moving to Settings.
+
+## Conventional behavior
+
+For an ordinary macOS document window, the conventional behavior is:
+
+> Settings becomes key; the main window remains visible but inactive.
+
+Focusing another window in the same application does not conventionally hide the main window.
+
+This surface is not an ordinary main window—it explicitly returns `false` from `canBecomeMain` and behaves as a transient floating editor. The authoritative feature specification says:
+
+> “Esc and a click outside the card always rest it.”
+
+`docs/spec/feature/background-surface/README.md:53`
+
+Given that established model, the most coherent behavior here would be:
+
+1. Opening Settings always rests the surface explicitly.
+2. Settings becomes the key window.
+3. An unpinned surface returns behind normal windows.
+4. A pinned surface remains visible but resting and non-key.
+5. The outcome is identical whether Settings was opened by `⌘,`, a menu, or the status item.
+
+The alternative—always leaving the surface raised—is also defensible under normal multi-window conventions, but it would require changing the project’s current “click outside always rests it” rule. The present route-dependent mixture is the non-idiomatic part.
+
+> After remove the special windowDidResignKey behaviour for consistency with familiar macos application behaviour, I rebuilt and ran the application with these changes and now it seems to behave like the Pin toggle all the time. So command-tab'ing to another window on the same desktop does not put OnetimePad window behind it; it just stays on top. What other non-standard behaviour is implemented that's causing that?
+
+The cause is the **raised stance**, not the Pin toggle.
+
+### What happens on ⌘Tab
+
+1. Summoning sets `stance = .raised` in `BackdropModel.raise`.
+2. A raised surface always uses `.floating` window level:
+
+   ```swift
+   case .raised: .floating
+   ```
+
+   `shell/Sources/OnetimePad/BackdropStance.swift`
+
+3. When ⌘Tab moves focus elsewhere, `windowDidResignKey` only updates the focus indicator:
+
+   ```swift
+   model.holdsKeys = false
+   ```
+
+   It does not lower the window level or change the stance.
+
+4. `BackdropPanel` also sets:
+
+   ```swift
+   hidesOnDeactivate = false
+   ```
+
+   so application deactivation does not hide it.
+
+Consequently, the window remains a floating, always-above-normal-windows panel after losing focus.
+
+### Why it resembles Pin
+
+Pin only changes the level of a **resting** surface:
+
+```swift
+case .resting: pinned ? .floating : .backdropDesktop
+case .raised: .floating
+```
+
+While raised, pinned and unpinned surfaces have the same `.floating` level. Since the new behavior keeps the surface raised until Escape, Pin has no visible stacking effect during that period.
+
+### Other non-standard window behavior
+
+The surface is also:
+
+- An `NSPanel`, not a conventional application window.
+- Created with `.nonactivatingPanel`.
+- Unable to become the application’s main window.
+- Configured with `.canJoinAllSpaces`.
+- Allowed over full-screen applications with `.fullScreenAuxiliary`.
+- Explicitly prevented from hiding when the app deactivates.
+- Kept at floating level even after it resigns key status.
+- Accompanied by a Settings window that is also raised to `.floating` whenever the surface is raised or pinned.
+
+The behavior directly responsible here is:
+
+> **Raised means floating regardless of whether the surface still has focus.**
+
+Familiar macOS behavior would require separating **visibility** from **always-on-top**: after resigning key, an unpinned surface should remain raised/visible but drop to normal window level, allowing the newly focused application’s windows to appear above it. A pinned surface could remain floating.
