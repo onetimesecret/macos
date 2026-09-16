@@ -81,9 +81,10 @@ in `SUPERSEDED_MAGICS`, never on a key failure
    under test; a user faced with an unrecognized app is expected to
    deny.
 5. Type a line on the page that opens, wait past the debounce, and press
-   ⌘Q. Confirm termination is cancelled automatically and no alert or
-   other app-owned surface appears. Use Force Quit to end the test
-   session.
+   ⌘Q. Confirm the app stays running, no alert or other app-owned
+   surface appears, and the quit anyway line stands under the recovery
+   line. Press ⌘Q again, or click "quit anyway (⌘Q)", and confirm the
+   app quits.
 6. Re read the evidence from step 2.
 
 **Pass, in this order:**
@@ -101,15 +102,16 @@ in `SUPERSEDED_MAGICS`, never on a key failure
   withholding the save licence"
   (`shell/Sources/CompanionKit/PageModel.swift`).
 - `state.sealed` is still present and its sha256 is **identical** to
-  step 2, including after the typing, cancelled quit and Force Quit: a
-  session without the licence never rewrites the file
+  step 2, including after the typing, the cancelled quit and the quit
+  anyway: a session without the licence never rewrites the file
   (`shell/Sources/CompanionKit/PageModel.swift`).
 - The `ots-companion-key-half-<32 hex>` file is still present and
   unchanged, and the `state-key` keychain item still exists. Nothing
   rotated: rotation has two triggers and a refusal is neither
   (ADR-0016 section 6).
-- The ⌘Q attempt cancels termination and no quit alert appears; the
-  existing inline recovery state remains.
+- The first ⌘Q cancels termination and no quit alert appears; the quit
+  anyway line stands beside the existing inline recovery state, and the
+  second ⌘Q quits.
 
 **Fail:** an erased or rewritten `state.sealed`, a changed sha256, a
 missing key half, a missing keychain item, a log line from the
