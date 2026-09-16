@@ -267,6 +267,49 @@ final class RestoreFailureTests: XCTestCase {
         XCTAssertEqual(stranger.saveStateForQuit(), .unsavableWithContent)
     }
 
+    /// The whole quit over a withheld licence, as the terminate path
+    /// runs it: the first ⌘Q cancels and puts the quit anyway line up
+    /// beside the recovery line; the discard, which grants the licence,
+    /// takes the quit line down with it; a later ⌘Q settles. Without
+    /// the discard, the second ⌘Q terminates, so the session is never
+    /// held open (issue 172, D-14 and D-19).
+    func testTheCancelledQuitOverAWithheldLicenceOffersQuitAnywayUntilTheDiscard() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")
+
+        let stranger = makeModel(
+            in: tempDir, defaults: defaults, tag: "stranger-\(UUID().uuidString)")
+        stranger.loadStateIfNeeded()
+        let sheet = try XCTUnwrap(stranger.selectedPageID)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "typed into the void")]))
+        stranger.applyOps(sheet: sheet, opsJSON: ops)
+
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: stranger), .terminateCancel)
+        XCTAssertEqual(stranger.quitRefusal, .unsavableWithContent)
+        XCTAssertTrue(stranger.contentRestoreRefused, "the recovery line stands beside the quit line")
+
+        stranger.clearUnreadableStateFile()
+        XCTAssertNil(stranger.quitRefusal, "the discard grants the licence, so the quit line comes down")
+        spinRunLoop { stranger.saveStatus == .saved }
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: stranger), .terminateNow)
+    }
+
+    func testTheSecondQuitOverAWithheldLicenceTerminates() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")
+
+        let stranger = makeModel(
+            in: tempDir, defaults: defaults, tag: "stranger-\(UUID().uuidString)")
+        stranger.loadStateIfNeeded()
+        let sheet = try XCTUnwrap(stranger.selectedPageID)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "typed into the void")]))
+        stranger.applyOps(sheet: sheet, opsJSON: ops)
+
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: stranger), .terminateCancel)
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: stranger), .terminateNow)
+        XCTAssertTrue(stranger.contentRestoreRefused, "quitting anyway never touches the unreadable file")
+    }
+
     func testTheQuitFlushOverAnEmptyUnlicensedSessionQuitsSilently() throws {
         let (tempDir, defaults, tag) = try makeFixture()
         try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")
@@ -456,5 +499,32 @@ final class RestoreFailureTests: XCTestCase {
         model.applyOps(sheet: sheet, opsJSON: ops)
 
         XCTAssertEqual(model.saveStateForQuit(), .refused)
+    }
+
+    /// The whole quit over a refused write: the first ⌘Q cancels and
+    /// puts the quit anyway line up; the line comes down the moment a
+    /// write lands, because the settled write is the thing the line
+    /// said had not happened; and a ⌘Q after that settles on its own.
+    func testTheCancelledQuitOverARefusedWriteOffersQuitAnywayUntilAWriteLands() throws {
+        let (tempDir, defaults, tag) = try makeFixture()
+        addTeardownBlock { try? self.setWritable(true, tempDir) }
+
+        let model = makeModel(in: tempDir, defaults: defaults, tag: tag, saveRetryDebounce: 1.0)
+        model.loadStateIfNeeded()
+        spinRunLoop { model.saveStatus == .saved }
+
+        try setWritable(false, tempDir)
+        let sheet = try XCTUnwrap(model.selectedPageID)
+        let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "lost at logout")]))
+        model.applyOps(sheet: sheet, opsJSON: ops)
+
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateCancel)
+        XCTAssertEqual(model.quitRefusal, .refused)
+
+        try setWritable(true, tempDir)
+        spinRunLoop { model.saveStatus == .saved }
+        XCTAssertEqual(model.saveStatus, .saved, "the armed retry lands once the volume is writable")
+        XCTAssertNil(model.quitRefusal, "a settled write takes the quit line down")
+        XCTAssertEqual(QuitPrompt.terminateReply(flushing: model), .terminateNow)
     }
 }

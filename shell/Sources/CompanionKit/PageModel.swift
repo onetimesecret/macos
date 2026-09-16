@@ -579,6 +579,15 @@ public final class PageModel: ObservableObject {
     /// withheld-licence leg, where the two flags above own the story.
     @Published public private(set) var saveStatus: SaveStatus = .idle
 
+    /// The quit the terminate path cancelled, if one stands: a refused
+    /// write or an unsavable session, recorded so the surface can say
+    /// what the quit would lose and offer to quit anyway. Set only by
+    /// `offerQuitAnyway`; cleared when the reason goes away, a settled
+    /// write for a refusal and the user's discard for an unsavable
+    /// session. Never cleared by time: the line is a standing state,
+    /// not a notice, because the condition is.
+    @Published public private(set) var quitRefusal: QuitSaveOutcome?
+
     /// True while the page holds the keyboard — drives the ember
     /// border. Set by the controller from window key status.
     @Published public var holdsKeys = false
@@ -1970,6 +1979,7 @@ public final class PageModel: ObservableObject {
         // standing `contentRestoreRefused` state ahead of this one, so
         // that reading is never displayed (issue #49).
         saveStatus = settled ? .saved : .failed
+        quitRefusal = Self.quitOfferAfterWrite(offer: quitRefusal, settled: settled)
         if !settled {
             // The buffer is still dirty and nothing else is going to ask
             // for it: the debounce only arms on a mutation, so a session
@@ -2100,10 +2110,11 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// The quit policy's outcome table. A refused write cancels termination
-    /// regardless of the licence. A settled flush over a withheld content
-    /// licence also cancels when the session accumulated work after load;
-    /// an untouched session under a withheld licence may terminate.
+    /// The quit policy's outcome table. A refused write cancels the first
+    /// quit regardless of the licence. A settled flush over a withheld
+    /// content licence also cancels it when the session accumulated work
+    /// after load; an untouched session under a withheld licence may
+    /// terminate. What a cancelled quit does next is `QuitPrompt`'s.
     public nonisolated static func quitOutcome(
         settled: Bool, contentLicence: Bool, loaded: Bool, mutatedSinceLoad: Bool
     ) -> QuitSaveOutcome {
@@ -2126,6 +2137,49 @@ public final class PageModel: ObservableObject {
             loaded: stateLoaded,
             mutatedSinceLoad: mutatedSinceLoad
         )
+    }
+
+    public var quitAnywayOffered: Bool { quitRefusal != nil }
+
+    /// The cancelled quit's standing line goes up. A settled outcome is
+    /// never recorded: there is nothing to quit anyway from.
+    public func offerQuitAnyway(after outcome: QuitSaveOutcome) {
+        guard outcome != .settled else { return }
+        quitRefusal = outcome
+    }
+
+    /// Whether the offer survives a write. A refusal's offer stands
+    /// until a write settles, because a settled write is exactly the
+    /// thing the refusal said had not happened. An unsavable session's
+    /// offer is untouched by writes: on that leg the flush settles
+    /// while the pages go nowhere, so a settle says nothing about it.
+    public nonisolated static func quitOfferAfterWrite(
+        offer: QuitSaveOutcome?, settled: Bool
+    ) -> QuitSaveOutcome? {
+        offer == .refused && settled ? nil : offer
+    }
+
+    /// Whether the offer survives the user's discard of the unreadable
+    /// file. The discard grants the licence, so an unsavable session's
+    /// offer comes down; a refusal's stands until its own write lands.
+    public nonisolated static func quitOfferAfterContentClear(
+        offer: QuitSaveOutcome?
+    ) -> QuitSaveOutcome? {
+        offer == .unsavableWithContent ? nil : offer
+    }
+
+    /// The standing line's sentence, a pure function of the outcome so
+    /// the two cases are testable as words. Lower case, third person,
+    /// and it names the loss rather than warning in general (D-15).
+    public nonisolated static func quitRefusalSentence(_ outcome: QuitSaveOutcome) -> String? {
+        switch outcome {
+        case .settled:
+            return nil
+        case .refused:
+            return "the sealed state file was not written, so this session's pages will not survive the quit"
+        case .unsavableWithContent:
+            return "nothing typed this session is on disk, so its pages will not survive the quit"
+        }
     }
 
     deinit {
@@ -3410,6 +3464,7 @@ public final class PageModel: ObservableObject {
         saveLicence = licences.content
         ledgerLicence = licences.ledger
         contentRestoreRefused = false
+        quitRefusal = Self.quitOfferAfterContentClear(offer: quitRefusal)
         markDirty()
         refresh()
     }

@@ -155,6 +155,13 @@ final class BackdropModel: ObservableObject, QuitFlushable {
         pages.saveStateForQuit()
     }
 
+    /// The cancelled quit's standing line, held by the shared model
+    /// because the surface that shows it is the shared one.
+    var quitAnywayOffered: Bool { pages.quitAnywayOffered }
+
+    func offerQuitAnyway(after outcome: QuitSaveOutcome) {
+        pages.offerQuitAnyway(after: outcome)
+    }
 
     // MARK: Stance
 

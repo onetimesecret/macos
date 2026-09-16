@@ -437,11 +437,17 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Quit performs one synchronous shell-state flush. A settled flush
     /// terminates, including when the sealed drafts contain unsaved file
-    /// buffers. A refused or unsavable flush cancels termination without
-    /// presenting or activating anything, leaving the surface's existing
-    /// inline save or recovery state in place.
+    /// buffers. A refused or unsavable flush cancels the first quit and
+    /// puts the quit anyway line under the page (`QuitPrompt`); the
+    /// surface is raised so that line is on screen, because a ⌘Q that
+    /// appears to do nothing over a resting card is the one outcome
+    /// worse than a dialog. The raise is an activation, not a summon:
+    /// the person named the app, and the roll stays where it was. The
+    /// second ⌘Q, or the line's button, terminates.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        QuitPrompt.terminateReply(flushing: model)
+        let reply = QuitPrompt.terminateReply(flushing: model)
+        if reply == .terminateCancel { model.raise(.activation) }
+        return reply
     }
 
     /// ⌘Tab (or the Dock icon) landing on this app raises the surface:
