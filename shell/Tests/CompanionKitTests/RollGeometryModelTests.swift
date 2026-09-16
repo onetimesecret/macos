@@ -160,4 +160,21 @@ final class RollGeometryModelTests: XCTestCase {
         await settle()
         XCTAssertEqual(model.geometry, .unmeasured, "a roll that went away kept its shape")
     }
+
+    /// Moving the clip changes only the viewport half of a measurement.
+    /// The document revision is the cache identity used by the navigator,
+    /// so it must remain stable through scroll-only publications.
+    func testViewportMovementPreservesDocumentGeometryIdentity() {
+        let document = RollGeometry.Document(
+            extents: [RollGeometry.Extent(bucket: 0, page: 1, top: 0, height: 500)],
+            height: 500,
+            revision: 7
+        )
+        let before = RollGeometry(document: document, viewportTop: 0, viewportHeight: 100)
+        let after = RollGeometry(document: document, viewportTop: 80, viewportHeight: 100)
+
+        XCTAssertEqual(before.document.revision, after.document.revision)
+        XCTAssertEqual(before.document, after.document)
+        XCTAssertNotEqual(before, after)
+    }
 }

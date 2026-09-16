@@ -257,6 +257,32 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(segment.y + segment.height, layout.placed[2].y, accuracy: 0.5)
     }
 
+    /// A transiently missing measurement must not send its node back to
+    /// document zero. Interpolate between the surrounding measured pages
+    /// so both the node tops and the inverse map remain monotonic.
+    func testAMissingMiddleExtentIsInterpolatedWithoutReversingAnchors() {
+        let nodes = nodes([
+            slot(tab: 1, page: 11, day: 0),
+            slot(tab: 2, page: 22, day: -1),
+            slot(tab: 3, page: 33, day: -2),
+        ])
+        let geometry = RollGeometry(
+            extents: [
+                extent(nodes[0], top: 0, height: 400),
+                extent(nodes[2], top: 800, height: 200),
+            ],
+            documentHeight: 1000, viewportTop: 0, viewportHeight: 300)
+
+        let layout = StreamNavigator.layout(
+            nodes: nodes, geometry: geometry, height: 300, width: 102)
+
+        XCTAssertEqual(layout.placed.map(\.documentTop), [0, 400, 800])
+        XCTAssertEqual(layout.anchors.map(\.document), layout.anchors.map(\.document).sorted())
+        XCTAssertEqual(
+            layout.documentOffset(atY: layout.placed[1].y), 400, accuracy: 0.5,
+            "the inverse map did not run through the interpolated middle page")
+    }
+
     /// The band is absent when the whole roll is on screen, and clamps
     /// into the rail when the clip is in the elastic.
     func testTheBandIsAbsentWhenTheWholeRollIsOnScreenAndClampsOtherwise() throws {
@@ -338,6 +364,71 @@ final class StreamNavigatorTests: XCTestCase {
         let doubled = layout.slivers.filter { $0.y > layout.placed[1].y }
         XCTAssertEqual(doubled.count, 1, "two lines on one point drew twice")
         XCTAssertEqual(doubled[0].width, 2 + 0.9 * (available - 2), accuracy: 0.01)
+    }
+
+    /// A viewport-only update retains every document-proportional result
+    /// and every sliver identity while moving only the band and emphasis.
+    func testViewportUpdateReusesPreparedDocumentLayout() {
+        let nodes = nodes([
+            slot(tab: 1, page: 11, day: 0),
+            slot(tab: 2, page: 22, day: -1),
+        ])
+        let document = RollGeometry.Document(
+            extents: [
+                extent(nodes[0], top: 0, height: 500, lines: [
+                    RollGeometry.LineMark(y: 300, width: 0.4),
+                ]),
+                extent(nodes[1], top: 500, height: 500, lines: [
+                    RollGeometry.LineMark(y: 700, width: 0.8),
+                ]),
+            ],
+            height: 1000,
+            revision: 9
+        )
+        let before = RollGeometry(document: document, viewportTop: 0, viewportHeight: 250)
+        let after = RollGeometry(document: document, viewportTop: 600, viewportHeight: 250)
+        let prepared = StreamNavigator.layout(
+            nodes: nodes, geometry: before, height: 400, width: 102)
+        let updated = StreamNavigator.updatingViewport(
+            in: prepared, geometry: after, height: 400)
+
+        XCTAssertEqual(updated.placed, prepared.placed)
+        XCTAssertEqual(updated.anchors, prepared.anchors)
+        XCTAssertEqual(updated.slivers.map(\.id), prepared.slivers.map(\.id))
+        XCTAssertEqual(updated.slivers.map(\.y), prepared.slivers.map(\.y))
+        XCTAssertNotEqual(updated.band, prepared.band)
+        XCTAssertNotEqual(updated.slivers.map(\.inView), prepared.slivers.map(\.inView))
+    }
+
+    /// The relay may forward through its hosting ancestor, but a sibling
+    /// above it is same-window content that owns the wheel at that point.
+    /// In that case the event must remain available to the occluder.
+    func testWheelRelayDoesNotTakeEventsFromSameWindowOccludingContent() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+            styleMask: [], backing: .buffered, defer: false)
+        let root = NSView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView = root
+        let relay = WheelRelayView(frame: root.bounds)
+        root.addSubview(relay)
+        let point = NSPoint(x: 50, y: 50)
+
+        XCTAssertTrue(WheelRelayView.shouldRelay(
+            eventWindow: window, relayWindow: window, pointInside: true,
+            hitView: root.hitTest(point), relayView: relay))
+
+        let occluder = NSView(frame: relay.frame)
+        root.addSubview(occluder)
+        XCTAssertTrue(root.hitTest(point) === occluder)
+        XCTAssertFalse(WheelRelayView.shouldRelay(
+            eventWindow: window, relayWindow: window, pointInside: true,
+            hitView: root.hitTest(point), relayView: relay))
+
+        let otherWindow = NSWindow(
+            contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
+        XCTAssertFalse(WheelRelayView.shouldRelay(
+            eventWindow: otherWindow, relayWindow: window, pointInside: true,
+            hitView: root, relayView: relay))
     }
 
     /// A node's click lands just above its page, never above the

@@ -280,7 +280,10 @@ public enum StreamNavigator {
     }
 
     /// One line of a page as a sliver beside the track.
-    public struct Sliver: Equatable, Sendable {
+    public struct Sliver: Equatable, Identifiable, Sendable {
+        /// The rounded rail row this sliver occupies. A cached document
+        /// layout keeps it stable while only the viewport moves.
+        public let id: Int
         public let y: CGFloat
         public let width: CGFloat
         /// Under the band: the lines the reader can see draw darker.
@@ -362,9 +365,7 @@ public enum StreamNavigator {
         guard height > 0, !nodes.isEmpty else { return .empty }
         let document = max(1, geometry.documentHeight)
         let windowIndex = nodes.firstIndex(where: \.trailing)
-        let documentTops = nodes.map { node in
-            geometry.extents.first { $0.page == node.page && $0.bucket == node.bucket }?.top ?? 0
-        }
+        let documentTops = resolvedDocumentTops(nodes: nodes, geometry: geometry)
         var reserves: [CGFloat] = []
         var gapBands: [CGFloat] = []
         var heights: [CGFloat] = []
@@ -451,6 +452,7 @@ public enum StreamNavigator {
                     if rows.contains(where: { y >= $0.0 && y <= $0.1 }) { continue }
                     let key = Int(y)
                     let sliver = Sliver(
+                        id: key,
                         y: y,
                         width: 2 + min(1, max(0, line.width)) * (available - 2),
                         inView: band?.contains(y) ?? false
@@ -471,6 +473,91 @@ public enum StreamNavigator {
             slivers: slivers.values.sorted { $0.y < $1.y },
             anchors: anchors
         )
+    }
+
+    /// Reapply only the viewport-dependent half of a prepared document
+    /// layout. Node placement, anchors, line mapping, collision removal,
+    /// and sliver widths remain unchanged while the clip moves.
+    public static func updatingViewport(
+        in layout: Layout, geometry: RollGeometry, height: CGFloat
+    ) -> Layout {
+        let document = max(1, geometry.documentHeight)
+        let map = { (offset: CGFloat) -> CGFloat in
+            for index in 1..<layout.anchors.count {
+                let a = layout.anchors[index - 1], b = layout.anchors[index]
+                if offset <= b.document {
+                    let share = (offset - a.document) / max(1, b.document - a.document)
+                    return a.y + share * (b.y - a.y)
+                }
+            }
+            return layout.trackBottom
+        }
+
+        var band: Band?
+        if geometry.documentHeight > 0, geometry.viewportHeight > 0,
+            geometry.viewportHeight < geometry.documentHeight, layout.anchors.count >= 2 {
+            let top = map(max(0, geometry.viewportTop))
+            let bottom = map(min(document, geometry.viewportTop + geometry.viewportHeight))
+            let drawn = max(Metrics.minimumBand, bottom - top)
+            band = Band(y: min(max(0, top), height - drawn), height: drawn)
+        }
+        let slivers = layout.slivers.map { sliver in
+            Sliver(
+                id: sliver.id, y: sliver.y, width: sliver.width,
+                inView: band?.contains(sliver.y) ?? false)
+        }
+        return Layout(
+            placed: layout.placed,
+            trackTop: layout.trackTop,
+            trackBottom: layout.trackBottom,
+            windowY: layout.windowY,
+            band: band,
+            activeSegment: layout.activeSegment,
+            slivers: slivers,
+            anchors: layout.anchors
+        )
+    }
+
+    /// Resolve transient gaps in the measured extents without sending a
+    /// later node back to document zero. Missing runs are interpolated
+    /// between their measured neighbours, or between a neighbour and the
+    /// document boundary, then clamped into nondecreasing order.
+    private static func resolvedDocumentTops(
+        nodes: [Node], geometry: RollGeometry
+    ) -> [CGFloat] {
+        var measured: [CGFloat?] = nodes.map { node in
+            geometry.extents.first {
+                $0.page == node.page && $0.bucket == node.bucket
+            }?.top
+        }
+        var start = 0
+        while start < measured.count {
+            guard measured[start] == nil else {
+                start += 1
+                continue
+            }
+            var end = start
+            while end < measured.count, measured[end] == nil { end += 1 }
+
+            let lowerIndex = start == 0 ? 0 : start - 1
+            let lower = start == 0 ? 0 : measured[lowerIndex] ?? 0
+            let upperIndex = end
+            let upper = end < measured.count ? measured[end] ?? lower : geometry.documentHeight
+            let span = max(upperIndex - lowerIndex, 1)
+            for index in start..<end {
+                let share = CGFloat(index - lowerIndex) / CGFloat(span)
+                measured[index] = lower + share * (upper - lower)
+            }
+            start = end
+        }
+
+        let ceiling = max(geometry.documentHeight, 0)
+        var floor: CGFloat = 0
+        return measured.map { candidate in
+            let top = min(max(candidate ?? floor, floor), ceiling)
+            floor = top
+            return top
+        }
     }
 
     /// How long a jump takes: the stance's own 160 ms, and nothing at

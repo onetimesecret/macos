@@ -331,11 +331,16 @@ final class DayScrollTests: XCTestCase {
             selectedPage: first,
             readOnly: false
         )
+        let documentRevision = roll.stack.measuredGeometry.document.revision
+        XCTAssertGreaterThan(documentRevision, 0)
         roll.scroll.contentView.scroll(to: NSPoint(x: 0, y: 240))
         roll.scroll.reflectScrolledClipView(roll.scroll.contentView)
 
         let measured = roll.stack.measuredGeometry
         XCTAssertEqual(measured.viewportTop, 240, accuracy: 1)
+        XCTAssertEqual(
+            measured.document.revision, documentRevision,
+            "scrolling replaced document geometry instead of reusing it")
         XCTAssertGreaterThan(
             measured.documentHeight, measured.viewportHeight,
             "a roll this long has to outgrow the card for the band to mean anything")

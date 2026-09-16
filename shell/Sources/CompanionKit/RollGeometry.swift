@@ -69,13 +69,37 @@ public struct RollGeometry: Equatable, Sendable {
         public var bottom: CGFloat { top + height }
     }
 
-    /// The rows, in document order: today first, the days before it
-    /// under it, exactly the order the roll lays them out in, one per
-    /// page.
-    public let extents: [Extent]
-    /// How tall the whole roll is. Zero before the first layout pass,
-    /// which is the signal that there is nothing honest to draw yet.
-    public let documentHeight: CGFloat
+    /// The document-proportional half of the measurement. Its revision
+    /// changes only when extents, line marks, or document height change;
+    /// viewport-only publications retain it so navigator layout caches do
+    /// not confuse scrolling with a new document layout.
+    public struct Document: Equatable, Sendable {
+        public let extents: [Extent]
+        public let height: CGFloat
+        /// Stable for one mounted stack and distinct across replacements.
+        /// Nil for hand-built geometry, which consumers do not cache.
+        public let identity: UUID?
+        public let revision: UInt64
+
+        public init(
+            extents: [Extent], height: CGFloat, identity: UUID? = nil, revision: UInt64 = 0
+        ) {
+            self.extents = extents
+            self.height = height
+            self.identity = identity
+            self.revision = revision
+        }
+
+        public static let unmeasured = Document(extents: [], height: 0)
+    }
+
+    public let document: Document
+
+    /// Compatibility accessors for callers interested in the complete
+    /// measurement rather than its publication identity.
+    public var extents: [Extent] { document.extents }
+    public var documentHeight: CGFloat { document.height }
+
     /// Where the clip is, measured down from the top of the document.
     /// Can be negative for the length of an elastic overscroll, which
     /// the mapping clamps rather than refuses.
@@ -84,10 +108,17 @@ public struct RollGeometry: Equatable, Sendable {
     public let viewportHeight: CGFloat
 
     public init(
-        extents: [Extent], documentHeight: CGFloat, viewportTop: CGFloat, viewportHeight: CGFloat
+        extents: [Extent], documentHeight: CGFloat, viewportTop: CGFloat, viewportHeight: CGFloat,
+        documentRevision: UInt64 = 0
     ) {
-        self.extents = extents
-        self.documentHeight = documentHeight
+        document = Document(
+            extents: extents, height: documentHeight, revision: documentRevision)
+        self.viewportTop = viewportTop
+        self.viewportHeight = viewportHeight
+    }
+
+    public init(document: Document, viewportTop: CGFloat, viewportHeight: CGFloat) {
+        self.document = document
         self.viewportTop = viewportTop
         self.viewportHeight = viewportHeight
     }

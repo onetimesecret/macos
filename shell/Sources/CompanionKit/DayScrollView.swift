@@ -255,6 +255,14 @@ final class DayStackView: NSView {
     private var rows: [Row] = []
     private var rendered: Signature?
 
+    /// Extents and line marks change only during layout. Scroll
+    /// notifications reuse this captured document half and publish a new
+    /// viewport over it, avoiding a second layout-fragment enumeration for
+    /// every clip movement.
+    private let documentIdentity = UUID()
+    private var measuredDocument = RollGeometry.Document.unmeasured
+    private var nextDocumentRevision: UInt64 = 0
+
     /// How many times the rows have been assembled, for the test that
     /// asserts a second identical pass assembles nothing.
     private(set) var rebuilds = 0
@@ -803,6 +811,7 @@ final class DayStackView: NSView {
         }
         setFrameSize(NSSize(width: width, height: max(y, clipHeight)))
         scroll.reflectScrolledClipView(scroll.contentView)
+        captureDocumentGeometry()
         publishGeometry()
     }
 
@@ -831,6 +840,17 @@ final class DayStackView: NSView {
     var measuredGeometry: RollGeometry {
         guard let scroll = enclosingScrollView else { return .unmeasured }
         let clip = scroll.contentView
+        return RollGeometry(
+            document: measuredDocument,
+            viewportTop: clip.bounds.origin.y,
+            viewportHeight: clip.bounds.height
+        )
+    }
+
+    /// Capture the document half after frames and text layout have settled.
+    /// Equal captures retain the revision so consumers can cache by a
+    /// scalar identity rather than comparing every line mark.
+    private func captureDocumentGeometry() {
         let extents = rows.map { row in
             RollGeometry.Extent(
                 bucket: row.bucket,
@@ -840,12 +860,15 @@ final class DayStackView: NSView {
                 lines: Self.lineMarks(of: row.body as? NSTextView)
             )
         }
-        return RollGeometry(
+        guard extents != measuredDocument.extents || frame.height != measuredDocument.height else {
+            return
+        }
+        nextDocumentRevision &+= 1
+        measuredDocument = RollGeometry.Document(
             extents: extents,
-            documentHeight: frame.height,
-            viewportTop: clip.bounds.origin.y,
-            viewportHeight: clip.bounds.height
-        )
+            height: frame.height,
+            identity: documentIdentity,
+            revision: nextDocumentRevision)
     }
 
     /// A page's laid-out lines as rectangles in document coordinates.

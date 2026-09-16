@@ -268,12 +268,13 @@ struct StreamNavigatorView: View {
     let chords: [UInt64: Keystroke]
 
     @State private var hoverID: UInt64?
+    @StateObject private var layoutCache = StreamNavigatorLayoutCache()
 
     private typealias Metrics = StreamNavigator.Metrics
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = StreamNavigator.layout(
+            let layout = layoutCache.layout(
                 nodes: nodes, geometry: roll.geometry,
                 height: proxy.size.height, width: proxy.size.width
             )
@@ -388,7 +389,7 @@ struct StreamNavigatorView: View {
     /// the rail's content, and a background that competed with them
     /// would have turned a navigation column into a chart.
     private func slivers(_ layout: StreamNavigator.Layout) -> some View {
-        ForEach(layout.slivers, id: \.y) { sliver in
+        ForEach(layout.slivers) { sliver in
             Rectangle()
                 .fill(Color.secondary.opacity(sliver.inView ? 0.5 : 0.15))
                 .frame(width: sliver.width, height: 1)
@@ -534,6 +535,48 @@ struct StreamNavigatorView: View {
     }
 }
 
+/// Keeps document-proportional navigator work out of viewport-only
+/// publications. Revision zero is intentionally uncached: it belongs to
+/// hand-built or unmeasured geometry that has no identity contract.
+@MainActor
+private final class StreamNavigatorLayoutCache: ObservableObject {
+    private struct Key: Equatable {
+        let nodes: [StreamNavigator.Node]
+        let documentIdentity: UUID
+        let documentRevision: UInt64
+        let height: CGFloat
+        let width: CGFloat
+    }
+
+    private var key: Key?
+    private var documentLayout: StreamNavigator.Layout?
+
+    func layout(
+        nodes: [StreamNavigator.Node], geometry: RollGeometry,
+        height: CGFloat, width: CGFloat
+    ) -> StreamNavigator.Layout {
+        guard let identity = geometry.document.identity, geometry.document.revision > 0 else {
+            return StreamNavigator.layout(
+                nodes: nodes, geometry: geometry, height: height, width: width)
+        }
+        let next = Key(
+            nodes: nodes,
+            documentIdentity: identity,
+            documentRevision: geometry.document.revision,
+            height: height,
+            width: width
+        )
+        if key != next || documentLayout == nil {
+            key = next
+            documentLayout = StreamNavigator.layout(
+                nodes: nodes, geometry: geometry, height: height, width: width)
+        }
+        guard let documentLayout else { return .empty }
+        return StreamNavigator.updatingViewport(
+            in: documentLayout, geometry: geometry, height: height)
+    }
+}
+
 /// A wheel turned over the rail reaches the roll.
 ///
 /// The rail is SwiftUI and has no wheel of its own to answer, so a
@@ -560,7 +603,7 @@ private struct WheelRelay: NSViewRepresentable {
 
 final class WheelRelayView: NSView {
     var relay: ((NSEvent) -> Void)?
-    private var monitor: Any?
+    nonisolated(unsafe) private var monitor: Any?
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -569,13 +612,39 @@ final class WheelRelayView: NSView {
         retireMonitor()
         guard window != nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self, event.window === self.window, let relay = self.relay else {
-                return event
-            }
+            guard let self, let relay = self.relay else { return event }
             let point = self.convert(event.locationInWindow, from: nil)
-            guard self.bounds.contains(point) else { return event }
+            let hitView = self.window?.contentView.map { content in
+                content.hitTest(content.convert(event.locationInWindow, from: nil))
+            } ?? nil
+            guard Self.shouldRelay(
+                eventWindow: event.window,
+                relayWindow: self.window,
+                pointInside: self.bounds.contains(point),
+                hitView: hitView,
+                relayView: self
+            ) else { return event }
             relay(event)
             return nil
+        }
+    }
+
+    /// The representable deliberately answers nil from `hitTest`, so an
+    /// ordinary wheel over the rail resolves to one of its ancestors in
+    /// the SwiftUI host. A hit on any other same-window branch belongs to
+    /// content above the rail and must neither be forwarded nor swallowed.
+    static func shouldRelay(
+        eventWindow: NSWindow?, relayWindow: NSWindow?, pointInside: Bool,
+        hitView: NSView?, relayView: NSView
+    ) -> Bool {
+        guard eventWindow === relayWindow, pointInside else { return false }
+        guard let hitView else { return true }
+        return hitView === relayView || relayView.isDescendant(of: hitView)
+    }
+
+    deinit {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
         }
     }
 
