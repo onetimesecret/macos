@@ -7,17 +7,19 @@ governs: A sealed item occupies one position in the document, but its plaintext 
 decisions: D-08, D-09, D-10, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, section 3)
 consumed-by:
   - docs/spec/design/2026-0915-ui-ux-decisions.md (section 3 applies this law to the surface)
-  - docs/spec/feature/sealed-content/sealed-content.md (the design note upstream of this law)
-  - docs/adr/0009-chip-deletion-deliberate-final.md (proposed, never accepted; its finality clause yields to the removal rows below)
-  - docs/adr/0012-framing-threat-boundary-and-persistence-model.md (the egress discipline this law widens to three points)
 sources:
   - the maintainer's sealed object model, 2026-09-15
   - docs/spec/design/2026-0915-ui-ux-decisions.md, section 3
+  - docs/spec/feature/sealed-content/sealed-content.md (historical design note upstream of this law)
   - docs/spec/design/04-interaction-model.md
+  - docs/adr/0009-chip-deletion-deliberate-final.md (proposed removal constraint superseded by D-30)
+  - docs/adr/0012-framing-threat-boundary-and-persistence-model.md (egress and clear discipline)
   - crates/core/src/sheet.rs (one clock per sheet, no per chip timers)
   - crates/core/src/store.rs (seal, copy out, delete, sync)
-  - crates/ffi/src/lib.rs (CLIPBOARD_CLEAR_SECONDS)
+  - crates/ffi/src/lib.rs (CLIPBOARD_CLEAR_SECONDS; chip-face and document JSON projections)
+  - shell/Sources/CompanionKit/CompanionClient.swift (ChipInfo.excerpt)
   - shell/Sources/CompanionKit/InkEditorView.swift (ChipCell, the chip menu, the seal commands)
+  - https://developer.apple.com/documentation/appkit/nspasteboard/ (drag and general pasteboard scope)
 ---
 
 # Law 0001: The sealed object
@@ -41,10 +43,10 @@ The model combines two established patterns:
 1. **Atomic attachment**: the sealed item behaves like an image, a mention,
    a token or an embedded file in a rich text editor. It is one position,
    one unit, never a run of characters.
-2. **Explicit declassification**: protected plaintext crosses its boundary
-   only through an action that clearly names that consequence, and the
-   write is always core side, so the Swift shell never holds plaintext
-   (ADR-0012).
+2. **Explicit declassification**: the shell never receives the sealed
+   payload from the core. It may hold visible ink before sealing and the
+   policy-approved mechanical excerpt afterward. Named egress operations
+   write the complete payload core-side (ADR-0012 Amendment 1).
 
 The rule serves the first tenet (losing work is unforgivable, even here) by
 making every structural edit reversible, and the boundary law (ADR-0002,
@@ -56,34 +58,30 @@ is no reveal affordance at any privilege, so no label may imply one (D-08).
 
 ## Operation classes
 
-Every operation on a sealed item is one of two kinds, and the distinction is
-the whole design.
+Every interaction involving a sealed item belongs to one of five classes:
 
-- **Structural**: move, select, cut, paste within the app, duplicate,
-  delete, expire. They act on the object, never on its payload, and they
-  are undoable. Removal is structural: a removed object is detached, not
-  destroyed, and undo reattaches it (D-30). Expiry is the one structural
-  operation that is not undoable, because nothing remains to restore
-  (D-33).
-- **Declassification**: copy decrypted contents, decrypted drag from the
-  handle, promote to a one time link, plaintext export. Plaintext crosses
-  the boundary, the action names it, and the write is core side (D-29,
-  D-32).
+- **Ambient observation**: caret movement, find, word count and public
+  fallback representations inspect the document without reading a sealed
+  payload. The object remains one opaque unit.
+- **Structural editing**: move, select, reference-only copy, cut, in-app
+  paste, clone and remove-from-page act on document structure. Removal
+  detaches rather than destroys and remains undoable (D-30).
+- **Classification**: sealing turns visible ink into a sealed object. It is
+  one-way in the editor: ⌘Z does not restore the plaintext (D-30).
+- **Declassification/egress**: copy decrypted contents, decrypted drag,
+  promotion to a one-time link and plaintext export send the complete
+  payload through a named consequence. Payload writes remain core-side
+  (D-29, D-32).
+- **Destruction/lifecycle**: page expiry and explicit burn destroy payload
+  bytes and are not undoable (D-33).
 
-A third word, **ambient**, marks the page's ordinary text machinery reading
-the document without reading the object: the caret, find, the plain text
-representation on the pasteboard. Ambient operations treat the object as
-one opaque unit.
-
-One exemption from reversibility: **sealing is one way** in the editor
-(D-30). An Undo that restored the plaintext would be the one reveal path
-that names nothing, and it would keep the plaintext alive in the shell's
-undo stack. ⌘Z after sealing is not offered; the content comes back only
-through *Copy decrypted contents*.
+`refused` is an outcome, not an operation class. For example, attempting to
+seal a selection that already contains a sealed object is classification
+with a refused outcome.
 
 ## Creating one after the fact
 
-With plaintext selected: **Seal Selection** in the context menu, **Edit →
+With visible ink selected: **Seal Selection** in the context menu, **Edit →
 Seal Selected Content** in the menu bar, and optionally the same action in
 a command palette. It replaces the selection in place with one sealed
 object, keeps the surrounding whitespace, and selects the new object so the
@@ -103,45 +101,106 @@ without a test says what it is owed by.
 
 | Interaction | Class | Expected behaviour | Pinned by |
 | --- | --- | --- | --- |
-| arrow keys | ambient | the caret crosses the object as one indivisible unit | held by AppKit, a chip is one attachment character; no direct test, owed: no issue yet |
-| click | structural | selects the whole object; never places a caret inside it | `DocumentOpsTests.swift` `testAClickOnAChipSelectsItWhole` |
-| shift selection | structural | includes the whole object or none of it | held by AppKit; no direct test, owed: no issue yet |
-| select all | structural | includes the object structurally, not its plaintext | `store.rs` `sheet_payload_inlines_chips_in_document_order` (the page's own payload carries the chip by reference); the shell side has no direct test, owed: no issue yet |
-| copy, object or whole page | structural | writes the private type carrying the chip's UUID plus the plain text placeholder; no payload, no ciphertext | owed: issue 170 (`DocumentOpsTests` for the types `writeSelection` writes) |
-| cut | structural | writes the same reference, then detaches the chip from the page; a detached chip shows in the app's own clipboard slot, on the page's clock, never an invisible limbo | owed: issue 170 (`store.rs` `a_cut_chip_is_detached_not_reaped`) |
-| paste, inside OnetimePad | structural | the core reattaches the chip by id at the new position; a paste after copy, or a second paste of a cut, is a core side clone with a new id and the same payload | owed: issue 170 (`store.rs` `a_pasted_reference_reattaches_by_id`) |
-| paste, another app | ambient | the destination gets `[sealed content · small]`, a size class, never a count, never plaintext | owed: issue 170; the size class itself is `store.rs` `a_multi_line_chip_reports_a_size_class_not_lines` |
-| drag, inside the document | structural | moves the object atomically with a clear insertion line; contents never preview | owed: issue 170 (the `NSDraggingSource`) and issue 169 (the move handle) |
-| ⌥ drag | structural | a core side clone, following the macOS copy drag convention; no pasteboard involvement | owed: issue 170 |
-| plain drag, outside | ambient | exposes only the placeholder | owed: issue 170 |
-| decrypted drag, from the handle | declassify | a distinct, labelled handle on the block; plaintext is supplied lazily through `NSPasteboardItemDataProvider`, so the core writes it, and the ledger `sent` record with destination `Drag`, only when a destination asks; a successful drop never deletes the chip | owed: issue 170 (ffi seam tests for the lazy write and its ledger record) |
-| backspace beside it | structural | the first press selects the object, the second removes it | owed: no issue yet; the build removes on the first press (`DocumentOpsTests.swift` `testAnUndoResurrectingADeadChipIsStrippedSilently` pins that and is rewritten with this row) |
-| backspace, selected | structural | removes it immediately, with Undo available; undo reattaches from the detached store | removal as one unit: `DocumentOpsTests.swift` `testDeletingAChipAttachmentEmitsOneDelete`; undo: owed, issue 170 |
-| find, word count | ambient | do not inspect the plaintext; optionally count one protected object | find: `WrapTests.swift` `testUseSelectionForFindRefusesAChip`; no word count exists in the build |
-| expiry | structural | a page's expiry takes its sealed objects with it, detached ones included; a detached object lives on its page's clock and there is no per chip timer; a reference pasted afterwards resolves to an *expired* placeholder, visibly distinct from a removed one, not undoable; all of it holds at rest under the boot bound key | page clock: `FocusLawTests.swift` `testAChipWhosePageExpiredClearsTheDraftEvenWhileOthersRemain`; the expired placeholder: owed, issue 170 (`store.rs` `a_reference_to_a_gone_chip_yields_a_removed_placeholder`, which must tell expired from removed) |
-| export, print, share | ambient | emit the placeholder by default; a decrypting export is a separately named action | no export, print or share path exists in the build; owed when one does |
-| promote the whole page | declassify | includes sealed payloads; the inline confirmation says so (`includes 2 sealed items`); the local copy is offered up to burn, never burned automatically | `ConcealWireTests.swift` `testTheSealedItemsLineCountsInTheSingularAndThePlural`, `testTheSealedItemCountIsReadOffThePagesRoster`; `store.rs` `a_conceal_marks_the_chip_and_keeps_only_the_receipt` |
-| seal a selection | structural, one way | replaces the selection in place, keeps whitespace, selects the new object | `DocumentOpsTests.swift` `testSealSelectionReplacesTheSelectionCoreSide`, `testSealingSelectsTheNewObject`; `store.rs` `a_range_seal_replaces_the_selection_atomically`, `a_range_seal_across_a_newline_merges_blocks_like_typing_over_it` |
-| seal over a sealed object | refused | sealed objects do not nest; ⇧⌘V over a chip refuses with `already sealed · a chip has no plaintext to seal` | `DocumentOpsTests.swift` `testSealedPasteOverAChipIsRefused`, `testTheContextMenuOffersSealSelectionOverInkOnly`; `store.rs` `a_range_seal_over_a_selected_chip_is_refused` |
-| undo after a seal | refused | ⌘Z does not restore the plaintext | `UndoRerouteTests.swift` `testASealCannotBeSteppedBack`; `store.rs` `a_seal_cannot_be_stepped_back` |
-| copy decrypted contents | declassify | offered by name in the object's menu; does not consume the chip; the line reads `decrypted contents copied · clipboard clears in 60 seconds` and the core arms the clear | `DocumentOpsTests.swift` `testTheChipMenuOffersPlaintextByName`; `store.rs` `copy_out_does_not_consume_the_chip`; `PasteboardOfferTests.swift` `testACopyOutArmsTheClearAndFlashesTheInterval`, `testTheBoardStillHoldsTheCopyInsideTheWindow`; `crates/ffi/src/lib.rs` `the_clear_interval_is_the_core_constant` |
-| the ledger | ambient | a sealed chip is content free in the ledger from the moment it exists | `store.rs` `a_sealed_chip_is_content_free_in_the_ledger_from_the_moment_it_exists`, `a_seal_carrying_an_origin_leaves_no_trace_in_the_ledger` |
-| the block | structural | full measure, 8 px radius, hairline border, padded 8 by 12; the tracked `SEALED CONTENT` label, the mechanical excerpt, the size class as metadata; nothing pressable; handles appear on hover or selection and keep their seat | excerpt: `store.rs` `sealed_chips_carry_the_mechanical_face`; geometry and handles: owed, issue 169 (`SealedBlockTests`) |
+| arrow keys | ambient observation | the caret crosses the object as one indivisible unit | held by AppKit, a chip is one attachment character; no direct test, owed: no issue yet |
+| click | structural editing | selects the whole object; never places a caret inside it | `DocumentOpsTests.swift` `testAClickOnAChipSelectsItWhole` |
+| shift selection | structural editing | includes the whole object or none of it | held by AppKit; no direct test, owed: no issue yet |
+| select all | structural editing | includes each object structurally, not its payload | no direct test; owed: issue 170 |
+| copy, object or mixed selection | structural editing | writes one versioned sealed fragment preserving ordered ink runs and UUID references; the public representation preserves the ink and substitutes one size-class placeholder per reference; neither representation contains payload or ciphertext | owed: issue 170 (`DocumentOpsTests` for ordered mixed and multi-chip selections) |
+| cut | structural editing | writes the same fragment, then detaches every referenced object in one core transaction; all selected objects appear together in the app's clipboard slot and retain the page's clock | owed: issue 170 (`store.rs` atomic multi-chip detach coverage) |
+| paste, inside OnetimePad | structural editing | inserts the whole fragment as one undoable transaction; the first paste of a cut reattaches all cut objects, while a paste after copy or a later paste of a cut clones every live reference core-side; terminal or unknown references become cause-specific placeholders in their original positions | owed: issue 170 (`store.rs` fragment reattach, clone, rollback and mixed-state coverage) |
+| paste, another app | ambient observation | receives ordered ink with `[sealed content · <size class>]` substituted for each live reference; never receives a payload | owed: issue 170; size class: `store.rs` `a_multi_line_chip_reports_a_size_class_not_lines` |
+| drag, inside the document | structural editing | moves the selected objects and ink atomically with a clear insertion line; contents never preview | owed: issue 170 and issue 169 |
+| ⌥ drag | structural editing | clones all selected sealed objects core-side as one operation, following the macOS copy-drag convention | owed: issue 170 |
+| plain drag, outside | ambient observation | exposes only ordered ink and placeholders | owed: issue 170 |
+| decrypted drag, from the handle | declassification/egress | a distinct, labelled handle; the core supplies the complete payload lazily when a destination asks and records destination `Drag`; a successful drop never deletes the object | owed: issue 170 |
+| backspace beside it | structural editing | the first press selects the object, the second removes it from the page | owed: no issue yet; the contradicting build test is rewritten under issue 170 |
+| backspace, selected | structural editing | detaches it immediately, with Undo available; undo reattaches from the detached store | removal as one unit: `DocumentOpsTests.swift` `testDeletingAChipAttachmentEmitsOneDelete`; undo: owed, issue 170 |
+| find, word count | ambient observation | does not inspect the payload; may count one protected object | `WrapTests.swift` `testUseSelectionForFindRefusesAChip`; no word count exists |
+| expiry | destruction/lifecycle | destroys all of the page's attached and detached payloads; while terminal-cause evidence remains, later references produce an expired placeholder and cannot be undone | no direct lifecycle test; owed: issue 170 |
+| explicit burn | destruction/lifecycle | destroys the named local payloads atomically; while terminal-cause evidence remains, later references produce a burned placeholder | owed: issue 170 |
+| export, print, share | ambient observation | emits placeholders by default; a plaintext export is separately named declassification/egress | owed when a path exists |
+| promote the whole page | declassification/egress | includes sealed payloads; the confirmation says so; the local copy is offered up to burn and is never burned automatically | payload inclusion: `store.rs` `sheet_payload_inlines_chips_in_document_order`; confirmation count: `ConcealWireTests.swift`; receipt marker: `store.rs` `a_conceal_marks_the_chip_and_keeps_only_the_receipt`; retained local payload after promotion: no direct test, owed: issue 170 |
+| seal a selection | classification | replaces visible ink in place, keeps whitespace and selects the new object; the result is one-way in the editor | shell and core range-seal tests listed below |
+| seal over a sealed object | classification | refused: sealed objects do not nest | `DocumentOpsTests.swift` and `store.rs` refusal tests listed below |
+| undo after a seal | classification | refused: ⌘Z does not restore the pre-seal ink | `UndoRerouteTests.swift` `testASealCannotBeSteppedBack`; `store.rs` `a_seal_cannot_be_stepped_back` |
+| copy decrypted contents | declassification/egress | offered by name and does not consume the object; the core writes the payload, the shell arms a timer from the core-owned 60-second interval, and the core later clears only if the pasteboard still holds that write | copy-out and shell timer tests listed below; guarded clear: `crates/pasteboard` `clear_after_copy_only_clears_our_own_write` (memory and macOS implementations) |
+
+### Sealed-fragment representation
+
+The private type is `com.onetimesecret.onetimepad.sealed-fragment` with the
+`.debug` suffix on development builds. Its envelope is versioned and contains
+an ordered sequence of only two node kinds: visible ink runs and sealed-object
+UUID references. A one-object copy is a one-reference fragment. The envelope
+never contains a sealed payload or ciphertext.
+
+Copy, cut, paste and clone preserve node order for a selection such as
+`ink → object A → ink → object B → ink`. Multi-object detach, reattach and
+clone are core transactions: an unexpected failure commits none of the
+structural or payload-state changes. Resolution to an expired, burned or
+unavailable placeholder is an expected paste result, not a partial failure.
+
+### Lifecycle states
+
+| State | Payload retained? | App clipboard slot | Paste of a referencing fragment |
+| --- | --- | --- | --- |
+| attached | yes | no | clones the live object unless it is part of the active cut transaction |
+| detached by cut | yes, on the page's clock | yes, for the active cut fragment | first paste reattaches all objects from that cut atomically; later pastes clone them |
+| detached by removal | yes, on the page's clock | no | clones the retained object; Undo, not paste, reattaches the removed instance |
+| expired | no | no | inserts `[sealed content · expired]` while expiry evidence remains |
+| explicitly burned | no | no | inserts `[sealed content · burned]` while burn evidence remains |
+| unknown or foreign reference | no known payload | no | inserts `[sealed content · unavailable]`; it is never labelled expired without expiry evidence |
+
+Removal never produces a removed placeholder because the retained object is
+still resolvable. The non-content lifecycle evidence is the object's UUID,
+terminal event and timestamp. An explicit burn uses the ledger's
+`discarded` event as burn evidence. ADR-0012 says a ledger record carries
+"event type ... timestamps ... [and] the item's random UUID" and that
+"Retention is a rolling 90-day window". Expired and burned references therefore remain
+distinguishable for that rolling window; after the evidence ages out, they
+resolve as unavailable rather than being guessed expired.
+
+### Security invariants
+
+- The shell never receives a sealed payload from the core. Swift may hold
+  visible ink before classification and the mechanical excerpt afterward;
+  `ChipInfo.excerpt` and `companion_sheet_document_json` make that residual
+  explicit. Complete payload egress remains core-side.
+- A sealed object's ledger record contains no payload or excerpt. This is
+  pinned by `store.rs`
+  `a_sealed_chip_is_content_free_in_the_ledger_from_the_moment_it_exists`
+  and `a_seal_carrying_an_origin_leaves_no_trace_in_the_ledger`.
+- OnetimePad does not write decrypted drag data to the general pasteboard.
+  Apple's [`NSPasteboard` documentation](https://developer.apple.com/documentation/appkit/nspasteboard/)
+  says, "The drag pasteboard is used to
+  transfer data that is being dragged by the user," and, separately, "The
+  general pasteboard ... automatically participates with the Universal
+  Clipboard feature." This law makes no broader claim about clipboard
+  history, observation by other software or erasure after a drag ends.
+
+### Presentation invariants
+
+The block is full measure, with an 8 px radius, hairline border and 8 by 12
+padding. It shows the tracked `SEALED CONTENT` label, the mechanical excerpt
+and the size class as metadata; it has no pressable body. Handles appear on
+hover or selection without changing layout. The excerpt is pinned by
+`store.rs` `sealed_chips_carry_the_mechanical_face`; geometry and handles are
+owed by issue 169 (`SealedBlockTests`).
 
 Fixed details the rows rely on:
 
-- The private pasteboard type is `com.onetimesecret.onetimepad.sealed-ref`,
-  with the `.debug` suffix on dev builds so dev and prod cannot resolve
-  each other's references. It carries the chip's UUID and nothing else
-  (D-31). The core already identifies chips by UUID and the ledger records
-  the same random id in plain, so the exposure is the ledger's, stated the
-  same way. Never the payload, never ciphertext.
+- The private pasteboard type is
+  `com.onetimesecret.onetimepad.sealed-fragment`, with the `.debug` suffix
+  on development builds so development and production cannot resolve each
+  other's references. It carries a version and ordered ink/UUID nodes.
+  Never the payload, never ciphertext (D-31).
 - The plain text placeholder is `[sealed content · <size class>]`, a size
   class from `SizeClass` (`crates/core/src/ledger.rs`), never a count.
-- Three egress points, all core side writes: copy decrypted, decrypted drag,
-  promotion (D-32). A decrypted drag never enters clipboard history or
-  Universal Clipboard, so it is the recommended path into a form field;
-  copy decrypted on the general pasteboard is the riskier fallback.
+- Three complete-payload egress points, all core-side writes: copy
+  decrypted, decrypted drag and promotion (D-32). Decrypted drag is the
+  recommended path into a form field because OnetimePad does not put its
+  decrypted data on the general pasteboard; copy decrypted does and is the
+  riskier fallback. No claim is made about third-party observation,
+  clipboard history or erasure of drag-pasteboard data.
 - The clear after copy is one core constant, 60 seconds
   (`CLIPBOARD_CLEAR_SECONDS`, `crates/ffi/src/lib.rs`), read through the
   seam `companion_clipboard_clear_seconds`; the confirmation states that
@@ -155,7 +214,7 @@ Fixed details the rows rely on:
   Copy decrypted contents
   Create one-time link…
   ────────────────────────
-  Remove protected content
+  Remove from page
   ```
 
 ## What the rule forbids
@@ -184,15 +243,16 @@ Fixed details the rows rely on:
   losing its payload?
 - **Legibility**: does the action name what crosses the protection
   boundary?
-- **Reversibility**: can structural edits be undone? Sealing is the one
-  exemption.
+- **Reversibility**: can structural edits be undone? Classification is a
+  separate class, and sealing is one-way.
 - **Safe fallback**: when a destination cannot understand the object, does
   it receive a placeholder rather than plaintext or nothing?
 
-The crucial question is which class the interaction belongs to. Moving,
-selecting, duplicating and deleting operate on the sealed object. Revealing,
-copying decrypted contents and exporting plaintext cross the security
-boundary and must always be explicit.
+The first question is which of the five classes the interaction belongs to.
+Moving, selecting, cloning and removing edit structure; sealing classifies;
+expiry and burn destroy; copying decrypted contents and exporting plaintext
+cross the security boundary and remain explicit. A refusal is the result of
+applying a class rule, not a sixth class.
 
 ## Acceptance and tests
 
@@ -239,9 +299,10 @@ lands (removal detaches, undo reattaches): `store.rs`
 `burning_a_chip_takes_the_stack_with_it`; `DocumentOpsTests`
 `testAnUndoResurrectingADeadChipIsStrippedSilently`.
 
-Owed: issue 169 (`SealedBlockTests`), issue 170 (the pasteboard model, the
-detached store, the lazy decrypted drag and their tests as named in the
-rows), issue 172 (the four interrupting dialogs; none is on a sealed path,
+Owed: issue 169 (`SealedBlockTests`), issue 170 (the versioned
+sealed-fragment model, atomic multi-object detach/reattach/clone, lifecycle
+resolution, the lazy decrypted drag and their tests as named in the rows),
+issue 172 (the four interrupting dialogs; none is on a sealed path,
 but D-14 is strict and the seal, remove and copy decrypted paths must stay
 dialog free).
 
@@ -251,5 +312,12 @@ dialog free).
   section 3 of the 2026-0915 record. Where the two differed the maintainer
   settled it the same day: removal is structural and undoable (ADR-0009's
   finality clause, proposed and never accepted, yields); the private type
-  carries the UUID, not a ticket; there is no per chip TTL; the clear after
-  copy is 60 seconds as one core constant.
+  carries UUID references, not tickets; there is no per chip TTL; the clear
+  after copy is 60 seconds as one core constant.
+- 2026-09-15: Review amendment. Narrowed the shell and drag guarantees to
+  what the FFI types and Apple's `NSPasteboard` documentation establish;
+  replaced the single-reference pasteboard value with a versioned ordered
+  fragment; defined lifecycle states and 90-day terminal-cause evidence;
+  renamed reversible removal to *Remove from page*; and replaced the
+  two-kind taxonomy with five operation classes. D-31 through D-33 and
+  ADR-0012 Amendment 1 are interpreted through this amendment.

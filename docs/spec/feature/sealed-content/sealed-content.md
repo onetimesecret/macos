@@ -2,15 +2,15 @@
 
 OnetimePad · Design note, consolidated · September 2026 · Upstream of an ADR
 
-Status: superseded in part by docs/spec/design/2026-0915-ui-ux-decisions.md section 3. Where the two differ, the record wins; the passages below that yielded say so in place.
+Status: historical. Superseded for governing behaviour by `docs/law/0001-sealed-object.md`; `docs/spec/design/2026-0915-ui-ux-decisions.md` section 3 applies that law to the surface. The rationale below is preserved, but its two-class taxonomy, ticket model, shell-plaintext claim, lifecycle and drag guarantees are not current requirements.
 
-A sealed item is the editor-side face of a chip: a Rust-core-owned secret that the Swift/AppKit shell never holds in plaintext. This note fixes how such an item behaves inside a page, on the pasteboard, and at the moment its contents cross the protection boundary. It combines two established patterns: the **atomic attachment** (an image, mention, or embedded file in a rich-text editor) and **explicit declassification** (protected plaintext leaves only through an action that names that consequence).
+A sealed item is the editor-side face of a chip. The shell never receives the complete sealed payload from the core; it may hold visible ink before sealing and the policy-approved mechanical excerpt afterward. This note fixes how such an item behaves inside a page, on the pasteboard, and at the moment its contents cross the protection boundary. It combines two established patterns: the **atomic attachment** (an image, mention, or embedded file in a rich-text editor) and **explicit declassification** (protected plaintext leaves only through an action that names that consequence).
 
 A sealed item occupies one position in the document, but its plaintext is not part of the document’s ambient text.
 
 *The governing law. It answers most interaction questions on its own.*
 
-Every operation on a sealed item is one of two kinds, and the distinction is the whole design:
+This historical draft grouped operations under two headings; Law 0001 replaces them with five classes:
 
 #### Structural
 
@@ -34,7 +34,7 @@ Sealing is one-way in the editor (successor record D-30). An earlier draft offer
 
 ## The sealed-object contract
 
-`structural``declassify``ambient` reads the object without reading its payload
+This historical table used `structural`, `declassify`, and `ambient`; Law 0001 replaces them with five operation classes.
 
 | Interaction                      | Kind                                  | Expected behaviour                                                                                                                                                                                                                                                                                                                                                |
 |----------------------------------|---------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -66,7 +66,7 @@ The object menu:
     Copy decrypted contents
     Create one-time link…
     ────────────────────────
-    Remove protected content
+    Remove from page
 
 After a decrypted copy, confirm the boundary crossing with the interval the core actually enforces, for example `Decrypted contents copied · clipboard clears in 60 seconds`. The core already clears on every pasteboard egress, so state the real number; never promise a clear the app does not perform.
 
@@ -90,7 +90,7 @@ The drag pasteboard uses the same multi-representation API, so decrypted drag is
 
 ## Egress points
 
-The ADR names one egress (send). This design makes it three, and the ADR should say so rather than drift: **copy decrypted** to the general pasteboard (concealed type, cleared on the core’s interval), **decrypted drag** to the drag pasteboard (never enters clipboard history or Universal Clipboard, which makes it the safer of the two and the recommended way to get a secret into a form field), and **promotion**. All three are core-side writes; the Swift shell still never holds plaintext.
+The successor record defines three complete-payload egresses: **copy decrypted** to the general pasteboard, **decrypted drag** to the drag pasteboard, and **promotion**. Complete-payload writes remain core-side. OnetimePad does not write decrypted drag data to the general pasteboard; no broader clipboard-history, observability, or end-of-drag erasure guarantee is made.
 
 ## Residual exposure
 
@@ -124,7 +124,7 @@ When a destination cannot understand the object, does it receive a placeholder r
 Sealing is one-way, so the copy names what it protects and from when (successor record D-30). A cut chip is visible in the clipboard slot, never orphaned. Expiry is on schedule and shown in place. A drop or promotion never deletes; burn is a separate act.
 
 2\. The artifact transcends the application  
-The artifact records chip attachment state (on page X, or detached) and the ticket table, so reopen restores exactly the interrupted state. The page TTL is an artifact property enforced at rest by the key lifecycle, not by a running process.
+The governing design records attached and detached object state in the content store. Pasteboard fragments contain ordered visible-ink runs and UUID references, never a persisted ticket table, payload, or ciphertext. The page clock is enforced at rest as well as by the running process.
 
 3\. Do not wag the dog  
 Every departure from the ADR above (three egress points, decrypted drag as preferred path) is argued on merits, not citation, and is a candidate ADR amendment.
