@@ -2061,6 +2061,9 @@ public struct InkEditorView: NSViewRepresentable {
         /// offer three different lists.
         func openChipMenu(at charIndex: Int, from point: NSPoint, in view: NSTextView) {
             let menu = NSMenu()
+            // The object's menu is the three items and nothing the text
+            // system would append to a text view's menu (D-41).
+            menu.allowsContextMenuPlugIns = false
             appendChipItems(to: menu, at: charIndex)
             guard !menu.items.isEmpty else { return }
             menu.popUp(positioning: nil, at: point, in: view)
@@ -3209,6 +3212,22 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         setNeedsDisplay(rect.insetBy(dx: -4, dy: -4))
     }
 
+    /// The secondary click over a chip pops the object's menu up here,
+    /// through the same call the glyph and Return take, rather than
+    /// handing AppKit a menu to show: the text system's own pop-up
+    /// appends AutoFill and Services to whatever `menu(for:)` returns,
+    /// and a sealed object offers neither (D-41). Over ink the click is
+    /// AppKit's.
+    override func rightMouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let coordinator, let index = coordinator.chipIndex(at: point, in: self) else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        setSelectedRange(NSRange(location: index, length: 1))
+        coordinator.openChipMenu(at: index, from: point, in: self)
+    }
+
     /// The context menu. Over a chip it is the chip's own: the object
     /// is selected whole first, as a plain click selects it, and the
     /// text menu AppKit would build is not consulted, because Cut and
@@ -3219,6 +3238,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         if let coordinator, let index = coordinator.chipIndex(at: point, in: self) {
             setSelectedRange(NSRange(location: index, length: 1))
             let menu = NSMenu()
+            menu.allowsContextMenuPlugIns = false
             coordinator.appendChipItems(to: menu, at: index)
             return menu
         }

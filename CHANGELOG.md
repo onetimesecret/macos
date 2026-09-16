@@ -34,8 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still does. The menu reads Copy decrypted contents (with the keymap's
   chord beside it, ⇧⌘C by default, bound as `chip::CopyDecrypted` and
   acting on exactly one selected object), Create one-time link…, and
-  Remove protected content in red. A selected block wears the ember
-  keyline. The lines after the actions read "copied decrypted contents
+  Remove protected content in red, and nothing the text system would
+  append to a text view's menu (no AutoFill, no Services). A selected
+  block wears the ember keyline. The lines after the actions read "copied decrypted contents
   — small. the clipboard clears in 90 seconds.", "the link is on the
   clipboard — paste it where it needs to go." and "protected content
   removed." (its Undo is gated until issue 170 lands the detached
