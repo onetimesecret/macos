@@ -89,6 +89,13 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
     /// recomputes it on every read, so the ordinary cosmetic redraw
     /// rolls the reading over at local midnight on its own.
     public let pageDayOffset: Int?
+    /// The page's own creation stamp, Unix epoch milliseconds, and nil
+    /// on the same terms as `pageDayOffset`: a slot holding no page was
+    /// born on no minute. The absolute stamp the offset was counted
+    /// from, carried so the stream navigator can print the minute a
+    /// checkpoint was made ("0914-1139", `StreamNavigator.stamp`)
+    /// without a second reading of the clock.
+    public let pageCreatedMs: UInt64?
 
     enum CodingKeys: String, CodingKey {
         case id, title, paused
@@ -106,6 +113,7 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
         case lastHour = "last_hour"
         case pageHasContent = "page_has_content"
         case pageDayOffset = "page_day_offset"
+        case pageCreatedMs = "page_created_ms"
     }
 }
 

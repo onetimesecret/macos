@@ -26,7 +26,7 @@ extension PageModel {
         switch command {
         case .pageNew:
             // ⌘N asks for a page to type on now. With the strip that is
-            // a new slot; with the days down the side it is today's
+            // a new slot; when pages are organized by day it is today's
             // page, which may already be there, and a second page on
             // today when the person is already on one (issues #79, #158).
             // One command with two
@@ -75,11 +75,12 @@ extension PageModel {
             // gate is here, at the dispatch, so that the stored value
             // and the flash cannot disagree about what just happened.
             if showsTimeUnits { flash(Self.wrapIsFixedNotice) } else { toggleWrap() }
-        case .clipboardSeal, .clipboardSealSelection, .editorDetectCodeLanguage,
-            .editorUndo, .editorRedo:
-            // The page's own text view answers these: the seal and language
-            // gestures act on its selection, and undo has to place a caret
-            // after the core moves the document underneath it.
+        case .clipboardSeal, .clipboardSealSelection, .chipCopyDecrypted,
+            .editorDetectCodeLanguage, .editorUndo, .editorRedo:
+            // The page's own text view answers these: the seal, copy
+            // decrypted and language gestures act on its selection, and
+            // undo has to place a caret after the core moves the
+            // document underneath it.
             return false
         case .pageSelect1, .pageSelect2, .pageSelect3, .pageSelect4, .pageSelect5,
             .pageSelect6, .pageSelect7, .pageSelect8, .pageSelect9:

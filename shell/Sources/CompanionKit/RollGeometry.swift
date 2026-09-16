@@ -1,52 +1,105 @@
 import SwiftUI
 
-/// Where the days stand in the roll, and how much of it the reader can
-/// see: the measurement behind the rail's minimap (issue #131).
+/// Where the pages stand in the roll, how their lines fall, and how much
+/// of it the reader can see: the measurement behind the rail's stream
+/// navigator (issue #131, and the stream navigator that succeeded its
+/// minimap).
 ///
-/// Geometry and nothing else. An extent is a day's top and height in the
-/// roll's own document coordinates, which is a fact about how much page
-/// that day holds, and the viewport is the window the clip has open onto
-/// it. No text, no attributed string, no snapshot of a rendered page
-/// crosses this type, and that is the load-bearing decision rather than
-/// an economy: a minimap drawn from glyphs would be a second surface
-/// rendering page content, it would have to reimplement how a concealed
-/// block draws, and it would invite an argument about whether two point
-/// text is legible. Rectangles cannot leak a word.
+/// Geometry and nothing else. An extent is a page's top and height in
+/// the roll's own document coordinates, which is a fact about how much
+/// page stands there, and its lines are the laid-out line fragments as
+/// rectangles: where each begins down the roll and how much of the wrap
+/// width it used. The viewport is the window the clip has open onto the
+/// document. No text, no attributed string, no snapshot of a rendered
+/// page crosses this type, and that is the load-bearing decision rather
+/// than an economy: a navigator drawn from glyphs would be a second
+/// surface rendering page content, it would have to reimplement how a
+/// sealed block draws, and it would invite an argument about whether two
+/// point text is legible. Rectangles cannot leak a word.
 ///
 /// Measured by the roll (`DayStackView.measuredGeometry`), mapped into
-/// the rail by `RailMinimap`, and carried between them as a value, so
-/// the whole path is testable without a window at one end and with one
-/// at the other.
+/// the rail by `StreamNavigator.layout`, and carried between them as a
+/// value, so the whole path is testable without a window at one end and
+/// with one at the other.
 public struct RollGeometry: Equatable, Sendable {
-    /// One day's span down the roll: where its first header begins and
-    /// how far its last page reaches.
+    /// One laid-out line of a page, as a rectangle and not as a line.
+    public struct LineMark: Equatable, Sendable {
+        /// The top of the line fragment, measured down from the top of
+        /// the document.
+        public let y: CGFloat
+        /// How much of the wrap width the fragment used, 0 to 1. A
+        /// blank line is zero, and a line that ran to the edge is one.
+        public let width: CGFloat
+
+        public init(y: CGFloat, width: CGFloat) {
+            self.y = y
+            self.width = width
+        }
+    }
+
+    /// One row's span down the roll: a page under its gutter, or the
+    /// empty place today keeps while it holds no page.
     public struct Extent: Equatable, Sendable {
         /// The day this span belongs to, 0 for today, as the projection
         /// counts them.
         public let bucket: Int
-        /// The top of the day's first header, measured down from the
-        /// top of the document.
+        /// The page standing here, or nil for the empty Today place,
+        /// which is a place and not a page (ADR-0017).
+        public let page: UInt64?
+        /// The top of the row's gutter, measured down from the top of
+        /// the document.
         public let top: CGFloat
-        /// Down to the bottom of the day's last page. Never negative,
-        /// and possibly a hair short of a point on a day the layout has
-        /// not measured yet.
+        /// Down to the bottom of the row's body, the gutter included.
+        /// Never negative.
         public let height: CGFloat
+        /// The page's lines, in document order. Empty for a row with no
+        /// text view under it.
+        public let lines: [LineMark]
 
-        public init(bucket: Int, top: CGFloat, height: CGFloat) {
+        public init(
+            bucket: Int, page: UInt64?, top: CGFloat, height: CGFloat, lines: [LineMark] = []
+        ) {
             self.bucket = bucket
+            self.page = page
             self.top = top
             self.height = height
+            self.lines = lines
         }
 
         public var bottom: CGFloat { top + height }
     }
 
-    /// The days, in document order: today first, the days before it
-    /// under it, exactly the order the roll lays them out in.
-    public let extents: [Extent]
-    /// How tall the whole roll is. Zero before the first layout pass,
-    /// which is the signal that there is nothing honest to draw yet.
-    public let documentHeight: CGFloat
+    /// The document-proportional half of the measurement. Its revision
+    /// changes only when extents, line marks, or document height change;
+    /// viewport-only publications retain it so navigator layout caches do
+    /// not confuse scrolling with a new document layout.
+    public struct Document: Equatable, Sendable {
+        public let extents: [Extent]
+        public let height: CGFloat
+        /// Stable for one mounted stack and distinct across replacements.
+        /// Nil for hand-built geometry, which consumers do not cache.
+        public let identity: UUID?
+        public let revision: UInt64
+
+        public init(
+            extents: [Extent], height: CGFloat, identity: UUID? = nil, revision: UInt64 = 0
+        ) {
+            self.extents = extents
+            self.height = height
+            self.identity = identity
+            self.revision = revision
+        }
+
+        public static let unmeasured = Document(extents: [], height: 0)
+    }
+
+    public let document: Document
+
+    /// Compatibility accessors for callers interested in the complete
+    /// measurement rather than its publication identity.
+    public var extents: [Extent] { document.extents }
+    public var documentHeight: CGFloat { document.height }
+
     /// Where the clip is, measured down from the top of the document.
     /// Can be negative for the length of an elastic overscroll, which
     /// the mapping clamps rather than refuses.
@@ -55,59 +108,37 @@ public struct RollGeometry: Equatable, Sendable {
     public let viewportHeight: CGFloat
 
     public init(
-        extents: [Extent], documentHeight: CGFloat, viewportTop: CGFloat, viewportHeight: CGFloat
+        extents: [Extent], documentHeight: CGFloat, viewportTop: CGFloat, viewportHeight: CGFloat,
+        documentRevision: UInt64 = 0
     ) {
-        self.extents = extents
-        self.documentHeight = documentHeight
+        document = Document(
+            extents: extents, height: documentHeight, revision: documentRevision)
+        self.viewportTop = viewportTop
+        self.viewportHeight = viewportHeight
+    }
+
+    public init(document: Document, viewportTop: CGFloat, viewportHeight: CGFloat) {
+        self.document = document
         self.viewportTop = viewportTop
         self.viewportHeight = viewportHeight
     }
 
     /// A roll nobody has measured: what the rail draws over before the
     /// first layout pass, and what a roll going away leaves behind. The
-    /// minimap over it is empty rather than wrong, which is the only
-    /// honest reading of a document with no height.
+    /// navigator over it packs its nodes from the top and draws no band,
+    /// which is the only honest reading of a document with no height.
     public static let unmeasured = RollGeometry(
         extents: [], documentHeight: 0, viewportTop: 0, viewportHeight: 0
     )
-
-    /// Fold the roll's rows into days.
-    ///
-    /// The roll lays out one row per page, and a day can hold more than
-    /// one page; the rail draws one row per day. Two pages born on one
-    /// day are therefore one extent covering both, which is what keeps
-    /// the minimap's bars in the same count and the same order as the
-    /// rail's rows. Count and order are the whole of the agreement: the
-    /// bars are a scaled impression of the roll in their own space, so a
-    /// bar is not level with the row for the same day and is not meant
-    /// to be. Consecutive rather than grouped, because
-    /// the roll already emits a day's pages together and an extent that
-    /// jumped a gap would claim ground belonging to the day in between.
-    ///
-    /// Pure, so the fold is an assertion rather than something inferred
-    /// from a mounted stack.
-    public static func merging(_ measured: [Extent]) -> [Extent] {
-        var merged: [Extent] = []
-        for extent in measured {
-            guard let last = merged.last, last.bucket == extent.bucket else {
-                merged.append(extent)
-                continue
-            }
-            let top = min(last.top, extent.top)
-            merged[merged.count - 1] = Extent(
-                bucket: last.bucket, top: top, height: max(last.bottom, extent.bottom) - top
-            )
-        }
-        return merged
-    }
 }
 
-/// The roll's measurement, published for the rail alone.
+/// The roll's measurement, published for the rail alone, and the rail's
+/// two asks of the roll, answered by whichever roll is mounted.
 ///
 /// Its own observable rather than a field on `PageModel` because the
 /// viewport moves on every scroll event, and a published change on the
 /// model would redraw the header, the status stack and the page along
-/// with the minimap. Observed by the minimap and by nothing else, a
+/// with the navigator. Observed by the navigator and by nothing else, a
 /// scroll costs a few rectangles.
 ///
 /// Every publication takes a hop through the main actor's queue, and
@@ -140,19 +171,38 @@ public final class RollGeometryModel: ObservableObject {
     /// `DayScrollView.dismantleNSView` states about the editor handle.
     /// Without a name on the publication, the outgoing roll's teardown
     /// would wipe the measurement the incoming one had already taken and
-    /// the minimap would draw nothing until something happened to
+    /// the navigator would draw nothing until something happened to
     /// re-measure. So a mount claims the model, and a roll that no
     /// longer holds the claim is answered with silence rather than with
     /// a redraw.
     private var publisher: ObjectIdentifier?
+
+    /// How the mounted roll moves its clip to a document offset, set
+    /// at the claim and dropped with it. The navigator asks through
+    /// `scroll(toDocumentOffset:)` and never reaches the roll itself.
+    private var scroller: ((CGFloat) -> Void)?
+
+    /// How the mounted roll takes a wheel event that landed on the
+    /// rail, on the same terms.
+    private var wheelRelay: ((NSEvent) -> Void)?
 
     /// A roll has been mounted. It speaks for the rail from here on, and
     /// it has nothing laid out yet, so the rail stops drawing the shape
     /// of whatever it is replacing. Through the same hop as any other
     /// publication, for the same reason: a mount happens inside
     /// `makeNSView`.
-    func claim(by roll: AnyObject) {
+    ///
+    /// The two closures are the roll's answers to the rail's two asks.
+    /// Nil is a roll that answers neither, which is what a test's
+    /// stand-in is; the surface always passes both.
+    func claim(
+        by roll: AnyObject,
+        scroller: ((CGFloat) -> Void)? = nil,
+        wheel: ((NSEvent) -> Void)? = nil
+    ) {
         publisher = ObjectIdentifier(roll)
+        self.scroller = scroller
+        wheelRelay = wheel
         reset(from: roll)
     }
 
@@ -182,9 +232,23 @@ public final class RollGeometryModel: ObservableObject {
     /// The roll is going away. Ignored when a replacement has already
     /// claimed the model: the surface being torn down is not the one the
     /// rail is drawing any more, and its parting word would blank a
-    /// minimap that has just been measured honestly.
+    /// navigator that has just been measured honestly.
     func reset(from roll: AnyObject) {
         publish(.unmeasured, from: roll)
+    }
+
+    /// The rail asked for the clip to move: a node was clicked, or the
+    /// track beside one. Silence when no roll is mounted, which is the
+    /// ledger or a file showing, where there is no roll to move.
+    public func scroll(toDocumentOffset offset: CGFloat) {
+        scroller?(offset)
+    }
+
+    /// A wheel turned over the rail. The roll takes the event as if it
+    /// had landed on the roll itself, momentum and all, so the column
+    /// beside the page scrolls the page rather than sitting inert.
+    public func relay(wheel event: NSEvent) {
+        wheelRelay?(event)
     }
 
     private func settle() {
@@ -192,108 +256,5 @@ public final class RollGeometryModel: ObservableObject {
         guard let next = pending else { return }
         pending = nil
         geometry = next
-    }
-}
-
-/// The map from the roll's coordinates to the rail's: what the faint
-/// background behind the days is made of (issue #131).
-///
-/// Two shapes and no more. A bar per day, as tall a share of the rail as
-/// that day is of the roll, so a day holding a long page reads as a
-/// taller smear than a day holding a line. A band over the part of the
-/// roll the reader can see, which moves as the roll scrolls. Both are
-/// pure functions of a measurement and a height, in the idiom
-/// `TimeRailView.selectedBucket` and `chord(forRowAt:)` set, so the
-/// whole minimap is under test without a window.
-public enum RailMinimap {
-    /// One day's share of the rail: where it starts and how tall it is,
-    /// in the rail's own coordinates, top down.
-    public struct Bar: Equatable, Sendable {
-        public let bucket: Int
-        public let y: CGFloat
-        public let height: CGFloat
-    }
-
-    /// The part of the roll the reader can see, in the same
-    /// coordinates.
-    public struct Band: Equatable, Sendable {
-        public let y: CGFloat
-        public let height: CGFloat
-    }
-
-    /// The least a shape may be drawn as. A day holding one short line
-    /// out of a very long roll scales to a fraction of a point, and a
-    /// bar rounded away would say the day holds nothing when the rail
-    /// is drawing a row for it right there.
-    public static let hairline: CGFloat = 2
-
-    /// The days, mapped. Empty before the roll has been measured: a
-    /// document with no height has no proportions, and inventing some
-    /// would draw a shape that is not a reading of anything.
-    ///
-    /// A walk rather than a map, because the hairline floor is what
-    /// makes the bars able to collide. A day scaled to a fifth of a
-    /// point is drawn two points tall, which is ground the next day was
-    /// going to start on, and two faint fills over one another are twice
-    /// the ink: the seam would read as a mark rather than as the join it
-    /// is. So each bar starts no higher than where the one above it
-    /// ended, and the borrowed room comes off the day below, which is
-    /// the day that had room to spare.
-    ///
-    /// The floor yields to the foot of the rail and never the other way
-    /// round. A last day pushed against the bottom is drawn thinner than
-    /// a hairline rather than hanging off the column or climbing back
-    /// over its neighbour, and a rail too short to give every day a
-    /// hairline runs out of room honestly, in the order the days come
-    /// in: the days it cannot draw are dropped rather than kept at no
-    /// height. Every bar here is ink somebody can see, which is what
-    /// lets the view draw the list as it stands and the QA procedure
-    /// read a missing bar as a fault. It takes far more days than a card
-    /// can draw rows for to reach that floor.
-    public static func bars(of roll: RollGeometry, in height: CGFloat) -> [Bar] {
-        guard height > 0, roll.documentHeight > 0 else { return [] }
-        let scale = height / roll.documentHeight
-        let floor = min(hairline, height)
-        var bars: [Bar] = []
-        // Where the last bar ended, which is the highest the next one may
-        // begin.
-        var settled: CGFloat = 0
-        for extent in roll.extents {
-            let top = max(clamped(extent.top * scale, from: 0, to: height), settled)
-            let bottom = clamped(extent.bottom * scale, from: top, to: height)
-            let wanted = max(bottom - top, floor)
-            let y = max(min(top, height - wanted), settled)
-            let drawn = max(min(wanted, height - y), 0)
-            if drawn > 0 {
-                bars.append(Bar(bucket: extent.bucket, y: y, height: drawn))
-            }
-            settled = y + drawn
-        }
-        return bars
-    }
-
-    /// The viewport band, or nothing at all when the whole roll is on
-    /// screen: a band around everything marks nothing, and the pad
-    /// spends most of its life holding less page than a card. It is the
-    /// scrolled reader the band exists for.
-    ///
-    /// An elastic overscroll puts the clip above the document or below
-    /// its end. The band clamps into the rail rather than hanging off
-    /// it, so the rubber band at the top of the roll reads as the band
-    /// resting against the ceiling.
-    public static func band(of roll: RollGeometry, in height: CGFloat) -> Band? {
-        guard height > 0, roll.documentHeight > 0, roll.viewportHeight > 0,
-              roll.viewportHeight < roll.documentHeight else { return nil }
-        let scale = height / roll.documentHeight
-        let top = clamped(roll.viewportTop * scale, from: 0, to: height)
-        let bottom = clamped(
-            (roll.viewportTop + roll.viewportHeight) * scale, from: top, to: height
-        )
-        let drawn = max(bottom - top, min(hairline, height))
-        return Band(y: min(top, height - drawn), height: drawn)
-    }
-
-    private static func clamped(_ value: CGFloat, from low: CGFloat, to high: CGFloat) -> CGFloat {
-        min(max(value, low), high)
     }
 }

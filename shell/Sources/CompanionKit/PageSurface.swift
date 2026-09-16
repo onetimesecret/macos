@@ -96,7 +96,7 @@ public struct PageContentView: View {
                     onEscape: { model.escape() }
                 )
                 VStack(spacing: 6) {
-                    Text("Empty is the resting state.")
+                    Text("No page here yet.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Text(emptyHint)
@@ -239,13 +239,23 @@ public struct PageStatusStack: View {
             // Ember only for what needs acting on (design record,
             // section 5): a refusal that leaves a save undone. A
             // notice that reports what just happened is a quiet line
-            // like the ones above it.
-            Text(notice)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(model.noticeTone == .actionable ? Color.emberText : Color.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // like the ones above it. The one thing a line may offer
+            // to do about itself (Undo, after a removal) is a button
+            // beside the words, in the pasteboard offer's shape.
+            HStack(spacing: 8) {
+                Text(notice)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(
+                        model.noticeTone == .actionable ? Color.emberText : Color.secondary)
+                if let action = model.noticeAction {
+                    Button(action.label) { model.performNoticeAction() }
+                        .font(.system(.caption, design: .monospaced))
+                        .controlSize(.small)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
         }
         if let draft = model.concealDraft, !model.showingLedger {
             // The inline, in-place confirmation (never a modal):

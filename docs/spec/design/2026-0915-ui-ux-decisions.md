@@ -296,15 +296,22 @@ Create one-time link…
 Remove from page
 ```
 
+*Amended 2026-09-15:* the removal item reads *Remove protected
+content*, the first verb carries the keymap's chord (⇧⌘C by default),
+and the block reveals an actions glyph on hover that opens this menu;
+see [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md)
+D-40 and D-41.
+
 After a decrypted copy, one line confirms the boundary crossing with the
-interval the core enforces:
-`decrypted contents copied · clipboard clears in 60 seconds`. The
-interval is one core constant, `CLIPBOARD_CLEAR_SECONDS` (60) in
-`crates/ffi`, read by the shell through the stateless seam
-`companion_clipboard_clear_seconds`; the model arms the clear on every
-pasteboard egress (`PageModel.swift` `armClipboardClear`), and the
-confirmation states that number. A clear the app does not perform is
-never promised.
+core's interval: `copied decrypted contents — small. the clipboard
+clears in 60 seconds.` The interval is one core constant,
+`CLIPBOARD_CLEAR_SECONDS` (60) in `crates/ffi`, read by the shell through
+`companion_clipboard_clear_seconds`. The model arms a timer after each
+general-pasteboard egress; when it fires, the core clears only if the
+pasteboard still holds that write. This does not bound copies retained
+by clipboard managers. See
+[2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-42 and
+D-43.
 
 ADR-0012 named one egress (send) at line 103. This record makes it
 three, **copy decrypted**, **decrypted drag**, **promotion**, and the
@@ -391,6 +398,9 @@ in plain; the fragment adds order, not payload exposure.
   (copy out, ↗ conceal, remove), so a pointer is never required; the
   row is not itself a button, and a click selects the whole attachment
   without placing the caret inside it.
+  *Amended 2026-09-15:* the click also opens the object's menu, and
+  Return or Space over the selected object opens it too; see
+  [2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-40.
 - **D-27 (fixed)** Sealed content is a full-measure block, not an inline
   pill: 8px radius, hairline border, a tracked `SEALED CONTENT` label
   with a lock over the mechanical excerpt, the size class right-aligned
@@ -419,10 +429,12 @@ in plain; the fragment adds order, not payload exposure.
   only; the decrypted-drag handle is visually distinct from the move
   handle; the confirmation names the interval the core enforces; no
   ordinary copy path (object, page, or select-all) offers plaintext.
-  The 60 second clear is implemented: one core constant,
-  `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi`, read by the shell through
-  the stateless seam `companion_clipboard_clear_seconds`, and armed by
-  the model on every pasteboard egress.
+  The guarded 60-second clear attempt is implemented as one core
+  constant, `CLIPBOARD_CLEAR_SECONDS` in `crates/ffi`, read by the shell
+  through `companion_clipboard_clear_seconds` and armed by the model on
+  every general-pasteboard egress. It clears only while that write is
+  still current
+  ([2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-43).
 - **D-30 (fixed)** Sealing an existing selection replaces it in place,
   keeps the surrounding whitespace and selects the new object, and is
   **one-way**: ⌘Z does not restore the plaintext. No confirmation
@@ -531,11 +543,12 @@ timeline that keeps the page's full width.
 
 Metrics do not change with the choice. Along the bottom: 32 tall,
 padded 6 × 4, 2 between tabs, title row 18, gauge 3, capped 140 wide,
-`+` pinned right, groups `FILES` then `PAD`. Down the side: 96 wide,
-eating into the page's column and never into the header, rows padded 4
-vertically, blank count at the foot in words. The two orientations are
-exclusive: a side column of days with a bottom strip underneath would
-be the same slots counted twice.
+`+` pinned right, groups `FILES` then `PAD`. Down the side: 110 wide,
+eating into the page's column and never into the header. Days + side is
+the stream navigator rather than day rows. The two orientations are
+exclusive: a side column with a bottom strip underneath would count the
+same pages twice. See
+[2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) section 1.
 
 Dash vocabulary: `2 3` a slot holding no page · `3 2` clock held for an
 hour · `7 2` hold topped up to 24h · `2 1.5` ember and hatched, under
@@ -610,10 +623,10 @@ sentence · remote-edit line · pasteboard offer · notice · conceal sheet.
   *Banned:* "3 items expiring soon", "Are you sure?" on expiry,
   onboarding or celebratory copy, "your secrets are safe with us", and
   any label implying content can be revealed.
-- **D-16 (fixed)** The empty state is one calm sentence ("Empty is the
-  resting state.") over a hint naming the gesture that works on this
-  surface and stance. No illustration, no onboarding flow.
-  *Acceptance:* raised: "click, ⌃⌥Space, or ↩ for a page" · pinned rest:
+- **D-16 (fixed)** The empty state is one calm sentence ("No page here
+  yet.") over a hint naming the gesture that works on this surface and
+  stance. No illustration, no onboarding flow.
+  *Acceptance:* raised: "click, ⌃⌥Space, or ↩ to start one" · pinned rest:
   "click or ⌃⌥Space raises the surface" · unpinned rest: "⌃⌥Space raises
   the surface".
 
@@ -820,8 +833,10 @@ moved a decision.
 - D-29, D-32 and the confirmation paragraph: ADR-0012 is named; the
   general-pasteboard interval is 60 seconds as one core constant,
   `CLIPBOARD_CLEAR_SECONDS`; ADR-0012's Amendment 1 adopts the three
-  complete-payload egress points. The drag guarantee is limited to what
-  Apple's pasteboard documentation establishes.
+  complete-payload egress points. The clear is change-count guarded, and
+  the drag and retention claims are limited to what the implementation
+  and Apple's pasteboard documentation establish
+  ([2026-0915-stream-navigator.md](2026-0915-stream-navigator.md) D-43).
 - D-33, the contract's cut, paste and expiry rows and the lifecycle table:
   every per-object TTL is removed. Cut and removed objects remain live on
   the page's clock; expiry, burn and unknown references remain distinct

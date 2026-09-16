@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The side rail is a stream navigator** (Days + side; `companion-ffi`
+  0.30.0). Every live page is a node on one track down the rail, newest
+  at the top: a day's first page carries the day's words, every page
+  carries the minute it was made ("0914-1139"), the page the surface
+  is on draws its dot, its stretch of track and its gauge, and days
+  with no page are noted where they fall ("2 empty days"). A page past
+  the seven day window says "7d+ · retained" under a dashed track. The
+  part of the roll on screen is a band beside the nodes, with the
+  pages' lines drawn as slivers (rectangles, never glyphs) so a long
+  page reads as one; a click on a node selects and scrolls to the page,
+  a click on bare track scrolls to the stretch clicked, and a wheel
+  over the rail scrolls the roll. The + sits on the PAD heading. The
+  rail is 110 wide, up from 96. This replaces the day rows and the
+  faint minimap behind them (issue #131). The tab summary now carries
+  `page_created_ms`, the page's own birth stamp, for the minute.
+
+- **The sealed block's actions, as the design drew them** (app 0.23.0;
+  `companion-ffi` 0.31.0;
+  `docs/spec/design/2026-0915-stream-navigator.md`, D-40 to D-43). An
+  actions glyph (`···`) appears in the block's top corner on hover or
+  selection; a plain click selects the block, while the glyph, Return or
+  Space over the selected block, and the secondary click open its menu.
+  The menu reads Copy decrypted contents (with the keymap's chord beside
+  it, ⇧⌘C by default, bound as `chip::CopyDecrypted` and acting on exactly
+  one selected object), Create one-time link…, and Remove protected
+  content after a separator, with text styled by AppKit. The text system
+  appends neither AutoFill nor Services. A selected block wears the
+  ember keyline. The lines after the actions read "copied decrypted
+  contents — small. the clipboard clears in 60 seconds.", "the link is on the
+  clipboard — paste it where it needs to go." and "protected content
+  removed." (its Undo is gated until issue 170 lands the detached
+  state). The interval is the core constant read through the seam; the
+  clear is attempted only if the general pasteboard still holds that write.
+
+- **A day's gutter says the day and the minute, and draws a gauge.**
+  Each page's gutter on the roll reads "today · 0914-1139" and carries
+  the strip's own gauge where the countdown text stood; a page past
+  the window reads "7d+ · retained" instead. The page the surface is
+  on underlines its gutter in ember, with its words in ink rather than
+  faint, so the colour is never the only carrier.
+
 - **A tab is renamed in place** (D-14, issue #172). Rename tab… on the
   strip and Rename page… on a day's gutter turn the title into a field
   where it stands: return commits, escape or the keyboard going
@@ -40,15 +81,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   context menu and as Edit → Seal Selected Content in the menu bar,
   both running the verb the chord runs.
 
-- **The clipboard clears itself after a copy-out** (D-29, D-32;
-  `companion-ffi` 0.29.0). Copying a chip's decrypted contents, or a
-  one-time link, arms a one-shot clear that takes the board back after
-  the core's interval, provisionally 60 seconds, and only while the board
-  still holds what the core wrote; anything copied since is left alone.
-  Every egress also retires the receipt of the one before it. The
-  confirmation reads "decrypted contents copied · clipboard clears in 60
-  seconds", with the number read from the core through
-  `companion_clipboard_clear_seconds`.
+- **Copy-out arms a guarded clipboard clear** (D-29, D-32;
+  `companion-ffi` 0.29.0). Copying a chip's decrypted contents or a
+  one-time link schedules a clear attempt after the core's 60-second
+  interval. The core clears the general pasteboard only if it still
+  holds that write; anything copied since is left alone. This does not
+  control copies retained by clipboard managers. The confirmation reads
+  the interval through `companion_clipboard_clear_seconds`.
 
 ### Added
 
@@ -167,6 +206,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FormFactor` and in the tray's version line alike, and the old
   state directories can be removed by hand once nothing in them is
   wanted.
+
+- **Page organization and navigation placement are independent settings**
+  (D-26). General separately chooses Slots or Days and bottom or side,
+  persists all four combinations, and keeps the time-related rounding
+  control under Days. Existing installs that only carry the former
+  combined preference retain its placement; new installs start at Slots
+  and bottom.
 
 - **Settings is a standard macOS settings window with toolbar tabs**
   (dogfood phase 4). Three tabs across the top, General, Connection

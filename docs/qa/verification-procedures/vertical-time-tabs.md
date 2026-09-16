@@ -25,8 +25,8 @@ refusal to emit an op and its undo boundary are asserted against a real
 window and a real TextKit stack
 (`shell/Tests/CompanionKitTests/DayScrollTests.swift`,
 `DayScrollProjectionTests.swift`); and the map from the roll's geometry
-to the rail's minimap, edges included, is pure Swift over hand-built
-measurements (`RailMinimapTests.swift`).
+to the stream navigator's nodes, viewport band and line slivers is pure
+Swift over hand-built measurements (`StreamNavigatorTests.swift`).
 
 Four things are left, and each of them is here because the automated
 suite structurally cannot reach it.
@@ -46,8 +46,8 @@ suite structurally cannot reach it.
   (`docs/qa/hardware-verification.md`).
 - **Reading it.** Whether a perforation reads as "a day ago" rather than
   as a bug is not a thing a test can hold an opinion about, and neither
-  is whether the minimap behind the rail is faint enough to stay a
-  background and strong enough to be worth drawing (case 10).
+  is whether the navigator's viewport band and line slivers stay faint
+  enough behind its nodes (case 10).
 
 ## Staging, and why it takes three days
 

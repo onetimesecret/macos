@@ -54,7 +54,8 @@ final class DayScrollProjectionTests: XCTestCase {
             chipCount: tab.chipCount,
             lastHour: tab.lastHour,
             pageHasContent: tab.pageHasContent,
-            pageDayOffset: day
+            pageDayOffset: day,
+            pageCreatedMs: tab.pageCreatedMs
         )
     }
 
@@ -249,13 +250,16 @@ final class DayScrollProjectionTests: XCTestCase {
         )
     }
 
-    /// Only a day's first page carries the day's label. Repeating it over
-    /// the second page born that day would read as two days rather than
-    /// as one day's two pages.
-    func testOnlyTheFirstPageOfADayCarriesItsLabel() {
-        XCTAssertEqual(DayHeaderView.dayText(unitLabel: "-3d", isFirstOfDay: true), "-3d")
-        XCTAssertEqual(DayHeaderView.dayText(unitLabel: "-3d", isFirstOfDay: false), "")
-        XCTAssertEqual(DayHeaderView.dayText(unitLabel: "Today", isFirstOfDay: true), "Today")
+    /// Every page's gutter carries the day and the minute the page was
+    /// made, because the minute is what tells two pages on one day
+    /// apart and the day is what the minute is read against; the
+    /// perforation above still says where the day changed. The empty
+    /// place has no minute and says the day alone.
+    func testEveryPageCarriesItsDayAndItsMinute() {
+        XCTAssertEqual(
+            DayHeaderView.dayText(spokenLabel: "3 days ago", stamp: "0911-0931"),
+            "3 days ago · 0911-0931")
+        XCTAssertEqual(DayHeaderView.dayText(spokenLabel: "today", stamp: nil), "today")
     }
 
     /// What VoiceOver hears at a perforation: the day in full words, the

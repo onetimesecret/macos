@@ -203,21 +203,28 @@ Fixed details the rows rely on:
   decrypted data on the general pasteboard; copy decrypted does and is the
   riskier fallback. No claim is made about third-party observation,
   clipboard history or erasure of drag-pasteboard data.
-- The clear after copy is one core constant, 60 seconds
-  (`CLIPBOARD_CLEAR_SECONDS`, `crates/ffi/src/lib.rs`), read through the
-  seam `companion_clipboard_clear_seconds`; the confirmation states that
-  number and never promises a clear the app does not perform (D-29).
+- Copy-out arms a change-count-guarded clear attempt after the core's
+  60-second constant (`CLIPBOARD_CLEAR_SECONDS`, `crates/ffi/src/lib.rs`),
+  read through `companion_clipboard_clear_seconds`. The general pasteboard
+  is cleared only if it still holds that write; no total-retention or
+  clipboard-manager guarantee is made (D-29, D-43 of the accepted
+  [2026-09-16 clear-interval record](../spec/design/2026-0916-clipboard-clear-interval.md)).
 - Time belongs to the page. A detached object takes its page's clock; there
   is no per chip TTL (`sheet.rs` forbids per chip timers; maintainer
   decision 2026-08-07; D-33).
 - The object's menu, in the copy register of D-15:
 
   ```text
-  Copy decrypted contents
+  Copy decrypted contents        ⇧⌘C
   Create one-time link…
   ────────────────────────
-  Remove from page
+  Remove protected content
   ```
+
+  The chord is the keymap's (`chip::CopyDecrypted`) and acts on exactly
+  one selected object; the removal follows a separator, uses AppKit's
+  standard menu styling, and stays structural and undoable (D-41 of the
+  2026-0915 stream navigator record).
 
 ## What the rule forbids
 
@@ -328,3 +335,25 @@ dialog free).
 - 2026-09-15: Review evidence correction. Added D-14 and D-15 to the decision
   cluster; limited each cited test to the behaviour it directly proves; and
   recorded direct coverage that promotion retains the local payload.
+- 2026-09-15: Stream navigator amendment. The maintainer's interactive
+  design ([2026-0915-stream-navigator.md](../spec/design/2026-0915-stream-navigator.md))
+  renamed the removal item back to *Remove protected content*, put the
+  copy decrypted chord beside its verb, reworded the three lines that
+  follow the menu's actions, set the clear after copy to 90 seconds, and
+  made a plain click, Return and Space over the selected object open its
+  menu (the click still selects the whole object first). The interval and
+  plain-click statements are superseded by the 2026-09-16 entry below.
+  The operation classes, the contract table and the lifecycle are
+  untouched; the removal's Undo remains owed to issue 170.
+- 2026-09-16: Authority amendment. The accepted
+  [general-pasteboard clear-interval record](../spec/design/2026-0916-clipboard-clear-interval.md)
+  supersedes the 2026-09-15 stream navigator record in full, incorporates
+  D-34 through D-41 without change, amends D-42's interval confirmation,
+  and replaces D-43 in full. The law therefore reads its clear-after-copy
+  contract through the successor: OnetimePad makes a change-count-guarded
+  clear attempt after the core-owned 60-second interval and leaves a newer
+  general-pasteboard write untouched. This is not a total-retention or
+  erasure guarantee. It also carries D-40's explicit-route correction: a
+  plain click selects the object without opening the menu. This amendment
+  supersedes the clear-interval and plain-click statements in the preceding
+  2026-09-15 entry; its remaining decisions stand.

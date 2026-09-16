@@ -157,18 +157,33 @@ public struct GeneralSettingsView: View {
             }
 
             Section {
-                Toggle("A page a day, with time tabs down the side", isOn: $model.showsTimeUnits)
+                Picker("Organize pages by", selection: $model.showsTimeUnits) {
+                    Text("Slots").tag(false)
+                    Text("Days (time tabs) · prototype").tag(true)
+                }
+                .pickerStyle(.segmented)
             } header: {
-                SettingsCaption(Self.timeUnitsCaption)
+                SettingsCaption(Self.pageOrganizationCaption)
             }
-            // The rounding switch is about time, so it reads as
-            // belonging to the Days choice and sits under it (D-26).
             Section {
-                Toggle("Round a page's deadline up to the hour, or to midnight", isOn: $model.snapsToBoundaries)
+                Picker("Show pages", selection: $model.showsPagesDownSide) {
+                    Text("Along the bottom").tag(false)
+                    Text("Down the side").tag(true)
+                }
+                .pickerStyle(.segmented)
             } header: {
-                SettingsCaption(
-                    "A rung names a duration; this lets the deadline land where the clock does. Under a day it rounds up to the next whole hour, from a day up to the next midnight, and never by more than a day. Pages already counting down keep the deadline they have."
-                )
+                SettingsCaption(Self.pagePlacementCaption)
+            }
+            // The rounding switch is about time, so it appears only
+            // under the Days choice (D-26).
+            if model.showsTimeUnits {
+                Section {
+                    Toggle("Round a page's deadline up to the hour, or to midnight", isOn: $model.snapsToBoundaries)
+                } header: {
+                    SettingsCaption(
+                        "A rung names a duration; this lets the deadline land where the clock does. Under a day it rounds up to the next whole hour, from a day up to the next midnight, and never by more than a day. Pages already counting down keep the deadline they have."
+                    )
+                }
             }
             Section {
                 Toggle("Start at login", isOn: loginBinding)
@@ -257,27 +272,18 @@ public struct GeneralSettingsView: View {
         model.fontFamily = family
     }
 
-    /// The prototype's caption (issue #79). It has three jobs, and the
-    /// order is deliberate: say that it is a prototype, say that it
-    /// moves no content, and say what it costs while the mode is on.
-    /// A toggle whose caption promised only the good half would be the
-    /// kind of setting a user flips once and distrusts afterwards. The
-    /// costs are the two the tree really imposes (D-26): lines wrap
-    /// whatever the wrap preference says, and an older page with
-    /// nothing on it draws no row and is only counted. Each day's
-    /// gutter carries the four verbs now, so they are no longer a cost
-    /// to name. "Strip" and "rail" are code names and stay out of the
-    /// caption, which a test pins.
-    static let timeUnitsCaption: String =
-        "A prototype. Live pages stand down the side of the card grouped by the day they "
-            + "were written, newest first, instead of along the bottom as slots. It moves no "
-            + "content and writes nothing new to disk: the tabs, their names and their rungs "
-            + "are the same underneath either way, and turning it off puts the slots back "
-            + "along the bottom. The days read as one page torn along a perforation: "
-            + "renaming, holding, shortening and closing live on each day's own gutter, and "
-            + "the column beside them is for getting about. Lines always wrap while days are "
-            + "showing. An older page with nothing on it is not drawn; it is counted at the "
-            + "foot of the column."
+    /// The two axes' captions say both what changes and what it costs.
+    /// User-facing copy never exposes the components' code names.
+    static let pageOrganizationCaption: String =
+        "Slots are pages you name and close yourself. Days is a prototype that groups live "
+            + "pages by the day they were written, newest first; lines always wrap and older "
+            + "blank pages are counted rather than drawn. Changing this moves no content and "
+            + "writes nothing new to disk."
+
+    static let pagePlacementCaption: String =
+        "Along the bottom keeps the page at full width and may scroll sideways. Down the side "
+            + "keeps longer names readable but takes 110 points from the page. Placement does "
+            + "not change how pages are grouped or stored."
 
     /// The section only exists when the switch is offered, so the
     /// caption's job is to say why this build has one and how long it

@@ -437,18 +437,18 @@ Four things about it are load-bearing.
   two point glyphs are legible. Rectangles cannot leak a word, so there
   is no argument to have. No per-block and no per-line rendering either:
   the finest thing the rail draws is a day.
-- **Faint is a requirement.** The markers over it, the day's words, its
-  gauge, the selection fill, are the rail's content, and a background
-  that competed with them would turn a navigation column into a chart.
-  The two inks (`RailMinimapView.dayInk` and `viewportInk`) are the
-  numbers the dogfood window is meant to argue with, which is why they
-  are named constants and not literals in a fill.
+- **Faint is a requirement.** The nodes, their words and gauges are the
+  rail's content, and a background that competed with them would turn a
+  navigation column into a chart. `StreamNavigatorView.slivers(_:)` and
+  `viewportBand(_:width:)` keep the roll geometry behind those nodes;
+  their opacity values are what the dogfood window is meant to argue
+  with.
 - **One measurement, read off the frames.** The extents come from
   `DayStackView.relayout`, the pass that has just placed every region,
-  so the minimap and the pages under the reader's eye cannot disagree
-  about how much page a day holds: the proportions are the roll's own
-  and not a second estimate of them. A day holding two pages is two rows
-  and one bar, folded by `RollGeometry.merging`.
+  so the navigator and the pages under the reader's eye cannot disagree
+  about how much page each node holds: the proportions are the roll's
+  own and not a second estimate of them. A day holding two pages is two
+  extents and two nodes, mapped by `StreamNavigator.layout`.
 - **Published on a hop, and off the model.** `relayout` runs inside
   `updateNSView`, so writing observed state there would be writing it
   during a render pass; the measurement goes to its own
@@ -463,16 +463,15 @@ Four things about it are load-bearing.
   replaces and the outgoing surface's parting reset would otherwise
   blank a minimap that had just been measured honestly.
 
-The mapping into the rail's coordinates is two pure functions,
-`RailMinimap.bars(of:in:)` and `band(of:in:)`, in the idiom
-`selectedBucket` and `chord(forRowAt:)` set. The edges they decide are
-the ones a drawing cannot be squinted at for: an unmeasured roll draws
-nothing rather than inventing proportions, a day a fraction of a point
-tall draws a hairline rather than vanishing under a row the rail is
-drawing anyway, a column with no room left runs out in the order the
-days come in rather than keeping bars nobody can see, an elastic
-overscroll clamps into the column instead of hanging off it, and a roll that fits in the card gets no band at all,
-because a band around everything marks nothing.
+The mapping into the rail's coordinates is the pure
+`StreamNavigator.layout(nodes:geometry:height:width:)` function, in the
+idiom `selectedBucket` and `chord(forRowAt:)` set. The edges it decides
+are the ones a drawing cannot be squinted at for: an unmeasured roll
+packs nodes in order without inventing proportions; missing extents are
+interpolated without reversing anchors; line fragments that land on one
+point collapse to one sliver; elastic overscroll clamps into the column;
+and a roll that fits in the card gets no band at all, because a band
+around everything marks nothing.
 
 Everything the rail already did is untouched by both: the tap targets,
 ⌘1 to ⌘9, the selection mark, the gauges, the empty rule, the hidden
@@ -651,15 +650,15 @@ are on each page's own gutter inside the roll, addressed to that page's
 slot, and the Settings caption says where they are rather than
 apologising for their absence.
 
-7. **The rail's words and its minimap** (issue #131), after the six.
+7. **The rail's stream navigator** (issue #131), after the six.
    `TimeUnit.railLabel(bucket:)` and the wider column
-   (`TimeRailView.width`); `RollGeometry`, `RollGeometryModel` and
-   `RailMinimap` in
-   `shell/Sources/CompanionKit/RollGeometry.swift`;
+   (`TimeRailView.width`); `RollGeometry` and `RollGeometryModel` in
+   `shell/Sources/CompanionKit/RollGeometry.swift`; `StreamNavigator` in
+   `shell/Sources/CompanionKit/StreamNavigator.swift`;
    `DayStackView.measuredGeometry` and the clip's bounds observation;
-   and `RailMinimapView` under the rail's rows. Type names rather than
-   line numbers, for the reason branch 6 gives. Nothing in the core, at
-   the seam, in the projection's laws or in horizontal mode moved:
+   and `StreamNavigatorView` under the rail's heading. Type names rather
+   than line numbers, for the reason branch 6 gives. Nothing in the core,
+   at the seam, in the projection's laws or in horizontal mode moved:
    `TabStripView.swift` takes no diff on this one either.
 
 ## Test plan
@@ -1011,13 +1010,14 @@ the height that arrived, so nothing shifts under a sentence being read.
     instrument rather than a feature. If the vertical mode wins outright,
     the follow-up is an amendment to doc 04 and one model, not a setting
     kept forever out of politeness.
-11. **How faint should the minimap be, and does the band read as the
-    viewport?** (issue #131) `RailMinimapView.dayInk` and `viewportInk`
-    are 0.10 and 0.06 of the secondary label colour, chosen to sit under
-    the tertiary text the footer draws in and never yet measured against
-    a real card. *Leaning:* they are a starting point and the dogfood
-    window is the instrument. Two failure modes to watch for, in
-    opposite directions: a background loud enough to compete with the
+11. **How faint should the navigator's roll marks be, and does the band
+    read as the viewport?** (issue #131)
+    `StreamNavigatorView.slivers(_:)` draws out-of-view lines at 0.15 of
+    the secondary colour and `viewportBand(_:width:)` draws its wash at
+    0.08 of the primary colour, values not yet measured against a real
+    card. *Leaning:* they are a starting point and the dogfood window is
+    the instrument. Two failure modes to watch for, in opposite
+    directions: a background loud enough to compete with the nodes and
     gauges, and one so faint that a scrolled reader gets no sense of
     place from it at all, in which case the honest answer is to drop the
     band rather than to darken it.

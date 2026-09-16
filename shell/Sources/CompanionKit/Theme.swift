@@ -27,6 +27,10 @@ extension Color {
 }
 
 extension NSColor {
+    /// The ember fill, the AppKit side of `Color.ember`, for the places
+    /// that draw with an `NSBezierPath`: the day gutter's active rule.
+    public static let ember = NSColor(srgbHex: 0xDC4A22)
+
     /// Ember as ink, the AppKit side of `Color.emberText`, for the
     /// places that draw with an `NSColor`. Light #B0361A, dark #F5865F.
     public static let emberText = NSColor.appearanceAware(light: 0xB0361A, dark: 0xF5865F)

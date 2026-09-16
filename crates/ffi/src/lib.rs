@@ -96,7 +96,7 @@ use ots_client::Transport as _;
 
 use companion_core::{
     ChipId, ChipMeta, DestinationClass, EditOp, FILE_SIZE_LIMIT, FileId, LedgerEvent, RestoreError,
-    Segment, Sheet, SheetId, SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, TabId, Ttl,
+    Segment, Sheet, SheetId, SheetStore, SystemClock, TTL_LADDER, Tab, TabId, Ttl,
     detect_source_language, local_day,
 };
 #[cfg(target_os = "macos")]
@@ -1322,9 +1322,7 @@ pub unsafe extern "C" fn companion_clear_clipboard_if_ours(handle: *mut Companio
 /// How long a copy-out may dwell on the general pasteboard before the
 /// shell's armed clear takes it back: the one number behind every
 /// "clipboard clears in N seconds" line, owned here so the shell reads
-/// it rather than promising one of its own (D-29, D-32). Provisional
-/// at 60 until the maintainer picks the interval; ADR-0012's egress
-/// amendment names it.
+/// it rather than promising one of its own (D-29, D-32).
 pub const CLIPBOARD_CLEAR_SECONDS: u32 = 60;
 
 /// The clear-after-copy interval in seconds ([`CLIPBOARD_CLEAR_SECONDS`]).
@@ -1495,13 +1493,7 @@ pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> 
                 "title": record.title(),
                 "at_ms": record.at_wall_ms(),
                 "created_at_ms": record.item_created_wall_ms(),
-                "size": match record.size() {
-                    SizeClass::Tiny => "tiny",
-                    SizeClass::Small => "small",
-                    SizeClass::Medium => "medium",
-                    SizeClass::Large => "large",
-                    SizeClass::Huge => "huge",
-                },
+                "size": record.size().as_str(),
                 "destination": match record.destination() {
                     DestinationClass::None => "none",
                     DestinationClass::Clipboard => "clipboard",
@@ -3391,9 +3383,9 @@ pub unsafe extern "C" fn companion_string_free(s: *mut c_char) {
 /// there is nothing for them to describe and the strip draws the dashed
 /// treatment instead of a gauge.
 ///
-/// The two page-shaped fields at the end are the page's own and follow
-/// `page_id`'s null rather than the clock fields' zero, because a day
-/// nobody was here on is not day zero. `page_day_offset` is
+/// The three page-shaped fields at the end are the page's own and
+/// follow `page_id`'s null rather than the clock fields' zero, because
+/// a day nobody was here on is not day zero. `page_day_offset` is
 /// deliberately *relative*: the far side never has to know what today
 /// is, so a repaint re-reads the summaries and the labels above them
 /// roll over at local midnight without anything being scheduled to make
@@ -3435,6 +3427,12 @@ fn summary_json(
         "last_hour": page.is_some_and(|sheet| sheet.last_hour(now)),
         "page_has_content": page.is_some_and(Sheet::has_content),
         "page_day_offset": page.map(|sheet| sheet.local_day(utc_offset_seconds) - today),
+        // The page's own birth stamp, absolute, for the surface that
+        // draws each page as a checkpoint on a stream: the navigator's
+        // "0914-1139" is this number rendered in local time, and it is
+        // the page's rather than the tab's for `page_day_offset`'s
+        // reason. Null follows `page_id`'s null.
+        "page_created_ms": page.map(Sheet::created_wall_ms),
     })
 }
 
@@ -5075,6 +5073,20 @@ mod tests {
             // On a live pad the page was made today, whatever today is
             // on the machine reading this.
             assert_eq!(strip(handle)[0]["page_day_offset"].as_i64(), Some(0));
+            // And the stamp the offset was counted from travels beside
+            // it, absolute, so a surface can print the minute the page
+            // was born without a second reading of the clock.
+            {
+                let guard = (*handle).inner.lock().unwrap();
+                let born = guard
+                    .store
+                    .sheet(SheetId::from_raw(page))
+                    .expect("the page is standing")
+                    .created_wall_ms();
+                drop(guard);
+                assert_eq!(strip(handle)[0]["page_created_ms"].as_u64(), Some(born));
+                assert!(born > 0, "a page born at the epoch is a clock nobody read");
+            }
 
             // Read against a later reading of today, which is what the
             // same pad answers once a local midnight has passed under
@@ -5243,6 +5255,9 @@ mod tests {
                 // The two this decision added, and nothing else.
                 "page_has_content",
                 "page_day_offset",
+                // And the page's own birth stamp, for the stream
+                // navigator's minute.
+                "page_created_ms",
             ];
             expected.sort_unstable();
             assert_eq!(keys, expected);

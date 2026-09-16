@@ -69,11 +69,15 @@ final class ClipboardClearTests: XCTestCase {
         let chip = try sealAChip(on: model)
         model.copyOutChip(chip)
 
-        // The line names the core's number, not the shortened window.
+        // The line names the core's number, not the shortened window,
+        // in the stream navigator design's words.
         XCTAssertEqual(CompanionClient.clipboardClearSeconds(), 60)
         XCTAssertEqual(
-            model.notice, "decrypted contents copied · clipboard clears in 60 seconds")
+            model.notice, "copied decrypted contents. the clipboard clears in 60 seconds.")
         XCTAssertEqual(model.notice, PageModel.copiedLine(clearsIn: 60))
+        XCTAssertEqual(
+            PageModel.copiedLine(clearsIn: 60, size: "small"),
+            "copied decrypted contents — small. the clipboard clears in 60 seconds.")
 
         // The timer fires, the board is given back, and the guarded
         // clear afterwards has nothing left to answer for.

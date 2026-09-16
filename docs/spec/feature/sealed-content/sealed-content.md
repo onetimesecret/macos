@@ -63,12 +63,12 @@ The full-width card is an **atomic block attachment**, not an oversized button. 
 
 The object menu:
 
-    Copy decrypted contents
+    Copy decrypted contents        ⇧⌘C
     Create one-time link…
     ────────────────────────
-    Remove from page
+    Remove protected content
 
-After a decrypted copy, confirm the boundary crossing with the interval the core actually enforces, for example `Decrypted contents copied · clipboard clears in 60 seconds`. The core already clears on every pasteboard egress, so state the real number; never promise a clear the app does not perform.
+After a decrypted copy, confirm the boundary crossing with the core's interval: `copied decrypted contents — small. the clipboard clears in 60 seconds.` At that interval the core attempts a change-count-guarded clear and leaves the general pasteboard alone if another write replaced its own. This does not bound copies retained by clipboard managers. (Menu wording, chord and the line follow the 2026-09-15 stream navigator record, D-41 to D-43.)
 
 ## Pasteboard model
 

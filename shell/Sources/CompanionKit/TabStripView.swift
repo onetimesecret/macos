@@ -220,6 +220,135 @@ public struct TabStripView: View {
     }
 }
 
+/// Days placed along the bottom. This is the horizontal presentation
+/// of the same `TimeUnitProjection` the side column uses; it changes
+/// neither grouping nor selection semantics (D-26).
+public struct TimeStripView: View {
+    @ObservedObject var model: PageModel
+
+    public init(model: PageModel) {
+        self.model = model
+    }
+
+    public var body: some View {
+        let projection = model.timeUnits
+        let selected = TimeRailView.selectedBucket(
+            projection: projection, selection: model.selection)
+        HStack(spacing: 2) {
+            if !model.openFiles.isEmpty {
+                GroupLabel(text: "FILES")
+                ForEach(model.openFiles) { file in
+                    FileTab(
+                        file: file,
+                        selected: model.selectedFile == file.id && !model.showingLedger,
+                        model: model
+                    )
+                }
+                GroupLabel(text: "PAD")
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    ForEach(projection.units.indices, id: \.self) { index in
+                        let unit = projection.units[index]
+                        TimeUnitBottomTab(
+                            unit: unit,
+                            selected: !model.showingLedger && model.selectedFile == nil
+                                && unit.bucket == selected,
+                            chord: TimeRailView.chord(
+                                forRowAt: TimeRailView.targetIndex(
+                                    forDay: index, openFileCount: model.openFiles.count),
+                                keymap: model.keymap),
+                            model: model
+                        )
+                    }
+                }
+            }
+            if projection.hiddenBlankPages > 0 {
+                Text("\(projection.hiddenBlankPages) blank")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .help(TimeRailView.hiddenPagesHelp(count: projection.hiddenBlankPages))
+                    .accessibilityLabel(Text(TimeRailView.hiddenPagesHelp(
+                        count: projection.hiddenBlankPages)))
+            }
+            Spacer(minLength: 8)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .frame(height: 32)
+        .background(Color.panelBackground)
+    }
+}
+
+/// A day in the bottom run. Its content and actions mirror
+/// `TimeUnitTab`; only its measure changes to the bottom-tab metrics.
+private struct TimeUnitBottomTab: View {
+    let unit: TimeUnitProjection.Unit
+    let selected: Bool
+    let chord: Keystroke?
+    @ObservedObject var model: PageModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 4) {
+                Text(unit.railLabel)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if TimeUnitTab.offersNewPage(unit) {
+                    Button(action: model.newPage) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 8, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help(TimeUnitTab.newPageHelp(
+                        chord: model.keymap.hintKeystroke(for: .pageNew)))
+                    .accessibilityLabel(Text("New page"))
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 18)
+            Group {
+                if unit.pageIDs.isEmpty {
+                    EmptyRule()
+                } else {
+                    GaugeBar(
+                        fraction: unit.fractionRemaining,
+                        paused: unit.paused,
+                        toppedUp: unit.toppedUp,
+                        lastHour: unit.lastHour
+                    )
+                }
+            }
+            .frame(height: 3)
+            .padding(.horizontal, 3)
+        }
+        .frame(maxWidth: 140)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(selected ? Color.cellBackground : .clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { model.select(target: TimeUnitTab.target(for: unit)) }
+        .help(helpText)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(unit.spokenLabel))
+        .accessibilityValue(Text(unit.spokenRemaining))
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityNewPageAction(when: TimeUnitTab.offersNewPage(unit)) {
+            model.newPage()
+        }
+    }
+
+    private var helpText: String {
+        if unit.pageIDs.isEmpty {
+            return TimeUnitTab.todayHelp(hasPage: false, chord: chord)
+        }
+        return TimeUnitTab.dayHelp(spokenLabel: unit.spokenLabel, chord: chord)
+    }
+}
+
 /// One tab: live title, its own gauge, ⏸ while held, ✕ on hover. A
 /// slot holding no page draws a dashed rule where the gauge goes and
 /// says so out loud, because there is no clock to render and the tab

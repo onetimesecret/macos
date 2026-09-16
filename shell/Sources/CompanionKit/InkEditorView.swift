@@ -1,4 +1,5 @@
 import AppKit
+import os
 import SwiftUI
 
 /// The page: a little text file of **ink** (visible, editable text) and
@@ -102,7 +103,7 @@ public struct InkEditorView: NSViewRepresentable {
         model: PageModel, sheetID: UInt64, coordinator: Coordinator
     ) -> InkTextView {
         let layoutManager = InkLayoutManager()
-        let container = NSTextContainer(size: NSSize(
+        let container = InkTextContainer(size: NSSize(
             width: 0, height: CGFloat.greatestFiniteMagnitude
         ))
         container.widthTracksTextView = true
@@ -2035,9 +2036,10 @@ public struct InkEditorView: NSViewRepresentable {
         ]
 
         /// A plain click on a chip selects the whole object and never
-        /// places a caret inside it (D-28). The menu no longer opens on
-        /// a click; it belongs to the secondary click, where every
-        /// other object on the platform keeps its actions.
+        /// places a caret inside it (D-28). It does not also perform an
+        /// action or open a menu: the explicit actions glyph, secondary
+        /// click, and Return or Space on the selected object provide the
+        /// menu routes. Actions, never content.
         public func textView(
             _ view: NSTextView,
             clickedOn cell: NSTextAttachmentCellProtocol,
@@ -2046,6 +2048,25 @@ public struct InkEditorView: NSViewRepresentable {
         ) {
             guard cell is ChipCell else { return }
             view.setSelectedRange(NSRange(location: charIndex, length: 1))
+        }
+
+        /// The object's menu, opened at `point`: the same items every
+        /// explicit route builds, so the glyph, secondary click, and
+        /// Return or Space over the selected block cannot drift apart.
+        func openChipMenu(at charIndex: Int, from point: NSPoint, in view: NSTextView) {
+            guard let menu = chipMenu(at: charIndex) else { return }
+            menu.popUp(positioning: nil, at: point, in: view)
+        }
+
+        /// Build the sealed object's context menu once for both AppKit's
+        /// menu query and the explicit routes that pop it up directly.
+        func chipMenu(at charIndex: Int) -> NSMenu? {
+            let menu = NSMenu()
+            // The object's menu is the three items and nothing the text
+            // system would append to a text view's menu (D-41).
+            menu.allowsContextMenuPlugIns = false
+            appendChipItems(to: menu, at: charIndex)
+            return menu.items.isEmpty ? nil : menu
         }
 
         /// The character index of the chip under `point` (in the text
@@ -2064,13 +2085,17 @@ public struct InkEditorView: NSViewRepresentable {
             var fraction: CGFloat = 0
             let glyph = layoutManager.glyphIndex(
                 for: local, in: container, fractionOfDistanceThroughGlyph: &fraction)
-            let bounds = layoutManager.boundingRect(
-                forGlyphRange: NSRange(location: glyph, length: 1), in: container)
-            guard bounds.contains(local) else { return nil }
             let index = layoutManager.characterIndexForGlyph(at: glyph)
             guard index < storage.length,
                   storage.attribute(.attachment, at: index, effectiveRange: nil) is ChipAttachment
             else { return nil }
+            if let inkView = view as? InkTextView {
+                guard let frame = inkView.chipFrame(at: index), frame.contains(point) else { return nil }
+            } else {
+                let bounds = layoutManager.boundingRect(
+                    forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+                guard bounds.contains(local) else { return nil }
+            }
             return index
         }
 
@@ -2091,7 +2116,20 @@ public struct InkEditorView: NSViewRepresentable {
                 keyEquivalent: ""
             )
             copy.target = self
-            copy.representedObject = chipID as NSNumber
+            // The item carries the object's place rather than its id,
+            // so the action can read the block's own size class off
+            // the storage for the confirmation line.
+            copy.representedObject = charIndex as NSNumber
+            // The chord beside the verb is the keymap's, the way every
+            // tooltip names its chord: a keymap that moved
+            // `chip::CopyDecrypted` moves this, and one that unbound it
+            // leaves the verb alone. Display only; the page's text view
+            // dispatches the chord itself, so the menu item advertises
+            // and never claims.
+            if let chord = model.keymap.hintKeystroke(for: .chipCopyDecrypted) {
+                copy.keyEquivalent = chord.menuKeyEquivalent
+                copy.keyEquivalentModifierMask = chord.menuModifierMask
+            }
             menu.addItem(copy)
             let conceal = NSMenuItem(
                 title: Self.chipMenuTitles[1],
@@ -2109,7 +2147,37 @@ public struct InkEditorView: NSViewRepresentable {
             )
             remove.target = self
             remove.representedObject = charIndex as NSNumber
+            // The separator and verb carry the destructive meaning;
+            // leave menu text styling to AppKit.
             menu.addItem(remove)
+        }
+
+        /// The chip standing at the selection, when the selection is
+        /// exactly one chip and nothing else: the one shape the copy
+        /// decrypted chord acts on. Nil over ink, over a caret, or over
+        /// a selection that mixes ink and objects, which is what keeps
+        /// ⇧⌘C from ever reaching a payload nobody pointed at.
+        var selectedChipIndex: Int? {
+            guard let textView, let storage = textView.textStorage else { return nil }
+            let range = textView.selectedRange()
+            guard range.length == 1, range.location < storage.length,
+                  storage.attribute(.attachment, at: range.location, effectiveRange: nil)
+                    is ChipAttachment
+            else { return nil }
+            return range.location
+        }
+
+        /// Copy the chip at `index` back out through the core, and say
+        /// so with the block's own size class in the line.
+        func copyOutChip(at index: Int) {
+            guard let storage = textView?.textStorage, index < storage.length,
+                  let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil)
+                    as? ChipAttachment
+            else { return }
+            model.copyOutChip(
+                attachment.info.chipId,
+                size: ChipCell.displayedSizeClass(attachment.info.sizeLabel)
+            )
         }
 
         // MARK: Links — ⌘-click opens, a plain click edits (ADR-0023)
@@ -2145,8 +2213,8 @@ public struct InkEditorView: NSViewRepresentable {
         }
 
         @objc private func copyOutChip(_ sender: NSMenuItem) {
-            guard let id = (sender.representedObject as? NSNumber)?.uint64Value else { return }
-            model.copyOutChip(id)
+            guard let index = (sender.representedObject as? NSNumber)?.intValue else { return }
+            copyOutChip(at: index)
         }
 
         /// The chip's ↗: open the inline confirmation. The bytes stay
@@ -2165,6 +2233,11 @@ public struct InkEditorView: NSViewRepresentable {
             if textView.shouldChangeText(in: range, replacementString: "") {
                 storage.replaceCharacters(in: range, with: "")
                 textView.didChangeText() // travels as a del op; the core reaps the chip
+                // The line says what happened. Its Undo steps the
+                // core's stack back once the core keeps a removed
+                // object to step back to (issue 170); until then the
+                // model offers the line without the button.
+                model.noteRemoval { [weak self] in self?.step(back: true) }
             }
         }
 
@@ -3075,6 +3148,25 @@ public enum SealSelectionMenu {
 /// route. Chips are atomic under the caret by construction — an
 /// attachment is one character: arrows step over it, one ⌫ removes it
 /// whole, selection cannot reach inside it.
+/// Carries the mounted editor's finite viewport measure into TextKit's
+/// nonisolated attachment-sizing callbacks. One scalar update replaces a
+/// whole-document attachment scan on every layout pass.
+final class InkTextContainer: NSTextContainer {
+    private let editorMeasure = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
+
+    nonisolated func setEditorMeasure(_ measure: CGFloat) -> Bool {
+        editorMeasure.withLock { current in
+            guard current != measure else { return false }
+            current = measure
+            return true
+        }
+    }
+
+    nonisolated var capturedEditorMeasure: CGFloat? {
+        editorMeasure.withLock { $0 }
+    }
+}
+
 final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder,
     SealResponder
 {
@@ -3088,6 +3180,158 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         coordinator?.applyManualLanguage(language)
     }
 
+    /// The sealed block under the pointer, if any, so the block can
+    /// draw its actions glyph while it is hovered (D-10). Kept here
+    /// rather than on the cell because the cell is drawn by the layout
+    /// manager and holds no state about the pointer; the view watches
+    /// the pointer and redraws the block that gained or lost it.
+    private(set) var hoveredChipIndex: Int? {
+        didSet {
+            guard hoveredChipIndex != oldValue else { return }
+            for index in [oldValue, hoveredChipIndex].compactMap({ $0 }) {
+                redrawChip(at: index)
+            }
+        }
+    }
+
+    private var hoverTracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTracking { removeTrackingArea(hoverTracking) }
+        let tracking = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil
+        )
+        addTrackingArea(tracking)
+        hoverTracking = tracking
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        let point = convert(event.locationInWindow, from: nil)
+        hoveredChipIndex = coordinator?.chipIndex(at: point, in: self)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        hoveredChipIndex = nil
+    }
+
+    private func redrawChip(at index: Int) {
+        guard let layoutManager, let textContainer,
+              let storage = textStorage, index < storage.length else { return }
+        let glyphs = layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        rect.origin.x += textContainerOrigin.x
+        rect.origin.y += textContainerOrigin.y
+        setNeedsDisplay(rect.insetBy(dx: -4, dy: -4))
+    }
+
+    /// Only the first primary click without a gesture modifier may activate
+    /// the actions seat. State flags such as Caps Lock do not change the
+    /// gesture; modified gestures and later clicks stay on AppKit's path.
+    nonisolated static func shouldOpenChipActions(
+        clickCount: Int, modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        clickCount == 1
+            && modifierFlags.intersection([.command, .shift, .control, .option]).isEmpty
+    }
+
+    /// A first Control-primary click is the secondary-click gesture. State
+    /// flags do not alter it, while additional gesture modifiers leave it
+    /// to AppKit.
+    nonisolated static func shouldOpenChipContextMenu(
+        clickCount: Int, modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        clickCount == 1
+            && modifierFlags.intersection([.command, .shift, .control, .option]) == .control
+    }
+
+    /// A click on the explicit actions affordance opens the object's menu.
+    /// Control-primary over a chip takes the same direct route as a
+    /// secondary click, avoiding text-system additions to the menu. Every
+    /// other primary click stays on AppKit's attachment path, whose
+    /// delegate selects the object without opening anything.
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if Self.shouldOpenChipContextMenu(
+            clickCount: event.clickCount, modifierFlags: event.modifierFlags),
+           let coordinator,
+           let index = coordinator.chipIndex(at: point, in: self)
+        {
+            setSelectedRange(NSRange(location: index, length: 1))
+            coordinator.openChipMenu(at: index, from: point, in: self)
+            return
+        }
+        guard Self.shouldOpenChipActions(
+            clickCount: event.clickCount, modifierFlags: event.modifierFlags)
+        else {
+            super.mouseDown(with: event)
+            return
+        }
+        if let coordinator,
+           let index = coordinator.chipIndex(at: point, in: self),
+           let frame = chipFrame(at: index),
+           ChipCell.actionsRect(in: frame).contains(point)
+        {
+            setSelectedRange(NSRange(location: index, length: 1))
+            coordinator.openChipMenu(at: index, from: point, in: self)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    /// The frame the block at `index` is drawn with, in this view's
+    /// coordinates, so a click can be tested against the drawn actions
+    /// seat. It is derived the way the layout manager derives the frame
+    /// it hands the cell: the glyph's location on its line fragment is
+    /// where the cell is set down, its bottom left corner with the
+    /// cell's baseline offset already folded in, and in this flipped
+    /// view the block stands one attachment height above that point.
+    /// The glyph's bounding rect is not that frame: it takes the line's
+    /// used height at the glyph's column, so whenever ink shares the
+    /// line and rises above the block the bounding rect starts above
+    /// the block and stands taller than it, and a seat computed off it
+    /// misses the drawn glyph.
+    func chipFrame(at index: Int) -> NSRect? {
+        guard let layoutManager, textContainer != nil,
+              let storage = textStorage, index < storage.length,
+              storage.attribute(.attachment, at: index, effectiveRange: nil) is ChipAttachment
+        else { return nil }
+        let glyphs = layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
+        guard glyphs.length == 1 else { return nil }
+        let glyph = glyphs.location
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        let location = layoutManager.location(forGlyphAt: glyph)
+        let size = layoutManager.attachmentSize(forGlyphAt: glyph)
+        return NSRect(
+            x: textContainerOrigin.x + line.minX + location.x,
+            y: textContainerOrigin.y + line.minY + location.y - size.height,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    /// The secondary click over a chip pops the object's menu up here,
+    /// through the same call the glyph and Return take, rather than
+    /// handing AppKit a menu to show: the text system's own pop-up
+    /// appends AutoFill and Services to whatever `menu(for:)` returns,
+    /// and a sealed object offers neither (D-41). Over ink the click is
+    /// AppKit's.
+    override func rightMouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let coordinator, let index = coordinator.chipIndex(at: point, in: self) else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        setSelectedRange(NSRange(location: index, length: 1))
+        coordinator.openChipMenu(at: index, from: point, in: self)
+    }
+
     /// The context menu. Over a chip it is the chip's own: the object
     /// is selected whole first, as a plain click selects it, and the
     /// text menu AppKit would build is not consulted, because Cut and
@@ -3097,9 +3341,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         let point = convert(event.locationInWindow, from: nil)
         if let coordinator, let index = coordinator.chipIndex(at: point, in: self) {
             setSelectedRange(NSRange(location: index, length: 1))
-            let menu = NSMenu()
-            coordinator.appendChipItems(to: menu, at: index)
-            return menu
+            return coordinator.chipMenu(at: index)
         }
         let menu = super.menu(for: event) ?? NSMenu()
         coordinator?.appendSealItem(to: menu)
@@ -3111,8 +3353,32 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     /// the block labels (ADR-0013) need only be moved, not recomputed
     /// from the core, cheap enough to run on every layout pass.
     override func layout() {
+        updateChipEditorMeasure()
         super.layout()
         coordinator?.repositionBlockLabels()
+    }
+
+    /// TextKit's attachment sizing callback is explicitly nonisolated,
+    /// while an editor's bounds are main-actor state. Capture the scalar
+    /// measure here, before layout, into each cell's lock-protected sizing
+    /// state so the callback never reaches across actor isolation.
+    private func updateChipEditorMeasure() {
+        guard let container = textContainer as? InkTextContainer, let layoutManager else { return }
+        // In unwrapped mode the text view can grow to its longest line;
+        // the scroll viewport remains the page measure the chip should
+        // occupy. A mount without a scroller uses its editor bounds.
+        // Either way the container inset comes off both edges, as it
+        // does for the ink, so a block is never wider than the page it
+        // sits on. A viewport not yet sized measures nothing, and a
+        // zero captured as the ceiling would refuse every candidate and
+        // drop every block to the floor, so an earlier capture is left
+        // in place until a real measure arrives.
+        let viewport = enclosingScrollView?.contentSize.width ?? bounds.width
+        let measure = viewport - textContainerInset.width * 2
+        guard measure > 0 else { return }
+        if container.setEditorMeasure(measure) {
+            layoutManager.textContainerChangedGeometry(container)
+        }
     }
 
     /// The page's own chords, which the keymap names and this view
@@ -3211,7 +3477,47 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
            dispatch(command.id) {
             return
         }
+        // Return or Space over a selected sealed object opens its menu
+        // rather than typing over it (D-40): the object is a block the
+        // keyboard has landed on, and the two keys that would replace
+        // it with a newline or a space are the two that ask it what may
+        // be done instead. The object's own keys, not chords, so they
+        // are not the keymap's; anywhere else they type as they always
+        // did.
+        if Self.opensObjectMenu(characters: event.charactersIgnoringModifiers,
+                                modifiers: event.modifierFlags),
+           let coordinator, let index = coordinator.selectedChipIndex {
+            coordinator.openChipMenu(at: index, from: menuAnchor(forChipAt: index), in: self)
+            return
+        }
         super.keyDown(with: event)
+    }
+
+    /// Whether a key press is Return or Space with no modifier held:
+    /// the two keys that open a selected object's menu. Pure, so the
+    /// decision is an assertion; the guard on the selection is the
+    /// caller's.
+    nonisolated static func opensObjectMenu(
+        characters: String?, modifiers: NSEvent.ModifierFlags
+    ) -> Bool {
+        guard modifiers.intersection([.command, .control, .option, .shift]).isEmpty,
+              let characters, characters.count == 1, let key = characters.first
+        else { return false }
+        return key == "\r" || key == "\n" || key == " "
+    }
+
+    /// Where a menu opened from the keyboard appears: under the block's
+    /// leading edge, where the block's own words begin, so the menu
+    /// reads as the block's rather than the caret's.
+    private func menuAnchor(forChipAt index: Int) -> NSPoint {
+        guard let layoutManager, let textContainer else { return .zero }
+        let glyphs = layoutManager.glyphRange(
+            forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
+        let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: textContainer)
+        return NSPoint(
+            x: rect.minX + textContainerOrigin.x + 12,
+            y: rect.maxY + textContainerOrigin.y
+        )
     }
 
     /// What the keymap says this event means on the Editor surface,
@@ -3238,6 +3544,13 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
             coordinator.sealedPaste()
         case .clipboardSealSelection:
             coordinator.sealSelectionOrLine()
+        case .chipCopyDecrypted:
+            // Only over exactly one selected object: anywhere else the
+            // chord is declined rather than swallowed, so it falls
+            // through to whatever else would have had it and never
+            // reaches a payload nobody pointed at (D-29).
+            guard let index = coordinator.selectedChipIndex else { return false }
+            coordinator.copyOutChip(at: index)
         case .editorDetectCodeLanguage:
             guard PageModel.languageDetectionFeaturesAvailable,
                   coordinator.model.languageDetectionEnabled,
@@ -3709,15 +4022,50 @@ final class ChipAttachment: NSTextAttachment {
     required init?(coder: NSCoder) {
         fatalError("chips are never unarchived")
     }
+
+    /// A sealed object occupies the editor's full available measure,
+    /// including when long lines are allowed to run horizontally. The
+    /// scroll view's viewport is the page measure; the text container
+    /// can be effectively infinite in that mode and must not decide the
+    /// block's width (D-27).
+    override func attachmentBounds(
+        for textContainer: NSTextContainer?,
+        proposedLineFragment lineFrag: NSRect,
+        glyphPosition position: NSPoint,
+        characterIndex charIndex: Int
+    ) -> NSRect {
+        let width = ChipCell.blockWidth(
+            in: textContainer, proposedLineFragment: lineFrag
+        )
+        return ChipCell.blockBounds(width: width)
+    }
 }
 
-/// Draws the chip: `[ excerpt · size ]`, a quiet capsule of exactly the
-/// mechanical excerpt the seal route returned — recognizable to the
-/// person who pasted it, opaque to a stranger.
+/// Draws a sealed object as a full-measure block: classification and
+/// size metadata above its mechanical excerpt. It is deliberately a
+/// bordered rectangle rather than a pill or button (D-27).
 final class ChipCell: NSTextAttachmentCell {
     let info: ChipInfo
 
-    private nonisolated static let padding = NSSize(width: 9, height: 3)
+    #if DEBUG
+    /// Test-only record of the frame handed to the drawing path.
+    @MainActor
+    private(set) var lastDrawnFrame: NSRect?
+    #endif
+
+    nonisolated static let blockHeight: CGFloat = 52
+    /// The width a block takes when nothing has measured the editor:
+    /// a context-free `cellSize()` and a layout with no usable measure
+    /// both fall back to it, so it is named once.
+    nonisolated static let fallbackBlockWidth: CGFloat = 240
+    /// Widths at or above this value are TextKit's effectively-unbounded
+    /// sentinels, not usable page measurements.
+    nonisolated static let effectivelyUnboundedWidth: CGFloat = 1_000_000
+    nonisolated static let classification = "SEALED CONTENT"
+
+    nonisolated static func blockBounds(width: CGFloat) -> NSRect {
+        NSRect(x: 0, y: -blockHeight + 4, width: width, height: blockHeight)
+    }
 
     @MainActor
     init(info: ChipInfo) {
@@ -3735,49 +4083,234 @@ final class ChipCell: NSTextAttachmentCell {
     /// captured at init so a chip follows the page's typeface without
     /// the storage being rebuilt around it.
     @MainActor
-    private var label: NSAttributedString {
+    private var excerpt: NSAttributedString {
         NSAttributedString(
-            string: "\(info.excerpt) · \(info.sizeLabel)",
+            string: info.excerpt,
             attributes: [
                 .font: InkStyle.chipFont,
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+    }
+
+    @MainActor
+    private var classificationLabel: NSAttributedString {
+        NSAttributedString(
+            string: Self.classification,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .kern: 1.15,
+            ]
+        )
+    }
+
+    @MainActor
+    private var metadata: NSAttributedString {
+        NSAttributedString(
+            string: Self.displayedSizeClass(info.sizeLabel),
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
                 .foregroundColor: NSColor.secondaryLabelColor,
             ]
         )
     }
 
-    override func cellSize() -> NSSize {
-        MainActor.assumeIsolated {
-            let text = label.size()
-            return NSSize(
-                width: text.width.rounded(.up) + Self.padding.width * 2,
-                height: text.height.rounded(.up) + Self.padding.height * 2
-            )
-        }
+    /// The current core returns this closed vocabulary. Refuse to draw
+    /// an older or malformed count-shaped label: D-27 permits a size
+    /// class here and explicitly forbids a count.
+    nonisolated static func displayedSizeClass(_ label: String) -> String {
+        let normalized = label.lowercased()
+        guard ["tiny", "small", "medium", "large", "huge"].contains(normalized)
+        else { return "size unknown" }
+        return normalized
     }
 
-    override func cellBaselineOffset() -> NSPoint {
-        NSPoint(x: 0, y: -(Self.padding.height + 2))
+    struct ContentLayout {
+        /// The content column's leading edge, the one inset every row
+        /// starts from.
+        let left: CGFloat
+        let topRowY: CGFloat
+        let bottomRowY: CGFloat
+        let lockRect: NSRect
+    }
+
+    /// Row and lock geometry in the flipped text-view coordinate system.
+    /// Keeping it pure makes the placement independently testable without
+    /// relying on pixels from an AppKit drawing context.
+    nonisolated static func contentLayout(in cellFrame: NSRect) -> ContentLayout {
+        let left = cellFrame.minX + 12
+        let topRowY = cellFrame.minY + 8
+        return ContentLayout(
+            left: left,
+            topRowY: topRowY,
+            bottomRowY: cellFrame.maxY - 24,
+            lockRect: NSRect(x: left, y: topRowY + 1, width: 9, height: 9)
+        )
+    }
+
+    /// The actions glyph: three dots in the block's top trailing
+    /// corner, drawn only while the pointer is over the block or the
+    /// block is selected, and clicked to open the object's menu. The
+    /// affordance is revealed, the content is not (D-10), and it keeps
+    /// its seat whether drawn or not, so revealing it moves nothing.
+    nonisolated static let actionsGlyph = "···"
+
+    /// Where the actions glyph sits in a block drawn at `cellFrame`,
+    /// and so where a click opens the menu. On the classification's
+    /// row, at the trailing edge, wide enough to hit. The text view
+    /// the block is drawn in is flipped, so the block's top row is at
+    /// `minY` and its bottom row at `maxY`. Pure, so the click test is
+    /// an assertion rather than a screen.
+    nonisolated static func actionsRect(in cellFrame: NSRect) -> NSRect {
+        NSRect(x: cellFrame.maxX - 12 - 22, y: cellFrame.minY + 6, width: 22, height: 16)
+    }
+
+    @MainActor
+    private var actions: NSAttributedString {
+        NSAttributedString(
+            string: Self.actionsGlyph,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .bold),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+        )
+    }
+
+
+    /// The captured editor measure wins when an unwrapped text container
+    /// is effectively infinite; otherwise the finite container or
+    /// proposed line fragment supplies the measure.
+    nonisolated static func blockWidth(
+        in textContainer: NSTextContainer?, proposedLineFragment lineFrag: NSRect
+    ) -> CGFloat {
+        // TextKit represents an unbounded container with a very large but
+        // finite number. Once the live editor measure is captured, a
+        // container may narrow that measure (wrapped mode) but may never
+        // widen it (unwrapped mode).
+        let capturedMeasure = (textContainer as? InkTextContainer)?.capturedEditorMeasure
+        let maximum = min(capturedMeasure ?? effectivelyUnboundedWidth, effectivelyUnboundedWidth)
+        let candidates = [
+            textContainer?.size.width,
+            lineFrag.width,
+            capturedMeasure,
+        ].compactMap { width -> CGFloat? in
+            guard let width, width.isFinite, width > 0, width < maximum
+            else { return nil }
+            return width
+        }
+        let measure = candidates.first ?? capturedMeasure ?? fallbackBlockWidth
+        let padding = (textContainer?.lineFragmentPadding ?? 0) * 2
+        return max(0, (measure - padding).rounded(.down))
+    }
+
+    override nonisolated func cellSize() -> NSSize {
+        // Context-free callers have no editor measure. Live TextKit
+        // layout uses cellFrame(...) below and replaces this fallback.
+        NSSize(width: Self.fallbackBlockWidth, height: Self.blockHeight)
+    }
+
+    override nonisolated func cellFrame(
+        for textContainer: NSTextContainer,
+        proposedLineFragment lineFrag: NSRect,
+        glyphPosition position: NSPoint,
+        characterIndex charIndex: Int
+    ) -> NSRect {
+        var frame = super.cellFrame(
+            for: textContainer,
+            proposedLineFragment: lineFrag,
+            glyphPosition: position,
+            characterIndex: charIndex
+        )
+        frame.size = Self.blockBounds(width: Self.blockWidth(
+            in: textContainer, proposedLineFragment: lineFrag)).size
+        return frame
+    }
+
+    override nonisolated func cellBaselineOffset() -> NSPoint {
+        Self.blockBounds(width: 0).origin
+    }
+
+    /// The layout manager's call, which names the character so the
+    /// block can ask its text view whether it is the one under the
+    /// pointer or the one selected. The plain `draw(withFrame:in:)` is
+    /// what it falls through to, with neither fact known.
+    override func draw(
+        withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int,
+        layoutManager: NSLayoutManager
+    ) {
+        let view = controlView as? InkTextView
+        let selected = view.map { $0.selectedRange() == NSRange(location: charIndex, length: 1) }
+            ?? false
+        let hovered = view?.hoveredChipIndex == charIndex
+        draw(withFrame: cellFrame, in: controlView, selected: selected, hovered: hovered)
     }
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        let capsule = NSBezierPath(
+        draw(withFrame: cellFrame, in: controlView, selected: false, hovered: false)
+    }
+
+    /// State first, identity second, actions third: the lock and the
+    /// classification on the top row with the actions glyph at its
+    /// end, the excerpt and the size class on the row under them. A
+    /// selected block wears the ember keyline and its tint, the same
+    /// way the card says it holds the keyboard, paired with the
+    /// selection itself so the colour is never the only carrier.
+    @MainActor
+    private func draw(withFrame cellFrame: NSRect, in controlView: NSView?, selected: Bool, hovered: Bool) {
+        #if DEBUG
+        lastDrawnFrame = cellFrame
+        #endif
+        let block = NSBezierPath(
             roundedRect: cellFrame.insetBy(dx: 0.5, dy: 0.5),
-            xRadius: 5,
-            yRadius: 5
+            xRadius: 8,
+            yRadius: 8
         )
-        NSColor.quaternaryLabelColor.withAlphaComponent(0.12).setFill()
-        capsule.fill()
-        NSColor.tertiaryLabelColor.withAlphaComponent(0.35).setStroke()
-        capsule.lineWidth = 1
-        capsule.stroke()
-        MainActor.assumeIsolated {
-            let text = label
-            let size = text.size()
-            text.draw(at: NSPoint(
-                x: cellFrame.minX + Self.padding.width,
-                y: cellFrame.midY - size.height / 2
+        NSColor.textBackgroundColor.withAlphaComponent(0.34).setFill()
+        block.fill()
+        if selected {
+            let ring = NSBezierPath(
+                roundedRect: cellFrame.insetBy(dx: -1, dy: -1), xRadius: 9, yRadius: 9)
+            NSColor.ember.withAlphaComponent(0.12).setStroke()
+            ring.lineWidth = 3
+            ring.stroke()
+            NSColor.ember.setStroke()
+        } else {
+            NSColor.separatorColor.setStroke()
+        }
+        block.lineWidth = 1
+        block.stroke()
+        let layout = Self.contentLayout(in: cellFrame)
+        let left = layout.left
+
+        if let lock = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil) {
+            lock.draw(
+                in: layout.lockRect,
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1,
+                respectFlipped: true,
+                hints: nil
+            )
+        }
+
+        classificationLabel.draw(at: NSPoint(x: left + 14, y: layout.topRowY))
+        if hovered || selected {
+            let glyph = actions
+            let size = glyph.size()
+            let seat = Self.actionsRect(in: cellFrame)
+            glyph.draw(at: NSPoint(
+                x: seat.maxX - size.width,
+                y: seat.midY - size.height / 2
             ))
         }
+
+        excerpt.draw(at: NSPoint(x: left, y: layout.bottomRowY))
+        let metadataSize = metadata.size()
+        metadata.draw(at: NSPoint(
+            x: cellFrame.maxX - 12 - metadataSize.width,
+            y: layout.bottomRowY + 1
+        ))
     }
 }
 
