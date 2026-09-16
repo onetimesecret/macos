@@ -169,6 +169,36 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertTrue(second.showsTimeUnits, "the preference did not survive a relaunch")
     }
 
+    func testOrganizationAndPlacementPersistIndependently() throws {
+        let (first, defaults) = try makeModel()
+        XCTAssertFalse(first.showsTimeUnits)
+        XCTAssertFalse(first.showsPagesDownSide)
+
+        first.showsTimeUnits = true
+        first.showsPagesDownSide = false
+        let daysAlongBottom = isolatedModel(defaults: defaults)
+        XCTAssertTrue(daysAlongBottom.showsTimeUnits)
+        XCTAssertFalse(daysAlongBottom.showsPagesDownSide)
+
+        daysAlongBottom.showsTimeUnits = false
+        daysAlongBottom.showsPagesDownSide = true
+        let slotsDownSide = isolatedModel(defaults: defaults)
+        XCTAssertFalse(slotsDownSide.showsTimeUnits)
+        XCTAssertTrue(slotsDownSide.showsPagesDownSide)
+    }
+
+    func testOldCombinedPreferenceKeepsTheLayoutTheUserChose() throws {
+        let suite = "companion-time-units-migration-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "showsTimeUnits")
+
+        let model = isolatedModel(defaults: defaults)
+
+        XCTAssertTrue(model.showsTimeUnits)
+        XCTAssertTrue(model.showsPagesDownSide)
+    }
+
     // MARK: Going to today
 
     /// ⌘N in the mode, on a pad with nothing on it. One page, minted
@@ -318,7 +348,7 @@ final class TimeUnitModeTests: XCTestCase {
 
     // MARK: The jump chords, in both readings
 
-    /// ⌘1 with the days down the side lands on today, and today is a
+    /// ⌘1 with pages organized by day lands on today, and today is a
     /// place rather than a page: on a pad with nothing on it the chord
     /// takes the shipped create path instead of finding nothing to
     /// select. That is a gesture minting, which is the only kind there
@@ -531,7 +561,7 @@ final class TimeUnitModeTests: XCTestCase {
 
     // MARK: The chord the mode takes away
 
-    /// ⌥Z with the days down the side. The roll wraps every day whatever
+    /// ⌥Z with pages organized by day. The roll wraps every day whatever
     /// the preference says, so the chord cannot do what it is for, and
     /// what it must not do instead is rewrite the stored preference
     /// under a surface that will not honour it, which would leave the
@@ -558,16 +588,21 @@ final class TimeUnitModeTests: XCTestCase {
         XCTAssertNotEqual(model.wrapsLines, wrapped, "the chord stayed refused with the mode off")
     }
 
-    /// "Strip" and "rail" are the code names for the two navigations
-    /// and never reach the UI (D-26). The caption also owes the reader
-    /// the two costs of the mode, and this pins that it names both.
-    func testTheDaysCaptionNamesNoCodeWords() {
-        let caption = GeneralSettingsView.timeUnitsCaption
-        let words = caption.lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.inverted)
-        XCTAssertFalse(words.contains("strip"), caption)
-        XCTAssertFalse(words.contains("rail"), caption)
-        XCTAssertTrue(caption.contains("Lines always wrap while days are showing."))
-        XCTAssertTrue(caption.contains("counted at the foot of the column"))
+    /// The internal component names never reach either half of the
+    /// two-axis setting, and each caption names its real cost (D-26).
+    func testTheNavigationCaptionsNameNoCodeWords() {
+        let captions = [
+            GeneralSettingsView.pageOrganizationCaption,
+            GeneralSettingsView.pagePlacementCaption,
+        ]
+        for caption in captions {
+            let words = caption.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            XCTAssertFalse(words.contains("strip"), caption)
+            XCTAssertFalse(words.contains("rail"), caption)
+        }
+        XCTAssertTrue(GeneralSettingsView.pageOrganizationCaption.contains("prototype"))
+        XCTAssertTrue(GeneralSettingsView.pageOrganizationCaption.contains("moves no content"))
+        XCTAssertTrue(GeneralSettingsView.pagePlacementCaption.contains("96 points"))
     }
 }

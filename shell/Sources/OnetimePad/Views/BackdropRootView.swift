@@ -120,23 +120,20 @@ struct BackdropRootView: View {
                 .padding(.horizontal, 12)
                 .frame(height: 32)
             Divider()
-            // Two content rows, written out rather than one row with a
-            // rail wrapped around it (issue #79). The mode's branch is
-            // the whole expression, so the off-path tree below is the
-            // tree the card has always built, character for character:
-            // "pixel-identical while the toggle is off" is then a fact
-            // about the source rather than a hope about layout. The
-            // cost is that flipping the mode is an identity change and
-            // remounts the editor, which is what a deliberate flip
-            // should cost and what a keystroke must never.
-            if pages.showsTimeUnits {
+            // Organization (slots or days) and placement (bottom or
+            // side) are independent. The content view answers the
+            // former; this branch answers only the latter (D-26).
+            if pages.showsPagesDownSide {
                 HStack(spacing: 0) {
-                    // The rail eats into the page's column, not into
-                    // the header, so `BackdropGeometry.minWidth` and
-                    // its clamp are untouched by the mode.
-                    TimeRailView(model: pages)
-                        .opacity(raised ? 1 : 0.72)
-                        .animation(stanceFade, value: raised)
+                    Group {
+                        if pages.showsTimeUnits {
+                            TimeRailView(model: pages)
+                        } else {
+                            SlotRailView(model: pages)
+                        }
+                    }
+                    .opacity(raised ? 1 : 0.72)
+                    .animation(stanceFade, value: raised)
                     Divider()
                     PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -153,15 +150,17 @@ struct BackdropRootView: View {
                     .animation(stanceFade, value: raised)
             }
             PageStatusStack(model: pages)
-            // The two are exclusive: the days are the tabs while the
-            // mode is on, and a strip underneath them would be the same
-            // slots counted a second way. The strip's own verbs go with
-            // it for now, and Settings is how they come back.
-            if !pages.showsTimeUnits {
+            if !pages.showsPagesDownSide {
                 Divider()
-                TabStripView(model: pages)
-                    .opacity(raised ? 1 : 0.72)
-                    .animation(stanceFade, value: raised)
+                Group {
+                    if pages.showsTimeUnits {
+                        TimeStripView(model: pages)
+                    } else {
+                        TabStripView(model: pages)
+                    }
+                }
+                .opacity(raised ? 1 : 0.72)
+                .animation(stanceFade, value: raised)
             }
         }
         .background(

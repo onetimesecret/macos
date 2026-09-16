@@ -3695,6 +3695,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 /// A sealed chip's place in the document: an attachment character
 /// carrying only the chip's id and mechanical face. There is no
 /// affordance — and no data — to reveal what it stands for.
+@MainActor
 final class ChipAttachment: NSTextAttachment {
     let info: ChipInfo
 
@@ -3709,15 +3710,39 @@ final class ChipAttachment: NSTextAttachment {
     required init?(coder: NSCoder) {
         fatalError("chips are never unarchived")
     }
+
+    /// A sealed object occupies the editor's full available measure,
+    /// including when long lines are allowed to run horizontally. The
+    /// scroll view's viewport is the page measure; the text container
+    /// can be effectively infinite in that mode and must not decide the
+    /// block's width (D-27).
+    override func attachmentBounds(
+        for textContainer: NSTextContainer?,
+        proposedLineFragment lineFrag: NSRect,
+        glyphPosition position: NSPoint,
+        characterIndex charIndex: Int
+    ) -> NSRect {
+        nonisolated(unsafe) let container = textContainer
+        return MainActor.assumeIsolated {
+            let viewport = container?.textView?.enclosingScrollView?.contentSize.width
+            let padding = (container?.lineFragmentPadding ?? 0) * 2
+            let proposed = (viewport ?? lineFrag.width) - padding
+            let width = max(160, proposed.rounded(.down))
+            return NSRect(
+                x: 0, y: -ChipCell.blockHeight + 4,
+                width: width, height: ChipCell.blockHeight)
+        }
+    }
 }
 
-/// Draws the chip: `[ excerpt · size ]`, a quiet capsule of exactly the
-/// mechanical excerpt the seal route returned — recognizable to the
-/// person who pasted it, opaque to a stranger.
+/// Draws a sealed object as a full-measure block: classification and
+/// size metadata above its mechanical excerpt. It is deliberately a
+/// bordered rectangle rather than a pill or button (D-27).
 final class ChipCell: NSTextAttachmentCell {
     let info: ChipInfo
 
-    private nonisolated static let padding = NSSize(width: 9, height: 3)
+    nonisolated static let blockHeight: CGFloat = 52
+    nonisolated static let classification = "SEALED CONTENT"
 
     @MainActor
     init(info: ChipInfo) {
@@ -3735,48 +3760,85 @@ final class ChipCell: NSTextAttachmentCell {
     /// captured at init so a chip follows the page's typeface without
     /// the storage being rebuilt around it.
     @MainActor
-    private var label: NSAttributedString {
+    private var excerpt: NSAttributedString {
         NSAttributedString(
-            string: "\(info.excerpt) · \(info.sizeLabel)",
+            string: info.excerpt,
             attributes: [
                 .font: InkStyle.chipFont,
+                .foregroundColor: NSColor.labelColor,
+            ]
+        )
+    }
+
+    @MainActor
+    private var classificationLabel: NSAttributedString {
+        NSAttributedString(
+            string: Self.classification,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold),
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .kern: 1.15,
+            ]
+        )
+    }
+
+    @MainActor
+    private var metadata: NSAttributedString {
+        NSAttributedString(
+            string: Self.displayedSizeClass(info.sizeLabel),
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 9, weight: .regular),
                 .foregroundColor: NSColor.secondaryLabelColor,
             ]
         )
     }
 
+    /// The current core returns this closed vocabulary. Refuse to draw
+    /// an older or malformed count-shaped label: D-27 permits a size
+    /// class here and explicitly forbids a count.
+    nonisolated static func displayedSizeClass(_ label: String) -> String {
+        let normalized = label.lowercased()
+        guard ["tiny", "small", "medium", "large", "huge"].contains(normalized)
+        else { return "size unknown" }
+        return normalized
+    }
+
     override func cellSize() -> NSSize {
-        MainActor.assumeIsolated {
-            let text = label.size()
-            return NSSize(
-                width: text.width.rounded(.up) + Self.padding.width * 2,
-                height: text.height.rounded(.up) + Self.padding.height * 2
-            )
-        }
+        NSSize(width: 240, height: Self.blockHeight)
     }
 
     override func cellBaselineOffset() -> NSPoint {
-        NSPoint(x: 0, y: -(Self.padding.height + 2))
+        NSPoint(x: 0, y: -(Self.blockHeight - 4))
     }
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        let capsule = NSBezierPath(
+        let block = NSBezierPath(
             roundedRect: cellFrame.insetBy(dx: 0.5, dy: 0.5),
-            xRadius: 5,
-            yRadius: 5
+            xRadius: 8,
+            yRadius: 8
         )
-        NSColor.quaternaryLabelColor.withAlphaComponent(0.12).setFill()
-        capsule.fill()
-        NSColor.tertiaryLabelColor.withAlphaComponent(0.35).setStroke()
-        capsule.lineWidth = 1
-        capsule.stroke()
+        NSColor.textBackgroundColor.withAlphaComponent(0.34).setFill()
+        block.fill()
+        NSColor.separatorColor.setStroke()
+        block.lineWidth = 1
+        block.stroke()
         MainActor.assumeIsolated {
-            let text = label
-            let size = text.size()
-            text.draw(at: NSPoint(
-                x: cellFrame.minX + Self.padding.width,
-                y: cellFrame.midY - size.height / 2
+            let left = cellFrame.minX + 12
+            let topBaseline = cellFrame.maxY - 17
+
+            if let lock = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil) {
+                let lockRect = NSRect(x: left, y: topBaseline - 1, width: 9, height: 9)
+                lock.draw(in: lockRect)
+            }
+
+            classificationLabel.draw(at: NSPoint(x: left + 14, y: topBaseline - 2))
+            let metadataSize = metadata.size()
+            metadata.draw(at: NSPoint(
+                x: cellFrame.maxX - 12 - metadataSize.width,
+                y: topBaseline - 2
             ))
+
+            excerpt.draw(at: NSPoint(x: left, y: cellFrame.minY + 9))
         }
     }
 }

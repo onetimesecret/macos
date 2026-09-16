@@ -222,6 +222,245 @@ public struct TimeRailView: View {
     }
 }
 
+/// Durable slots placed down the leading edge. The slots remain the
+/// same named, reorderable objects as the bottom presentation; only
+/// their measure and reading direction change (D-26).
+public struct SlotRailView: View {
+    @ObservedObject var model: PageModel
+    @State private var rowFrames: [UInt64: CGRect] = [:]
+
+    public init(model: PageModel) {
+        self.model = model
+    }
+
+    public var body: some View {
+        VStack(spacing: 2) {
+            if !model.openFiles.isEmpty {
+                GroupLabel(text: "FILES")
+                ForEach(model.openFiles) { file in
+                    FileShelfRow(
+                        file: file,
+                        selected: model.selectedFile == file.id && !model.showingLedger,
+                        model: model
+                    )
+                }
+                GroupLabel(text: "PAD")
+            }
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 2) {
+                    ForEach(model.tabs) { sheet in
+                        SlotRailRow(
+                            sheet: sheet,
+                            selected: model.selection == sheet.id
+                                && model.selectedFile == nil && !model.showingLedger,
+                            model: model,
+                            beginReorder: { model.draggingTab = sheet.id },
+                            reorder: { pointerY in
+                                reorder(dragged: sheet.id, pointerY: pointerY)
+                            },
+                            endReorder: { model.draggingTab = nil }
+                        )
+                        .id(sheet.id)
+                        .opacity(model.draggingTab == sheet.id ? 0.6 : 1)
+                        .background(GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: SlotRailFramesKey.self,
+                                value: [sheet.id: geometry.frame(in: .named(Self.space))]
+                            )
+                        })
+                    }
+                }
+            }
+            Button(action: model.newPage) {
+                Image(systemName: "plus")
+                    .font(.system(size: 10, weight: .medium))
+                    .frame(width: 24, height: 20)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(TabStripView.newPageHelp(chord: model.keymap.hintKeystroke(for: .pageNew)))
+            .accessibilityLabel(Text("New page"))
+            if blankCount > 0 {
+                Text("\(blankCount) blank")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityLabel(Text("\(blankCount) blank slot\(blankCount == 1 ? "" : "s")"))
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+        .frame(width: TimeRailView.width)
+        .background(Color.panelBackground)
+        .coordinateSpace(name: Self.space)
+        .onPreferenceChange(SlotRailFramesKey.self) { rowFrames = $0 }
+    }
+
+    fileprivate static let space = "slotRail"
+
+    private var blankCount: Int {
+        model.tabs.count { !$0.hasPage }
+    }
+
+    private func reorder(dragged: UInt64, pointerY: CGFloat) {
+        let target = model.tabs
+            .filter { $0.id != dragged }
+            .count { rowFrames[$0.id].map { $0.midY < pointerY } ?? false }
+        guard let current = model.tabs.firstIndex(where: { $0.id == dragged }), target != current
+        else { return }
+        model.move(dragged, to: target)
+    }
+}
+
+private struct SlotRailRow: View {
+    let sheet: TabSummary
+    let selected: Bool
+    @ObservedObject var model: PageModel
+    let beginReorder: () -> Void
+    let reorder: (CGFloat) -> Void
+    let endReorder: () -> Void
+
+    @State private var hovering = false
+    @State private var renaming = false
+    @State private var renameDraft = ""
+    @FocusState private var renameFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 3) {
+                if sheet.paused { HoldChip(toppedUp: sheet.holdToppedUp) }
+                if renaming {
+                    renameField
+                } else {
+                    Text(sheet.title)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                reorderHandle
+                Button { model.close(sheet.id) } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
+                .accessibilityLabel(Text("Close tab"))
+            }
+            Group {
+                if sheet.hasPage {
+                    GaugeBar(
+                        fraction: sheet.fractionRemaining,
+                        paused: sheet.paused,
+                        toppedUp: sheet.holdToppedUp,
+                        lastHour: sheet.lastHour
+                    )
+                } else {
+                    EmptyRule()
+                }
+            }
+            .frame(height: 3)
+            .padding(.horizontal, 3)
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(selected ? Color.cellBackground : .clear)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .gesture(TapGesture(count: 2).onEnded { if !renaming { model.pause(sheet.id) } })
+        .simultaneousGesture(TapGesture().onEnded { if !renaming { model.select(sheet.id) } })
+        .accessibilityElement(children: renaming ? .contain : .ignore)
+        .accessibilityLabel(Text(accessibilityDescription))
+        .accessibilityValue(Text(sheet.spokenRemaining))
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .contextMenu {
+            Button("Rename tab…") { beginRename() }
+            Button(SheetTab.holdMenuTitle(
+                paused: sheet.paused, toppedUp: sheet.holdToppedUp)
+            ) { model.pause(sheet.id) }
+                .disabled(!sheet.hasPage)
+            Button(SheetTab.rungMenuTitle(hasPage: sheet.hasPage)) {
+                model.cycleRung(sheet.id)
+            }
+            if model.sync.enabled, let pageID = sheet.pageID {
+                Button(SheetTab.syncMenuTitle(enrolled: model.sync.isEnrolled(pageID))) {
+                    model.sync.enrol(page: pageID, on: !model.sync.isEnrolled(pageID))
+                }
+            }
+            Button("Close tab", role: .destructive) { model.close(sheet.id) }
+        }
+    }
+
+    private var reorderHandle: some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.system(size: 8, weight: .medium))
+            .foregroundStyle(.secondary)
+            .frame(width: 12, height: 18)
+            .contentShape(Rectangle())
+            .help("Drag to reorder tab")
+            .accessibilityLabel(Text("Reorder tab"))
+            .gesture(
+                DragGesture(minimumDistance: 4, coordinateSpace: .named(SlotRailView.space))
+                    .onChanged { value in
+                        beginReorder()
+                        reorder(value.location.y)
+                    }
+                    .onEnded { _ in endReorder() }
+            )
+    }
+
+    private func beginRename() {
+        renameDraft = sheet.title
+        renaming = true
+    }
+
+    private var renameField: some View {
+        TextField("", text: $renameDraft)
+            .textFieldStyle(.plain)
+            .font(.system(.caption, design: .monospaced))
+            .focused($renameFocused)
+            .onSubmit { endRename(committed: true) }
+            .onExitCommand { endRename(committed: false) }
+            .onChange(of: renameFocused) { focused in
+                if !focused { endRename(committed: false) }
+            }
+            .onAppear { DispatchQueue.main.async { renameFocused = true } }
+            .accessibilityLabel(Text("Tab name"))
+    }
+
+    private func endRename(committed: Bool) {
+        guard renaming else { return }
+        renaming = false
+        switch TabRename.outcome(draft: renameDraft, current: sheet.title, committed: committed) {
+        case .rename(let name): model.renameTab(sheet.id, to: name)
+        case .keep: break
+        }
+    }
+
+    private var accessibilityDescription: String {
+        guard sheet.hasPage else { return "tab, \(sheet.title), holding no page" }
+        var description = "page, \(sheet.title)"
+        if sheet.chipCount > 0 {
+            description += ", \(sheet.chipCount) sealed chip\(sheet.chipCount == 1 ? "" : "s")"
+        }
+        if sheet.paused {
+            description += sheet.holdToppedUp ? ", clock held, topped up" : ", clock held"
+        }
+        return description
+    }
+}
+
+private struct SlotRailFramesKey: PreferenceKey {
+    static let defaultValue: [UInt64: CGRect] = [:]
+
+    static func reduce(value: inout [UInt64: CGRect], nextValue: () -> [UInt64: CGRect]) {
+        value.merge(nextValue()) { _, newer in newer }
+    }
+}
+
 /// The rail's background: the panel it always was, with a faint reading
 /// of the roll drawn on it (issue #131).
 ///
@@ -526,7 +765,7 @@ struct TimeUnitTab: View {
     }
 }
 
-private extension View {
+extension View {
     @ViewBuilder
     func accessibilityNewPageAction(when offered: Bool, action: @escaping () -> Void) -> some View {
         if offered {

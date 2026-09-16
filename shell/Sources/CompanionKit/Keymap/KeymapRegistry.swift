@@ -26,7 +26,7 @@ extension PageModel {
         switch command {
         case .pageNew:
             // ⌘N asks for a page to type on now. With the strip that is
-            // a new slot; with the days down the side it is today's
+            // a new slot; when pages are organized by day it is today's
             // page, which may already be there, and a second page on
             // today when the person is already on one (issues #79, #158).
             // One command with two
