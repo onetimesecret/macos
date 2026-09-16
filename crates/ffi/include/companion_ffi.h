@@ -1218,8 +1218,8 @@ char *companion_file_open_error_json(CompanionHandle *handle);
 /*
  * Close the file and drop its buffer. The draft goes with it: a draft
  * never outlives its tab, so reopening the file later never brings back
- * old edits. The Save, Discard, Cancel review for a dirty file is the
- * shell's and happens before this call.
+ * old edits. Any dirty-close decision is settled in the shell before
+ * this call.
  */
 bool companion_file_close(CompanionHandle *handle, uint64_t file);
 

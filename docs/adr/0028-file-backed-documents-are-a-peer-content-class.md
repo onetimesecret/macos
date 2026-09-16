@@ -277,10 +277,6 @@ and redundant.
 - **2026-09-05:** The initial implementation warned on quit with dirty
   files, using Quit Anyway and Cancel rather than a save or discard
   sheet (`QuitPrompt`).
-- **2026-09-16:** The proposed interaction clauses were aligned with the
-  accepted D-14 and D-19 record for issue #172. Dirty close is inline,
-  Take theirs is immediate and undoable, and quit asks nothing. The ADR
-  remains proposed.
 - **2026-09-05:** The two clauses no test in this repository can reach,
   the staged drafts clause across a `kill -9` and the resealing clause
   across the automatic content erase, were verified on hardware. All
@@ -291,3 +287,7 @@ and redundant.
   removed (issue #158, ADR-0017's history). The exemption stands on its
   own terms: a file takes no slot on the strip, whatever the strip
   holds. The body above keeps its original wording.
+- **2026-09-16:** The proposed interaction clauses were aligned with the
+  accepted D-14 and D-19 record for issue #172. Dirty close is inline,
+  Take theirs is immediate and undoable, and quit asks nothing. The ADR
+  remains proposed.
