@@ -1038,11 +1038,40 @@ final class DayStackView: NSView {
 
     /// The spoken countdowns tick and the titles follow the page's
     /// first line, so every pass refreshes what the gutters say without
-    /// touching what the roll is made of.
+    /// touching what the roll is made of. `stampFormat` is one such
+    /// change: a pattern edited in Settings publishes back into an
+    /// unchanged projection, so the `dayText` the header prints must be
+    /// re-derived here rather than only in the assembly pass, or the
+    /// mounted headers keep their old stamps until the roll rebuilds
+    /// for another reason (Greptile P1 #1).
     private func refreshGutters() {
+        let units = model.timeUnits.units
+        let unitByBucket = Dictionary(uniqueKeysWithValues: units.map { ($0.bucket, $0) })
+        var stampsByBucket: [Int: [String]] = [:]
+        for unit in units where !unit.pageIDs.isEmpty {
+            let summaries = unit.tabIDs.map { summary(ofTab: $0) }
+            stampsByBucket[unit.bucket] = StreamNavigator.stamps(
+                createdMs: summaries.map { $0?.pageCreatedMs }, format: model.stampFormat
+            )
+        }
         for row in rows {
-            guard let tab = row.header.tab else { continue }
-            row.header.refresh(summary: summary(ofTab: tab))
+            let unit = unitByBucket[row.bucket]
+            let spokenLabel = unit?.spokenLabel ?? ""
+            let dayText: String
+            let rowSummary: TabSummary?
+            if let page = row.page, let unit,
+               let index = unit.pageIDs.firstIndex(of: page)
+            {
+                let stamp = stampsByBucket[unit.bucket]?[index] ?? ""
+                dayText = DayHeaderView.dayText(
+                    spokenLabel: spokenLabel, stamp: stamp, firstOfDay: index == 0
+                )
+                rowSummary = summary(ofTab: unit.tabIDs[index])
+            } else {
+                dayText = DayHeaderView.dayText(spokenLabel: spokenLabel, stamp: nil)
+                rowSummary = row.header.tab.flatMap { summary(ofTab: $0) }
+            }
+            row.header.refresh(dayText: dayText, summary: rowSummary)
         }
     }
 }
@@ -1234,16 +1263,23 @@ final class DayHeaderView: NSView {
 
     func show(dayText: String, spokenLabel: String, mark: Mark, summary: TabSummary?) {
         self.mark = mark
-        dayField.stringValue = dayText
         self.spokenLabel = spokenLabel
-        refresh(summary: summary)
+        refresh(dayText: dayText, summary: summary)
     }
 
     private var spokenLabel = ""
 
     /// The words, re-read from the current summary. The countdown moves
-    /// every second and the title follows the page's own first line, so
-    /// this runs on every pass while `show` runs only on an assembly.
+    /// every second, the title follows the page's own first line, and
+    /// the stamp beside the day follows `PageModel.stampFormat`; this
+    /// runs on every pass while `show` runs only on an assembly, so a
+    /// pattern edit that leaves the roll's structure alone still moves
+    /// the stamp on every gutter.
+    func refresh(dayText: String, summary: TabSummary?) {
+        dayField.stringValue = dayText
+        refresh(summary: summary)
+    }
+
     func refresh(summary: TabSummary?) {
         if let tabBeingRenamed, tabBeingRenamed != summary?.id {
             returnKeyboard()
@@ -1442,6 +1478,10 @@ final class DayHeaderView: NSView {
     /// Whether the title field is drawn, readable so the roll's tests
     /// can pin what a gutter shows without a window.
     var titleIsDrawn: Bool { !titleField.isHidden }
+
+    /// The day text as the gutter is drawing it, readable so a test
+    /// can pin what the header shows across a stamp-format edit.
+    var dayText: String { dayField.stringValue }
 
     /// The draft as the field holds it, readable and settable so a test
     /// can stand in for the keyboard.

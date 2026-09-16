@@ -925,6 +925,47 @@ final class DayScrollTests: XCTestCase {
         )
     }
 
+    /// A pattern edited in Settings publishes back into an unchanged
+    /// projection: the roll rebuilds nothing (Greptile P1 #1) but the
+    /// mounted headers must still say the new pattern's stamp, because
+    /// the assembly pass is where the old code put dayText. The
+    /// ordinary pass has to move it now.
+    func testAStampFormatEditRolls_MountedGuttersWithoutRebuilding() throws {
+        let model = try makeModel()
+        let only = try page(in: model, saying: "credentials")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: only),
+            selectedPage: only,
+            readOnly: false
+        )
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let before = header.dayText
+        let rebuildsBefore = roll.stack.rebuilds
+
+        model.stampFormat = StreamNavigator.StampFormat(short: "h:mm a", fine: "h:mm:ss a")
+        // The same signature is the point: the roll's structure did
+        // not change, only the reading of its stamps did.
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: only),
+            selectedPage: only,
+            readOnly: false
+        )
+
+        XCTAssertEqual(
+            roll.stack.rebuilds, rebuildsBefore,
+            "the roll rebuilt when no structural fact changed"
+        )
+        XCTAssertNotEqual(
+            header.dayText, before,
+            "the mounted gutter kept the old pattern's stamp across a settings edit"
+        )
+        XCTAssertTrue(
+            header.dayText.hasSuffix("AM") || header.dayText.hasSuffix("PM"),
+            "the new pattern's meridiem is missing from the gutter: \(header.dayText)"
+        )
+    }
+
     /// The titles the strip's context menu offers a slot with a page,
     /// in its order (TabStripView.swift, `SheetTab.contextMenu`). That
     /// menu is SwiftUI and cannot be walked, so its literal titles are
