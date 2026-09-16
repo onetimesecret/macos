@@ -330,6 +330,41 @@ final class SyncSurfaceTests: XCTestCase {
         XCTAssertEqual(word(gate: .attached, peers: 1, enrolled: 2)?.text, "synced")
     }
 
+    func testRefreshedRosterPeerPresenceOverridesTheAttachCount() {
+        let own = SyncDevice(
+            fingerprint: "this-mac", label: "", thisDevice: true, verified: true,
+            pairedWallMs: nil, attachedMs: nil)
+        let awake = SyncDevice(
+            fingerprint: "peer", label: "laptop", thisDevice: false, verified: true,
+            pairedWallMs: 1_000, attachedMs: 2_000)
+        let away = SyncDevice(
+            fingerprint: "peer", label: "laptop", thisDevice: false, verified: true,
+            pairedWallMs: 1_000, attachedMs: nil)
+
+        let afterPeerWakes = SyncController.currentPeers(
+            devices: [own, awake], attachFallback: 0)
+        XCTAssertEqual(afterPeerWakes, 1)
+        XCTAssertEqual(word(gate: .attached, peers: afterPeerWakes)?.text, "synced")
+
+        let afterPeerLeaves = SyncController.currentPeers(
+            devices: [own, away], attachFallback: 1)
+        XCTAssertEqual(afterPeerLeaves, 0)
+        XCTAssertEqual(word(gate: .attached, peers: afterPeerLeaves)?.text, "sync waiting")
+    }
+
+    func testAttachPeerCountStandsInUntilTheRosterIsReadable() {
+        let unanchoredPeer = SyncDevice(
+            fingerprint: "peer", label: "laptop", thisDevice: false, verified: true,
+            pairedWallMs: 1_000, attachedMs: 2_000)
+
+        XCTAssertEqual(
+            SyncController.currentPeers(devices: [], attachFallback: 2), 2,
+            "an unavailable roster must not erase the attach answer")
+        XCTAssertEqual(
+            SyncController.currentPeers(devices: [unanchoredPeer], attachFallback: 0), 0,
+            "a roster with no own-device anchor is not authoritative")
+    }
+
     func testACoreWithNoGateLeavesTheShellsOwnReadingStanding() {
         // A core built before the gate existed, or one a version ahead
         // naming a state this build never heard of.
