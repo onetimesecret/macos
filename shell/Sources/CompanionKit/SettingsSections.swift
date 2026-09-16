@@ -304,9 +304,6 @@ public struct GeneralSettingsView: View {
         #endif
     }
 
-    /// The toggle speaks to `SMAppService` directly; a refused
-    /// registration reverts the switch to the system's actual state
-    /// rather than showing a wish as a fact.
     /// What the two time patterns cost and do, in the caption's own
     /// words (D-26).
     static let stampFormatCaption =
@@ -323,6 +320,9 @@ public struct GeneralSettingsView: View {
         )
     }
 
+    /// The toggle speaks to `SMAppService` directly; a refused
+    /// registration reverts the switch to the system's actual state
+    /// rather than showing a wish as a fact.
     private var loginBinding: Binding<Bool> {
         Binding(
             get: { launchAtLogin },
