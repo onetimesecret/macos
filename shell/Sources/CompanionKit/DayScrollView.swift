@@ -148,13 +148,20 @@ public struct DayScrollView: NSViewRepresentable {
             model: model, coordinator: coordinator, emptyHint: emptyHint
         )
         // A roll with nothing laid out in it has no proportions to
-        // report, and the rail's minimap must not spend this pass
+        // report, and the rail's navigator must not spend this pass
         // drawing the shape of the roll it is replacing (issue #131).
         // The claim also names this stack as the one the rail listens
         // to, so the roll it replaces cannot answer for it on the way
-        // out. The first `relayout` publishes the real measurement a
-        // moment later.
-        model.rollGeometry.claim(by: stack)
+        // out, and hands over the two things the rail may ask of a
+        // roll: a jump to an offset, and a wheel that turned over the
+        // rail. Both weak, so a torn-down roll answers with nothing.
+        // The first `relayout` publishes the real measurement a moment
+        // later.
+        model.rollGeometry.claim(
+            by: stack,
+            scroller: { [weak stack] offset in stack?.scroll(toDocumentOffset: offset) },
+            wheel: { [weak scroll] event in scroll?.scrollWheel(with: event) }
+        )
         scroll.documentView = stack
         stack.observeRoll()
         // The clip the wrap geometry is levelled against is the roll's,
@@ -190,10 +197,10 @@ final class DayStackView: NSView {
         /// go.
         let body: NSView
         /// The day this row was laid out for, as the projection counts
-        /// them. Carried so the rail's minimap can be told which day
+        /// them. Carried so the rail's navigator can be told which day
         /// each stretch of the roll belongs to (issue #131); a day
-        /// holding two pages has two rows and one bucket, which is the
-        /// fold `RollGeometry.merging` performs.
+        /// holding two pages has two rows and one bucket, and the
+        /// navigator draws two nodes under one day's words.
         let bucket: Int
         /// The page under this header, or nil for the empty Today
         /// place, which is a place and not a page (ADR-0017).
@@ -465,11 +472,15 @@ final class DayStackView: NSView {
                 // other day exists because a live page is keyed to it.
                 let header = pooledHeader(at: built.count)
                 header.show(
-                    dayText: unit.label,
+                    dayText: DayHeaderView.dayText(spokenLabel: unit.spokenLabel, stamp: nil),
                     spokenLabel: unit.spokenLabel,
                     mark: DayHeaderView.mark(isFirstOnRoll: isFirstOnRoll, isFirstOfDay: true),
                     summary: nil
                 )
+                // The empty place is where the surface stands only by
+                // elimination: nothing else on the roll holds the
+                // selection.
+                header.isActive = selectedPage == nil
                 let place = todayPlace ?? EmptyTodayView(model: model, hint: emptyHint)
                 emptyToday = place
                 built.append(Row(
@@ -485,16 +496,19 @@ final class DayStackView: NSView {
             for (index, page) in unit.pageIDs.enumerated() {
                 let firstOfDay = index == 0
                 let header = pooledHeader(at: built.count)
+                let summary = summary(ofTab: unit.tabIDs[index])
                 header.show(
                     dayText: DayHeaderView.dayText(
-                        unitLabel: unit.label, isFirstOfDay: firstOfDay
+                        spokenLabel: unit.spokenLabel,
+                        stamp: summary?.pageCreatedMs.map { StreamNavigator.stamp(createdMs: $0) }
                     ),
                     spokenLabel: unit.spokenLabel,
                     mark: DayHeaderView.mark(
                         isFirstOnRoll: isFirstOnRoll && firstOfDay, isFirstOfDay: firstOfDay
                     ),
-                    summary: summary(ofTab: unit.tabIDs[index])
+                    summary: summary
                 )
+                header.isActive = page == selectedPage
                 wantedPages.insert(page)
                 let body: NSView = page == selectedPage
                     ? editorView(for: page)
@@ -794,15 +808,22 @@ final class DayStackView: NSView {
 
     // MARK: What the rail draws behind the days
 
-    /// Where each day now stands and how much of the roll is on screen
-    /// (issue #131).
+    /// Where each page now stands, how its lines fall, and how much of
+    /// the roll is on screen (issue #131).
     ///
     /// Read off the frames this pass just set rather than computed a
-    /// second way, so the bars behind the rail's rows and the regions
-    /// under the reader's eye cannot disagree about how much page a day
-    /// holds. A day's span runs from the top of its first header to the
-    /// bottom of its last page, the perforation included, because the
-    /// tear is part of what a reader scrolls past.
+    /// second way, so the nodes on the rail and the regions under the
+    /// reader's eye cannot disagree about where a page is. A row's span
+    /// runs from the top of its header to the bottom of its body, the
+    /// perforation included, because the tear is part of what a reader
+    /// scrolls past. One extent per row, a day holding two pages
+    /// measuring as two, because the navigator draws a node per page.
+    ///
+    /// The lines are the layout manager's own fragments, as rectangles:
+    /// where each begins down the roll and what share of the wrap width
+    /// it used. Geometry only. No glyph, run or string is read here,
+    /// so the slivers the rail draws from them can say a page has a
+    /// long line and never what the line says.
     ///
     /// Internal and readable so a test can mount the roll and ask it
     /// what it measured, without waiting on the publication's hop
@@ -810,19 +831,76 @@ final class DayStackView: NSView {
     var measuredGeometry: RollGeometry {
         guard let scroll = enclosingScrollView else { return .unmeasured }
         let clip = scroll.contentView
-        let spans = rows.map { row in
+        let extents = rows.map { row in
             RollGeometry.Extent(
                 bucket: row.bucket,
+                page: row.page,
                 top: row.header.frame.minY,
-                height: max(row.body.frame.maxY - row.header.frame.minY, 0)
+                height: max(row.body.frame.maxY - row.header.frame.minY, 0),
+                lines: Self.lineMarks(of: row.body as? NSTextView)
             )
         }
         return RollGeometry(
-            extents: RollGeometry.merging(spans),
+            extents: extents,
             documentHeight: frame.height,
             viewportTop: clip.bounds.origin.y,
             viewportHeight: clip.bounds.height
         )
+    }
+
+    /// A page's laid-out lines as rectangles in document coordinates.
+    /// Empty for a row with no text view under it, and for a view whose
+    /// layout has nothing in it yet.
+    static func lineMarks(of text: NSTextView?) -> [RollGeometry.LineMark] {
+        guard let text, let layoutManager = text.layoutManager,
+              let container = text.textContainer else { return [] }
+        let wrap = max(container.size.width - container.lineFragmentPadding * 2, 1)
+        let origin = text.frame.minY + text.textContainerInset.height
+        var marks: [RollGeometry.LineMark] = []
+        let glyphs = layoutManager.glyphRange(for: container)
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { _, used, _, _, _ in
+            marks.append(RollGeometry.LineMark(
+                y: origin + used.minY, width: min(1, max(0, used.width / wrap))
+            ))
+        }
+        return marks
+    }
+
+    // MARK: What the rail asks of the roll
+
+    /// Move the clip to a document offset: a node or the bare track was
+    /// clicked on the rail. Clamped to the document, so a click past
+    /// the last page lands on the last page rather than in the elastic.
+    /// Over the stance's own 160 ms, and instantly for a reader who
+    /// asked for less motion, which is the surface's one motion rule
+    /// (D-02). The bounds change notifications the roll already listens
+    /// to fire along the way, so the band on the rail travels with the
+    /// clip rather than jumping after it. Instant as well in a window
+    /// nobody can see, which is a test's, where an animation would be
+    /// a frame nobody draws and a clip that has not moved yet.
+    func scroll(toDocumentOffset offset: CGFloat) {
+        guard let scroll = enclosingScrollView else { return }
+        let clip = scroll.contentView
+        let floor = max(frame.height - clip.bounds.height, 0)
+        let target = NSPoint(x: clip.bounds.origin.x, y: min(max(offset, 0), floor))
+        let duration = StreamNavigator.jumpDuration(
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
+        guard duration > 0, window?.isVisible == true else {
+            clip.scroll(to: target)
+            scroll.reflectScrolledClipView(clip)
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            clip.animator().setBoundsOrigin(target)
+        } completionHandler: { [weak scroll] in
+            MainActor.assumeIsolated {
+                guard let scroll else { return }
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+        }
     }
 
     /// Hand the measurement to the rail. The model's own observable
@@ -973,12 +1051,36 @@ final class DayHeaderView: NSView {
     private let model: PageModel
     private let dayField = NSTextField(labelWithString: "")
     private let titleField = NSTextField(labelWithString: "")
+    /// The retained words for a page past the window, and otherwise
+    /// empty: the countdown that used to stand here is the gauge now
+    /// (the stream navigator's "retention words instead of countdowns").
     private let remainingField = NSTextField(labelWithString: "")
+    /// The page's remaining life as geometry, the strip's own
+    /// `GaugeBar` hosted where the countdown text stood, so a gutter
+    /// and a tab draw one vocabulary (held is dashed, the last hour is
+    /// hatched ember) rather than two that drift. Hidden for the empty
+    /// place and for a page past the window.
+    private let gauge = NSHostingView(
+        rootView: GaugeBar(fraction: 0, paused: false, lastHour: false)
+    )
 
     /// What this header draws across its top. Readable so a test can
     /// ask the mounted roll where its perforations are rather than
     /// inferring them from a height.
     private(set) var mark: Mark = .none
+
+    /// The page under this gutter is the one the surface is showing:
+    /// the rule under the checkpoint's words draws in ember, and the
+    /// words in ink rather than the faint label. Set by the stack on
+    /// every assembly, the selection being part of what an assembly is
+    /// keyed on.
+    var isActive = false {
+        didSet {
+            guard isActive != oldValue else { return }
+            dayField.textColor = isActive ? .labelColor : .tertiaryLabelColor
+            needsDisplay = true
+        }
+    }
 
     /// The slot the verbs are addressed to, or nil for the empty Today
     /// place, which has no page and therefore nothing to rename, hold,
@@ -1009,18 +1111,24 @@ final class DayHeaderView: NSView {
     init(model: PageModel) {
         self.model = model
         super.init(frame: .zero)
-        dayField.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+        dayField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         dayField.textColor = .tertiaryLabelColor
         titleField.font = NSFont.systemFont(ofSize: 11)
         titleField.textColor = .secondaryLabelColor
         titleField.usesSingleLineMode = true
         titleField.cell?.lineBreakMode = .byTruncatingTail
-        remainingField.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        remainingField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         remainingField.textColor = .tertiaryLabelColor
         remainingField.alignment = .right
+        // The host takes the frame it is given and asks for nothing
+        // back: a hosting view left to size itself would set its own
+        // frame from the bar's ideal size, which is no size at all.
+        gauge.sizingOptions = []
+        gauge.isHidden = true
         addSubview(dayField)
         addSubview(titleField)
         addSubview(remainingField)
+        addSubview(gauge)
         setAccessibilityElement(true)
     }
 
@@ -1043,12 +1151,26 @@ final class DayHeaderView: NSView {
         return isFirstOfDay ? .tear : .hairline
     }
 
-    /// The relative label, which only a day's first page carries. The
-    /// second page born on a day is under the same label as the first,
-    /// so repeating it would read as two days rather than as one day's
-    /// two pages. Pure, and empty means the gutter draws no day at all.
-    nonisolated static func dayText(unitLabel: String, isFirstOfDay: Bool) -> String {
-        isFirstOfDay ? unitLabel : ""
+    /// The checkpoint's words: the day and the page's birth minute,
+    /// "today · 0914-1139", on every gutter. Every page carries the
+    /// day rather than only a day's first, because the minute is what
+    /// tells two pages on one day apart and the day is what the minute
+    /// is read against; the perforation above still says where the day
+    /// changed. The empty place has no minute, so it says the day alone.
+    /// Pure, so the shape is an assertion.
+    nonisolated static func dayText(spokenLabel: String, stamp: String?) -> String {
+        guard let stamp, !stamp.isEmpty else { return spokenLabel }
+        return "\(spokenLabel) · \(stamp)"
+    }
+
+    /// Past the seven day window, a gutter says the page is retained
+    /// where it would draw the gauge (`StreamNavigator.retainedLabel`).
+    /// Pure, on the day the summary reports.
+    nonisolated static func retainedText(pageDayOffset: Int?) -> String {
+        guard let pageDayOffset, StreamNavigator.isTrailing(bucket: pageDayOffset) else {
+            return ""
+        }
+        return StreamNavigator.retainedLabel
     }
 
     /// What VoiceOver hears at a perforation: which day it is, what the
@@ -1094,22 +1216,41 @@ final class DayHeaderView: NSView {
         paused = summary?.paused ?? false
         toppedUp = summary?.holdToppedUp ?? false
         pageID = summary?.pageID
+        spokenRemainingLabel = summary.map { $0.hasPage ? $0.remainingLabel : "" } ?? ""
         // Not while a draft is in the field: this pass runs every
         // second, and the title it would write is the one the rename
         // is there to replace.
         if titleBeforeRename == nil {
             titleField.stringValue = summary?.title ?? ""
         }
-        remainingField.stringValue = summary.map { $0.hasPage ? $0.remainingLabel : "" } ?? ""
+        let retained = Self.retainedText(pageDayOffset: summary?.pageDayOffset)
+        remainingField.stringValue = retained
+        if let summary, summary.hasPage, retained.isEmpty {
+            gauge.rootView = GaugeBar(
+                fraction: summary.fractionRemaining,
+                paused: summary.paused,
+                toppedUp: summary.holdToppedUp,
+                lastHour: summary.lastHour
+            )
+            gauge.toolTip = summary.spokenRemaining
+            gauge.isHidden = false
+        } else {
+            gauge.isHidden = true
+        }
         updateAccessibilityLabel()
         needsDisplay = true
     }
+
+    /// The countdown VoiceOver hears, kept beside the gauge that
+    /// replaced it on screen: the words are what a gauge owes (D-11).
+    private var spokenRemainingLabel = ""
 
     private func updateAccessibilityLabel() {
         setAccessibilityLabel(Self.spokenHeader(
             spokenLabel: spokenLabel,
             title: titleField.stringValue,
-            remainingLabel: remainingField.stringValue
+            remainingLabel: remainingField.stringValue.isEmpty
+                ? spokenRemainingLabel : remainingField.stringValue
         ))
     }
 
@@ -1122,13 +1263,21 @@ final class DayHeaderView: NSView {
         dayField.sizeToFit()
         remainingField.sizeToFit()
         let dayWidth = dayField.frame.width
-        let remainingWidth = remainingField.frame.width
+        // The gauge and the retained words share the trailing seat:
+        // whichever is showing is what the title makes room for.
+        let remainingWidth = gauge.isHidden
+            ? remainingField.frame.width : StreamNavigator.Metrics.gaugeWidth
         dayField.frame = NSRect(
             x: Self.margin, y: top + 3, width: dayWidth, height: Self.gutterHeight - 6
         )
         remainingField.frame = NSRect(
-            x: max(bounds.width - Self.margin - remainingWidth, 0), y: top + 3,
-            width: remainingWidth, height: Self.gutterHeight - 6
+            x: max(bounds.width - Self.margin - remainingField.frame.width, 0), y: top + 3,
+            width: remainingField.frame.width, height: Self.gutterHeight - 6
+        )
+        gauge.frame = NSRect(
+            x: max(bounds.width - Self.margin - StreamNavigator.Metrics.gaugeWidth, 0),
+            y: top + (Self.gutterHeight - 3) / 2,
+            width: StreamNavigator.Metrics.gaugeWidth, height: 3
         )
         let titleX = Self.margin + (dayWidth > 0 ? dayWidth + 8 : 0)
         titleField.frame = NSRect(
@@ -1150,6 +1299,20 @@ final class DayHeaderView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        if isActive {
+            // The rule under the page the surface is showing: ember,
+            // 1.5 points, one of the three things the rail spends ember
+            // on (with the active node and the band's bar), and paired
+            // with the words above it drawn in ink rather than faint,
+            // so the colour is never the only carrier (D-03).
+            let rule = NSBezierPath()
+            let y = bounds.height - 0.75
+            rule.move(to: NSPoint(x: Self.margin, y: y))
+            rule.line(to: NSPoint(x: max(bounds.width - Self.margin, Self.margin), y: y))
+            rule.lineWidth = 1.5
+            NSColor.ember.setStroke()
+            rule.stroke()
+        }
         guard mark != .none else { return }
         let y = (Self.tearReserve / 2).rounded() + 0.5
         let path = NSBezierPath()

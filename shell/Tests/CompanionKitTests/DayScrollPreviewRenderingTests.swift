@@ -78,7 +78,8 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
             chipCount: tab.chipCount,
             lastHour: tab.lastHour,
             pageHasContent: tab.pageHasContent,
-            pageDayOffset: day
+            pageDayOffset: day,
+            pageCreatedMs: tab.pageCreatedMs
         )
     }
 
@@ -455,10 +456,9 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
         let beforeDocumentHeight = roll.stack.frame.height
         let beforeMeasured = roll.stack.measuredGeometry
         let beforePublished = model.rollGeometry.geometry
-        let beforeBars = RailMinimap.bars(of: beforeMeasured, in: 200)
         XCTAssertFalse(
-            beforeBars.isEmpty,
-            "the fixture failed to hand the minimap any bars to compare"
+            beforeMeasured.extents.isEmpty,
+            "the fixture failed to hand the navigator any extents to compare"
         )
 
         model.previewRendering = .never
@@ -481,16 +481,16 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
         )
         XCTAssertNotEqual(
             afterMeasured.extents.map(\.height), beforeMeasured.extents.map(\.height),
-            "per-day extents did not follow the newly styled row heights"
+            "per-page extents did not follow the newly styled row heights"
         )
         XCTAssertNotEqual(
             model.rollGeometry.geometry, beforePublished,
             "the published RollGeometry did not follow the remeasurement"
         )
-        let afterBars = RailMinimap.bars(of: afterMeasured, in: 200)
         XCTAssertNotEqual(
-            afterBars.map(\.height), beforeBars.map(\.height),
-            "the minimap's proportions did not update when the roll's did"
+            afterMeasured.extents.map { $0.lines.map(\.y) },
+            beforeMeasured.extents.map { $0.lines.map(\.y) },
+            "the navigator's line slivers did not update when the roll's lines did"
         )
     }
 

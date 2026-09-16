@@ -23,7 +23,7 @@ final class RollGeometryModelTests: XCTestCase {
 
     private func measured(_ documentHeight: CGFloat) -> RollGeometry {
         RollGeometry(
-            extents: [RollGeometry.Extent(bucket: 0, top: 0, height: documentHeight)],
+            extents: [RollGeometry.Extent(bucket: 0, page: 1, top: 0, height: documentHeight)],
             documentHeight: documentHeight,
             viewportTop: 0,
             viewportHeight: 100

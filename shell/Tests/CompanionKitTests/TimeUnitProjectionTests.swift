@@ -46,7 +46,8 @@ final class TimeUnitProjectionTests: XCTestCase {
             chipCount: 0,
             lastHour: lastHour,
             pageHasContent: page == nil ? false : content,
-            pageDayOffset: page == nil ? nil : day
+            pageDayOffset: page == nil ? nil : day,
+            pageCreatedMs: page == nil ? nil : 1_757_849_940_000
         )
     }
 

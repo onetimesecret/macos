@@ -40,7 +40,8 @@ final class TimeRailTests: XCTestCase {
             chipCount: 0,
             lastHour: false,
             pageHasContent: page == nil ? false : content,
-            pageDayOffset: page == nil ? nil : day
+            pageDayOffset: page == nil ? nil : day,
+            pageCreatedMs: page == nil ? nil : 1_757_849_940_000
         )
     }
 
