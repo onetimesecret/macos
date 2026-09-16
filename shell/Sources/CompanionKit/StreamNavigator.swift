@@ -202,13 +202,24 @@ public enum StreamNavigator {
         var finePattern: String { fine.isEmpty ? Self.standard.fine : fine }
     }
 
-    /// The page's birth time in local time, in the pattern given.
+    /// The page's birth time in local time, in the pattern given. A
+    /// pattern that formats to the empty string (pure literals, an
+    /// unbalanced quote, anything DateFormatter refuses to render)
+    /// falls through to the standard pattern of the same class as the
+    /// caller's, on the same "empty means the standard one" rule
+    /// `StampFormat` states for a blank pattern: the reader still gets
+    /// a stamp rather than an empty gutter.
     public static func stamp(
         createdMs: UInt64, pattern: String = StampFormat.standard.short,
         timeZone: TimeZone = .current
     ) -> String {
         let formatter = StampFormatterCache.formatter(pattern: pattern, timeZone: timeZone)
-        return formatter.string(from: Date(timeIntervalSince1970: Double(createdMs) / 1000))
+        let date = Date(timeIntervalSince1970: Double(createdMs) / 1000)
+        let reading = formatter.string(from: date)
+        guard reading.isEmpty, pattern != StampFormat.standard.short else { return reading }
+        let fallback = StampFormatterCache.formatter(
+            pattern: StampFormat.standard.short, timeZone: timeZone)
+        return fallback.string(from: date)
     }
 
     /// The stamps for one day's pages, in the day's order: the short

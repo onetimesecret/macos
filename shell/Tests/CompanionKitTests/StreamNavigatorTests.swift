@@ -132,6 +132,17 @@ final class StreamNavigatorTests: XCTestCase {
             nodes([slot(tab: 1, page: 11)], stampFormat: twelveHour).map(\.stamp), ["11:39 AM"])
     }
 
+    /// A pattern the formatter cannot render (pure literals, an
+    /// unbalanced quote) falls through to the standard short pattern
+    /// on the same "empty means the standard one" rule a blank pattern
+    /// takes, so a broken setting still shows a stamp rather than an
+    /// empty gutter.
+    func testAMalformedPatternFallsThroughToTheStandardStamp() {
+        let standard = StreamNavigator.stamp(createdMs: born, timeZone: utc)
+        XCTAssertEqual(
+            StreamNavigator.stamp(createdMs: born, pattern: "'", timeZone: utc), standard)
+    }
+
     /// A placeholder title is the stamp again in the core's own shape,
     /// so a node carries none and its tooltip has no second line; a
     /// typed name and a first line are carried.
