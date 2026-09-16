@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The side rail is a stream navigator** (Days + side; `companion-ffi`
+  0.30.0). Every live page is a node on one track down the rail, newest
+  at the top: a day's first page carries the day's words, every page
+  carries the minute it was made ("0914-1139"), the page the surface
+  is on draws its dot, its stretch of track and its gauge, and days
+  with no page are noted where they fall ("2 empty days"). A page past
+  the seven day window says "7d+ · retained" under a dashed track. The
+  part of the roll on screen is a band beside the nodes, with the
+  pages' lines drawn as slivers (rectangles, never glyphs) so a long
+  page reads as one; a click on a node selects and scrolls to the page,
+  a click on bare track scrolls to the stretch clicked, and a wheel
+  over the rail scrolls the roll. The + sits on the PAD heading. The
+  rail is 110 wide, up from 96. This replaces the day rows and the
+  faint minimap behind them (issue #131). The tab summary now carries
+  `page_created_ms`, the page's own birth stamp, for the minute.
+
+- **A day's gutter says the day and the minute, and draws a gauge.**
+  Each page's gutter on the roll reads "today · 0914-1139" and carries
+  the strip's own gauge where the countdown text stood; a page past
+  the window reads "7d+ · retained" instead. The page the surface is
+  on underlines its gutter in ember, with its words in ink rather than
+  faint, so the colour is never the only carrier.
+
 - **A tab is renamed in place** (D-14, issue #172). Rename tab… on the
   strip and Rename page… on a day's gutter turn the title into a field
   where it stands: return commits, escape or the keyboard going
