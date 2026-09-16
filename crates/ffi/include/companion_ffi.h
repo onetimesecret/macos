@@ -272,7 +272,19 @@ bool companion_tab_set_title(CompanionHandle *handle, uint64_t tab,
  *   title (the tab's label, resolved three ways: the name the user
  *     typed; else the live page's derived title, its first non-empty
  *     ink line with markdown stripped, capped at 80 characters; else
- *     "MMDD-HHmm" from the TAB's creation stamp in LOCAL time),
+ *     "MMDD-HHmm" from the TAB's creation stamp in LOCAL time. A page
+ *     that opens with a fenced code block has its derived title taken
+ *     from the first non-empty line *inside* the fence rather than the
+ *     fence's language word (D-48), since a language name is markup
+ *     and not the writer's own line),
+ *   title_source (string enum, one of "name" | "derived" |
+ *     "placeholder": which of the three steps above answered. The
+ *     shell hides the title beside a gutter when the source is
+ *     "derived" (the same first line stands directly under the gutter
+ *     already) or "placeholder" (the gutter's stamp is that string in
+ *     the core's own shape), and draws it only for "name". The core
+ *     still emits the placeholder as text so a caller with no gutter
+ *     of its own — the strip, the ledger — has something to draw),
  *   rung_code (CompanionRung), rung_label ("8h"), both the tab's,
  *   remaining_ms, remaining_label ("3h 40m"), spoken_remaining ("about
  *     3 hours remaining", the VoiceOver value), fraction_remaining
