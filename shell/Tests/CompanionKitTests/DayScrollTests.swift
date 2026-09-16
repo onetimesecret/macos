@@ -740,6 +740,55 @@ final class DayScrollTests: XCTestCase {
 
     // MARK: The gutter's verbs
 
+    func testReassigningAPooledHeaderCancelsItsRenameWithoutRenamingTheReplacement() throws {
+        let model = try makeModel()
+        model.newPage()
+        let firstID = try XCTUnwrap(model.selection)
+        model.renameTab(firstID, to: "first page")
+        model.newPage()
+        let secondID = try XCTUnwrap(model.selection)
+        model.renameTab(secondID, to: "second page")
+        let first = try XCTUnwrap(model.tabs.first { $0.id == firstID })
+        let second = try XCTUnwrap(model.tabs.first { $0.id == secondID })
+        let header = DayHeaderView(model: model)
+        header.show(dayText: "today", spokenLabel: "today", mark: .none, summary: first)
+
+        header.beginRename()
+        header.renameDraft = "draft for first"
+        header.refresh(summary: second)
+        header.endRename(committed: true)
+
+        XCTAssertEqual(model.tabs.first { $0.id == firstID }?.title, "first page")
+        XCTAssertEqual(model.tabs.first { $0.id == secondID }?.title, "second page")
+        XCTAssertEqual(header.renameDraft, "second page")
+    }
+
+    func testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft() throws {
+        let model = try makeModel()
+        model.newPage()
+        let tabID = try XCTUnwrap(model.selection)
+        model.renameTab(tabID, to: "original title")
+        let summary = try XCTUnwrap(model.tabs.first { $0.id == tabID })
+        let header = DayHeaderView(model: model)
+        header.show(dayText: "today", spokenLabel: "today", mark: .none, summary: summary)
+
+        header.beginRename()
+        header.renameDraft = "visible draft"
+
+        let expected = DayHeaderView.spokenHeader(
+            spokenLabel: "today",
+            title: "visible draft",
+            remainingLabel: summary.remainingLabel
+        )
+        XCTAssertEqual(header.accessibilityLabel(), expected)
+
+        header.refresh(summary: summary)
+        XCTAssertEqual(
+            header.accessibilityLabel(), expected,
+            "a projection refresh replaced the spoken draft with the saved title"
+        )
+    }
+
     /// The titles the strip's context menu offers a slot with a page,
     /// in its order (TabStripView.swift, `SheetTab.contextMenu`). That
     /// menu is SwiftUI and cannot be walked, so its literal titles are

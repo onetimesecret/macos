@@ -997,6 +997,10 @@ final class DayHeaderView: NSView {
     /// so it does not write the page's first line over the draft, and
     /// its value is what a cancel puts back.
     private var titleBeforeRename: String?
+    /// The slot captured when editing began. A pooled header can be
+    /// reassigned while its field is active, so submission must never
+    /// infer its target from the header's current `tab`.
+    private var tabBeingRenamed: UInt64?
     /// Who held the keyboard when the rename began, given it back on
     /// return and on escape. On a focus loss the keyboard has already
     /// gone where the user sent it and is left there.
@@ -1081,6 +1085,10 @@ final class DayHeaderView: NSView {
     /// every second and the title follows the page's own first line, so
     /// this runs on every pass while `show` runs only on an assembly.
     func refresh(summary: TabSummary?) {
+        if let tabBeingRenamed, tabBeingRenamed != summary?.id {
+            returnKeyboard()
+            endRename(committed: false)
+        }
         tab = summary?.id
         hasPage = summary?.hasPage ?? false
         paused = summary?.paused ?? false
@@ -1093,12 +1101,16 @@ final class DayHeaderView: NSView {
             titleField.stringValue = summary?.title ?? ""
         }
         remainingField.stringValue = summary.map { $0.hasPage ? $0.remainingLabel : "" } ?? ""
+        updateAccessibilityLabel()
+        needsDisplay = true
+    }
+
+    private func updateAccessibilityLabel() {
         setAccessibilityLabel(Self.spokenHeader(
             spokenLabel: spokenLabel,
-            title: summary?.title ?? "",
+            title: titleField.stringValue,
             remainingLabel: remainingField.stringValue
         ))
-        needsDisplay = true
     }
 
     /// Frame layout, called by the stack after the header's own frame is
@@ -1229,8 +1241,9 @@ final class DayHeaderView: NSView {
     /// tests can drive a rename without a window's field editor and
     /// pin that no modal session is entered on the way.
     func beginRename() {
-        guard tab != nil, titleBeforeRename == nil else { return }
+        guard let tab, titleBeforeRename == nil else { return }
         titleBeforeRename = titleField.stringValue
+        tabBeingRenamed = tab
         responderBeforeRename = window?.firstResponder
         titleField.delegate = self
         titleField.isSelectable = true
@@ -1243,7 +1256,10 @@ final class DayHeaderView: NSView {
     /// can stand in for the keyboard.
     var renameDraft: String {
         get { titleField.stringValue }
-        set { titleField.stringValue = newValue }
+        set {
+            titleField.stringValue = newValue
+            updateAccessibilityLabel()
+        }
     }
 
     /// Ends the rename one way or the other, deciding through
@@ -1254,17 +1270,20 @@ final class DayHeaderView: NSView {
     /// themselves, and a focus loss has already moved it.
     func endRename(committed: Bool) {
         guard let current = titleBeforeRename else { return }
+        let targetTab = tabBeingRenamed
         titleBeforeRename = nil
+        tabBeingRenamed = nil
         titleField.delegate = nil
         titleField.isEditable = false
         titleField.isSelectable = false
         switch TabRename.outcome(draft: titleField.stringValue, current: current, committed: committed) {
         case .rename(let name):
-            guard let tab else { return }
-            model.renameTab(tab, to: name)
+            guard let targetTab else { return }
+            model.renameTab(targetTab, to: name)
         case .keep:
             titleField.stringValue = current
         }
+        updateAccessibilityLabel()
         needsDisplay = true
     }
 
@@ -1307,6 +1326,10 @@ final class DayHeaderView: NSView {
 /// so it is caught as the command it is and the keyboard is moved,
 /// which ends the editing the ordinary way.
 extension DayHeaderView: NSTextFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        updateAccessibilityLabel()
+    }
+
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         guard selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
         returnKeyboard()
