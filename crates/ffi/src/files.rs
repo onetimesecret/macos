@@ -320,8 +320,8 @@ pub unsafe extern "C" fn companion_file_open_error_json(
 }
 
 /// Close the file and drop its buffer. The draft goes with it: a draft
-/// never outlives its tab. The review prompt for a dirty file is the
-/// shell's, and it happens before this call.
+/// never outlives its tab. Any dirty-close decision is settled in the
+/// shell before this call.
 ///
 /// # Safety
 /// `handle` must be a valid handle.

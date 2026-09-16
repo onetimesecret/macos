@@ -37,7 +37,7 @@ extension PageModel {
             if showsTimeUnits { openToday() } else { newPage() }
         case .pageClose:
             // ⌘W closes what is on screen. A dirty file publishes its
-            // Save edits, Keep saved file, and Keep editing decision
+            // Save file, Discard changes, and Keep editing decision
             // inline; on a page it is the page, as it always
             // was. The second reading rather than a third id, for
             // `.pageNew`'s reason above (ADR-0028).

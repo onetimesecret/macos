@@ -298,13 +298,14 @@ public enum FileCloseAction: CaseIterable, Equatable, Sendable {
 
     public var label: String {
         switch self {
-        case .save: return "Save edits"
-        case .discard: return "Keep saved file"
+        case .save: return "Save file"
+        case .discard: return "Discard changes"
         case .keepEditing: return "Keep editing"
         }
     }
 
-    public var isDefault: Bool { self == .keepEditing }
+    /// No close action is the window default while the editor remains editable.
+    public var isDefault: Bool { false }
 }
 
 /// A dirty file waiting for an inline close decision.
@@ -2622,10 +2623,22 @@ public final class PageModel: ObservableObject {
     /// file cannot leave the surface pointing at nothing.
     func standOpenFiles(_ files: [FileSummary]) {
         openFiles = files
-        if let pendingFileClose,
-           !files.contains(where: { $0.id == pendingFileClose.fileID && $0.isDirty })
-        {
-            clearPendingFileClose()
+        if let pending = pendingFileClose {
+            if let file = files.first(where: { $0.id == pending.fileID }) {
+                if !file.isDirty {
+                    let previousSelection = selectionBeforePendingFileClose
+                    let previousLedger = ledgerBeforePendingFileClose
+                    clearPendingFileClose()
+                    if !closeFileNow(file.id) {
+                        pendingFileClose = pending
+                        selectionBeforePendingFileClose = previousSelection
+                        ledgerBeforePendingFileClose = previousLedger
+                    }
+                    return
+                }
+            } else {
+                clearPendingFileClose()
+            }
         }
         if let selectedFile, !files.contains(where: { $0.id == selectedFile }) {
             self.selectedFile = nil

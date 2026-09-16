@@ -109,36 +109,14 @@ final class FileSurfaceTests: XCTestCase {
             "file, README.md, unsaved, changed on disk")
     }
 
-    func testTheDirtyCloseActionsAreOrderedByOutcomeWithKeepEditingLastAndDefault() {
+    func testTheDirtyCloseActionsAreOrderedByOutcomeWithKeepEditingLast() {
         XCTAssertEqual(
             FileCloseAction.allCases.map(\.label),
-            ["Save edits", "Keep saved file", "Keep editing"]
+            ["Save file", "Discard changes", "Keep editing"]
         )
-        XCTAssertEqual(FileCloseAction.allCases.filter(\.isDefault), [.keepEditing])
+        XCTAssertTrue(FileCloseAction.allCases.filter(\.isDefault).isEmpty)
         XCTAssertEqual(FileCloseAction.allCases.last, .keepEditing)
         XCTAssertEqual(FileCloseBanner.sentence(name: "notes.txt"), "notes.txt has unsaved changes")
-    }
-
-    func testDirtyCloseOwnsReturnAheadOfASimultaneousConflict() {
-        XCTAssertEqual(
-            FileBannerDefaultAction.derive(hasPendingClose: true, hasConflict: true),
-            .keepEditing
-        )
-        XCTAssertEqual(
-            FileBannerDefaultAction.derive(hasPendingClose: true, hasConflict: false),
-            .keepEditing
-        )
-    }
-
-    func testSaveAsOwnsReturnOnlyWhenAConflictStandsWithoutDirtyClose() {
-        XCTAssertEqual(
-            FileBannerDefaultAction.derive(hasPendingClose: false, hasConflict: true),
-            .saveAs
-        )
-        XCTAssertEqual(
-            FileBannerDefaultAction.derive(hasPendingClose: false, hasConflict: false),
-            .none
-        )
     }
 
     func testTheConflictBannerNamesTheFileAndSaysSavingIsRefused() {

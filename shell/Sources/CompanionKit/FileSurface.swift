@@ -217,23 +217,9 @@ struct UnsavedDot: View {
     }
 }
 
-/// Which file banner owns Return. A pending close always takes priority over
-/// conflict resolution because Keep editing is the safe way to dismiss that
-/// decision; Save As resumes as the conflict default once no close is pending.
-public enum FileBannerDefaultAction: Equatable, Sendable {
-    case keepEditing
-    case saveAs
-    case none
-
-    public static func derive(hasPendingClose: Bool, hasConflict: Bool) -> Self {
-        if hasPendingClose { return .keepEditing }
-        if hasConflict { return .saveAs }
-        return .none
-    }
-}
-
 /// The nonmodal dirty-close decision shown above the file editor. Editing
-/// remains available while the request stands.
+/// remains available while the request stands, including Return to insert a
+/// newline. The banner does not claim a default keyboard action.
 public struct FileCloseBanner: View {
     public let pending: PendingFileClose
     public let resolve: (FileCloseAction) -> Void
@@ -262,7 +248,6 @@ public struct FileCloseBanner: View {
             Button(FileCloseAction.keepEditing.label) { resolve(.keepEditing) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
-                .keyboardShortcut(.defaultAction)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
@@ -275,22 +260,14 @@ public struct FileCloseBanner: View {
 /// The file changed on disk while this copy held unsaved edits, and
 /// nothing is written until a person says which copy wins (ADR-0028).
 ///
-/// Three actions, in the order they are read. Save As owns Return when the
-/// conflict stands alone because it leaves both copies in place. If a dirty
-/// close decision is also present, its Keep editing action owns Return instead.
-/// Editing is not blocked while either banner stands; only saving is refused.
+/// Three actions, in the order they are read. Editing is not blocked while the
+/// banner stands, including Return to insert a newline; only saving is refused.
 public struct FileConflictBanner: View {
     let file: FileSummary
-    let saveAsIsDefault: Bool
     let resolve: (FileConflictResolution) -> Void
 
-    public init(
-        file: FileSummary,
-        saveAsIsDefault: Bool = true,
-        resolve: @escaping (FileConflictResolution) -> Void
-    ) {
+    public init(file: FileSummary, resolve: @escaping (FileConflictResolution) -> Void) {
         self.file = file
-        self.saveAsIsDefault = saveAsIsDefault
         self.resolve = resolve
     }
 
@@ -318,7 +295,6 @@ public struct FileConflictBanner: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             // The two competing copies are named by the one each action keeps.
-            // Save As owns Return only when no dirty-close decision is above it.
             Button("Keep mine") { resolve(.keepMine) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
@@ -332,7 +308,6 @@ public struct FileConflictBanner: View {
             Button("Save As") { resolve(.saveAs) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
-                .keyboardShortcut(saveAsIsDefault ? .defaultAction : nil)
                 .help("Write this copy somewhere else and leave the file on disk alone")
                 .accessibilityLabel(Text("Save my copy somewhere else and leave both"))
         }

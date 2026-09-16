@@ -417,6 +417,62 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertNil(model.selectedFile, "the surface fell back to the pad")
     }
 
+    func testSavingWhileADirtyCloseDecisionStandsClosesTheNowCleanFile() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let url = try write("body\n", named: "notes.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.activeFile?.id)
+        try type("the ", at: 0, into: id, on: model)
+
+        model.closeActiveFile()
+        XCTAssertEqual(model.pendingFileClose?.fileID, id)
+        XCTAssertTrue(model.saveFile(id))
+
+        XCTAssertEqual(try read(url), "the body\n")
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertNil(model.pendingFileClose)
+    }
+
+    func testUndoingAPendingCloseBackToSavedTextClosesTheFile() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let url = try write("body\n", named: "notes.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.activeFile?.id)
+        try type("the ", at: 0, into: id, on: model)
+
+        model.closeActiveFile()
+        XCTAssertEqual(model.pendingFileClose?.fileID, id)
+        XCTAssertTrue(model.undoEdit(sheet: id).applied)
+
+        XCTAssertEqual(try read(url), "body\n")
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertNil(model.pendingFileClose)
+    }
+
+    func testTakingTheirsWhileADirtyCloseDecisionStandsClosesTheFile() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let url = try write("body\n", named: "notes.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.activeFile?.id)
+        try type("mine ", at: 0, into: id, on: model)
+        try Data("theirs\n".utf8).write(to: url)
+        model.checkOpenFilesOnActivate()
+
+        model.closeActiveFile()
+        XCTAssertEqual(model.pendingFileClose?.fileID, id)
+        model.resolveConflict(.takeTheirs)
+
+        XCTAssertEqual(try read(url), "theirs\n")
+        XCTAssertTrue(model.openFiles.isEmpty)
+        XCTAssertNil(model.pendingFileClose)
+    }
+
     func testSaveCloseFailureLeavesTheFileAndInlineDecisionStanding() throws {
         let fixture = try makeFixture()
         let model = makeModel(fixture, panels: ScriptedFilePanels())

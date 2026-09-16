@@ -232,6 +232,20 @@ front` names it) and leave this window visible but not key.
       for focus where they used not to; the ask is refused for an
       unkeyed surface, and the refusal is what this line is about.
 
+## §G — File-close decision and editor keys
+
+**Owner:** delano.
+
+- [ ] Open a writable text file, make an unsaved edit, and request its close.
+      With the dirty-close banner visible and the text view focused, press Return.
+      A newline is inserted; no banner action runs.
+- [ ] With that close request still pending, save the file with ⌘S. The file closes.
+- [ ] Reopen the file, make one edit, request close, then press ⌘Z until the
+      buffer matches the saved file. The file closes.
+- [ ] Reopen the file, make an edit, modify the same file on disk, and request
+      close. Choose **Take theirs**. The file closes with the on-disk contents
+      unchanged.
+
 ## Separate procedures, in their own documents
 
 The runbook above is one session. These are standalone procedures, each
