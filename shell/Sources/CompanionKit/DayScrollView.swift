@@ -501,14 +501,19 @@ final class DayStackView: NSView {
                 isFirstOnRoll = false
                 continue
             }
+            // One day's stamps are decided together, so two pages born
+            // the same minute read to the second and the rail's nodes
+            // say the same (`StreamNavigator.stamps`).
+            let summaries = unit.tabIDs.map { summary(ofTab: $0) }
+            let stamps = StreamNavigator.stamps(
+                createdMs: summaries.map { $0?.pageCreatedMs }, format: model.stampFormat)
             for (index, page) in unit.pageIDs.enumerated() {
                 let firstOfDay = index == 0
                 let header = pooledHeader(at: built.count)
-                let summary = summary(ofTab: unit.tabIDs[index])
+                let summary = summaries[index]
                 header.show(
                     dayText: DayHeaderView.dayText(
-                        spokenLabel: unit.spokenLabel,
-                        stamp: summary?.pageCreatedMs.map { StreamNavigator.stamp(createdMs: $0) }
+                        spokenLabel: unit.spokenLabel, stamp: stamps[index], firstOfDay: firstOfDay
                     ),
                     spokenLabel: unit.spokenLabel,
                     mark: DayHeaderView.mark(
@@ -1031,13 +1036,42 @@ final class DayStackView: NSView {
 
     // MARK: The gutters
 
-    /// The countdowns tick and the titles follow the page's first line,
-    /// so every pass refreshes what the gutters say without touching
-    /// what the roll is made of.
+    /// The spoken countdowns tick and the titles follow the page's
+    /// first line, so every pass refreshes what the gutters say without
+    /// touching what the roll is made of. `stampFormat` is one such
+    /// change: a pattern edited in Settings publishes back into an
+    /// unchanged projection, so the `dayText` the header prints must be
+    /// re-derived here rather than only in the assembly pass, or the
+    /// mounted headers keep their old stamps until the roll rebuilds
+    /// for another reason (Greptile P1 #1).
     private func refreshGutters() {
+        let units = model.timeUnits.units
+        let unitByBucket = Dictionary(uniqueKeysWithValues: units.map { ($0.bucket, $0) })
+        var stampsByBucket: [Int: [String]] = [:]
+        for unit in units where !unit.pageIDs.isEmpty {
+            let summaries = unit.tabIDs.map { summary(ofTab: $0) }
+            stampsByBucket[unit.bucket] = StreamNavigator.stamps(
+                createdMs: summaries.map { $0?.pageCreatedMs }, format: model.stampFormat
+            )
+        }
         for row in rows {
-            guard let tab = row.header.tab else { continue }
-            row.header.refresh(summary: summary(ofTab: tab))
+            let unit = unitByBucket[row.bucket]
+            let spokenLabel = unit?.spokenLabel ?? ""
+            let dayText: String
+            let rowSummary: TabSummary?
+            if let page = row.page, let unit,
+               let index = unit.pageIDs.firstIndex(of: page)
+            {
+                let stamp = stampsByBucket[unit.bucket]?[index] ?? ""
+                dayText = DayHeaderView.dayText(
+                    spokenLabel: spokenLabel, stamp: stamp, firstOfDay: index == 0
+                )
+                rowSummary = summary(ofTab: unit.tabIDs[index])
+            } else {
+                dayText = DayHeaderView.dayText(spokenLabel: spokenLabel, stamp: nil)
+                rowSummary = row.header.tab.flatMap { summary(ofTab: $0) }
+            }
+            row.header.refresh(dayText: dayText, summary: rowSummary)
         }
     }
 }
@@ -1075,17 +1109,17 @@ final class DayHeaderView: NSView {
     private let dayField = NSTextField(labelWithString: "")
     private let titleField = NSTextField(labelWithString: "")
     /// The retained words for a page past the window, and otherwise
-    /// empty: the countdown that used to stand here is the gauge now
-    /// (the stream navigator's "retention words instead of countdowns").
+    /// empty. The countdown that used to stand here became a gauge,
+    /// and the gauge went too: a page's remaining life is drawn once,
+    /// under the active node on the rail, since a gauge on every
+    /// gutter was the same shape twenty times over and read as a
+    /// texture rather than a fact. VoiceOver still hears the countdown
+    /// here (`spokenHeader`).
     private let remainingField = NSTextField(labelWithString: "")
-    /// The page's remaining life as geometry, the strip's own
-    /// `GaugeBar` hosted where the countdown text stood, so a gutter
-    /// and a tab draw one vocabulary (held is dashed, the last hour is
-    /// hatched ember) rather than two that drift. Hidden for the empty
-    /// place and for a page past the window.
-    private let gauge = NSHostingView(
-        rootView: GaugeBar(fraction: 0, paused: false, lastHour: false)
-    )
+    /// Which step of the core's label resolution the title came from,
+    /// as of the last refresh, which is what decides whether the title
+    /// is drawn once a rename ends (`drawsTitle`).
+    private var titleSource: TitleSource?
 
     /// What this header draws across its top. Readable so a test can
     /// ask the mounted roll where its perforations are rather than
@@ -1143,15 +1177,10 @@ final class DayHeaderView: NSView {
         remainingField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         remainingField.textColor = .tertiaryLabelColor
         remainingField.alignment = .right
-        // The host takes the frame it is given and asks for nothing
-        // back: a hosting view left to size itself would set its own
-        // frame from the bar's ideal size, which is no size at all.
-        gauge.sizingOptions = []
-        gauge.isHidden = true
+        titleField.isHidden = true
         addSubview(dayField)
         addSubview(titleField)
         addSubview(remainingField)
-        addSubview(gauge)
         setAccessibilityElement(true)
     }
 
@@ -1174,16 +1203,31 @@ final class DayHeaderView: NSView {
         return isFirstOfDay ? .tear : .hairline
     }
 
-    /// The checkpoint's words: the day and the page's birth minute,
-    /// "today · 0914-1139", on every gutter. Every page carries the
-    /// day rather than only a day's first, because the minute is what
-    /// tells two pages on one day apart and the day is what the minute
-    /// is read against; the perforation above still says where the day
-    /// changed. The empty place has no minute, so it says the day alone.
-    /// Pure, so the shape is an assertion.
-    nonisolated static func dayText(spokenLabel: String, stamp: String?) -> String {
+    /// The checkpoint's words. A day's first gutter reads the day and
+    /// the page's birth time, "2 days ago · 13:00"; the gutters under
+    /// it on the same day read the time alone, "13:17", because the
+    /// day was said once above them and the hairline says these are
+    /// one day's pages. Saying the day on every gutter, and a date in
+    /// every time, was the same fact three times over. Two pages born
+    /// the same minute read to the second (`StreamNavigator.stamps`).
+    /// The empty place has no time, so it says the day alone. Pure, so
+    /// the shape is an assertion.
+    nonisolated static func dayText(
+        spokenLabel: String, stamp: String?, firstOfDay: Bool = true
+    ) -> String {
         guard let stamp, !stamp.isEmpty else { return spokenLabel }
-        return "\(spokenLabel) · \(stamp)"
+        return firstOfDay ? "\(spokenLabel) · \(stamp)" : stamp
+    }
+
+    /// Whether the gutter draws its title: only a name the user typed.
+    /// A placeholder repeats the stamp beside it in the core's own
+    /// shape, and a derived title repeats the page's first line, which
+    /// stands directly under the gutter. Both are still spoken
+    /// (`spokenHeader`), since VoiceOver reads the gutter on its own.
+    /// A rename in progress shows the field whatever it holds: the
+    /// draft is the thing being edited.
+    nonisolated static func drawsTitle(source: TitleSource?, renaming: Bool) -> Bool {
+        renaming || source == .name
     }
 
     /// Past the seven day window, a gutter says the page is retained
@@ -1219,16 +1263,23 @@ final class DayHeaderView: NSView {
 
     func show(dayText: String, spokenLabel: String, mark: Mark, summary: TabSummary?) {
         self.mark = mark
-        dayField.stringValue = dayText
         self.spokenLabel = spokenLabel
-        refresh(summary: summary)
+        refresh(dayText: dayText, summary: summary)
     }
 
     private var spokenLabel = ""
 
     /// The words, re-read from the current summary. The countdown moves
-    /// every second and the title follows the page's own first line, so
-    /// this runs on every pass while `show` runs only on an assembly.
+    /// every second, the title follows the page's own first line, and
+    /// the stamp beside the day follows `PageModel.stampFormat`; this
+    /// runs on every pass while `show` runs only on an assembly, so a
+    /// pattern edit that leaves the roll's structure alone still moves
+    /// the stamp on every gutter.
+    func refresh(dayText: String, summary: TabSummary?) {
+        dayField.stringValue = dayText
+        refresh(summary: summary)
+    }
+
     func refresh(summary: TabSummary?) {
         if let tabBeingRenamed, tabBeingRenamed != summary?.id {
             returnKeyboard()
@@ -1246,20 +1297,10 @@ final class DayHeaderView: NSView {
         if titleBeforeRename == nil {
             titleField.stringValue = summary?.title ?? ""
         }
-        let retained = Self.retainedText(pageDayOffset: summary?.pageDayOffset)
-        remainingField.stringValue = retained
-        if let summary, summary.hasPage, retained.isEmpty {
-            gauge.rootView = GaugeBar(
-                fraction: summary.fractionRemaining,
-                paused: summary.paused,
-                toppedUp: summary.holdToppedUp,
-                lastHour: summary.lastHour
-            )
-            gauge.toolTip = summary.spokenRemaining
-            gauge.isHidden = false
-        } else {
-            gauge.isHidden = true
-        }
+        titleSource = summary?.titleSource
+        titleField.isHidden = !Self.drawsTitle(
+            source: titleSource, renaming: titleBeforeRename != nil)
+        remainingField.stringValue = Self.retainedText(pageDayOffset: summary?.pageDayOffset)
         updateAccessibilityLabel()
         needsDisplay = true
     }
@@ -1286,21 +1327,13 @@ final class DayHeaderView: NSView {
         dayField.sizeToFit()
         remainingField.sizeToFit()
         let dayWidth = dayField.frame.width
-        // The gauge and the retained words share the trailing seat:
-        // whichever is showing is what the title makes room for.
-        let remainingWidth = gauge.isHidden
-            ? remainingField.frame.width : StreamNavigator.Metrics.gaugeWidth
+        let remainingWidth = remainingField.frame.width
         dayField.frame = NSRect(
             x: Self.margin, y: top + 3, width: dayWidth, height: Self.gutterHeight - 6
         )
         remainingField.frame = NSRect(
-            x: max(bounds.width - Self.margin - remainingField.frame.width, 0), y: top + 3,
-            width: remainingField.frame.width, height: Self.gutterHeight - 6
-        )
-        gauge.frame = NSRect(
-            x: max(bounds.width - Self.margin - StreamNavigator.Metrics.gaugeWidth, 0),
-            y: top + (Self.gutterHeight - 3) / 2,
-            width: StreamNavigator.Metrics.gaugeWidth, height: 3
+            x: max(bounds.width - Self.margin - remainingWidth, 0), y: top + 3,
+            width: remainingWidth, height: Self.gutterHeight - 6
         )
         let titleX = Self.margin + (dayWidth > 0 ? dayWidth + 8 : 0)
         titleField.frame = NSRect(
@@ -1431,12 +1464,24 @@ final class DayHeaderView: NSView {
         titleBeforeRename = titleField.stringValue
         tabBeingRenamed = tab
         responderBeforeRename = window?.firstResponder
+        // A placeholder or a first line is not drawn as a label, but
+        // it is the draft a rename starts from, so the field shows for
+        // the rename's length.
+        titleField.isHidden = false
         titleField.delegate = self
         titleField.isSelectable = true
         titleField.isEditable = true
         window?.makeFirstResponder(titleField)
         titleField.currentEditor()?.selectAll(nil)
     }
+
+    /// Whether the title field is drawn, readable so the roll's tests
+    /// can pin what a gutter shows without a window.
+    var titleIsDrawn: Bool { !titleField.isHidden }
+
+    /// The day text as the gutter is drawing it, readable so a test
+    /// can pin what the header shows across a stamp-format edit.
+    var dayText: String { dayField.stringValue }
 
     /// The draft as the field holds it, readable and settable so a test
     /// can stand in for the keyboard.
@@ -1465,9 +1510,12 @@ final class DayHeaderView: NSView {
         switch TabRename.outcome(draft: titleField.stringValue, current: current, committed: committed) {
         case .rename(let name):
             guard let targetTab else { return }
+            // The field stays up: the name it now holds is a typed
+            // one, and the model's next pass confirms it as such.
             model.renameTab(targetTab, to: name)
         case .keep:
             titleField.stringValue = current
+            titleField.isHidden = !Self.drawsTitle(source: titleSource, renaming: false)
         }
         updateAccessibilityLabel()
         needsDisplay = true

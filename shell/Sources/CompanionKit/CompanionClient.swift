@@ -46,6 +46,12 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
     /// with the page, so an expiry falls the label back one step rather
     /// than leaving a string the app invented on a durable object.
     public let title: String
+    /// Which of the three steps answered. The gutter draws a title
+    /// only when it is a name the user typed: a placeholder repeats
+    /// the stamp the gutter already carries, and a derived title
+    /// repeats the page's own first line, which stands directly under
+    /// the gutter (2026-0916 rail redundancy record).
+    public let titleSource: TitleSource
     public let rungCode: Int32
     public let rungLabel: String
     public let remainingMs: UInt64
@@ -92,8 +98,8 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
     /// The page's own creation stamp, Unix epoch milliseconds, and nil
     /// on the same terms as `pageDayOffset`: a slot holding no page was
     /// born on no minute. The absolute stamp the offset was counted
-    /// from, carried so the stream navigator can print the minute a
-    /// checkpoint was made ("0914-1139", `StreamNavigator.stamp`)
+    /// from, carried so the stream navigator and the gutters can print
+    /// the time a checkpoint was made ("11:39", `StreamNavigator.stamps`)
     /// without a second reading of the clock.
     public let pageCreatedMs: UInt64?
 
@@ -101,6 +107,7 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
         case id, title, paused
         case hasPage = "has_page"
         case pageID = "page_id"
+        case titleSource = "title_source"
         case rungCode = "rung_code"
         case rungLabel = "rung_label"
         case remainingMs = "remaining_ms"
@@ -115,6 +122,17 @@ public struct TabSummary: Identifiable, Codable, Hashable, Sendable {
         case pageDayOffset = "page_day_offset"
         case pageCreatedMs = "page_created_ms"
     }
+}
+
+/// Which step of the core's three-step label resolution answered
+/// (`Tab::label` in `crates/core/src/sheet.rs`).
+public enum TitleSource: String, Codable, Hashable, Sendable {
+    /// The name the user typed.
+    case name
+    /// The live page's first typed line, markup stripped.
+    case derived
+    /// The tab's own "MMDD-HHmm" stamp, because nothing was typed.
+    case placeholder
 }
 
 /// A non-secret snapshot of one open file, decoded from the core's

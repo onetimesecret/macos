@@ -66,6 +66,7 @@ final class DayScrollPreviewRenderingTests: XCTestCase {
             hasPage: tab.hasPage,
             pageID: tab.pageID,
             title: tab.title,
+            titleSource: tab.titleSource,
             rungCode: tab.rungCode,
             rungLabel: tab.rungLabel,
             remainingMs: tab.remainingMs,

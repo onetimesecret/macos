@@ -14,6 +14,7 @@ final class CompanionClientTests: XCTestCase {
             "has_page": true,
             "page_id": 12,
             "title": "deploy friday",
+            "title_source": "derived",
             "rung_code": 2,
             "rung_label": "8h",
             "remaining_ms": 28800000,
@@ -39,6 +40,7 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertTrue(sheet.hasPage)
         XCTAssertEqual(sheet.pageID, 12)
         XCTAssertEqual(sheet.title, "deploy friday")
+        XCTAssertEqual(sheet.titleSource, .derived)
         XCTAssertEqual(sheet.rungLabel, "8h")
         XCTAssertEqual(sheet.spokenRemaining, "about 8 hours remaining")
         XCTAssertEqual(sheet.chipCount, 2)
@@ -59,6 +61,7 @@ final class CompanionClientTests: XCTestCase {
             "has_page": true,
             "page_id": 3,
             "title": "errands",
+            "title_source": "derived",
             "rung_code": 0,
             "rung_label": "1h",
             "remaining_ms": 1800000,
@@ -95,6 +98,7 @@ final class CompanionClientTests: XCTestCase {
             "has_page": true,
             "page_id": 3,
             "title": "errands",
+            "title_source": "derived",
             "rung_code": 0,
             "rung_label": "1h",
             "remaining_ms": 1800000,
@@ -126,6 +130,7 @@ final class CompanionClientTests: XCTestCase {
             "has_page": false,
             "page_id": null,
             "title": "payroll",
+            "title_source": "name",
             "rung_code": 5,
             "rung_label": "7d",
             "remaining_ms": 0,
@@ -146,6 +151,7 @@ final class CompanionClientTests: XCTestCase {
         XCTAssertFalse(tabs[0].hasPage)
         XCTAssertNil(tabs[0].pageID)
         XCTAssertEqual(tabs[0].title, "payroll", "the name outlived the page")
+        XCTAssertEqual(tabs[0].titleSource, .name)
         XCTAssertEqual(tabs[0].rungLabel, "7d", "and so did the rung")
         // The day follows the page id rather than the clock fields: it
         // is null and not zero, because a slot holding no page is on no

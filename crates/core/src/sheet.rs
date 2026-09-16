@@ -773,16 +773,67 @@ impl Tab {
     /// unnamed tab that keeps taking fresh pages would otherwise change
     /// its label every time one was born, and the slot the user
     /// arranged by dragging would stop being recognizable.
+    ///
+    /// Which branch answered is [`Tab::label_source`]'s business, and
+    /// this function reads through it rather than repeating the walk,
+    /// so the two cannot disagree about a tab whose name was cleared
+    /// or whose page just settled its first line.
     #[must_use]
     pub fn label(&self, utc_offset_seconds: i32) -> String {
-        self.name
-            .clone()
-            .or_else(|| {
-                self.page
-                    .as_ref()
-                    .and_then(|page| page.derived_title.clone())
-            })
-            .unwrap_or_else(|| placeholder_title(self.created_wall_ms, utc_offset_seconds))
+        match self.label_source() {
+            LabelSource::Name => self
+                .name
+                .clone()
+                .expect("label_source promised Name has a name"),
+            LabelSource::Derived => self
+                .page
+                .as_ref()
+                .and_then(|page| page.derived_title.clone())
+                .expect("label_source promised Derived has a derived title"),
+            LabelSource::Placeholder => placeholder_title(self.created_wall_ms, utc_offset_seconds),
+        }
+    }
+
+    /// Which of [`Tab::label`]'s three steps answered. The far side
+    /// reads it to decide what the label is worth drawing beside: a
+    /// placeholder repeats the stamp the gutter and the rail already
+    /// carry, and a derived title repeats the page's own first line.
+    #[must_use]
+    pub fn label_source(&self) -> LabelSource {
+        if self.name.is_some() {
+            LabelSource::Name
+        } else if self
+            .page
+            .as_ref()
+            .is_some_and(|page| page.derived_title.is_some())
+        {
+            LabelSource::Derived
+        } else {
+            LabelSource::Placeholder
+        }
+    }
+}
+
+/// Which step of [`Tab::label`] a label came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LabelSource {
+    /// The name the user typed.
+    Name,
+    /// The live page's first typed line.
+    Derived,
+    /// The tab's own `MMDD-HHmm` stamp, because nothing was typed.
+    Placeholder,
+}
+
+impl LabelSource {
+    /// The word the seam carries.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Name => "name",
+            Self::Derived => "derived",
+            Self::Placeholder => "placeholder",
+        }
     }
 }
 
@@ -794,22 +845,99 @@ pub(crate) const TITLE_CAP: usize = 80;
 /// stripped and capped at [`TITLE_CAP`] characters; `None` when the
 /// body offers no such line.
 ///
+/// A fence's rules are markup and never a name (D-12): the walk steps
+/// over an opening rule (three backticks or tildes, with or without a
+/// language word) and takes the first line inside the fence, as typed,
+/// since code carries no markdown to strip. A body that is nothing but
+/// rules derives nothing, the same as a body that is nothing but
+/// blank lines.
+///
 /// The walk stops at the walk (ADR-0017): the fallback is
 /// [`Tab::label`]'s business, because the placeholder renders from the
 /// tab's stamp and not the page's. Answering `None` here is what keeps
 /// a label from jumping to a different four-digit stamp the moment a
 /// page expires under it.
 pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
-    segments
-        .iter()
-        .filter_map(|s| match s {
-            Segment::Ink(text) => Some(text),
-            Segment::Chip(_) => None,
-        })
-        .flat_map(|text| text.lines())
-        .map(strip_markdown)
-        .find(|line| !line.is_empty())
-        .map(|line| line.chars().take(TITLE_CAP).collect())
+    let mut fence: Option<Fence> = None;
+    let mut result: Option<String> = None;
+    'outer: for text in segments.iter().filter_map(|s| match s {
+        Segment::Ink(text) => Some(text),
+        Segment::Chip(_) => None,
+    }) {
+        for line in text.lines() {
+            match fence {
+                Some(open) if closes_fence(line, open) => fence = None,
+                Some(_) => {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        result = Some(trimmed.to_string());
+                        break 'outer;
+                    }
+                }
+                None => {
+                    if let Some(open) = opens_fence(line) {
+                        fence = Some(open);
+                        continue;
+                    }
+                    let stripped = strip_markdown(line);
+                    if !stripped.is_empty() {
+                        result = Some(stripped);
+                        break 'outer;
+                    }
+                }
+            }
+        }
+    }
+    result.map(|line| line.chars().take(TITLE_CAP).collect())
+}
+
+/// A fenced code block, remembered as the opener saw it: the marker
+/// character (`` ` `` or `~`) and the length of the opener's run
+/// (three or more). A closer has to match both so a `~~~` line inside
+/// a backtick fence stays code, and a `` ``` `` line inside a longer
+/// `` ```` `` fence stays code (`CommonMark` §4.5).
+#[derive(Clone, Copy)]
+struct Fence {
+    marker: char,
+    length: usize,
+}
+
+/// A fence's opening rule: up to three spaces of indent, then three
+/// or more backticks or tildes, with or without an info string after.
+/// Four or more spaces of leading indent is a `CommonMark` indented
+/// code block and the line stays prose.
+fn opens_fence(line: &str) -> Option<Fence> {
+    let indent = line.chars().take_while(|c| *c == ' ').count();
+    if indent >= 4 {
+        return None;
+    }
+    let rest = &line[indent..];
+    let marker = rest.chars().next()?;
+    if marker != '`' && marker != '~' {
+        return None;
+    }
+    let length = rest.chars().take_while(|c| *c == marker).count();
+    if length < 3 {
+        return None;
+    }
+    Some(Fence { marker, length })
+}
+
+/// A fence's closing rule: up to three spaces of indent, a marker run
+/// of the opener's kind at least as long as the opener's, and nothing
+/// but whitespace after it. An info string on a would-be closer is
+/// not one, and the fence stays open (`CommonMark` §4.5).
+fn closes_fence(line: &str, opener: Fence) -> bool {
+    let indent = line.chars().take_while(|c| *c == ' ').count();
+    if indent >= 4 {
+        return false;
+    }
+    let rest = &line[indent..];
+    let marker_count = rest.chars().take_while(|c| *c == opener.marker).count();
+    if marker_count < opener.length {
+        return false;
+    }
+    rest[marker_count..].chars().all(char::is_whitespace)
 }
 
 /// The local day a wall-clock stamp falls on: days since the Unix
@@ -1265,6 +1393,7 @@ mod tests {
         // 1_700_000_000_000 ms is 2023-11-14 22:13:20 UTC.
         let mut tab = unnamed_tab(None);
         assert_eq!(tab.label(0), "1114-2213", "no name, no page");
+        assert_eq!(tab.label_source(), LabelSource::Placeholder);
 
         // A page with a first line supplies the middle step. The page's
         // own birthday sits a day later than the tab's, which is what
@@ -1274,15 +1403,78 @@ mod tests {
         page.derived_title = Some("deploy notes".into());
         tab.page = Some(page);
         assert_eq!(tab.label(0), "deploy notes");
+        assert_eq!(tab.label_source(), LabelSource::Derived);
 
         // An untyped page falls straight through to the tab's stamp,
         // never the page's.
         tab.page = Some(bare_sheet(STAMP + day));
         assert_eq!(tab.label(0), "1114-2213");
+        assert_eq!(tab.label_source(), LabelSource::Placeholder);
 
         // And a name the user typed wins over both.
         tab.name = Some("the vault".into());
         assert_eq!(tab.label(0), "the vault");
+        assert_eq!(tab.label_source(), LabelSource::Name);
+    }
+
+    #[test]
+    fn titles_step_over_fence_rules_and_take_the_code_as_typed() {
+        // The opening rule names a language and is markup, not a name:
+        // the title is the first line inside the fence, and code is
+        // taken as typed rather than stripped of emphasis it never had.
+        let segs = vec![Segment::Ink(
+            "```ruby\n  if Onetime::Utils.yes?(ENV.fetch('STDOUT_SYNC', false))\n```".into(),
+        )];
+        assert_eq!(
+            derive_title(&segs).as_deref(),
+            Some("if Onetime::Utils.yes?(ENV.fetch('STDOUT_SYNC', false))")
+        );
+        // A closing rule is stepped over too, and the line after it is
+        // prose again, with its markup stripped.
+        let segs = vec![Segment::Ink("```\n```\n## after the fence".into())];
+        assert_eq!(derive_title(&segs).as_deref(), Some("after the fence"));
+        // Tildes fence too.
+        assert_eq!(title_of("~~~sh\nls -la"), "ls -la");
+        // A body that is nothing but a rule derives nothing at all.
+        assert_eq!(derive_title(&[Segment::Ink("```ruby\n".into())]), None);
+    }
+
+    #[test]
+    fn a_mismatched_inner_marker_does_not_close_the_outer_fence() {
+        // A backtick fence enclosing a `~~~` line keeps that line as
+        // code, because a closer must match the opener's marker. The
+        // derived title is the first line *inside* the outer fence,
+        // and the "## heading" past the outer closer is prose the walk
+        // never reaches, because the first non-empty line inside is
+        // already the title.
+        let segs = vec![Segment::Ink(
+            "```\ninner code\n~~~\nmore code\n```\n## after".into(),
+        )];
+        assert_eq!(derive_title(&segs).as_deref(), Some("inner code"));
+    }
+
+    #[test]
+    fn a_fence_indented_four_spaces_is_prose_not_a_fence() {
+        // CommonMark treats four spaces as an indented code block, and
+        // a fence-looking line inside one does not open a fence. The
+        // walk stays outside, so the line after it is markdown that
+        // gets stripped rather than code taken as typed: "**bold**"
+        // becomes "bold" here, where an open fence would have taken it
+        // as "**bold**".
+        let segs = vec![Segment::Ink("    ```\n**bold**".into())];
+        assert_eq!(derive_title(&segs).as_deref(), Some("bold"));
+    }
+
+    #[test]
+    fn a_fence_closer_with_an_info_string_is_not_a_closer() {
+        // A closer must be nothing but marker and whitespace. `` ``` js
+        // `` looks like a close but carries an info string, which
+        // CommonMark forbids on closers, so the fence stays open and
+        // the walk keeps taking lines as code.
+        let segs = vec![Segment::Ink(
+            "```\nfirst line of code\n``` js\nstill code\n```".into(),
+        )];
+        assert_eq!(derive_title(&segs).as_deref(), Some("first line of code"));
     }
 
     #[test]

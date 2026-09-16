@@ -56,6 +56,7 @@ final class DayScrollTests: XCTestCase {
             hasPage: tab.hasPage,
             pageID: tab.pageID,
             title: tab.title,
+            titleSource: tab.titleSource,
             rungCode: tab.rungCode,
             rungLabel: tab.rungLabel,
             remainingMs: tab.remainingMs,
@@ -854,6 +855,50 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(header.renameDraft, "second page")
     }
 
+    /// A gutter's title field is drawn for a typed name and for the
+    /// length of a rename, and for nothing else: a placeholder and a
+    /// first line are both said already, beside or under the gutter.
+    /// The gauge that stood at the gutter's trailing edge is gone; the
+    /// countdown is still spoken.
+    func testAGutterDrawsATypedNameAndNoGauge() throws {
+        let model = try makeModel()
+        model.newPage()
+        let tabID = try XCTUnwrap(model.selection)
+        let placeholder = try XCTUnwrap(model.tabs.first { $0.id == tabID })
+        XCTAssertEqual(placeholder.titleSource, .placeholder)
+        let header = DayHeaderView(model: model)
+        header.show(dayText: "today · 11:39", spokenLabel: "today", mark: .none, summary: placeholder)
+        XCTAssertFalse(header.titleIsDrawn, "a placeholder title was drawn beside its own stamp")
+        XCTAssertTrue(
+            header.subviews.allSatisfy { $0 is NSTextField },
+            "the gutter hosts something besides its words: \(header.subviews)")
+        XCTAssertEqual(
+            header.accessibilityLabel(),
+            DayHeaderView.spokenHeader(
+                spokenLabel: "today", title: placeholder.title,
+                remainingLabel: placeholder.remainingLabel),
+            "the countdown stopped being spoken when the gauge went")
+
+        try page(in: model, saying: "deploy notes\nthe rest")
+        let derived = try XCTUnwrap(model.tabs.first { $0.id == model.selection })
+        XCTAssertEqual(derived.titleSource, .derived)
+        header.show(dayText: "11:40", spokenLabel: "today", mark: .hairline, summary: derived)
+        XCTAssertFalse(header.titleIsDrawn, "a first line was drawn above itself")
+
+        header.beginRename()
+        XCTAssertTrue(header.titleIsDrawn, "the rename had no field to type into")
+        XCTAssertEqual(header.renameDraft, "deploy notes")
+        header.endRename(committed: false)
+        XCTAssertFalse(header.titleIsDrawn, "a let-go rename left the field up")
+
+        model.renameTab(derived.id, to: "the vault")
+        let named = try XCTUnwrap(model.tabs.first { $0.id == derived.id })
+        XCTAssertEqual(named.titleSource, .name)
+        header.refresh(summary: named)
+        XCTAssertTrue(header.titleIsDrawn, "a typed name was not drawn")
+        XCTAssertEqual(header.renameDraft, "the vault")
+    }
+
     func testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft() throws {
         let model = try makeModel()
         model.newPage()
@@ -877,6 +922,47 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(
             header.accessibilityLabel(), expected,
             "a projection refresh replaced the spoken draft with the saved title"
+        )
+    }
+
+    /// A pattern edited in Settings publishes back into an unchanged
+    /// projection: the roll rebuilds nothing (Greptile P1 #1) but the
+    /// mounted headers must still say the new pattern's stamp, because
+    /// the assembly pass is where the old code put dayText. The
+    /// ordinary pass has to move it now.
+    func testAStampFormatEditRolls_MountedGuttersWithoutRebuilding() throws {
+        let model = try makeModel()
+        let only = try page(in: model, saying: "credentials")
+        let roll = try mountRoll(model: model)
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: only),
+            selectedPage: only,
+            readOnly: false
+        )
+        let header = try XCTUnwrap(roll.stack.laidOut.first?.header)
+        let before = header.dayText
+        let rebuildsBefore = roll.stack.rebuilds
+
+        model.stampFormat = StreamNavigator.StampFormat(short: "h:mm a", fine: "h:mm:ss a")
+        // The same signature is the point: the roll's structure did
+        // not change, only the reading of its stamps did.
+        roll.stack.update(
+            projection: spreadOverDays(model, selecting: only),
+            selectedPage: only,
+            readOnly: false
+        )
+
+        XCTAssertEqual(
+            roll.stack.rebuilds, rebuildsBefore,
+            "the roll rebuilt when no structural fact changed"
+        )
+        XCTAssertNotEqual(
+            header.dayText, before,
+            "the mounted gutter kept the old pattern's stamp across a settings edit"
+        )
+        XCTAssertTrue(
+            header.dayText.hasSuffix("AM") || header.dayText.hasSuffix("PM"),
+            "the new pattern's meridiem is missing from the gutter: \(header.dayText)"
         )
     }
 

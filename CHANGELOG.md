@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The rail and the gutters say each fact once** (Days + side;
+  `companion-core` 0.24.0; `companion-ffi` 0.32.0;
+  `docs/spec/design/2026-0916-rail-redundancy.md`, D-44 to D-48). A
+  node and a gutter read the page's birth time as "11:39", never with
+  the date the day's words above already say; two pages on one day
+  born in the same minute read to the second, "13:00:04", and only
+  those. Both patterns are settings under the Days choice. Only the
+  active node is a dot; every other page is a tick across the track.
+  A day's first gutter reads "2 days ago · 13:00" and the gutters under
+  it read the time alone. A gutter draws its title only when the user
+  typed it: a placeholder repeats the stamp and a first line repeats
+  the ink under the gutter. The gauge is off every gutter; a page's
+  remaining life is drawn once, under the active node. The tab summary
+  carries `title_source` (name, derived, placeholder). A page that
+  opens with a fence is titled by the first line inside it, as typed,
+  and never by the fence's language word.
+
 - **The side rail is a stream navigator** (Days + side; `companion-ffi`
   0.30.0). Every live page is a node on one track down the rail, newest
   at the top: a day's first page carries the day's words, every page

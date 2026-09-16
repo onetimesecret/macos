@@ -26,7 +26,7 @@ import Foundation
 /// What it never carries is text. `RollGeometry` hands it rectangles
 /// (a page's span, a line's width) and it hands the view rectangles
 /// back; the one string a node draws that the rail did not already
-/// draw is the page's birth minute.
+/// draw is the page's birth time.
 public enum StreamNavigator {
     /// The longest rung on the ladder, in days. A page older than this
     /// is past every countdown the pad can run and stands on the roll
@@ -55,11 +55,15 @@ public enum StreamNavigator {
         public let dayLabel: String
         /// "today", "yesterday": what the tooltip and VoiceOver say.
         public let spokenDay: String
-        /// The page's birth minute, "0914-1139", or empty for the empty
-        /// place.
+        /// The page's birth time, "11:39", or "11:39:12" where another
+        /// page on the day shares the minute (`stamps`); empty for the
+        /// empty place. The day is not repeated: it stands above the
+        /// node in the day's words.
         public let stamp: String
         /// The page's title as the core resolves it (D-12), for the
-        /// tooltip. Empty for the empty place.
+        /// tooltip, when it is a name or a first line. Empty for the
+        /// empty place and for a placeholder, which would only repeat
+        /// the stamp the node already carries.
         public let title: String
         /// The first page on its day: drawn larger, with the day's
         /// words.
@@ -102,7 +106,8 @@ public enum StreamNavigator {
     /// is on screen is then not on the rail.
     public static func nodes(
         projection: TimeUnitProjection, tabs: [TabSummary], selection: UInt64?,
-        surfaceShowsRoll: Bool = true, timeZone: TimeZone = .current
+        surfaceShowsRoll: Bool = true, timeZone: TimeZone = .current,
+        stampFormat: StampFormat = .standard
     ) -> [Node] {
         // The empty place lights by elimination only: on a pad where no
         // drawn day holds a page, there is nothing else the mark could
@@ -122,15 +127,18 @@ public enum StreamNavigator {
                 ))
                 continue
             }
+            let summaries = unit.tabIDs.map { id in tabs.first { $0.id == id } }
+            let stamps = stamps(
+                createdMs: summaries.map { $0?.pageCreatedMs }, format: stampFormat,
+                timeZone: timeZone)
             for (index, page) in unit.pageIDs.enumerated() {
                 let tab = unit.tabIDs[index]
-                let summary = tabs.first { $0.id == tab }
+                let summary = summaries[index]
                 nodes.append(Node(
                     page: page, tab: tab, bucket: unit.bucket, dayIndex: dayIndex,
                     dayLabel: unit.railLabel, spokenDay: unit.spokenLabel,
-                    stamp: summary?.pageCreatedMs.map { stamp(createdMs: $0, timeZone: timeZone) }
-                        ?? "",
-                    title: summary?.title ?? "",
+                    stamp: stamps[index],
+                    title: title(of: summary),
                     firstOfDay: index == 0, active: surfaceShowsRoll && selection == tab,
                     emptyDays: index == 0 ? gap : 0,
                     fractionRemaining: summary?.fractionRemaining ?? 0,
@@ -169,15 +177,106 @@ public enum StreamNavigator {
         "\(count) empty day\(count == 1 ? "" : "s")"
     }
 
-    /// The page's birth minute in local time, "0914-1139": the same
-    /// shape the core's own "MMDD-HHmm" placeholder title takes, so a
-    /// node and an untitled tab read the same stamp for the same page.
-    public static func stamp(createdMs: UInt64, timeZone: TimeZone = .current) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "MMdd-HHmm"
-        return formatter.string(from: Date(timeIntervalSince1970: Double(createdMs) / 1000))
+    /// How a page's birth time reads where its day is already said.
+    /// The day's words stand above the node and on the day's first
+    /// gutter, so the time stands alone, "11:39", and never repeats
+    /// the date the way the core's "MMDD-HHmm" placeholder must, which
+    /// has no day beside it. Two pages on one day born in the same
+    /// minute would read alike, so those take the finer form,
+    /// "11:39:12". Both patterns are the user's (Settings, under the
+    /// Days choice); an empty pattern reads as the standard one.
+    public struct StampFormat: Equatable, Sendable {
+        /// The pattern every page reads in, Unicode date format syntax.
+        public var short: String
+        /// The pattern pages sharing a `short` reading fall back to.
+        public var fine: String
+
+        public static let standard = StampFormat(short: "HH:mm", fine: "HH:mm:ss")
+
+        public init(short: String, fine: String) {
+            self.short = short
+            self.fine = fine
+        }
+
+        var shortPattern: String { short.isEmpty ? Self.standard.short : short }
+        var finePattern: String { fine.isEmpty ? Self.standard.fine : fine }
+    }
+
+    /// The page's birth time in local time, in the pattern given. A
+    /// pattern that formats to the empty string (pure literals, an
+    /// unbalanced quote, anything DateFormatter refuses to render)
+    /// falls through to the standard pattern of the same class as the
+    /// caller's, on the same "empty means the standard one" rule
+    /// `StampFormat` states for a blank pattern: the reader still gets
+    /// a stamp rather than an empty gutter.
+    public static func stamp(
+        createdMs: UInt64, pattern: String = StampFormat.standard.short,
+        timeZone: TimeZone = .current
+    ) -> String {
+        let formatter = StampFormatterCache.formatter(pattern: pattern, timeZone: timeZone)
+        let date = Date(timeIntervalSince1970: Double(createdMs) / 1000)
+        let reading = formatter.string(from: date)
+        guard reading.isEmpty, pattern != StampFormat.standard.short else { return reading }
+        let fallback = StampFormatterCache.formatter(
+            pattern: StampFormat.standard.short, timeZone: timeZone)
+        return fallback.string(from: date)
+    }
+
+    /// The stamps for one day's pages, in the day's order: the short
+    /// form for each, and the fine form for every page whose short
+    /// form another page on the same day also reads, so no two gutters
+    /// or nodes under one day's words say the same thing. A page with
+    /// no birth stamp reads as empty and collides with nothing. The one
+    /// rule the rail and the roll both read, so a node and its gutter
+    /// cannot disagree about a page's time.
+    ///
+    /// A user's `fine` pattern coarser than a minute (or the same as
+    /// their `short`) would leave same-minute births still reading
+    /// alike after the escalation; the standard `HH:mm:ss` is a final
+    /// tiebreaker for exactly that case, so two pages born the same
+    /// minute read apart even when the user's own patterns cannot.
+    /// Two births at the same second remain a dead heat and read as
+    /// the fine form; there is no honest way to tell them apart.
+    public static func stamps(
+        createdMs: [UInt64?], format: StampFormat = .standard, timeZone: TimeZone = .current
+    ) -> [String] {
+        let short = createdMs.map { ms in
+            ms.map { stamp(createdMs: $0, pattern: format.shortPattern, timeZone: timeZone) } ?? ""
+        }
+        var shortCounts: [String: Int] = [:]
+        for reading in short where !reading.isEmpty { shortCounts[reading, default: 0] += 1 }
+        let escalated: [String] = createdMs.indices.map { index in
+            guard let ms = createdMs[index], shortCounts[short[index], default: 0] > 1 else {
+                return short[index]
+            }
+            return stamp(createdMs: ms, pattern: format.finePattern, timeZone: timeZone)
+        }
+        // A fine pattern coarser than the birth resolution (say `HH`
+        // paired with `HH:mm`, or a `fine` equal to the `short`) leaves
+        // the same colliding readings behind; the standard `HH:mm:ss`
+        // is the final tiebreaker so a same-minute pair reads apart.
+        var fineCounts: [String: Int] = [:]
+        for (index, reading) in escalated.enumerated()
+        where !reading.isEmpty && shortCounts[short[index], default: 0] > 1 {
+            fineCounts[reading, default: 0] += 1
+        }
+        return createdMs.indices.map { index in
+            let reading = escalated[index]
+            guard let ms = createdMs[index],
+                  shortCounts[short[index], default: 0] > 1,
+                  fineCounts[reading, default: 0] > 1
+            else { return reading }
+            return stamp(
+                createdMs: ms, pattern: StampFormat.standard.fine, timeZone: timeZone)
+        }
+    }
+
+    /// The title a node carries for its tooltip: the core's label when
+    /// it is a name or the page's first line, and nothing for a
+    /// placeholder, which is the stamp again in the core's own shape.
+    static func title(of summary: TabSummary?) -> String {
+        guard let summary, summary.titleSource != .placeholder else { return "" }
+        return summary.title
     }
 
     // MARK: What a node says
@@ -243,7 +342,9 @@ public enum StreamNavigator {
         /// viewport, so the stretch clicked is read rather than kissed
         /// by the top edge.
         public static let trackLead: CGFloat = 0.3
-        /// The gauge's width beside a node and on a gutter.
+        /// The gauge's width under the active node, the one place on
+        /// the surface a page's remaining life is drawn while pages
+        /// are organized by day.
         public static let gaugeWidth: CGFloat = 44
     }
 
@@ -593,5 +694,29 @@ public enum StreamNavigator {
     /// motion rule the surface has (D-02).
     public static func jumpDuration(reduceMotion: Bool) -> TimeInterval {
         reduceMotion ? 0 : 0.16
+    }
+}
+
+/// One `DateFormatter` per (pattern, timeZone.identifier), so the rail
+/// and the roll do not allocate a formatter every second per node
+/// (Claude #6). `DateFormatter` is thread-safe once configured for the
+/// read side; the cache guards the shared dictionary with a lock, since
+/// `stamp` is non-isolated and reads run from both the SwiftUI body and
+/// the assembly pass.
+private enum StampFormatterCache {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cache: [String: DateFormatter] = [:]
+
+    static func formatter(pattern: String, timeZone: TimeZone) -> DateFormatter {
+        let key = "\(timeZone.identifier)\u{1F}\(pattern)"
+        lock.lock()
+        defer { lock.unlock() }
+        if let hit = cache[key] { return hit }
+        let made = DateFormatter()
+        made.locale = Locale(identifier: "en_US_POSIX")
+        made.timeZone = timeZone
+        made.dateFormat = pattern
+        cache[key] = made
+        return made
     }
 }

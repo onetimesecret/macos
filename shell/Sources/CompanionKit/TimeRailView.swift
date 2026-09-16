@@ -62,7 +62,8 @@ public struct TimeRailView: View {
         let nodes = StreamNavigator.nodes(
             projection: projection, tabs: model.tabs,
             selection: rollIsShowing ? model.selection : nil,
-            surfaceShowsRoll: rollIsShowing
+            surfaceShowsRoll: rollIsShowing,
+            stampFormat: model.stampFormat
         )
         VStack(spacing: 2) {
             // The Files shelf: fixed, above the days, and drawn only
@@ -488,28 +489,33 @@ struct StreamNavigatorView: View {
         .accessibilityAddTraits(node.active ? [.isSelected] : [])
     }
 
-    /// The dot: larger for a day's first page, ember when active, and
-    /// dashed for the place today keeps while it holds no page, in the
-    /// strip's own language for a slot standing empty.
+    /// The mark on the track. The active node is a filled ember dot,
+    /// the one dot the rail draws: twenty hollow circles read as twenty
+    /// things to look at, and only one of them is where the surface
+    /// stands. Every other page is a quaternary tick across the track,
+    /// wider for a day's first page, so the track reads as a ruler with
+    /// one bead on it. The place today keeps while it holds no page is
+    /// a dashed ring, in the strip's own language for a slot standing
+    /// empty. Each mark keeps the same seat whichever it is, so a
+    /// selection moving down the rail moves nothing else.
     @ViewBuilder
     private func marker(for node: StreamNavigator.Node) -> some View {
         let size: CGFloat = node.firstOfDay ? 7 : 5
-        if node.hasPage {
-            Circle()
-                .fill(node.active ? Color.ember : Color.cellBackground)
-                .overlay(
-                    Circle().strokeBorder(
-                        node.active ? Color.ember : Color.secondary.opacity(0.5),
-                        lineWidth: node.active ? 1.5 : 1
-                    )
-                )
-                .frame(width: size, height: size)
-        } else {
+        if !node.hasPage {
             Circle()
                 .strokeBorder(
                     node.active ? Color.ember : Color.secondary.opacity(0.5),
                     style: StrokeStyle(lineWidth: 1, dash: [1.5, 1.5])
                 )
+                .frame(width: size, height: size)
+        } else if node.active {
+            Circle()
+                .fill(Color.ember)
+                .frame(width: size, height: size)
+        } else {
+            Rectangle()
+                .fill(.quaternary)
+                .frame(width: size, height: 1)
                 .frame(width: size, height: size)
         }
     }

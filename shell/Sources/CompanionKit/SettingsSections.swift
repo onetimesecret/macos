@@ -174,8 +174,8 @@ public struct GeneralSettingsView: View {
             } header: {
                 SettingsCaption(Self.pagePlacementCaption)
             }
-            // The rounding switch is about time, so it appears only
-            // under the Days choice (D-26).
+            // The rounding switch and the time patterns are about
+            // time, so they appear only under the Days choice (D-26).
             if model.showsTimeUnits {
                 Section {
                     Toggle("Round a page's deadline up to the hour, or to midnight", isOn: $model.snapsToBoundaries)
@@ -183,6 +183,14 @@ public struct GeneralSettingsView: View {
                     SettingsCaption(
                         "A rung names a duration; this lets the deadline land where the clock does. Under a day it rounds up to the next whole hour, from a day up to the next midnight, and never by more than a day. Pages already counting down keep the deadline they have."
                     )
+                }
+                Section {
+                    TextField("Time on a page", text: stampBinding(\.short), prompt: Text("HH:mm"))
+                    TextField(
+                        "When two pages share a minute", text: stampBinding(\.fine),
+                        prompt: Text("HH:mm:ss"))
+                } header: {
+                    SettingsCaption(Self.stampFormatCaption)
                 }
             }
             Section {
@@ -294,6 +302,22 @@ public struct GeneralSettingsView: View {
         #else
         return "Shown because this app was launched with COMPANION_ALLOW_CAPTURE. It lifts the screen-capture exclusion until the app quits, and an ordinary launch offers no such switch."
         #endif
+    }
+
+    /// What the two time patterns cost and do, in the caption's own
+    /// words (D-26).
+    static let stampFormatCaption =
+        "How a page's birth time reads beside its day, on the rail and in the gutter. The day's words carry the date, so the time stands alone; two pages born the same minute take the second pattern so they read apart. Unicode date patterns: HH:mm, HH:mm:ss, h:mm a. Empty means the standard one."
+
+    /// One field of the stamp format, edited in place. An empty
+    /// pattern is kept as typed and read as the standard one.
+    private func stampBinding(
+        _ keyPath: WritableKeyPath<StreamNavigator.StampFormat, String>
+    ) -> Binding<String> {
+        Binding(
+            get: { model.stampFormat[keyPath: keyPath] },
+            set: { model.stampFormat[keyPath: keyPath] = $0 }
+        )
     }
 
     /// The toggle speaks to `SMAppService` directly; a refused

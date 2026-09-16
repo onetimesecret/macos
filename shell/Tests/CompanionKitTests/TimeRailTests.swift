@@ -28,6 +28,7 @@ final class TimeRailTests: XCTestCase {
             hasPage: page != nil,
             pageID: page,
             title: "slot \(tab)",
+            titleSource: .derived,
             rungCode: 5,
             rungLabel: "7d",
             remainingMs: page == nil ? 0 : 3_600_000,
