@@ -96,7 +96,7 @@ use ots_client::Transport as _;
 
 use companion_core::{
     ChipId, ChipMeta, DestinationClass, EditOp, FILE_SIZE_LIMIT, FileId, LedgerEvent, RestoreError,
-    Segment, Sheet, SheetId, SheetStore, SizeClass, SystemClock, TTL_LADDER, Tab, TabId, Ttl,
+    Segment, Sheet, SheetId, SheetStore, SystemClock, TTL_LADDER, Tab, TabId, Ttl,
     detect_source_language, local_day,
 };
 #[cfg(target_os = "macos")]
@@ -1322,11 +1322,8 @@ pub unsafe extern "C" fn companion_clear_clipboard_if_ours(handle: *mut Companio
 /// How long a copy-out may dwell on the general pasteboard before the
 /// shell's armed clear takes it back: the one number behind every
 /// "clipboard clears in N seconds" line, owned here so the shell reads
-/// it rather than promising one of its own (D-29, D-32). Ninety, the
-/// interval the maintainer's stream navigator design names in its
-/// copy notice (2026-09-15); it was provisional at 60 until then.
-/// ADR-0012's egress amendment names it.
-pub const CLIPBOARD_CLEAR_SECONDS: u32 = 90;
+/// it rather than promising one of its own (D-29, D-32).
+pub const CLIPBOARD_CLEAR_SECONDS: u32 = 60;
 
 /// The clear-after-copy interval in seconds ([`CLIPBOARD_CLEAR_SECONDS`]).
 /// Stateless: no handle, nothing to fail.
@@ -1496,13 +1493,7 @@ pub unsafe extern "C" fn companion_ledger_json(handle: *mut CompanionHandle) -> 
                 "title": record.title(),
                 "at_ms": record.at_wall_ms(),
                 "created_at_ms": record.item_created_wall_ms(),
-                "size": match record.size() {
-                    SizeClass::Tiny => "tiny",
-                    SizeClass::Small => "small",
-                    SizeClass::Medium => "medium",
-                    SizeClass::Large => "large",
-                    SizeClass::Huge => "huge",
-                },
+                "size": record.size().to_string(),
                 "destination": match record.destination() {
                     DestinationClass::None => "none",
                     DestinationClass::Clipboard => "clipboard",
@@ -4491,7 +4482,7 @@ mod tests {
     #[test]
     fn the_clear_interval_is_the_core_constant() {
         assert_eq!(companion_clipboard_clear_seconds(), CLIPBOARD_CLEAR_SECONDS);
-        assert_eq!(companion_clipboard_clear_seconds(), 90);
+        assert_eq!(companion_clipboard_clear_seconds(), 60);
     }
 
     /// Every egress retires the receipt of the one before it: a second
