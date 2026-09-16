@@ -132,13 +132,31 @@ final class FenceLanguageTests: XCTestCase {
         XCTAssertNil(scanner.fenceLanguage)
     }
 
-    /// The colors live in one place so a test can name them and dark
-    /// mode costs nothing: every one is a system color.
-    func testTheFourColorsAreFixedInOnePlace() {
-        XCTAssertEqual(InkStyle.tokenColor(.keyword), NSColor.systemPurple)
-        XCTAssertEqual(InkStyle.tokenColor(.string), NSColor.systemRed)
-        XCTAssertEqual(InkStyle.tokenColor(.comment), NSColor.secondaryLabelColor)
-        XCTAssertEqual(InkStyle.tokenColor(.number), NSColor.systemBlue)
+    /// The colours live in one place, Theme.swift, and the editor
+    /// reads them from there: each kind maps to its ink token and the
+    /// four are distinct from each other. What the tokens measure
+    /// against the wash is ThemeContrastTests' question (D-06).
+    func testTheFourColoursComeFromTheTheme() {
+        XCTAssertEqual(InkStyle.tokenColor(.keyword), NSColor.inkKeyword)
+        XCTAssertEqual(InkStyle.tokenColor(.string), NSColor.inkString)
+        XCTAssertEqual(InkStyle.tokenColor(.comment), NSColor.inkComment)
+        XCTAssertEqual(InkStyle.tokenColor(.number), NSColor.inkNumber)
+    }
+
+    /// Each token clears the record's bar against the wash it is drawn
+    /// on, under both appearances, measured rather than named.
+    func testTokenColoursClearFourPointFiveAgainstTheFenceWash() {
+        for kind in [CodeInk.TokenKind.keyword, .string, .comment, .number] {
+            for appearance in ThemeContrastTests.appearances {
+                for (backingName, layers) in ThemeContrastTests.fenceWashes {
+                    let ratio = ThemeContrastTests.contrastRatio(
+                        InkStyle.tokenColor(kind), over: layers, appearance: appearance)
+                    XCTAssertGreaterThanOrEqual(
+                        ratio, ThemeContrastTests.bar,
+                        "\(kind) on \(backingName) under \(appearance.rawValue) reads \(ratio):1")
+                }
+            }
+        }
     }
 }
 
@@ -324,10 +342,10 @@ final class CodeHighlightingRenderingTests: XCTestCase {
             ```
             """
         )
-        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
-        XCTAssertEqual(foreground(of: "\"ada\""), NSColor.systemRed)
-        XCTAssertEqual(foreground(of: "// who"), NSColor.secondaryLabelColor)
-        XCTAssertEqual(foreground(of: "42"), NSColor.systemBlue)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
+        XCTAssertEqual(foreground(of: "\"ada\""), NSColor.inkString)
+        XCTAssertEqual(foreground(of: "// who"), NSColor.inkComment)
+        XCTAssertEqual(foreground(of: "42"), NSColor.inkNumber)
         // Everything the tokenizer did not claim is ordinary ink, and
         // the rules themselves are markup, dimmed as they always were.
         XCTAssertEqual(foreground(of: "name"), NSColor.labelColor)
@@ -343,9 +361,9 @@ final class CodeHighlightingRenderingTests: XCTestCase {
     func testAControlCharacterAtTheHeadOfALineDoesNotShiftItsColor() {
         makeEditor()
         paste("```swift\n\u{0C}let name = 1\n```")
-        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
         XCTAssertEqual(foreground(of: "\u{0C}"), NSColor.labelColor)
-        XCTAssertEqual(foreground(of: "1"), NSColor.systemBlue)
+        XCTAssertEqual(foreground(of: "1"), NSColor.inkNumber)
         XCTAssertEqual(foreground(of: "name"), NSColor.labelColor)
     }
 
@@ -384,7 +402,7 @@ final class CodeHighlightingRenderingTests: XCTestCase {
         XCTAssertEqual(foreground(of: "\"quoted\""), NSColor.labelColor)
         // The one line that is inside the fence still colors, so the
         // page above is not simply going uncolored by accident.
-        XCTAssertEqual(foreground(of: "let x"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "let x"), NSColor.inkKeyword)
     }
 
     /// The whole contract of display-only styling: the restyle pass may
@@ -405,7 +423,7 @@ final class CodeHighlightingRenderingTests: XCTestCase {
         XCTAssertEqual(storage.string, before)
         XCTAssertEqual(storage.string, page)
         // And the coloring really did happen over those unchanged bytes.
-        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
     }
 
     /// A comment left open at the end of one block cannot color the
@@ -423,15 +441,15 @@ final class CodeHighlightingRenderingTests: XCTestCase {
             ```
             """
         )
-        XCTAssertEqual(foreground(of: "/* still open"), NSColor.secondaryLabelColor)
-        XCTAssertEqual(foreground(of: "let x"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "/* still open"), NSColor.inkComment)
+        XCTAssertEqual(foreground(of: "let x"), NSColor.inkKeyword)
     }
 
     func testTurningHighlightingOffKeepsFixedWidthCodeTypography() throws {
         makeEditor()
         paste("prose\n```swift\nlet value = 1\n```\nafter")
         let code = (storage.string as NSString).range(of: "let").location
-        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
 
         model.syntaxHighlightingEnabled = false
         coordinator.applySyntaxHighlighting(false)
@@ -444,6 +462,42 @@ final class CodeHighlightingRenderingTests: XCTestCase {
 
         model.syntaxHighlightingEnabled = true
         coordinator.applySyntaxHighlighting(true)
-        XCTAssertEqual(foreground(of: "let"), NSColor.systemPurple)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
+    }
+
+    /// The whole of D-05 from the reader's side: headings keep their
+    /// hashes and a fence keeps its rules on screen, dimmed rather than
+    /// removed, so select all and copy hands back the page as it was
+    /// typed. The reading is the one a copy takes: the text under the
+    /// selection after select all, which is the storage's string over
+    /// its full range. The pasteboard itself is not written, since a
+    /// headless test binary has no pasteboard server worth trusting
+    /// and the general pasteboard is the person's, not the suite's.
+    func testSelectAllCopyReturnsTheTypedString() {
+        makeEditor()
+        let page = """
+            # heading
+
+            ## second
+
+            body with a [link](https://example.invalid)
+
+            ```swift
+            let name = "ada" // who
+            ```
+            after
+            """
+        paste(page)
+        XCTAssertEqual(foreground(of: "# heading"), NSColor.tertiaryLabelColor)
+        XCTAssertEqual(foreground(of: "let"), NSColor.inkKeyword)
+
+        let full = NSRange(location: 0, length: storage.length)
+        XCTAssertEqual(storage.attributedSubstring(from: full).string, page)
+
+        textView.selectAll(nil)
+        XCTAssertEqual(textView.selectedRange(), full)
+        XCTAssertEqual(
+            storage.attributedSubstring(from: textView.selectedRange()).string, page,
+            "what the copy would take is not what was typed")
     }
 }

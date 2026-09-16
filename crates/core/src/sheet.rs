@@ -23,6 +23,7 @@ use std::time::{Duration, Instant};
 
 use crate::blocks::{BlockIndex, BlockMeta};
 use crate::document::{DocRun, SheetDocument};
+use crate::ledger::SizeClass;
 use crate::secret::SecretBuffer;
 use crate::ttl::{self, Ttl};
 
@@ -244,7 +245,7 @@ impl SealedChip {
             bytes: SecretBuffer::new_unlocked(bytes),
             meta: ChipMeta::Image { byte_len },
             excerpt,
-            size_label: human_bytes(byte_len),
+            size_label: SizeClass::of(byte_len).to_string(),
             conceal: None,
         }
     }
@@ -276,7 +277,9 @@ impl SealedChip {
         &self.excerpt
     }
 
-    /// The count shown beside the excerpt ("40 ch", "5 ln", "212 KB").
+    /// The size class shown beside the excerpt ("tiny", "small",
+    /// "medium", "large", "huge"): the ledger's own bucket
+    /// ([`SizeClass`]), never an exact length (D-29).
     #[must_use]
     pub fn size_label(&self) -> &str {
         &self.size_label
@@ -965,18 +968,22 @@ fn flatten_links(text: &str) -> String {
 /// The mechanical excerpt rule (doc 04; reference implementation in the
 /// rev C prototype's `excerptOf`). Returns (excerpt, size label, meta).
 ///
-/// - Multi-line: first line, at most 17 characters, `…` appended; the
-///   count reads in lines ("5 ln").
+/// - Multi-line: first line, at most 17 characters, `…` appended.
 /// - Single line of n characters: reveal budget `B = min(24, ⌊n/3⌋)`,
 ///   split 60/40 head–tail (`head = max(1, ⌈0.6·B⌉)`), middle hidden;
-///   too short to split (`B < 1`) shows `···`. The count reads in
-///   characters ("40 ch").
+///   too short to split (`B < 1`) shows `···`.
 ///
-/// Trailing newlines are trimmed before counting: the person who pasted
-/// it recognizes "3 ch", not "4 ch with an invisible newline". Counts
-/// are `char`s — mechanical, not grapheme-aware; the excerpt only has to
-/// be recognized by the person who pasted it.
+/// The size label is a class, never a count: the same bucket the
+/// ledger reduces the seal to, read off the sealed bytes whole. An
+/// exact length is a weak fingerprint of the content, and the label is
+/// what would sit in a clipboard history forever once a placeholder
+/// carries it (D-29). Trailing newlines are trimmed before the excerpt
+/// is cut, so the person who pasted "abc\n" still recognizes "a…";
+/// the character and line counts stay in the meta, which never
+/// renders. Counts are `char`s, mechanical and not grapheme-aware; the
+/// excerpt only has to be recognized by the person who pasted it.
 fn text_face(text: &str) -> (String, String, ChipMeta) {
+    let size_label = SizeClass::of(text.len()).to_string();
     let trimmed = text.trim_end_matches('\n');
     let lines = trimmed.split('\n').count().max(1);
     if lines > 1 {
@@ -990,7 +997,7 @@ fn text_face(text: &str) -> (String, String, ChipMeta) {
         let chars = trimmed.chars().count();
         return (
             format!("{head}…"),
-            format!("{lines} ln"),
+            size_label,
             ChipMeta::Text { chars, lines },
         );
     }
@@ -998,14 +1005,14 @@ fn text_face(text: &str) -> (String, String, ChipMeta) {
     let meta = ChipMeta::Text { chars: n, lines };
     let budget = (n / 3).min(24);
     if budget < 1 {
-        return ("···".to_string(), format!("{n} ch"), meta);
+        return ("···".to_string(), size_label, meta);
     }
     // 60/40 head–tail, head rounded up: max(1, ⌈0.6·B⌉) = max(1, ⌈3B/5⌉).
     let head_len = (3 * budget).div_ceil(5).max(1);
     let tail_len = budget - head_len;
     let head: String = trimmed.chars().take(head_len).collect();
     let tail: String = trimmed.chars().skip(n.saturating_sub(tail_len)).collect();
-    (format!("{head}…{tail}"), format!("{n} ch"), meta)
+    (format!("{head}…{tail}"), size_label, meta)
 }
 
 /// Sniff an image container from magic bytes — a header peek, never a
@@ -1021,17 +1028,6 @@ fn sniff_image_kind(bytes: &[u8]) -> &'static str {
         "GIF"
     } else {
         "an"
-    }
-}
-
-/// "212 KB" — byte sizes the way the chip face reads them.
-pub(crate) fn human_bytes(len: usize) -> String {
-    if len >= 1024 * 1024 {
-        format!("{:.1} MB", len as f64 / (1024.0 * 1024.0))
-    } else if len >= 1024 {
-        format!("{} KB", len / 1024)
-    } else {
-        format!("{len} B")
     }
 }
 
@@ -1092,7 +1088,7 @@ mod tests {
         let token = String::from("ghp_") + "4kQ9wXbGpT2mR8vLcY3n" + "Z6qF1sJde0H5jK7a";
         assert_eq!(token.chars().count(), 40);
         let (excerpt, label) = face(&token);
-        assert_eq!(label, "40 ch");
+        assert_eq!(label, "tiny");
         assert_eq!(excerpt, "ghp_4kQ9…5jK7a");
         assert_eq!(excerpt.chars().filter(|c| *c != '…').count(), 13);
     }
@@ -1101,7 +1097,7 @@ mod tests {
     fn long_single_line_caps_the_budget_at_24() {
         let long: String = "x".repeat(200);
         let (excerpt, label) = face(&long);
-        assert_eq!(label, "200 ch");
+        assert_eq!(label, "small");
         // budget 24: head ⌈14.4⌉ = 15, tail 9.
         assert_eq!(excerpt.chars().filter(|c| *c != '…').count(), 24);
         assert!(excerpt.starts_with(&"x".repeat(15)));
@@ -1111,7 +1107,7 @@ mod tests {
     fn too_short_to_split_shows_dots() {
         let (excerpt, label) = face("ab");
         assert_eq!(excerpt, "···");
-        assert_eq!(label, "2 ch");
+        assert_eq!(label, "tiny");
     }
 
     #[test]
@@ -1119,24 +1115,28 @@ mod tests {
         // n=3 → budget 1 → head 1, tail 0.
         let (excerpt, label) = face("abc");
         assert_eq!(excerpt, "a…");
-        assert_eq!(label, "3 ch");
+        assert_eq!(label, "tiny");
     }
 
     #[test]
-    fn multi_line_shows_first_line_and_line_count() {
-        let (excerpt, label) =
-            face("-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaA\n-----END-----");
+    fn multi_line_shows_first_line_and_a_size_class() {
+        let key = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaA\n-----END-----";
+        let (excerpt, label) = face(key);
         assert_eq!(excerpt, "-----BEGIN OPENSS…");
-        assert_eq!(label, "3 ln");
+        assert_eq!(label, SizeClass::of(key.len()).to_string());
+        assert!(!label.contains("ln"), "a line count is a count: {label}");
     }
 
     #[test]
-    fn trailing_newlines_do_not_count() {
+    fn trailing_newlines_do_not_shape_the_excerpt() {
+        // The excerpt is cut from the content, not from its terminator;
+        // the label is a class of the whole, so nothing about it can
+        // betray the newline either way.
         let (excerpt, label) = face("abc\n");
-        assert_eq!(label, "3 ch", "a trailing newline is not content");
         assert_eq!(excerpt, "a…");
-        let (_, label) = face("one\ntwo\n\n");
-        assert_eq!(label, "2 ln");
+        assert_eq!(label, "tiny");
+        let (excerpt, _) = face("one\ntwo\n\n");
+        assert_eq!(excerpt, "one…");
     }
 
     #[test]
@@ -1158,7 +1158,7 @@ mod tests {
         };
         let chip = SealedChip::image(ChipId(1), png);
         assert_eq!(chip.excerpt(), "PNG image");
-        assert_eq!(chip.size_label(), "212 KB");
+        assert_eq!(chip.size_label(), "large");
         assert_eq!(
             chip.meta(),
             ChipMeta::Image {
@@ -1171,7 +1171,7 @@ mod tests {
     fn unknown_image_kind_stays_generic() {
         let chip = SealedChip::image(ChipId(1), vec![0u8; 64]);
         assert_eq!(chip.excerpt(), "an image");
-        assert_eq!(chip.size_label(), "64 B");
+        assert_eq!(chip.size_label(), "small");
     }
 
     /// The fixed stamp `ManualClock::new()` reports, so every title
@@ -1508,9 +1508,22 @@ mod tests {
     }
 
     #[test]
-    fn human_bytes_scales() {
-        assert_eq!(human_bytes(212 * 1024), "212 KB");
-        assert_eq!(human_bytes(64), "64 B");
-        assert_eq!(human_bytes(3 * 1024 * 1024), "3.0 MB");
+    fn the_size_label_is_the_ledgers_bucket_never_a_count() {
+        // The label and the ledger read the same bytes through the
+        // same buckets, so the face can never say more than the record.
+        for (text, class) in [
+            ("ab".to_string(), "tiny"),
+            ("x".repeat(64), "small"),
+            ("x".repeat(1024), "medium"),
+            ("x".repeat(65_536), "large"),
+        ] {
+            let (_, label) = face(&text);
+            assert_eq!(label, class, "{} bytes", text.len());
+            assert_eq!(label, SizeClass::of(text.len()).to_string());
+        }
+        assert!(
+            !face(&"x".repeat(200)).1.contains("200"),
+            "an exact length must never reach the face"
+        );
     }
 }

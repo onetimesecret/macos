@@ -110,12 +110,26 @@ final class FileSurfaceTests: XCTestCase {
     }
 
     func testTheConflictBannerNamesTheFileAndSaysSavingIsRefused() {
-        let sentence = FileConflictBanner.sentence(for: .changed, name: "README.md")
-        XCTAssertTrue(sentence.contains("README.md"))
-        XCTAssertTrue(sentence.contains("refused"))
+        XCTAssertEqual(
+            FileConflictBanner.sentence(for: .changed, name: "README.md"),
+            "README.md changed on disk and this copy has unsaved edits · "
+                + "saving is refused until one copy is chosen")
         XCTAssertTrue(
             FileConflictBanner.sentence(for: .missing, name: "notes.txt")
                 .contains("no longer at its path"))
+    }
+
+    /// The copy register (D-15) speaks in the third person outside
+    /// tooltips, so neither conflict may address the reader as "you".
+    func testTheConflictSentenceSpeaksInTheThirdPerson() {
+        for conflict in [FileConflict.changed, .missing] {
+            let sentence = FileConflictBanner.sentence(for: conflict, name: "README.md")
+            let words = sentence.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            XCTAssertFalse(words.contains("you"), sentence)
+            XCTAssertFalse(words.contains("your"), sentence)
+            XCTAssertFalse(sentence.contains("!"), sentence)
+        }
     }
 
 

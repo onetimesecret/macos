@@ -50,3 +50,10 @@ e5a4d02f43db3f6f1be307b504c05f2bb6964056:docs/Airlock Prototype/_ds/onetime-secr
 # its 40-char PAT-shaped fixture as a literal; the follow-up commit
 # rewrote it to be assembled at runtime, matching the discipline above.
 1f7f12c7dda24a6d162de81ae3315672cef146e7:crates/core/src/sheet.rs:github-pat:456
+
+# Historical size-class test fixture: this test constructs a truncated,
+# repeated OpenSSH-shaped payload solely to verify that a few-hundred-byte
+# sealed item is labelled "small". It is not a usable private key. Both
+# reachable commit IDs contain the identical fixture.
+23d48ee438c80b807f538c3202d2023102c4c764:crates/core/src/store.rs:private-key:2423
+2b83c4ae091b301ecfa8e6707dbbb9f7cac6590b:crates/core/src/store.rs:private-key:2423

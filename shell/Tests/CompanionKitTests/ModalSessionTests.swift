@@ -60,4 +60,48 @@ final class ModalSessionTests: XCTestCase {
         // without hanging the run on a panel nobody is looking at.
         XCTAssertFalse(ModalSession.isRunning)
     }
+
+    /// A rename is not destructive and takes an inline field (D-14,
+    /// issue #172), so the rename path never enters a modal session.
+    /// The roll's gutter is the field that can be driven without a
+    /// window: its rename begins, takes a draft and ends by the same
+    /// calls the field editor makes, against a real model over its own
+    /// state directory. The strip's SwiftUI field cannot be driven
+    /// here; it decides its endings through the same `TabRename`, whose
+    /// outcomes `TabRenameTests` pin.
+    func testRenameNeverRunsAModalSession() throws {
+        let suiteName = "companion-rename-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+        let model = isolatedModel(defaults: defaults)
+        model.newPage()
+        let tab = try XCTUnwrap(model.tabs.first)
+
+        var ends = 0
+        let token = NotificationCenter.default.addObserver(
+            forName: ModalSession.didEndNotification, object: nil, queue: nil
+        ) { _ in
+            MainActor.assumeIsolated { ends += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let header = DayHeaderView(model: model)
+        header.show(dayText: "today", spokenLabel: "today", mark: .none, summary: tab)
+
+        header.beginRename()
+        XCTAssertFalse(ModalSession.isRunning, "the field opens in place, not in a panel")
+        header.renameDraft = "payroll"
+        header.endRename(committed: true)
+        XCTAssertEqual(model.tabs.first?.title, "payroll", "return hands the model the name")
+
+        header.refresh(summary: model.tabs.first)
+        header.beginRename()
+        header.renameDraft = "ledger"
+        header.endRename(committed: false)
+        XCTAssertEqual(model.tabs.first?.title, "payroll", "escape and focus loss keep the title")
+        XCTAssertEqual(header.renameDraft, "payroll", "and the gutter shows it again")
+
+        XCTAssertEqual(ends, 0, "no bracket was entered on either ending")
+        XCTAssertFalse(ModalSession.isRunning)
+    }
 }

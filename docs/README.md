@@ -10,7 +10,7 @@ replacement for it.
 - [ROADMAP.md](ROADMAP.md): where the product is going, milestone by milestone.
 - [tenets.md](tenets.md): the commitments that decide arguments when two good options conflict.
 - [purpose-aspirations-and-peers.md](purpose-aspirations-and-peers.md): why the app exists and which software it wants to be measured against.
-- [design-brief.md](design-brief.md): the original brief for the menu-bar companion.
+- [design-brief.md](design-brief.md): the original panel-era brief; tokens superseded by the design record.
 
 Read these first, and amend them rather than fork them when the shape of
 the product changes.
@@ -23,6 +23,16 @@ decision per file, named `NNNN-slug.md`. An ADR is an argument with a
 context and consequences, not a veto: an idea that cuts against one
 reopens it rather than being cancelled by it. New decisions take the next
 free number.
+
+## law/
+
+Numbered behaviour laws, 0001 upward, plus the [template](law/template.md)
+and [behaviour law conventions](law/README.md). One governing rule per
+file, named `NNNN-slug.md`, with the cluster of decisions that follow from
+it and a contract table that is the test list. An ADR decides one thing; a
+dated decision record snapshots many at a date; a law holds the rule they
+share across the core, the shell and the UI. A law is amended in place, and
+a build that contradicts an accepted law is a bug report.
 
 ## archive/
 

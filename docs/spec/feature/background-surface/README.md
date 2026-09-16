@@ -332,14 +332,16 @@ Added by the parity amendment:
 
 8. Chips: the sealing gestures work from a raised card (⇧⌘V takes the
    clipboard and clears it, ⌘↩ seals the selection or line, an external
-   drop seals), and the resting glance draws the resulting excerpt
-   capsules with no affordance to reveal anything.
+   drop seals), and the resting glance draws the resulting sealed
+   blocks (D-27 in docs/spec/design/2026-0915-ui-ux-decisions.md; the
+   block is owed until the full-measure attachment lands) with no
+   affordance to reveal anything.
 9. Conceal: a link created from the backdrop reaches the server and
    lands on the clipboard, and a token saved in the backdrop's Settings
    goes under `com.onetimesecret.pad` in the Keychain.
    The panel's own token is untouched and neither app prompts for the
    other's item.
-10. Tabs: ⌘1 through ⌘9, ⌘N (including the refusal at nine), ⌥⌘←/→,
+10. Tabs: ⌘1 through ⌘9, ⌘N, ⌥⌘←/→,
     ⌘W, drag to reorder, double-click to hold the clock, and the ledger
     tab, all from a raised card and none of them reachable from a
     resting one.
@@ -358,7 +360,9 @@ Added by the parity amendment:
 2. **Per-display backdrops.** v0 is primary-screen only. One surface
    per display is mechanical to add and probably right.
 3. **Chip faces on the backdrop.** Chips appear now (the parity
-   amendment), rendered as the same excerpt capsule the panel draws.
+   amendment), rendered as the sealed block of D-27 in
+   docs/spec/design/2026-0915-ui-ux-decisions.md (owed: `ChipCell`'s
+   excerpt pill is the shipping treatment until the block lands).
    What stays open is whether even that mechanical excerpt is too much
    standing exposure on a surface nobody dismisses. A count-only face
    ("3 sealed items, 2h") remains the fallback if lived use says so.

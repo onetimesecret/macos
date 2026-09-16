@@ -91,8 +91,13 @@ spoken to." Existing copy sets the register:
 
 ## Tokens and parameters (current values)
 
+Superseded by docs/spec/design/2026-0915-ui-ux-decisions.md; the values
+below are history.
+
 - **Accent:** ember `#D45A2A`. The *single* accent colour, used sparingly,
-  never as the only carrier of state.
+  never as the only carrier of state. (The record's value is `#DC4A22`,
+  matching the shipped logo asset, and `Theme.swift` now carries
+  `#DC4A22` as well; the value above is the one this brief shipped with.)
 - **Surfaces:** drawn from the system palette
   (`windowBackgroundColor` / `controlBackgroundColor`) so Increase Contrast
   and Reduce Transparency degrade them to legible solid fills for free.
@@ -100,14 +105,15 @@ spoken to." Existing copy sets the register:
   prose.
 - **TTL ladder:** 1h → 3h → 8h → 24h → 3d → 7d. Default landing rung
   **8h**. Rendered as a draining ring plus a text label (e.g. "8h").
-- **Capacity:** 12 cells, **refuse-don't-evict** — cells leave only by
-  expiry or explicit discard, never by being pushed out.
+- ~~**Capacity:** 12 cells, **refuse-don't-evict** — cells leave only by
+  expiry or explicit discard, never by being pushed out.~~ (No cap since
+  issue #158; nothing is evicted but by the countdown.)
 - **Cell anatomy (today):** a clickable countdown ring (cycles the TTL) ·
   a caption ("TEXT · 8h · looks like a GitHub token") · the masked
   recognition line · a copy button.
 - **Tray glyph:** currently ㊙️ (maruhi, "secret").
 - **Panel:** ~320×480, edge-docked top-right, minimal chrome, generous
-  whitespace, one accent.
+  whitespace, one accent. (The archived panel form factor, ADR-0014.)
 
 ## Where design judgment is wanted (`docs/spec/06` + felt-experience)
 
@@ -116,8 +122,9 @@ settle them:
 
 - **Draining-ring legibility** across the full ladder — does 1h read
   differently from 7d at a glance? Its Reduce-Motion static form.
-- **Cap behaviour at 12** — should hitting the ceiling feel like a wall or
-  a nudge, and what does "refuse" look like on screen?
+- ~~**Cap behaviour at 12** — should hitting the ceiling feel like a wall or
+  a nudge, and what does "refuse" look like on screen?~~ (Closed: no cap
+  since issue #158.)
 - **Default landing rung** (8h) — does it feel right as you cycle?
 - **Conceal-to-link CTA**: subtle yet discoverable on every cell.
 - **Float-on-top affordance** — currently a header pin (`pin.fill` on /

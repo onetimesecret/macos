@@ -528,7 +528,7 @@ final class LanguageDetectionPasteIntegrationTests: XCTestCase {
         XCTAssertEqual(textView.string, "x\(payload)")
         XCTAssertNotEqual(
             model.notice,
-            "Paste canceled because the editor changed before detection finished."
+            "paste canceled: the editor changed before detection finished"
         )
         XCTAssertNil(service.currentResult)
         XCTAssertTrue(textView.coordinator === coordinator)
@@ -650,7 +650,7 @@ final class LanguageDetectionPasteIntegrationTests: XCTestCase {
         XCTAssertEqual(model.storage(for: second).string, "")
         XCTAssertEqual(
             model.notice,
-            "Paste canceled because the editor changed before detection finished."
+            "paste canceled: the editor changed before detection finished"
         )
         XCTAssertNil(service.currentResult)
         XCTAssertTrue(textView.coordinator === coordinator)

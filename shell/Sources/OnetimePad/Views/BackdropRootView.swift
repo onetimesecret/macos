@@ -39,6 +39,17 @@ struct BackdropRootView: View {
 
     private var raised: Bool { model.stance == .raised }
 
+    /// The crossing between the two stances (D-02): a short fade of
+    /// the dimmed content, or no animation at all under Reduce Motion,
+    /// where SwiftUI takes nil as "arrive at once". Read on each body
+    /// evaluation rather than captured, so a stance change sees the
+    /// setting as it stands. Nothing else on the card animates: the
+    /// keyline, the header words and the geometry all snap.
+    private var stanceFade: Animation? {
+        let duration = BackdropStance.currentStanceFadeDuration()
+        return duration > 0 ? .easeInOut(duration: duration) : nil
+    }
+
     var body: some View {
         let placed = model.displayedGeometry
         // While the window hugs the card (a pinned rest, and every
@@ -125,10 +136,12 @@ struct BackdropRootView: View {
                     // its clamp are untouched by the mode.
                     TimeRailView(model: pages)
                         .opacity(raised ? 1 : 0.72)
+                        .animation(stanceFade, value: raised)
                     Divider()
                     PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .opacity(raised ? 1 : 0.72)
+                        .animation(stanceFade, value: raised)
                 }
             } else {
                 PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
@@ -137,6 +150,7 @@ struct BackdropRootView: View {
                     // dimmed. Raising and lowering must not make the
                     // text jump, so only the opacity changes.
                     .opacity(raised ? 1 : 0.72)
+                    .animation(stanceFade, value: raised)
             }
             PageStatusStack(model: pages)
             // The two are exclusive: the days are the tabs while the
@@ -147,6 +161,7 @@ struct BackdropRootView: View {
                 Divider()
                 TabStripView(model: pages)
                     .opacity(raised ? 1 : 0.72)
+                    .animation(stanceFade, value: raised)
             }
         }
         .background(
@@ -339,21 +354,23 @@ struct BackdropRootView: View {
                 }
                 Text(state.saveWord)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(state.showsUnsavedDot ? Color.ember : Color.secondary)
+                    .foregroundStyle(state.showsUnsavedDot ? Color.emberText : Color.secondary)
             }
             if let stamp = state.lastEditStamp {
                 // The draft's age, on a file whose buffer came back
                 // from the drafts file rather than from disk. It is the
                 // whole of what the app owes for quitting without a
                 // save sheet: a person can see how old the typing is
-                // before pressing the save chord.
+                // before pressing the save chord. Secondary rather than
+                // tertiary ink, since a fact the app owes is text that
+                // carries meaning and must be readable as such.
                 Text(stamp)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             Text(state.encodingAndFormat)
                 .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(state.spoken))
@@ -375,7 +392,7 @@ struct BackdropRootView: View {
         } else if pages.contentRestoreRefused {
             Text("not saving")
                 .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(Color.ember)
+                .foregroundStyle(Color.emberText)
                 .help("The existing state file would not open, so this session is not being saved. The page shows the recovery.")
                 .accessibilityLabel(Text("This session is not being saved"))
         } else {
@@ -397,7 +414,7 @@ struct BackdropRootView: View {
             case .failed:
                 Text("save failed")
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(Color.ember)
+                    .foregroundStyle(Color.emberText)
                     .help("The last write was refused; the app keeps retrying. Quitting now will warn before any loss.")
                     .accessibilityLabel(Text("Save failed, retrying"))
             }
@@ -422,7 +439,7 @@ struct BackdropRootView: View {
         switch tone {
         case .quiet: return AnyShapeStyle(.tertiary)
         case .plain: return AnyShapeStyle(.secondary)
-        case .loud: return AnyShapeStyle(Color.ember)
+        case .loud: return AnyShapeStyle(Color.emberText)
         }
     }
 

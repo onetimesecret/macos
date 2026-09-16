@@ -74,7 +74,7 @@ final class SyncSurfaceTests: XCTestCase {
                 enabled: true,
                 status: status(signedIn: false, attached: false, gate: .signingIn),
                 trouble: nil, peers: nil),
-            "waiting on your browser to finish signing in; Settings can give up on it"
+            "waiting on the browser to finish signing in; Settings can give up on it"
         )
         // The control exists exactly while the trip does, which is the
         // gated banner's shape rather than a disabled button.
@@ -319,9 +319,50 @@ final class SyncSurfaceTests: XCTestCase {
 
     func testAttachedWithNobodyAwakeDoesNotClaimToBeSynced() {
         XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 2)?.text, "sync waiting")
-        // With nothing enrolled there is nothing waiting: an empty
-        // channel is genuinely up to date.
-        XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 0)?.text, "synced")
+        // With nothing enrolled the channel is still only a channel: a
+        // working one is not news until another device is there to
+        // receive, so the word waits whether or not pages are enrolled
+        // (D-20), and it waits in the plain tone, not the loud one.
+        XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 0)?.text, "sync waiting")
+        XCTAssertEqual(word(gate: .attached, peers: 0, enrolled: 0)?.tone, .plain)
+        // "synced" is the word for a peer awake, and for nothing else.
+        XCTAssertEqual(word(gate: .attached, peers: 1, enrolled: 0)?.text, "synced")
+        XCTAssertEqual(word(gate: .attached, peers: 1, enrolled: 2)?.text, "synced")
+    }
+
+    func testRefreshedRosterPeerPresenceOverridesTheAttachCount() {
+        let own = SyncDevice(
+            fingerprint: "this-mac", label: "", thisDevice: true, verified: true,
+            pairedWallMs: nil, attachedMs: nil)
+        let awake = SyncDevice(
+            fingerprint: "peer", label: "laptop", thisDevice: false, verified: true,
+            pairedWallMs: 1_000, attachedMs: 2_000)
+        let away = SyncDevice(
+            fingerprint: "peer", label: "laptop", thisDevice: false, verified: true,
+            pairedWallMs: 1_000, attachedMs: nil)
+
+        let afterPeerWakes = SyncController.currentPeers(
+            devices: [own, awake], attachFallback: 0)
+        XCTAssertEqual(afterPeerWakes, 1)
+        XCTAssertEqual(word(gate: .attached, peers: afterPeerWakes)?.text, "synced")
+
+        let afterPeerLeaves = SyncController.currentPeers(
+            devices: [own, away], attachFallback: 1)
+        XCTAssertEqual(afterPeerLeaves, 0)
+        XCTAssertEqual(word(gate: .attached, peers: afterPeerLeaves)?.text, "sync waiting")
+    }
+
+    func testAttachPeerCountStandsInUntilTheRosterIsReadable() {
+        let unanchoredPeer = SyncDevice(
+            fingerprint: "peer", label: "laptop", thisDevice: false, verified: true,
+            pairedWallMs: 1_000, attachedMs: 2_000)
+
+        XCTAssertEqual(
+            SyncController.currentPeers(devices: [], attachFallback: 2), 2,
+            "an unavailable roster must not erase the attach answer")
+        XCTAssertEqual(
+            SyncController.currentPeers(devices: [unanchoredPeer], attachFallback: 0), 0,
+            "a roster with no own-device anchor is not authoritative")
     }
 
     func testACoreWithNoGateLeavesTheShellsOwnReadingStanding() {
@@ -522,5 +563,15 @@ final class SyncSurfaceTests: XCTestCase {
         let outcome = try JSONDecoder().decode(SyncPumpOutcome.self, from: Data(json.utf8))
         XCTAssertEqual(outcome.events.count, 1)
         XCTAssertNil(outcome.events[0].pageID)
+    }
+
+    /// The refusal names the one rule the URL has to meet (D-24), so
+    /// the sentence is held to the record rather than left to drift
+    /// inside `save()`.
+    func testARefusedServerURLNamesTheHttpsRule() {
+        XCTAssertEqual(
+            ConnectionSettingsView.saveStatus(accepted: false),
+            "refused: the server URL must be https://…")
+        XCTAssertEqual(ConnectionSettingsView.saveStatus(accepted: true), "saved")
     }
 }

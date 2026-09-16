@@ -185,6 +185,33 @@ enum BackdropStance: Equatable {
         case .raised: 1
         }
     }
+
+    /// How long the card takes to cross between the glance and the
+    /// editor (D-02). The two stances differ only in opacity, and the
+    /// crossing is short enough to read as one thing settling rather
+    /// than something arriving: 160 ms, or nothing at all when the
+    /// person has asked the system for less motion, in which case the
+    /// end state lands in the same frame the stance changes. Pure, so
+    /// the number and the exception can be asserted without a view.
+    static func stanceFadeDuration(reduceMotion: Bool) -> Double {
+        reduceMotion ? 0 : 0.16
+    }
+
+    /// Whether the person has asked for reduced motion, read from the
+    /// system setting. A closure rather than a direct read so a test
+    /// can drive the answer without touching the accessibility
+    /// preference of the machine it runs on. The view asks at each
+    /// stance change, which is the only moment the answer matters, so
+    /// a setting flipped mid-session is honoured at the next crossing.
+    @MainActor static var reduceMotionPreferred: () -> Bool = {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    /// The fade as it stands right now: the pure rule applied to the
+    /// system's answer. This is what the view reads.
+    @MainActor static func currentStanceFadeDuration() -> Double {
+        stanceFadeDuration(reduceMotion: reduceMotionPreferred())
+    }
 }
 
 extension NSWindow.Level {

@@ -557,4 +557,17 @@ final class TimeUnitModeTests: XCTestCase {
         model.perform(.editorToggleWrap)
         XCTAssertNotEqual(model.wrapsLines, wrapped, "the chord stayed refused with the mode off")
     }
+
+    /// "Strip" and "rail" are the code names for the two navigations
+    /// and never reach the UI (D-26). The caption also owes the reader
+    /// the two costs of the mode, and this pins that it names both.
+    func testTheDaysCaptionNamesNoCodeWords() {
+        let caption = GeneralSettingsView.timeUnitsCaption
+        let words = caption.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+        XCTAssertFalse(words.contains("strip"), caption)
+        XCTAssertFalse(words.contains("rail"), caption)
+        XCTAssertTrue(caption.contains("Lines always wrap while days are showing."))
+        XCTAssertTrue(caption.contains("counted at the foot of the column"))
+    }
 }

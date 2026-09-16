@@ -2,7 +2,9 @@
 
 This directory holds numbered Architecture Decision Records: durable arguments for
 choices that constrain later work. Each new ADR takes the next free number and
-is named `NNNN-slug.md`.
+is named `NNNN-slug.md`. A governing rule and the cluster of decisions that
+follow from it is a behaviour law, not an ADR; those live in
+[docs/law/](../law/README.md).
 
 An ADR records what was decided, why it was reasonable under the constraints at
 the time, what it costs, and what evidence would reopen it. It is not a work

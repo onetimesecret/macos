@@ -1011,6 +1011,40 @@ final class FileDocumentTests: XCTestCase {
             model.openFiles, model.coreClient.fileRoster(),
             "and again after a save, which is what moves the dot")
     }
+
+    // MARK: Render mode and the bytes
+
+    /// The render mode is session state and attributes only (D-18,
+    /// D-05): it says how a file looks on screen and nothing about
+    /// what the file says. A flip followed by a save leaves the bytes
+    /// on disk identical, and a real write under the flipped mode
+    /// carries exactly the edit and nothing the mode drew.
+    func testARenderModeFlipLeavesTheFileBytesIdentical() throws {
+        let fixture = try makeFixture()
+        let panels = ScriptedFilePanels()
+        let model = makeModel(fixture, panels: panels)
+        model.loadStateIfNeeded()
+        let original = "# heading\n\nbody\n\n```swift\nlet x = 1\n```\n"
+        let url = try write(original, named: "notes.md", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.activeFile?.id)
+        _ = model.storage(for: id)
+        let before = model.fileRenderMode(for: id)
+
+        model.selectFileRenderMode(.source("swift"), for: id)
+        XCTAssertNotEqual(model.fileRenderMode(for: id), before, "the flip must be a flip")
+        _ = model.saveFile(id)
+
+        XCTAssertEqual(try Data(contentsOf: url), Data(original.utf8), "the mode reached the bytes")
+        XCTAssertFalse(try XCTUnwrap(model.activeFile).isDirty, "a mode flip is not an edit")
+
+        try type("typed ", at: 0, into: id, on: model)
+        XCTAssertTrue(model.saveFile(id))
+
+        XCTAssertEqual(
+            try Data(contentsOf: url), Data(("typed " + original).utf8),
+            "a save under the flipped mode wrote something the mode drew")
+    }
 }
 
 /// The nine findings of the adversarial Swift review, each with the

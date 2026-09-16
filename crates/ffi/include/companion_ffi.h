@@ -334,8 +334,8 @@ bool companion_store_emptiness(CompanionHandle *handle,
  * staged (ADR-0007 Amendment 1). A refused seal clears nothing.
  * Returns the chip's JSON (free with companion_string_free()):
  *   chip_id, kind ("text"|"image"), excerpt (the mechanical face —
- *   the only rendering the content ever gets), size_label ("40 ch",
- *   "5 ln", "212 KB"), concealed (bool).
+ *   the only rendering the content ever gets), size_label (a size
+ *   class, "tiny" through "huge", never a count), concealed (bool).
  * Null when the board is empty, the page unknown, content empty, or
  * the range not on the page.
  * at_utf16/len_utf16 name the selection the gesture replaces, in
@@ -542,6 +542,14 @@ bool companion_chip_delete(CompanionHandle *handle, uint64_t chip);
  * happened.
  */
 bool companion_clear_clipboard_if_ours(CompanionHandle *handle);
+
+/*
+ * The clear-after-copy interval in seconds: how long a copy-out may
+ * dwell on the general pasteboard before the shell's armed clear takes
+ * it back. One core constant, read here so the confirmation line and
+ * the timer name the same number. Stateless.
+ */
+uint32_t companion_clipboard_clear_seconds(void);
 
 /* ------------------------------------------------------------------ */
 /* Time: the ladder, the pause, the one armed timer                    */

@@ -167,9 +167,86 @@ ADR-0017 own the superseded staged-content and object-graph decisions.
   or availability assumptions unavailable. The remaining persistence policy
   must then be re-evaluated against that platform change.
 
+## Amendment 1: three egress points and one clear interval
+
+- **Status:** accepted
+- **Date:** 2026-09-15
+
+Appended, not folded in. Unlike the ADR-0007 amendments, this one leaves
+the Decision text above as written: the base record already says that
+successors name the subsections they replace rather than editing them,
+and this section does the same for two bullets of **Supporting
+decisions**, the secret-handling discipline bullet and the input path
+bullet that follows it.
+
+### What changed
+
+The secret-handling discipline bullet counts "one egress (send)". The
+successor design record,
+[docs/spec/design/2026-0915-ui-ux-decisions.md](../spec/design/2026-0915-ui-ux-decisions.md),
+decision D-32, makes it three, and this amendment adopts that count so
+the ADR does not drift from the surface it governs:
+
+1. **Copy decrypted.** The plaintext goes to the general pasteboard.
+   This is the riskier path: the channel the Context section names as
+   the existential risk (clipboard managers, Universal Clipboard,
+   polling apps), kept as the fallback for destinations that take no
+   drop.
+2. **Decrypted drag.** OnetimePad writes the plaintext to the drag
+   pasteboard, from the explicit decrypted-drag handle only, and does not
+   write it to the general pasteboard. This is the recommended path into a
+   form field. No claim is made about clipboard history, observation by
+   third-party software or erasure when the drag ends.
+3. **Promotion to a one-time link.** The conceal of ADR-0007 Amendment
+   3: plaintext leaves for the server and a link comes back.
+
+All three complete-payload writes are core-side. The Swift shell asks the
+core to write to a named destination and never receives the sealed payload.
+It may hold visible ink before sealing and the policy-approved mechanical
+excerpt afterward: `ChipInfo.excerpt` and the JSON returned by
+`companion_sheet_document_json` make those Swift-visible strings explicit.
+The inventory is therefore one ingress and three complete-payload egresses,
+each crossing the FFI at a documented point.
+
+The input path bullet's "clear on any pasteboard egress" gains the
+number it lacked. The clear-on-egress interval is one core constant,
+60 seconds, exposed through a seam so the confirmation line and the
+timer read the same value (`CLIPBOARD_CLEAR_SECONDS` and the
+`companion_clipboard_clear_seconds` seam in `crates/ffi/src/lib.rs`).
+The shell arms a one shot timer after every copy out and after the
+one time link copy, calling `clearClipboardIfOurs`
+(`shell/Sources/CompanionKit/CompanionClient.swift:833`), so the
+interval describes what the build does. The clear applies to the general pasteboard only. This amendment makes no
+erasure or retention promise for the drag pasteboard.
+
+The ledger's `sent` record keeps its shape. Its `DestinationClass`
+(`crates/core/src/ledger.rs:108`) names `Clipboard` and `OneTimeLink`
+today; it gains a `Drag` class when issue 170 (the sealed object
+pasteboard model: private type, placeholder, detach on cut, reattach on
+paste, lazy decrypted drag) lands, written at the moment the drag's
+plaintext is provided, not when the drag starts. Recording the class
+costs no content, as the Ledger subsection already argues for
+`clipboard`, and it lets the ledger tell the riskier egress from the
+recommended one.
+
+### What this does not claim
+
+Three named egresses do not narrow the residual exposure the Consequences
+list. Apple's [`NSPasteboard` documentation](https://developer.apple.com/documentation/appkit/nspasteboard/)
+states, "The drag pasteboard is
+used to transfer data that is being dragged by the user," and that the
+general pasteboard "automatically participates with the Universal Clipboard
+feature." It does not promise that drag data is absent from clipboard
+history, unobservable by other software or erased when the drag ends. A
+decrypted drag is preferred because OnetimePad does not put those bytes on
+the general pasteboard, not because the bytes are protected in flight; the
+destination application holds them from the drop onward.
+
 ## Decision history
 
 - **2026-07-15:** This remains the proposed base record.
 - **2026-08-06:** Revised to incorporate external review and implementation findings. The revision did not change the proposed status.
 - **2026-08-20:** [ADR-0016](0016-content-persists-across-restart.md) superseded the named staged-content lifecycle and related consequences portions; [ADR-0017](0017-durable-tabs-expiring-pages.md) superseded the named object-graph and title-ownership portions. See [Supersession](#supersession) for scope.
 - **2026-08-20 onward:** The portions named as still standing in [Supersession](#supersession) remain in force.
+- **2026-09-15:** [Amendment 1](#amendment-1-three-egress-points-and-one-clear-interval) was appended, adopting D-32 of the [2026-0915 design record](../spec/design/2026-0915-ui-ux-decisions.md): three egress points in place of one, the clear-on-egress interval as one core constant of 60 seconds, and the `Drag` destination class owed to issue 170.
+- **2026-09-15:** Amendment 1 was narrowed after documentation review: the shell does not receive the complete sealed payload but may hold visible ink and the mechanical excerpt; decrypted drag is guaranteed not to be written by OnetimePad to the general pasteboard, with no broader clipboard-history, observability or erasure claim.

@@ -143,7 +143,7 @@ public struct GeneralSettingsView: View {
                 if let fontStatus {
                     Text(fontStatus)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(Color.ember)
+                        .foregroundStyle(Color.emberText)
                 }
             } header: {
                 SettingsCaption(typeCaption)
@@ -157,6 +157,13 @@ public struct GeneralSettingsView: View {
             }
 
             Section {
+                Toggle("A page a day, with time tabs down the side", isOn: $model.showsTimeUnits)
+            } header: {
+                SettingsCaption(Self.timeUnitsCaption)
+            }
+            // The rounding switch is about time, so it reads as
+            // belonging to the Days choice and sits under it (D-26).
+            Section {
                 Toggle("Round a page's deadline up to the hour, or to midnight", isOn: $model.snapsToBoundaries)
             } header: {
                 SettingsCaption(
@@ -164,17 +171,12 @@ public struct GeneralSettingsView: View {
                 )
             }
             Section {
-                Toggle("A page a day, with time tabs down the side", isOn: $model.showsTimeUnits)
-            } header: {
-                SettingsCaption(timeUnitsCaption)
-            }
-            Section {
                 Toggle("Start at login", isOn: loginBinding)
                     .disabled(!LaunchAtLogin.mayRegister)
                 if let loginStatus {
                     Text(loginStatus)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(Color.ember)
+                        .foregroundStyle(Color.emberText)
                 }
             } header: {
                 SettingsCaption(loginCaption)
@@ -259,18 +261,23 @@ public struct GeneralSettingsView: View {
     /// order is deliberate: say that it is a prototype, say that it
     /// moves no content, and say what it costs while the mode is on.
     /// A toggle whose caption promised only the good half would be the
-    /// kind of setting a user flips once and distrusts afterwards, and
-    /// the missing verbs are a real limit until each page carries its
-    /// own gutter.
-    private var timeUnitsCaption: String {
-        "A prototype. Your live pages stand down the side of the card grouped by the day they "
+    /// kind of setting a user flips once and distrusts afterwards. The
+    /// costs are the two the tree really imposes (D-26): lines wrap
+    /// whatever the wrap preference says, and an older page with
+    /// nothing on it draws no row and is only counted. Each day's
+    /// gutter carries the four verbs now, so they are no longer a cost
+    /// to name. "Strip" and "rail" are code names and stay out of the
+    /// caption, which a test pins.
+    static let timeUnitsCaption: String =
+        "A prototype. Live pages stand down the side of the card grouped by the day they "
             + "were written, newest first, instead of along the bottom as slots. It moves no "
             + "content and writes nothing new to disk: the tabs, their names and their rungs "
-            + "are the same underneath either way you look at them, and turning it off puts the "
-            + "strip back as it was. The days read as one page torn along a perforation: "
+            + "are the same underneath either way, and turning it off puts the slots back "
+            + "along the bottom. The days read as one page torn along a perforation: "
             + "renaming, holding, shortening and closing live on each day's own gutter, and "
-            + "the column beside them is for getting about."
-    }
+            + "the column beside them is for getting about. Lines always wrap while days are "
+            + "showing. An older page with nothing on it is not drawn; it is counted at the "
+            + "foot of the column."
 
     /// The section only exists when the switch is offered, so the
     /// caption's job is to say why this build has one and how long it
@@ -347,7 +354,7 @@ public struct CodeSettingsView: View {
                 if let codeFontStatus {
                     Text(codeFontStatus)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(Color.ember)
+                        .foregroundStyle(Color.emberText)
                 }
             } header: {
                 SettingsCaption(
@@ -471,7 +478,7 @@ public struct ConnectionSettingsView: View {
                 if let status {
                     Text(status)
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(statusIsError ? Color.ember : Color.secondary)
+                        .foregroundStyle(statusIsError ? Color.emberText : Color.secondary)
                 }
                 Spacer()
                 Button("Save") { save() }
@@ -505,7 +512,14 @@ public struct ConnectionSettingsView: View {
         )
         token = ""
         statusIsError = !accepted
-        status = accepted ? "saved" : "refused: the server URL must be https://…"
+        status = Self.saveStatus(accepted: accepted)
+    }
+
+    /// The two words a save can end on. The refusal names the one rule
+    /// the core applies to the URL (D-24), and it lives here rather
+    /// than inline in `save()` so a test can hold it to the record.
+    nonisolated static func saveStatus(accepted: Bool) -> String {
+        accepted ? "saved" : "refused: the server URL must be https://…"
     }
 
     private func clearToken() {

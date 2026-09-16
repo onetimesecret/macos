@@ -349,6 +349,23 @@ public final class EditStepAvailability: ObservableObject {
     }
 }
 
+/// What Edit → Seal Selected Content greys itself out on: whether the
+/// editor holds an editable page with a non-empty selection. Published
+/// for the same reason as the two above, a SwiftUI menu item carries
+/// its own target and is never validated down the responder chain.
+///
+/// Enablement is display, never a gate. A selection that holds a chip
+/// leaves the item enabled and the click refuses out loud (D-08); a
+/// disabled item would hide the refusal rather than say it.
+@MainActor
+public final class SealActionAvailability: ObservableObject {
+    @Published public private(set) var canSeal = false
+
+    func stand(canSeal: Bool) {
+        if self.canSeal != canSeal { self.canSeal = canSeal }
+    }
+}
+
 @MainActor
 public final class PageModel: ObservableObject {
     /// What this form factor decides differently — where its Keychain
@@ -470,6 +487,23 @@ public final class PageModel: ObservableObject {
     /// A refusal or status line the surface shows briefly ("nothing to
     /// seal"). When the app declines something it says so.
     @Published public var notice: String?
+
+    /// How the current notice is drawn. Ember is for what needs acting
+    /// on (design record, section 5); a notice that only reports what
+    /// just happened, "the link is on the clipboard" or "long lines
+    /// wrap", is a quiet line like any other. Set by `flash` alongside
+    /// the words, so the two never disagree.
+    @Published public private(set) var noticeTone: NoticeTone = .plain
+
+    /// The two ways a notice can read: as information, or as something
+    /// the person has to do something about.
+    public enum NoticeTone: Equatable, Sendable {
+        /// A fact about what just happened. Secondary ink.
+        case plain
+        /// A refusal that leaves work undone until the person acts,
+        /// such as a save that did not reach disk. Ember ink.
+        case actionable
+    }
 
     /// Notices are transient by contract: each `flash` restarts the
     /// clock, and the line clears itself unless a newer notice has
@@ -777,7 +811,7 @@ public final class PageModel: ObservableObject {
     /// will not honour it, which hands horizontal mode back unwrapped
     /// for a keystroke whose effect the user was never shown.
     public static let wrapIsFixedNotice =
-        "long lines always wrap while the time tabs are showing"
+        "long lines always wrap while the days are showing"
 
     /// The rule, as a pure decision on the two facts a launch knows, so
     /// the release branch is testable from a debug test binary: a debug
@@ -839,6 +873,9 @@ public final class PageModel: ObservableObject {
 
     /// What the Edit menu's Undo and Redo read as right now.
     public let editSteps = EditStepAvailability()
+
+    /// What Edit → Seal Selected Content reads as the selection moves.
+    public let sealActions = SealActionAvailability()
 
     /// Set by the app delegate; Esc routes here when no editor holds
     /// the keys (the controller re-keys the frontmost app's window).
@@ -959,6 +996,11 @@ public final class PageModel: ObservableObject {
     private nonisolated(unsafe) var eventTimer: Timer?
     private nonisolated(unsafe) var redrawTimer: Timer?
     private nonisolated(unsafe) var saveTimer: Timer?
+    /// The clear-after-copy: one shot, armed on every pasteboard
+    /// egress, re-armed rather than doubled when a second egress lands
+    /// inside the window. Its firing is the guarded clear, which takes
+    /// nothing the user copied since.
+    private nonisolated(unsafe) var clipboardClearTimer: Timer?
 
     // nonisolated(unsafe) for the same reason as the timers: deinit is
     // nonisolated even on a @MainActor class, and deinit is where a
@@ -1022,6 +1064,15 @@ public final class PageModel: ObservableObject {
     /// retry at its far end needs no further gesture.
     private let saveRetryDebounce: TimeInterval
 
+    /// The clear-after-copy window a test shortened, or nil for the
+    /// core's own interval (`CompanionClient.clipboardClearSeconds`).
+    private let clipboardClearDebounce: TimeInterval?
+
+    /// The receipt-guarded clear itself. Shipping construction always
+    /// delegates to the core; the seam lets timer and teardown behavior
+    /// be asserted without touching the developer's clipboard.
+    private let clearClipboardIfOurs: @Sendable () -> Bool
+
     /// The init's test seams, gathered into one struct so the shipping
     /// signature stays narrow however many seams the tests grow. Each
     /// member is optional and nil means the shipping value: a
@@ -1051,6 +1102,12 @@ public final class PageModel: ObservableObject {
         /// passing or failing on whatever the person running the tests
         /// happens to have bound, which is not a test.
         let keymapOverride: URL?
+        /// A shorter window for the clear-after-copy timer, so a test
+        /// can watch it fire. The number the confirmation line names
+        /// is never this one: that is always the core's constant, and
+        /// only the timer's wait is shortened.
+        let clipboardClearDebounce: TimeInterval?
+        let clearClipboardIfOurs: (@Sendable () -> Bool)?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1058,7 +1115,9 @@ public final class PageModel: ObservableObject {
             saveDebounce: TimeInterval? = nil,
             saveRetryDebounce: TimeInterval? = nil,
             keymapOverride: URL? = nil,
-            fileLanguageDetection: LanguageDetectionService? = nil
+            fileLanguageDetection: LanguageDetectionService? = nil,
+            clipboardClearDebounce: TimeInterval? = nil,
+            clearClipboardIfOurs: (@Sendable () -> Bool)? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1066,6 +1125,8 @@ public final class PageModel: ObservableObject {
             self.saveRetryDebounce = saveRetryDebounce
             self.keymapOverride = keymapOverride
             self.fileLanguageDetection = fileLanguageDetection
+            self.clipboardClearDebounce = clipboardClearDebounce
+            self.clearClipboardIfOurs = clearClipboardIfOurs
         }
     }
 
@@ -1128,7 +1189,12 @@ public final class PageModel: ObservableObject {
         CoreDiagnostics.route(subsystem: formFactor.loggerSubsystem)
         self.formFactor = formFactor
         self.defaults = defaults
-        client = seams.client ?? CompanionClient(credentialService: formFactor.credentialService)
+        let resolvedClient =
+            seams.client ?? CompanionClient(credentialService: formFactor.credentialService)
+        client = resolvedClient
+        clearClipboardIfOurs = seams.clearClipboardIfOurs ?? {
+            resolvedClient.clearClipboardIfOurs()
+        }
         fileLanguageDetection = seams.fileLanguageDetection ?? LanguageDetectionService()
         stateFileURL = seams.stateDirectory.map(FormFactor.stateFileURL(in:))
             ?? formFactor.stateFileURL
@@ -1138,6 +1204,7 @@ public final class PageModel: ObservableObject {
             ?? formFactor.draftsFileURL
         saveDebounce = seams.saveDebounce ?? Self.saveDebounce
         saveRetryDebounce = seams.saveRetryDebounce ?? Self.saveRetryDebounce
+        clipboardClearDebounce = seams.clipboardClearDebounce
         logger = Logger(subsystem: formFactor.loggerSubsystem, category: "persistence")
         // Resolved once, here, so the surface and the page's text view
         // are answering out of one map. A test reads only the override
@@ -1644,6 +1711,29 @@ public final class PageModel: ObservableObject {
         saveTimer = timer
     }
 
+    /// Arm the clear-after-copy (D-29, D-32; ADR-0012): one shot, the
+    /// core's interval unless a test shortened it, firing the guarded
+    /// clear that takes the board back only while it still holds what
+    /// the core wrote. Re-armed on every egress: a second copy inside
+    /// the window gets its own full window, and the first timer is
+    /// stood down rather than left to fire early against the newer
+    /// write. In `.common` so a tracked menu cannot hold the clear
+    /// past its window.
+    private func armClipboardClear() {
+        clipboardClearTimer?.invalidate()
+        let interval =
+            clipboardClearDebounce ?? TimeInterval(CompanionClient.clipboardClearSeconds())
+        let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.clipboardClearTimer = nil
+                _ = self.clearClipboardIfOurs()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        clipboardClearTimer = timer
+    }
+
     /// Seal the store into its two files: live pages and their chips
     /// into the state file, the audit trail into the ledger file. Two
     /// files because they are sealed under two different keys with two
@@ -1951,6 +2041,10 @@ public final class PageModel: ObservableObject {
     deinit {
         eventTimer?.invalidate()
         redrawTimer?.invalidate()
+        if clipboardClearTimer != nil {
+            _ = clearClipboardIfOurs()
+            clipboardClearTimer?.invalidate()
+        }
         // A pending write dies with the model. In practice the model
         // outlives everything but the process, and the process's own
         // exit routes through `saveState` first.
@@ -2597,7 +2691,7 @@ public final class PageModel: ObservableObject {
     public func saveFile(_ id: UInt64) -> Bool {
         guard let before = openFiles.first(where: { $0.id == id }) else { return false }
         guard before.conflict == .none else {
-            flash(Self.unresolvedConflictNotice(name: before.name))
+            flash(Self.unresolvedConflictNotice(name: before.name), tone: .actionable)
             return false
         }
         // The check can reload a clean file out from under the save,
@@ -2609,7 +2703,7 @@ public final class PageModel: ObservableObject {
         guard let file = openFiles.first(where: { $0.id == id }) else { return false }
         guard file.conflict == .none else { return false }
         guard client.saveFile(id) else {
-            flash(Self.writeRefusalNotice(name: file.name))
+            flash(Self.writeRefusalNotice(name: file.name), tone: .actionable)
             return false
         }
         // The roster is what the header and the dots read, and a save
@@ -2655,7 +2749,7 @@ public final class PageModel: ObservableObject {
             return
         }
         guard client.saveFile(file.id, as: url.path) else {
-            flash(Self.writeRefusalNotice(name: url.lastPathComponent))
+            flash(Self.writeRefusalNotice(name: url.lastPathComponent), tone: .actionable)
             return
         }
         // The identity moved, so the bookmark has to move with it, or
@@ -2737,7 +2831,7 @@ public final class PageModel: ObservableObject {
             // throws it away now rather than later.
             guard fileCoordinator.confirmDiscardingEdits(named: file.name) else { return }
             guard client.reloadFile(file.id) else {
-                flash(Self.readRefusalNotice(name: file.name))
+                flash(Self.readRefusalNotice(name: file.name), tone: .actionable)
                 return
             }
             restateStorage(sheet: file.id)
@@ -3263,9 +3357,12 @@ public final class PageModel: ObservableObject {
     }
 
     /// Show `message` for a few seconds, then clear it — unless a newer
-    /// notice replaced it in the meantime.
-    public func flash(_ message: String) {
+    /// notice replaced it in the meantime. Plain unless the caller says
+    /// otherwise: most notices report, and the few that ask for a hand
+    /// name themselves as `.actionable` where they are raised.
+    public func flash(_ message: String, tone: NoticeTone = .plain) {
         notice = message
+        noticeTone = tone
         noticeGeneration += 1
         let generation = noticeGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
@@ -3752,7 +3849,17 @@ public final class PageModel: ObservableObject {
     /// ledger, and that record is lost unless a write is armed for it
     /// (issue #52).
     public func copyOutChip(_ id: UInt64) {
-        if client.copyOutChip(id: id) { markDirty() }
+        guard client.copyOutChip(id: id) else { return }
+        markDirty()
+        armClipboardClear()
+        flash(Self.copiedLine(clearsIn: CompanionClient.clipboardClearSeconds()))
+    }
+
+    /// The confirmation after a copy-out (D-29): what happened, and
+    /// when the board gives it back. The number is the core's, read
+    /// through the seam, never a promise the shell makes on its own.
+    public nonisolated static func copiedLine(clearsIn seconds: UInt32) -> String {
+        "decrypted contents copied · clipboard clears in \(seconds) seconds"
     }
 
     /// True while the shell is writing the projection itself: a
@@ -4112,11 +4219,15 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    private func finishConceal(_ outcome: ConcealOutcome, for target: ConcealDraft.Target) {
+    func finishConceal(_ outcome: ConcealOutcome, for target: ConcealDraft.Target) {
         // Before the staleness guard: the round trip moved core-side
         // state (a receipt in the ledger either way), whether or not
         // the draft that started it is still standing.
         markDirty()
+        // Success has already put a link on the clipboard core-side. Its
+        // clear belongs to that egress, not to whichever draft the UI is
+        // showing when the response returns.
+        if outcome.ok { armClipboardClear() }
         // The confirmation may have been dismissed — or reopened on a
         // different target — while the call was out; a stale outcome
         // must not land on someone else's draft. (On success the link

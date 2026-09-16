@@ -160,6 +160,8 @@ public final class SyncController: ObservableObject {
     /// only until that settling reads it: nothing durable records a
     /// cancelled ceremony, which never happened.
     private var signinGivenUp = false
+    /// The attach response's peer count is the compatibility fallback
+    /// until a readable device roster supplies the current count.
     private var lastAttachPeers: Int?
     private var pumping = false
     /// Which run of the engine loop is the live one. Every detached
@@ -209,7 +211,7 @@ public final class SyncController: ObservableObject {
     /// The standing sentence for the surface's status stack; nil when
     /// sync is off (silence is the promise) or quiet and well.
     public var standingSentence: String? {
-        Self.sentence(enabled: enabled, status: status, trouble: trouble, peers: lastAttachPeers)
+        Self.sentence(enabled: enabled, status: status, trouble: trouble, peers: displayedPeers)
     }
 
     /// Whether the standing sentence names something to act on. The
@@ -224,7 +226,15 @@ public final class SyncController: ObservableObject {
     /// which the gate reads as `off` and the ADR gives nothing to say.
     public var headerWord: SyncHeaderWord? {
         Self.headerWord(
-            enabled: enabled, status: status, trouble: trouble, peers: lastAttachPeers)
+            enabled: enabled, status: status, trouble: trouble, peers: displayedPeers)
+    }
+
+    /// Refreshed roster presence is newer than the attach response. A
+    /// roster without this device's anchor may be unavailable or from a
+    /// core that cannot supply it, so the attach answer remains the
+    /// fallback rather than being softened into zero peers.
+    private var displayedPeers: Int? {
+        Self.currentPeers(devices: devices, attachFallback: lastAttachPeers)
     }
 
     /// The Settings section's own status line: the standing sentence,
@@ -463,7 +473,12 @@ public final class SyncController: ObservableObject {
             armRetry()
             return
         }
-        if let state = outcome.state { status = state }
+        if let state = outcome.state {
+            status = state
+            // A pump state is a status refresh. Read the roster with it
+            // so peer-dependent words do not remain pinned to attach.
+            devices = client.syncDevices()
+        }
         var sawUnreachable = false
         var sawUnauthorized = false
         var remoteChanged = false
@@ -717,6 +732,18 @@ public final class SyncController: ObservableObject {
 
     // MARK: The sentences, pure and testable
 
+    /// The number of other devices presently represented as attached by
+    /// a readable roster. The own-device row is the validity anchor:
+    /// without it, preserve the attach response for compatibility rather
+    /// than treating an unavailable or older roster as an authoritative
+    /// zero.
+    public nonisolated static func currentPeers(
+        devices: [SyncDevice], attachFallback: Int?
+    ) -> Int? {
+        guard devices.contains(where: { $0.thisDevice }) else { return attachFallback }
+        return devices.filter { !$0.thisDevice && $0.attachedMs != nil }.count
+    }
+
     /// The one standing sentence the surface may show — nil when sync
     /// is off (off must be indistinguishable) and nil when it is quiet
     /// and well. Every degraded state gets its own, and none of them
@@ -744,7 +771,7 @@ public final class SyncController: ObservableObject {
         // that opened it should say so rather than look idle (ADR-0027
         // §5, `signing_in`).
         if status?.gate == .signingIn {
-            return "waiting on your browser to finish signing in; Settings can give up on it"
+            return "waiting on the browser to finish signing in; Settings can give up on it"
         }
         guard let status, status.attached else { return nil }
         if peers == 0, status.enrolled > 0 {
@@ -826,10 +853,14 @@ public final class SyncController: ObservableObject {
                 spoken: "Reaching the relay"
             )
         case .attached:
-            // Issue #94's device: enrolled pages and nobody awake to
-            // receive them. Saying "synced" there would be the one
-            // cheerful lie this word could tell.
-            if peers == 0, let status, status.enrolled > 0 {
+            // Issue #94's device: attached, and nobody awake to receive
+            // anything. Saying "synced" there would be the one cheerful
+            // lie this word could tell, and it stays a lie with nothing
+            // enrolled: a working channel is not news until another
+            // device is there to receive (D-20). The count comes from
+            // the refreshed roster when readable, with the attach answer
+            // retained as a compatibility fallback.
+            if peers == 0 {
                 return SyncHeaderWord(
                     text: "sync waiting",
                     tone: .plain,

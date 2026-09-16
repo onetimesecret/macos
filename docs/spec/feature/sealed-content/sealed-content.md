@@ -2,13 +2,15 @@
 
 OnetimePad · Design note, consolidated · September 2026 · Upstream of an ADR
 
-A sealed item is the editor-side face of a chip: a Rust-core-owned secret that the Swift/AppKit shell never holds in plaintext. This note fixes how such an item behaves inside a page, on the pasteboard, and at the moment its contents cross the protection boundary. It combines two established patterns: the **atomic attachment** (an image, mention, or embedded file in a rich-text editor) and **explicit declassification** (protected plaintext leaves only through an action that names that consequence).
+Status: historical. Superseded for governing behaviour by `docs/law/0001-sealed-object.md`; `docs/spec/design/2026-0915-ui-ux-decisions.md` section 3 applies that law to the surface. The rationale below is preserved, but its two-class taxonomy, ticket model, shell-plaintext claim, lifecycle and drag guarantees are not current requirements.
+
+A sealed item is the editor-side face of a chip. The shell never receives the complete sealed payload from the core; it may hold visible ink before sealing and the policy-approved mechanical excerpt afterward. This note fixes how such an item behaves inside a page, on the pasteboard, and at the moment its contents cross the protection boundary. It combines two established patterns: the **atomic attachment** (an image, mention, or embedded file in a rich-text editor) and **explicit declassification** (protected plaintext leaves only through an action that names that consequence).
 
 A sealed item occupies one position in the document, but its plaintext is not part of the document’s ambient text.
 
 *The governing law. It answers most interaction questions on its own.*
 
-Every operation on a sealed item is one of two kinds, and the distinction is the whole design:
+This historical draft grouped operations under two headings; Law 0001 replaces them with five classes:
 
 #### Structural
 
@@ -18,7 +20,7 @@ Every operation on a sealed item is one of two kinds, and the distinction is the
 
 #### Declassification
 
-- Copy decrypted contents, decrypted drag from the handle, unseal, promote to a one-time link, plaintext export
+- Copy decrypted contents, decrypted drag from the handle, promote to a one-time link, plaintext export
 - Plaintext crosses the boundary; the action names it
 - Always explicit, always core-side
 
@@ -26,13 +28,13 @@ Every operation on a sealed item is one of two kinds, and the distinction is the
 
 When plaintext is selected, offer **Seal Selection** in the context menu, **Edit → Seal Selected Content** in the menu bar, and optionally the same action in the command palette. Invoking it replaces the selection in place with one sealed object, preserves position and surrounding whitespace, selects the new object so the transformation is visible, and rejects selections that already contain a sealed object (sealed objects do not nest). No confirmation dialog for the ordinary case; the visible collapse into a card is the feedback.
 
-Sealing is reversible through **Unseal**, a named declassification on the object menu that restores the plaintext in place. ⌘Z immediately after sealing invokes exactly that command and is labelled *Undo Seal Selection* in the Edit menu. The undo record holds only the chip id and the range; the plaintext returns from the core through the same ingress in reverse, so the shell’s undo stack never contains a secret.
+Sealing is one-way in the editor (successor record D-30). An earlier draft offered **Unseal** as a named declassification and had ⌘Z invoke it as *Undo Seal Selection*; the record withdrew it, because an Undo that restored plaintext would be the one reveal path that names nothing. ⌘Z after sealing is not offered, and the content comes back only through *Copy decrypted contents*.
 
 > **Honest scope.** Retroactive sealing protects the selection *from this point forward*. In artifact terms: after the next debounced write the stored page no longer contains the plaintext, and earlier file generations are covered by the boot-bound key. What remains is the shell’s layout and glyph caches and whatever the user pasted from. Never imply historical erasure.
 
 ## The sealed-object contract
 
-`structural``declassify``ambient` reads the object without reading its payload
+This historical table used `structural`, `declassify`, and `ambient`; Law 0001 replaces them with five operation classes.
 
 | Interaction                      | Kind                                  | Expected behaviour                                                                                                                                                                                                                                                                                                                                                |
 |----------------------------------|---------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -40,10 +42,10 @@ Sealing is reversible through **Unseal**, a named declassification on the object
 | Click                            | `structural` | Selects the whole object; never places a caret inside it.                                                                                                                                                                                                                                                                                                         |
 | Shift-selection                  | `structural` | Includes the whole object or none of it.                                                                                                                                                                                                                                                                                                                          |
 | Select All                       | `structural` | Includes the object structurally, not its plaintext.                                                                                                                                                                                                                                                                                                              |
-| Copy (object or whole page)      | `structural` | Writes a copy-ticket in the private type plus the placeholder in plain text. No payload, no ciphertext.                                                                                                                                                                                                                                                           |
-| Cut                              | `structural` | Writes a cut-ticket, then moves the chip to the *detached* state, where it shows in the app’s own clipboard slot on its own TTL. Never an invisible limbo.                                                                                                                                                                                                        |
-| Paste inside OnetimePad          | `structural` | The core resolves the ticket. A cut-ticket reattaches the chip at the new position and is consumed; a copy-ticket (or a second paste of a cut-ticket) clones the chip with a new UUID, same TTL and payload.                                                                                                                                                      |
-| Paste into another app           | `ambient`    | The destination gets the placeholder `[sealed: ]`. Never plaintext.                                                                                                                                                                                                                                                                                        |
+| Copy (object or whole page)      | `structural` | Writes a versioned ordered fragment of visible ink runs and UUID references plus placeholders in plain text. No payload, no ciphertext.                                                                                                                                                                                                                          |
+| Cut                              | `structural` | Writes the same fragment, then moves every referenced chip to the *detached* state, where the fragment shows in the app’s own clipboard slot and every chip retains the page’s clock (no per object TTL; successor record D-33). Never an invisible limbo.                                                                                                         |
+| Paste inside OnetimePad          | `structural` | The core resolves each UUID reference. The first paste of a cut fragment reattaches its chips atomically; a copied fragment or later paste of a cut fragment clones live chips with new UUIDs and the same payload, on the page’s clock.                                                                                                                              |
+| Paste into another app           | `ambient`    | The destination gets the placeholder `[sealed content · <size class>]` (successor record D-29). Never plaintext.                                                                                                                                                                                                                                                                                        |
 | Drag within the document         | `structural` | Moves the object atomically with a clear insertion line. Contents never preview.                                                                                                                                                                                                                                                                                  |
 | Option-drag                      | `structural` | Core-side clone, following the macOS copy-drag convention. No pasteboard involvement.                                                                                                                                                                                                                                                                             |
 | Plain drag outside OnetimePad    | `ambient`    | Exposes only the placeholder.                                                                                                                                                                                                                                                                                                                                     |
@@ -51,7 +53,7 @@ Sealing is reversible through **Unseal**, a named declassification on the object
 | Backspace beside it              | `structural` | First press selects the object; second press removes it.                                                                                                                                                                                                                                                                                                          |
 | Backspace while selected         | `structural` | Removes it immediately, with Undo available.                                                                                                                                                                                                                                                                                                                      |
 | Search and word count            | `ambient`    | Do not inspect the plaintext; optionally count one protected object.                                                                                                                                                                                                                                                                                              |
-| Expiry                           | `structural` | A chip has its own TTL, which may be shorter than the page’s. When it elapses the page shows an *expired* placeholder in place, visibly distinct from a removed one, and not undoable because nothing remains to restore. When the page expires its chips go with it. Both hold at rest with the app not running (boot-bound key, refuse-to-reveal at next open). |
+| Expiry                           | `structural` | A page’s expiry takes its sealed objects with it, detached ones included; there is no per object TTL (successor record D-33, maintainer decision 2026-08-07). A pasted reference whose object is gone resolves to an *expired* placeholder in place, visibly distinct from a removed one, and not undoable because nothing remains to restore. All of it holds at rest with the app not running (boot-bound key, refuse-to-reveal at next open). |
 | Export, print, share             | `ambient`    | Emit the placeholder by default. Decrypting export is a separately named action.                                                                                                                                                                                                                                                                                  |
 | Promote whole page               | `declassify` | Includes sealed payloads; that is the product. The confirmation says so: “includes 2 sealed items”. The local copy is offered up to burn, never burned automatically.                                                                                                                                                                                             |
 
@@ -63,9 +65,8 @@ The object menu:
 
     Copy decrypted contents
     Create one-time link…
-    Unseal
     ────────────────────────
-    Remove protected content
+    Remove from page
 
 After a decrypted copy, confirm the boundary crossing with the interval the core actually enforces, for example `Decrypted contents copied · clipboard clears in 60 seconds`. The core already clears on every pasteboard egress, so state the real number; never promise a clear the app does not perform.
 
@@ -73,25 +74,25 @@ After a decrypted copy, confirm the boundary crossing with the interval the core
 
 `NSPasteboard` lets one item advertise several representations, and receiving apps choose the one they understand (the same mechanism that supplies image, rich-text, and plain-text forms of a single copy). A sealed object writes:
 
-- a private type, `com.onetimesecret.onetimepad.sealed-ref` (with the `.debug` suffix on dev builds, so dev and prod cannot resolve each other’s tickets), whose payload is a **ticket**;
-- the plain-text placeholder `[sealed: ]`;
+- a private type, `com.onetimesecret.onetimepad.sealed-fragment` (with the `.debug` suffix on development builds), whose versioned payload is an ordered sequence of visible ink runs and sealed-object UUID references;
+- the plain-text placeholder `[sealed content · <size class>]` (successor record D-29);
 - a public URL representation *only* as the direct result of “Create one-time link”, never on an ordinary copy. A one-time link is itself a declassification: the first reader burns it, and a pasteboard-polling app is a reader.
 
-Clipboard managers and Universal Clipboard do not pick a representation; they archive all of them and sync them to other devices. That is why the private type carries a ticket and not the chip: a ticket is content-free and linkage-free, whereas the chip’s stable UUID (already in the ledger) would let a history entry be linked to a ledger record forever.
+Clipboard managers and Universal Clipboard do not pick a representation; they archive all of them and sync them to other devices. That is why the private type carries references and never a chip payload or ciphertext. D-31 specifies UUID references because the ledger already records the same random identifiers in plain. Mixed ink and multiple objects require the ordered fragment rather than a single UUID.
 
-### Tickets
+### Rejected ticket proposal
 
-A ticket is a fresh random 128-bit value the core mints per copy or cut and maps internally to `{chip id, operation, pasteboard changeCount at issue}`. Tickets persist in the content store alongside the chips, so quitting between cut and paste and relaunching still pastes. On paste the core checks `changeCount`; a ticket issued under an older count is stale, and pasting it is a no-op with a one-line notice, never a resurrection. Across a reboot the chip is gone by crypto-erasure, so the ticket resolves to *expired* and the paste inserts the expired placeholder, which is the honest answer rather than a failure.
+An earlier draft proposed minting a per-copy ticket and persisting a ticket-to-chip table in the content store. D-31 rejected that model. The governing design persists no ticket table: a fragment contains ordered visible ink runs and UUID references, while detach/reattach state remains in the core-owned content store.
 
 The drag pasteboard uses the same multi-representation API, so decrypted drag is the same code path under a different pasteboard name, with the plaintext type present only when the drag starts from the explicit handle.
 
 ## Egress points
 
-The ADR names one egress (send). This design makes it three, and the ADR should say so rather than drift: **copy decrypted** to the general pasteboard (concealed type, cleared on the core’s interval), **decrypted drag** to the drag pasteboard (never enters clipboard history or Universal Clipboard, which makes it the safer of the two and the recommended way to get a secret into a form field), and **promotion**. All three are core-side writes; the Swift shell still never holds plaintext.
+The successor record defines three complete-payload egresses: **copy decrypted** to the general pasteboard, **decrypted drag** to the drag pasteboard, and **promotion**. Complete-payload writes remain core-side. OnetimePad does not write decrypted drag data to the general pasteboard; no broader clipboard-history, observability, or end-of-drag erasure guarantee is made.
 
 ## Residual exposure
 
-The placeholder carries the title, the ADR’s one accepted content-derived field, and it will sit in clipboard history under that label. Same exposure as the ledger, stated the same way. The title replaces the earlier `· 51 characters` form, which leaked an exact length the ledger deliberately reduces to a size class and was less useful to whoever received it.
+The placeholder carries a size class from `SizeClass` (`crates/core/src/ledger.rs`) and never a length, and it will sit in clipboard history under that label. Same exposure as the ledger, stated the same way. The size class replaces the earlier `· 51 characters` form, which leaked an exact length the ledger deliberately reduces to a class; an intermediate draft carried the page title instead, which the successor record D-29 retired.
 
 ## The rubric
 
@@ -110,7 +111,7 @@ Legibility
 Does the action name what crosses the protection boundary?
 
 Reversibility  
-Can structural edits be undone? (Unseal is the one declassification that also serves as undo, and it is named as such.)
+Can structural edits be undone? (Sealing is the one exemption: it is one-way in the editor, per the successor record D-30.)
 
 Safe fallback  
 When a destination cannot understand the object, does it receive a placeholder rather than plaintext or nothing?
@@ -118,20 +119,20 @@ When a destination cannot understand the object, does it receive a placeholder r
 ## Against the tenets
 
 1\. Losing work is unforgivable, even here  
-Unseal exists so a mis-sealed paragraph is not lost to friction. A cut chip is visible in the clipboard slot, never orphaned. Expiry is on schedule and shown in place. A drop or promotion never deletes; burn is a separate act.
+Sealing is one-way, so the copy names what it protects and from when (successor record D-30). A cut chip is visible in the clipboard slot, never orphaned. Expiry is on schedule and shown in place. A drop or promotion never deletes; burn is a separate act.
 
 2\. The artifact transcends the application  
-The artifact records chip attachment state (on page X, or detached) and the ticket table, so reopen restores exactly the interrupted state. Chip and page TTLs are artifact properties enforced at rest by the key lifecycle, not by a running process.
+The governing design records attached and detached object state in the content store. Pasteboard fragments contain ordered visible-ink runs and UUID references, never a persisted ticket table, payload, or ciphertext. The page clock is enforced at rest as well as by the running process.
 
 3\. Do not wag the dog  
 Every departure from the ADR above (three egress points, decrypted drag as preferred path) is argued on merits, not citation, and is a candidate ADR amendment.
 
 ## Changes from the first draft
 
-- **Undo of sealing** was “restore the plaintext”. It is now the named Unseal command, so ⌘Z is not an unlabelled reveal and the undo stack holds no plaintext.
-- **Paste inside OnetimePad** was “restores the complete sealed object, including its protected payload”. The private type now carries a ticket; the core owns the payload throughout.
+- **Undo of sealing** was “restore the plaintext”, then the named Unseal command. The successor record withdrew Unseal too: sealing is one-way, ⌘Z is not offered, and the undo stack holds no plaintext.
+- **Paste inside OnetimePad** was “restores the complete sealed object, including its protected payload”. The private type carries a reference (the chip's UUID, per the successor record D-31); the core owns the payload throughout.
 - **Drag outside OnetimePad** was placeholder-only with a vague exception for destinations that understand the format. It is now placeholder by default plus an explicit decrypted-drag handle, because the drag pasteboard is the safer declassification channel.
-- **Placeholder** was `[sealed content · 51 characters]`. It is now `[sealed: ]`.
+- **Placeholder** was `[sealed content · 51 characters]`, then `[sealed: <title>]`. It is now `[sealed content · <size class>]` (successor record D-29).
 - **Cut** now defines the detached state instead of leaving an unpasted chip undefined.
 - **Expiry** and **whole-page promotion** rows were added to the contract.
-- **Retroactive sealing’s caveat** is restated in artifact terms; autosave is already under the boot-bound key, so undo history is not in the residual list once Unseal routes through the core.
+- **Retroactive sealing’s caveat** is restated in artifact terms; autosave is already under the boot-bound key, so undo history is not in the residual list once sealing is one-way.

@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class OpEmitterTests: XCTestCase {
     private func chipInfo(id: UInt64) -> ChipInfo {
-        ChipInfo(chipId: id, kind: "text", excerpt: "ch…ip", sizeLabel: "4 ch", concealed: false)
+        ChipInfo(chipId: id, kind: "text", excerpt: "ch…ip", sizeLabel: "tiny", concealed: false)
     }
 
     func testTypingEmitsOneInsert() {
@@ -44,6 +44,38 @@ final class OpEmitterTests: XCTestCase {
             storage: storage, editedRange: NSRange(location: 1, length: 0), changeInLength: -1
         )
         XCTAssertEqual(ops, [.del(at: 1, len: 1)])
+    }
+
+    func testContainsChipRejectsInvalidRangesWithoutEnumerating() {
+        let storage = NSTextStorage(string: "ink")
+        let invalidRanges = [
+            NSRange(location: NSNotFound, length: 0),
+            NSRange(location: storage.length + 1, length: 0),
+            NSRange(location: storage.length, length: 1),
+            NSRange(location: Int.max - 1, length: 10),
+        ]
+
+        for range in invalidRanges {
+            XCTAssertFalse(
+                InkEditorView.Coordinator.containsChip(storage, in: range),
+                "invalid range \(range) must not be enumerated"
+            )
+        }
+    }
+
+    func testContainsChipRetainsValidRangeBehavior() {
+        let storage = NSTextStorage(string: "ab")
+        storage.insert(InkEditorView.Coordinator.chipString(chipInfo(id: 7)), at: 1)
+
+        XCTAssertFalse(
+            InkEditorView.Coordinator.containsChip(
+                storage, in: NSRange(location: 0, length: 1)))
+        XCTAssertTrue(
+            InkEditorView.Coordinator.containsChip(
+                storage, in: NSRange(location: 1, length: 1)))
+        XCTAssertFalse(
+            InkEditorView.Coordinator.containsChip(
+                storage, in: NSRange(location: storage.length, length: 0)))
     }
 
     func testAMultiRunPasteSplitsIntoInkAndChipOps() {
@@ -377,11 +409,143 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertEqual(head, "a\u{1F600} ")
         XCTAssertEqual(tail, " tail")
         XCTAssertFalse(storage.string.contains("SECRET"))
-        // The caret sits just past the chip, and sealing is not
+        // The new object is selected (D-30), and sealing is not
         // undoable.
-        XCTAssertEqual(textView.selectedRange(), NSRange(location: 5, length: 0))
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 4, length: 1))
         XCTAssertNil(textView.undoManager, "AppKit is vending a stack for a page it does not own")
         assertParity()
+    }
+
+    func testSealingSelectsTheNewObject() {
+        makeEditor()
+        textView.insertText(
+            "head SECRET tail", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 5, length: 6))
+        coordinator.sealSelectionOrLine()
+
+        // The selection covers exactly the sentinel character, so the
+        // transformation is visible where it happened rather than the
+        // caret sitting quietly after it.
+        let selected = textView.selectedRange()
+        XCTAssertEqual(selected, NSRange(location: 5, length: 1))
+        XCTAssertTrue(
+            InkEditorView.Coordinator.containsChip(storage, in: selected),
+            "the selection is the chip, not the ink beside it")
+        XCTAssertEqual((storage.string as NSString).character(at: 5), 0xFFFC)
+        assertParity()
+    }
+
+    func testSealedPasteOverAChipIsRefused() {
+        makeEditor()
+        textView.insertText(
+            "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.sealSelectionOrLine()
+        guard case .chip(let sealed)? = coreRuns().dropFirst().first else {
+            return XCTFail("the seal left no chip")
+        }
+        // A selection that swallows the chip: "b", the chip, " c".
+        textView.setSelectedRange(NSRange(location: 1, length: 4))
+        batches = []
+        model.notice = nil
+        coordinator.sealedPaste()
+
+        // A chip leaves the page only by an act aimed at it (D-08). The
+        // chord refuses with the line, no delete crosses the seam, and
+        // the chip is still standing core-side with the ink around it.
+        XCTAssertEqual(model.notice, InkEditorView.Coordinator.alreadySealedLine)
+        XCTAssertEqual(batches, [], "a refused seal must emit no ops")
+        XCTAssertEqual(coreRuns().count, 3)
+        guard case .chip(let still)? = coreRuns().dropFirst().first else {
+            return XCTFail("the refused seal reaped the chip")
+        }
+        XCTAssertEqual(still.chipId, sealed.chipId)
+        XCTAssertEqual(storage.string.utf16.count, 7, "ab, space, the chip, space, cd")
+        assertParity()
+    }
+
+    func testTheChipMenuOffersPlaintextByName() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.chipMenuTitles,
+            ["Copy decrypted contents", "Create one-time link…", "Remove protected content"])
+        makeEditor()
+        textView.insertText(
+            "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.sealSelectionOrLine()
+
+        // The two egresses, a separator, then the removal (D-29), every
+        // action aimed at the coordinator that owns the chip.
+        let menu = NSMenu()
+        coordinator.appendChipItems(to: menu, at: 3)
+        XCTAssertEqual(menu.items.count, 4)
+        XCTAssertEqual(menu.items[0].title, "Copy decrypted contents")
+        XCTAssertEqual(menu.items[1].title, "Create one-time link…")
+        XCTAssertTrue(menu.items[2].isSeparatorItem)
+        XCTAssertEqual(menu.items[3].title, "Remove protected content")
+        for item in menu.items where !item.isSeparatorItem {
+            XCTAssertTrue(item.target === coordinator, "\(item.title) is not the coordinator's")
+        }
+        // Ink offers no chip items at all.
+        let ink = NSMenu()
+        coordinator.appendChipItems(to: ink, at: 0)
+        XCTAssertTrue(ink.items.isEmpty)
+    }
+
+    func testTheContextMenuOffersSealSelectionOverInkOnly() {
+        makeEditor()
+        textView.isEditable = true
+        textView.insertText(
+            "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        // Nothing selected: no row, and the Edit menu item is dimmed.
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        coordinator.refreshLanguageActionAvailability()
+        XCTAssertFalse(model.sealActions.canSeal)
+        let bare = NSMenu()
+        coordinator.appendSealItem(to: bare)
+        XCTAssertTrue(bare.items.isEmpty)
+
+        // Ink selected: the row is offered and runs the seal (D-30).
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.refreshLanguageActionAvailability()
+        XCTAssertTrue(model.sealActions.canSeal)
+        let offered = NSMenu()
+        coordinator.appendSealItem(to: offered)
+        XCTAssertEqual(offered.items.map(\.title), [SealSelectionMenu.contextMenuTitle])
+        XCTAssertTrue(offered.items[0].target === coordinator)
+        coordinator.sealSelectionOrLine()
+
+        // A selection holding the chip: the row is withheld, because
+        // it would only refuse; the Edit item stays enabled so the
+        // refusal is said rather than hidden.
+        textView.setSelectedRange(NSRange(location: 1, length: 4))
+        coordinator.refreshLanguageActionAvailability()
+        XCTAssertTrue(model.sealActions.canSeal)
+        let overChip = NSMenu()
+        coordinator.appendSealItem(to: overChip)
+        XCTAssertTrue(overChip.items.isEmpty)
+        model.notice = nil
+        textView.sealSelectedContent(nil)
+        XCTAssertEqual(model.notice, InkEditorView.Coordinator.alreadySealedLine)
+        assertParity()
+    }
+
+    func testAClickOnAChipSelectsItWhole() throws {
+        makeEditor()
+        textView.insertText(
+            "ab SECRET cd", replacementRange: NSRange(location: NSNotFound, length: 0))
+        textView.setSelectedRange(NSRange(location: 3, length: 6))
+        coordinator.sealSelectionOrLine()
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let attachment = try XCTUnwrap(
+            storage.attribute(.attachment, at: 3, effectiveRange: nil) as? ChipAttachment)
+        let cell = try XCTUnwrap(attachment.attachmentCell)
+
+        // A plain click selects the whole object and never places a
+        // caret inside it (D-28); no menu opens on the click.
+        coordinator.textView(textView, clickedOn: cell, in: .zero, at: 3)
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 1))
     }
 
     func testAnUndoResurrectingADeadChipIsStrippedSilently() {

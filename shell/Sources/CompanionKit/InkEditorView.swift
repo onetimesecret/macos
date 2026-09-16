@@ -518,7 +518,7 @@ public struct InkEditorView: NSViewRepresentable {
             languageSuggestion = nil
             languageDetectionService.invalidate()
             if canceledAutomaticPaste {
-                model.flash("Paste canceled because the editor changed before detection finished.")
+                model.flash("paste canceled: the editor changed before detection finished")
             }
         }
 
@@ -558,12 +558,12 @@ public struct InkEditorView: NSViewRepresentable {
                   textView.isEditable, !textView.hasMarkedText(),
                   let storage = textView.textStorage
             else {
-                model.flash("Paste canceled because the editor changed before detection finished.")
+                model.flash("paste canceled: the editor changed before detection finished")
                 return
             }
             let selection = textView.selectedRange()
             guard selection.location != NSNotFound, NSMaxRange(selection) <= storage.length else {
-                model.flash("Paste canceled because the editor changed before detection finished.")
+                model.flash("paste canceled: the editor changed before detection finished")
                 return
             }
             let caret = NSRange(
@@ -837,6 +837,45 @@ public struct InkEditorView: NSViewRepresentable {
                 canChoose: canChoose,
                 selectionIsEmpty: selectionIsEmpty
             )
+            model.sealActions.stand(canSeal: sealableSelection() != nil)
+        }
+
+        /// The selection Edit → Seal Selected Content and the context
+        /// menu row would seal: non-empty, on an editable page rather
+        /// than a file, and not mid-composition. Nil otherwise. The
+        /// chord is wider (it takes the current line when nothing is
+        /// selected); the menus name a selection and offer only that.
+        func sealableSelection() -> NSRange? {
+            guard let textView, let storage = textView.textStorage,
+                  let sheet = currentSheet, !sheet.isFileID,
+                  textView.isEditable, !textView.hasMarkedText()
+            else { return nil }
+            let selection = textView.selectedRange()
+            guard selection.location != NSNotFound, selection.length > 0,
+                  NSMaxRange(selection) <= storage.length
+            else { return nil }
+            return selection
+        }
+
+        /// The context menu's Seal Selection row (D-30), offered when
+        /// the selection is sealable and holds no chip: over a chip the
+        /// row would only ever refuse, and a menu should not offer a
+        /// verb it knows it will decline.
+        func appendSealItem(to menu: NSMenu) {
+            guard let storage = textView?.textStorage, let selection = sealableSelection(),
+                  !Self.containsChip(storage, in: selection)
+            else { return }
+            let seal = NSMenuItem(
+                title: SealSelectionMenu.contextMenuTitle,
+                action: #selector(sealSelectionFromMenu(_:)),
+                keyEquivalent: ""
+            )
+            seal.target = self
+            menu.addItem(seal)
+        }
+
+        @objc private func sealSelectionFromMenu(_ sender: NSMenuItem) {
+            sealSelectionOrLine()
         }
 
         var canDetectCodeLanguage: Bool {
@@ -848,7 +887,7 @@ public struct InkEditorView: NSViewRepresentable {
                   model.languageDetectionEnabled
             else { return }
             guard let target = manualLanguageTarget(), let storage = textView?.textStorage else {
-                model.flash("Select whole lines or place the caret inside a bare code fence.")
+                model.flash("select whole lines or place the caret inside a bare code fence")
                 return
             }
             invalidateOrdinaryPasteMeasurement()
@@ -877,14 +916,14 @@ public struct InkEditorView: NSViewRepresentable {
                         else { return }
                         self.pendingManualRequestID = nil
                         guard let language = result.language else {
-                            self.model.flash("No code language suggestion.")
+                            self.model.flash("no code language suggestion")
                             return
                         }
                         self.languageSuggestion = LanguageSuggestion(
                             target: target, language: language
                         )
                         self.textView?.showFindIndicator(for: target.detectionRange)
-                        self.model.flash("Suggested language: \(language). Open the editor menu to apply it.")
+                        self.model.flash("suggested language: \(language) · open the editor menu to apply it")
                     }
                 }
             )
@@ -1858,18 +1897,32 @@ public struct InkEditorView: NSViewRepresentable {
 
         // MARK: The seal gestures
 
+        /// What both seal chords say over a selection that already
+        /// holds a chip (D-08). A chip leaves the page only by an act
+        /// aimed at the chip; a seal is not one, so the gesture refuses
+        /// here, and the core refuses it again on its own.
+        static let alreadySealedLine = "already sealed · a chip has no plaintext to seal"
+
         /// ⇧⌘V: the core reads the pasteboard itself, deletes the
         /// selection captured here, and stands the chip in its place,
         /// one atomic locked call. This process never sees the pasted
         /// bytes.
         func sealedPaste() {
-            guard let textView else { return }
+            guard let textView, let storage = textView.textStorage else { return }
             // Captured at gesture time and passed whole. The seal call
             // is synchronous on the main actor from here through the C
             // seam, so no event can move the caret between this capture
             // and the core's replace: the range is still true when the
             // core deletes it.
             let range = textView.selectedRange()
+            guard Self.isValid(range, for: storage.length) else { return }
+            // Refused before the board is read: a take that ended in a
+            // refusal would have cleared nothing, but it would have
+            // read the board for no reason.
+            if Self.containsChip(storage, in: range) {
+                model.flash(Self.alreadySealedLine)
+                return
+            }
             guard let chip = model.sealPasteboard(replacing: range) else { return }
             placeChipFace(chip, replacing: range)
         }
@@ -1896,6 +1949,7 @@ public struct InkEditorView: NSViewRepresentable {
             guard let textView, let storage = textView.textStorage else { return }
             let text = storage.string as NSString
             var range = textView.selectedRange()
+            guard Self.isValid(range, for: storage.length) else { return }
             if range.length == 0 {
                 range = text.lineRange(for: range)
                 // Seal the line's content, not its terminator.
@@ -1907,7 +1961,7 @@ public struct InkEditorView: NSViewRepresentable {
             }
             guard range.length > 0 else { return }
             if Self.containsChip(storage, in: range) {
-                model.flash("already sealed — a chip has no plaintext to seal")
+                model.flash(Self.alreadySealedLine)
                 return
             }
             let ink = text.substring(with: range)
@@ -1927,6 +1981,11 @@ public struct InkEditorView: NSViewRepresentable {
         /// back as ops would stand the chip twice. Undo dies with it:
         /// sealing is not undoable, and undo never un-seals (doc 06
         /// №5).
+        ///
+        /// The new object is left selected rather than the caret placed
+        /// after it (D-30): the seal is the app's one irreversible
+        /// gesture, and the selection is what makes the transformation
+        /// visible at the moment it happens.
         private func placeChipFace(_ chip: ChipInfo, replacing range: NSRange) {
             guard let textView, let storage = textView.textStorage else { return }
             model.applyingProjection {
@@ -1935,10 +1994,21 @@ public struct InkEditorView: NSViewRepresentable {
                     textView.didChangeText()
                 }
             }
-            textView.setSelectedRange(NSRange(location: range.location + 1, length: 0))
+            textView.setSelectedRange(NSRange(location: range.location, length: 1))
+        }
+
+        static func isValid(_ range: NSRange, for length: Int) -> Bool {
+            guard length >= 0,
+                  range.location != NSNotFound,
+                  range.location >= 0,
+                  range.length >= 0,
+                  range.location <= length
+            else { return false }
+            return range.length <= length - range.location
         }
 
         static func containsChip(_ storage: NSTextStorage, in range: NSRange) -> Bool {
+            guard isValid(range, for: storage.length) else { return false }
             var found = false
             storage.enumerateAttribute(.attachment, in: range) { value, _, stop in
                 if value is ChipAttachment {
@@ -1953,19 +2023,70 @@ public struct InkEditorView: NSViewRepresentable {
             NSAttributedString(attachment: ChipAttachment(info: chip))
         }
 
-        // MARK: Chip actions — hover/click reveals actions, never content
+        // MARK: Chip actions: a click selects, a secondary click offers actions, never content
 
+        /// The chip's menu, in order (D-29): the two egresses, then the
+        /// removal set apart. Lifted so the titles are pinned by a test
+        /// rather than read off a screen.
+        static let chipMenuTitles = [
+            "Copy decrypted contents",
+            "Create one-time link…",
+            "Remove protected content",
+        ]
+
+        /// A plain click on a chip selects the whole object and never
+        /// places a caret inside it (D-28). The menu no longer opens on
+        /// a click; it belongs to the secondary click, where every
+        /// other object on the platform keeps its actions.
         public func textView(
             _ view: NSTextView,
             clickedOn cell: NSTextAttachmentCellProtocol,
             in cellFrame: NSRect,
             at charIndex: Int
         ) {
-            guard let chipCell = cell as? ChipCell else { return }
-            let chipID = chipCell.info.chipId
-            let menu = NSMenu()
+            guard cell is ChipCell else { return }
+            view.setSelectedRange(NSRange(location: charIndex, length: 1))
+        }
+
+        /// The character index of the chip under `point` (in the text
+        /// view's coordinates), or nil when the point is over ink or
+        /// past the end of a line. The nearest-glyph answer the layout
+        /// manager gives is checked against the glyph's own bounds, so
+        /// a click in the margin beside a chip is not a click on it.
+        func chipIndex(at point: NSPoint, in view: NSTextView) -> Int? {
+            guard let layoutManager = view.layoutManager,
+                  let container = view.textContainer,
+                  let storage = view.textStorage,
+                  storage.length > 0
+            else { return nil }
+            let origin = view.textContainerOrigin
+            let local = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+            var fraction: CGFloat = 0
+            let glyph = layoutManager.glyphIndex(
+                for: local, in: container, fractionOfDistanceThroughGlyph: &fraction)
+            let bounds = layoutManager.boundingRect(
+                forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+            guard bounds.contains(local) else { return nil }
+            let index = layoutManager.characterIndexForGlyph(at: glyph)
+            guard index < storage.length,
+                  storage.attribute(.attachment, at: index, effectiveRange: nil) is ChipAttachment
+            else { return nil }
+            return index
+        }
+
+        /// The chip's three actions, appended to `menu` for the chip
+        /// standing at `charIndex`: the egresses first, a separator,
+        /// then the removal, which keeps today's behaviour of deleting
+        /// the sentinel whole (the two stage removal is a separate
+        /// call).
+        func appendChipItems(to menu: NSMenu, at charIndex: Int) {
+            guard let storage = textView?.textStorage, charIndex < storage.length,
+                  let attachment = storage.attribute(.attachment, at: charIndex, effectiveRange: nil)
+                    as? ChipAttachment
+            else { return }
+            let chipID = attachment.info.chipId
             let copy = NSMenuItem(
-                title: "Copy out — stays sealed",
+                title: Self.chipMenuTitles[0],
                 action: #selector(copyOutChip(_:)),
                 keyEquivalent: ""
             )
@@ -1973,22 +2094,22 @@ public struct InkEditorView: NSViewRepresentable {
             copy.representedObject = chipID as NSNumber
             menu.addItem(copy)
             let conceal = NSMenuItem(
-                title: "Conceal into a one-time link…",
+                title: Self.chipMenuTitles[1],
                 action: #selector(concealChip(_:)),
                 keyEquivalent: ""
             )
             conceal.target = self
             conceal.representedObject = chipID as NSNumber
             menu.addItem(conceal)
+            menu.addItem(.separator())
             let remove = NSMenuItem(
-                title: "Remove chip",
+                title: Self.chipMenuTitles[2],
                 action: #selector(removeChip(_:)),
                 keyEquivalent: ""
             )
             remove.target = self
             remove.representedObject = charIndex as NSNumber
             menu.addItem(remove)
-            menu.popUp(positioning: nil, at: NSPoint(x: cellFrame.minX, y: cellFrame.maxY), in: view)
         }
 
         // MARK: Links — ⌘-click opens, a plain click edits (ADR-0023)
@@ -2928,12 +3049,35 @@ final class InkLayoutManager: NSLayoutManager {
     func pasteWithoutDetection(_ sender: Any?)
 }
 
+/// The seal of a selection, posted by Edit → Seal Selected Content down
+/// the responder chain (D-30). Same shape as `EditStepResponder`, for
+/// the same reason: the app target cannot name the page's text view,
+/// and a selector spelled once here is checked by the compiler at both
+/// ends of the route.
+@MainActor
+@objc public protocol SealResponder {
+    func sealSelectedContent(_ sender: Any?)
+}
+
+/// The two placements the record gives the seal of a selection (D-30):
+/// a row in the editor's context menu and an item in the Edit menu.
+/// Both run the same coordinator method the chord runs, so there is
+/// one implementation of the verb and the menus cannot drift from the
+/// keyboard. The command id is the one the keymap names.
+public enum SealSelectionMenu {
+    public static let contextMenuTitle = "Seal Selection"
+    public static let editMenuTitle = "Seal Selected Content"
+    public static let command = CommandID.clipboardSealSelection
+}
+
 /// The page's text view: routes the seal gestures, keeps ⌘V plain,
 /// hands Esc back, and seals external drops through the core's drag
 /// route. Chips are atomic under the caret by construction — an
 /// attachment is one character: arrows step over it, one ⌫ removes it
 /// whole, selection cannot reach inside it.
-final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder {
+final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionResponder,
+    SealResponder
+{
     weak var coordinator: InkEditorView.Coordinator?
 
     var canChooseCodeLanguage: Bool {
@@ -2944,8 +3088,21 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         coordinator?.applyManualLanguage(language)
     }
 
+    /// The context menu. Over a chip it is the chip's own: the object
+    /// is selected whole first, as a plain click selects it, and the
+    /// text menu AppKit would build is not consulted, because Cut and
+    /// Copy of a sealed object are not the text menu's to offer. Over
+    /// ink it is AppKit's menu with the page's items appended.
     override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        if let coordinator, let index = coordinator.chipIndex(at: point, in: self) {
+            setSelectedRange(NSRange(location: index, length: 1))
+            let menu = NSMenu()
+            coordinator.appendChipItems(to: menu, at: index)
+            return menu
+        }
         let menu = super.menu(for: event) ?? NSMenu()
+        coordinator?.appendSealItem(to: menu)
         coordinator?.appendLanguageItems(to: menu)
         return menu
     }
@@ -3002,6 +3159,14 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
 
     @objc func redo(_ sender: Any?) {
         coordinator?.step(back: false)
+    }
+
+    /// Edit → Seal Selected Content, arriving nil-targeted. The same
+    /// method the chord and the context menu row run; a page shown
+    /// read-only refuses it here, as it refuses the chord.
+    @objc func sealSelectedContent(_ sender: Any?) {
+        guard isEditable else { return }
+        coordinator?.sealSelectionOrLine()
     }
 
     /// The answer for any nil-targeted item that asks this view about
@@ -3930,18 +4095,20 @@ public enum InkStyle {
     /// into a document of boxes.
     public static let codeBackground = NSColor.quaternaryLabelColor
 
-    /// What each kind of token wears inside a fence, and the only place
-    /// these four colors are written down, so a test can assert them and
-    /// dark mode costs nothing: every one is a system color that already
-    /// knows both appearances. Color is the whole of token styling. The
-    /// surrounding code range keeps `codeFont`, so coloring cannot change
-    /// metrics, wrapping, caret geometry, or bytes.
+    /// What each kind of token wears inside a fence. The four inks are
+    /// written down once, in Theme.swift beside ember, as dynamic
+    /// colours darkened or lightened from the system hues until each
+    /// clears 4.5:1 on the fence wash in its appearance (D-06); a test
+    /// measures them rather than naming them. Color is the whole of
+    /// token styling. The surrounding code range keeps `codeFont`, so
+    /// coloring cannot change metrics, wrapping, caret geometry, or
+    /// bytes.
     public nonisolated static func tokenColor(_ kind: CodeInk.TokenKind) -> NSColor {
         switch kind {
-        case .keyword: NSColor.systemPurple
-        case .string: NSColor.systemRed
-        case .comment: NSColor.secondaryLabelColor
-        case .number: NSColor.systemBlue
+        case .keyword: NSColor.inkKeyword
+        case .string: NSColor.inkString
+        case .comment: NSColor.inkComment
+        case .number: NSColor.inkNumber
         }
     }
 

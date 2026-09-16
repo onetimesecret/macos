@@ -4,8 +4,9 @@ import AppKit
 /// has returned.
 ///
 /// Every panel and alert this app runs is modal and blocking: the open
-/// and save panels, the two file reviews, the tab rename prompt, the
-/// quit notice. What the surface needs from all of them is one fact at
+/// and save panels, the two file reviews, the quit notice. (The tab
+/// rename is none of them since D-14 gave it an inline field.) What
+/// the surface needs from all of them is one fact at
 /// two moments. While one is up, a press into it must not be read as a
 /// press into another application; and when it returns, however it
 /// returned, the surface has to be raised and in front again, because
