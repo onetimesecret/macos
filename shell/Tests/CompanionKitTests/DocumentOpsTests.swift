@@ -487,9 +487,15 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertNotNil(link)
         XCTAssertNotNil(remove)
         XCTAssertTrue(menu.items.contains { $0.isSeparatorItem })
-        if let remove,
+        // The two egresses come first, in the order D-41 renders them,
+        // and the separator keeps the removal below both.
+        if let copy, let link, let remove,
+           let copyIndex = menu.items.firstIndex(of: copy),
+           let linkIndex = menu.items.firstIndex(of: link),
            let removalIndex = menu.items.firstIndex(of: remove),
            let separatorIndex = menu.items.firstIndex(where: \.isSeparatorItem) {
+            XCTAssertLessThan(copyIndex, linkIndex)
+            XCTAssertLessThan(linkIndex, separatorIndex)
             XCTAssertGreaterThan(removalIndex, separatorIndex)
         }
         for item in menu.items where !item.isSeparatorItem {

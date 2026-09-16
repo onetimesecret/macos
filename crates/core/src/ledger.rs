@@ -88,6 +88,10 @@ impl SizeClass {
     }
 }
 
+/// The ledger JSON vocabulary. The FFI writes `record.size().to_string()`
+/// straight into the `size` field, and the Swift shell fails closed on any
+/// label outside this set (`SealedBlockTests`), so a spelling here is a
+/// contract change on both sides of the seam, not a cosmetic one.
 impl std::fmt::Display for SizeClass {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {

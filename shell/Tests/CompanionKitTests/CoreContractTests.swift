@@ -100,6 +100,9 @@ final class CoreContractTests: XCTestCase {
         let sealed = ledger[1]
         let created = ledger[2]
         XCTAssertEqual(sealed.size, chip.sizeLabel)
+        // Both sides read the core's one Display impl; the vocabulary
+        // itself is pinned here so a renamed bucket cannot pass unseen.
+        XCTAssertTrue(["tiny", "small", "medium", "large", "huge"].contains(sealed.size))
 
         // The page's own records share its item id; the chip has its own.
         XCTAssertEqual(created.item, discarded.item)
