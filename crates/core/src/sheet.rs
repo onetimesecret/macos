@@ -858,34 +858,86 @@ pub(crate) const TITLE_CAP: usize = 80;
 /// a label from jumping to a different four-digit stamp the moment a
 /// page expires under it.
 pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
-    let mut in_fence = false;
-    segments
-        .iter()
-        .filter_map(|s| match s {
-            Segment::Ink(text) => Some(text),
-            Segment::Chip(_) => None,
-        })
-        .flat_map(|text| text.lines())
-        .filter_map(|line| {
-            if is_fence_rule(line) {
-                in_fence = !in_fence;
-                return None;
+    let mut fence: Option<Fence> = None;
+    let mut result: Option<String> = None;
+    'outer: for text in segments.iter().filter_map(|s| match s {
+        Segment::Ink(text) => Some(text),
+        Segment::Chip(_) => None,
+    }) {
+        for line in text.lines() {
+            match fence {
+                Some(open) if closes_fence(line, open) => fence = None,
+                Some(_) => {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        result = Some(trimmed.to_string());
+                        break 'outer;
+                    }
+                }
+                None => {
+                    if let Some(open) = opens_fence(line) {
+                        fence = Some(open);
+                        continue;
+                    }
+                    let stripped = strip_markdown(line);
+                    if !stripped.is_empty() {
+                        result = Some(stripped);
+                        break 'outer;
+                    }
+                }
             }
-            Some(if in_fence {
-                line.trim().to_string()
-            } else {
-                strip_markdown(line)
-            })
-        })
-        .find(|line| !line.is_empty())
-        .map(|line| line.chars().take(TITLE_CAP).collect())
+        }
+    }
+    result.map(|line| line.chars().take(TITLE_CAP).collect())
 }
 
-/// A fence's opening or closing rule: three backticks or tildes at the
-/// start of the line, with or without a language word after them.
-fn is_fence_rule(line: &str) -> bool {
-    let trimmed = line.trim_start();
-    trimmed.starts_with("```") || trimmed.starts_with("~~~")
+/// A fenced code block, remembered as the opener saw it: the marker
+/// character (`` ` `` or `~`) and the length of the opener's run
+/// (three or more). A closer has to match both so a `~~~` line inside
+/// a backtick fence stays code, and a `` ``` `` line inside a longer
+/// `` ```` `` fence stays code (`CommonMark` §4.5).
+#[derive(Clone, Copy)]
+struct Fence {
+    marker: char,
+    length: usize,
+}
+
+/// A fence's opening rule: up to three spaces of indent, then three
+/// or more backticks or tildes, with or without an info string after.
+/// Four or more spaces of leading indent is a `CommonMark` indented
+/// code block and the line stays prose.
+fn opens_fence(line: &str) -> Option<Fence> {
+    let indent = line.chars().take_while(|c| *c == ' ').count();
+    if indent >= 4 {
+        return None;
+    }
+    let rest = &line[indent..];
+    let marker = rest.chars().next()?;
+    if marker != '`' && marker != '~' {
+        return None;
+    }
+    let length = rest.chars().take_while(|c| *c == marker).count();
+    if length < 3 {
+        return None;
+    }
+    Some(Fence { marker, length })
+}
+
+/// A fence's closing rule: up to three spaces of indent, a marker run
+/// of the opener's kind at least as long as the opener's, and nothing
+/// but whitespace after it. An info string on a would-be closer is
+/// not one, and the fence stays open (`CommonMark` §4.5).
+fn closes_fence(line: &str, opener: Fence) -> bool {
+    let indent = line.chars().take_while(|c| *c == ' ').count();
+    if indent >= 4 {
+        return false;
+    }
+    let rest = &line[indent..];
+    let marker_count = rest.chars().take_while(|c| *c == opener.marker).count();
+    if marker_count < opener.length {
+        return false;
+    }
+    rest[marker_count..].chars().all(char::is_whitespace)
 }
 
 /// The local day a wall-clock stamp falls on: days since the Unix
@@ -1385,6 +1437,44 @@ mod tests {
         assert_eq!(title_of("~~~sh\nls -la"), "ls -la");
         // A body that is nothing but a rule derives nothing at all.
         assert_eq!(derive_title(&[Segment::Ink("```ruby\n".into())]), None);
+    }
+
+    #[test]
+    fn a_mismatched_inner_marker_does_not_close_the_outer_fence() {
+        // A backtick fence enclosing a `~~~` line keeps that line as
+        // code, because a closer must match the opener's marker. The
+        // derived title is the first line *inside* the outer fence,
+        // and the "## heading" past the outer closer is prose the walk
+        // never reaches, because the first non-empty line inside is
+        // already the title.
+        let segs = vec![Segment::Ink(
+            "```\ninner code\n~~~\nmore code\n```\n## after".into(),
+        )];
+        assert_eq!(derive_title(&segs).as_deref(), Some("inner code"));
+    }
+
+    #[test]
+    fn a_fence_indented_four_spaces_is_prose_not_a_fence() {
+        // CommonMark treats four spaces as an indented code block, and
+        // a fence-looking line inside one does not open a fence. The
+        // walk stays outside, so the line after it is markdown that
+        // gets stripped rather than code taken as typed: "**bold**"
+        // becomes "bold" here, where an open fence would have taken it
+        // as "**bold**".
+        let segs = vec![Segment::Ink("    ```\n**bold**".into())];
+        assert_eq!(derive_title(&segs).as_deref(), Some("bold"));
+    }
+
+    #[test]
+    fn a_fence_closer_with_an_info_string_is_not_a_closer() {
+        // A closer must be nothing but marker and whitespace. `` ``` js
+        // `` looks like a close but carries an info string, which
+        // CommonMark forbids on closers, so the fence stays open and
+        // the walk keeps taking lines as code.
+        let segs = vec![Segment::Ink(
+            "```\nfirst line of code\n``` js\nstill code\n```".into(),
+        )];
+        assert_eq!(derive_title(&segs).as_deref(), Some("first line of code"));
     }
 
     #[test]
