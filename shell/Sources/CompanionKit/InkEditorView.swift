@@ -2046,7 +2046,7 @@ public struct InkEditorView: NSViewRepresentable {
             in cellFrame: NSRect,
             at charIndex: Int
         ) {
-            guard cell is ChipCell else { return }
+            guard cell is SealedBlockCell else { return }
             view.setSelectedRange(NSRange(location: charIndex, length: 1))
         }
 
@@ -2176,7 +2176,7 @@ public struct InkEditorView: NSViewRepresentable {
             else { return }
             model.copyOutChip(
                 attachment.info.chipId,
-                size: ChipCell.displayedSizeClass(attachment.info.sizeLabel)
+                size: SealedBlockCell.displayedSizeClass(attachment.info.sizeLabel)
             )
         }
 
@@ -3275,7 +3275,7 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         if let coordinator,
            let index = coordinator.chipIndex(at: point, in: self),
            let frame = chipFrame(at: index),
-           ChipCell.actionsRect(in: frame).contains(point)
+           SealedBlockCell.actionsRect(in: frame).contains(point)
         {
             setSelectedRange(NSRange(location: index, length: 1))
             coordinator.openChipMenu(at: index, from: point, in: self)
@@ -4015,7 +4015,7 @@ final class ChipAttachment: NSTextAttachment {
     init(info: ChipInfo) {
         self.info = info
         super.init(data: nil, ofType: nil)
-        attachmentCell = ChipCell(info: info)
+        attachmentCell = SealedBlockCell(info: info)
     }
 
     @available(*, unavailable)
@@ -4034,17 +4034,17 @@ final class ChipAttachment: NSTextAttachment {
         glyphPosition position: NSPoint,
         characterIndex charIndex: Int
     ) -> NSRect {
-        let width = ChipCell.blockWidth(
+        let width = SealedBlockCell.blockWidth(
             in: textContainer, proposedLineFragment: lineFrag
         )
-        return ChipCell.blockBounds(width: width)
+        return SealedBlockCell.blockBounds(width: width)
     }
 }
 
 /// Draws a sealed object as a full-measure block: classification and
 /// size metadata above its mechanical excerpt. It is deliberately a
 /// bordered rectangle rather than a pill or button (D-27).
-final class ChipCell: NSTextAttachmentCell {
+final class SealedBlockCell: NSTextAttachmentCell {
     let info: ChipInfo
 
     #if DEBUG
@@ -4053,7 +4053,7 @@ final class ChipCell: NSTextAttachmentCell {
     private(set) var lastDrawnFrame: NSRect?
     #endif
 
-    nonisolated static let blockHeight: CGFloat = 52
+    nonisolated static let blockHeight = SealedBlockLayout.metrics(containerWidth: 0).height
     /// The width a block takes when nothing has measured the editor:
     /// a context-free `cellSize()` and a layout with no usable measure
     /// both fall back to it, so it is named once.
@@ -4064,7 +4064,8 @@ final class ChipCell: NSTextAttachmentCell {
     nonisolated static let classification = "SEALED CONTENT"
 
     nonisolated static func blockBounds(width: CGFloat) -> NSRect {
-        NSRect(x: 0, y: -blockHeight + 4, width: width, height: blockHeight)
+        let metrics = SealedBlockLayout.metrics(containerWidth: width)
+        return NSRect(x: 0, y: -metrics.height + 4, width: metrics.width, height: metrics.height)
     }
 
     @MainActor
@@ -4139,8 +4140,9 @@ final class ChipCell: NSTextAttachmentCell {
     /// Keeping it pure makes the placement independently testable without
     /// relying on pixels from an AppKit drawing context.
     nonisolated static func contentLayout(in cellFrame: NSRect) -> ContentLayout {
-        let left = cellFrame.minX + 12
-        let topRowY = cellFrame.minY + 8
+        let metrics = SealedBlockLayout.metrics(containerWidth: cellFrame.width)
+        let left = cellFrame.minX + metrics.horizontalPadding
+        let topRowY = cellFrame.minY + metrics.verticalPadding
         return ContentLayout(
             left: left,
             topRowY: topRowY,
@@ -4163,7 +4165,13 @@ final class ChipCell: NSTextAttachmentCell {
     /// `minY` and its bottom row at `maxY`. Pure, so the click test is
     /// an assertion rather than a screen.
     nonisolated static func actionsRect(in cellFrame: NSRect) -> NSRect {
-        NSRect(x: cellFrame.maxX - 12 - 22, y: cellFrame.minY + 6, width: 22, height: 16)
+        let metrics = SealedBlockLayout.metrics(containerWidth: cellFrame.width)
+        return NSRect(
+            x: cellFrame.maxX - metrics.horizontalPadding - 22,
+            y: cellFrame.minY + 6,
+            width: 22,
+            height: 16
+        )
     }
 
     @MainActor
@@ -4207,7 +4215,8 @@ final class ChipCell: NSTextAttachmentCell {
     override nonisolated func cellSize() -> NSSize {
         // Context-free callers have no editor measure. Live TextKit
         // layout uses cellFrame(...) below and replaces this fallback.
-        NSSize(width: Self.fallbackBlockWidth, height: Self.blockHeight)
+        let metrics = SealedBlockLayout.metrics(containerWidth: Self.fallbackBlockWidth)
+        return NSSize(width: metrics.width, height: metrics.height)
     }
 
     override nonisolated func cellFrame(
@@ -4261,16 +4270,23 @@ final class ChipCell: NSTextAttachmentCell {
         #if DEBUG
         lastDrawnFrame = cellFrame
         #endif
+        let metrics = SealedBlockLayout.metrics(containerWidth: cellFrame.width)
         let block = NSBezierPath(
-            roundedRect: cellFrame.insetBy(dx: 0.5, dy: 0.5),
-            xRadius: 8,
-            yRadius: 8
+            roundedRect: cellFrame.insetBy(
+                dx: metrics.borderWidth / 2,
+                dy: metrics.borderWidth / 2
+            ),
+            xRadius: metrics.cornerRadius,
+            yRadius: metrics.cornerRadius
         )
         NSColor.textBackgroundColor.withAlphaComponent(0.34).setFill()
         block.fill()
         if selected {
             let ring = NSBezierPath(
-                roundedRect: cellFrame.insetBy(dx: -1, dy: -1), xRadius: 9, yRadius: 9)
+                roundedRect: cellFrame.insetBy(dx: -1, dy: -1),
+                xRadius: metrics.cornerRadius + 1,
+                yRadius: metrics.cornerRadius + 1
+            )
             NSColor.ember.withAlphaComponent(0.12).setStroke()
             ring.lineWidth = 3
             ring.stroke()
@@ -4278,7 +4294,7 @@ final class ChipCell: NSTextAttachmentCell {
         } else {
             NSColor.separatorColor.setStroke()
         }
-        block.lineWidth = 1
+        block.lineWidth = metrics.borderWidth
         block.stroke()
         let layout = Self.contentLayout(in: cellFrame)
         let left = layout.left
@@ -4308,7 +4324,7 @@ final class ChipCell: NSTextAttachmentCell {
         excerpt.draw(at: NSPoint(x: left, y: layout.bottomRowY))
         let metadataSize = metadata.size()
         metadata.draw(at: NSPoint(
-            x: cellFrame.maxX - 12 - metadataSize.width,
+            x: cellFrame.maxX - metrics.horizontalPadding - metadataSize.width,
             y: layout.bottomRowY + 1
         ))
     }
