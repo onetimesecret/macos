@@ -784,6 +784,48 @@ impl Tab {
             })
             .unwrap_or_else(|| placeholder_title(self.created_wall_ms, utc_offset_seconds))
     }
+
+    /// Which of [`Tab::label`]'s three steps answered. The far side
+    /// reads it to decide what the label is worth drawing beside: a
+    /// placeholder repeats the stamp the gutter and the rail already
+    /// carry, and a derived title repeats the page's own first line.
+    #[must_use]
+    pub fn label_source(&self) -> LabelSource {
+        if self.name.is_some() {
+            LabelSource::Name
+        } else if self
+            .page
+            .as_ref()
+            .is_some_and(|page| page.derived_title.is_some())
+        {
+            LabelSource::Derived
+        } else {
+            LabelSource::Placeholder
+        }
+    }
+}
+
+/// Which step of [`Tab::label`] a label came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LabelSource {
+    /// The name the user typed.
+    Name,
+    /// The live page's first typed line.
+    Derived,
+    /// The tab's own `MMDD-HHmm` stamp, because nothing was typed.
+    Placeholder,
+}
+
+impl LabelSource {
+    /// The word the seam carries.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Name => "name",
+            Self::Derived => "derived",
+            Self::Placeholder => "placeholder",
+        }
+    }
 }
 
 /// A title is a name, not a document: 80 characters, counted in `char`s
@@ -794,12 +836,20 @@ pub(crate) const TITLE_CAP: usize = 80;
 /// stripped and capped at [`TITLE_CAP`] characters; `None` when the
 /// body offers no such line.
 ///
+/// A fence's rules are markup and never a name (D-12): the walk steps
+/// over an opening rule (three backticks or tildes, with or without a
+/// language word) and takes the first line inside the fence, as typed,
+/// since code carries no markdown to strip. A body that is nothing but
+/// rules derives nothing, the same as a body that is nothing but
+/// blank lines.
+///
 /// The walk stops at the walk (ADR-0017): the fallback is
 /// [`Tab::label`]'s business, because the placeholder renders from the
 /// tab's stamp and not the page's. Answering `None` here is what keeps
 /// a label from jumping to a different four-digit stamp the moment a
 /// page expires under it.
 pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
+    let mut in_fence = false;
     segments
         .iter()
         .filter_map(|s| match s {
@@ -807,9 +857,26 @@ pub(crate) fn derive_title(segments: &[Segment]) -> Option<String> {
             Segment::Chip(_) => None,
         })
         .flat_map(|text| text.lines())
-        .map(strip_markdown)
+        .filter_map(|line| {
+            if is_fence_rule(line) {
+                in_fence = !in_fence;
+                return None;
+            }
+            Some(if in_fence {
+                line.trim().to_string()
+            } else {
+                strip_markdown(line)
+            })
+        })
         .find(|line| !line.is_empty())
         .map(|line| line.chars().take(TITLE_CAP).collect())
+}
+
+/// A fence's opening or closing rule: three backticks or tildes at the
+/// start of the line, with or without a language word after them.
+fn is_fence_rule(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("```") || trimmed.starts_with("~~~")
 }
 
 /// The local day a wall-clock stamp falls on: days since the Unix
@@ -1265,6 +1332,7 @@ mod tests {
         // 1_700_000_000_000 ms is 2023-11-14 22:13:20 UTC.
         let mut tab = unnamed_tab(None);
         assert_eq!(tab.label(0), "1114-2213", "no name, no page");
+        assert_eq!(tab.label_source(), LabelSource::Placeholder);
 
         // A page with a first line supplies the middle step. The page's
         // own birthday sits a day later than the tab's, which is what
@@ -1274,15 +1342,40 @@ mod tests {
         page.derived_title = Some("deploy notes".into());
         tab.page = Some(page);
         assert_eq!(tab.label(0), "deploy notes");
+        assert_eq!(tab.label_source(), LabelSource::Derived);
 
         // An untyped page falls straight through to the tab's stamp,
         // never the page's.
         tab.page = Some(bare_sheet(STAMP + day));
         assert_eq!(tab.label(0), "1114-2213");
+        assert_eq!(tab.label_source(), LabelSource::Placeholder);
 
         // And a name the user typed wins over both.
         tab.name = Some("the vault".into());
         assert_eq!(tab.label(0), "the vault");
+        assert_eq!(tab.label_source(), LabelSource::Name);
+    }
+
+    #[test]
+    fn titles_step_over_fence_rules_and_take_the_code_as_typed() {
+        // The opening rule names a language and is markup, not a name:
+        // the title is the first line inside the fence, and code is
+        // taken as typed rather than stripped of emphasis it never had.
+        let segs = vec![Segment::Ink(
+            "```ruby\n  if Onetime::Utils.yes?(ENV.fetch('STDOUT_SYNC', false))\n```".into(),
+        )];
+        assert_eq!(
+            derive_title(&segs).as_deref(),
+            Some("if Onetime::Utils.yes?(ENV.fetch('STDOUT_SYNC', false))")
+        );
+        // A closing rule is stepped over too, and the line after it is
+        // prose again, with its markup stripped.
+        let segs = vec![Segment::Ink("```\n```\n## after the fence".into())];
+        assert_eq!(derive_title(&segs).as_deref(), Some("after the fence"));
+        // Tildes fence too.
+        assert_eq!(title_of("~~~sh\nls -la"), "ls -la");
+        // A body that is nothing but a rule derives nothing at all.
+        assert_eq!(derive_title(&[Segment::Ink("```ruby\n".into())]), None);
     }
 
     #[test]

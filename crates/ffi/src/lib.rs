@@ -3407,6 +3407,12 @@ fn summary_json(
         "has_page": page.is_some(),
         "page_id": page.map(|sheet| sheet.id().raw()),
         "title": tab.label(utc_offset_seconds),
+        // Which step of the label's resolution answered, "name",
+        // "derived" or "placeholder", so the far side can leave a
+        // placeholder undrawn where the stamp already stands and a
+        // derived title undrawn where the first line it repeats is on
+        // screen.
+        "title_source": tab.label_source().as_str(),
         "rung_code": ttl_to_code(tab.rung()),
         "rung_label": tab.rung().to_string(),
         "remaining_ms": u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX),
@@ -5039,6 +5045,7 @@ mod tests {
             assert_eq!(summaries[0]["has_page"].as_bool(), Some(false));
             assert!(summaries[0]["page_id"].is_null(), "{:?}", summaries[0]);
             assert_eq!(summaries[0]["title"].as_str(), Some("payroll"));
+            assert_eq!(summaries[0]["title_source"].as_str(), Some("name"));
             assert_eq!(summaries[0]["rung_code"].as_i64(), Some(0), "the rung too");
             assert_eq!(companion_next_event_ms(handle), -1, "nothing to arm");
 
@@ -5241,6 +5248,8 @@ mod tests {
                 "has_page",
                 "page_id",
                 "title",
+                // Which step of the label's resolution answered.
+                "title_source",
                 "rung_code",
                 "rung_label",
                 "remaining_ms",

@@ -56,6 +56,7 @@ final class DayScrollTests: XCTestCase {
             hasPage: tab.hasPage,
             pageID: tab.pageID,
             title: tab.title,
+            titleSource: tab.titleSource,
             rungCode: tab.rungCode,
             rungLabel: tab.rungLabel,
             remainingMs: tab.remainingMs,
@@ -852,6 +853,50 @@ final class DayScrollTests: XCTestCase {
         XCTAssertEqual(model.tabs.first { $0.id == firstID }?.title, "first page")
         XCTAssertEqual(model.tabs.first { $0.id == secondID }?.title, "second page")
         XCTAssertEqual(header.renameDraft, "second page")
+    }
+
+    /// A gutter's title field is drawn for a typed name and for the
+    /// length of a rename, and for nothing else: a placeholder and a
+    /// first line are both said already, beside or under the gutter.
+    /// The gauge that stood at the gutter's trailing edge is gone; the
+    /// countdown is still spoken.
+    func testAGutterDrawsATypedNameAndNoGauge() throws {
+        let model = try makeModel()
+        model.newPage()
+        let tabID = try XCTUnwrap(model.selection)
+        let placeholder = try XCTUnwrap(model.tabs.first { $0.id == tabID })
+        XCTAssertEqual(placeholder.titleSource, .placeholder)
+        let header = DayHeaderView(model: model)
+        header.show(dayText: "today · 11:39", spokenLabel: "today", mark: .none, summary: placeholder)
+        XCTAssertFalse(header.titleIsDrawn, "a placeholder title was drawn beside its own stamp")
+        XCTAssertTrue(
+            header.subviews.allSatisfy { $0 is NSTextField },
+            "the gutter hosts something besides its words: \(header.subviews)")
+        XCTAssertEqual(
+            header.accessibilityLabel(),
+            DayHeaderView.spokenHeader(
+                spokenLabel: "today", title: placeholder.title,
+                remainingLabel: placeholder.remainingLabel),
+            "the countdown stopped being spoken when the gauge went")
+
+        try page(in: model, saying: "deploy notes\nthe rest")
+        let derived = try XCTUnwrap(model.tabs.first { $0.id == model.selection })
+        XCTAssertEqual(derived.titleSource, .derived)
+        header.show(dayText: "11:40", spokenLabel: "today", mark: .hairline, summary: derived)
+        XCTAssertFalse(header.titleIsDrawn, "a first line was drawn above itself")
+
+        header.beginRename()
+        XCTAssertTrue(header.titleIsDrawn, "the rename had no field to type into")
+        XCTAssertEqual(header.renameDraft, "deploy notes")
+        header.endRename(committed: false)
+        XCTAssertFalse(header.titleIsDrawn, "a let-go rename left the field up")
+
+        model.renameTab(derived.id, to: "the vault")
+        let named = try XCTUnwrap(model.tabs.first { $0.id == derived.id })
+        XCTAssertEqual(named.titleSource, .name)
+        header.refresh(summary: named)
+        XCTAssertTrue(header.titleIsDrawn, "a typed name was not drawn")
+        XCTAssertEqual(header.renameDraft, "the vault")
     }
 
     func testAHeaderAccessibilityLabelUsesTheVisibleRenameDraft() throws {

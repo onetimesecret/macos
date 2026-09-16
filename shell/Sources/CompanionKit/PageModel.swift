@@ -824,6 +824,21 @@ public final class PageModel: ObservableObject {
     }
     private static let pagesDownSideKey = "showsPagesDownSide"
 
+    /// How a page's birth time reads on the rail and in the gutters
+    /// while pages are organized by day (`StreamNavigator.StampFormat`):
+    /// the pattern every page reads in, and the finer one two pages
+    /// born the same minute fall back to. A presentation preference
+    /// like the two above: it lives in UserDefaults and marks nothing
+    /// dirty.
+    @Published public var stampFormat: StreamNavigator.StampFormat {
+        didSet {
+            defaults.set(stampFormat.short, forKey: Self.stampShortKey)
+            defaults.set(stampFormat.fine, forKey: Self.stampFineKey)
+        }
+    }
+    private static let stampShortKey = "stampFormatShort"
+    private static let stampFineKey = "stampFormatFine"
+
     /// ⌥Z. A page whose lines all fit shows no difference, so the toggle
     /// says what it did rather than leaving the keystroke looking dead.
     ///
@@ -1295,6 +1310,13 @@ public final class PageModel: ObservableObject {
         // shipping default in D-13.
         showsPagesDownSide = defaults.object(forKey: Self.pagesDownSideKey) as? Bool
             ?? showsTimeUnits
+        // Unset → the standard patterns, "HH:mm" and "HH:mm:ss".
+        stampFormat = StreamNavigator.StampFormat(
+            short: defaults.string(forKey: Self.stampShortKey)
+                ?? StreamNavigator.StampFormat.standard.short,
+            fine: defaults.string(forKey: Self.stampFineKey)
+                ?? StreamNavigator.StampFormat.standard.fine
+        )
         // Unset → on (ADR-0011 section 4). Told to the core here because
         // a property observer does not run during init.
         let snapsToBoundaries = defaults.object(forKey: Self.graceSnapKey) as? Bool ?? true

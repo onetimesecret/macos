@@ -42,6 +42,7 @@ final class DayScrollProjectionTests: XCTestCase {
             hasPage: tab.hasPage,
             pageID: tab.pageID,
             title: tab.title,
+            titleSource: tab.titleSource,
             rungCode: tab.rungCode,
             rungLabel: tab.rungLabel,
             remainingMs: tab.remainingMs,
@@ -250,16 +251,32 @@ final class DayScrollProjectionTests: XCTestCase {
         )
     }
 
-    /// Every page's gutter carries the day and the minute the page was
-    /// made, because the minute is what tells two pages on one day
-    /// apart and the day is what the minute is read against; the
-    /// perforation above still says where the day changed. The empty
-    /// place has no minute and says the day alone.
-    func testEveryPageCarriesItsDayAndItsMinute() {
+    /// A day's first gutter carries the day and the time the page was
+    /// made; the gutters under it on the same day carry the time alone,
+    /// since the day was said once above them and the hairline says
+    /// these are one day's pages. The empty place has no time and says
+    /// the day alone.
+    func testADaysFirstGutterCarriesTheDayAndTheRestTheTimeAlone() {
         XCTAssertEqual(
-            DayHeaderView.dayText(spokenLabel: "3 days ago", stamp: "0911-0931"),
-            "3 days ago · 0911-0931")
+            DayHeaderView.dayText(spokenLabel: "3 days ago", stamp: "09:31"),
+            "3 days ago · 09:31")
+        XCTAssertEqual(
+            DayHeaderView.dayText(spokenLabel: "3 days ago", stamp: "09:31:07", firstOfDay: false),
+            "09:31:07")
         XCTAssertEqual(DayHeaderView.dayText(spokenLabel: "today", stamp: nil), "today")
+    }
+
+    /// The gutter draws a title only when the user typed it. A
+    /// placeholder repeats the stamp beside it and a first line repeats
+    /// the ink directly under the gutter; a rename shows the field for
+    /// its own length whatever the source.
+    func testTheGutterDrawsOnlyATypedName() {
+        XCTAssertFalse(DayHeaderView.drawsTitle(source: .placeholder, renaming: false))
+        XCTAssertFalse(DayHeaderView.drawsTitle(source: .derived, renaming: false))
+        XCTAssertTrue(DayHeaderView.drawsTitle(source: .name, renaming: false))
+        XCTAssertFalse(DayHeaderView.drawsTitle(source: nil, renaming: false))
+        XCTAssertTrue(DayHeaderView.drawsTitle(source: .placeholder, renaming: true))
+        XCTAssertTrue(DayHeaderView.drawsTitle(source: .derived, renaming: true))
     }
 
     /// What VoiceOver hears at a perforation: the day in full words, the

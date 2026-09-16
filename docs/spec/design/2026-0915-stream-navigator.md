@@ -43,6 +43,16 @@ minute it was made, "0914-1139", the same "MMDD-HHmm" shape the core's
 placeholder title takes. Today with no page is a node with no minute
 and a dashed dot, and the one node whose click takes the create path.
 
+*Amended 2026-09-16
+([2026-0916-rail-redundancy.md](2026-0916-rail-redundancy.md)):* every
+page carries its time, "11:39", and not the date the day's words
+already say, to the second where two pages on a day share the minute
+(D-44 amends D-34); only the active node is a dot and the rest are
+ticks (D-45 amends D-36); the gauge is off the gutters (D-47 amends
+D-37); a placeholder title is not the tooltip's second line (D-44
+amends D-38); a day's later gutters read the time alone and a gutter
+draws only a typed name (D-46 amends the gutter paragraph).
+
 - **D-34 (fixed)** The node is the page. It stands where the page's
   share of the roll falls, pushed apart from its neighbours only as far
   as its words need, and the map from the document to the rail runs

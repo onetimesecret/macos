@@ -25,6 +25,11 @@ amends D-42 only where its confirmation names the clear interval, and
 replaces D-43 in full. This whole-record supersession follows the dated
 record convention in [the behaviour law conventions](../../law/README.md).
 
+*Amended 2026-09-16:* D-34's stamp, D-36's marks, D-37's gutter gauge
+and D-38's tooltip and gutter paragraph, as incorporated here, are
+amended by [2026-0916-rail-redundancy.md](2026-0916-rail-redundancy.md)
+(D-44 to D-47).
+
 ## D-42 · Confirmation after decrypted copy
 
 After a decrypted copy, the confirmation reads: `copied decrypted

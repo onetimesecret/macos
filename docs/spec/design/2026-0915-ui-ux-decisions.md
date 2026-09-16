@@ -572,6 +572,10 @@ read as a page an instant from death rather than a slot standing ready.
   *Acceptance:* strip and rail speak a file identically; the row says
   "unsaved" in words and the dot is never the only cue; the tooltip is
   the last known path.
+  *Amended 2026-09-16:* a fence's opening and closing rules are markup,
+  so a page opening with "```ruby" is titled by the first line inside
+  the fence, as typed, and never "ruby"
+  ([2026-0916-rail-redundancy.md](2026-0916-rail-redundancy.md), D-48).
 - **D-13 (open)** Days is gated on parity with slots: renaming,
   holding, shortening, closing and sync enrolment on each day's own
   gutter. The gutter carries all five today (`DayScrollView.swift`,

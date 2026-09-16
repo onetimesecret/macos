@@ -20,6 +20,7 @@ final class StreamNavigatorTests: XCTestCase {
 
     private func slot(
         tab: UInt64, page: UInt64? = nil, day: Int = 0, title: String = "",
+        titleSource: TitleSource = .derived,
         createdMs: UInt64? = nil, fraction: Double = 0.5, paused: Bool = false
     ) -> TabSummary {
         TabSummary(
@@ -27,6 +28,7 @@ final class StreamNavigatorTests: XCTestCase {
             hasPage: page != nil,
             pageID: page,
             title: title,
+            titleSource: titleSource,
             rungCode: 5,
             rungLabel: "7d",
             remainingMs: page == nil ? 0 : 3_600_000,
@@ -45,13 +47,14 @@ final class StreamNavigatorTests: XCTestCase {
     }
 
     private func nodes(
-        _ tabs: [TabSummary], selecting tab: UInt64? = nil, showsRoll: Bool = true
+        _ tabs: [TabSummary], selecting tab: UInt64? = nil, showsRoll: Bool = true,
+        stampFormat: StreamNavigator.StampFormat = .standard
     ) -> [StreamNavigator.Node] {
         let projection = TimeUnitProjection.project(
             tabs: tabs, selectedPageID: nil, unit: .day)
         return StreamNavigator.nodes(
             projection: projection, tabs: tabs, selection: tab,
-            surfaceShowsRoll: showsRoll, timeZone: utc)
+            surfaceShowsRoll: showsRoll, timeZone: utc, stampFormat: stampFormat)
     }
 
     private func extent(
@@ -65,7 +68,8 @@ final class StreamNavigatorTests: XCTestCase {
     // MARK: The nodes
 
     /// One node per page in the roll's order, the first page of each
-    /// day carrying the day's words, every page carrying its minute.
+    /// day carrying the day's words, every page carrying its time and
+    /// never the date the day's words already say.
     func testEveryPageIsANodeAndOnlyADaysFirstCarriesTheDay() {
         let nodes = nodes([
             slot(tab: 1, page: 11, day: 0, title: "stdout sync"),
@@ -75,19 +79,74 @@ final class StreamNavigatorTests: XCTestCase {
         XCTAssertEqual(nodes.map(\.page), [11, 22, 33])
         XCTAssertEqual(nodes.map(\.firstOfDay), [true, false, true])
         XCTAssertEqual(nodes.map(\.dayLabel), ["Today", "Today", "Yesterday"])
-        XCTAssertEqual(nodes.map(\.stamp), ["0914-1139", "0914-1155", "0914-1139"])
+        XCTAssertEqual(nodes.map(\.stamp), ["11:39", "11:55", "11:39"])
         XCTAssertEqual(nodes.map(\.title), ["stdout sync", "", ""])
         XCTAssertEqual(nodes.map(\.target), [.tab(1), .tab(2), .tab(3)])
     }
 
-    /// The stamp is the page's birth minute in the zone it is read in,
-    /// in the core's own "MMDD-HHmm" shape.
-    func testTheStampIsTheBirthMinuteInLocalTime() {
-        XCTAssertEqual(StreamNavigator.stamp(createdMs: born, timeZone: utc), "0914-1139")
+    /// The stamp is the page's birth time in the zone it is read in,
+    /// "HH:mm" and never "HHmm", in whatever pattern the caller names.
+    func testTheStampIsTheBirthTimeInLocalTime() {
+        XCTAssertEqual(StreamNavigator.stamp(createdMs: born, timeZone: utc), "11:39")
         XCTAssertEqual(
             StreamNavigator.stamp(
                 createdMs: born, timeZone: TimeZone(identifier: "America/Vancouver")!),
-            "0914-0439")
+            "04:39")
+        XCTAssertEqual(
+            StreamNavigator.stamp(createdMs: born, pattern: "h:mm a", timeZone: utc), "11:39 AM")
+    }
+
+    /// Two pages on one day born in the same minute would read alike,
+    /// so those two read to the second while the rest of the day keeps
+    /// the minute; a page on another day sharing the minute is told
+    /// apart by its day's words and stays short. The empty place has
+    /// no stamp and collides with nothing.
+    func testPagesSharingAMinuteReadToTheSecond() {
+        let tabs = [
+            slot(tab: 1, page: 11, day: 0, createdMs: born + 12_000),
+            slot(tab: 2, page: 22, day: 0, createdMs: born + 48_000),
+            slot(tab: 3, page: 33, day: 0, createdMs: born + 61_000),
+            slot(tab: 4, page: 44, day: -1, createdMs: born + 12_000),
+        ]
+        XCTAssertEqual(
+            nodes(tabs).map(\.stamp), ["11:39:12", "11:39:48", "11:40", "11:39"])
+        XCTAssertEqual(
+            StreamNavigator.stamps(createdMs: [born, nil, born + 30_000], timeZone: utc),
+            ["11:39:00", "", "11:39:30"])
+        XCTAssertEqual(StreamNavigator.stamps(createdMs: [], timeZone: utc), [])
+    }
+
+    /// Both patterns are the user's; an empty one reads as the standard.
+    func testTheStampPatternsAreSettingsWithTheStandardBehindThem() {
+        let twelveHour = StreamNavigator.StampFormat(short: "h:mm a", fine: "h:mm:ss a")
+        XCTAssertEqual(
+            StreamNavigator.stamps(
+                createdMs: [born, born + 5_000, born + 90_000], format: twelveHour,
+                timeZone: utc),
+            ["11:39:00 AM", "11:39:05 AM", "11:40 AM"])
+        let blank = StreamNavigator.StampFormat(short: "", fine: "")
+        XCTAssertEqual(
+            StreamNavigator.stamps(createdMs: [born, born + 5_000], format: blank, timeZone: utc),
+            ["11:39:00", "11:39:05"])
+        XCTAssertEqual(
+            nodes([slot(tab: 1, page: 11)], stampFormat: twelveHour).map(\.stamp), ["11:39 AM"])
+    }
+
+    /// A placeholder title is the stamp again in the core's own shape,
+    /// so a node carries none and its tooltip has no second line; a
+    /// typed name and a first line are carried.
+    func testAPlaceholderTitleIsNotCarriedTwice() throws {
+        let nodes = nodes([
+            slot(tab: 1, page: 11, title: "0914-1139", titleSource: .placeholder),
+            slot(tab: 2, page: 22, title: "the vault", titleSource: .name, createdMs: born + 60_000),
+            slot(
+                tab: 3, page: 33, title: "stdout sync", titleSource: .derived,
+                createdMs: born + 120_000),
+        ])
+        XCTAssertEqual(nodes.map(\.title), ["", "the vault", "stdout sync"])
+        let placeholder = try XCTUnwrap(nodes.first)
+        XCTAssertEqual(StreamNavigator.help(for: placeholder, chord: nil), "today · 11:39")
+        XCTAssertEqual(StreamNavigator.spoken(for: placeholder), "today, 11:39")
     }
 
     /// Today with no page is a node with no minute, and the one node
@@ -154,15 +213,15 @@ final class StreamNavigatorTests: XCTestCase {
     /// past the window, that the page is retained.
     func testTheTooltipAndTheSpokenLabelSayTheSameFacts() throws {
         let page = try XCTUnwrap(nodes([slot(tab: 1, page: 11, title: "stdout sync")]).first)
-        XCTAssertEqual(StreamNavigator.help(for: page, chord: nil), "today · 0914-1139\nstdout sync")
+        XCTAssertEqual(StreamNavigator.help(for: page, chord: nil), "today · 11:39\nstdout sync")
         let chord = try Keystroke.parse("cmd-1").get()
         XCTAssertEqual(
             StreamNavigator.help(for: page, chord: chord),
-            "today · 0914-1139 (\(chord.displaySymbol))\nstdout sync")
-        XCTAssertEqual(StreamNavigator.spoken(for: page), "today, 0914-1139, stdout sync")
+            "today · 11:39 (\(chord.displaySymbol))\nstdout sync")
+        XCTAssertEqual(StreamNavigator.spoken(for: page), "today, 11:39, stdout sync")
 
         let untitled = try XCTUnwrap(nodes([slot(tab: 1, page: 11)]).first)
-        XCTAssertEqual(StreamNavigator.help(for: untitled, chord: nil), "today · 0914-1139")
+        XCTAssertEqual(StreamNavigator.help(for: untitled, chord: nil), "today · 11:39")
 
         let empty = try XCTUnwrap(nodes([]).first)
         XCTAssertEqual(StreamNavigator.help(for: empty, chord: nil), "Start today's page")
@@ -170,17 +229,22 @@ final class StreamNavigatorTests: XCTestCase {
         let retained = try XCTUnwrap(nodes([slot(tab: 1, page: 11, day: -8)]).last)
         XCTAssertEqual(
             StreamNavigator.spoken(for: retained),
-            "8 days ago, 0914-1139, past seven days, retained because it holds content")
+            "8 days ago, 11:39, past seven days, retained because it holds content")
     }
 
-    /// The gutter's words are the day and the minute on every page,
-    /// the day alone for the empty place, and the retained words past
-    /// the window.
-    func testTheGutterSaysTheDayAndTheMinute() {
+    /// The gutter's words are the day and the time on a day's first
+    /// page, the time alone on the pages under it, the day alone for
+    /// the empty place, and the retained words past the window.
+    func testTheGutterSaysTheDayOnceAndTheTimeOnEveryPage() {
         XCTAssertEqual(
-            DayHeaderView.dayText(spokenLabel: "today", stamp: "0914-1139"), "today · 0914-1139")
+            DayHeaderView.dayText(spokenLabel: "today", stamp: "11:39"), "today · 11:39")
+        XCTAssertEqual(
+            DayHeaderView.dayText(spokenLabel: "today", stamp: "11:55", firstOfDay: false),
+            "11:55")
         XCTAssertEqual(DayHeaderView.dayText(spokenLabel: "today", stamp: nil), "today")
         XCTAssertEqual(DayHeaderView.dayText(spokenLabel: "today", stamp: ""), "today")
+        XCTAssertEqual(
+            DayHeaderView.dayText(spokenLabel: "today", stamp: nil, firstOfDay: false), "today")
         XCTAssertEqual(DayHeaderView.retainedText(pageDayOffset: -3), "")
         XCTAssertEqual(DayHeaderView.retainedText(pageDayOffset: nil), "")
         XCTAssertEqual(
