@@ -229,19 +229,45 @@ public enum StreamNavigator {
     /// no birth stamp reads as empty and collides with nothing. The one
     /// rule the rail and the roll both read, so a node and its gutter
     /// cannot disagree about a page's time.
+    ///
+    /// A user's `fine` pattern coarser than a minute (or the same as
+    /// their `short`) would leave same-minute births still reading
+    /// alike after the escalation; the standard `HH:mm:ss` is a final
+    /// tiebreaker for exactly that case, so two pages born the same
+    /// minute read apart even when the user's own patterns cannot.
+    /// Two births at the same second remain a dead heat and read as
+    /// the fine form; there is no honest way to tell them apart.
     public static func stamps(
         createdMs: [UInt64?], format: StampFormat = .standard, timeZone: TimeZone = .current
     ) -> [String] {
         let short = createdMs.map { ms in
             ms.map { stamp(createdMs: $0, pattern: format.shortPattern, timeZone: timeZone) } ?? ""
         }
-        var readings: [String: Int] = [:]
-        for reading in short where !reading.isEmpty { readings[reading, default: 0] += 1 }
-        return createdMs.indices.map { index in
-            guard let ms = createdMs[index], readings[short[index], default: 0] > 1 else {
+        var shortCounts: [String: Int] = [:]
+        for reading in short where !reading.isEmpty { shortCounts[reading, default: 0] += 1 }
+        let escalated: [String] = createdMs.indices.map { index in
+            guard let ms = createdMs[index], shortCounts[short[index], default: 0] > 1 else {
                 return short[index]
             }
             return stamp(createdMs: ms, pattern: format.finePattern, timeZone: timeZone)
+        }
+        // A fine pattern coarser than the birth resolution (say `HH`
+        // paired with `HH:mm`, or a `fine` equal to the `short`) leaves
+        // the same colliding readings behind; the standard `HH:mm:ss`
+        // is the final tiebreaker so a same-minute pair reads apart.
+        var fineCounts: [String: Int] = [:]
+        for (index, reading) in escalated.enumerated()
+        where !reading.isEmpty && shortCounts[short[index], default: 0] > 1 {
+            fineCounts[reading, default: 0] += 1
+        }
+        return createdMs.indices.map { index in
+            let reading = escalated[index]
+            guard let ms = createdMs[index],
+                  shortCounts[short[index], default: 0] > 1,
+                  fineCounts[reading, default: 0] > 1
+            else { return reading }
+            return stamp(
+                createdMs: ms, pattern: StampFormat.standard.fine, timeZone: timeZone)
         }
     }
 

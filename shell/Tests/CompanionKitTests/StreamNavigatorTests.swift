@@ -143,6 +143,29 @@ final class StreamNavigatorTests: XCTestCase {
             StreamNavigator.stamp(createdMs: born, pattern: "'", timeZone: utc), standard)
     }
 
+    /// A `fine` pattern coarser than the birth resolution (say a `HH`
+    /// short paired with a `HH:mm` fine, where two same-hour pages
+    /// differ by many minutes) escalates to the fine reading, which is
+    /// already distinct across the group; no further tiebreak needed.
+    func testCoarseShortEscalatesToTheFineWhenItReadsThemApart() {
+        let format = StreamNavigator.StampFormat(short: "HH", fine: "HH:mm")
+        let readings = StreamNavigator.stamps(
+            createdMs: [born, born + 16 * 60_000], format: format, timeZone: utc)
+        XCTAssertEqual(readings, ["11:39", "11:55"])
+        XCTAssertNotEqual(readings[0], readings[1])
+    }
+
+    /// A `fine` pattern that reads the same as the `short` (or that is
+    /// still coarser than the birth resolution) leaves same-minute
+    /// pages colliding after the escalation, so the standard fine
+    /// `HH:mm:ss` is a final tiebreaker for exactly that case.
+    func testACoarseFinePatternFallsThroughToTheStandardFine() {
+        let format = StreamNavigator.StampFormat(short: "HH:mm", fine: "HH:mm")
+        let readings = StreamNavigator.stamps(
+            createdMs: [born + 12_000, born + 48_000], format: format, timeZone: utc)
+        XCTAssertEqual(readings, ["11:39:12", "11:39:48"])
+    }
+
     /// A placeholder title is the stamp again in the core's own shape,
     /// so a node carries none and its tooltip has no second line; a
     /// typed name and a first line are carried.
