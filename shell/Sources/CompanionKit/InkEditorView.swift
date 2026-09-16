@@ -3980,10 +3980,12 @@ final class ChipCell: NSTextAttachmentCell {
 
     /// Where the actions glyph sits in a block drawn at `cellFrame`,
     /// and so where a click opens the menu. On the classification's
-    /// row, at the trailing edge, wide enough to hit. Pure, so the
-    /// click test is an assertion rather than a screen.
+    /// row, at the trailing edge, wide enough to hit. The text view
+    /// the block is drawn in is flipped, so the block's top row is at
+    /// `minY` and its bottom row at `maxY`. Pure, so the click test is
+    /// an assertion rather than a screen.
     nonisolated static func actionsRect(in cellFrame: NSRect) -> NSRect {
-        NSRect(x: cellFrame.maxX - 12 - 22, y: cellFrame.maxY - 26, width: 22, height: 16)
+        NSRect(x: cellFrame.maxX - 12 - 22, y: cellFrame.minY + 6, width: 22, height: 16)
     }
 
     @MainActor
@@ -4052,15 +4054,17 @@ final class ChipCell: NSTextAttachmentCell {
         block.stroke()
         MainActor.assumeIsolated {
             let left = cellFrame.minX + 12
-            let topBaseline = cellFrame.maxY - 17
-            let excerptY = cellFrame.minY + 9
+            // The text view is flipped: `minY` is the block's top edge,
+            // so the row that reads first sits at the smaller y.
+            let topRowY = cellFrame.minY + 8
+            let excerptY = cellFrame.maxY - 24
 
             if let lock = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil) {
-                let lockRect = NSRect(x: left, y: topBaseline - 1, width: 9, height: 9)
+                let lockRect = NSRect(x: left, y: topRowY + 1, width: 9, height: 9)
                 lock.draw(in: lockRect)
             }
 
-            classificationLabel.draw(at: NSPoint(x: left + 14, y: topBaseline - 2))
+            classificationLabel.draw(at: NSPoint(x: left + 14, y: topRowY))
             if hovered || selected {
                 let glyph = actions
                 let size = glyph.size()

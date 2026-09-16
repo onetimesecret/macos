@@ -62,7 +62,9 @@ final class SealedCapsuleTests: XCTestCase {
         let seat = ChipCell.actionsRect(in: frame)
         XCTAssertTrue(frame.contains(seat), "the seat hung off the block")
         XCTAssertEqual(seat.maxX, frame.maxX - 12, "the seat did not share the metadata's inset")
-        XCTAssertGreaterThan(seat.midY, frame.midY, "the seat was not on the top row")
+        // The block is drawn in a flipped text view: the top row is the
+        // one nearer `minY`.
+        XCTAssertLessThan(seat.midY, frame.midY, "the seat was not on the top row")
         XCTAssertEqual(ChipCell.actionsGlyph, "···")
     }
 
