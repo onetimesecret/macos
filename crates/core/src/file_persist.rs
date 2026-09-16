@@ -16,8 +16,9 @@
 //! helper, same strict envelope rule. `OTSSNAP4` is not touched.
 //!
 //! One record per open file: the bookmark blob, the last known path,
-//! the witness, the dirty flag, the last edit stamp, and for a dirty
-//! file the Loro snapshot. A clean file records only its identity, so
+//! the witness, the dirty flag, the last edit stamp, for a dirty file
+//! the Loro snapshot, and an optional trailing generation-dirty flag.
+//! A clean file records only its identity, so
 //! its tab comes back with nothing staged behind it and the shell fills
 //! it from disk with a reload.
 //!
@@ -94,6 +95,9 @@ pub fn emit(store: &FileStore, wall_ms: u64) -> Emitted {
                     out.bytes(bytes);
                 }
             }
+            // Optional trailing field: older readers skip it by frame
+            // length, and this reader defaults it for older records.
+            out.u8(u8::from(file.take_theirs_undone()));
         });
     }
     Emitted {
@@ -164,6 +168,15 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
             1 => Some(record.bytes().ok_or(Malformed)?.to_vec()),
             _ => return Err(Malformed),
         };
+        let take_theirs_undone = if record.done() {
+            false
+        } else {
+            match record.u8().ok_or(Malformed)? {
+                0 => false,
+                1 => true,
+                _ => return Err(Malformed),
+            }
+        };
         // Fields this build has never heard of are left behind inside
         // the frame. The record's own length is what finds the next
         // one, so the walk above stopping early is the rule working.
@@ -180,6 +193,7 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
             has_bom,
             dirty,
             last_edited_ms,
+            take_theirs_undone,
             snapshot,
         });
     }
@@ -201,6 +215,7 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
             record.has_bom,
             record.dirty,
             record.last_edited_ms,
+            record.take_theirs_undone,
             record.snapshot.as_deref(),
         )?;
         restored += 1;
@@ -217,6 +232,7 @@ struct Record {
     has_bom: bool,
     dirty: bool,
     last_edited_ms: u64,
+    take_theirs_undone: bool,
     snapshot: Option<Vec<u8>>,
 }
 
@@ -341,6 +357,56 @@ mod tests {
     }
 
     #[test]
+    fn an_undone_equal_text_take_theirs_stays_dirty_after_relaunch() {
+        let io = MemoryIo::with("/generation.txt", b"old\n");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/generation.txt")).unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Delete {
+                    pos_u16: 0,
+                    len_u16: 3,
+                },
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "same".into(),
+                },
+            ],
+            4_000,
+        ));
+        io.put(
+            "/generation.txt",
+            &[&[0xEF, 0xBB, 0xBF][..], b"same\r\n"].concat(),
+        );
+        store.refresh_conflict(&io, id);
+        store.take_theirs(&io, id).unwrap();
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert!(store.is_dirty(id));
+
+        let bytes = emit(&store, 5_000).bytes;
+        let (back, notices) = relaunch(&io, &bytes);
+        assert!(notices.is_empty());
+        let file = &back.files()[0];
+        assert_eq!(file.text(), "same\n");
+        assert!(
+            file.is_dirty(),
+            "the restored draft generation remains distinct from disk"
+        );
+        assert_eq!(file.line_ending(), LineEnding::Crlf);
+        assert!(file.has_bom());
+        assert_eq!(
+            back.check(&io, file.id()),
+            crate::files::ExternalState::Unchanged
+        );
+        assert!(
+            !back.can_undo(file.id()),
+            "undo history does not cross launch"
+        );
+    }
+
+    #[test]
     fn a_restored_draft_saves_the_text_it_came_back_with() {
         let (io, store, _clean, _dirty) = seeded();
         let bytes = emit(&store, 1_000).bytes;
@@ -373,6 +439,19 @@ mod tests {
         back.open(&io, Path::new("/clean.txt")).unwrap();
         assert_eq!(restore(&mut back, &bytes, 1).unwrap(), 2);
         assert_eq!(back.files().len(), 2);
+    }
+
+    #[test]
+    fn records_without_the_generation_field_still_restore() {
+        let (io, store, _clean, _dirty) = seeded();
+        let current = emit(&store, 1_000).bytes;
+        let old = strip_last_field_from_each_record(&current);
+        let (back, notices) = relaunch(&io, &old);
+        assert!(notices.is_empty());
+        assert_eq!(back.files().len(), 2);
+        assert!(!back.files()[0].is_dirty());
+        assert!(back.files()[1].is_dirty());
+        assert_eq!(back.files()[1].text(), "typed dirty body\n");
     }
 
     #[test]
@@ -447,6 +526,25 @@ mod tests {
         assert_eq!(restore(&mut back, &widened, 1).unwrap(), 2);
         assert_eq!(back.files()[0].path(), Path::new("/clean.txt"));
         assert_eq!(back.files()[1].text(), "typed dirty body\n");
+    }
+
+    /// Remove the optional trailing generation flag from every record,
+    /// producing the exact record shape written before that field existed.
+    fn strip_last_field_from_each_record(bytes: &[u8]) -> Vec<u8> {
+        let head = MAGIC.len() + 8 + 8;
+        let count = u64::from_le_bytes(bytes[16..24].try_into().unwrap()) as usize;
+        let mut out = bytes[..head].to_vec();
+        let mut at = head;
+        for _ in 0..count {
+            let len = u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap()) as usize;
+            let body_at = at + 8;
+            assert!(len > 0);
+            out.extend_from_slice(&((len - 1) as u64).to_le_bytes());
+            out.extend_from_slice(&bytes[body_at..body_at + len - 1]);
+            at = body_at + len;
+        }
+        assert_eq!(at, bytes.len());
+        out
     }
 
     /// Append `extra` inside the first record's frame and restate the

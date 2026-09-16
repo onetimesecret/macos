@@ -414,7 +414,7 @@ struct BackdropRootView: View {
                 Text("save failed")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(Color.emberText)
-                    .help("The last write was refused; the app keeps retrying. Quitting now will warn before any loss.")
+                    .help("The last write was refused; the app keeps retrying. Quit is cancelled while the flush remains refused.")
                     .accessibilityLabel(Text("Save failed, retrying"))
             }
         }

@@ -134,12 +134,10 @@ route, and record the outcome for each:
 
 1. **Force Quit.** With a line typed and unsettled, open the Force Quit
    window (⌥⌘Esc), select OnetimePad, and press Force Quit. Confirm the
-   dialog kills it outright rather than routing through
-   `applicationShouldTerminate`, that is, no quit warning appears
-   (`shell/Sources/OnetimePad/BackdropApp.swift`,
-   `shell/Sources/CompanionKit/QuitPrompt.swift`). If a warning does
-   appear you pressed Quit rather than Force Quit, and this is not the
-   case under test.
+   system kills it outright rather than routing through the app's
+   synchronous quit flush (`shell/Sources/OnetimePad/BackdropApp.swift`,
+   `shell/Sources/CompanionKit/QuitPrompt.swift`). No app alert or other
+   app-owned surface appears.
 2. **A rebuild over a live dev instance.** Package and launch the debug
    bundle, type an unsettled line into it, then run
    `swift build --package-path shell` from another terminal. The

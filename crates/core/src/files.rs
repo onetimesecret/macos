@@ -381,6 +381,16 @@ pub struct OpenFile {
     /// [`FileStore::resolve_keep_mine`] and cleared by the save it
     /// licenses, so one choice buys one save.
     overwrite_next_save: bool,
+    /// The Take theirs generation whose undo marker may currently govern
+    /// dirty state. Cleared whenever a save establishes a newer baseline.
+    active_take_theirs_generation: Option<i64>,
+    /// The last file-local generation minted into undo metadata. It stays
+    /// monotonic while this document and its historical markers live.
+    next_take_theirs_generation: i64,
+    /// Whether the active Take theirs structural action is currently
+    /// undone. While it is, the pre-resolution draft generation remains
+    /// dirty even when its normalized text equals `saved_text`.
+    take_theirs_undone: bool,
     /// Whether the drafts file carried this record dirty but without a
     /// snapshot, which happens only when the snapshot was over
     /// [`DRAFT_SNAPSHOT_LIMIT`] at the save. Set at restore and read
@@ -492,10 +502,13 @@ impl OpenFile {
     }
 
     /// Recompute the dirty flag from the buffer against the saved text.
-    /// A file whose saved text is unknown keeps the flag it has, which
-    /// is the persisted one.
+    /// An undone Take theirs remains dirty by generation even when its
+    /// normalized text equals the adopted disk text. A file whose saved
+    /// text is unknown keeps the flag it has, which is the persisted one.
     fn resettle_dirty(&mut self) {
-        if let Some(saved) = &self.saved_text {
+        if self.take_theirs_undone {
+            self.dirty = true;
+        } else if let Some(saved) = &self.saved_text {
             self.dirty = *saved != text_of(&self.document);
         }
     }
@@ -515,6 +528,24 @@ impl OpenFile {
         self.has_bom = read.has_bom;
         self.dirty = false;
         self.conflict = FileConflict::None;
+        self.active_take_theirs_generation = None;
+        self.next_take_theirs_generation = 0;
+        self.take_theirs_undone = false;
+    }
+
+    /// Mint a marker that cannot alias another Take theirs item still in
+    /// this document's undo history. Exhaustion is unreachable in
+    /// practice; if reached, dropping history is safer than aliasing an
+    /// old baseline marker.
+    fn mint_take_theirs_generation(&mut self) -> i64 {
+        if self.next_take_theirs_generation == i64::MAX {
+            self.document.forget_undo();
+            self.next_take_theirs_generation = 0;
+            self.active_take_theirs_generation = None;
+            self.take_theirs_undone = false;
+        }
+        self.next_take_theirs_generation += 1;
+        self.next_take_theirs_generation
     }
 
     /// This file as a notice the shell can put in front of a person.
@@ -586,6 +617,9 @@ impl FileStore {
             restored_from_draft: false,
             externally_reloaded: false,
             overwrite_next_save: false,
+            active_take_theirs_generation: None,
+            next_take_theirs_generation: 0,
+            take_theirs_undone: false,
             draft_dropped: false,
             bookmark: Vec::new(),
         });
@@ -690,7 +724,7 @@ impl FileStore {
         if new_step {
             file.document.commit_as_new_step(None);
         } else {
-            file.document.commit(None);
+            file.document.commit_file_edit(None);
         }
         // The stamp is only taken for a batch that applied whole. A
         // caller told its batch was refused must not then find the file
@@ -743,6 +777,14 @@ impl FileStore {
             None
         };
         if applied {
+            if let Some(generation) = file.document.popped_take_theirs()
+                && file.active_take_theirs_generation == Some(generation)
+            {
+                // Historical markers survive save and Redo, but only the
+                // marker bound to the current saved baseline may govern
+                // generation-level dirtiness.
+                file.take_theirs_undone = back;
+            }
             file.resettle_dirty();
         }
         Some(StepOutcome { applied, caret_u16 })
@@ -855,7 +897,7 @@ impl FileStore {
 
     /// Keep mine: the first of the three conflict resolutions. The
     /// buffer stands and the next save overwrites whatever is on disk.
-    /// Take theirs is [`FileStore::reload`] and the third is
+    /// Take theirs is [`FileStore::take_theirs`] and the third is
     /// [`FileStore::save_as`].
     ///
     /// Two things happen, and both are needed. The witness is refreshed
@@ -876,9 +918,11 @@ impl FileStore {
         true
     }
 
-    /// Re-read the file from disk, discarding whatever the buffer held.
-    /// Take theirs, and also the silent reload a clean file gets when
-    /// something else wrote it.
+    /// Re-read the file from disk, discarding whatever the buffer held
+    /// and its undo history. This is the non-interactive reload primitive
+    /// used when a clean file changes; an explicit conflict resolution
+    /// uses [`FileStore::take_theirs`] so the discarded draft can be
+    /// recovered with Undo.
     ///
     /// # Errors
     ///
@@ -898,6 +942,63 @@ impl FileStore {
             // by the reload itself.
             file.restored_from_draft = false;
             file.externally_reloaded = false;
+            file.overwrite_next_save = false;
+        }
+        Ok(())
+    }
+
+    /// Adopt the disk copy as an explicit, undoable conflict resolution.
+    /// The replacement is one structural edit step. Its disk text becomes
+    /// the saved baseline immediately, so Undo restores the former draft
+    /// as dirty and Redo returns to the adopted disk text as clean.
+    ///
+    /// The witness, line ending, and BOM all describe the adopted disk
+    /// generation on both sides of the undo step. A refused read leaves
+    /// the buffer and its history exactly as they were.
+    ///
+    /// # Errors
+    ///
+    /// The same refusals [`FileStore::open`] gives.
+    pub fn take_theirs(&mut self, io: &dyn FileIo, id: FileId) -> Result<(), OpenRefusal> {
+        let path = self
+            .file(id)
+            .ok_or(OpenRefusal::Io(io::ErrorKind::NotFound))?
+            .path
+            .clone();
+        let read = read_file(io, &path)?;
+        if let Some(file) = self.file_mut(id) {
+            let generation = file.mint_take_theirs_generation();
+            let len = file.document.utf16_len();
+            if len == 0 && read.text.is_empty() {
+                // Even an empty buffer over an empty disk copy is an
+                // explicit structural choice. A transient insertion and
+                // deletion gives the undo manager a real, net-empty step.
+                file.document
+                    .insert(0, " ")
+                    .expect("zero is a valid insertion point");
+                file.document
+                    .delete(0, 1)
+                    .expect("the inserted code unit is a valid range");
+            } else {
+                file.document
+                    .delete(0, len)
+                    .expect("the document's full UTF-16 range is valid");
+                file.document
+                    .insert(0, &read.text)
+                    .expect("zero is a valid insertion point");
+            }
+            file.document.commit_take_theirs_step(generation);
+            file.saved_text = Some(read.text);
+            file.witness = Some(read.witness);
+            file.line_ending = read.line_ending;
+            file.has_bom = read.has_bom;
+            file.dirty = false;
+            file.conflict = FileConflict::None;
+            file.active_take_theirs_generation = Some(generation);
+            file.take_theirs_undone = false;
+            file.restored_from_draft = false;
+            file.externally_reloaded = false;
+            file.overwrite_next_save = false;
         }
         Ok(())
     }
@@ -958,6 +1059,7 @@ impl FileStore {
         has_bom: bool,
         dirty: bool,
         last_edited_ms: u64,
+        take_theirs_undone: bool,
         snapshot: Option<&[u8]>,
     ) -> Result<FileId, crate::persist::RestoreError> {
         let document = SheetDocument::new();
@@ -984,6 +1086,9 @@ impl FileStore {
             restored_from_draft: true,
             externally_reloaded: false,
             overwrite_next_save: false,
+            active_take_theirs_generation: None,
+            next_take_theirs_generation: 0,
+            take_theirs_undone,
             draft_dropped: dirty && snapshot.is_none(),
             bookmark,
         });
@@ -1041,6 +1146,7 @@ impl FileStore {
             let dropped_draft = file.draft_dropped;
             if dropped_draft {
                 file.dirty = false;
+                file.take_theirs_undone = false;
                 file.draft_dropped = false;
             }
             match read_file(io, &file.path) {
@@ -1152,6 +1258,10 @@ impl OpenFile {
 
     pub(crate) fn last_edited_ms(&self) -> u64 {
         self.last_edited_ms
+    }
+
+    pub(crate) fn take_theirs_undone(&self) -> bool {
+        self.take_theirs_undone
     }
 }
 
@@ -1324,6 +1434,8 @@ fn write_and_settle(io: &dyn FileIo, file: &mut OpenFile, path: &Path) -> Result
     file.dirty = false;
     file.conflict = FileConflict::None;
     file.restored_from_draft = false;
+    file.active_take_theirs_generation = None;
+    file.take_theirs_undone = false;
     // The consent was for this save. The next divergence asks again.
     file.overwrite_next_save = false;
     Ok(())
@@ -1911,6 +2023,7 @@ mod tests {
         assert_eq!(store.text(id).unwrap(), "theirs");
         assert!(!store.is_dirty(id));
         assert_eq!(store.check(&io, id), ExternalState::Unchanged);
+        assert!(!store.can_undo(id), "an automatic reload is not an edit");
     }
 
     #[test]
@@ -1945,16 +2058,260 @@ mod tests {
     }
 
     #[test]
-    fn take_theirs_resolves_by_reloading() {
-        let io = MemoryIo::with("/t.txt", b"one");
+    fn take_theirs_is_one_undoable_structural_change() {
+        let io = MemoryIo::with("/t.txt", b"one\n");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/t.txt")).unwrap();
-        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
-        io.put("/t.txt", b"theirs");
-        store.refresh_conflict(&io, id);
-        store.reload(&io, id).unwrap();
-        assert_eq!(store.file(id).unwrap().conflict(), FileConflict::None);
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 7_000));
+        io.put("/t.txt", &[UTF8_BOM, b"theirs\r\n"].concat());
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
+
+        store.take_theirs(&io, id).unwrap();
+        let file = store.file(id).unwrap();
+        assert_eq!(file.text(), "theirs\n");
+        assert!(!file.is_dirty());
+        assert_eq!(file.conflict(), FileConflict::None);
+        assert_eq!(file.line_ending(), LineEnding::Crlf);
+        assert!(file.has_bom());
+        assert_eq!(file.last_edited_at(), 7);
+        assert_eq!(store.check(&io, id), ExternalState::Unchanged);
+        assert!(store.can_undo(id));
+
+        assert!(store.undo(id).unwrap().applied);
+        let file = store.file(id).unwrap();
+        assert_eq!(file.text(), "one mine\n", "Undo restores the draft");
+        assert!(file.is_dirty(), "the draft differs from the disk baseline");
+        assert_eq!(file.conflict(), FileConflict::None);
+        assert_eq!(file.line_ending(), LineEnding::Crlf);
+        assert!(file.has_bom());
+        assert_eq!(store.check(&io, id), ExternalState::Unchanged);
+        assert_eq!(
+            file.bytes_to_write(),
+            [UTF8_BOM, b"one mine\r\n"].concat(),
+            "an undone draft uses the adopted disk encoding"
+        );
+
+        assert!(store.redo(id).unwrap().applied);
+        let file = store.file(id).unwrap();
+        assert_eq!(file.text(), "theirs\n");
+        assert!(!file.is_dirty());
+        assert_eq!(file.conflict(), FileConflict::None);
+        assert_eq!(store.check(&io, id), ExternalState::Unchanged);
+    }
+
+    #[test]
+    fn equal_normalized_text_still_records_take_theirs_as_a_structural_step() {
+        let io = MemoryIo::with("/equal.txt", b"old\n");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/equal.txt")).unwrap();
+        assert!(store.apply_ops(id, &[del(0, 3), ins(0, "same")], 4_000));
+        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert!(store.is_dirty(id));
+
+        io.put("/equal.txt", &[UTF8_BOM, b"same\r\n"].concat());
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
+        store.take_theirs(&io, id).unwrap();
+        let file = store.file(id).unwrap();
+        assert_eq!(file.text(), "same\n");
+        assert!(!file.is_dirty());
+        assert_eq!(file.line_ending(), LineEnding::Crlf);
+        assert!(file.has_bom());
+        assert_eq!(store.check(&io, id), ExternalState::Unchanged);
+
+        assert!(store.undo(id).unwrap().applied);
+        let file = store.file(id).unwrap();
+        assert_eq!(file.text(), "same\n");
+        assert!(
+            file.is_dirty(),
+            "Undo restores the former draft generation even when text is equal"
+        );
+        assert_eq!(file.conflict(), FileConflict::None);
+        assert_eq!(file.line_ending(), LineEnding::Crlf);
+        assert!(file.has_bom());
+        assert_eq!(store.check(&io, id), ExternalState::Unchanged);
+
+        assert!(store.redo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert!(!store.is_dirty(id));
+        assert_eq!(store.check(&io, id), ExternalState::Unchanged);
+
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert!(
+            store.is_dirty(id),
+            "the structural marker survives a Redo/Undo cycle"
+        );
+
+        // Typing branches from the pre-resolution draft and invalidates
+        // Redo of Take theirs. Undoing that typing reaches saved_text
+        // again, but it is still the old draft generation and stays dirty.
+        assert!(store.apply_ops(id, &[ins(4, "!")], 5_000));
+        assert_eq!(store.text(id).unwrap(), "same!\n");
+        assert!(store.is_dirty(id));
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert!(
+            store.is_dirty(id),
+            "ordinary edit/undo cannot erase the undone generation"
+        );
+
+        // The only remaining redo is the branched typing step; the old
+        // Take theirs redo was invalidated when that branch was authored.
+        assert!(store.redo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "same!\n");
+        assert!(store.is_dirty(id));
+        assert!(!store.can_redo(id));
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert!(store.is_dirty(id));
+
         store.save(&io, id).unwrap();
+        assert!(!store.is_dirty(id), "a successful save settles the branch");
+        assert_eq!(io.bytes("/equal.txt"), [UTF8_BOM, b"same\r\n"].concat());
+    }
+
+    #[test]
+    fn take_theirs_generation_state_clears_only_on_successful_settlement() {
+        let io = MemoryIo::with("/settle.txt", b"old\n");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/settle.txt")).unwrap();
+        assert!(store.apply_ops(id, &[del(0, 3), ins(0, "same")], 1));
+        io.put("/settle.txt", b"same\n");
+        store.take_theirs(&io, id).unwrap();
+        assert!(store.undo(id).unwrap().applied);
+        assert!(store.is_dirty(id));
+
+        io.remove("/settle.txt");
+        assert_eq!(
+            store.take_theirs(&io, id),
+            Err(OpenRefusal::Io(io::ErrorKind::NotFound))
+        );
+        assert!(
+            store.is_dirty(id),
+            "a refused resolution leaves generation state unchanged"
+        );
+
+        io.put("/settle.txt", b"same\n");
+        store.take_theirs(&io, id).unwrap();
+        assert!(!store.is_dirty(id), "a new Take theirs settles the state");
+        assert!(store.undo(id).unwrap().applied);
+        assert!(store.is_dirty(id));
+
+        store.reload(&io, id).unwrap();
+        assert!(!store.is_dirty(id), "automatic adoption clears the state");
+        assert!(
+            !store.can_undo(id),
+            "automatic reload keeps no undo history"
+        );
+
+        assert!(store.close(id));
+        let reopened = store.open(&io, Path::new("/settle.txt")).unwrap();
+        assert!(!store.is_dirty(reopened));
+    }
+
+    #[test]
+    fn save_invalidates_historical_take_theirs_markers() {
+        let io = MemoryIo::with("/saved.txt", b"old");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/saved.txt")).unwrap();
+        assert!(store.apply_ops(id, &[del(0, 3), ins(0, "mine")], 1));
+        io.put("/saved.txt", b"theirs");
+        store.take_theirs(&io, id).unwrap();
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "mine");
+        assert!(store.is_dirty(id));
+
+        store.save(&io, id).unwrap();
+        assert!(!store.is_dirty(id));
+        assert_eq!(io.bytes("/saved.txt"), b"mine");
+
+        assert!(store.redo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert!(
+            store.is_dirty(id),
+            "the historical disk text differs from the newer saved baseline"
+        );
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "mine");
+        assert!(
+            !store.is_dirty(id),
+            "the stale marker cannot reactivate generation dirtiness"
+        );
+    }
+
+    #[test]
+    fn save_as_invalidates_historical_take_theirs_markers() {
+        let io = MemoryIo::with("/from-take.txt", b"old");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/from-take.txt")).unwrap();
+        assert!(store.apply_ops(id, &[del(0, 3), ins(0, "mine")], 1));
+        io.put("/from-take.txt", b"theirs");
+        store.take_theirs(&io, id).unwrap();
+        assert!(store.undo(id).unwrap().applied);
+
+        store.save_as(&io, id, Path::new("/saved-as.txt")).unwrap();
+        assert_eq!(store.file(id).unwrap().path(), Path::new("/saved-as.txt"));
+        assert!(!store.is_dirty(id));
+
+        assert!(store.redo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert!(store.is_dirty(id));
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "mine");
+        assert!(!store.is_dirty(id));
+    }
+
+    #[test]
+    fn typing_after_take_theirs_is_a_later_undo_step() {
+        let io = MemoryIo::with("/later.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/later.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1_000));
+        io.put("/later.txt", b"theirs");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
+        store.take_theirs(&io, id).unwrap();
+
+        assert!(store.apply_ops(id, &[ins(6, "!")], 2_000));
+        assert_eq!(store.text(id).unwrap(), "theirs!");
+        assert!(store.is_dirty(id));
+
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert!(!store.is_dirty(id));
+        assert!(
+            store.can_undo(id),
+            "Take theirs remains a distinct earlier step"
+        );
+
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "one mine");
+        assert!(store.is_dirty(id));
+
+        assert!(store.redo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "theirs");
+        assert!(!store.is_dirty(id));
+        assert!(store.redo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "theirs!");
+        assert!(store.is_dirty(id));
+    }
+
+    #[test]
+    fn a_refused_take_theirs_preserves_the_draft_and_undo_stack() {
+        let io = MemoryIo::with("/gone.txt", b"one");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/gone.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(3, " mine")], 1));
+        io.remove("/gone.txt");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Missing);
+
+        assert_eq!(
+            store.take_theirs(&io, id),
+            Err(OpenRefusal::Io(io::ErrorKind::NotFound))
+        );
+        assert_eq!(store.text(id).unwrap(), "one mine");
+        assert!(store.is_dirty(id));
+        assert_eq!(store.file(id).unwrap().conflict(), FileConflict::Missing);
+        assert!(store.can_undo(id));
     }
 
     #[test]

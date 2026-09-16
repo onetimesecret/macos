@@ -632,7 +632,7 @@ final class BackdropWindowController: NSObject, NSWindowDelegate {
     }
 
     /// Losing the keyboard is never a rest, and that is load-bearing:
-    /// the open panel, an alert, or a ⌘Tab to work beside the card all
+    /// an open or save panel, or a ⌘Tab to work beside the card, can
     /// take key from a surface that stays raised, and a rest here would
     /// pull the pad away under every one of them. The stance moves only
     /// by the routes that name it.

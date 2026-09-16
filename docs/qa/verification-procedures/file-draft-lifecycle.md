@@ -19,9 +19,11 @@ content erase fires when the last page tab goes, which a headless suite
 reaches only by calling the rotation directly rather than by the
 predicate that fires it in the app.
 **Owner:** delano.
-**Status:** passed on hardware 2026-09-05, all three cases. Re-run when
-the drafts file's format changes, when the content erase predicate
-moves, or before a release that touches either.
+**Status:** cases 1 and 2 passed on hardware 2026-09-05. Case 3's
+former modal path passed then; rerun cases 2 through 4 for issue #172's
+nonmodal interactions. Re-run all cases when the drafts file's format
+changes, when the content erase predicate moves, or before a release
+that touches either.
 
 This is the file side of
 [`force-termination.md`](force-termination.md). That procedure asks what
@@ -121,12 +123,13 @@ page or two on it first so there is something for step 1 to close.
 2. Confirm from the log or from `ls -la "$STATE"` that the content erase
    ran: the key half file changes, and `drafts.sealed` is rewritten at
    the same time rather than removed.
-3. Quit the app normally and relaunch it.
+3. Quit the app normally. Confirm no alert, sheet or notification
+   appears, then relaunch it.
 
-**Pass:** `drafts.sealed` is still present after step 2, the file tab
-comes back after step 3, and the draft from case 1 is still in it with
-its unsaved dot. The pages are gone, which is what closing them asked
-for.
+**Pass:** quit asks nothing; `drafts.sealed` is still present after
+step 2; the file tab comes back after step 3; and the draft from case 1
+is still in it with its unsaved dot. The pages are gone, which is what
+closing them asked for.
 
 **Fail:** `drafts.sealed` removed in step 2; the file tab returning
 empty or clean; or the file tab absent entirely, which would mean a page
@@ -137,23 +140,54 @@ lifecycle event destroyed a person's unsaved file edits.
 The control for cases 1 and 2. A draft that survives everything would be
 a different bug.
 
-1. With the dirty file open, press cmd-w. Confirm the review appears
-   offering Save, Discard and Cancel.
-2. Choose Discard.
-3. Reopen `/tmp/qa-draft.txt`.
+1. With the dirty file open, press cmd-w. Confirm a banner appears above
+   the editor saying `qa-draft.txt has unsaved changes` and offering
+   **Save file**, **Discard changes** and **Keep editing**, in that order.
+   Confirm the editor remains usable while the banner stands and Keep
+   editing is the default action.
+2. Choose **Keep editing**. Confirm the banner goes away, the tab stays
+   open and dirty, and no alert or modal session appeared.
+3. Press cmd-w again and choose **Discard changes**.
+4. Reopen `/tmp/qa-draft.txt`.
 
 **Pass:** the reopened file holds the two lines on disk and nothing
-else. The draft is gone, and the header reads saved.
+else. The draft is gone, the header reads saved, and every close choice
+was inline.
 
-**Fail:** the discarded draft coming back, which would let a later cmd-s
-write typing from a session the person had ended.
+**Fail:** an alert or sheet; editing blocked while the choice stands;
+the wrong action order or default; the tab closing after Keep editing;
+or the discarded draft coming back, which would let a later cmd-s write
+typing from a session the person had ended.
+
+## Case 4: Take theirs is immediate and undoable
+
+1. With `/tmp/qa-draft.txt` open, type `MINE` at the start and do not
+   save.
+2. In Terminal, replace the disk copy:
+
+   ```sh
+   printf 'THEIRS\n' > /tmp/qa-draft.txt
+   ```
+
+3. Activate OnetimePad. Confirm the conflict banner appears, then choose
+   **Take theirs**.
+4. Press cmd-z, then cmd-shift-z.
+
+**Pass:** Take theirs presents no confirmation and immediately shows
+`THEIRS`. Undo restores the buffer containing `MINE`; Redo shows
+`THEIRS` again. The conflict is cleared after Take theirs.
+
+**Fail:** any alert or confirmation; Take theirs leaving the old buffer
+visible; Undo failing to restore it; Redo failing to reapply the disk
+copy; or the conflict remaining after the replacement succeeds.
 
 ## Results
 
-First run 2026-09-05, on the dev bundle at `fb5e798`, all three cases
-pass. The two claims no test in this repository can reach are therefore
-checked: a draft survives a `kill -9`, and emptying the pad of pages
-reseals the drafts rather than taking them.
+First run 2026-09-05, on the dev bundle at `fb5e798`, all three original
+cases passed. The two claims no test in this repository can reach were
+therefore checked: a draft survives a `kill -9`, and emptying the pad of
+pages reseals the drafts rather than taking them. The issue #172 manual
+checks added to cases 2 and 3, and new case 4, have not yet been run.
 
 | Date | Machine and macOS | Case | Pass or fail | What was lost | Notes |
 |---|---|---|---|---|---|

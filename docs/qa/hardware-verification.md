@@ -299,8 +299,10 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   Owner: delano. A dirty file backed document across a SIGKILL and a
   relaunch, the draft's own last edit time on the header, the automatic
   content erase resealing rather than dropping the draft when the last
-  page tab closes, and the close review ending the draft
-  (ADR-0028). Not an ADR-0016 case: a file is not staged content.
+  page tab closes, the inline dirty-close decision ending the draft,
+  Take theirs remaining undoable, and dirty-file quit asking nothing
+  (ADR-0028, D-14, D-19). Not an ADR-0016 case: a file is not staged
+  content.
 
 Whether any of them has been run is recorded in each file's own Status
 line and Results table, which is the one place a run belongs. A tally

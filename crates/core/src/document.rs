@@ -13,6 +13,7 @@
 //! `_utf16` variants are called here, and no Rust `String` is ever
 //! indexed by a wire offset.
 
+use std::cell::Cell;
 use std::sync::{Arc, Mutex};
 
 use loro::cursor::{Cursor, PosType, Side};
@@ -143,12 +144,23 @@ pub(crate) struct SheetDocument {
     caret: Arc<Mutex<Option<usize>>>,
     /// The merge interval standing on the manager right now, held here
     /// because the library offers no way to read it back. Only
-    /// [`SheetDocument::commit_as_new_step`] and the test-only
-    /// retuning below write it, and the former restores what it finds
+    /// [`SheetDocument::commit_as_new_step`], the isolated structural
+    /// commit below, and the test-only retuning write it. Both commit
+    /// helpers restore what they find
     /// rather than the constant, so a test that lowered the interval
     /// still has its number after an automation batch has passed
     /// through.
     merge_interval: i64,
+    /// Whether the next ordinary commit must begin after an isolated
+    /// structural action rather than merge into it.
+    separate_next_commit: Cell<bool>,
+    /// Set only across the commit that implements explicit Take theirs.
+    /// The undo push hook copies this file-local generation into that
+    /// undo item's metadata.
+    take_theirs_commit: Arc<Mutex<Option<i64>>>,
+    /// The Take theirs generation carried by the item most recently
+    /// popped from either stack, if any.
+    popped_take_theirs: Arc<Mutex<Option<i64>>>,
 }
 
 impl SheetDocument {
@@ -191,13 +203,16 @@ impl SheetDocument {
         // window and this one dies with the process, which is the
         // honest thing to offer for a document whose history the
         // ceremony is entitled to destroy.
-        let (undo, caret) = bind_undo(&doc, &body);
+        let binding = bind_undo(&doc, &body);
         Self {
             doc,
             body,
-            undo,
-            caret,
+            undo: binding.undo,
+            caret: binding.caret,
             merge_interval: UNDO_MERGE_INTERVAL_MS,
+            separate_next_commit: Cell::new(false),
+            take_theirs_commit: binding.take_theirs_commit,
+            popped_take_theirs: binding.popped_take_theirs,
         }
     }
 
@@ -212,6 +227,7 @@ impl SheetDocument {
     /// (ADR-0021 section 5).
     pub(crate) fn undo(&mut self) -> bool {
         self.set_caret(None);
+        self.set_popped_take_theirs(None);
         // A refusal from the library is a step that did not happen, and
         // a step that did not happen must read as one: the seam above
         // restates the page only when this says something moved.
@@ -222,7 +238,15 @@ impl SheetDocument {
     /// restored.
     pub(crate) fn redo(&mut self) -> bool {
         self.set_caret(None);
+        self.set_popped_take_theirs(None);
         self.undo.redo().unwrap_or(false)
+    }
+
+    /// The file-local generation carried by the last popped Take theirs
+    /// structural action. The marker follows the inverse item across
+    /// Undo and Redo so repeated cycles identify the same baseline.
+    pub(crate) fn popped_take_theirs(&self) -> Option<i64> {
+        *self.popped_take_theirs.lock().ok()?
     }
 
     /// Whether a step is waiting to be taken back.
@@ -257,9 +281,22 @@ impl SheetDocument {
     /// grouping would otherwise find its number quietly replaced by
     /// the first automation batch the case sends.
     pub(crate) fn commit_as_new_step(&mut self, message: Option<&str>) {
+        self.separate_next_commit.set(false);
         self.undo.set_merge_interval(0);
-        self.commit(message);
+        self.commit_now(message);
         self.undo.set_merge_interval(self.merge_interval);
+    }
+
+    /// Commit explicit Take theirs as an isolated undo item. The zero
+    /// interval separates it from preceding typing; `separate_next_commit`
+    /// applies the same barrier to the first commit that follows it.
+    pub(crate) fn commit_take_theirs_step(&mut self, generation: i64) {
+        self.set_take_theirs_commit(Some(generation));
+        self.undo.set_merge_interval(0);
+        self.commit_now(None);
+        self.undo.set_merge_interval(self.merge_interval);
+        self.set_take_theirs_commit(None);
+        self.separate_next_commit.set(true);
     }
 
     /// Where the caret belongs after the last [`SheetDocument::undo`]
@@ -286,6 +323,9 @@ impl SheetDocument {
     pub(crate) fn forget_undo(&self) {
         self.undo.clear();
         self.set_caret(None);
+        self.separate_next_commit.set(false);
+        self.set_take_theirs_commit(None);
+        self.set_popped_take_theirs(None);
     }
 
     /// Write the pending caret slot, tolerating a poisoned lock the way
@@ -294,6 +334,18 @@ impl SheetDocument {
     fn set_caret(&self, scalar: Option<usize>) {
         if let Ok(mut slot) = self.caret.lock() {
             *slot = scalar;
+        }
+    }
+
+    fn set_take_theirs_commit(&self, value: Option<i64>) {
+        if let Ok(mut slot) = self.take_theirs_commit.lock() {
+            *slot = value;
+        }
+    }
+
+    fn set_popped_take_theirs(&self, value: Option<i64>) {
+        if let Ok(mut slot) = self.popped_take_theirs.lock() {
+            *slot = value;
         }
     }
 
@@ -345,6 +397,23 @@ impl SheetDocument {
     /// Close the open transaction as one change, optionally carrying a
     /// persisted message, and immediately open the next.
     pub(crate) fn commit(&self, message: Option<&str>) {
+        self.commit_now(message);
+    }
+
+    /// Close an ordinary file edit, applying the trailing boundary left
+    /// by an isolated structural action when one is pending.
+    pub(crate) fn commit_file_edit(&mut self, message: Option<&str>) {
+        let separate = self.separate_next_commit.replace(false);
+        if separate {
+            self.undo.set_merge_interval(0);
+        }
+        self.commit_now(message);
+        if separate {
+            self.undo.set_merge_interval(self.merge_interval);
+        }
+    }
+
+    fn commit_now(&self, message: Option<&str>) {
         let mut options = CommitOptions::new().immediate_renew(true);
         if let Some(message) = message {
             options = options.commit_msg(message);
@@ -805,13 +874,37 @@ fn chips_of(body: &LoroText) -> Vec<ItemId> {
 /// calls subscribers with the state lock held, this hook deadlocks in
 /// the field rather than failing a test, so the pin is what makes the
 /// re-check deliberate.
-fn bind_undo(doc: &LoroDoc, body: &LoroText) -> (UndoManager, Arc<Mutex<Option<usize>>>) {
+struct UndoBinding {
+    undo: UndoManager,
+    caret: Arc<Mutex<Option<usize>>>,
+    take_theirs_commit: Arc<Mutex<Option<i64>>>,
+    popped_take_theirs: Arc<Mutex<Option<i64>>>,
+}
+
+fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
     let mut undo = UndoManager::new(doc);
     undo.set_merge_interval(UNDO_MERGE_INTERVAL_MS);
 
+    let take_theirs_commit = Arc::new(Mutex::new(None));
+    let take_theirs_source = Arc::clone(&take_theirs_commit);
+    let popped_take_theirs = Arc::new(Mutex::new(None));
+    let inverse_take_theirs_source = Arc::clone(&popped_take_theirs);
     let anchor = body.clone();
     undo.set_on_push(Some(Box::new(move |_kind, _span, event| {
         let mut meta = UndoItemMeta::new();
+        let explicit_commit = take_theirs_source.lock().ok().and_then(|slot| *slot);
+        let inverse_step = event
+            .is_none()
+            .then(|| {
+                inverse_take_theirs_source
+                    .lock()
+                    .ok()
+                    .and_then(|slot| *slot)
+            })
+            .flatten();
+        if let Some(generation) = explicit_commit.or(inverse_step) {
+            meta.set_value(LoroValue::I64(generation));
+        }
         // A cursor rather than a bare offset, because a cursor is what
         // the library transforms when a peer's operations arrive while
         // the step sits on the stack. A step whose position cannot be
@@ -829,13 +922,25 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> (UndoManager, Arc<Mutex<Option<u
 
     let caret = Arc::new(Mutex::new(None));
     let sink = Arc::clone(&caret);
+    let take_theirs_sink = Arc::clone(&popped_take_theirs);
     undo.set_on_pop(Some(Box::new(move |_kind, _span, meta| {
         if let Ok(mut slot) = sink.lock() {
             *slot = meta.cursors.first().map(|cursor| cursor.pos.pos);
         }
+        if let Ok(mut slot) = take_theirs_sink.lock() {
+            *slot = match meta.value {
+                LoroValue::I64(generation) => Some(generation),
+                _ => None,
+            };
+        }
     })));
 
-    (undo, caret)
+    UndoBinding {
+        undo,
+        caret,
+        take_theirs_commit,
+        popped_take_theirs,
+    }
 }
 
 /// Where a local change began, as a unicode scalar offset into the

@@ -40,6 +40,10 @@ public struct PageContentView: View {
         if model.showingLedger {
             LedgerView(entries: model.ledgerEntries)
         } else if let file = model.activeFile {
+            let bannerDefault = FileBannerDefaultAction.derive(
+                hasPendingClose: model.pendingFileClose?.fileID == file.id,
+                hasConflict: file.conflict != .none
+            )
             // A file replaces whatever the surface was showing, in
             // either layout: the roll is a projection of pages and a
             // file is not one, so there is nothing for a file to be a
@@ -51,8 +55,15 @@ public struct PageContentView: View {
             // swapped underneath it, and files join that rotation
             // rather than standing up an editor of their own.
             VStack(spacing: 0) {
+                if let pending = model.pendingFileClose, pending.fileID == file.id {
+                    FileCloseBanner(pending: pending) { model.resolvePendingFileClose($0) }
+                    Divider()
+                }
                 if file.conflict != .none {
-                    FileConflictBanner(file: file) { model.resolveConflict($0) }
+                    FileConflictBanner(
+                        file: file,
+                        saveAsIsDefault: bannerDefault == .saveAs
+                    ) { model.resolveConflict($0) }
                     Divider()
                 }
                 if let suggestion = model.fileRenderSuggestion, suggestion.fileID == file.id {

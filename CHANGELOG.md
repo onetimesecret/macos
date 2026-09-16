@@ -67,12 +67,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on underlines its gutter in ember, with its words in ink rather than
   faint, so the colour is never the only carrier.
 
-- **A tab is renamed in place** (D-14, issue #172). Rename tab… on the
-  strip and Rename page… on a day's gutter turn the title into a field
-  where it stands: return commits, escape or the keyboard going
-  elsewhere cancels, and an empty name lets the title follow the page
-  again. The alert that used to ask, and the modal session it ran in,
-  are gone; the other dialogs are untouched.
+- **File and quit decisions no longer interrupt the surface** (D-14,
+  D-19, issue #172). Rename edits the title in place; closing a dirty
+  file shows Save file, Discard changes and Keep editing above the
+  editor; Take theirs applies immediately and can be undone; and quit
+  flushes the pad's state without an alert. A refused flush cancels quit
+  and leaves the existing inline recovery state in place.
 
 - **The header never says "synced" with no peer awake** (D-20). An
   attached channel with no other device awake says "sync waiting", in
@@ -251,12 +251,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and in front, on the active Space. A launch the system performs, as
   a login item or in the background, still rests behind everything,
   because it never activates the app and the activation is what the
-  raise waits for. The open and save panels, the file review
-  alerts, the tab rename prompt and the quit alert used to look to
-  the outside click monitor like a click somewhere else, and the card
-  rested underneath them; a press while one of them is running no
-  longer rests it, and when the panel returns the pad is brought back
-  to the front.
+  raise waits for. The open and save panels used to look to the outside
+  click monitor like a click somewhere else, and the card rested
+  underneath them; a press while either panel is running no longer
+  rests it, and when the panel returns the pad is brought back to the
+  front.
 
 ### Removed
 

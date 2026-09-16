@@ -109,6 +109,38 @@ final class FileSurfaceTests: XCTestCase {
             "file, README.md, unsaved, changed on disk")
     }
 
+    func testTheDirtyCloseActionsAreOrderedByOutcomeWithKeepEditingLastAndDefault() {
+        XCTAssertEqual(
+            FileCloseAction.allCases.map(\.label),
+            ["Save edits", "Keep saved file", "Keep editing"]
+        )
+        XCTAssertEqual(FileCloseAction.allCases.filter(\.isDefault), [.keepEditing])
+        XCTAssertEqual(FileCloseAction.allCases.last, .keepEditing)
+        XCTAssertEqual(FileCloseBanner.sentence(name: "notes.txt"), "notes.txt has unsaved changes")
+    }
+
+    func testDirtyCloseOwnsReturnAheadOfASimultaneousConflict() {
+        XCTAssertEqual(
+            FileBannerDefaultAction.derive(hasPendingClose: true, hasConflict: true),
+            .keepEditing
+        )
+        XCTAssertEqual(
+            FileBannerDefaultAction.derive(hasPendingClose: true, hasConflict: false),
+            .keepEditing
+        )
+    }
+
+    func testSaveAsOwnsReturnOnlyWhenAConflictStandsWithoutDirtyClose() {
+        XCTAssertEqual(
+            FileBannerDefaultAction.derive(hasPendingClose: false, hasConflict: true),
+            .saveAs
+        )
+        XCTAssertEqual(
+            FileBannerDefaultAction.derive(hasPendingClose: false, hasConflict: false),
+            .none
+        )
+    }
+
     func testTheConflictBannerNamesTheFileAndSaysSavingIsRefused() {
         XCTAssertEqual(
             FileConflictBanner.sentence(for: .changed, name: "README.md"),
@@ -249,14 +281,14 @@ final class FileSurfaceTests: XCTestCase {
         XCTAssertEqual(model.tabs.count, 1, "on a page the close chord closes the tab")
 
         let id = CompanionClient.fileIDTag | 10
-        model.standOpenFiles([file(id: id)])
+        model.standOpenFiles([file(id: id, dirty: true)])
         model.select(target: .file(id))
         model.perform(.pageClose)
         XCTAssertEqual(model.tabs.count, 1, "on a file the close chord leaves the tabs alone")
-        // The file was never in the core, so the close finds an empty
-        // roster and the selection falls back to the pad. That fall is
-        // what says the chord took the file's arm and not the tab's.
-        XCTAssertNil(model.selectedFile, "on a file the close chord closed the file")
+        XCTAssertEqual(
+            model.pendingFileClose?.fileID, id,
+            "on a dirty file the close chord publishes the inline decision"
+        )
     }
 
     /// The two new ids reach the two file commands.

@@ -435,30 +435,13 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         return sinceLaunch < launchWindow ? launchRaise : .activation
     }
 
-    /// Quit flushes whatever the debounce still holds; the debounced
-    /// mutation write is what actually gets the page onto disk
-    /// (ADR-0012). Intercepted here rather than in
-    /// `applicationWillTerminate` so a refused save reaches the user
-    /// while there is still a choice to make: accept the loss, or stay
-    /// and try again. Never a retry loop; cancelling simply returns to
-    /// the surface. Which outcome warns, with which story, and what the
-    /// system is answered with belongs to `QuitPrompt`; what stays here
-    /// is the alert itself.
+    /// Quit performs one synchronous shell-state flush. A settled flush
+    /// terminates, including when the sealed drafts contain unsaved file
+    /// buffers. A refused or unsavable flush cancels termination without
+    /// presenting or activating anything, leaving the surface's existing
+    /// inline save or recovery state in place.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        QuitPrompt.terminateReply(flushing: model) { warning in
-            let alert = NSAlert()
-            alert.messageText = warning.messageText
-            alert.informativeText = warning.informativeText
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Quit Anyway")
-            alert.addButton(withTitle: "Cancel")
-            NSApp.activate(ignoringOtherApps: true)
-            // Bracketed like every modal of ours: a cancelled quit is a
-            // return to the surface, and the surface comes forward for
-            // it. A confirmed quit terminates before the deferred raise
-            // can run.
-            return ModalSession.run { alert.runModal() } == .alertFirstButtonReturn
-        }
+        QuitPrompt.terminateReply(flushing: model)
     }
 
     /// ⌘Tab (or the Dock icon) landing on this app raises the surface:
@@ -496,10 +479,9 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
         model.raise(raise)
     }
 
-    /// A modal of ours has returned: the open or save panel, a file
-    /// review, the rename prompt, the quit notice, opened or cancelled
-    /// alike. The surface was raised when it went up, since every one of
-    /// them is reached from a keyed card or from a menu of an active
+    /// A modal open or save panel has returned, accepted or cancelled.
+    /// The surface was raised when it went up, since either panel is
+    /// reached from a keyed card or from a menu of an active
     /// app, and it comes forward again now: the panel took the keyboard
     /// on its way in, AppKit promises nothing about where the keyboard
     /// goes on the way out, and a person who has just chosen a file is
@@ -508,12 +490,10 @@ final class BackdropAppDelegate: NSObject, NSApplicationDelegate {
     /// Raised as an activation, not a summon: nobody named the surface,
     /// and the roll stays where the person left it (`BackdropRaise`).
     /// Only over a raised surface, because a rest that happened while
-    /// the panel was up was somebody's deliberate act, or the quit
-    /// notice reached from a resting card's tray menu, and neither is
-    /// ours to undo. Deferred a turn so the raise runs outside the
+    /// the panel was up was somebody's deliberate act and is not ours
+    /// to undo. Deferred a turn so the raise runs outside the
     /// caller's own stack, which for the open panel is the model in the
-    /// middle of opening the file, and never at all on a confirmed
-    /// quit, which terminates first.
+    /// middle of opening the file.
     ///
     /// The deferred half asks `ModalSession.isRunning` again, for the
     /// same reason the outside press rule asks it: the main queue

@@ -64,10 +64,16 @@ The clauses that fix the boundary:
   bookmark, and restored at the next launch. A draft is never written to
   the file until the person saves. It is destroyed by a save, by an
   explicit discard, or by an erase of the app's state, and by nothing
-  else. Closing a dirty file's tab raises the standard macOS review of
-  Save, Discard or Cancel, so a draft never outlives its tab and
-  reopening a file never resurrects earlier edits. A restored dirty
-  file shows the time of its last edit beside the unsaved marker.
+  else. Closing a dirty file's tab shows a nonmodal decision above the
+  editor: Save file, Discard changes or Keep editing. The file remains
+  editable while it stands. A restored dirty file shows the time of its
+  last edit beside the unsaved marker.
+- **Quit asks nothing.** The quit path seals the app's state but never
+  writes an open file through the file-save path. A settled flush exits;
+  a refused or unsavable flush cancels termination without presenting or
+  activating another surface. This proposed record follows accepted
+  D-14 and D-19 in
+  `../spec/design/2026-0915-ui-ux-decisions.md`.
 - **Drafts live in a third sealed file.** They are not a new section in
   the page snapshot and not a field on the Tab record. They are their
   own sealed file, with its own plaintext magic and its own envelope
@@ -134,6 +140,10 @@ The clauses that fix the boundary:
 - **Keep mine licenses exactly one save.** Choosing it takes a fresh
   reading of the file being overwritten and sets a consent that the
   before save check honours and that the save spends.
+- **Take theirs is immediate and undoable.** It replaces the buffer with
+  the copy on disk without asking for confirmation, and records the
+  replacement in the file's edit history so Undo restores the prior
+  buffer and Redo reapplies the disk copy.
 - **Save As onto a path another open file holds is refused**, before
   anything is written.
 
@@ -181,9 +191,8 @@ specification kept a draft after its tab closed, so reopening a file
 restored unsaved edits. It reads as the tenet 1 answer and is in fact a
 trap: a person reopens a file, sees text they do not recognise as old,
 presses Cmd S, and overwrites the file with typing from an unknown
-earlier session. Rejected in favour of the standard macOS review at
-close, which asks the question at the moment the person still has the
-context to answer it.
+earlier session. Rejected in favour of an inline close decision at the
+moment the person still has the context to answer it.
 
 **Files as synced pages.** Attractive because the sync machinery already
 moves documents between a person's devices. It fails on two counts. It
@@ -213,9 +222,9 @@ and redundant.
   restore path, its own strict envelope check and its own place in every
   rotation and erase operation. Drafts cannot accumulate without bound,
   since each one lives only as long as its tab.
-- Closing a dirty file tab is now a question the person must answer.
-  That is a modal in a product that avoids them, accepted here because
-  it is the moment at which the person still knows what the edits were.
+- Closing a dirty file tab now presents an inline choice above its
+  editor. The tab remains open and editable until Save file or Discard
+  changes succeeds; Keep editing dismisses the choice.
 - Deferring encodings other than UTF-8, and refusing above 4 MiB, means
   some files simply cannot be opened. Both refusals are explicit and
   name the reason.
@@ -263,12 +272,13 @@ and redundant.
   refusal were added. The decision remains proposed. Implementation
   notes are in
   [about file backed documents](../development/about-file-backed-documents.md).
-- **2026-09-05:** The quit behaviour question is closed by the
-  maintainer: a quit with a dirty file open now says so and names the
-  files, rather than going silently. It is a notice and not a save or
-  discard sheet, with Quit Anyway and Cancel and no third button,
-  because the draft survives the quit and a Discard would create the
-  loss path the feature otherwise does not have (`QuitPrompt`).
+- **2026-09-05:** The initial implementation warned on quit with dirty
+  files, using Quit Anyway and Cancel rather than a save or discard
+  sheet (`QuitPrompt`).
+- **2026-09-16:** The proposed interaction clauses were aligned with the
+  accepted D-14 and D-19 record for issue #172. Dirty close is inline,
+  Take theirs is immediate and undoable, and quit asks nothing. The ADR
+  remains proposed.
 - **2026-09-05:** The two clauses no test in this repository can reach,
   the staged drafts clause across a `kill -9` and the resealing clause
   across the automatic content erase, were verified on hardware. All

@@ -250,7 +250,7 @@ final class RestoreFailureTests: XCTestCase {
         XCTAssertTrue(stranger.contentRestoreRefused)
     }
 
-    func testTheQuitFlushOverAWithheldLicenceNamesTheLoss() throws {
+    func testTheQuitFlushOverAWithheldLicenceIsUnsavable() throws {
         let (tempDir, defaults, tag) = try makeFixture()
         try sealFiles(in: tempDir, defaults: defaults, tag: tag, ink: "sealed elsewhere")
 
@@ -261,10 +261,9 @@ final class RestoreFailureTests: XCTestCase {
         let ops = try XCTUnwrap(DocumentEditOp.wireJSON([.ins(at: 0, text: "typed into the void")]))
         stranger.applyOps(sheet: sheet, opsJSON: ops)
 
-        // The flush settles, because the withheld legs owe nothing, but
-        // the session holds content that was never written: the quit
-        // path must repeat the banner's warning rather than quit
-        // silently.
+        // The flush settles because the withheld legs owe nothing, but
+        // the session holds content that was never written, so the quit
+        // outcome remains unsavable.
         XCTAssertEqual(stranger.saveStateForQuit(), .unsavableWithContent)
     }
 
@@ -275,7 +274,7 @@ final class RestoreFailureTests: XCTestCase {
         let stranger = makeModel(
             in: tempDir, defaults: defaults, tag: "stranger-\(UUID().uuidString)")
         stranger.loadStateIfNeeded()
-        // Nothing typed: nothing to lose, so no warning.
+        // Nothing typed and nothing to lose, so the flush is settled.
         XCTAssertEqual(stranger.saveStateForQuit(), .settled)
     }
 
@@ -441,9 +440,8 @@ final class RestoreFailureTests: XCTestCase {
         XCTAssertEqual(relaunch.storage(for: restored).string, "and more" + ink)
     }
 
-    /// The loudest arm of the quit truth table (issue #49), which until
-    /// now had never met a write that actually failed: the flush is
-    /// refused, so the alert must say so whatever the licences read.
+    /// The refused arm of the quit outcome table, driven by a write that
+    /// actually fails rather than by a withheld licence.
     func testTheQuitFlushOverARefusedWriteSaysRefused() throws {
         let (tempDir, defaults, tag) = try makeFixture()
         addTeardownBlock { try? self.setWritable(true, tempDir) }

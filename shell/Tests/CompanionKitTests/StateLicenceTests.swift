@@ -135,8 +135,7 @@ final class ContentClearTests: XCTestCase {
     }
 }
 
-/// The quit alert's truth table (issue #49): which flush outcomes warn,
-/// and with which story.
+/// The quit flush outcome table used by the automatic terminate policy.
 final class QuitOutcomeTests: XCTestCase {
     func testARefusedWriteIsTheLoudestOutcomeRegardlessOfLicence() {
         // Pages that were supposed to land did not; the licence's state
@@ -153,11 +152,10 @@ final class QuitOutcomeTests: XCTestCase {
         )
     }
 
-    func testAWithheldLicenceOverRealContentRepeatsTheWarning() {
+    func testAWithheldLicenceOverRealContentIsUnsavable() {
         // The flush settled because the withheld leg owes nothing, but
-        // the session holds content that was never written. This is the
-        // case the banner has been standing for, repeated at the last
-        // moment it can still change the outcome.
+        // the session holds content that was never written, so termination
+        // must remain blocked.
         XCTAssertEqual(
             PageModel.quitOutcome(
                 settled: true, contentLicence: false, loaded: true, mutatedSinceLoad: true),
@@ -166,8 +164,7 @@ final class QuitOutcomeTests: XCTestCase {
     }
 
     func testAWithheldLicenceOverAnEmptySessionQuitsSilently() {
-        // Nothing typed, nothing lost: warning here would teach the
-        // user to click through the one alert that matters.
+        // Nothing typed and nothing lost, so the flush is settled.
         XCTAssertEqual(
             PageModel.quitOutcome(
                 settled: true, contentLicence: false, loaded: true, mutatedSinceLoad: false),
@@ -184,8 +181,7 @@ final class QuitOutcomeTests: XCTestCase {
     }
 
     func testASessionThatNeverLoadedQuitsSilently() {
-        // No restore ran, so no licence was ever withheld; there is
-        // nothing the warning could be about.
+        // No restore ran, so no licence was ever withheld.
         XCTAssertEqual(
             PageModel.quitOutcome(
                 settled: true, contentLicence: false, loaded: false, mutatedSinceLoad: true),

@@ -2,22 +2,12 @@ import XCTest
 
 @testable import CompanionKit
 
-/// Panels a test answers for.
-///
-/// Every one of them is a stored answer rather than a closure, because
-/// what these tests assert is which answer the model acted on, and a
-/// closure would let a test assert on a call it never actually made.
-/// `reviews` and `confirmations` are counted so a test can say the
-/// review was raised once, or not at all.
+/// Open and save panels a test answers for.
 @MainActor
 final class ScriptedFilePanels: FilePanels {
     var openURL: URL?
     var destinationURL: URL?
-    var review: FileCloseReview = .cancel
-    var confirmation = true
 
-    private(set) var reviews = 0
-    private(set) var confirmations = 0
     private(set) var opens = 0
     private(set) var destinations = 0
 
@@ -31,15 +21,6 @@ final class ScriptedFilePanels: FilePanels {
         return destinationURL
     }
 
-    func reviewUnsavedFile(named name: String) -> FileCloseReview {
-        reviews += 1
-        return review
-    }
-
-    func confirmDiscardingEdits(named name: String) -> Bool {
-        confirmations += 1
-        return confirmation
-    }
 }
 
 /// The file lane driven whole through the model: open a real file in a
@@ -414,7 +395,7 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertTrue(model.openFiles.first?.isDirty == true, "the edits are still unsaved")
     }
 
-    // MARK: The close review
+    // MARK: Inline dirty close
 
     func testClosingADirtyFileWithSaveWritesItAndThenCloses() throws {
         let fixture = try makeFixture()
@@ -426,13 +407,34 @@ final class FileDocumentTests: XCTestCase {
         let id = try XCTUnwrap(model.openFiles.first?.id)
         try type("the ", at: 0, into: id, on: model)
 
-        panels.review = .save
         model.closeActiveFile()
+        XCTAssertEqual(model.pendingFileClose, PendingFileClose(fileID: id, name: "notes.txt"))
+        XCTAssertTrue(model.openFiles.first?.isDirty == true, "the file remains editable while pending")
+        model.resolvePendingFileClose(.save)
 
-        XCTAssertEqual(panels.reviews, 1, "a dirty file takes the review")
         XCTAssertEqual(try read(url), "the body\n")
         XCTAssertTrue(model.openFiles.isEmpty)
         XCTAssertNil(model.selectedFile, "the surface fell back to the pad")
+    }
+
+    func testSaveCloseFailureLeavesTheFileAndInlineDecisionStanding() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        let url = try write("before\n", named: "notes.txt", in: fixture)
+        model.openFile(at: url)
+        let id = try XCTUnwrap(model.activeFile?.id)
+        try type("mine ", at: 0, into: id, on: model)
+        try Data("theirs\n".utf8).write(to: url)
+        model.checkOpenFilesOnActivate()
+
+        model.closeActiveFile()
+        model.resolvePendingFileClose(.save)
+
+        XCTAssertEqual(model.pendingFileClose?.fileID, id)
+        XCTAssertEqual(model.openFiles.count, 1)
+        XCTAssertEqual(model.storage(for: id).string, "mine before\n")
+        XCTAssertEqual(try read(url), "theirs\n")
     }
 
     func testClosingADirtyFileWithDiscardLeavesTheFileOnDiskAlone() throws {
@@ -445,15 +447,14 @@ final class FileDocumentTests: XCTestCase {
         let id = try XCTUnwrap(model.openFiles.first?.id)
         try type("the ", at: 0, into: id, on: model)
 
-        panels.review = .discard
         model.closeActiveFile()
+        model.resolvePendingFileClose(.discard)
 
-        XCTAssertEqual(panels.reviews, 1)
         XCTAssertEqual(try read(url), "body\n", "discard means the file is not written")
         XCTAssertTrue(model.openFiles.isEmpty)
     }
 
-    func testCancellingTheReviewLeavesTheFileOpenAndStillDirty() throws {
+    func testKeepEditingLeavesTheFileOpenAndStillDirty() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
         let model = makeModel(fixture, panels: panels)
@@ -463,16 +464,34 @@ final class FileDocumentTests: XCTestCase {
         let id = try XCTUnwrap(model.openFiles.first?.id)
         try type("the ", at: 0, into: id, on: model)
 
-        panels.review = .cancel
         model.closeActiveFile()
+        model.resolvePendingFileClose(.keepEditing)
 
-        XCTAssertEqual(panels.reviews, 1)
-        XCTAssertEqual(model.openFiles.count, 1, "cancel leaves everything exactly as it was")
+        XCTAssertNil(model.pendingFileClose)
+        XCTAssertEqual(model.openFiles.count, 1, "Keep editing leaves everything exactly as it was")
         XCTAssertTrue(model.openFiles.first?.isDirty == true)
         XCTAssertEqual(model.selectedFile, id)
     }
 
-    func testClosingACleanFileRaisesNoReviewAtAll() throws {
+    func testLeavingAFileClearsItsStalePendingCloseState() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("body\n", named: "notes.txt", in: fixture))
+        let id = try XCTUnwrap(model.activeFile?.id)
+        try type("the ", at: 0, into: id, on: model)
+        let page = try XCTUnwrap(model.selectedPageID)
+
+        model.closeActiveFile()
+        XCTAssertEqual(model.pendingFileClose?.fileID, id)
+        model.select(page)
+
+        XCTAssertNil(model.pendingFileClose)
+        XCTAssertNil(model.selectedFile)
+        XCTAssertEqual(model.openFiles.count, 1)
+    }
+
+    func testClosingACleanFilePublishesNoPendingDecision() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
         let model = makeModel(fixture, panels: panels)
@@ -481,7 +500,7 @@ final class FileDocumentTests: XCTestCase {
 
         model.closeActiveFile()
 
-        XCTAssertEqual(panels.reviews, 0, "there is nothing to review")
+        XCTAssertNil(model.pendingFileClose, "there is nothing to decide")
         XCTAssertTrue(model.openFiles.isEmpty)
     }
 
@@ -547,7 +566,7 @@ final class FileDocumentTests: XCTestCase {
         XCTAssertEqual(try read(url), "mine before\n", "keep mine wins on the next save")
     }
 
-    func testTakeTheirsAsksFirstAndThenTakesTheCopyOnDisk() throws {
+    func testTakeTheirsDirectlyTakesTheCopyOnDiskAndCanBeUndoneAndRedone() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
         let model = makeModel(fixture, panels: panels)
@@ -560,19 +579,18 @@ final class FileDocumentTests: XCTestCase {
         try Data("theirs\n".utf8).write(to: url)
         model.checkOpenFilesOnActivate()
 
-        panels.confirmation = false
-        model.resolveConflict(.takeTheirs)
-        XCTAssertEqual(panels.confirmations, 1)
-        XCTAssertTrue(
-            model.openFiles.first?.isDirty == true,
-            "a refused confirmation throws nothing away")
-
-        panels.confirmation = true
+        let mounted = model.storage(for: id)
         model.resolveConflict(.takeTheirs)
 
-        XCTAssertEqual(model.storage(for: id).string, "theirs\n")
+        XCTAssertTrue(model.storage(for: id) === mounted)
+        XCTAssertEqual(mounted.string, "theirs\n")
         XCTAssertFalse(model.openFiles.first?.isDirty == true)
         XCTAssertEqual(model.openFiles.first?.conflict, FileConflict.none)
+        XCTAssertTrue(model.canUndoEdit(sheet: id), "Take theirs enters the core file history")
+        XCTAssertTrue(model.undoEdit(sheet: id).applied)
+        XCTAssertEqual(mounted.string, "mine before\n")
+        XCTAssertTrue(model.redoEdit(sheet: id).applied)
+        XCTAssertEqual(mounted.string, "theirs\n")
     }
 
     func testAFileThatWentAwayUnderADirtyBufferSaysSoAndStandsInAMissingConflict() throws {
@@ -585,12 +603,18 @@ final class FileDocumentTests: XCTestCase {
         let id = try XCTUnwrap(model.openFiles.first?.id)
         try type("mine ", at: 0, into: id, on: model)
 
+        let mounted = model.storage(for: id)
+        let mine = mounted.string
         try FileManager.default.removeItem(at: url)
         model.notice = nil
         model.checkOpenFilesOnActivate()
 
         XCTAssertEqual(model.openFiles.first?.conflict, FileConflict.missing)
         XCTAssertEqual(model.notice, PageModel.missingNotice(name: "notes.txt"))
+        model.resolveConflict(.takeTheirs)
+        XCTAssertEqual(mounted.string, mine, "a failed Take theirs preserves the mounted buffer")
+        XCTAssertTrue(model.openFiles.first?.isDirty == true)
+        XCTAssertEqual(model.openFiles.first?.conflict, FileConflict.missing)
     }
 
     // MARK: Refusals
@@ -1152,7 +1176,6 @@ final class FileReviewFixTests: XCTestCase {
         model.checkOpenFilesOnActivate()
         XCTAssertEqual(model.openFiles.first?.conflict, FileConflict.changed)
 
-        panels.confirmation = true
         model.resolveConflict(.takeTheirs)
 
         XCTAssertEqual(
@@ -1287,9 +1310,9 @@ final class FileReviewFixTests: XCTestCase {
         XCTAssertNil(pruned[dead], "a dead page's caret still goes")
     }
 
-    // MARK: 7. Cancel leaves the selection where it was
+    // MARK: 7. Keep editing restores the selection
 
-    func testCancellingTheReviewOfAnotherFileRestoresTheSelection() throws {
+    func testKeepEditingAnotherFileRestoresTheSelection() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
         let model = makeModel(fixture, panels: panels)
@@ -1301,18 +1324,18 @@ final class FileReviewFixTests: XCTestCase {
         let showing = try XCTUnwrap(model.openFiles.last?.id)
         model.selectFile(showing)
 
-        // The close mark on the other row, cancelled.
-        panels.review = .cancel
         model.closeFile(dirty)
+        XCTAssertEqual(model.selectedFile, dirty, "the requested file is shown with its inline state")
+        XCTAssertEqual(model.pendingFileClose?.fileID, dirty)
+        model.resolvePendingFileClose(.keepEditing)
 
-        XCTAssertEqual(panels.reviews, 1)
-        XCTAssertEqual(model.openFiles.count, 2, "cancel closed nothing")
+        XCTAssertEqual(model.openFiles.count, 2, "Keep editing closed nothing")
         XCTAssertEqual(
             model.selectedFile, showing,
             "and left the person looking at the file they were on")
     }
 
-    func testCancellingTheReviewFromAPageReturnsToThePage() throws {
+    func testKeepEditingFromAPageReturnsToThePage() throws {
         let fixture = try makeFixture()
         let panels = ScriptedFilePanels()
         let model = makeModel(fixture, panels: panels)
@@ -1324,10 +1347,30 @@ final class FileReviewFixTests: XCTestCase {
         model.select(page)
         XCTAssertNil(model.selectedFile)
 
-        panels.review = .cancel
         model.closeFile(dirty)
+        XCTAssertEqual(model.selectedFile, dirty)
+        model.resolvePendingFileClose(.keepEditing)
 
         XCTAssertNil(model.selectedFile, "the pad was showing before and is showing after")
+    }
+
+    func testKeepEditingFromTheLedgerReturnsToTheLedger() throws {
+        let fixture = try makeFixture()
+        let model = makeModel(fixture, panels: ScriptedFilePanels())
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("a\n", named: "a.txt", in: fixture))
+        let dirty = try XCTUnwrap(model.openFiles.first?.id)
+        try type("x", at: 0, into: dirty, on: model)
+        model.select(try XCTUnwrap(model.selectedPageID))
+        model.showLedger()
+        XCTAssertTrue(model.showingLedger)
+
+        model.closeFile(dirty)
+        XCTAssertFalse(model.showingLedger)
+        model.resolvePendingFileClose(.keepEditing)
+
+        XCTAssertTrue(model.showingLedger)
+        XCTAssertNil(model.selectedFile)
     }
 
     // MARK: 8. The Edit menu tells the truth about a file
