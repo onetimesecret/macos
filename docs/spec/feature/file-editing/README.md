@@ -189,8 +189,10 @@ Saving is explicit. There is no autosave to the file.
   into the app's own state; a settled flush exits, and the next launch
   reopens the file with the draft restored and the unsaved dot still
   showing. The file on disk is not written. A refused or unsavable flush
-  cancels termination without presenting or activating another surface;
-  the existing inline save or recovery state remains in place.
+  cancels the first quit without presenting a dialog and puts one
+  standing line under the page naming the loss, with a quit anyway
+  button; the existing inline save or recovery state remains above it.
+  The second quit request, ⌘Q again or the button, exits.
 
   The unsaved state must instead be unmistakable before and after the
   quit. A restored dirty file shows the time of its last edit in the

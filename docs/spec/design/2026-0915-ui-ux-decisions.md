@@ -604,8 +604,9 @@ read as a page an instant from death rather than a slot standing ready.
 on, absent unless they have something to say; the layout reserves no
 room. Everything sits between the page and the tabs. A standing
 condition persists for the session; a notice is transient. Precedence,
-in draw order: content-restore failure · ledger failure · sync standing
-sentence · remote-edit line · pasteboard offer · notice · conceal sheet.
+in draw order: content-restore failure · ledger failure · cancelled quit
+· sync standing sentence · remote-edit line · pasteboard offer · notice
+· conceal sheet.
 
 - **D-14 (fixed)** No modals, no interrupting dialogs, no notifications,
   badges, bounce or count chips. A condition speaks in a line under the
@@ -669,7 +670,11 @@ blocked while they stand (status lines stay 12 × 4).
   others as issue 172.
   *Acceptance:* the stamp shows only for a draft-restored buffer, in
   `EEE HH:mm` with a 24-hour clock whatever the locale; quitting with
-  dirty files asks nothing.
+  dirty files asks nothing. A refused or unsavable state flush is the
+  one case quit does not simply proceed: the first ⌘Q is cancelled and
+  a standing line names the loss with a "quit anyway (⌘Q)" button, the
+  inline confirmation D-14 allows; the second ⌘Q, or the button, quits.
+  Quit is never inert.
 
 ## 7 · The sync surface
 

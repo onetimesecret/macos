@@ -70,9 +70,11 @@ The clauses that fix the boundary:
   last edit beside the unsaved marker.
 - **Quit asks nothing.** The quit path seals the app's state but never
   writes an open file through the file-save path. A settled flush exits;
-  a refused or unsavable flush cancels termination without presenting or
-  activating another surface. This proposed record follows accepted
-  D-14 and D-19 in
+  a refused or unsavable flush cancels the first quit and puts one
+  standing line under the page naming the loss, with a quit anyway
+  button; the second quit request, ⌘Q again or the button, exits. No
+  dialog, and no state in which quit is inert. This proposed record
+  follows accepted D-14 and D-19 in
   `../spec/design/2026-0915-ui-ux-decisions.md`.
 - **Drafts live in a third sealed file.** They are not a new section in
   the page snapshot and not a field on the Tab record. They are their
