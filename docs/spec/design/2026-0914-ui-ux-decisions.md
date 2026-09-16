@@ -27,6 +27,10 @@ sources:
 # UI/UX decisions for the background surface
 
 Superseded by `docs/spec/design/2026-0915-ui-ux-decisions.md` (2026-09-15).
+Section 3 is retained only as decision history. Its two-class taxonomy,
+single-UUID pasteboard value, per-object TTL, shell-plaintext claim and drag
+history claim do not describe the governing design; use
+`docs/law/0001-sealed-object.md` and its 2026-09-15 review amendment.
 
 What the shipping surface looks like, what each visible decision is, and
 what a build has to satisfy before the decision counts as honoured. The
