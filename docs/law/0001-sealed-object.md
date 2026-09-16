@@ -4,7 +4,7 @@ title: The sealed object
 status: accepted     # draft → accepted → superseded
 dated: 2026-09-15
 governs: A sealed item occupies one position in the document, but its plaintext is not part of the document's ambient text.
-decisions: D-08, D-09, D-10, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, section 3)
+decisions: D-08, D-09, D-10, D-14, D-15, D-27, D-28, D-29, D-30, D-31, D-32, D-33 (docs/spec/design/2026-0915-ui-ux-decisions.md, sections 3 and 5)
 consumed-by:
   - docs/spec/design/2026-0915-ui-ux-decisions.md (section 3 applies this law to the surface)
 sources:
@@ -52,8 +52,10 @@ The rule serves the first tenet (losing work is unforgivable, even here) by
 making every structural edit reversible, and the boundary law (ADR-0002,
 ADR-0021) by making every reveal a named act. A sealed object shows one
 plaintext only: the mechanical excerpt, head…tail of at most 24 plaintext
-characters, computed by the core (`text_face` in `crates/core/src/sheet.rs`),
-which only has to be recognised by the person who pasted it (D-27). There
+characters, computed by the core (`text_face` in `crates/core/src/sheet.rs`).
+The algorithm counts Rust `char` values and is deliberately not
+grapheme-aware; the result only has to be recognised by the person who pasted
+it (D-27). There
 is no reveal affordance at any privilege, so no label may imply one (D-08).
 
 ## Operation classes
@@ -119,11 +121,11 @@ without a test says what it is owed by.
 | expiry | destruction/lifecycle | destroys all of the page's attached and detached payloads; while terminal-cause evidence remains, later references produce an expired placeholder and cannot be undone | no direct lifecycle test; owed: issue 170 |
 | explicit burn | destruction/lifecycle | destroys the named local payloads atomically; while terminal-cause evidence remains, later references produce a burned placeholder | owed: issue 170 |
 | export, print, share | ambient observation | emits placeholders by default; a plaintext export is separately named declassification/egress | owed when a path exists |
-| promote the whole page | declassification/egress | includes sealed payloads; the confirmation says so; the local copy is offered up to burn and is never burned automatically | payload inclusion: `store.rs` `sheet_payload_inlines_chips_in_document_order`; confirmation count: `ConcealWireTests.swift`; receipt marker: `store.rs` `a_conceal_marks_the_chip_and_keeps_only_the_receipt`; retained local payload after promotion: no direct test, owed: issue 170 |
+| promote the whole page | declassification/egress | includes sealed payloads; the confirmation says so; the local copy is offered up to burn and is never burned automatically | payload inclusion: `store.rs` `sheet_payload_inlines_chips_in_document_order`; confirmation count: `ConcealWireTests.swift`; receipt marker and retained local payload: `store.rs` `a_conceal_marks_the_chip_and_keeps_only_the_receipt` |
 | seal a selection | classification | replaces visible ink in place, keeps whitespace and selects the new object; the result is one-way in the editor | shell and core range-seal tests listed below |
 | seal over a sealed object | classification | refused: sealed objects do not nest | `DocumentOpsTests.swift` and `store.rs` refusal tests listed below |
 | undo after a seal | classification | refused: ⌘Z does not restore the pre-seal ink | `UndoRerouteTests.swift` `testASealCannotBeSteppedBack`; `store.rs` `a_seal_cannot_be_stepped_back` |
-| copy decrypted contents | declassification/egress | offered by name and does not consume the object; the core writes the payload, the shell arms a timer from the core-owned 60-second interval, and the core later clears only if the pasteboard still holds that write | copy-out and shell timer tests listed below; guarded clear: `crates/pasteboard` `clear_after_copy_only_clears_our_own_write` (memory and macOS implementations) |
+| copy decrypted contents | declassification/egress | offered by name and does not consume the object; the core writes the payload, the shell arms a timer from the core-owned 60-second interval, and the core later clears only if the pasteboard still holds that write | copy-out and shell timer tests listed below; guarded clear: `crates/pasteboard/src/lib.rs` and `crates/pasteboard/src/macos.rs` `clear_after_copy_only_clears_our_own_write`, both of which refuse to erase a newer write |
 
 ### Sealed-fragment representation
 
@@ -286,7 +288,9 @@ Shell (`shell/Tests/CompanionKitTests`, `scripts/test-shell.sh`):
 `ConcealWireTests` (the sealed items line),
 `KeymapDispatchTests.testSealSelectedContentIsWiredToTheSameCommand`,
 `BundledKeymapTests.testTheSealGesturesAndUndoAreDispatchedByThePage`,
-`FocusLawTests` (the chip draft on an expiring page),
+`FocusLawTests.testAChipWhosePageExpiredClearsTheDraftEvenWhileOthersRemain`
+(conceal-draft reconciliation after the target chip disappears; it does not
+pin chip expiry or lifecycle),
 `PageModelPreviewRenderingTests.testChipAttachmentSurvivesEveryScope`.
 
 Tests that pin the contradicting build and are rewritten when issue 170
@@ -321,3 +325,6 @@ dialog free).
   renamed reversible removal to *Remove from page*; and replaced the
   two-kind taxonomy with five operation classes. D-31 through D-33 and
   ADR-0012 Amendment 1 are interpreted through this amendment.
+- 2026-09-15: Review evidence correction. Added D-14 and D-15 to the decision
+  cluster; limited each cited test to the behaviour it directly proves; and
+  recorded direct coverage that promotion retains the local payload.

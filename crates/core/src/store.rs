@@ -3512,6 +3512,7 @@ mod tests {
             sheet.chip(chip).unwrap().conceal().unwrap().receipt_id,
             "9f2abc"
         );
+        assert_eq!(&**store.chip_payload(chip).unwrap(), b"conceal me");
         assert!(!store.mark_chip_concealed(ChipId(999), "x".into()));
     }
 

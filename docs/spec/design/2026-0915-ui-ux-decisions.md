@@ -351,7 +351,12 @@ in plain; the fragment adds order, not payload exposure.
 - **D-08 (fixed)** The UI never receives or draws the complete sealed
   payload: no reveal, no eye toggle and no copy-to-see-it. It may hold
   visible ink before sealing and the policy-approved mechanical excerpt
-  afterward. ⇧⌘V over a line already holding a chip refuses:
+  afterward.
+  *Review correction 2026-09-15:* this replaces the earlier absolute “No
+  plaintext, ever” wording, which contradicted D-27's excerpt and the visible
+  pre-seal ink. The prohibition applies to the complete sealed payload, with
+  those two explicit exceptions.
+  ⇧⌘V over a line already holding a chip refuses:
   `already sealed · a chip has no plaintext to seal`. (The core's own
   vocabulary still says "chip"; the UI says nothing about the shape.)
   *Errata 2026-09-15:* the refusal line above was quoted with an em
@@ -362,10 +367,15 @@ in plain; the fragment adds order, not payload exposure.
 - **D-09 (fixed)** Concealing is the app's one network outbound action:
   discoverable on every chip, prominent on none. Never a hero button,
   never a side effect. The confirming click is the network boundary and
-  the destination is always named. The confirmation is inline and never
-  a modal: the boundary named, then the clipboard line and **Burn local
-  copy**. On a page target the sheet says how many sealed items travel
-  (`includes 2 sealed items`).
+  the destination is always named. This network-action count is distinct
+  from D-32's three complete-payload egresses: copy decrypted and decrypted
+  drag are local pasteboard writes; promotion is the concealment network
+  action.
+  *Review correction 2026-09-15:* “one outbound action” is narrowed to “one
+  network outbound action”; it does not replace D-32's egress inventory.
+  The confirmation is inline and never a modal: the boundary named, then the
+  clipboard line and **Burn local copy**. On a page target the sheet says how
+  many sealed items travel (`includes 2 sealed items`).
   *Acceptance:* inline sheet, no modal, no focus theft; the link's TTL
   is never seeded from the page's remaining time; failure is inline text
   and the button becomes Retry; the local copy is offered up to burn and
@@ -374,6 +384,9 @@ in plain; the fragment adds order, not payload exposure.
   affordance keeps its seat whether visible or not (~120 ms opacity,
   0 ms under Reduce Motion): revealing it never nudges the ink or
   reflows the row.
+  *Review correction 2026-09-15:* the earlier acceptance line said a click
+  only placed the caret. D-28 and the attachment interaction require the
+  opposite: a click selects the whole object.
   *Acceptance:* every hover action is also in the row's context menu
   (copy out, ↗ conceal, remove), so a pointer is never required; the
   row is not itself a button, and a click selects the whole attachment
@@ -457,10 +470,11 @@ in plain; the fragment adds order, not payload exposure.
   rolling 90-day window, then resolves as unavailable.
   *Acceptance:* the lifecycle table in Law 0001 is covered state by state;
   expiry and burn are not undoable; no timer exists per object.
-  *Note 2026-09-15:* the 0914 record gave each chip its own TTL. That
-  clause is dropped, the one deliberate deviation from the record: the
-  core forbids per chip timers (`sheet.rs` :292, doc 04 :155) and the
-  maintainer rejected per block TTL on 2026-08-07.
+  *Review correction 2026-09-15:* the earlier contract and amendment-history
+  wording said an unpasted chip died by “its own TTL.” That wording is
+  withdrawn. The page owns the clock for attached and detached objects; no
+  chip timer exists (`sheet.rs` :292, doc 04 :155), following the maintainer's
+  2026-08-07 decision.
 
 ### Amended since the first draft
 
@@ -813,10 +827,13 @@ moved a decision.
   the page's clock; expiry, burn and unknown references remain distinct
   while the ledger retains terminal-cause evidence.
 - D-09: the conceal confirmation names its button, Burn local copy.
-- Review correction 2026-09-15: the FFI document projection and
-  `ChipInfo.excerpt` establish that Swift holds visible ink and the
-  mechanical excerpt, not the complete sealed payload. Law 0001's review
-  amendment is controlling for D-08 and D-31 through D-33.
+- Review corrections 2026-09-15: D-08's boundary is the complete sealed
+  payload, with visible pre-seal ink and the mechanical excerpt as explicit
+  exceptions; D-10's click selects the attachment rather than merely placing
+  the caret; D-09's one outbound action means one network action and does not
+  contradict D-32's three egresses; D-33 and the amendment history use the
+  page-owned clock and define no per-object TTL. Law 0001's review amendment
+  is controlling for D-08 through D-10 and D-31 through D-33.
 - The feature-scale items are linked by issue: the sealed block (D-27,
   issue 169), the fragment and lifecycle model (D-29, D-31, D-33, issue 170), the
   split Days setting (D-26, issue 171) and the four dialogs (D-14,
