@@ -1068,6 +1068,11 @@ public final class PageModel: ObservableObject {
     /// core's own interval (`CompanionClient.clipboardClearSeconds`).
     private let clipboardClearDebounce: TimeInterval?
 
+    /// The receipt-guarded clear itself. Shipping construction always
+    /// delegates to the core; the seam lets timer and teardown behavior
+    /// be asserted without touching the developer's clipboard.
+    private let clearClipboardIfOurs: @Sendable () -> Bool
+
     /// The init's test seams, gathered into one struct so the shipping
     /// signature stays narrow however many seams the tests grow. Each
     /// member is optional and nil means the shipping value: a
@@ -1102,6 +1107,7 @@ public final class PageModel: ObservableObject {
         /// is never this one: that is always the core's constant, and
         /// only the timer's wait is shortened.
         let clipboardClearDebounce: TimeInterval?
+        let clearClipboardIfOurs: (@Sendable () -> Bool)?
 
         public init(
             stateDirectory: URL? = nil,
@@ -1110,7 +1116,8 @@ public final class PageModel: ObservableObject {
             saveRetryDebounce: TimeInterval? = nil,
             keymapOverride: URL? = nil,
             fileLanguageDetection: LanguageDetectionService? = nil,
-            clipboardClearDebounce: TimeInterval? = nil
+            clipboardClearDebounce: TimeInterval? = nil,
+            clearClipboardIfOurs: (@Sendable () -> Bool)? = nil
         ) {
             self.stateDirectory = stateDirectory
             self.client = client
@@ -1119,6 +1126,7 @@ public final class PageModel: ObservableObject {
             self.keymapOverride = keymapOverride
             self.fileLanguageDetection = fileLanguageDetection
             self.clipboardClearDebounce = clipboardClearDebounce
+            self.clearClipboardIfOurs = clearClipboardIfOurs
         }
     }
 
@@ -1181,7 +1189,12 @@ public final class PageModel: ObservableObject {
         CoreDiagnostics.route(subsystem: formFactor.loggerSubsystem)
         self.formFactor = formFactor
         self.defaults = defaults
-        client = seams.client ?? CompanionClient(credentialService: formFactor.credentialService)
+        let resolvedClient =
+            seams.client ?? CompanionClient(credentialService: formFactor.credentialService)
+        client = resolvedClient
+        clearClipboardIfOurs = seams.clearClipboardIfOurs ?? {
+            resolvedClient.clearClipboardIfOurs()
+        }
         fileLanguageDetection = seams.fileLanguageDetection ?? LanguageDetectionService()
         stateFileURL = seams.stateDirectory.map(FormFactor.stateFileURL(in:))
             ?? formFactor.stateFileURL
@@ -1714,7 +1727,7 @@ public final class PageModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.clipboardClearTimer = nil
-                self.client.clearClipboardIfOurs()
+                _ = self.clearClipboardIfOurs()
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -2028,7 +2041,10 @@ public final class PageModel: ObservableObject {
     deinit {
         eventTimer?.invalidate()
         redrawTimer?.invalidate()
-        clipboardClearTimer?.invalidate()
+        if clipboardClearTimer != nil {
+            _ = clearClipboardIfOurs()
+            clipboardClearTimer?.invalidate()
+        }
         // A pending write dies with the model. In practice the model
         // outlives everything but the process, and the process's own
         // exit routes through `saveState` first.
@@ -4203,11 +4219,15 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    private func finishConceal(_ outcome: ConcealOutcome, for target: ConcealDraft.Target) {
+    func finishConceal(_ outcome: ConcealOutcome, for target: ConcealDraft.Target) {
         // Before the staleness guard: the round trip moved core-side
         // state (a receipt in the ledger either way), whether or not
         // the draft that started it is still standing.
         markDirty()
+        // Success has already put a link on the clipboard core-side. Its
+        // clear belongs to that egress, not to whichever draft the UI is
+        // showing when the response returns.
+        if outcome.ok { armClipboardClear() }
         // The confirmation may have been dismissed — or reopened on a
         // different target — while the call was out; a stale outcome
         // must not land on someone else's draft. (On success the link
@@ -4217,10 +4237,6 @@ public final class PageModel: ObservableObject {
         if outcome.ok {
             draft.error = nil
             draft.receiptId = outcome.receiptId
-            // The link is a capability, not the secret, but it is a
-            // pasteboard egress all the same, and every egress arms
-            // the clear (ADR-0012).
-            armClipboardClear()
             flash("the link is on the clipboard")
         } else {
             // Inline, with retry; content never left the sheet.
