@@ -554,7 +554,9 @@ private final class StreamNavigatorLayoutCache {
     /// Called from inside a `GeometryReader` builder. The reference is
     /// retained in `@State`, but its cache mutations are intentionally not
     /// observable: publishing from body evaluation would invalidate the
-    /// view from within its own body.
+    /// view from within its own body. The small node array is compared on
+    /// each evaluation, and this single-entry cache may recompute while
+    /// live resize alternates dimensions.
     func layout(
         nodes: [StreamNavigator.Node], geometry: RollGeometry,
         height: CGFloat, width: CGFloat
@@ -607,12 +609,9 @@ private struct WheelRelay: NSViewRepresentable {
 
 final class WheelRelayView: NSView {
     var relay: ((NSEvent) -> Void)?
-    /// Marked `nonisolated(unsafe)` only so `deinit` can reach it. The
-    /// monitor is retired in `viewDidMoveToWindow` the moment the window
-    /// goes away, and that is the path that counts; the removal in
-    /// `deinit` is belt and braces for a view freed while still hosted,
-    /// and can go, annotation and all, once isolated deinit is available.
-    nonisolated(unsafe) private var monitor: Any?
+    /// Retired on the main-actor view lifecycle path when the view leaves
+    /// its window or moves between windows.
+    private var monitor: Any?
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -661,12 +660,6 @@ final class WheelRelayView: NSView {
         guard eventWindow === relayWindow, pointInside else { return false }
         guard let hitView else { return true }
         return hitView === relayView || relayView.isDescendant(of: hitView)
-    }
-
-    deinit {
-        if let monitor {
-            NSEvent.removeMonitor(monitor)
-        }
     }
 
     private func retireMonitor() {

@@ -3230,27 +3230,48 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
         setNeedsDisplay(rect.insetBy(dx: -4, dy: -4))
     }
 
-    /// Only the first unmodified primary click may activate the actions
-    /// seat. Modifier gestures and later clicks in a multi-click sequence
-    /// stay on AppKit's text-system path.
+    /// Only the first primary click without a gesture modifier may activate
+    /// the actions seat. State flags such as Caps Lock do not change the
+    /// gesture; modified gestures and later clicks stay on AppKit's path.
     nonisolated static func shouldOpenChipActions(
         clickCount: Int, modifierFlags: NSEvent.ModifierFlags
     ) -> Bool {
         clickCount == 1
-            && modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty
+            && modifierFlags.intersection([.command, .shift, .control, .option]).isEmpty
     }
 
-    /// A click on the explicit actions affordance opens the object's
-    /// menu. Every other plain click stays on AppKit's attachment path,
-    /// whose delegate selects the object without opening anything.
+    /// A first Control-primary click is the secondary-click gesture. State
+    /// flags do not alter it, while additional gesture modifiers leave it
+    /// to AppKit.
+    nonisolated static func shouldOpenChipContextMenu(
+        clickCount: Int, modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        clickCount == 1
+            && modifierFlags.intersection([.command, .shift, .control, .option]) == .control
+    }
+
+    /// A click on the explicit actions affordance opens the object's menu.
+    /// Control-primary over a chip takes the same direct route as a
+    /// secondary click, avoiding text-system additions to the menu. Every
+    /// other primary click stays on AppKit's attachment path, whose
+    /// delegate selects the object without opening anything.
     override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if Self.shouldOpenChipContextMenu(
+            clickCount: event.clickCount, modifierFlags: event.modifierFlags),
+           let coordinator,
+           let index = coordinator.chipIndex(at: point, in: self)
+        {
+            setSelectedRange(NSRange(location: index, length: 1))
+            coordinator.openChipMenu(at: index, from: point, in: self)
+            return
+        }
         guard Self.shouldOpenChipActions(
             clickCount: event.clickCount, modifierFlags: event.modifierFlags)
         else {
             super.mouseDown(with: event)
             return
         }
-        let point = convert(event.locationInWindow, from: nil)
         if let coordinator,
            let index = coordinator.chipIndex(at: point, in: self),
            let frame = chipFrame(at: index),
@@ -4013,9 +4034,7 @@ final class ChipAttachment: NSTextAttachment {
         glyphPosition position: NSPoint,
         characterIndex charIndex: Int
     ) -> NSRect {
-        let width = (attachmentCell as? ChipCell)?.resolvedBlockWidth(
-            in: textContainer, proposedLineFragment: lineFrag
-        ) ?? ChipCell.blockWidth(
+        let width = ChipCell.blockWidth(
             in: textContainer, proposedLineFragment: lineFrag
         )
         return ChipCell.blockBounds(width: width)
@@ -4163,16 +4182,13 @@ final class ChipCell: NSTextAttachmentCell {
     /// is effectively infinite; otherwise the finite container or
     /// proposed line fragment supplies the measure.
     nonisolated static func blockWidth(
-        in textContainer: NSTextContainer?,
-        proposedLineFragment lineFrag: NSRect,
-        editorMeasure: CGFloat? = nil
+        in textContainer: NSTextContainer?, proposedLineFragment lineFrag: NSRect
     ) -> CGFloat {
         // TextKit represents an unbounded container with a very large but
         // finite number. Once the live editor measure is captured, a
         // container may narrow that measure (wrapped mode) but may never
         // widen it (unwrapped mode).
-        let capturedMeasure = editorMeasure
-            ?? (textContainer as? InkTextContainer)?.capturedEditorMeasure
+        let capturedMeasure = (textContainer as? InkTextContainer)?.capturedEditorMeasure
         let maximum = min(capturedMeasure ?? effectivelyUnboundedWidth, effectivelyUnboundedWidth)
         let candidates = [
             textContainer?.size.width,
@@ -4185,17 +4201,7 @@ final class ChipCell: NSTextAttachmentCell {
         }
         let measure = candidates.first ?? capturedMeasure ?? fallbackBlockWidth
         let padding = (textContainer?.lineFragmentPadding ?? 0) * 2
-        return max(160, (measure - padding).rounded(.down))
-    }
-
-    nonisolated func resolvedBlockWidth(
-        in textContainer: NSTextContainer?, proposedLineFragment lineFrag: NSRect
-    ) -> CGFloat {
-        Self.blockWidth(
-            in: textContainer,
-            proposedLineFragment: lineFrag,
-            editorMeasure: nil
-        )
+        return max(0, (measure - padding).rounded(.down))
     }
 
     override nonisolated func cellSize() -> NSSize {
@@ -4216,7 +4222,7 @@ final class ChipCell: NSTextAttachmentCell {
             glyphPosition: position,
             characterIndex: charIndex
         )
-        frame.size = Self.blockBounds(width: resolvedBlockWidth(
+        frame.size = Self.blockBounds(width: Self.blockWidth(
             in: textContainer, proposedLineFragment: lineFrag)).size
         return frame
     }

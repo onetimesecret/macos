@@ -341,7 +341,8 @@ dialog free).
   copy decrypted chord beside its verb, reworded the three lines that
   follow the menu's actions, set the clear after copy to 90 seconds, and
   made a plain click, Return and Space over the selected object open its
-  menu (the click still selects the whole object first).
+  menu (the click still selects the whole object first). The interval and
+  plain-click statements are superseded by the 2026-09-16 entry below.
   The operation classes, the contract table and the lifecycle are
   untouched; the removal's Undo remains owed to issue 170.
 - 2026-09-16: Authority amendment. The accepted

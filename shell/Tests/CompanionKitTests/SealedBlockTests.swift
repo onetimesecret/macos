@@ -48,6 +48,23 @@ final class SealedBlockTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(cell.cellSize().width, ChipCell.fallbackBlockWidth)
     }
 
+    func testANarrowMeasureDoesNotOverflowTheContainer() {
+        let container = NSTextContainer(size: NSSize(
+            width: 120,
+            height: ChipCell.blockHeight
+        ))
+        let width = ChipCell.blockWidth(
+            in: container,
+            proposedLineFragment: NSRect(
+                x: 0, y: 0,
+                width: 120,
+                height: ChipCell.blockHeight)
+        )
+
+        XCTAssertEqual(width, floor(120 - container.lineFragmentPadding * 2))
+        XCTAssertLessThan(width, 160)
+    }
+
     func testEffectivelyUnboundedFiniteWidthsUseTheFallbackMeasure() {
         let container = NSTextContainer(size: NSSize(
             width: ChipCell.effectivelyUnboundedWidth * 2,

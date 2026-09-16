@@ -307,11 +307,10 @@ public enum StreamNavigator {
         public let band: Band?
         public let activeSegment: Segment?
         public let slivers: [Sliver]
-        /// The rail dimensions this document-proportional layout was
-        /// prepared for. Viewport-only updates reuse these values rather
-        /// than accepting unchecked dimensions from a caller.
+        /// The rail height this document-proportional layout was prepared
+        /// for. Viewport-only updates reuse it rather than accepting an
+        /// unchecked height from a caller.
         let sourceHeight: CGFloat
-        let sourceWidth: CGFloat
         /// The map, kept so a click on bare track can be inverted.
         public let anchors: [Anchor]
 
@@ -339,7 +338,7 @@ public enum StreamNavigator {
 
         public static let empty = Layout(
             placed: [], trackTop: 0, trackBottom: 0, windowY: nil, band: nil,
-            activeSegment: nil, slivers: [], sourceHeight: 0, sourceWidth: 0, anchors: []
+            activeSegment: nil, slivers: [], sourceHeight: 0, anchors: []
         )
     }
 
@@ -471,7 +470,6 @@ public enum StreamNavigator {
             activeSegment: segment,
             slivers: slivers.values.sorted { $0.y < $1.y },
             sourceHeight: height,
-            sourceWidth: width,
             anchors: anchors
         )
     }
@@ -499,7 +497,6 @@ public enum StreamNavigator {
             activeSegment: layout.activeSegment,
             slivers: slivers,
             sourceHeight: layout.sourceHeight,
-            sourceWidth: layout.sourceWidth,
             anchors: layout.anchors
         )
     }
@@ -571,9 +568,9 @@ public enum StreamNavigator {
             while end < measured.count, measured[end] == nil { end += 1 }
 
             let lowerIndex = start == 0 ? 0 : start - 1
-            let lower = start == 0 ? 0 : measured[lowerIndex] ?? 0
+            let lower = measured[..<start].compactMap { $0 }.last ?? 0
             let upperIndex = end
-            let upper = end < measured.count ? measured[end] ?? lower : documentHeight
+            let upper = measured[end...].compactMap { $0 }.first ?? documentHeight
             let span = max(upperIndex - lowerIndex, 1)
             for index in start..<end {
                 let share = CGFloat(index - lowerIndex) / CGFloat(span)

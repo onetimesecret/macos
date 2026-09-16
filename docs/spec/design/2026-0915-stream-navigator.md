@@ -204,6 +204,8 @@ and label.
 ## 4 · Amended in the 2026-0915 record
 
 One line per passage, each of which carries a dated note pointing here.
+The interval amendments listed below are superseded by the accepted
+2026-09-16 record named in §5; they remain only as decision history.
 
 - Section 4, metrics: down the side is 110 wide, not 96 (D-26).
 - Section 3, the object's menu: the removal item reads *Remove

@@ -83,15 +83,30 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(ChipCell.actionsGlyph, "···")
     }
 
-    func testTheActionsSeatOpensOnlyOnAPlainFirstClick() {
+    func testTheActionsSeatIgnoresStateFlagsButRejectsGestureModifiersAndLaterClicks() {
         XCTAssertTrue(InkTextView.shouldOpenChipActions(
             clickCount: 1, modifierFlags: []))
+        XCTAssertTrue(InkTextView.shouldOpenChipActions(
+            clickCount: 1, modifierFlags: .capsLock))
+        XCTAssertTrue(InkTextView.shouldOpenChipActions(
+            clickCount: 1, modifierFlags: .function))
         XCTAssertFalse(InkTextView.shouldOpenChipActions(
             clickCount: 2, modifierFlags: []))
         XCTAssertFalse(InkTextView.shouldOpenChipActions(
             clickCount: 1, modifierFlags: .command))
         XCTAssertFalse(InkTextView.shouldOpenChipActions(
             clickCount: 1, modifierFlags: .shift))
+    }
+
+    func testControlPrimaryTakesTheDirectContextMenuRoute() {
+        XCTAssertTrue(InkTextView.shouldOpenChipContextMenu(
+            clickCount: 1, modifierFlags: .control))
+        XCTAssertTrue(InkTextView.shouldOpenChipContextMenu(
+            clickCount: 1, modifierFlags: [.control, .capsLock]))
+        XCTAssertFalse(InkTextView.shouldOpenChipContextMenu(
+            clickCount: 2, modifierFlags: .control))
+        XCTAssertFalse(InkTextView.shouldOpenChipContextMenu(
+            clickCount: 1, modifierFlags: [.control, .option]))
     }
 
     /// An unwrapped editor, as the page mounts one: an effectively

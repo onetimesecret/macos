@@ -464,7 +464,7 @@ final class DocumentOpsWiringTests: XCTestCase {
         assertParity()
     }
 
-    func testTheChipMenuOffersPlaintextByName() {
+    func testTheChipMenuOffersPlaintextByName() throws {
         XCTAssertEqual(
             InkEditorView.Coordinator.chipMenuTitles,
             ["Copy decrypted contents", "Create one-time link…", "Remove protected content"])
@@ -480,24 +480,23 @@ final class DocumentOpsWiringTests: XCTestCase {
         // unrelated contract.
         let menu = NSMenu()
         coordinator.appendChipItems(to: menu, at: 3)
-        let copy = menu.items.first { $0.title == "Copy decrypted contents" }
-        let link = menu.items.first { $0.title == "Create one-time link…" }
-        let remove = menu.items.first { $0.title == "Remove protected content" }
-        XCTAssertNotNil(copy)
-        XCTAssertNotNil(link)
-        XCTAssertNotNil(remove)
+        let copy = try XCTUnwrap(
+            menu.items.first { $0.title == "Copy decrypted contents" })
+        let link = try XCTUnwrap(
+            menu.items.first { $0.title == "Create one-time link…" })
+        let remove = try XCTUnwrap(
+            menu.items.first { $0.title == "Remove protected content" })
         XCTAssertTrue(menu.items.contains { $0.isSeparatorItem })
         // The two egresses come first, in the order D-41 renders them,
         // and the separator keeps the removal below both.
-        if let copy, let link, let remove,
-           let copyIndex = menu.items.firstIndex(of: copy),
-           let linkIndex = menu.items.firstIndex(of: link),
-           let removalIndex = menu.items.firstIndex(of: remove),
-           let separatorIndex = menu.items.firstIndex(where: \.isSeparatorItem) {
-            XCTAssertLessThan(copyIndex, linkIndex)
-            XCTAssertLessThan(linkIndex, separatorIndex)
-            XCTAssertGreaterThan(removalIndex, separatorIndex)
-        }
+        let copyIndex = try XCTUnwrap(menu.items.firstIndex(of: copy))
+        let linkIndex = try XCTUnwrap(menu.items.firstIndex(of: link))
+        let removalIndex = try XCTUnwrap(menu.items.firstIndex(of: remove))
+        let separatorIndex = try XCTUnwrap(
+            menu.items.firstIndex(where: \.isSeparatorItem))
+        XCTAssertLessThan(copyIndex, linkIndex)
+        XCTAssertLessThan(linkIndex, separatorIndex)
+        XCTAssertGreaterThan(removalIndex, separatorIndex)
         for item in menu.items where !item.isSeparatorItem {
             XCTAssertTrue(item.target === coordinator, "\(item.title) is not the coordinator's")
         }
