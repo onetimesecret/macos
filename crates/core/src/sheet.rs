@@ -773,16 +773,25 @@ impl Tab {
     /// unnamed tab that keeps taking fresh pages would otherwise change
     /// its label every time one was born, and the slot the user
     /// arranged by dragging would stop being recognizable.
+    ///
+    /// Which branch answered is [`Tab::label_source`]'s business, and
+    /// this function reads through it rather than repeating the walk,
+    /// so the two cannot disagree about a tab whose name was cleared
+    /// or whose page just settled its first line.
     #[must_use]
     pub fn label(&self, utc_offset_seconds: i32) -> String {
-        self.name
-            .clone()
-            .or_else(|| {
-                self.page
-                    .as_ref()
-                    .and_then(|page| page.derived_title.clone())
-            })
-            .unwrap_or_else(|| placeholder_title(self.created_wall_ms, utc_offset_seconds))
+        match self.label_source() {
+            LabelSource::Name => self
+                .name
+                .clone()
+                .expect("label_source promised Name has a name"),
+            LabelSource::Derived => self
+                .page
+                .as_ref()
+                .and_then(|page| page.derived_title.clone())
+                .expect("label_source promised Derived has a derived title"),
+            LabelSource::Placeholder => placeholder_title(self.created_wall_ms, utc_offset_seconds),
+        }
     }
 
     /// Which of [`Tab::label`]'s three steps answered. The far side
