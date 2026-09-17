@@ -12,11 +12,19 @@ struct StanceFadeModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            // The fade belongs to this compositing boundary, not to the
-            // native editor inside it. Letting the transaction reach the
-            // NSTextView/NSScrollView update animates its viewport while
-            // editability changes, which makes the page dip and return on
-            // every raise and rest.
+            // The fade belongs to this compositing boundary and to
+            // nothing under it. A transaction covers the whole subtree,
+            // so this clears the animation for everything the modifier
+            // wraps, the banners and status lines included, and not
+            // only for the embedded editor that made it necessary:
+            // letting the transaction reach the NSTextView/NSScrollView
+            // update animates its viewport while editability changes,
+            // which makes the page dip and return on every raise and
+            // rest. The breadth is accepted rather than incidental.
+            // Stance is a whole-card change, so a piece of the card
+            // animating on its own timing across it would read as a
+            // glitch, and any animation a child truly needs can carry
+            // its own transaction below this one.
             .transaction { transaction in
                 transaction.animation = nil
             }
