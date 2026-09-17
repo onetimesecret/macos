@@ -217,14 +217,51 @@ struct UnsavedDot: View {
     }
 }
 
+/// The nonmodal dirty-close decision shown above the file editor. Editing
+/// remains available while the request stands, including Return to insert a
+/// newline. The banner does not claim a default keyboard action.
+public struct FileCloseBanner: View {
+    public let pending: PendingFileClose
+    public let resolve: (FileCloseAction) -> Void
+
+    public init(pending: PendingFileClose, resolve: @escaping (FileCloseAction) -> Void) {
+        self.pending = pending
+        self.resolve = resolve
+    }
+
+    public static func sentence(name: String) -> String {
+        "\(name) has unsaved changes"
+    }
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            Text(Self.sentence(name: pending.name))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(Color.emberText)
+            Spacer(minLength: 8)
+            Button(FileCloseAction.save.label) { resolve(.save) }
+                .font(.system(.caption, design: .monospaced))
+                .controlSize(.small)
+            Button(FileCloseAction.discard.label, role: .destructive) { resolve(.discard) }
+                .font(.system(.caption, design: .monospaced))
+                .controlSize(.small)
+            Button(FileCloseAction.keepEditing.label) { resolve(.keepEditing) }
+                .font(.system(.caption, design: .monospaced))
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(Self.sentence(name: pending.name)))
+    }
+}
+
 /// The file changed on disk while this copy held unsaved edits, and
 /// nothing is written until a person says which copy wins (ADR-0028).
 ///
-/// Three actions, in the order they are read, with Save As focused: it
-/// is the only one of the three that destroys nothing, and a banner
-/// that arrives under a person's hands should have its safe exit under
-/// the return key. Editing is not blocked while it stands, because the
-/// buffer is still theirs to work on; only saving is refused.
+/// Three actions, in the order they are read. Editing is not blocked while the
+/// banner stands, including Return to insert a newline; only saving is refused.
 public struct FileConflictBanner: View {
     let file: FileSummary
     let resolve: (FileConflictResolution) -> Void
@@ -257,9 +294,7 @@ public struct FileConflictBanner: View {
                 .foregroundStyle(Color.emberText)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            // Keep mine and Take theirs each destroy one of the two
-            // copies, so they are named by what they keep rather than
-            // by what they discard, and Save As sits last and focused.
+            // The two competing copies are named by the one each action keeps.
             Button("Keep mine") { resolve(.keepMine) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
@@ -268,12 +303,11 @@ public struct FileConflictBanner: View {
             Button("Take theirs") { resolve(.takeTheirs) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
-                .help("Discard the unsaved edits and read the file again. This asks first.")
-                .accessibilityLabel(Text("Take the copy on disk and discard my unsaved edits"))
+                .help("Replace this copy with the file on disk. Undo restores this copy.")
+                .accessibilityLabel(Text("Take the copy on disk; Undo restores my copy"))
             Button("Save As") { resolve(.saveAs) }
                 .font(.system(.caption, design: .monospaced))
                 .controlSize(.small)
-                .keyboardShortcut(.defaultAction)
                 .help("Write this copy somewhere else and leave the file on disk alone")
                 .accessibilityLabel(Text("Save my copy somewhere else and leave both"))
         }

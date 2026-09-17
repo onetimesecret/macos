@@ -150,16 +150,18 @@ final class BackdropModel: ObservableObject, QuitFlushable {
 
     /// The quit path's flush with its verdict: settled, refused, or
     /// settled but over a withheld licence with content still in the
-    /// session (issue #49). The delegate's alert text hangs off the
-    /// distinction, so it is carried rather than folded into a Bool.
+    /// session. The terminate policy uses the distinction directly.
     func saveStateForQuit() -> QuitSaveOutcome {
         pages.saveStateForQuit()
     }
 
-    /// The open files carrying unsaved edits, for the quit notice. The
-    /// roster lives with the pages, so this is a forward and nothing
-    /// more.
-    var dirtyFileNames: [String] { pages.dirtyFileNames }
+    /// The cancelled quit's standing line, held by the shared model
+    /// because the surface that shows it is the shared one.
+    var quitAnywayOffered: Bool { pages.quitAnywayOffered }
+
+    func offerQuitAnyway(after outcome: QuitSaveOutcome) {
+        pages.offerQuitAnyway(after: outcome)
+    }
 
     // MARK: Stance
 

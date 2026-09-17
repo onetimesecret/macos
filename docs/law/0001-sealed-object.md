@@ -18,7 +18,7 @@ sources:
   - crates/core/src/store.rs (seal, copy out, delete, sync)
   - crates/ffi/src/lib.rs (CLIPBOARD_CLEAR_SECONDS; chip-face and document JSON projections)
   - shell/Sources/CompanionKit/CompanionClient.swift (ChipInfo.excerpt)
-  - shell/Sources/CompanionKit/InkEditorView.swift (ChipCell, the chip menu, the seal commands)
+  - shell/Sources/CompanionKit/InkEditorView.swift (SealedBlockCell, the chip menu, the seal commands)
   - https://developer.apple.com/documentation/appkit/nspasteboard/ (drag and general pasteboard scope)
 ---
 

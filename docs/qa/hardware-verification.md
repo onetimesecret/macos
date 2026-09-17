@@ -232,6 +232,20 @@ front` names it) and leave this window visible but not key.
       for focus where they used not to; the ask is refused for an
       unkeyed surface, and the refusal is what this line is about.
 
+## §G — File-close decision and editor keys
+
+**Owner:** delano.
+
+- [ ] Open a writable text file, make an unsaved edit, and request its close.
+      With the dirty-close banner visible and the text view focused, press Return.
+      A newline is inserted; no banner action runs.
+- [ ] With that close request still pending, save the file with ⌘S. The file closes.
+- [ ] Reopen the file, make one edit, request close, then press ⌘Z until the
+      buffer matches the saved file. The file closes.
+- [ ] Reopen the file, make an edit, modify the same file on disk, and request
+      close. Choose **Take theirs**. The file closes with the on-disk contents
+      unchanged.
+
 ## Separate procedures, in their own documents
 
 The runbook above is one session. These are standalone procedures, each
@@ -299,8 +313,10 @@ is indexed in [`recovery-matrix.md`](recovery-matrix.md):
   Owner: delano. A dirty file backed document across a SIGKILL and a
   relaunch, the draft's own last edit time on the header, the automatic
   content erase resealing rather than dropping the draft when the last
-  page tab closes, and the close review ending the draft
-  (ADR-0028). Not an ADR-0016 case: a file is not staged content.
+  page tab closes, the inline dirty-close decision ending the draft,
+  Take theirs remaining undoable, and dirty-file quit asking nothing
+  (ADR-0028, D-14, D-19). Not an ADR-0016 case: a file is not staged
+  content.
 
 Whether any of them has been run is recorded in each file's own Status
 line and Results table, which is the one place a run belongs. A tally

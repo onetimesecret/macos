@@ -249,13 +249,15 @@ A page that was held keeps its hold, and the gap shortens the hold
 before it reaches the countdown. Nothing outlives its TTL, and the
 ceiling is seven days.
 
-If a save at quit fails (locked Keychain, full disk, a failed rename)
-you get an alert with the choice to quit anyway or stay and retry.
-There is currently no equivalent alert for a restore failure at
-launch; it only withholds that session's ability to save over the
-existing file and logs to the unified log under the `persistence`
-category. See [ABERRATIONS.md](ABERRATIONS.md) for the running list of
-behavior like this that has not yet earned a permanent home.
+Quit performs one synchronous state flush and presents no alert. If the
+flush is refused, or the session has content under a withheld save
+licence, the first ⌘Q is cancelled and an ember line under the page says
+what the quit would lose, with a "quit anyway (⌘Q)" button beside it;
+the existing inline save or recovery state remains above it. A second
+⌘Q, or the button, quits. A restore failure at
+launch also logs to the unified log under the `persistence` category and
+withholds that session's ability to overwrite the existing file. See
+[ABERRATIONS.md](ABERRATIONS.md) for the historical investigation.
 
 When a page does not come back, the whole story is in the unified log,
 however the app was launched:

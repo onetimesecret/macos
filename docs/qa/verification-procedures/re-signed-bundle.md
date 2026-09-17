@@ -80,7 +80,11 @@ in `SUPERSEDED_MAGICS`, never on a key failure
    the app may use the `state-key` item. **Deny it**, which is the case
    under test; a user faced with an unrecognized app is expected to
    deny.
-5. Type a line on the page that opens, wait past the debounce, and quit.
+5. Type a line on the page that opens, wait past the debounce, and press
+   ⌘Q. Confirm the app stays running, no alert or other app-owned
+   surface appears, and the quit anyway line stands under the recovery
+   line. Press ⌘Q again, or click "quit anyway (⌘Q)", and confirm the
+   app quits.
 6. Re read the evidence from step 2.
 
 **Pass, in this order:**
@@ -98,19 +102,21 @@ in `SUPERSEDED_MAGICS`, never on a key failure
   withholding the save licence"
   (`shell/Sources/CompanionKit/PageModel.swift`).
 - `state.sealed` is still present and its sha256 is **identical** to
-  step 2, including after the typing and the quit: a session without the
-  licence never rewrites the file
+  step 2, including after the typing, the cancelled quit and the quit
+  anyway: a session without the licence never rewrites the file
   (`shell/Sources/CompanionKit/PageModel.swift`).
 - The `ots-companion-key-half-<32 hex>` file is still present and
   unchanged, and the `state-key` keychain item still exists. Nothing
   rotated: rotation has two triggers and a refusal is neither
   (ADR-0016 section 6).
-- No quit alert appears, because the session owes no write.
+- The first ⌘Q cancels termination and no quit alert appears; the quit
+  anyway line stands beside the existing inline recovery state, and the
+  second ⌘Q quits.
 
 **Fail:** an erased or rewritten `state.sealed`, a changed sha256, a
-missing key half, a missing keychain item, or a log line from the
-superseded arm (`crates/ffi/src/lib.rs`), which would mean a key
-failure was routed into the destructive path.
+missing key half, a missing keychain item, a log line from the
+superseded arm (`crates/ffi/src/lib.rs`), an app-owned quit surface, or
+⌘Q terminating the unsavable session.
 
 7. Restore the original identity and confirm recovery is real:
 

@@ -320,8 +320,8 @@ pub unsafe extern "C" fn companion_file_open_error_json(
 }
 
 /// Close the file and drop its buffer. The draft goes with it: a draft
-/// never outlives its tab. The review prompt for a dirty file is the
-/// shell's, and it happens before this call.
+/// never outlives its tab. Any dirty-close decision is settled in the
+/// shell before this call.
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -636,7 +636,9 @@ pub unsafe extern "C" fn companion_file_check(
     }
 }
 
-/// Re-read the file from disk, discarding whatever the buffer held.
+/// Re-read the file from disk, discarding whatever the buffer held and
+/// its undo history. This is the non-interactive reload primitive; an
+/// explicit Take theirs uses [`companion_file_resolve_take_theirs`].
 ///
 /// # Safety
 /// `handle` must be a valid handle.
@@ -651,9 +653,29 @@ pub unsafe extern "C" fn companion_file_reload(handle: *mut CompanionHandle, fil
     guard.files.reload(&RealFileIo, FileId(file)).is_ok()
 }
 
+/// Take theirs: adopt the disk copy as one undoable structural change.
+/// Undo restores the former draft as dirty against that adopted disk
+/// baseline; Redo reapplies the disk copy.
+///
+/// # Safety
+/// `handle` must be a valid handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn companion_file_resolve_take_theirs(
+    handle: *mut CompanionHandle,
+    file: u64,
+) -> bool {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    let Ok(mut guard) = handle.inner.lock() else {
+        return false;
+    };
+    guard.files.take_theirs(&RealFileIo, FileId(file)).is_ok()
+}
+
 /// Keep mine: the first of the three conflict resolutions, and the only
 /// one with no other entry point. Take theirs is
-/// [`companion_file_reload`] and the third is
+/// [`companion_file_resolve_take_theirs`] and the third is
 /// [`companion_file_save_as`]. Clears the conflict and lets the next
 /// save overwrite whatever is on disk.
 ///
@@ -1326,6 +1348,72 @@ mod tests {
             assert_eq!(roster(handle)[0]["conflict"], serde_json::json!("none"));
             assert!(companion_file_save(handle, id));
             assert_eq!(std::fs::read(&file).unwrap(), b"one mine");
+        }
+        cleanup(handle, &dir);
+    }
+
+    #[test]
+    fn take_theirs_crosses_the_ffi_as_an_undoable_resolution() {
+        let (handle, dir) = scratch("take-theirs");
+        let file = dir.join("take.txt");
+        std::fs::write(&file, b"one\n").unwrap();
+        unsafe {
+            let id = open(handle, &file);
+            let ops = cstring(r#"[{"ins":{"at":3,"text":" mine"}}]"#);
+            assert!(companion_file_apply_ops(handle, id, ops.as_ptr()));
+            std::fs::write(&file, [&[0xEF, 0xBB, 0xBFu8][..], b"theirs\r\n"].concat()).unwrap();
+            let _ = take_json(companion_file_check(handle, id));
+
+            assert!(companion_file_resolve_take_theirs(handle, id));
+            assert_eq!(
+                take_json(companion_file_runs_json(handle, id)),
+                r#"[{"ink":"theirs\n"}]"#
+            );
+            let row = roster(handle);
+            assert_eq!(row[0]["isDirty"], serde_json::json!(false));
+            assert_eq!(row[0]["conflict"], serde_json::json!("none"));
+            assert_eq!(row[0]["lineEnding"], serde_json::json!("crlf"));
+            assert_eq!(row[0]["hasBOM"], serde_json::json!(true));
+
+            let typing = cstring(r#"[{"ins":{"at":6,"text":"!"}}]"#);
+            assert!(companion_file_apply_ops(handle, id, typing.as_ptr()));
+
+            let undo_typing: serde_json::Value =
+                serde_json::from_str(&take_json(companion_file_undo(handle, id))).unwrap();
+            assert_eq!(undo_typing["applied"], serde_json::json!(true));
+            assert_eq!(
+                take_json(companion_file_runs_json(handle, id)),
+                r#"[{"ink":"theirs\n"}]"#
+            );
+            assert_eq!(roster(handle)[0]["isDirty"], serde_json::json!(false));
+            assert!(companion_file_can_undo(handle, id));
+
+            let undo_resolution: serde_json::Value =
+                serde_json::from_str(&take_json(companion_file_undo(handle, id))).unwrap();
+            assert_eq!(undo_resolution["applied"], serde_json::json!(true));
+            assert_eq!(
+                take_json(companion_file_runs_json(handle, id)),
+                r#"[{"ink":"one mine\n"}]"#
+            );
+            assert_eq!(roster(handle)[0]["isDirty"], serde_json::json!(true));
+
+            let redo_resolution: serde_json::Value =
+                serde_json::from_str(&take_json(companion_file_redo(handle, id))).unwrap();
+            assert_eq!(redo_resolution["applied"], serde_json::json!(true));
+            assert_eq!(
+                take_json(companion_file_runs_json(handle, id)),
+                r#"[{"ink":"theirs\n"}]"#
+            );
+            assert_eq!(roster(handle)[0]["isDirty"], serde_json::json!(false));
+
+            let redo_typing: serde_json::Value =
+                serde_json::from_str(&take_json(companion_file_redo(handle, id))).unwrap();
+            assert_eq!(redo_typing["applied"], serde_json::json!(true));
+            assert_eq!(
+                take_json(companion_file_runs_json(handle, id)),
+                r#"[{"ink":"theirs!\n"}]"#
+            );
+            assert_eq!(roster(handle)[0]["isDirty"], serde_json::json!(true));
         }
         cleanup(handle, &dir);
     }
@@ -2090,6 +2178,7 @@ mod tests {
             assert!(!companion_file_save_as(handle, page, target.as_ptr()));
             assert!(companion_file_check(handle, page).is_null());
             assert!(!companion_file_reload(handle, page));
+            assert!(!companion_file_resolve_take_theirs(handle, page));
             assert!(!companion_file_resolve_keep_mine(handle, page));
             let mark = cstring("");
             assert!(!companion_file_set_bookmark(handle, page, mark.as_ptr()));
@@ -2122,6 +2211,7 @@ mod tests {
             assert!(!companion_file_save_as(null, 1, ptr::null()));
             assert!(companion_file_check(null, 1).is_null());
             assert!(!companion_file_reload(null, 1));
+            assert!(!companion_file_resolve_take_theirs(null, 1));
             assert!(!companion_file_resolve_keep_mine(null, 1));
             assert!(!companion_file_set_bookmark(null, 1, ptr::null()));
             assert!(companion_file_bookmark_b64(null, 1).is_null());

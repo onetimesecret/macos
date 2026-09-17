@@ -184,29 +184,21 @@ Saving is explicit. There is no autosave to the file.
   changes the bytes and clears on a successful write. A write that
   fails leaves the dot, keeps the draft, and shows the failure with its
   reason, for example a read only volume or a permission denial.
-- **Quit with unsaved changes.** Quitting with a dirty file open says
-  so, once, and names the files. The staged draft is sealed into the
-  app's own state before the app exits, and the next launch reopens the
-  file with the draft restored and the unsaved dot still showing. The
-  file on disk is not written.
+- **Quit with unsaved changes.** Quit asks nothing and never writes an
+  open file through the file-save path. It first seals the staged draft
+  into the app's own state; a settled flush exits, and the next launch
+  reopens the file with the draft restored and the unsaved dot still
+  showing. The file on disk is not written. A refused or unsavable flush
+  cancels the first quit without presenting a dialog and puts one
+  standing line under the page naming the loss, with a quit anyway
+  button; the existing inline save or recovery state remains above it.
+  The second quit request, ⌘Q again or the button, exits.
 
-  The notice is not the macOS save or discard sheet, and the difference
-  is the point. It offers Quit Anyway and Cancel and no third button,
-  because the draft survives the quit either way: a Discard here would
-  manufacture the one loss path this feature does not have, at exactly
-  the moment a person is dismissing dialogues by reflex, and tenet 1
-  says losing work is unforgivable. Cancel exists so Cmd S is one
-  keystroke away. It appears only when a file is actually dirty, so a
-  quit with nothing at stake is still silent.
-
-  What the pad owes beyond the notice is that the unsaved state is
-  unmistakable at the next launch. So a restored dirty file shows the
-  time of its last edit in the header beside the dot, and a person can
-  judge the draft's age before pressing Cmd S.
-
-  When the pad's own state write fails at the same quit, the notice
-  drops the restoration promise and says the typing is in memory only,
-  because on that branch it is (`QuitPrompt`).
+  The unsaved state must instead be unmistakable before and after the
+  quit. A restored dirty file shows the time of its last edit in the
+  header beside the dot, so a person can judge the draft's age before
+  pressing Cmd S. This follows accepted D-14 and D-19 in
+  `../../design/2026-0915-ui-ux-decisions.md`.
 - **An unsaved draft survives relaunch and crash.** The draft lives in
   the app's own sealed state, in a separate sealed drafts file under
   the same content key as the page snapshot, and it is never written to
@@ -222,7 +214,8 @@ Saving is explicit. There is no autosave to the file.
 ### What can drop a draft
 
 Three things drop a draft and nothing else does: a successful save,
-Discard in the close review, and an explicit erase of the drafts file.
+Discard changes in the inline close decision, and an explicit erase of
+the drafts file.
 
 The one that needs saying out loud is what does not drop one. The pad
 erases its content key automatically when no tab holds a page, which is
@@ -279,9 +272,10 @@ looks changed, against what was read.
     overwritten and licenses exactly one save. The check the pad makes
     before every write does not undo the choice, and the save spends
     it, so a second conflict later asks again.
-  - **Take theirs.** Replace the buffer with the file, discarding the
-    draft. This one asks for confirmation, because it is the only
-    action here that destroys the person's typing.
+  - **Take theirs.** Replace the buffer with the file immediately,
+    without confirmation. The replacement enters the file's edit
+    history, so Undo restores the prior buffer and Redo reapplies the
+    disk copy.
   - **Save As.** Write the buffer somewhere else and leave both the
     original file and its new content intact. This is the safe exit and
     is the default focus.
@@ -322,13 +316,14 @@ and no other.
 Closing a file tab leaves the file on disk exactly as it is. Nothing is
 written and nothing is deleted.
 
-Closing a dirty file tab raises the standard macOS review, with three
-actions:
+Closing a dirty file tab shows a nonmodal decision above the editor.
+The file remains editable while it stands, with three actions:
 
-- **Save** writes the file and closes the tab.
-- **Discard** closes the tab and destroys the draft. It names the file
-  it is discarding.
-- **Cancel** leaves the tab open with its draft intact.
+- **Save file** writes the file and closes the tab only after the write
+  succeeds.
+- **Discard changes** closes the tab and destroys the draft.
+- **Keep editing** leaves the tab open with its draft intact. It is the
+  default action.
 
 A draft therefore lives exactly as long as its tab. It is destroyed by
 a save, by a discard, or by an erase of the app's state, and by nothing
@@ -460,9 +455,9 @@ depending on the surface:
   sealed page state, exactly as it does today. On a file target it
   writes the file. The raw id is published contract and is not
   changing, and Cmd S is not being rebound to a second id.
-- **`page::Close`**, bound to Cmd W. On a file target it closes the
-  file, raising the Save, Discard or Cancel review when the tab is
-  dirty.
+- **`page::Close`**, bound to Cmd W. On a clean file target it closes
+  the file. On a dirty file it shows the inline Save file, Discard
+  changes and Keep editing decision.
 
 Two ids are new:
 

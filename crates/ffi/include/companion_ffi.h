@@ -1218,8 +1218,8 @@ char *companion_file_open_error_json(CompanionHandle *handle);
 /*
  * Close the file and drop its buffer. The draft goes with it: a draft
  * never outlives its tab, so reopening the file later never brings back
- * old edits. The Save, Discard, Cancel review for a dirty file is the
- * shell's and happens before this call.
+ * old edits. Any dirty-close decision is settled in the shell before
+ * this call.
  */
 bool companion_file_close(CompanionHandle *handle, uint64_t file);
 
@@ -1292,8 +1292,18 @@ bool companion_file_save_as(CompanionHandle *handle, uint64_t file,
  */
 char *companion_file_check(CompanionHandle *handle, uint64_t file);
 
-/* Re-read the file, discarding whatever the buffer held. */
+/* Re-read the file, discarding whatever the buffer held and its undo
+ * history. This is the non-interactive reload primitive. */
 bool companion_file_reload(CompanionHandle *handle, uint64_t file);
+
+/*
+ * Take theirs: adopt the disk copy as one undoable structural change.
+ * Undo restores the former draft as dirty against the adopted disk copy;
+ * Redo reapplies the disk copy. Returns false for an unknown file or a
+ * disk copy that cannot be opened.
+ */
+bool companion_file_resolve_take_theirs(CompanionHandle *handle,
+                                         uint64_t file);
 
 /*
  * Every open file, in open order, as an array of FileSummary. Null when
@@ -1315,8 +1325,9 @@ bool companion_file_clear_reload_notice(CompanionHandle *handle,
 
 /*
  * Keep mine: the first of the three conflict resolutions, and the only
- * one with no other entry point. Take theirs is companion_file_reload()
- * and the third is companion_file_save_as(). Clears the conflict and
+ * one with no other entry point. Take theirs is
+ * companion_file_resolve_take_theirs() and the third is
+ * companion_file_save_as(). Clears the conflict and
  * lets the next save overwrite whatever is on disk; the shell calls it
  * only after the person has chosen. Returns false for an unknown file.
  *

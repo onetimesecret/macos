@@ -30,7 +30,7 @@ final class ModalSessionTests: XCTestCase {
     }
 
     func testACancelledBodyIsAnnouncedTheSameAsAnAcceptedOne() {
-        // Open or Cancel, Save or Discard: the surface comes forward
+        // Open or Save As, accepted or cancelled: the surface comes forward
         // again either way, so the bracket cannot know or care which.
         let center = NotificationCenter()
         var ends = 0
@@ -59,6 +59,26 @@ final class ModalSessionTests: XCTestCase {
         // process, was measured by hand and cannot be asserted here
         // without hanging the run on a panel nobody is looking at.
         XCTAssertFalse(ModalSession.isRunning)
+    }
+
+    func testOnlyOpenAndSavePanelsEnterTheModalBracket() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let coordinator = try String(
+            contentsOf: root.appendingPathComponent("Sources/CompanionKit/FileCoordinator.swift"),
+            encoding: .utf8
+        )
+        let appDelegate = try String(
+            contentsOf: root.appendingPathComponent("Sources/OnetimePad/BackdropApp.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertEqual(coordinator.components(separatedBy: "ModalSession.run").count - 1, 2)
+        XCTAssertFalse(appDelegate.contains("ModalSession.run"), "quit does not enter a modal session")
+        XCTAssertFalse(coordinator.contains("NSAlert"), "file decisions are inline")
+        XCTAssertFalse(appDelegate.contains("NSAlert"), "quit owns no alert")
     }
 
     /// A rename is not destructive and takes an inline field (D-14,

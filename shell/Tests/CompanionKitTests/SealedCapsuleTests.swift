@@ -71,16 +71,16 @@ final class SealedCapsuleTests: XCTestCase {
     /// In a flipped text view, the lock, classification, and actions
     /// affordance occupy the upper row while excerpt metadata is below.
     func testTheRowsLockAndActionsUseFlippedTextViewCoordinates() {
-        let frame = NSRect(x: 10, y: 100, width: 400, height: ChipCell.blockHeight)
-        let layout = ChipCell.contentLayout(in: frame)
-        let seat = ChipCell.actionsRect(in: frame)
+        let frame = NSRect(x: 10, y: 100, width: 400, height: SealedBlockCell.blockHeight)
+        let layout = SealedBlockCell.contentLayout(in: frame)
+        let seat = SealedBlockCell.actionsRect(in: frame)
         XCTAssertTrue(frame.contains(layout.lockRect), "the lock hung off the block")
         XCTAssertLessThan(layout.topRowY, layout.bottomRowY, "the rows were vertically reversed")
         XCTAssertLessThan(layout.lockRect.midY, frame.midY, "the lock was not on the top row")
         XCTAssertTrue(frame.contains(seat), "the seat hung off the block")
         XCTAssertEqual(seat.maxX, frame.maxX - 12, "the seat did not share the metadata's inset")
         XCTAssertLessThan(seat.midY, frame.midY, "the seat was not on the top row")
-        XCTAssertEqual(ChipCell.actionsGlyph, "···")
+        XCTAssertEqual(SealedBlockCell.actionsGlyph, "···")
     }
 
     func testTheActionsSeatIgnoresStateFlagsButRejectsGestureModifiersAndLaterClicks() {
@@ -182,9 +182,9 @@ final class SealedCapsuleTests: XCTestCase {
 
         XCTAssertEqual(attachmentSize.width, expectedWidth, accuracy: 0.5)
         XCTAssertEqual(glyphBounds.width, expectedWidth, accuracy: 0.5)
-        XCTAssertEqual(attachmentSize.height, ChipCell.blockHeight, accuracy: 0.5)
+        XCTAssertEqual(attachmentSize.height, SealedBlockCell.blockHeight, accuracy: 0.5)
         XCTAssertNotEqual(
-            attachmentSize.width, ChipCell.fallbackBlockWidth,
+            attachmentSize.width, SealedBlockCell.fallbackBlockWidth,
             "live layout used the fallback cell width")
         XCTAssertGreaterThan(glyphBounds.height, 0)
         XCTAssertLessThanOrEqual(
@@ -249,7 +249,7 @@ final class SealedCapsuleTests: XCTestCase {
             range: NSRange(location: chipIndex - 3, length: storage.length - chipIndex + 3))
         let cell = try XCTUnwrap(
             (storage.attribute(.attachment, at: chipIndex, effectiveRange: nil) as? ChipAttachment)?
-                .attachmentCell as? ChipCell)
+                .attachmentCell as? SealedBlockCell)
 
         textView.layout()
         layoutManager.ensureLayout(for: container)
@@ -262,7 +262,7 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertEqual(answered.minY, drawn.minY, accuracy: 0.5)
         XCTAssertEqual(answered.width, drawn.width, accuracy: 0.5)
         XCTAssertEqual(answered.height, drawn.height, accuracy: 0.5)
-        XCTAssertEqual(drawn.height, ChipCell.blockHeight, accuracy: 0.5)
+        XCTAssertEqual(drawn.height, SealedBlockCell.blockHeight, accuracy: 0.5)
         XCTAssertNil(textView.chipFrame(at: 0), "ink answered a chip frame")
 
         // The case exists because the bounding rect is the wrong answer
@@ -276,7 +276,7 @@ final class SealedCapsuleTests: XCTestCase {
         XCTAssertLessThan(bounding.minY, drawn.minY, "the ink did not rise above the block; the case is moot")
         XCTAssertGreaterThan(bounding.height, drawn.height)
         XCTAssertNotEqual(
-            ChipCell.actionsRect(in: bounding).minY, ChipCell.actionsRect(in: drawn).minY,
+            SealedBlockCell.actionsRect(in: bounding).minY, SealedBlockCell.actionsRect(in: drawn).minY,
             "the seats agreed; the old frame would have hit")
 
         let outsideBlock = NSPoint(x: drawn.midX, y: bounding.minY + 0.5)
@@ -322,7 +322,7 @@ final class SealedCapsuleTests: XCTestCase {
 
         XCTAssertEqual(attachmentSize.width, expectedWidth, accuracy: 0.5)
         XCTAssertLessThan(attachmentSize.width, scroll.contentSize.width)
-        XCTAssertNotEqual(attachmentSize.width, ChipCell.fallbackBlockWidth)
+        XCTAssertNotEqual(attachmentSize.width, SealedBlockCell.fallbackBlockWidth)
     }
 
     /// Return and Space, bare, are the two keys that open a selected

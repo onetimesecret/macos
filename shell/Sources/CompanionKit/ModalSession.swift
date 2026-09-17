@@ -3,10 +3,9 @@ import AppKit
 /// A modal of ours, bracketed so the rest of the app can tell when it
 /// has returned.
 ///
-/// Every panel and alert this app runs is modal and blocking: the open
-/// and save panels, the two file reviews, the quit notice. (The tab
-/// rename is none of them since D-14 gave it an inline field.) What
-/// the surface needs from all of them is one fact at
+/// The app's modal inventory is limited to the system open and save panels.
+/// Dirty close, conflict resolution, rename, and quit do not enter a modal
+/// session. What the surface needs from the two panels is one fact at
 /// two moments. While one is up, a press into it must not be read as a
 /// press into another application; and when it returns, however it
 /// returned, the surface has to be raised and in front again, because
@@ -30,8 +29,8 @@ import AppKit
 /// and the app delegate, and the form factor that answers is the one
 /// that knows what a raise is.
 public enum ModalSession {
-    /// Posted after a modal of ours has returned, opened, saved,
-    /// confirmed or cancelled alike. The object is nil; nothing about
+    /// Posted after an open or save panel has returned, accepted or
+    /// cancelled alike. The object is nil; nothing about
     /// which panel it was bears on what the surface does next.
     public static let didEndNotification = Notification.Name("CompanionKit.ModalSession.didEnd")
 

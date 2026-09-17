@@ -361,7 +361,7 @@ Added by the parity amendment:
    per display is mechanical to add and probably right.
 3. **Chip faces on the backdrop.** Chips appear now (the parity
    amendment), rendered as the sealed block of D-27 in
-   docs/spec/design/2026-0915-ui-ux-decisions.md (owed: `ChipCell`'s
+   docs/spec/design/2026-0915-ui-ux-decisions.md (owed: `SealedBlockCell`'s
    excerpt pill is the shipping treatment until the block lands).
    What stays open is whether even that mechanical excerpt is too much
    standing exposure on a surface nobody dismisses. A count-only face

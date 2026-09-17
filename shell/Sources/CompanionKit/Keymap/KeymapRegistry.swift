@@ -36,9 +36,9 @@ extension PageModel {
             // working under the chord they chose.
             if showsTimeUnits { openToday() } else { newPage() }
         case .pageClose:
-            // ⌘W closes what is on screen. On a file that is the file,
-            // with the Save, Discard or Cancel review when it holds
-            // unsaved edits; on a page it is the page, as it always
+            // ⌘W closes what is on screen. A dirty file publishes its
+            // Save file, Discard changes, and Keep editing decision
+            // inline; on a page it is the page, as it always
             // was. The second reading rather than a third id, for
             // `.pageNew`'s reason above (ADR-0028).
             if case .file = activeTarget { closeActiveFile() } else { closeCurrent() }

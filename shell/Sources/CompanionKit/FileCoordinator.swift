@@ -2,30 +2,9 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
-/// What the close review came back with, when a file with unsaved
-/// edits is asked to go away.
-///
-/// The three readings of the standard macOS review, named rather than
-/// carried as an `NSApplication.ModalResponse`, so the model's logic
-/// reads as three outcomes and a test can hand it one without a window
-/// on screen.
-public enum FileCloseReview: Equatable, Sendable {
-    /// Write the file, then close it.
-    case save
-    /// Throw the unsaved edits away and close it.
-    case discard
-    /// Leave the file open exactly as it stands.
-    case cancel
-}
-
-/// The panels and prompts a file feature has to raise, behind a
-/// protocol so the model never touches AppKit directly and a test can
-/// script every answer.
-///
-/// Every one of them is modal and blocking, which is why they are
-/// posed as plain returning functions rather than as callbacks: the
-/// model's own logic is a straight line through them, and a callback
-/// would spread one decision over three places.
+/// The system file panels, behind a protocol so the model never touches
+/// AppKit directly and a test can script every answer. Dirty-close and
+/// conflict decisions are inline model state and do not belong here.
 @MainActor
 public protocol FilePanels {
     /// Ask for a file to open. Nil means the person cancelled.
@@ -33,14 +12,6 @@ public protocol FilePanels {
 
     /// Ask where to write a file. Nil means the person cancelled.
     func chooseDestination(suggestedName: String) -> URL?
-
-    /// The Save, Discard, Cancel review a dirty file takes before it
-    /// closes.
-    func reviewUnsavedFile(named name: String) -> FileCloseReview
-
-    /// The confirmation Take theirs asks for, since it throws away
-    /// unsaved edits with no way back. True means go ahead.
-    func confirmDiscardingEdits(named name: String) -> Bool
 }
 
 /// The one place in the app that raises a file panel, makes a
@@ -54,8 +25,8 @@ public protocol FilePanels {
 /// can be bypassed is not a bracket.
 @MainActor
 public final class FileCoordinator {
-    /// The panels this coordinator raises: the real ones in the app,
-    /// scripted ones under a test.
+    /// The open and save panels this coordinator raises: the real ones
+    /// in the app, scripted ones under a test.
     public let panels: FilePanels
 
     /// The default panels are the real ones in the app and refusing
@@ -65,7 +36,7 @@ public final class FileCoordinator {
     /// reasoning as the state directory's own refusal
     /// (`FormFactor.refusesProductionStateUnderTests`): a panel is
     /// modal, so a test that reached one would not fail, it would hang
-    /// the whole run with an alert nobody is looking at. A suite that
+    /// the whole run with a panel nobody is looking at. A suite that
     /// wants an answer scripts one; a suite that never meant to raise
     /// a panel gets a cancel, which is the outcome a person who was
     /// not asked would have given.
@@ -145,14 +116,6 @@ public final class FileCoordinator {
     public func chooseDestination(suggestedName: String) -> URL? {
         panels.chooseDestination(suggestedName: suggestedName)
     }
-
-    public func reviewUnsavedFile(named name: String) -> FileCloseReview {
-        panels.reviewUnsavedFile(named: name)
-    }
-
-    public func confirmDiscardingEdits(named name: String) -> Bool {
-        panels.confirmDiscardingEdits(named: name)
-    }
 }
 
 /// The panels a test run gets unless it scripts its own: every one of
@@ -167,8 +130,6 @@ public struct RefusingFilePanels: FilePanels {
     public init() {}
     public func chooseFileToOpen() -> URL? { nil }
     public func chooseDestination(suggestedName: String) -> URL? { nil }
-    public func reviewUnsavedFile(named name: String) -> FileCloseReview { .cancel }
-    public func confirmDiscardingEdits(named name: String) -> Bool { false }
 }
 
 /// The real panels: the ones with a window.
@@ -198,8 +159,8 @@ public struct SystemFilePanels: FilePanels {
         panel.allowsMultipleSelection = false
         panel.prompt = "Open"
         panel.message = "Choose a UTF-8 text file."
-        // Bracketed, as every modal of ours is, so the surface learns
-        // when the panel has returned and comes forward again.
+        // Open and Save As are the app's modal entry points. The bracket
+        // lets the surface learn when the panel has returned.
         return ModalSession.run { panel.runModal() } == .OK ? panel.url : nil
     }
 
@@ -213,27 +174,4 @@ public struct SystemFilePanels: FilePanels {
         return ModalSession.run { panel.runModal() } == .OK ? panel.url : nil
     }
 
-    public func reviewUnsavedFile(named name: String) -> FileCloseReview {
-        let alert = NSAlert()
-        alert.messageText = "Save the changes to \(name)?"
-        alert.informativeText = "Your changes will be lost if you do not save them."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Discard")
-        switch ModalSession.run({ alert.runModal() }) {
-        case .alertFirstButtonReturn: return .save
-        case .alertThirdButtonReturn: return .discard
-        default: return .cancel
-        }
-    }
-
-    public func confirmDiscardingEdits(named name: String) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "Take the copy on disk for \(name)?"
-        alert.informativeText =
-            "Your unsaved changes go, and there is no undo. The file is read again from disk."
-        alert.addButton(withTitle: "Take theirs")
-        alert.addButton(withTitle: "Cancel")
-        return ModalSession.run { alert.runModal() } == .alertFirstButtonReturn
-    }
 }

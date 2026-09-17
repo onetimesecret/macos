@@ -85,18 +85,15 @@ final class LaunchStanceTests: XCTestCase {
     // MARK: The raise after a modal of ours
 
     func testAModalsReturnRaisesOverAStillRaisedSurface() {
-        // The open panel, a file review, the rename prompt or a
-        // cancelled quit: the surface was raised when it went up and
-        // comes forward again once it is down.
+        // An open or save panel returns to the surface that raised it.
         XCTAssertTrue(
             BackdropAppDelegate.raisesAfterModal(stance: .raised, modalSessionRunning: false)
         )
     }
 
     func testAModalsReturnDoesNotRaiseARestedSurface() {
-        // A rest while the panel was up was somebody's deliberate act,
-        // or the quit notice reached from a resting card's tray menu,
-        // and neither is ours to undo.
+        // A rest while the panel was up was somebody's deliberate act
+        // and is not ours to undo.
         XCTAssertFalse(
             BackdropAppDelegate.raisesAfterModal(stance: .resting, modalSessionRunning: false)
         )

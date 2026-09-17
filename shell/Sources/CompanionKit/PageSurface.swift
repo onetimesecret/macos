@@ -51,6 +51,10 @@ public struct PageContentView: View {
             // swapped underneath it, and files join that rotation
             // rather than standing up an editor of their own.
             VStack(spacing: 0) {
+                if let pending = model.pendingFileClose, pending.fileID == file.id {
+                    FileCloseBanner(pending: pending) { model.resolvePendingFileClose($0) }
+                    Divider()
+                }
                 if file.conflict != .none {
                     FileConflictBanner(file: file) { model.resolveConflict($0) }
                     Divider()
@@ -147,6 +151,17 @@ public struct PageStatusStack: View {
         return base + " " + atRisk
     }
 
+    /// What the quit anyway button says it will do: the loss named by
+    /// filename where a dirty file is open, for the same reason as
+    /// `discardHelp`.
+    private var quitAnywayHelp: String {
+        let base = "Quits now. The pages this session could not save are lost."
+        guard let atRisk = PageModel.draftsAtRiskSentence(files: model.openFiles) else {
+            return base
+        }
+        return base + " " + atRisk
+    }
+
     public var body: some View {
         if model.contentRestoreRefused {
             // The standing restore-failure state (issue #49): persistent
@@ -181,6 +196,31 @@ public struct PageStatusStack: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        if let refusal = model.quitRefusal,
+            let sentence = PageModel.quitRefusalSentence(refusal)
+        {
+            // The quit the terminate path cancelled (issue 172, D-14 and
+            // D-19). Standing rather than a notice, because the condition
+            // it names is; ember because the one thing to do about it is
+            // a decision. The button and a second ⌘Q are the same answer
+            // (`QuitPrompt.terminateReply`), so ⌘Q is never inert: the
+            // first press says what the quit costs and the second pays
+            // it. The recovery line above, when it stands, is the other
+            // way out.
+            HStack(spacing: 8) {
+                Text(sentence)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.emberText)
+                Button("quit anyway (⌘Q)") { model.requestQuitAnyway() }
+                    .font(.system(.caption, design: .monospaced))
+                    .controlSize(.small)
+                    .help(quitAnywayHelp)
+                    .accessibilityLabel(Text("Quit without this session's unsaved pages"))
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
         }
         if let sentence = sync.standingSentence {
             // Sync's one standing line (issue #102): present only while

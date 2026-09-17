@@ -568,7 +568,14 @@ public struct SyncPairingStage: Codable, Hashable, Sendable {
 /// call is serialized by the core's own mutex (companion_ffi.h) — the
 /// conceal routes are *meant* to be called off the main actor, since
 /// they block for a network round-trip.
-public final class CompanionClient: @unchecked Sendable {
+///
+/// Not final, for one reason: the test target subclasses it to answer a
+/// call the way the core never would on demand. A close is the case
+/// that forced it, since the core refuses one only for an id it has
+/// never heard of, and the shell's behaviour when a close is refused
+/// under a standing decision is exactly what wants covering. Nothing in
+/// the app subclasses it, and no method here is written to be extended.
+public class CompanionClient: @unchecked Sendable {
     private let handle: OpaquePointer
 
     /// `credentialService` scopes this client's Keychain items. Nil
@@ -1306,8 +1313,8 @@ public final class CompanionClient: @unchecked Sendable {
     }
 
     /// Close the file and drop its buffer. The draft goes with it: a
-    /// draft never outlives its tab. The Save, Discard, Cancel review
-    /// for a dirty file happens before this call.
+    /// draft never outlives its tab. Any dirty-close decision is settled
+    /// in the shell before this call.
     @discardableResult
     public func closeFile(_ file: UInt64) -> Bool {
         companion_file_close(handle, file)
@@ -1374,10 +1381,18 @@ public final class CompanionClient: @unchecked Sendable {
         decodeJSON(FileCheck.self, from: companion_file_check(handle, file))
     }
 
-    /// Re-read the file, discarding whatever the buffer held.
+    /// Re-read a clean file, replacing its buffer.
     @discardableResult
     public func reloadFile(_ file: UInt64) -> Bool {
         companion_file_reload(handle, file)
+    }
+
+    /// Resolve a conflict in favor of the copy on disk. Unlike an ordinary
+    /// reload, this explicit resolution records the replacement in the
+    /// file's core-owned edit history.
+    @discardableResult
+    public func resolveFileTakeTheirs(_ file: UInt64) -> Bool {
+        companion_file_resolve_take_theirs(handle, file)
     }
 
     /// Every open file, in open order.
@@ -1385,9 +1400,9 @@ public final class CompanionClient: @unchecked Sendable {
         decodeJSON([FileSummary].self, from: companion_file_roster_json(handle)) ?? []
     }
 
-    /// Keep mine: the first of the three conflict resolutions, and the
-    /// only one with no other entry point. Take theirs is
-    /// `reloadFile(_:)` and the third is `saveFile(_:as:)`. It clears
+    /// Keep mine: the first of the three conflict resolutions. Take theirs
+    /// has its own explicit resolution above, and the third is
+    /// `saveFile(_:as:)`. It clears
     /// the conflict and lets the next save write over whatever is on
     /// disk, so it is called only after the person has chosen.
     @discardableResult

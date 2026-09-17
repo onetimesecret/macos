@@ -407,13 +407,13 @@ in plain; the fragment adds order, not payload exposure.
   as metadata (never a count), and nothing that reads as pressable. The
   pill shape invited a press that nothing answers. The excerpt still
   only has to be recognised by the person who pasted it.
-  *Owed:* this overrules the shipping treatment, `ChipCell` in
+  *Owed:* this overrules the shipping treatment, `SealedBlockCell` in
   `shell/Sources/CompanionKit/InkEditorView.swift`, which draws
   `[ excerpt · size ]` at intrinsic width; the archived Airlock canvases
   drew an inline pill and are history. There is no design system
   component to follow; the only `SealedChip` in the tree is the Rust
   type. Tracked as "Sealed block: full-measure attachment replaces
-  ChipCell (D-27)" (issue 169).
+  SealedBlockCell (D-27)" (issue 169).
 - **D-28 (fixed)** A sealed item is one object in the document and its
   plaintext is not part of the document's ambient text. Structural
   operations act on the whole object; the caret never lands inside it
@@ -604,8 +604,9 @@ read as a page an instant from death rather than a slot standing ready.
 on, absent unless they have something to say; the layout reserves no
 room. Everything sits between the page and the tabs. A standing
 condition persists for the session; a notice is transient. Precedence,
-in draw order: content-restore failure · ledger failure · sync standing
-sentence · remote-edit line · pasteboard offer · notice · conceal sheet.
+in draw order: content-restore failure · ledger failure · cancelled quit
+· sync standing sentence · remote-edit line · pasteboard offer · notice
+· conceal sheet.
 
 - **D-14 (fixed)** No modals, no interrupting dialogs, no notifications,
   badges, bounce or count chips. A condition speaks in a line under the
@@ -614,9 +615,10 @@ sentence · remote-edit line · pasteboard offer · notice · conceal sheet.
   confirmation. `NSOpenPanel` and `NSSavePanel` are platform file
   pickers the user asked for, not app dialogs. The build's four
   dialogs (the quit alert, the close review of a dirty file, the Take
-  theirs confirmation and the tab rename alert) are defects against
-  this decision, tracked as "Replace the four interrupting dialogs with
-  inline surfaces (D-14, D-19)" (issue 172).
+  theirs confirmation and the tab rename alert) were defects against
+  this decision, tracked as issue 172 and resolved 2026-09-16: the tab
+  renames in place, the dirty close and the cancelled quit are standing
+  lines with inline buttons, and Take theirs is immediate and undoable.
   *Acceptance:* every interaction completes without the surface becoming
   key unless the user deliberately raised it. An unexpected focus change
   is destructive for assistive tech, so this is an a11y rule, not
@@ -665,11 +667,15 @@ blocked while they stand (status lines stay 12 × 4).
 - **D-19 (fixed)** No save sheet on quit; the draft's age in the header
   is what the app owes instead, so a person can judge how old the typing
   is before pressing the save chord. The build's Quit Anyway / Cancel
-  alert is a defect against this decision, tracked with D-14's three
-  others as issue 172.
+  alert was a defect against this decision, tracked with D-14's three
+  others as issue 172 and resolved 2026-09-16.
   *Acceptance:* the stamp shows only for a draft-restored buffer, in
   `EEE HH:mm` with a 24-hour clock whatever the locale; quitting with
-  dirty files asks nothing.
+  dirty files asks nothing. A refused or unsavable state flush is the
+  one case quit does not simply proceed: the first ⌘Q is cancelled and
+  a standing line names the loss with a "quit anyway (⌘Q)" button, the
+  inline confirmation D-14 allows; the second ⌘Q, or the button, quits.
+  Quit is never inert.
 
 ## 7 · The sync surface
 
@@ -818,8 +824,11 @@ moved a decision.
 - D-13: stays open. The cap paragraph is struck; no cap exists since
   issue #158. Sync enrolment joins the gutter verb set, and the gutter
   carries all five verbs today.
-- D-14 and D-19: unchanged in substance. The build's four dialogs are
-  named as defects and tracked as issue 172.
+- D-14 and D-19: unchanged in substance. The build's four dialogs were
+  named as defects, tracked as issue 172 and resolved 2026-09-16. D-19's
+  acceptance gains the cancelled quit: a refused state flush cancels the
+  first ⌘Q and a standing line offers quit anyway; the cancelled quit
+  joins the status precedence.
 - D-20: unchanged; the acceptance line stands as the 0914 record wrote
   it, and the code is fixed to match.
 - D-27: the "design system's `SealedChip`" clause is removed; no such
@@ -856,4 +865,4 @@ moved a decision.
 - The feature-scale items are linked by issue: the sealed block (D-27,
   issue 169), the fragment and lifecycle model (D-29, D-31, D-33, issue 170), the
   split Days setting (D-26, issue 171) and the four dialogs (D-14,
-  D-19, issue 172).
+  D-19, issue 172, resolved 2026-09-16).

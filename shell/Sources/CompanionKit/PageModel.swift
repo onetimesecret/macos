@@ -219,12 +219,9 @@ public enum SaveStatus: Equatable, Sendable {
     case failed
 }
 
-/// What the quit path learned from its flush, in the order the alert
-/// cares about: a refused write is the loudest, a session that was
-/// never allowed to write but holds real content repeats the warning
-/// the banner has been showing, and everything else quits silently
-/// (issue #49: the quit-time behavior repeats the warning if unsaved
-/// work remains).
+/// What the quit path learned from its flush. Settled state may terminate;
+/// a refused write or an unsavable session holding new content keeps the app
+/// running with its existing inline state visible.
 public enum QuitSaveOutcome: Equatable, Sendable {
     /// Every owed write landed, or nothing was owed. Quit proceeds.
     case settled
@@ -287,10 +284,36 @@ public struct FileRenderSuggestion: Equatable, Sendable {
 public enum FileConflictResolution: Equatable, Sendable {
     /// Keep the buffer and overwrite the file on the next save.
     case keepMine
-    /// Discard the buffer and reload the file.
+    /// Replace the buffer with the copy on disk.
     case takeTheirs
     /// Write the buffer somewhere else and leave the file alone.
     case saveAs
+}
+
+/// The outcomes offered by the inline dirty-close banner, in visual order.
+public enum FileCloseAction: CaseIterable, Equatable, Sendable {
+    case save
+    case discard
+    case keepEditing
+
+    public var label: String {
+        switch self {
+        case .save: return "Save file"
+        case .discard: return "Discard changes"
+        case .keepEditing: return "Keep editing"
+        }
+    }
+}
+
+/// A dirty file waiting for an inline close decision.
+public struct PendingFileClose: Equatable, Sendable {
+    public let fileID: UInt64
+    public let name: String
+
+    public init(fileID: UInt64, name: String) {
+        self.fileID = fileID
+        self.name = name
+    }
 }
 
 /// Which pages the hybrid markdown preview and syntax highlighting reach.
@@ -383,6 +406,11 @@ public final class PageModel: ObservableObject {
     /// keeping them out of `tabs` is what makes those facts structural
     /// rather than rules a reader has to remember.
     @Published public private(set) var openFiles: [FileSummary] = []
+
+    /// The dirty file whose close request is awaiting an inline outcome.
+    @Published public private(set) var pendingFileClose: PendingFileClose?
+    private var selectionBeforePendingFileClose: UInt64?
+    private var ledgerBeforePendingFileClose = false
 
     /// Presentation state is deliberately separate from `FileSummary`: the
     /// core owns file content and persistence, while these choices last only
@@ -548,6 +576,15 @@ public final class PageModel: ObservableObject {
     /// `markDirty` and `saveState` only, and deliberately not on the
     /// withheld-licence leg, where the two flags above own the story.
     @Published public private(set) var saveStatus: SaveStatus = .idle
+
+    /// The quit the terminate path cancelled, if one stands: a refused
+    /// write or an unsavable session, recorded so the surface can say
+    /// what the quit would lose and offer to quit anyway. Set only by
+    /// `offerQuitAnyway`; cleared when the reason goes away, a settled
+    /// write for a refusal and the user's discard for an unsavable
+    /// session. Never cleared by time: the line is a standing state,
+    /// not a notice, because the condition is.
+    @Published public private(set) var quitRefusal: QuitSaveOutcome?
 
     /// True while the page holds the keyboard — drives the ember
     /// border. Set by the controller from window key status.
@@ -1351,7 +1388,7 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// The one route to a file panel, a bookmark, or a modal review.
+    /// The one route to a system file panel or a bookmark.
     ///
     /// `lazy` so no panel object is built at init, and `var` so a test
     /// can put scripted panels in its place. It is not in `Seams`
@@ -1377,9 +1414,9 @@ public final class PageModel: ObservableObject {
     /// new or closed tab, a rename, a rung. Set at every `markDirty`
     /// and reset once at the end of `loadStateIfNeeded`, so the mint
     /// that launch itself performs does not count as the user's work.
-    /// The quit warning under a withheld licence hangs off this: in a
+    /// Quit cancellation under a withheld licence hangs off this: in a
     /// session that cannot write, everything it records is exactly
-    /// what a quit would lose (issue #49).
+    /// what termination would lose.
     private var mutatedSinceLoad = false
 
     /// The licence `saveState` requires, granted separately from
@@ -1502,7 +1539,7 @@ public final class PageModel: ObservableObject {
         // unsaved typing to an unrelated failure.
         restoreDrafts()
         // The load is settled, mint included: what happens from here is
-        // the user's work, and only that arms the quit warning.
+        // the user's work, and only that can block a later quit.
         mutatedSinceLoad = false
         // Sync starts only now, after the restore, so the engine never
         // sweeps a store the load is still filling. Off — the default —
@@ -1715,7 +1752,7 @@ public final class PageModel: ObservableObject {
         #endif
         // Before the licence guard, deliberately: a session that may
         // write nothing still accumulates work, and that work is what
-        // the quit warning is about.
+        // makes the quit outcome unsavable.
         mutatedSinceLoad = true
         guard Self.writesEitherFile(
             loaded: stateLoaded, contentLicence: saveLicence, ledgerLicence: ledgerLicence
@@ -1756,9 +1793,8 @@ public final class PageModel: ObservableObject {
 
     /// Arm the deferred write, unless one is already armed. The timer
     /// runs in `.common` so a tracked menu cannot stall the write past
-    /// its window; the failure retry runs in `.default` instead, so it
-    /// cannot fire underneath the terminate path's modal alert and make
-    /// that alert's text false while the user reads it.
+    /// its window; the failure retry runs in `.default` instead, outside
+    /// the system file panels' modal run-loop mode.
     private func scheduleSave(after interval: TimeInterval, mode: RunLoop.Mode = .common) {
         guard let generation = saveSchedule.arm() else { return }
         let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
@@ -1941,6 +1977,7 @@ public final class PageModel: ObservableObject {
         // standing `contentRestoreRefused` state ahead of this one, so
         // that reading is never displayed (issue #49).
         saveStatus = settled ? .saved : .failed
+        quitRefusal = Self.quitOfferAfterWrite(offer: quitRefusal, settled: settled)
         if !settled {
             // The buffer is still dirty and nothing else is going to ask
             // for it: the debounce only arms on a mutation, so a session
@@ -2071,13 +2108,11 @@ public final class PageModel: ObservableObject {
         }
     }
 
-    /// The quit alert's truth table (issue #49). A refused write is the
-    /// loudest outcome regardless of the licence, because pages that
-    /// were supposed to land did not. A settled flush over a withheld
-    /// content licence warns only when the session accumulated work
-    /// after the load: an untouched session under a withheld licence
-    /// loses nothing by quitting, and warning there would teach the
-    /// user to click through the one alert that matters.
+    /// The quit policy's outcome table. A refused write cancels the first
+    /// quit regardless of the licence. A settled flush over a withheld
+    /// content licence also cancels it when the session accumulated work
+    /// after load; an untouched session under a withheld licence may
+    /// terminate. What a cancelled quit does next is `QuitPrompt`'s.
     public nonisolated static func quitOutcome(
         settled: Bool, contentLicence: Bool, loaded: Bool, mutatedSinceLoad: Bool
     ) -> QuitSaveOutcome {
@@ -2100,6 +2135,67 @@ public final class PageModel: ObservableObject {
             loaded: stateLoaded,
             mutatedSinceLoad: mutatedSinceLoad
         )
+    }
+
+    public var quitAnywayOffered: Bool { quitRefusal != nil }
+
+    /// The standing line's button, answered.
+    ///
+    /// It asks for a termination rather than performing one: the request
+    /// goes back through `applicationShouldTerminate`, which is where
+    /// `QuitPrompt.terminateReply` reads the offer this line represents
+    /// and lets the second ask through. That is why the button and a
+    /// second ⌘Q are the same answer, and it is the reason this is a
+    /// model call and not `NSApp.terminate` from inside a view: every
+    /// other action on the status stack goes through the model, and the
+    /// quit path is the one that can least afford a second route.
+    ///
+    /// `NSApp` is read optionally because a filtered test run has no
+    /// application object, and a status action that traps the runner is
+    /// worse than one that does nothing there.
+    public func requestQuitAnyway() {
+        NSApp?.terminate(nil)
+    }
+
+    /// The cancelled quit's standing line goes up. A settled outcome is
+    /// never recorded: there is nothing to quit anyway from.
+    public func offerQuitAnyway(after outcome: QuitSaveOutcome) {
+        guard outcome != .settled else { return }
+        quitRefusal = outcome
+    }
+
+    /// Whether the offer survives a write. A refusal's offer stands
+    /// until a write settles, because a settled write is exactly the
+    /// thing the refusal said had not happened. An unsavable session's
+    /// offer is untouched by writes: on that leg the flush settles
+    /// while the pages go nowhere, so a settle says nothing about it.
+    public nonisolated static func quitOfferAfterWrite(
+        offer: QuitSaveOutcome?, settled: Bool
+    ) -> QuitSaveOutcome? {
+        offer == .refused && settled ? nil : offer
+    }
+
+    /// Whether the offer survives the user's discard of the unreadable
+    /// file. The discard grants the licence, so an unsavable session's
+    /// offer comes down; a refusal's stands until its own write lands.
+    public nonisolated static func quitOfferAfterContentClear(
+        offer: QuitSaveOutcome?
+    ) -> QuitSaveOutcome? {
+        offer == .unsavableWithContent ? nil : offer
+    }
+
+    /// The standing line's sentence, a pure function of the outcome so
+    /// the two cases are testable as words. Lower case, third person,
+    /// and it names the loss rather than warning in general (D-15).
+    public nonisolated static func quitRefusalSentence(_ outcome: QuitSaveOutcome) -> String? {
+        switch outcome {
+        case .settled:
+            return nil
+        case .refused:
+            return "the sealed state file was not written, so this session's pages will not survive the quit"
+        case .unsavableWithContent:
+            return "nothing typed this session is on disk, so its pages will not survive the quit"
+        }
     }
 
     deinit {
@@ -2525,6 +2621,9 @@ public final class PageModel: ObservableObject {
     /// there is no empty file to conjure.
     public func selectFile(_ id: UInt64) {
         showingLedger = false
+        if pendingFileClose?.fileID != id {
+            clearPendingFileClose()
+        }
         guard selectedFile != id else { return }
         selectedFile = id
         refocusEditorIfKeyed()
@@ -2539,6 +2638,32 @@ public final class PageModel: ObservableObject {
     /// file cannot leave the surface pointing at nothing.
     func standOpenFiles(_ files: [FileSummary]) {
         openFiles = files
+        if let pending = pendingFileClose {
+            if let file = files.first(where: { $0.id == pending.fileID }) {
+                if !file.isDirty {
+                    let previousSelection = selectionBeforePendingFileClose
+                    let previousLedger = ledgerBeforePendingFileClose
+                    clearPendingFileClose()
+                    if closeFileNow(file.id) {
+                        // The close stood a fresh roster through this
+                        // same method, and that nested pass did every
+                        // prune below against it. Doing them again here
+                        // would work off the roster the close replaced.
+                        return
+                    }
+                    // The close was refused, so the decision goes back
+                    // on the surface and this pass carries on: the
+                    // roster above is already the published one, and
+                    // the prunes below are what keeps the per-file side
+                    // tables from outliving it.
+                    pendingFileClose = pending
+                    selectionBeforePendingFileClose = previousSelection
+                    ledgerBeforePendingFileClose = previousLedger
+                }
+            } else {
+                clearPendingFileClose()
+            }
+        }
         if let selectedFile, !files.contains(where: { $0.id == selectedFile }) {
             self.selectedFile = nil
         }
@@ -2827,55 +2952,106 @@ public final class PageModel: ObservableObject {
         markFilesDirty()
     }
 
-    /// Close the selected file. A dirty one takes the Save, Discard,
-    /// Cancel review first, and the draft dies with the tab either way.
-    /// Returns whether the file actually closed, so a caller that
-    /// moved the selection to raise the review can put it back.
+    /// Close the selected file. A clean file closes immediately. A dirty
+    /// file publishes an inline decision and remains editable.
     @discardableResult
     public func closeActiveFile() -> Bool {
         guard let file = activeFile else { return false }
+        guard !file.isDirty else {
+            beginPendingFileClose(
+                file, returningTo: selectedFile, returningToLedger: showingLedger
+            )
+            return false
+        }
+        return closeFileNow(file.id)
+    }
+
+    /// Close a named file, which is what the ✕ on a row asks for. A dirty
+    /// non-active file is selected so its inline decision appears above its
+    /// editor; Keep editing returns to the surface that was showing.
+    public func closeFile(_ id: UInt64) {
+        guard let file = openFiles.first(where: { $0.id == id }) else {
+            clearPendingFileClose()
+            return
+        }
+        let wasShowing = selectedFile
+        if pendingFileClose?.fileID != id { clearPendingFileClose() }
         if file.isDirty {
-            switch fileCoordinator.reviewUnsavedFile(named: file.name) {
-            case .cancel:
-                return false
-            case .save:
-                // A save that refused leaves the file open. Closing
-                // anyway would discard the very edits the person just
-                // asked to keep.
-                guard saveFile(file.id) else { return false }
-            case .discard:
-                break
+            let wasShowingLedger = showingLedger
+            selectedFile = id
+            showingLedger = false
+            beginPendingFileClose(
+                file, returningTo: wasShowing, returningToLedger: wasShowingLedger
+            )
+            refocusEditorIfKeyed()
+        } else {
+            _ = closeFileNow(id)
+        }
+    }
+
+    /// Resolve the inline dirty-close decision. Save closes only after a
+    /// successful write; Discard closes without writing; Keep editing closes
+    /// nothing and restores the prior surface when the request came from
+    /// another file's row.
+    public func resolvePendingFileClose(_ action: FileCloseAction) {
+        guard let pending = pendingFileClose,
+              openFiles.contains(where: { $0.id == pending.fileID })
+        else {
+            clearPendingFileClose()
+            return
+        }
+        switch action {
+        case .save:
+            guard saveFile(pending.fileID) else { return }
+            // A successful save refreshes the roster, and a clean file
+            // with a close still pending is closed inside
+            // `standOpenFiles`, so by the time this line runs the file
+            // has usually gone already. The check writes that invariant
+            // down rather than leaning on file ids never being reused:
+            // the only id this closes is one the core still holds,
+            // which leaves the retry after an auto-close that failed.
+            guard openFiles.contains(where: { $0.id == pending.fileID }) else { return }
+            clearPendingFileClose()
+            _ = closeFileNow(pending.fileID)
+        case .discard:
+            clearPendingFileClose()
+            _ = closeFileNow(pending.fileID)
+        case .keepEditing:
+            let previous = selectionBeforePendingFileClose
+            let previousLedger = ledgerBeforePendingFileClose
+            clearPendingFileClose()
+            if selectedFile == pending.fileID, previous != pending.fileID {
+                selectedFile = previous.flatMap { previousID in
+                    openFiles.contains(where: { $0.id == previousID }) ? previousID : nil
+                }
+                showingLedger = previousLedger
+                refocusEditorIfKeyed()
             }
         }
-        client.closeFile(file.id)
-        storages[file.id] = nil
-        // The roster no longer names it, and `standOpenFiles` drops a
-        // selection pointing at a file that is gone, so the surface
-        // falls back to the pad on its own.
+    }
+
+    private func beginPendingFileClose(
+        _ file: FileSummary, returningTo selection: UInt64?, returningToLedger: Bool
+    ) {
+        guard pendingFileClose?.fileID != file.id else { return }
+        pendingFileClose = PendingFileClose(fileID: file.id, name: file.name)
+        selectionBeforePendingFileClose = selection
+        ledgerBeforePendingFileClose = returningToLedger
+    }
+
+    private func clearPendingFileClose() {
+        pendingFileClose = nil
+        selectionBeforePendingFileClose = nil
+        ledgerBeforePendingFileClose = false
+    }
+
+    @discardableResult
+    private func closeFileNow(_ id: UInt64) -> Bool {
+        guard client.closeFile(id) else { return false }
+        storages[id] = nil
         refreshOpenFiles()
         markFilesDirty()
         return true
-    }
-
-    /// Close a named file, which is what the ✕ on a row asks for.
-    ///
-    /// It makes that file the active one first, so the review a dirty
-    /// file raises is about the file the person can see. Closing
-    /// through the one active path keeps the review, the draft's death
-    /// and the roster update in a single place rather than two that
-    /// would have to agree.
-    public func closeFile(_ id: UInt64) {
-        // Cancel means nothing happened, and the selection is part of
-        // nothing. Without this a Cancel leaves the person looking at
-        // a file they were not on, which is the one gesture that is
-        // supposed to change least.
-        let wasShowing = selectedFile
-        selectFile(id)
-        let closed = closeActiveFile()
-        if !closed, selectedFile == id, wasShowing != id {
-            selectedFile = wasShowing
-            refocusEditorIfKeyed()
-        }
     }
 
 
@@ -2890,15 +3066,12 @@ public final class PageModel: ObservableObject {
             // its own deliberate gesture and has its own chord.
             client.resolveFileKeepMine(file.id)
         case .takeTheirs:
-            // This one does ask, because it is the only one of the
-            // three that throws the person's typing away, and it
-            // throws it away now rather than later.
-            guard fileCoordinator.confirmDiscardingEdits(named: file.name) else { return }
-            guard client.reloadFile(file.id) else {
+            guard client.resolveFileTakeTheirs(file.id) else {
                 flash(Self.readRefusalNotice(name: file.name), tone: .actionable)
                 return
             }
             restateStorage(sheet: file.id)
+            refreshOpenFiles()
             reconsiderFileRenderMode(for: file.id, resetDismissal: true)
         case .saveAs:
             // Save As settles the conflict by moving the identity
@@ -2907,7 +3080,7 @@ public final class PageModel: ObservableObject {
             saveActiveFileAs()
             return
         }
-        refreshOpenFiles()
+        if resolution != .takeTheirs { refreshOpenFiles() }
         markFilesDirty()
     }
 
@@ -3151,6 +3324,7 @@ public final class PageModel: ObservableObject {
     /// leaves an empty tab rather than a fresh countdown on nothing.
     public func select(_ id: UInt64) {
         let leavingLedger = showingLedger
+        clearPendingFileClose()
         // A slot and a file are never both showing, so choosing a slot
         // puts the file away. The file itself stays open and keeps its
         // place in the FILES group; only the surface moved.
@@ -3246,6 +3420,7 @@ public final class PageModel: ObservableObject {
     /// any, is the keymap's business; the bundled default names none
     /// while the ledger's entry points are hidden (issue #78).
     public func showLedger() {
+        clearPendingFileClose()
         ledgerEntries = client.ledger()
         showingLedger = true
     }
@@ -3334,6 +3509,7 @@ public final class PageModel: ObservableObject {
         saveLicence = licences.content
         ledgerLicence = licences.ledger
         contentRestoreRefused = false
+        quitRefusal = Self.quitOfferAfterContentClear(offer: quitRefusal)
         markDirty()
         refresh()
     }
@@ -3484,6 +3660,7 @@ public final class PageModel: ObservableObject {
     /// (issue #158).
     public func newPage() {
         notice = nil
+        clearPendingFileClose()
         // A page asked for now is a page to look at now, so the file
         // that was showing gives way to it.
         selectedFile = nil

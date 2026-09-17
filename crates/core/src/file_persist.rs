@@ -16,8 +16,9 @@
 //! helper, same strict envelope rule. `OTSSNAP4` is not touched.
 //!
 //! One record per open file: the bookmark blob, the last known path,
-//! the witness, the dirty flag, the last edit stamp, and for a dirty
-//! file the Loro snapshot. A clean file records only its identity, so
+//! the witness, the dirty flag, the last edit stamp, for a dirty file
+//! the Loro snapshot, and an optional trailing generation-dirty flag.
+//! A clean file records only its identity, so
 //! its tab comes back with nothing staged behind it and the shell fills
 //! it from disk with a reload.
 //!
@@ -164,6 +165,13 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
             1 => Some(record.bytes().ok_or(Malformed)?.to_vec()),
             _ => return Err(Malformed),
         };
+        // A build in between wrote a generation-dirty flag here. It is
+        // read by nobody now and stepped over by the frame's own length,
+        // which is what ADR-0031 asks for: the field may survive in old
+        // records, and it carries no authority over dirty state, because
+        // file undo history does not cross launch and a marker without
+        // its history explains nothing to the person looking at the tab.
+        //
         // Fields this build has never heard of are left behind inside
         // the frame. The record's own length is what finds the next
         // one, so the walk above stopping early is the rule working.
@@ -341,6 +349,107 @@ mod tests {
     }
 
     #[test]
+    fn an_undone_equal_text_take_theirs_settles_clean_after_relaunch() {
+        let io = MemoryIo::with("/generation.txt", b"old\n");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/generation.txt")).unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Delete {
+                    pos_u16: 0,
+                    len_u16: 3,
+                },
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "same".into(),
+                },
+            ],
+            4_000,
+        ));
+        io.put(
+            "/generation.txt",
+            &[&[0xEF, 0xBB, 0xBF][..], b"same\r\n"].concat(),
+        );
+        store.refresh_conflict(&io, id);
+        store.take_theirs(&io, id).unwrap();
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "same\n");
+        assert!(store.is_dirty(id));
+
+        let bytes = emit(&store, 5_000).bytes;
+        let (mut back, notices) = relaunch(&io, &bytes);
+        assert!(notices.is_empty());
+        let file = &back.files()[0];
+        let restored = file.id();
+        assert_eq!(file.text(), "same\n");
+        assert!(
+            !file.is_dirty(),
+            "a generation marker without its undo history cannot keep equal output dirty"
+        );
+        assert_eq!(file.line_ending(), LineEnding::Crlf);
+        assert!(file.has_bom());
+        assert_eq!(
+            file.bytes_to_write(),
+            [&[0xEF, 0xBB, 0xBF][..], b"same\r\n"].concat(),
+            "the restored save output is already byte-identical to disk"
+        );
+        assert_eq!(
+            back.check(&io, restored),
+            crate::files::ExternalState::Unchanged
+        );
+        assert!(
+            !back.can_undo(restored),
+            "undo history does not cross launch"
+        );
+        assert!(
+            !back.can_redo(restored),
+            "redo history does not cross launch"
+        );
+        back.save(&io, restored).unwrap();
+        assert!(!back.is_dirty(restored), "Save remains available and clean");
+    }
+
+    #[test]
+    fn an_undone_equal_text_take_theirs_stays_dirty_when_save_output_differs() {
+        let io = MemoryIo::with("/mixed.txt", b"old\nline\n");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/mixed.txt")).unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Delete {
+                    pos_u16: 0,
+                    len_u16: 3,
+                },
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "same".into(),
+                },
+            ],
+            4_000,
+        ));
+        io.put("/mixed.txt", b"same\nline\r\n");
+        store.refresh_conflict(&io, id);
+        store.take_theirs(&io, id).unwrap();
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "same\nline\n");
+
+        let bytes = emit(&store, 5_000).bytes;
+        let (back, notices) = relaunch(&io, &bytes);
+        assert!(notices.is_empty());
+        let file = &back.files()[0];
+        assert!(
+            file.is_dirty(),
+            "normalizing mixed line endings would still change the disk bytes"
+        );
+        assert_eq!(file.bytes_to_write(), b"same\nline\n");
+        assert_ne!(file.bytes_to_write(), io.files.lock().unwrap()[file.path()]);
+        assert!(!back.can_undo(file.id()));
+        assert!(!back.can_redo(file.id()));
+    }
+
+    #[test]
     fn a_restored_draft_saves_the_text_it_came_back_with() {
         let (io, store, _clean, _dirty) = seeded();
         let bytes = emit(&store, 1_000).bytes;
@@ -373,6 +482,21 @@ mod tests {
         back.open(&io, Path::new("/clean.txt")).unwrap();
         assert_eq!(restore(&mut back, &bytes, 1).unwrap(), 2);
         assert_eq!(back.files().len(), 2);
+    }
+
+    #[test]
+    fn records_carrying_the_old_generation_field_still_restore() {
+        // The shape a build in between wrote: one trailing boolean this
+        // build neither reads nor grants any say over dirty state.
+        let (io, store, _clean, _dirty) = seeded();
+        let current = emit(&store, 1_000).bytes;
+        let old = widen_first_record(&current, &[1]);
+        let (back, notices) = relaunch(&io, &old);
+        assert!(notices.is_empty());
+        assert_eq!(back.files().len(), 2);
+        assert!(!back.files()[0].is_dirty());
+        assert!(back.files()[1].is_dirty());
+        assert_eq!(back.files()[1].text(), "typed dirty body\n");
     }
 
     #[test]

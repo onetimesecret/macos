@@ -2,6 +2,43 @@ import AppKit
 import CompanionKit
 import SwiftUI
 
+/// Dim one piece of the card as the stance crosses. Kept as a modifier
+/// so the opacity rule has one implementation for the rail, page and
+/// strip, and so the transaction it hands to embedded AppKit content is
+/// directly testable.
+struct StanceFadeModifier: ViewModifier {
+    let raised: Bool
+    let animation: Animation?
+
+    func body(content: Content) -> some View {
+        content
+            // The fade belongs to this compositing boundary and to
+            // nothing under it. A transaction covers the whole subtree,
+            // so this clears the animation for everything the modifier
+            // wraps, the banners and status lines included, and not
+            // only for the embedded editor that made it necessary:
+            // letting the transaction reach the NSTextView/NSScrollView
+            // update animates its viewport while editability changes,
+            // which makes the page dip and return on every raise and
+            // rest. The breadth is accepted rather than incidental.
+            // Stance is a whole-card change, so a piece of the card
+            // animating on its own timing across it would read as a
+            // glitch, and any animation a child truly needs can carry
+            // its own transaction below this one.
+            .transaction { transaction in
+                transaction.animation = nil
+            }
+            .opacity(raised ? 1 : 0.72)
+            .animation(animation, value: raised)
+    }
+}
+
+extension View {
+    func stanceFaded(raised: Bool, animation: Animation?) -> some View {
+        modifier(StanceFadeModifier(raised: raised, animation: animation))
+    }
+}
+
 /// The surface's face: a card of pages over the desktop, dimmed to a
 /// glance while resting and a plain editor while raised. The ember
 /// border shows exactly while the surface holds the keyboard, the same
@@ -132,13 +169,11 @@ struct BackdropRootView: View {
                             SlotRailView(model: pages)
                         }
                     }
-                    .opacity(raised ? 1 : 0.72)
-                    .animation(stanceFade, value: raised)
+                    .stanceFaded(raised: raised, animation: stanceFade)
                     Divider()
                     PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .opacity(raised ? 1 : 0.72)
-                        .animation(stanceFade, value: raised)
+                        .stanceFaded(raised: raised, animation: stanceFade)
                 }
             } else {
                 PageContentView(model: pages, readOnly: !raised, emptyHint: emptyHint)
@@ -146,8 +181,7 @@ struct BackdropRootView: View {
                     // The glance is the same ink at the same measure,
                     // dimmed. Raising and lowering must not make the
                     // text jump, so only the opacity changes.
-                    .opacity(raised ? 1 : 0.72)
-                    .animation(stanceFade, value: raised)
+                    .stanceFaded(raised: raised, animation: stanceFade)
             }
             PageStatusStack(model: pages)
             if !pages.showsPagesDownSide {
@@ -159,8 +193,7 @@ struct BackdropRootView: View {
                         TabStripView(model: pages)
                     }
                 }
-                .opacity(raised ? 1 : 0.72)
-                .animation(stanceFade, value: raised)
+                .stanceFaded(raised: raised, animation: stanceFade)
             }
         }
         .background(
@@ -414,7 +447,7 @@ struct BackdropRootView: View {
                 Text("save failed")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(Color.emberText)
-                    .help("The last write was refused; the app keeps retrying. Quitting now will warn before any loss.")
+                    .help("The last write was refused; the app keeps retrying. Quit is cancelled while the flush remains refused.")
                     .accessibilityLabel(Text("Save failed, retrying"))
             }
         }

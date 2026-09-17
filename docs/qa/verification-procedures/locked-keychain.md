@@ -78,10 +78,13 @@ written over it for the whole session.
 4. Launch the app. macOS presents the unlock prompt for the login
    keychain. **Cancel it.** Cancelling is the case under test.
 5. Type a line on the page that opens, wait past the debounce, then
-   quit with ⌘Q. The quit warns that this session was never being
-   saved, and offers Quit Anyway or Cancel. Choose **Quit Anyway**:
-   Cancel returns to the page, and the discard the alert points at
-   would overwrite the very file this procedure is protecting.
+   press ⌘Q. Confirm the app stays running, no alert or other app-owned
+   surface appears, the surface is raised, and a second ember line
+   stands under the recovery line: "nothing typed this session is on
+   disk, so its pages will not survive the quit" with a "quit anyway
+   (⌘Q)" button. Press ⌘Q again. Confirm the app quits without a save
+   licence having been granted. Clicking the button instead of the
+   second ⌘Q is the same path.
 6. Re read the evidence from step 2.
 
 **Pass:**
@@ -104,18 +107,17 @@ written over it for the whole session.
   rotation: rotation deletes the keychain half
   (`crates/ffi/src/persist.rs`) and must not run on this path.
 - The `state-key` item still exists once the keychain is unlocked.
-- The quit alert says "This session was never being saved" and names the
-  discard as the way to keep the session's content
-  (`shell/Sources/CompanionKit/QuitPrompt.swift`, reply, presented at
-  `shell/Sources/OnetimePad/BackdropApp.swift`). It is the
-  withheld licence being said out loud at the last moment it still
-  matters (issue #49), not a save failure: the session owes no write.
-  Quit Anyway leaves the file untouched.
+- The first ⌘Q performs one synchronous flush, cancels termination,
+  presents no alert, and puts the quit anyway line under the page
+  (`shell/Sources/CompanionKit/QuitPrompt.swift`, called by
+  `shell/Sources/OnetimePad/BackdropApp.swift`). The inline recovery
+  state remains available beside it. The second ⌘Q quits and leaves
+  the unreadable file untouched.
 
 **Fail:** any change to either sha256, a missing file, a missing key
 half, a missing keychain item, a superseded disposal line
-(`crates/ffi/src/lib.rs`), or a quit that says nothing at all,
-which is the silence issue #49 exists to end.
+(`crates/ffi/src/lib.rs`), an alert or other app-owned quit surface, or
+⌘Q terminating the unsavable session instead of cancelling it.
 
 7. Recover:
 
