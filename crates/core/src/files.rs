@@ -1274,10 +1274,6 @@ impl OpenFile {
     pub(crate) fn last_edited_ms(&self) -> u64 {
         self.last_edited_ms
     }
-
-    pub(crate) fn take_theirs_undone(&self) -> bool {
-        self.take_theirs_undone
-    }
 }
 
 /// The reading of a line ending byte a drafts record carried.

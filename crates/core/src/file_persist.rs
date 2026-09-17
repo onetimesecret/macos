@@ -95,9 +95,6 @@ pub fn emit(store: &FileStore, wall_ms: u64) -> Emitted {
                     out.bytes(bytes);
                 }
             }
-            // Optional trailing field: older readers skip it by frame
-            // length, and this reader defaults it for older records.
-            out.u8(u8::from(file.take_theirs_undone()));
         });
     }
     Emitted {
@@ -168,16 +165,13 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
             1 => Some(record.bytes().ok_or(Malformed)?.to_vec()),
             _ => return Err(Malformed),
         };
-        if !record.done() {
-            // Legacy generation-dirty field. Validate it so malformed
-            // records are still refused, but do not restore it: file undo
-            // history does not cross launch, so there is no generation
-            // marker that could give this boolean authority.
-            match record.u8().ok_or(Malformed)? {
-                0 | 1 => {}
-                _ => return Err(Malformed),
-            }
-        }
+        // A build in between wrote a generation-dirty flag here. It is
+        // read by nobody now and stepped over by the frame's own length,
+        // which is what ADR-0031 asks for: the field may survive in old
+        // records, and it carries no authority over dirty state, because
+        // file undo history does not cross launch and a marker without
+        // its history explains nothing to the person looking at the tab.
+        //
         // Fields this build has never heard of are left behind inside
         // the frame. The record's own length is what finds the next
         // one, so the walk above stopping early is the rule working.
@@ -491,10 +485,12 @@ mod tests {
     }
 
     #[test]
-    fn records_without_the_generation_field_still_restore() {
+    fn records_carrying_the_old_generation_field_still_restore() {
+        // The shape a build in between wrote: one trailing boolean this
+        // build neither reads nor grants any say over dirty state.
         let (io, store, _clean, _dirty) = seeded();
         let current = emit(&store, 1_000).bytes;
-        let old = strip_last_field_from_each_record(&current);
+        let old = widen_first_record(&current, &[1]);
         let (back, notices) = relaunch(&io, &old);
         assert!(notices.is_empty());
         assert_eq!(back.files().len(), 2);
@@ -575,25 +571,6 @@ mod tests {
         assert_eq!(restore(&mut back, &widened, 1).unwrap(), 2);
         assert_eq!(back.files()[0].path(), Path::new("/clean.txt"));
         assert_eq!(back.files()[1].text(), "typed dirty body\n");
-    }
-
-    /// Remove the optional trailing generation flag from every record,
-    /// producing the exact record shape written before that field existed.
-    fn strip_last_field_from_each_record(bytes: &[u8]) -> Vec<u8> {
-        let head = MAGIC.len() + 8 + 8;
-        let count = u64::from_le_bytes(bytes[16..24].try_into().unwrap()) as usize;
-        let mut out = bytes[..head].to_vec();
-        let mut at = head;
-        for _ in 0..count {
-            let len = u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap()) as usize;
-            let body_at = at + 8;
-            assert!(len > 0);
-            out.extend_from_slice(&((len - 1) as u64).to_le_bytes());
-            out.extend_from_slice(&bytes[body_at..body_at + len - 1]);
-            at = body_at + len;
-        }
-        assert_eq!(at, bytes.len());
-        out
     }
 
     /// Append `extra` inside the first record's frame and restate the
