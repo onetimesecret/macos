@@ -224,6 +224,152 @@ final class SealedBlockTests: XCTestCase {
         )
     }
 
+    /// Wrapped mode: the container is exactly the captured measure.
+    /// That is the common case, and it must match as a candidate, not
+    /// fall through to the captured measure only because every
+    /// candidate failed a strict ceiling.
+    func testAContainerEqualToTheCapturedMeasureIsTheMeasure() {
+        let container = InkTextContainer(size: NSSize(
+            width: 400,
+            height: SealedBlockCell.blockHeight
+        ))
+        XCTAssertTrue(container.setEditorMeasure(400))
+        let width = SealedBlockCell.blockWidth(
+            in: container,
+            proposedLineFragment: NSRect(
+                x: 0, y: 0,
+                width: 400,
+                height: SealedBlockCell.blockHeight)
+        )
+
+        XCTAssertEqual(width, floor(400 - container.lineFragmentPadding * 2))
+    }
+
+    /// Unwrapped mode: the container and the proposed fragment are
+    /// both effectively infinite, so only the captured measure can
+    /// size the block, and it spans the padding like the container.
+    func testAnUnboundedContainerTakesTheCapturedMeasure() {
+        let container = InkTextContainer(size: NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        ))
+        XCTAssertTrue(container.setEditorMeasure(480))
+        let width = SealedBlockCell.blockWidth(
+            in: container,
+            proposedLineFragment: NSRect(
+                x: 0, y: 0,
+                width: CGFloat.greatestFiniteMagnitude,
+                height: SealedBlockCell.blockHeight)
+        )
+
+        XCTAssertEqual(width, floor(480 - container.lineFragmentPadding * 2))
+    }
+
+    /// A container wider than the captured measure may not widen it.
+    func testAContainerWiderThanTheCapturedMeasureIsCapped() {
+        let container = InkTextContainer(size: NSSize(
+            width: 600,
+            height: SealedBlockCell.blockHeight
+        ))
+        XCTAssertTrue(container.setEditorMeasure(400))
+        let width = SealedBlockCell.blockWidth(
+            in: container,
+            proposedLineFragment: NSRect(
+                x: 0, y: 0,
+                width: 600,
+                height: SealedBlockCell.blockHeight)
+        )
+
+        XCTAssertEqual(width, floor(400 - container.lineFragmentPadding * 2))
+    }
+
+    /// The proposed fragment spans the padding like the container does,
+    /// so when it is the measure the padding still comes off, or the
+    /// block overruns the line by the padding on each side.
+    func testAFiniteFragmentInAnUnboundedContainerGivesBackThePadding() {
+        let plain = NSTextContainer(size: NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        ))
+        XCTAssertGreaterThan(plain.lineFragmentPadding, 0, "the padding has nothing to prove")
+        let fragment = NSRect(x: 0, y: 0, width: 300, height: SealedBlockCell.blockHeight)
+
+        XCTAssertEqual(
+            SealedBlockCell.blockWidth(in: plain, proposedLineFragment: fragment),
+            floor(300 - plain.lineFragmentPadding * 2))
+
+        let captured = InkTextContainer(size: plain.size)
+        XCTAssertTrue(captured.setEditorMeasure(480))
+        XCTAssertEqual(
+            SealedBlockCell.blockWidth(in: captured, proposedLineFragment: fragment),
+            floor(300 - captured.lineFragmentPadding * 2),
+            "a fragment under the captured measure kept the padding")
+    }
+
+    /// Records what TextKit hands an attachment cell during layout.
+    private final class ProposalRecorder: NSTextAttachmentCell {
+        // Layout runs synchronously on the thread that asked for it,
+        // which here is the test's; the cell's hook is nonisolated.
+        nonisolated(unsafe) var proposedFragment: NSRect?
+        nonisolated(unsafe) var glyphPosition: NSPoint?
+
+        override nonisolated func cellFrame(
+            for textContainer: NSTextContainer,
+            proposedLineFragment lineFrag: NSRect,
+            glyphPosition position: NSPoint,
+            characterIndex charIndex: Int
+        ) -> NSRect {
+            proposedFragment = lineFrag
+            glyphPosition = position
+            return super.cellFrame(
+                for: textContainer,
+                proposedLineFragment: lineFrag,
+                glyphPosition: position,
+                characterIndex: charIndex
+            )
+        }
+    }
+
+    /// The premise `blockWidth` rests on, checked against TextKit
+    /// rather than assumed: the proposed line fragment is as wide as
+    /// the container, padding included, and the padding shows up in
+    /// the glyph origin instead. With that geometry the block laid out
+    /// through the fragment must end inside the padding, not at the
+    /// container's edge.
+    func testTextKitProposesAFragmentAsWideAsTheContainer() {
+        let padding: CGFloat = 5
+        let recorder = ProposalRecorder()
+        let probe = NSTextAttachment(data: nil, ofType: nil)
+        probe.attachmentCell = recorder
+        let storage = NSTextStorage(attributedString: NSAttributedString(string: "ab "))
+        storage.append(NSAttributedString(attachment: probe))
+        let layoutManager = NSLayoutManager()
+        storage.addLayoutManager(layoutManager)
+        let container = NSTextContainer(size: NSSize(width: 300, height: 1_000))
+        container.lineFragmentPadding = padding
+        layoutManager.addTextContainer(container)
+        layoutManager.ensureLayout(for: container)
+
+        XCTAssertEqual(recorder.proposedFragment?.minX, 0)
+        XCTAssertEqual(recorder.proposedFragment?.width, 300)
+        XCTAssertGreaterThanOrEqual(recorder.glyphPosition?.x ?? 0, padding)
+
+        let sealed = NSTextStorage(attributedString: NSAttributedString(string: "ab "))
+        sealed.append(NSAttributedString(attachment: ChipAttachment(info: chip())))
+        let sealedLayout = NSLayoutManager()
+        sealed.addLayoutManager(sealedLayout)
+        let sealedContainer = NSTextContainer(size: NSSize(width: 300, height: 1_000))
+        sealedContainer.lineFragmentPadding = padding
+        sealedLayout.addTextContainer(sealedContainer)
+        sealedLayout.ensureLayout(for: sealedContainer)
+        let glyph = sealedLayout.glyphIndexForCharacter(at: 3)
+
+        XCTAssertEqual(sealedLayout.attachmentSize(forGlyphAt: glyph).width, 300 - padding * 2)
+        let block = sealedLayout.boundingRect(
+            forGlyphRange: NSRange(location: glyph, length: 1), in: sealedContainer)
+        XCTAssertLessThanOrEqual(block.maxX, 300 - padding, "the block overran the padding")
+    }
+
     func testMetadataAcceptsCoreSizeClassesAndFailsClosedForUnknownValues() throws {
         // The core owns bucket boundaries. The shell verifies only that
         // labels crossing the seam belong to the vocabulary it can draw.

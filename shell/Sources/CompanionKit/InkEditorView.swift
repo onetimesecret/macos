@@ -4248,19 +4248,22 @@ final class SealedBlockCell: NSTextAttachmentCell {
         // container may narrow that measure (wrapped mode) but may never
         // widen it (unwrapped mode).
         let capturedMeasure = (textContainer as? InkTextContainer)?.capturedEditorMeasure
-        let maximum = min(capturedMeasure ?? effectivelyUnboundedWidth, effectivelyUnboundedWidth)
-        let candidates = [
-            textContainer?.size.width,
-            lineFrag.width,
-            capturedMeasure,
-        ].compactMap { width -> CGFloat? in
-            guard let width, width.isFinite, width > 0, width < maximum
-            else { return nil }
-            return width
-        }
-        let measure = candidates.first ?? capturedMeasure ?? fallbackBlockWidth
+        let ceiling = capturedMeasure ?? .infinity
+        // Every candidate spans the line fragment padding on both
+        // sides. TextKit proposes a fragment as wide as the container
+        // and applies the padding to the glyph origin instead, so the
+        // fragment is not the rect inside the padding and gives it
+        // back like the other two (`SealedBlockTests` pins this
+        // against a live layout manager).
         let padding = (textContainer?.lineFragmentPadding ?? 0) * 2
-        return max(0, (measure - padding).rounded(.down))
+        let candidates = [textContainer?.size.width, lineFrag.width, capturedMeasure]
+        for case let width? in candidates {
+            guard width.isFinite, width > 0,
+                width < effectivelyUnboundedWidth, width <= ceiling
+            else { continue }
+            return max(0, (width - padding).rounded(.down))
+        }
+        return max(0, ((capturedMeasure ?? fallbackBlockWidth) - padding).rounded(.down))
     }
 
     override nonisolated func cellSize() -> NSSize {
