@@ -362,13 +362,12 @@ pub struct OpenFile {
     /// the buffer holds it. `None` only while this store has not seen
     /// the disk copy: a draft restored beside a file that changed under
     /// it, where the persisted dirty flag is the only answer there is.
-    saved_text: Option<String>,
-    /// Exact disk bytes learned while hydrating a restored dirty draft.
-    /// They govern that draft until Save, Reload, or Take theirs because
-    /// equal normalized text can still write different line endings.
-    /// Zeroizing because they are the file's plaintext for as long as
-    /// the draft stands.
-    restored_disk_bytes: Option<Zeroizing<Vec<u8>>>,
+    ///
+    /// This is the one baseline for opened, restored, and Take theirs
+    /// buffers. Mixed line endings are normalised at read time, so their
+    /// eventual uniform save output does not make an otherwise equal
+    /// draft dirty merely because it crossed a launch boundary.
+    saved_text: Option<Zeroizing<String>>,
     witness: Option<FileWitness>,
     line_ending: LineEnding,
     has_bom: bool,
@@ -496,30 +495,40 @@ impl OpenFile {
     /// ending style, behind the byte order mark it arrived with.
     #[must_use]
     pub fn bytes_to_write(&self) -> Vec<u8> {
-        let text = self.text();
-        let body = match self.line_ending {
-            LineEnding::Lf => text,
-            LineEnding::Crlf => text.replace('\n', "\r\n"),
-        };
-        let mut bytes = Vec::with_capacity(body.len() + UTF8_BOM.len());
+        self.bytes_to_write_zeroizing().to_vec()
+    }
+
+    /// Build the save bytes for core-owned transient use. The public
+    /// accessor above must return an ordinary vector for its callers,
+    /// but save paths must not retain another plaintext allocation.
+    fn bytes_to_write_zeroizing(&self) -> Zeroizing<Vec<u8>> {
+        let text = Zeroizing::new(text_of(&self.document));
+        let extra_crs = usize::from(self.line_ending == LineEnding::Crlf)
+            * text.bytes().filter(|byte| *byte == b'\n').count();
+        let mut bytes = Zeroizing::new(Vec::with_capacity(
+            text.len() + extra_crs + usize::from(self.has_bom) * UTF8_BOM.len(),
+        ));
         if self.has_bom {
             bytes.extend_from_slice(UTF8_BOM);
         }
-        bytes.extend_from_slice(body.as_bytes());
+        for byte in text.bytes() {
+            if byte == b'\n' && self.line_ending == LineEnding::Crlf {
+                bytes.push(b'\r');
+            }
+            bytes.push(byte);
+        }
         bytes
     }
 
-    /// Recompute the dirty flag against the active saved baseline. A
-    /// hydrated draft uses exact disk bytes; ordinary live editing uses
-    /// normalized text so Redo can return to an adopted disk generation.
-    /// A file whose baseline is unknown keeps its persisted flag.
+    /// Recompute the dirty flag against the active normalized-text
+    /// baseline. A file whose baseline is unknown keeps its persisted
+    /// flag. Compare runs directly so accepted edit batches do not
+    /// reconstruct or re-normalize the whole save output.
     fn resettle_dirty(&mut self) {
         if self.take_theirs_undone {
             self.dirty = true;
-        } else if let Some(saved) = &self.restored_disk_bytes {
-            self.dirty = **saved != self.bytes_to_write();
         } else if let Some(saved) = &self.saved_text {
-            self.dirty = *saved != text_of(&self.document);
+            self.dirty = !document_matches_text(&self.document, saved);
         }
     }
 
@@ -533,7 +542,6 @@ impl OpenFile {
     fn adopt(&mut self, read: ReadFile) {
         self.document = document_holding(&read.text);
         self.saved_text = Some(read.text);
-        self.restored_disk_bytes = None;
         self.witness = Some(read.witness);
         self.line_ending = read.line_ending;
         self.has_bom = read.has_bom;
@@ -619,7 +627,6 @@ impl FileStore {
             path: path.clone(),
             document: document_holding(&read.text),
             saved_text: Some(read.text),
-            restored_disk_bytes: None,
             witness: Some(read.witness),
             line_ending: read.line_ending,
             has_bom: read.has_bom,
@@ -1006,7 +1013,6 @@ impl FileStore {
                 .expect("zero is a valid insertion point");
             let stepped = file.document.commit_take_theirs_step(generation);
             file.saved_text = Some(read.text);
-            file.restored_disk_bytes = None;
             file.witness = Some(read.witness);
             file.line_ending = read.line_ending;
             file.has_bom = read.has_bom;
@@ -1096,7 +1102,6 @@ impl FileStore {
             // here can recompute dirtiness. The persisted flag is the
             // only answer there is until a save or a reload.
             saved_text: None,
-            restored_disk_bytes: None,
             witness,
             line_ending,
             has_bom,
@@ -1182,13 +1187,12 @@ impl FileStore {
                         file.adopt(read);
                         file.externally_reloaded = !unchanged;
                     } else if unchanged {
-                        // The draft stands. What it gains is the exact
-                        // disk output to be measured against.
+                        // The draft stands. What it gains is the same
+                        // normalized-text baseline every live file uses.
                         file.line_ending = read.line_ending;
                         file.has_bom = read.has_bom;
                         file.witness = Some(read.witness);
                         file.saved_text = Some(read.text);
-                        file.restored_disk_bytes = Some(read.bytes);
                         file.conflict = FileConflict::None;
                         file.resettle_dirty();
                     } else {
@@ -1196,7 +1200,6 @@ impl FileStore {
                         // draft stands and the person chooses.
                         file.conflict = FileConflict::Changed;
                         file.saved_text = None;
-                        file.restored_disk_bytes = None;
                     }
                     kept.push(file);
                 }
@@ -1217,7 +1220,6 @@ impl FileStore {
                         // person picks keep mine or save as.
                         file.conflict = FileConflict::Changed;
                         file.saved_text = None;
-                        file.restored_disk_bytes = None;
                         kept.push(file);
                     } else {
                         notices.push(file.notice(DroppedReason::Unreadable));
@@ -1292,13 +1294,12 @@ pub(crate) fn line_ending_from_code(code: u8) -> Option<LineEnding> {
     LineEnding::from_code(code)
 }
 
-/// What one read of a file settled: the normalised text, the exact bytes,
-/// and everything the buffer has to remember to write them back.
+/// What one read of a file settled: normalised text and everything the
+/// buffer has to remember to write it back.
 struct ReadFile {
-    text: String,
-    /// Zeroizing because they are plaintext and outlive the read when a
-    /// hydration keeps them as the draft's baseline.
-    bytes: Zeroizing<Vec<u8>>,
+    /// The text is retained as the saved baseline, so it must scrub when
+    /// a rejected read or replaced baseline drops it.
+    text: Zeroizing<String>,
     witness: FileWitness,
     line_ending: LineEnding,
     has_bom: bool,
@@ -1365,10 +1366,9 @@ fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefus
         return Err(OpenRefusal::Binary);
     }
     let line_ending = LineEnding::detect(text);
-    let text = text.replace("\r\n", "\n");
+    let text = Zeroizing::new(text.replace("\r\n", "\n"));
     Ok(Some(ReadFile {
         text,
-        bytes,
         witness: after,
         line_ending,
         has_bom,
@@ -1446,9 +1446,32 @@ fn text_of(document: &SheetDocument) -> String {
     text
 }
 
+/// Whether the document contains exactly `expected`, without allocating
+/// another complete text copy just to settle dirty state.
+fn document_matches_text(document: &SheetDocument, expected: &str) -> bool {
+    let mut remaining = expected;
+    for run in document.runs() {
+        match run {
+            DocRun::Ink(ink) => {
+                let Some(after) = remaining.strip_prefix(&ink) else {
+                    return false;
+                };
+                remaining = after;
+            }
+            DocRun::Chip(_) => {
+                let Some(after) = remaining.strip_prefix('\u{FFFC}') else {
+                    return false;
+                };
+                remaining = after;
+            }
+        }
+    }
+    remaining.is_empty()
+}
+
 /// Write the buffer to `path` and settle the file around what landed.
 fn write_and_settle(io: &dyn FileIo, file: &mut OpenFile, path: &Path) -> Result<(), SaveError> {
-    let bytes = file.bytes_to_write();
+    let bytes = file.bytes_to_write_zeroizing();
     io.write_atomic(path, &bytes)
         .map_err(|e| SaveError::Io(e.kind()))?;
     // The witness has to describe what is on disk now, so it is taken
@@ -1457,8 +1480,7 @@ fn write_and_settle(io: &dyn FileIo, file: &mut OpenFile, path: &Path) -> Result
     // changed on the next check: conservative, and it costs one prompt
     // rather than a silent overwrite.
     file.witness = io.stat(path).ok();
-    file.saved_text = Some(file.text());
-    file.restored_disk_bytes = None;
+    file.saved_text = Some(Zeroizing::new(text_of(&file.document)));
     file.dirty = false;
     file.conflict = FileConflict::None;
     file.restored_from_draft = false;
