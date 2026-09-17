@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc">
+  <title id="title">Block history affordance in vertical time-tabs view</title>
+  <desc id="desc">A dark-mode editor wireframe. Untouched blocks show no timestamp. A modified block has a compact right-aligned edited affordance. Hover reveals created, edited, and revision-count details; clicking opens an anchored history panel with a revision scrubber and word-level change preview.</desc>
+
+  <defs>
+    <linearGradient id="window" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#222224"/>
+      <stop offset="1" stop-color="#1b1b1d"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#333337"/>
+      <stop offset="1" stop-color="#29292d"/>
+    </linearGradient>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="165%">
+      <feDropShadow dx="0" dy="14" stdDeviation="22" flood-color="#000" flood-opacity="0.48"/>
+    </filter>
+    <style>
+      .ui { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace; }
+      .hairline { stroke: #46464a; stroke-width: 1; }
+      .muted { fill: #85858b; }
+      .quiet { fill: #a4a4aa; }
+      .ink { fill: #e3e3e6; }
+      .ember { fill: #ff5a2b; }
+    </style>
+  </defs>
+
+  <!-- Canvas and app window -->
+  <rect width="1440" height="960" fill="#121214"/>
+  <rect x="28" y="24" width="1384" height="908" rx="18" fill="url(#window)" stroke="#4b4b50"/>
+  <rect x="28" y="24" width="1384" height="42" rx="18" fill="#2c2c2f"/>
+  <path d="M28 48v18h1384V48" fill="#2c2c2f"/>
+  <circle cx="52" cy="45" r="6" fill="#ff5f57"/>
+  <circle cx="72" cy="45" r="6" fill="#febc2e"/>
+  <circle cx="92" cy="45" r="6" fill="#28c840"/>
+  <text x="720" y="50" text-anchor="middle" class="ui quiet" font-size="13">OnetimePad · vertical time tabs</text>
+
+  <!-- Time rail -->
+  <rect x="29" y="66" width="218" height="865" fill="#19191b"/>
+  <line x1="247" y1="66" x2="247" y2="931" class="hairline"/>
+  <text x="64" y="111" class="ui muted" font-size="11" font-weight="600" letter-spacing="1.4">TIME</text>
+  <line x1="75" y1="142" x2="75" y2="856" stroke="#414146" stroke-width="2"/>
+
+  <circle cx="75" cy="194" r="7" fill="#ff5a2b"/>
+  <text x="101" y="189" class="mono ink" font-size="14">today</text>
+  <text x="101" y="211" class="mono quiet" font-size="12">17:21</text>
+  <rect x="54" y="166" width="168" height="69" rx="10" fill="none" stroke="#ff5a2b" stroke-opacity="0.55"/>
+
+  <circle cx="75" cy="326" r="5" fill="#65656b"/>
+  <text x="101" y="322" class="mono quiet" font-size="13">yesterday</text>
+  <text x="101" y="343" class="mono muted" font-size="12">23:39</text>
+
+  <circle cx="75" cy="456" r="5" fill="#65656b"/>
+  <text x="101" y="452" class="mono quiet" font-size="13">6 days ago</text>
+  <text x="101" y="473" class="mono muted" font-size="12">18:25</text>
+
+  <text x="64" y="896" class="ui muted" font-size="11">The rail establishes the day.</text>
+
+  <!-- Editor -->
+  <g transform="translate(247 66)">
+    <rect width="1164" height="865" fill="#232325"/>
+    <line x1="46" y1="80" x2="1118" y2="80" class="hairline"/>
+    <text x="50" y="49" class="mono quiet" font-size="14">today · 17:21</text>
+    <text x="1114" y="49" text-anchor="end" class="ui muted" font-size="12">checkpoint timestamp</text>
+
+    <!-- Untouched content: deliberately no timestamp rows -->
+    <text x="70" y="150" class="mono ink" font-size="25" font-weight="650">plop</text>
+    <text x="70" y="195" class="mono ink" font-size="24">– one</text>
+    <text x="70" y="229" class="mono ink" font-size="24">– item</text>
+    <text x="70" y="263" class="mono ink" font-size="24">– per</text>
+    <text x="70" y="297" class="mono ink" font-size="24">– point</text>
+    <path d="M51 119h5M51 321h5" stroke="#696970" stroke-width="2" stroke-linecap="round"/>
+    <text x="896" y="238" class="ui muted" font-size="12">untouched blocks</text>
+    <text x="896" y="257" class="ui muted" font-size="12">reserve no metadata row</text>
+    <path d="M880 245H810" stroke="#5d5d63" stroke-width="1" stroke-dasharray="4 4"/>
+
+    <!-- Modified block, resting state -->
+    <rect x="49" y="350" width="1068" height="62" rx="8" fill="#29292c"/>
+    <text x="70" y="389" class="mono ink" font-size="24">A new paragraph</text>
+    <g transform="translate(995 367)">
+      <rect width="102" height="28" rx="14" fill="#3b302e" stroke="#704435"/>
+      <circle cx="16" cy="14" r="4" fill="#ff5a2b"/>
+      <text x="29" y="18" class="ui" font-size="12" font-weight="600" fill="#e8b09f">edited</text>
+    </g>
+    <text x="70" y="435" class="ui muted" font-size="12">RESTING · only meaningful state is persistent; no vertical space is added</text>
+
+    <!-- Hover/focus state -->
+    <text x="50" y="504" class="ui quiet" font-size="12" font-weight="650" letter-spacing="1.2">HOVER OR KEYBOARD FOCUS</text>
+    <rect x="49" y="526" width="1068" height="62" rx="8" fill="#29292c" stroke="#57575d"/>
+    <text x="70" y="565" class="mono ink" font-size="24">A new paragraph</text>
+    <g transform="translate(727 542)">
+      <rect width="370" height="31" rx="15.5" fill="#39393e" stroke="#626269"/>
+      <text x="16" y="20" class="ui quiet" font-size="12">created 17:21</text>
+      <circle cx="112" cy="15.5" r="1.5" fill="#77777d"/>
+      <text x="124" y="20" class="ui" font-size="12" fill="#e8b09f">edited 17:22</text>
+      <circle cx="219" cy="15.5" r="1.5" fill="#77777d"/>
+      <text x="231" y="20" class="ui ink" font-size="12" font-weight="600">4 revisions</text>
+      <path d="M346 11l6 5-6 5" fill="none" stroke="#bcbcc2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="70" y="611" class="ui muted" font-size="12">The full date remains available to VoiceOver and in the history panel.</text>
+
+    <!-- Click state / anchored panel -->
+    <text x="50" y="674" class="ui quiet" font-size="12" font-weight="650" letter-spacing="1.2">ONE CLICK · BLOCK HISTORY</text>
+    <rect x="49" y="696" width="530" height="62" rx="8" fill="#29292c" stroke="#ff5a2b" stroke-opacity="0.7"/>
+    <text x="70" y="735" class="mono ink" font-size="24">A new paragraph</text>
+    <rect x="509" y="710" width="50" height="30" rx="15" fill="#ff5a2b"/>
+    <text x="534" y="730" text-anchor="middle" class="ui" font-size="12" font-weight="700" fill="#211714">4</text>
+
+    <!-- Popover -->
+    <g filter="url(#shadow)">
+      <path d="M610 681h456a14 14 0 0 1 14 14v155a14 14 0 0 1-14 14H610a14 14 0 0 1-14-14V695a14 14 0 0 1 14-14Z" fill="url(#panel)" stroke="#5a5a61"/>
+      <path d="M596 721l-12 10 12 10Z" fill="#333337" stroke="#5a5a61" stroke-linejoin="round"/>
+      <text x="620" y="711" class="ui ink" font-size="15" font-weight="650">Block history</text>
+      <text x="1052" y="711" text-anchor="end" class="ui muted" font-size="12">Wed 16 Sep 2026</text>
+      <line x1="620" y1="727" x2="1052" y2="727" class="hairline"/>
+
+      <!-- Revision scrubber -->
+      <line x1="645" y1="762" x2="1020" y2="762" stroke="#68686f" stroke-width="2"/>
+      <circle cx="645" cy="762" r="5" fill="#8a8a91"/>
+      <circle cx="765" cy="762" r="5" fill="#8a8a91"/>
+      <circle cx="897" cy="762" r="5" fill="#8a8a91"/>
+      <circle cx="1020" cy="762" r="8" fill="#ff5a2b" stroke="#ffb097" stroke-width="2"/>
+      <text x="645" y="787" text-anchor="middle" class="mono muted" font-size="10">17:21</text>
+      <text x="1020" y="787" text-anchor="middle" class="mono quiet" font-size="10">17:22</text>
+
+      <!-- Delta preview -->
+      <rect x="620" y="804" width="291" height="38" rx="7" fill="#242427"/>
+      <text x="635" y="829" class="mono ink" font-size="14">A </text>
+      <rect x="652" y="810" width="34" height="25" rx="4" fill="#59362e"/>
+      <text x="657" y="829" class="mono" font-size="14" fill="#ffc0ac">new</text>
+      <text x="693" y="829" class="mono ink" font-size="14"> paragraph</text>
+
+      <rect x="926" y="804" width="126" height="38" rx="7" fill="#44444a" stroke="#626269"/>
+      <text x="989" y="828" text-anchor="middle" class="ui ink" font-size="12" font-weight="600">Restore this state</text>
+    </g>
+  </g>
+
+  <!-- Footer legend -->
+  <text x="48" y="951" class="ui muted" font-size="11">Proposal: checkpoint = temporal navigation · block affordance = change state and doorway to history</text>
+</svg>
