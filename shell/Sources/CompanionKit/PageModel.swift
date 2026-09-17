@@ -2629,12 +2629,21 @@ public final class PageModel: ObservableObject {
                     let previousSelection = selectionBeforePendingFileClose
                     let previousLedger = ledgerBeforePendingFileClose
                     clearPendingFileClose()
-                    if !closeFileNow(file.id) {
-                        pendingFileClose = pending
-                        selectionBeforePendingFileClose = previousSelection
-                        ledgerBeforePendingFileClose = previousLedger
+                    if closeFileNow(file.id) {
+                        // The close stood a fresh roster through this
+                        // same method, and that nested pass did every
+                        // prune below against it. Doing them again here
+                        // would work off the roster the close replaced.
+                        return
                     }
-                    return
+                    // The close was refused, so the decision goes back
+                    // on the surface and this pass carries on: the
+                    // roster above is already the published one, and
+                    // the prunes below are what keeps the per-file side
+                    // tables from outliving it.
+                    pendingFileClose = pending
+                    selectionBeforePendingFileClose = previousSelection
+                    ledgerBeforePendingFileClose = previousLedger
                 }
             } else {
                 clearPendingFileClose()

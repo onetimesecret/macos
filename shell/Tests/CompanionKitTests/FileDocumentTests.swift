@@ -1152,6 +1152,52 @@ final class FileDocumentTests: XCTestCase {
             client.closeRequests, [dirty],
             "the close that happened inside the refreshed roster is the only one owed")
     }
+
+    /// A refused automatic close puts the decision back on the surface,
+    /// and the pass it interrupted carries on: the roster standing is
+    /// already the published one, so the per-file side tables have to be
+    /// swept against it or they outlive the files they describe.
+    func testARefusedAutomaticCloseKeepsTheDecisionAndStillPrunesTheSideTables() throws {
+        let fixture = try makeFixture()
+        let client = ScriptedCloseClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("a\n", named: "a.txt", in: fixture))
+        let dirty = try XCTUnwrap(model.openFiles.first?.id)
+        try type("x", at: 0, into: dirty, on: model)
+        model.openFile(at: try write("# b\n", named: "b.md", in: fixture))
+        let leaving = try XCTUnwrap(model.openFiles.last?.id)
+        XCTAssertEqual(
+            model.fileRenderModes[leaving], FileRenderMode.markdown,
+            "the second file arrived with a render mode of its own")
+
+        model.closeFile(dirty)
+        XCTAssertEqual(model.pendingFileClose?.fileID, dirty)
+
+        // The roster a successful save would publish: the file with the
+        // decision on it is clean now, and the other one is gone. The
+        // core refuses the close this provokes.
+        client.refusalsRemaining = 1
+        model.standOpenFiles([
+            FileSummary(
+                id: dirty, name: "a.txt",
+                path: fixture.workspace.appendingPathComponent("a.txt").path,
+                isDirty: false, conflict: .none, lineEnding: .lf, hasBOM: false,
+                lastEditedAt: 0, restoredFromDraft: false
+            )
+        ])
+
+        XCTAssertEqual(client.closeRequests, [dirty], "the close was asked for and refused")
+        XCTAssertEqual(
+            model.pendingFileClose?.fileID, dirty,
+            "a refused close leaves the person the decision they still have to make")
+        XCTAssertEqual(
+            model.openFiles.map { $0.id }, [dirty] as [UInt64],
+            "and the roster published is the new one")
+        XCTAssertNil(
+            model.fileRenderModes[leaving],
+            "the refusal must not skip the sweep: the file that left took its render mode with it")
+    }
 }
 
 /// The nine findings of the adversarial Swift review, each with the
