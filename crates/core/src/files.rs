@@ -361,6 +361,10 @@ pub struct OpenFile {
     /// the disk copy: a draft restored beside a file that changed under
     /// it, where the persisted dirty flag is the only answer there is.
     saved_text: Option<String>,
+    /// Exact disk bytes learned while hydrating a restored dirty draft.
+    /// They govern that draft until Save, Reload, or Take theirs because
+    /// equal normalized text can still write different line endings.
+    restored_disk_bytes: Option<Vec<u8>>,
     witness: Option<FileWitness>,
     line_ending: LineEnding,
     has_bom: bool,
@@ -501,13 +505,15 @@ impl OpenFile {
         bytes
     }
 
-    /// Recompute the dirty flag from the buffer against the saved text.
-    /// An undone Take theirs remains dirty by generation even when its
-    /// normalized text equals the adopted disk text. A file whose saved
-    /// text is unknown keeps the flag it has, which is the persisted one.
+    /// Recompute the dirty flag against the active saved baseline. A
+    /// hydrated draft uses exact disk bytes; ordinary live editing uses
+    /// normalized text so Redo can return to an adopted disk generation.
+    /// A file whose baseline is unknown keeps its persisted flag.
     fn resettle_dirty(&mut self) {
         if self.take_theirs_undone {
             self.dirty = true;
+        } else if let Some(saved) = &self.restored_disk_bytes {
+            self.dirty = *saved != self.bytes_to_write();
         } else if let Some(saved) = &self.saved_text {
             self.dirty = *saved != text_of(&self.document);
         }
@@ -523,6 +529,7 @@ impl OpenFile {
     fn adopt(&mut self, read: ReadFile) {
         self.document = document_holding(&read.text);
         self.saved_text = Some(read.text);
+        self.restored_disk_bytes = None;
         self.witness = Some(read.witness);
         self.line_ending = read.line_ending;
         self.has_bom = read.has_bom;
@@ -608,6 +615,7 @@ impl FileStore {
             path: path.clone(),
             document: document_holding(&read.text),
             saved_text: Some(read.text),
+            restored_disk_bytes: None,
             witness: Some(read.witness),
             line_ending: read.line_ending,
             has_bom: read.has_bom,
@@ -989,6 +997,7 @@ impl FileStore {
             }
             file.document.commit_take_theirs_step(generation);
             file.saved_text = Some(read.text);
+            file.restored_disk_bytes = None;
             file.witness = Some(read.witness);
             file.line_ending = read.line_ending;
             file.has_bom = read.has_bom;
@@ -1059,7 +1068,6 @@ impl FileStore {
         has_bom: bool,
         dirty: bool,
         last_edited_ms: u64,
-        take_theirs_undone: bool,
         snapshot: Option<&[u8]>,
     ) -> Result<FileId, crate::persist::RestoreError> {
         let document = SheetDocument::new();
@@ -1077,6 +1085,7 @@ impl FileStore {
             // here can recompute dirtiness. The persisted flag is the
             // only answer there is until a save or a reload.
             saved_text: None,
+            restored_disk_bytes: None,
             witness,
             line_ending,
             has_bom,
@@ -1088,7 +1097,10 @@ impl FileStore {
             overwrite_next_save: false,
             active_take_theirs_generation: None,
             next_take_theirs_generation: 0,
-            take_theirs_undone,
+            // Undo history does not cross launch, so no restored boolean
+            // can stand in for the absent Take theirs generation marker.
+            // Hydration derives dirtiness from the draft and disk texts.
+            take_theirs_undone: false,
             draft_dropped: dirty && snapshot.is_none(),
             bookmark,
         });
@@ -1159,12 +1171,13 @@ impl FileStore {
                         file.adopt(read);
                         file.externally_reloaded = !unchanged;
                     } else if unchanged {
-                        // The draft stands. What it gains is a saved
-                        // text to be measured against.
+                        // The draft stands. What it gains is the exact
+                        // disk output to be measured against.
                         file.line_ending = read.line_ending;
                         file.has_bom = read.has_bom;
                         file.witness = Some(read.witness);
                         file.saved_text = Some(read.text);
+                        file.restored_disk_bytes = Some(read.bytes);
                         file.conflict = FileConflict::None;
                         file.resettle_dirty();
                     } else {
@@ -1172,6 +1185,7 @@ impl FileStore {
                         // draft stands and the person chooses.
                         file.conflict = FileConflict::Changed;
                         file.saved_text = None;
+                        file.restored_disk_bytes = None;
                     }
                     kept.push(file);
                 }
@@ -1192,6 +1206,7 @@ impl FileStore {
                         // person picks keep mine or save as.
                         file.conflict = FileConflict::Changed;
                         file.saved_text = None;
+                        file.restored_disk_bytes = None;
                         kept.push(file);
                     } else {
                         notices.push(file.notice(DroppedReason::Unreadable));
@@ -1270,10 +1285,11 @@ pub(crate) fn line_ending_from_code(code: u8) -> Option<LineEnding> {
     LineEnding::from_code(code)
 }
 
-/// What one read of a file settled: the normalised text and everything
-/// about the bytes the buffer has to remember to write them back.
+/// What one read of a file settled: the normalised text, the exact bytes,
+/// and everything the buffer has to remember to write them back.
 struct ReadFile {
     text: String,
+    bytes: Vec<u8>,
     witness: FileWitness,
     line_ending: LineEnding,
     has_bom: bool,
@@ -1340,8 +1356,10 @@ fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefus
         return Err(OpenRefusal::Binary);
     }
     let line_ending = LineEnding::detect(text);
+    let text = text.replace("\r\n", "\n");
     Ok(Some(ReadFile {
-        text: text.replace("\r\n", "\n"),
+        text,
+        bytes,
         witness: after,
         line_ending,
         has_bom,
@@ -1431,6 +1449,7 @@ fn write_and_settle(io: &dyn FileIo, file: &mut OpenFile, path: &Path) -> Result
     // rather than a silent overwrite.
     file.witness = io.stat(path).ok();
     file.saved_text = Some(file.text());
+    file.restored_disk_bytes = None;
     file.dirty = false;
     file.conflict = FileConflict::None;
     file.restored_from_draft = false;
@@ -2100,6 +2119,28 @@ mod tests {
     }
 
     #[test]
+    fn redo_take_theirs_settles_a_mixed_line_ending_generation_clean() {
+        let io = MemoryIo::with("/mixed-take.txt", b"mine\n");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/mixed-take.txt")).unwrap();
+        assert!(store.apply_ops(id, &[ins(4, " draft")], 1_000));
+        io.put("/mixed-take.txt", b"theirs\nsecond\r\n");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
+
+        store.take_theirs(&io, id).unwrap();
+        assert_eq!(store.text(id).unwrap(), "theirs\nsecond\n");
+        assert!(!store.is_dirty(id));
+        assert!(store.undo(id).unwrap().applied);
+        assert!(store.is_dirty(id));
+        assert!(store.redo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "theirs\nsecond\n");
+        assert!(
+            !store.is_dirty(id),
+            "Redo returns to the adopted disk generation even when its endings were mixed"
+        );
+    }
+
+    #[test]
     fn equal_normalized_text_still_records_take_theirs_as_a_structural_step() {
         let io = MemoryIo::with("/equal.txt", b"old\n");
         let mut store = FileStore::new();
@@ -2143,7 +2184,7 @@ mod tests {
         );
 
         // Typing branches from the pre-resolution draft and invalidates
-        // Redo of Take theirs. Undoing that typing reaches saved_text
+        // Redo of Take theirs. Undoing that typing reaches the saved output
         // again, but it is still the old draft generation and stays dirty.
         assert!(store.apply_ops(id, &[ins(4, "!")], 5_000));
         assert_eq!(store.text(id).unwrap(), "same!\n");

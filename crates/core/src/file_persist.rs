@@ -168,15 +168,16 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
             1 => Some(record.bytes().ok_or(Malformed)?.to_vec()),
             _ => return Err(Malformed),
         };
-        let take_theirs_undone = if record.done() {
-            false
-        } else {
+        if !record.done() {
+            // Legacy generation-dirty field. Validate it so malformed
+            // records are still refused, but do not restore it: file undo
+            // history does not cross launch, so there is no generation
+            // marker that could give this boolean authority.
             match record.u8().ok_or(Malformed)? {
-                0 => false,
-                1 => true,
+                0 | 1 => {}
                 _ => return Err(Malformed),
             }
-        };
+        }
         // Fields this build has never heard of are left behind inside
         // the frame. The record's own length is what finds the next
         // one, so the walk above stopping early is the rule working.
@@ -193,7 +194,6 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
             has_bom,
             dirty,
             last_edited_ms,
-            take_theirs_undone,
             snapshot,
         });
     }
@@ -215,7 +215,6 @@ pub fn restore(store: &mut FileStore, bytes: &[u8], wall_ms: u64) -> Result<usiz
             record.has_bom,
             record.dirty,
             record.last_edited_ms,
-            record.take_theirs_undone,
             record.snapshot.as_deref(),
         )?;
         restored += 1;
@@ -232,7 +231,6 @@ struct Record {
     has_bom: bool,
     dirty: bool,
     last_edited_ms: u64,
-    take_theirs_undone: bool,
     snapshot: Option<Vec<u8>>,
 }
 
@@ -357,7 +355,7 @@ mod tests {
     }
 
     #[test]
-    fn an_undone_equal_text_take_theirs_stays_dirty_after_relaunch() {
+    fn an_undone_equal_text_take_theirs_settles_clean_after_relaunch() {
         let io = MemoryIo::with("/generation.txt", b"old\n");
         let mut store = FileStore::new();
         let id = store.open(&io, Path::new("/generation.txt")).unwrap();
@@ -386,24 +384,75 @@ mod tests {
         assert!(store.is_dirty(id));
 
         let bytes = emit(&store, 5_000).bytes;
-        let (back, notices) = relaunch(&io, &bytes);
+        let (mut back, notices) = relaunch(&io, &bytes);
         assert!(notices.is_empty());
         let file = &back.files()[0];
+        let restored = file.id();
         assert_eq!(file.text(), "same\n");
         assert!(
-            file.is_dirty(),
-            "the restored draft generation remains distinct from disk"
+            !file.is_dirty(),
+            "a generation marker without its undo history cannot keep equal output dirty"
         );
         assert_eq!(file.line_ending(), LineEnding::Crlf);
         assert!(file.has_bom());
         assert_eq!(
-            back.check(&io, file.id()),
+            file.bytes_to_write(),
+            [&[0xEF, 0xBB, 0xBF][..], b"same\r\n"].concat(),
+            "the restored save output is already byte-identical to disk"
+        );
+        assert_eq!(
+            back.check(&io, restored),
             crate::files::ExternalState::Unchanged
         );
         assert!(
-            !back.can_undo(file.id()),
+            !back.can_undo(restored),
             "undo history does not cross launch"
         );
+        assert!(
+            !back.can_redo(restored),
+            "redo history does not cross launch"
+        );
+        back.save(&io, restored).unwrap();
+        assert!(!back.is_dirty(restored), "Save remains available and clean");
+    }
+
+    #[test]
+    fn an_undone_equal_text_take_theirs_stays_dirty_when_save_output_differs() {
+        let io = MemoryIo::with("/mixed.txt", b"old\nline\n");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/mixed.txt")).unwrap();
+        assert!(store.apply_ops(
+            id,
+            &[
+                EditOp::Delete {
+                    pos_u16: 0,
+                    len_u16: 3,
+                },
+                EditOp::Insert {
+                    pos_u16: 0,
+                    text: "same".into(),
+                },
+            ],
+            4_000,
+        ));
+        io.put("/mixed.txt", b"same\nline\r\n");
+        store.refresh_conflict(&io, id);
+        store.take_theirs(&io, id).unwrap();
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "same\nline\n");
+
+        let bytes = emit(&store, 5_000).bytes;
+        let (back, notices) = relaunch(&io, &bytes);
+        assert!(notices.is_empty());
+        let file = &back.files()[0];
+        assert!(
+            file.is_dirty(),
+            "normalizing mixed line endings would still change the disk bytes"
+        );
+        assert_eq!(file.bytes_to_write(), b"same\nline\n");
+        assert_ne!(file.bytes_to_write(), io.files.lock().unwrap()[file.path()]);
+        assert!(!back.can_undo(file.id()));
+        assert!(!back.can_redo(file.id()));
     }
 
     #[test]
