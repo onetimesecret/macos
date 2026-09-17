@@ -1000,7 +1000,7 @@ impl FileStore {
             file.document
                 .insert(0, &read.text)
                 .expect("zero is a valid insertion point");
-            file.document.commit_take_theirs_step(generation);
+            let stepped = file.document.commit_take_theirs_step(generation);
             file.saved_text = Some(read.text);
             file.restored_disk_bytes = None;
             file.witness = Some(read.witness);
@@ -1008,7 +1008,9 @@ impl FileStore {
             file.has_bom = read.has_bom;
             file.dirty = false;
             file.conflict = FileConflict::None;
-            file.active_take_theirs_generation = Some(generation);
+            // Armed only behind an undo item: a generation no Undo can
+            // reach is the orphaned marker ADR-0031 refuses elsewhere.
+            file.active_take_theirs_generation = stepped.then_some(generation);
             file.take_theirs_undone = false;
             file.restored_from_draft = false;
             file.externally_reloaded = false;
@@ -2304,6 +2306,11 @@ mod tests {
             "nothing changed, so there is no step to take back"
         );
         assert!(!store.can_redo(id));
+        assert_eq!(
+            store.file(id).unwrap().active_take_theirs_generation,
+            None,
+            "no undo item exists, so no generation may govern dirty state"
+        );
 
         // Pressing Undo anyway is a step that did not happen, and the
         // file is left exactly where the adoption put it.
@@ -2318,6 +2325,14 @@ mod tests {
         store.take_theirs(&io, id).unwrap();
         assert_eq!(store.text(id).unwrap(), "theirs\n");
         assert!(store.can_undo(id));
+        assert!(
+            store
+                .file(id)
+                .unwrap()
+                .active_take_theirs_generation
+                .is_some(),
+            "an undo item exists, so its generation is armed"
+        );
         assert!(store.undo(id).unwrap().applied);
         assert_eq!(store.text(id).unwrap(), "");
         assert!(store.is_dirty(id));

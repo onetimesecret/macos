@@ -290,13 +290,24 @@ impl SheetDocument {
     /// Commit explicit Take theirs as an isolated undo item. The zero
     /// interval separates it from preceding typing; `separate_next_commit`
     /// applies the same barrier to the first commit that follows it.
-    pub(crate) fn commit_take_theirs_step(&mut self, generation: i64) {
+    ///
+    /// Returns whether an undo item was pushed carrying the generation.
+    /// A commit with no operations pushes none, and a generation no item
+    /// carries is one no Undo can ever reach.
+    pub(crate) fn commit_take_theirs_step(&mut self, generation: i64) -> bool {
         self.set_take_theirs_commit(Some(generation));
         self.undo.set_merge_interval(0);
         self.commit_now(None);
         self.undo.set_merge_interval(self.merge_interval);
+        // The push hook takes the generation with the item it stamps, so
+        // a slot still holding it means nothing was pushed.
+        let pushed = self
+            .take_theirs_commit
+            .lock()
+            .is_ok_and(|slot| slot.is_none());
         self.set_take_theirs_commit(None);
         self.separate_next_commit.set(true);
+        pushed
     }
 
     /// Where the caret belongs after the last [`SheetDocument::undo`]
@@ -892,7 +903,12 @@ fn bind_undo(doc: &LoroDoc, body: &LoroText) -> UndoBinding {
     let anchor = body.clone();
     undo.set_on_push(Some(Box::new(move |_kind, _span, event| {
         let mut meta = UndoItemMeta::new();
-        let explicit_commit = take_theirs_source.lock().ok().and_then(|slot| *slot);
+        // Taken rather than read, so the commit that set it can tell
+        // whether an item was pushed to carry it.
+        let explicit_commit = take_theirs_source
+            .lock()
+            .ok()
+            .and_then(|mut slot| slot.take());
         let inverse_step = event
             .is_none()
             .then(|| {
