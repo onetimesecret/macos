@@ -2663,10 +2663,11 @@ public final class PageModel: ObservableObject {
         if let pending = pendingFileClose {
             if let file = files.first(where: { $0.id == pending.fileID }) {
                 // A pending close is answered only by its own three
-                // actions or by another close gesture; nothing here
-                // closes a tab. A file that came clean by any other
+                // actions; nothing here closes a tab, and a second
+                // close gesture on the same tab is a no-op while the
+                // decision stands. A file that came clean by any other
                 // route (⌘S, an Undo back to the saved text, Take
-                // theirs, a reload) has had its question overtaken, so
+                // theirs) has had its question overtaken, so
                 // the decision is withdrawn and the tab stays, undo
                 // and redo history intact. Closing is the one step on
                 // this surface that cannot be undone, which is why only

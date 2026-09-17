@@ -118,9 +118,12 @@ final class FileSurfaceTests: XCTestCase {
         XCTAssertEqual(FileCloseBanner.sentence(name: "notes.txt"), "notes.txt has unsaved changes")
     }
 
-    /// Each close action carries a tooltip and a VoiceOver hint, as the
-    /// conflict banner's do. Discard is the destructive one, and both
-    /// of its strings say the draft is destroyed and does not come back.
+    /// Each close action carries a tooltip and a VoiceOver hint. The
+    /// conflict banner replaces its labels instead, in the first person;
+    /// a hint keeps the button's own text and reads after it, which is
+    /// the right slot for an action whose label is already a verb.
+    /// Discard is the destructive one, and both of its strings say the
+    /// draft is destroyed and does not come back.
     func testTheCloseBannerActionsEachSayWhatTheyDo() {
         XCTAssertEqual(
             FileCloseBanner.help(for: .save),

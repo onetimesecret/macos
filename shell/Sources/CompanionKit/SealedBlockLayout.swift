@@ -2,10 +2,12 @@ import CoreGraphics
 
 /// Pure geometry for a sealed block after TextKit has resolved its usable measure.
 ///
-/// Every number a sealed block is drawn with lives here, so the block's
+/// Every length a sealed block is drawn with lives here, so the block's
 /// shape can be argued about in tests rather than read out of a drawing
 /// routine. The drawing code asks for metrics and places things; it
-/// invents no constants of its own.
+/// invents no geometry of its own. Type faces, kerning and ink alphas
+/// are the drawing code's, since they colour the block rather than
+/// shape it.
 enum SealedBlockLayout {
     /// A block is a fixed slab: its height is the same whatever measure
     /// the container offers, which is why it stands apart from `Metrics`

@@ -325,10 +325,11 @@ The file remains editable while it stands, with three actions:
 - **Keep editing** leaves the tab open with its draft intact. It is the
   default action.
 
-The decision is consumed only by those three actions or by another
-close gesture on the tab. Nothing else closes it. If the file becomes
-clean by any other route while the decision stands (Cmd S, an Undo back
-to the saved text, Take theirs, a reload), the decision is withdrawn,
+The decision is consumed only by those three actions. Nothing else
+closes the tab, and a second Cmd W on the same tab while the decision
+stands does nothing. If the file becomes clean by any other route while
+the decision stands (Cmd S, an Undo back to the saved text, Take
+theirs), the decision is withdrawn,
 because the question it asked no longer applies, and the tab stays open
 with its undo history intact; a further Cmd W then closes the clean tab
 at once, as it does for any clean file. Closing a tab is the one step

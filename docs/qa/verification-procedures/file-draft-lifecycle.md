@@ -184,8 +184,9 @@ copy; or the conflict remaining after the replacement succeeds.
 
 ## Case 5: a clean buffer withdraws the banner and keeps the tab
 
-The banner from case 3 offers three actions, and only those three, or
-another cmd-w, close the tab. Making the buffer match the file by any
+The banner from case 3 offers three actions, and only those three close
+the tab; a second cmd-w while it stands does nothing. Making the buffer
+match the file by any
 other route (saving, undoing back to the saved text, taking theirs on a
 conflict) withdraws the decision instead, because the question it asked
 no longer applies, and the tab stays open with its undo history intact.
