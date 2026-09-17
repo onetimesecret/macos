@@ -3032,19 +3032,16 @@ public struct InkEditorView: NSViewRepresentable {
         private static func makeBlockLabel() -> BlockMetadataField {
             let field = BlockMetadataField(labelWithString: "")
             field.font = blockLabelFont
-            field.textColor = .secondaryLabelColor
             field.alignment = .center
             field.isSelectable = false
             field.isEditable = false
             field.drawsBackground = true
-            field.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08)
             field.isBezeled = false
             field.wantsLayer = true
             field.layer?.cornerRadius = blockLabelMinHeight / 2
             field.layer?.masksToBounds = true
             field.layer?.borderWidth = 1
-            field.layer?.borderColor = NSColor.separatorColor
-                .withAlphaComponent(0.35).cgColor
+            field.refreshPillColors()
             field.setAccessibilityElement(true)
             field.setAccessibilityRole(.staticText)
             return field
@@ -3129,12 +3126,37 @@ public struct InkEditorView: NSViewRepresentable {
 /// Block metadata is informative until the revision read API exists.
 /// Let pointer gestures fall through to the editor so the compact pill
 /// never steals caret placement or text selection from the line it rides.
-private final class BlockMetadataField: NSTextField {
+final class BlockMetadataField: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override class var cellClass: AnyClass? {
         get { BlockMetadataCell.self }
         set { super.cellClass = newValue }
+    }
+
+    /// A dynamic colour asked for its `cgColor` answers with whatever
+    /// appearance happened to be current at the time, and then keeps
+    /// that answer forever. The pill's washes are resolved again here,
+    /// inside this view's own appearance, so a switch between light and
+    /// dark carries them along.
+    func refreshPillColors() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            textColor = .secondaryLabelColor
+            backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08)
+            layer?.borderColor = NSColor.separatorColor
+                .withAlphaComponent(0.35).cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshPillColors()
+        needsDisplay = true
+    }
+
+    override func updateLayer() {
+        super.updateLayer()
+        refreshPillColors()
     }
 }
 

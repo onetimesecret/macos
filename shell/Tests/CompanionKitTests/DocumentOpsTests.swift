@@ -684,6 +684,27 @@ final class DocumentOpsWiringTests: XCTestCase {
         XCTAssertEqual(origin.y, 58)
     }
 
+    /// The pill's border is a dynamic colour flattened to a CGColor, the
+    /// one place where a light-mode answer would otherwise be kept
+    /// through a switch to dark.
+    func testThePillsWashesFollowTheAppearance() {
+        let field = BlockMetadataField(labelWithString: "edited")
+        field.wantsLayer = true
+        field.layer?.borderWidth = 1
+
+        field.appearance = NSAppearance(named: .aqua)
+        field.refreshPillColors()
+        let light = field.layer?.borderColor?.components
+        XCTAssertNotNil(light)
+
+        field.appearance = NSAppearance(named: .darkAqua)
+        field.refreshPillColors()
+        let dark = field.layer?.borderColor?.components
+        XCTAssertNotNil(dark)
+
+        XCTAssertNotEqual(light, dark, "the border kept its light-mode reading")
+    }
+
 }
 
 /// A tiny deterministic generator, so the random edit script replays
