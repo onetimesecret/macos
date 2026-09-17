@@ -16,11 +16,12 @@
 //! helper, same strict envelope rule. `OTSSNAP4` is not touched.
 //!
 //! One record per open file: the bookmark blob, the last known path,
-//! the witness, the dirty flag, the last edit stamp, for a dirty file
-//! the Loro snapshot, and an optional trailing generation-dirty flag.
-//! A clean file records only its identity, so
-//! its tab comes back with nothing staged behind it and the shell fills
-//! it from disk with a reload.
+//! the witness, the line ending and BOM, the dirty flag, the last edit
+//! stamp, and for a dirty file the Loro snapshot. A clean file records
+//! only its identity, so its tab comes back with nothing staged behind
+//! it and the shell fills it from disk with a reload. A record that
+//! carries the trailing generation-dirty flag one earlier build wrote
+//! is tolerated on read and the flag is never acted on.
 //!
 //! [`restore`] is only half of a restore: it decodes, and touches no
 //! filesystem. [`crate::files::FileStore::hydrate_restored`] is the
