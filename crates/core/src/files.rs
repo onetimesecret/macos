@@ -28,6 +28,8 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use zeroize::Zeroizing;
+
 use crate::document::{DocRun, SheetDocument};
 use crate::store::EditOp;
 
@@ -364,7 +366,9 @@ pub struct OpenFile {
     /// Exact disk bytes learned while hydrating a restored dirty draft.
     /// They govern that draft until Save, Reload, or Take theirs because
     /// equal normalized text can still write different line endings.
-    restored_disk_bytes: Option<Vec<u8>>,
+    /// Zeroizing because they are the file's plaintext for as long as
+    /// the draft stands.
+    restored_disk_bytes: Option<Zeroizing<Vec<u8>>>,
     witness: Option<FileWitness>,
     line_ending: LineEnding,
     has_bom: bool,
@@ -513,7 +517,7 @@ impl OpenFile {
         if self.take_theirs_undone {
             self.dirty = true;
         } else if let Some(saved) = &self.restored_disk_bytes {
-            self.dirty = *saved != self.bytes_to_write();
+            self.dirty = **saved != self.bytes_to_write();
         } else if let Some(saved) = &self.saved_text {
             self.dirty = *saved != text_of(&self.document);
         }
@@ -1253,7 +1257,7 @@ pub(crate) enum DraftBody {
     /// A clean file: identity only, since its text is on disk.
     None,
     /// A dirty file's buffer.
-    Snapshot(zeroize::Zeroizing<Vec<u8>>),
+    Snapshot(Zeroizing<Vec<u8>>),
     /// A dirty file whose buffer is over [`DRAFT_SNAPSHOT_LIMIT`]. The
     /// record is written without it, and the restore says so.
     Oversized,
@@ -1292,7 +1296,9 @@ pub(crate) fn line_ending_from_code(code: u8) -> Option<LineEnding> {
 /// and everything the buffer has to remember to write them back.
 struct ReadFile {
     text: String,
-    bytes: Vec<u8>,
+    /// Zeroizing because they are plaintext and outlive the read when a
+    /// hydration keeps them as the draft's baseline.
+    bytes: Zeroizing<Vec<u8>>,
     witness: FileWitness,
     line_ending: LineEnding,
     has_bom: bool,
@@ -1333,7 +1339,7 @@ const READ_ATTEMPTS: usize = 3;
 /// something to start and then reconsider.
 fn read_once(io: &dyn FileIo, path: &Path) -> Result<Option<ReadFile>, OpenRefusal> {
     let before = io.stat(path).map_err(|e| OpenRefusal::Io(e.kind()))?;
-    let bytes = io.read(path).map_err(|e| OpenRefusal::Io(e.kind()))?;
+    let bytes = Zeroizing::new(io.read(path).map_err(|e| OpenRefusal::Io(e.kind()))?);
     let after = io.stat(path).map_err(|e| OpenRefusal::Io(e.kind()))?;
     if before != after {
         return Ok(None);
