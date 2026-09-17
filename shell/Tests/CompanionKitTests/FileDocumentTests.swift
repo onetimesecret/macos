@@ -72,14 +72,15 @@ final class FileDocumentTests: XCTestCase {
     private func makeModel(
         _ fixture: Fixture,
         panels: ScriptedFilePanels,
-        fileLanguageDetection: LanguageDetectionService? = nil
+        fileLanguageDetection: LanguageDetectionService? = nil,
+        client: CompanionClient? = nil
     ) -> PageModel {
         let model = PageModel(
             formFactor: .panel,
             defaults: fixture.defaults,
             seams: .init(
                 stateDirectory: fixture.state,
-                client: .ephemeral(tag: fixture.tag),
+                client: client ?? CompanionClient.ephemeral(tag: fixture.tag),
                 saveDebounce: 0.05,
                 fileLanguageDetection: fileLanguageDetection
             )

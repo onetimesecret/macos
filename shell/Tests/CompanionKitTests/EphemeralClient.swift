@@ -19,11 +19,17 @@ extension CompanionClient {
     /// shipping path: the form factors construct through
     /// `init(credentialService:)`.
     static func ephemeral(tag: String) -> CompanionClient {
+        CompanionClient(adopting: ephemeralHandleForTests(tag: tag))
+    }
+
+    /// The handle behind `ephemeral(tag:)`, on its own so a subclass
+    /// can stand on the same store without reaching for the seam twice.
+    static func ephemeralHandleForTests(tag: String) -> OpaquePointer {
         companion_init()
         guard let created = tag.withCString({ companion_new_ephemeral($0) }) else {
             fatalError("the core refused to create an ephemeral handle")
         }
-        return CompanionClient(adopting: created)
+        return created
     }
 
     /// Age every staged page by `ms` of wall time, the way a relaunch
@@ -84,5 +90,37 @@ struct WireRecord: Decodable, Equatable {
         case method, url, authorized, ttl, recipient
         case shareDomain = "share_domain"
         case hasPassphrase = "has_passphrase"
+    }
+}
+
+/// An ephemeral client that can be told to refuse a close, and that
+/// counts every close it is asked for.
+///
+/// Both halves earn their place. The core grants a close for any file
+/// it holds, so without this there is no way to stand the shell in
+/// front of a refusal and see whether the decision survives it; and the
+/// second close after a save is invisible in the roster either way,
+/// because a close of a file already gone changes nothing, so only a
+/// count can say whether the retry happened at all.
+final class ScriptedCloseClient: CompanionClient, @unchecked Sendable {
+    /// How many closes are refused before the next one is granted.
+    /// Refusals are spent one per call, so `1` is the auto-close after
+    /// a save saying no while the retry behind it says yes.
+    var refusalsRemaining = 0
+    /// Every file id this was asked to close, in order, refusals
+    /// included.
+    private(set) var closeRequests: [UInt64] = []
+
+    init(tag: String) {
+        super.init(adopting: CompanionClient.ephemeralHandleForTests(tag: tag))
+    }
+
+    override func closeFile(_ file: UInt64) -> Bool {
+        closeRequests.append(file)
+        if refusalsRemaining > 0 {
+            refusalsRemaining -= 1
+            return false
+        }
+        return super.closeFile(file)
     }
 }

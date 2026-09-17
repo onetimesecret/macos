@@ -568,7 +568,14 @@ public struct SyncPairingStage: Codable, Hashable, Sendable {
 /// call is serialized by the core's own mutex (companion_ffi.h) — the
 /// conceal routes are *meant* to be called off the main actor, since
 /// they block for a network round-trip.
-public final class CompanionClient: @unchecked Sendable {
+///
+/// Not final, for one reason: the test target subclasses it to answer a
+/// call the way the core never would on demand. A close is the case
+/// that forced it, since the core refuses one only for an id it has
+/// never heard of, and the shell's behaviour when a close is refused
+/// under a standing decision is exactly what wants covering. Nothing in
+/// the app subclasses it, and no method here is written to be extended.
+public class CompanionClient: @unchecked Sendable {
     private let handle: OpaquePointer
 
     /// `credentialService` scopes this client's Keychain items. Nil
