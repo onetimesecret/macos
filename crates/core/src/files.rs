@@ -988,24 +988,18 @@ impl FileStore {
         if let Some(file) = self.file_mut(id) {
             let generation = file.mint_take_theirs_generation();
             let len = file.document.utf16_len();
-            if len == 0 && read.text.is_empty() {
-                // Even an empty buffer over an empty disk copy is an
-                // explicit structural choice. A transient insertion and
-                // deletion gives the undo manager a real, net-empty step.
-                file.document
-                    .insert(0, " ")
-                    .expect("zero is a valid insertion point");
-                file.document
-                    .delete(0, 1)
-                    .expect("the inserted code unit is a valid range");
-            } else {
-                file.document
-                    .delete(0, len)
-                    .expect("the document's full UTF-16 range is valid");
-                file.document
-                    .insert(0, &read.text)
-                    .expect("zero is a valid insertion point");
-            }
+            // An empty buffer over an empty disk copy writes no
+            // operations, so the undo manager gets no item and Undo
+            // stays unavailable. That is the honest answer: an enabled
+            // Undo that changes nothing when pressed is worse than a
+            // step the person is told does not exist, and there is no
+            // former generation here that any press could show them.
+            file.document
+                .delete(0, len)
+                .expect("the document's full UTF-16 range is valid");
+            file.document
+                .insert(0, &read.text)
+                .expect("zero is a valid insertion point");
             file.document.commit_take_theirs_step(generation);
             file.saved_text = Some(read.text);
             file.restored_disk_bytes = None;
@@ -2291,6 +2285,45 @@ mod tests {
             store.file(id).unwrap().bytes_to_write(),
             b"theirs\n".to_vec()
         );
+    }
+
+    #[test]
+    fn take_theirs_over_two_empty_copies_settles_without_a_step() {
+        let io = MemoryIo::with("/empty.txt", b"");
+        let mut store = FileStore::new();
+        let id = store.open(&io, Path::new("/empty.txt")).unwrap();
+        assert_eq!(store.text(id).unwrap(), "");
+        assert!(!store.can_undo(id));
+
+        store.take_theirs(&io, id).unwrap();
+        assert_eq!(store.text(id).unwrap(), "");
+        assert!(!store.is_dirty(id));
+        assert_eq!(store.check(&io, id), ExternalState::Unchanged);
+        assert!(
+            !store.can_undo(id),
+            "nothing changed, so there is no step to take back"
+        );
+        assert!(!store.can_redo(id));
+
+        // Pressing Undo anyway is a step that did not happen, and the
+        // file is left exactly where the adoption put it.
+        assert!(!store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "");
+        assert!(!store.is_dirty(id));
+
+        // A later adoption over a disk copy with words in it is an
+        // ordinary structural step again.
+        io.put("/empty.txt", b"theirs\n");
+        assert_eq!(store.refresh_conflict(&io, id), ExternalState::Changed);
+        store.take_theirs(&io, id).unwrap();
+        assert_eq!(store.text(id).unwrap(), "theirs\n");
+        assert!(store.can_undo(id));
+        assert!(store.undo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "");
+        assert!(store.is_dirty(id));
+        assert!(store.redo(id).unwrap().applied);
+        assert_eq!(store.text(id).unwrap(), "theirs\n");
+        assert!(!store.is_dirty(id));
     }
 
     #[test]
