@@ -732,6 +732,43 @@ final class DocumentOpsWiringTests: XCTestCase {
         ))
     }
 
+    /// A page with wrapping off hands its container TextKit's unbounded
+    /// sentinel. Placed against that, the pill would sit at an x no
+    /// reader can reach and every wide reading would "fit"; the view's
+    /// own width stands in.
+    func testAnUnboundedContainerTakesTheViewsWidth() {
+        XCTAssertEqual(
+            InkEditorView.Coordinator.blockAffordanceMeasure(
+                containerWidth: .greatestFiniteMagnitude, viewWidth: 640
+            ),
+            640
+        )
+        XCTAssertEqual(
+            InkEditorView.Coordinator.blockAffordanceMeasure(
+                containerWidth: SealedBlockCell.effectivelyUnboundedWidth, viewWidth: 640
+            ),
+            640
+        )
+        // A wrapped page's container is the measure, and the narrower of
+        // the two wins while a resize is still settling.
+        XCTAssertEqual(
+            InkEditorView.Coordinator.blockAffordanceMeasure(
+                containerWidth: 500, viewWidth: 640
+            ),
+            500
+        )
+        XCTAssertFalse(
+            InkEditorView.Coordinator.blockAffordanceFits(
+                lineMaxX: 620,
+                containerWidth: InkEditorView.Coordinator.blockAffordanceMeasure(
+                    containerWidth: .greatestFiniteMagnitude, viewWidth: 640
+                ),
+                affordanceWidth: 180
+            ),
+            "the wide reading fit itself onto an unbounded page"
+        )
+    }
+
     /// The pill's border is a dynamic colour flattened to a CGColor, the
     /// one place where a light-mode answer would otherwise be kept
     /// through a switch to dark.

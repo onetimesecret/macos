@@ -2937,17 +2937,20 @@ public struct InkEditorView: NSViewRepresentable {
         /// the only thing keeping the two in step.
         private var blockToolTips: [NSView.ToolTipTag: String] = [:]
 
-        /// The tags currently registered, in document order. The tests
-        /// read the tooltip table through the same door AppKit does.
-        var blockToolTipTags: [NSView.ToolTipTag] { blockToolTips.keys.sorted() }
+        #if DEBUG
+            /// The tags currently registered, in document order. The tests
+            /// read the tooltip table through the same door AppKit does.
+            /// A seam, so it is not built into a shipped binary.
+            var blockToolTipTags: [NSView.ToolTipTag] { blockToolTips.keys.sorted() }
 
-        /// What the last restyle laid out, in document order: one entry
-        /// per edited block, the range being the line its affordance
-        /// rides. The window tests get onto the block walk; nothing
-        /// writes through it.
-        var blockLabelLayout: [(range: NSRange, text: String)] {
-            blockDisplays.map { ($0.range, $0.compactText) }
-        }
+            /// What the last restyle laid out, in document order: one entry
+            /// per edited block, the range being the line its affordance
+            /// rides. The window tests get onto the block walk; nothing
+            /// writes through it.
+            var blockLabelLayout: [(range: NSRange, text: String)] {
+                blockDisplays.map { ($0.range, $0.compactText) }
+            }
+        #endif
 
         private static let blockLabelFont = NSFont.monospacedDigitSystemFont(
             ofSize: 10.5, weight: .medium
@@ -3058,22 +3061,34 @@ public struct InkEditorView: NSViewRepresentable {
             repositionBlockLabels()
         }
 
+        /// Re-decide each affordance's reading and place it. A resize
+        /// rewraps the paragraph under an expanded pill, so the fit test
+        /// that stood the wide reading down (or let it through) has to be
+        /// taken again; moving the pills alone would leave a wide reading
+        /// sitting over the words the rewrap just pushed under it.
+        func refitBlockLabels() {
+            updateBlockLabelViews()
+        }
+
         /// Lay the affordances out against stamps handed in rather than
         /// read from the core. The mounted editor never takes this door:
         /// it exists because a block cannot be aged inside a test run,
         /// and the pills, the accessibility children and the tooltip
         /// table can only be examined over a page that carries edited
-        /// blocks.
-        func layOutBlockLabels(forMetas metas: [BlockInfo]) {
-            guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
-            let (_, displays, _) = Self.applyMarkdownStyling(
-                to: storage, sheet: sheet, blockMetas: metas,
-                syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
-                fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet)
-            )
-            blockDisplays = displays
-            updateBlockLabelViews()
-        }
+        /// blocks. A seam (ADR-0018), so it is compiled out of a shipped
+        /// binary rather than left standing in one.
+        #if DEBUG
+            func layOutBlockLabels(forMetas metas: [BlockInfo]) {
+                guard let storage = textView?.textStorage, let sheet = currentSheet else { return }
+                let (_, displays, _) = Self.applyMarkdownStyling(
+                    to: storage, sheet: sheet, blockMetas: metas,
+                    syntaxHighlightingEnabled: model.syntaxHighlightingEnabled,
+                    fenceRenderingLanguages: model.fenceRenderingLanguages(for: sheet)
+                )
+                blockDisplays = displays
+                updateBlockLabelViews()
+            }
+        #endif
 
         /// One padding rule for both readings, so the pill grows and
         /// shrinks without appearing to change shape.
@@ -3089,12 +3104,33 @@ public struct InkEditorView: NSViewRepresentable {
         private func expandedLabelFits(
             _ field: BlockMetadataField, for display: BlockDisplay
         ) -> Bool {
-            guard let container = textView?.textContainer,
-                  let line = firstLineUsedRect(for: display) else { return true }
+            guard let line = firstLineUsedRect(for: display) else { return true }
             return Self.blockAffordanceFits(
-                lineMaxX: line.maxX, containerWidth: container.size.width,
+                lineMaxX: line.maxX, containerWidth: blockAffordanceMeasure,
                 affordanceWidth: field.frame.width
             )
+        }
+
+        /// The measure every affordance is placed and tested against.
+        /// A page with wrapping off hands its container TextKit's
+        /// unbounded sentinel, which would put the pill at an x no
+        /// reader can reach and make every wide reading "fit"; the
+        /// view's own width is the page that exists, so it stands in.
+        private var blockAffordanceMeasure: CGFloat {
+            guard let textView else { return 0 }
+            return Self.blockAffordanceMeasure(
+                containerWidth: textView.textContainer?.size.width ?? .infinity,
+                viewWidth: textView.bounds.width
+            )
+        }
+
+        nonisolated static func blockAffordanceMeasure(
+            containerWidth: CGFloat, viewWidth: CGFloat
+        ) -> CGFloat {
+            guard containerWidth.isFinite,
+                  containerWidth < SealedBlockCell.effectivelyUnboundedWidth
+            else { return viewWidth }
+            return min(containerWidth, viewWidth)
         }
 
         /// The used rect of the line a block's affordance rides, in
@@ -3134,18 +3170,23 @@ public struct InkEditorView: NSViewRepresentable {
         /// without changing what any block says.
         func repositionBlockLabels() {
             blockFirstLineDisplayRects.removeAll()
-            guard let textView, let container = textView.textContainer else { return }
+            guard let textView else { return }
+            let measure = blockAffordanceMeasure
             let origin = textView.textContainerOrigin
             // AppKit hands a tooltip to whichever view answers the hit
             // test, and the pill answers with nothing so the caret can
             // land behind it. The text view hosts the tooltip instead,
             // over the same row the hover expansion already claims.
+            // Clearing the table wholesale means the affordances own the
+            // text view's tooltips outright: anything else that wants one
+            // on this view has to be registered from here too, or this
+            // pass will take it away.
             textView.removeAllToolTips()
             blockToolTips.removeAll()
             for (field, display) in zip(blockLabelViews, blockDisplays) {
                 guard let usedRect = firstLineUsedRect(for: display) else { continue }
                 field.frame.origin = Self.blockAffordanceOrigin(
-                    firstLine: usedRect, containerWidth: container.size.width,
+                    firstLine: usedRect, containerWidth: measure,
                     containerOrigin: origin, affordanceSize: field.frame.size
                 )
                 // The owner is this coordinator, never the string itself:
@@ -3156,7 +3197,7 @@ public struct InkEditorView: NSViewRepresentable {
                 // rebuilt alongside the rects it belongs to.
                 let displayRect = NSRect(
                     x: origin.x, y: origin.y + usedRect.minY,
-                    width: container.size.width, height: usedRect.height
+                    width: measure, height: usedRect.height
                 )
                 blockFirstLineDisplayRects[display.range.location] = displayRect
                 let tag = textView.addToolTip(
@@ -3269,15 +3310,13 @@ final class BlockMetadataField: NSTextField {
         }
     }
 
+    /// The one door the washes are resolved through. Resolving them from
+    /// a drawing pass instead would assign colours while drawing, which
+    /// invalidates display and asks for the next pass, and so on.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         refreshPillColors()
         needsDisplay = true
-    }
-
-    override func updateLayer() {
-        super.updateLayer()
-        refreshPillColors()
     }
 }
 
@@ -3635,12 +3674,13 @@ final class InkTextView: NSTextView, EditStepResponder, LanguageDetectionRespond
     }
 
     /// A resize rewraps paragraphs without touching their content, so
-    /// the block affordances (ADR-0013) need only be moved, not recomputed
-    /// from the core, cheap enough to run on every layout pass.
+    /// the block affordances (ADR-0013) are re-decided and moved from
+    /// their own displays, never recomputed from the core: no round trip,
+    /// cheap enough to run on every layout pass.
     override func layout() {
         updateChipEditorMeasure()
         super.layout()
-        coordinator?.repositionBlockLabels()
+        coordinator?.refitBlockLabels()
     }
 
     /// TextKit's attachment sizing callback is explicitly nonisolated,
