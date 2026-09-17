@@ -2979,6 +2979,14 @@ public final class PageModel: ObservableObject {
         switch action {
         case .save:
             guard saveFile(pending.fileID) else { return }
+            // A successful save refreshes the roster, and a clean file
+            // with a close still pending is closed inside
+            // `standOpenFiles`, so by the time this line runs the file
+            // has usually gone already. The check writes that invariant
+            // down rather than leaning on file ids never being reused:
+            // the only id this closes is one the core still holds,
+            // which leaves the retry after an auto-close that failed.
+            guard openFiles.contains(where: { $0.id == pending.fileID }) else { return }
             clearPendingFileClose()
             _ = closeFileNow(pending.fileID)
         case .discard:

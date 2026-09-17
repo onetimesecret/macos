@@ -1126,6 +1126,32 @@ final class FileDocumentTests: XCTestCase {
             try Data(contentsOf: url), Data(("typed " + original).utf8),
             "a save under the flipped mode wrote something the mode drew")
     }
+
+    // MARK: 7a. What a refused close does, and how often one is asked for
+
+    /// Save closes the file through the roster the save itself
+    /// refreshed, so the core is asked for the close once and only
+    /// once. The second ask would land on an id the core no longer
+    /// holds, and file ids are not promised never to be reused.
+    func testSaveAsksTheCoreToCloseTheFileExactlyOnce() throws {
+        let fixture = try makeFixture()
+        let client = ScriptedCloseClient(tag: fixture.tag)
+        let model = makeModel(fixture, panels: ScriptedFilePanels(), client: client)
+        model.loadStateIfNeeded()
+        model.openFile(at: try write("a\n", named: "a.txt", in: fixture))
+        let dirty = try XCTUnwrap(model.openFiles.first?.id)
+        try type("x", at: 0, into: dirty, on: model)
+
+        model.closeFile(dirty)
+        XCTAssertEqual(model.pendingFileClose?.fileID, dirty)
+        model.resolvePendingFileClose(.save)
+
+        XCTAssertTrue(model.openFiles.isEmpty, "the save went through and the close followed it")
+        XCTAssertNil(model.pendingFileClose, "and the decision left with the file")
+        XCTAssertEqual(
+            client.closeRequests, [dirty],
+            "the close that happened inside the refreshed roster is the only one owed")
+    }
 }
 
 /// The nine findings of the adversarial Swift review, each with the
