@@ -10,6 +10,13 @@ struct StanceFadeModifier: ViewModifier {
     let raised: Bool
     let animation: Animation?
 
+    /// Sees the transaction the fade itself runs under, above the
+    /// boundary that clears it. Nothing below the boundary can observe
+    /// that the fade is animated, so the tests need this seam to pin
+    /// the positive half of the rule. The shipping call site leaves it
+    /// nil.
+    var fadeProbe: (@MainActor (Transaction) -> Void)? = nil
+
     func body(content: Content) -> some View {
         content
             // The fade belongs to this compositing boundary and to
@@ -29,6 +36,9 @@ struct StanceFadeModifier: ViewModifier {
                 transaction.animation = nil
             }
             .opacity(raised ? 1 : 0.72)
+            .transaction { transaction in
+                fadeProbe?(transaction)
+            }
             .animation(animation, value: raised)
     }
 }
