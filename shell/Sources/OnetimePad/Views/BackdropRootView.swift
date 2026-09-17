@@ -10,12 +10,13 @@ struct StanceFadeModifier: ViewModifier {
     let raised: Bool
     let animation: Animation?
 
+    #if DEBUG
     /// Sees the transaction the fade itself runs under, above the
     /// boundary that clears it. Nothing below the boundary can observe
-    /// that the fade is animated, so the tests need this seam to pin
-    /// the positive half of the rule. The shipping call site leaves it
-    /// nil.
+    /// that the fade is animated, so debug tests use this seam to pin
+    /// the positive half of the rule. It is not compiled into releases.
     var fadeProbe: (@MainActor (Transaction) -> Void)? = nil
+    #endif
 
     func body(content: Content) -> some View {
         content
@@ -36,9 +37,11 @@ struct StanceFadeModifier: ViewModifier {
                 transaction.animation = nil
             }
             .opacity(raised ? 1 : 0.72)
+            #if DEBUG
             .transaction { transaction in
                 fadeProbe?(transaction)
             }
+            #endif
             .animation(animation, value: raised)
     }
 }

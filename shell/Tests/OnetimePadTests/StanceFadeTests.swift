@@ -12,9 +12,11 @@ final class StanceFadeTests: XCTestCase {
         /// Whether each native update below the boundary carried an
         /// animation.
         var updates: [Bool] = []
+        #if DEBUG
         /// The animation each pass of the fade's own transaction carried,
         /// as the probe above the boundary saw it.
         var fades: [Animation?] = []
+        #endif
     }
 
     private struct NativeContent: NSViewRepresentable {
@@ -36,11 +38,21 @@ final class StanceFadeTests: XCTestCase {
 
         var body: some View {
             NativeContent(raised: raised, transactions: transactions)
-                .modifier(StanceFadeModifier(
-                    raised: raised,
-                    animation: StanceFadeTests.fade,
-                    fadeProbe: { transactions.fades.append($0.animation) }
-                ))
+                .modifier(Self.stanceFade(raised: raised, transactions: transactions))
+        }
+
+        private static func stanceFade(
+            raised: Bool, transactions: Transactions
+        ) -> StanceFadeModifier {
+            #if DEBUG
+            return StanceFadeModifier(
+                raised: raised,
+                animation: StanceFadeTests.fade,
+                fadeProbe: { transactions.fades.append($0.animation) }
+            )
+            #else
+            return StanceFadeModifier(raised: raised, animation: StanceFadeTests.fade)
+            #endif
         }
     }
 
@@ -61,7 +73,9 @@ final class StanceFadeTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
 
         transactions.updates.removeAll()
+        #if DEBUG
         transactions.fades.removeAll()
+        #endif
         host.rootView = Harness(raised: true, transactions: transactions)
         host.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
@@ -81,6 +95,7 @@ final class StanceFadeTests: XCTestCase {
         )
     }
 
+    #if DEBUG
     /// The other half of the rule: the boundary must clear the fade for
     /// what lies under it, not remove the fade itself. Dropping the
     /// animation modifier, or clearing the transaction above the
@@ -98,4 +113,5 @@ final class StanceFadeTests: XCTestCase {
             "the stance change reached the fade without its 160 ms animation"
         )
     }
+    #endif
 }
