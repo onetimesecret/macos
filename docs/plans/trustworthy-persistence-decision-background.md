@@ -113,7 +113,7 @@ section 7 covers the cases where it is not.
 
 | Event | Unexpired content survives | What the user sees |
 |---|---|---|
-| Clean quit (⌘Q) | Yes, in full | `applicationShouldTerminate` calls `saveState()` and stands down whatever the debounce still holds (`shell/Sources/OnetimePad/BackdropApp.swift`, `shell/Sources/CompanionKit/PageModel.swift`). If that write is refused, an alert offers Quit Anyway or Cancel; a settled flush over a withheld licence with work in the session warns the same way (which outcome tells which story lives in `shell/Sources/CompanionKit/QuitPrompt.swift`, and the reply it becomes). On relaunch the pages are there with less time on them. |
+| Clean quit (⌘Q) | Yes, in full | `applicationShouldTerminate` calls `saveState()` and stands down whatever the debounce still holds (`shell/Sources/OnetimePad/BackdropApp.swift`, `shell/Sources/CompanionKit/PageModel.swift`). The Quit Anyway or Cancel alert this row was written against is gone. A refused or unsavable flush now cancels the first quit and raises the surface with one standing line under the page naming what the quit would lose and offering to quit anyway; the second quit request, either ⌘Q again or that line's button, terminates (`shell/Sources/CompanionKit/QuitPrompt.swift`, `applicationShouldTerminate` in BackdropApp.swift). A settled flush terminates on the first request. On relaunch the pages are there with less time on them. |
 | Crash (process fault) | Yes, except the debounce window | The last burst of typing inside the window is gone. Everything sealed before it is intact, because each write lands whole or not at all (`crates/ffi/src/persist.rs`). Nothing tells the user which keystrokes were lost. Window quantified in section 2. |
 | Force termination (`kill -9`, Force Quit) | Yes, except the debounce window | Identical to crash. SIGKILL runs no handler, so the sudden-termination latch (`shell/Sources/CompanionKit/PageModel.swift`) buys nothing here; the atomic write is what saves the rest. |
 | macOS restart or shutdown | Yes. The discard arm this row was written against is gone | An orderly restart delivers a terminate while a write is owed, because the latch holds sudden termination off a dirty buffer (PageModel.swift, `shell/OnetimePad-Info.plist`), so the quit flush runs and the loss window is zero. A mutation that never reached `markDirty()` is not covered, and neither is a kill before the flush lands. The empty pad this ADR was written to remove is removed: the restart is asserted at `a_restart_leaves_the_pages_alive_and_drains_them_by_the_gap` (`crates/ffi/src/lib.rs`) and confirmed on hardware once, `docs/qa/verification-procedures/reboot.md`, 2026-08-22. |
@@ -149,7 +149,14 @@ section 2:
   so it cannot fire underneath the quit alert's modal and make its text
   false. The cost is that the retry
   cannot fire while any tracked menu or modal is up, so the window is
-  open-ended for as long as one is.
+  open-ended for as long as one is. **Owed:** the quit alert this reason
+  cites no longer exists; the quit path is the nonmodal standing line
+  described in section 1. The mode is still `.default`
+  (`scheduleSave` at PageModel.swift), and the comment there gives a
+  different reason that does still stand: staying outside the system
+  file panels' modal run-loop mode. Which reason the choice now rests
+  on, and whether the cost stated above is still worth paying for it,
+  wants confirming rather than assuming.
 
 The user is now told all of this (issue #49). A withheld licence raises
 a standing banner on the surface with the one recovery action
@@ -159,9 +166,12 @@ the write lifecycle as a word, saving, saved or save failed
 (`SaveStatus` at PageModel.swift, moved in `markDirty` and
 `saveState`), and the quit path warns on both loud outcomes: a refused
 write, and a settled flush over a withheld licence with work in the
-session (`quitOutcome` at PageModel.swift,
-`QuitPrompt.forOutcome` at CompanionKit/QuitPrompt.swift,
-BackdropApp.swift). `saveState()` still sets `saved = true` on
+session (`quitOutcome` at PageModel.swift). The warning is no longer an
+alert: `QuitPrompt.terminateReply(flushing:)`
+(CompanionKit/QuitPrompt.swift, called from `applicationShouldTerminate`
+in BackdropApp.swift) cancels the first quit, raises the surface and
+leaves the quit anyway line standing, and terminates on the second quit
+request. `saveState()` still sets `saved = true` on
 the withheld-licence leg (PageModel.swift), so `settled` stays
 true there; the standing state is what carries the story, not the
 write's return value.
